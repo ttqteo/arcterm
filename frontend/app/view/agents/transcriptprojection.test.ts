@@ -760,13 +760,10 @@ describe("extractBackgroundTasks", () => {
             },
         ]);
     // an event notification names only the task id and carries no status; the expiry notice is one of them
+    const eventText = (taskId: string, event: string) =>
+        `<task-notification>\n<task-id>${taskId}</task-id>\n<summary>Monitor event: "Fit progress"</summary>\n<event>${event}</event>\n</task-notification>`;
     const monitorEvent = (taskId: string, event: string) =>
-        JSON.stringify({
-            type: "user",
-            message: {
-                content: `<task-notification>\n<task-id>${taskId}</task-id>\n<summary>Monitor event: "Fit progress"</summary>\n<event>${event}</event>\n</task-notification>`,
-            },
-        });
+        JSON.stringify({ type: "user", message: { content: eventText(taskId, event) } });
 
     it("a Monitor is a task from its start result until its stream ends, through its events", () => {
         const start = [
@@ -784,6 +781,9 @@ describe("extractBackgroundTasks", () => {
                 command: "tail -f fit.log",
                 status: "running",
                 monitor: true,
+                timeoutMs: 1800000,
+                persistent: false,
+                events: [{ lines: ["epoch 3/30"] }],
             },
         ]);
         expect(extractBackgroundTasks([...start, notify("m1", "completed")])[0].status).toBe("completed");
@@ -804,6 +804,183 @@ describe("extractBackgroundTasks", () => {
 
     it("a Monitor whose start was refused is not a task", () => {
         expect(extractBackgroundTasks([monitor("m3"), result("m3", "Monitor is not available")])).toEqual([]);
+    });
+
+    describe("monitor events and expiry", () => {
+        // a task starts when the agent ran the command: its tool_use record, a second before its result
+        const CALL_TS = "2026-10-27T09:00:00.000Z";
+        const START_MS = Date.parse(CALL_TS);
+        const TIMEOUT = 1800000;
+        const at = (line: string, timestamp: string) => JSON.stringify({ ...JSON.parse(line), timestamp });
+        // a start whose records carry timestamps, as a real transcript's do
+        const startLogs = (toolResult: object = { taskId: "bm1", timeoutMs: TIMEOUT, persistent: false }) => [
+            at(monitor("m1"), CALL_TS),
+            at(
+                result("m1", "Monitor started (task bm1, expires in 30m unless the source ends first).", {
+                    toolUseResult: toolResult,
+                }),
+                "2026-10-27T09:00:01.000Z"
+            ),
+        ];
+        const enqueue = (content: string, timestamp = "2026-10-27T09:01:00.000Z") =>
+            JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp, content });
+        const userText = (content: string, timestamp = "2026-10-27T09:01:00.050Z") =>
+            JSON.stringify({ type: "user", timestamp, message: { role: "user", content } });
+        const ev1 = eventText("bm1", "ERROR one\nERROR two");
+        const eventsOf = (lines: string[], opts?: { now?: number }) => extractBackgroundTasks(lines, opts)[0]?.events;
+
+        it("a Monitor that has reported nothing has an empty event list and its timeout from the start result", () => {
+            expect(extractBackgroundTasks(startLogs())[0]).toMatchObject({
+                monitor: true,
+                status: "running",
+                startMs: START_MS,
+                timeoutMs: TIMEOUT,
+                persistent: false,
+                events: [],
+            });
+        });
+
+        it("a persistent Monitor says so, and a start result with no timeout leaves it unset", () => {
+            expect(
+                extractBackgroundTasks(startLogs({ taskId: "bm1", timeoutMs: TIMEOUT, persistent: true }))[0]
+            ).toMatchObject({
+                persistent: true,
+            });
+            const bare = extractBackgroundTasks([
+                monitor("m1"),
+                result("m1", "Monitor started (task bm1, expires in 30m)"),
+            ])[0];
+            expect(bare.events).toEqual([]);
+            expect(bare).not.toHaveProperty("timeoutMs");
+            expect(bare).not.toHaveProperty("persistent");
+        });
+
+        it("a shell task has no event list", () => {
+            const lines = [
+                bash("t1", { command: "npm run dev", run_in_background: true }),
+                result("t1", "", { toolUseResult: { backgroundTaskId: "b1" } }),
+            ];
+            expect(extractBackgroundTasks(lines)[0]).not.toHaveProperty("events");
+        });
+
+        it("each event counts once and keeps its time and its lines", () => {
+            expect(eventsOf([...startLogs(), enqueue(ev1), userText(ev1)])).toEqual([
+                { ts: Date.parse("2026-10-27T09:01:00.000Z"), lines: ["ERROR one", "ERROR two"] },
+            ]);
+        });
+
+        it("an event delivered mid-turn counts once", () => {
+            const remove = JSON.stringify({
+                type: "queue-operation",
+                operation: "remove",
+                timestamp: "2026-10-27T09:01:01.000Z",
+            });
+            const attachment = JSON.stringify({
+                type: "attachment",
+                timestamp: "2026-10-27T09:01:01.000Z",
+                attachment: { type: "queued_command", prompt: ev1, commandMode: "task-notification" },
+            });
+            expect(eventsOf([...startLogs(), enqueue(ev1), remove, attachment])).toHaveLength(1);
+        });
+
+        it("a user-record event with no enqueue counts", () => {
+            expect(eventsOf([...startLogs(), userText(ev1, "2026-10-27T09:02:00.000Z")])).toEqual([
+                { ts: Date.parse("2026-10-27T09:02:00.000Z"), lines: ["ERROR one", "ERROR two"] },
+            ]);
+        });
+
+        it("two identical events both count", () => {
+            const twice = (...records: string[]) => eventsOf([...startLogs(), ...records])?.length;
+            expect(twice(enqueue(ev1), enqueue(ev1), userText(ev1), userText(ev1))).toBe(2);
+            expect(twice(enqueue(ev1), userText(ev1), enqueue(ev1), userText(ev1))).toBe(2);
+        });
+
+        it("matches a user-record copy to its enqueue by body", () => {
+            const ev2 = eventText("bm1", "ERROR three");
+            expect(eventsOf([...startLogs(), enqueue(ev1), userText(ev2), userText(ev1)])).toHaveLength(2);
+        });
+
+        it("an event for an id with no Monitor start, or for a shell task, is ignored", () => {
+            const stray = eventText("bother", "x");
+            expect(extractBackgroundTasks([enqueue(stray), userText(stray)])).toEqual([]);
+            expect(eventsOf([...startLogs(), enqueue(stray), userText(stray)])).toEqual([]);
+            const shell = [
+                bash("t1", { command: "npm run dev", run_in_background: true }),
+                result("t1", "", { toolUseResult: { backgroundTaskId: "b1" } }),
+                enqueue(eventText("b1", "not a monitor")),
+            ];
+            expect(extractBackgroundTasks(shell)[0]).not.toHaveProperty("events");
+        });
+
+        it("the expiry notice ends the Monitor and is not one of its events", () => {
+            const expired = eventText(
+                "bm1",
+                "[Monitor expired after 30m with no events delivered. Re-arm it if you still need the watch.]"
+            );
+            const copy = userText(expired, "2026-10-27T09:30:01.050Z");
+            const [t] = extractBackgroundTasks([...startLogs(), enqueue(expired, "2026-10-27T09:30:01.000Z"), copy]);
+            expect(t).toMatchObject({ status: "stopped", endMs: Date.parse("2026-10-27T09:30:01.000Z"), events: [] });
+        });
+
+        it("an ended Monitor keeps its events, and TaskStop stops one", () => {
+            const end = userText(
+                "<task-notification>\n<task-id>bm1</task-id>\n<tool-use-id>m1</tool-use-id>\n<output-file>/tmp/bm1.output</output-file>\n<status>completed</status>\n<summary>Monitor stream ended</summary>\n</task-notification>",
+                "2026-10-27T09:05:00.000Z"
+            );
+            const [done] = extractBackgroundTasks([...startLogs(), enqueue(ev1), userText(ev1), end]);
+            expect(done).toMatchObject({
+                status: "completed",
+                endMs: Date.parse("2026-10-27T09:05:00.000Z"),
+                outputFile: "/tmp/bm1.output",
+            });
+            expect(done.events).toHaveLength(1);
+            const stop = asst([{ type: "tool_use", id: "s1", name: "TaskStop", input: { task_id: "bm1" } }]);
+            expect(extractBackgroundTasks([...startLogs(), stop])[0].status).toBe("stopped");
+        });
+
+        it("reads a Monitor past its timeout as stopped at the expiry, when given the time", () => {
+            const lines = startLogs();
+            const expires = START_MS + TIMEOUT;
+            expect(extractBackgroundTasks(lines, { now: expires - 1 })[0].status).toBe("running");
+            expect(extractBackgroundTasks(lines, { now: expires })[0]).toMatchObject({
+                status: "stopped",
+                endMs: expires,
+            });
+            // without the time the clock is not consulted, and a notice that landed first still wins
+            expect(extractBackgroundTasks(lines)[0].status).toBe("running");
+            const ended = userText(
+                "<task-notification><task-id>bm1</task-id><tool-use-id>m1</tool-use-id><status>completed</status></task-notification>",
+                "2026-10-27T09:10:00.000Z"
+            );
+            expect(extractBackgroundTasks([...lines, ended], { now: expires + 1 })[0]).toMatchObject({
+                status: "completed",
+                endMs: Date.parse("2026-10-27T09:10:00.000Z"),
+            });
+        });
+
+        it("never expires a persistent Monitor, or one whose start time or timeout is unknown", () => {
+            const far = START_MS + TIMEOUT * 100;
+            const persistent = startLogs({ taskId: "bm1", timeoutMs: TIMEOUT, persistent: true });
+            expect(extractBackgroundTasks(persistent, { now: far })[0].status).toBe("running");
+            const untimed = [monitor("m1"), result("m1", "Monitor started (task bm1, expires in 30m)")];
+            expect(extractBackgroundTasks(untimed, { now: far })[0].status).toBe("running");
+            const undated = startLogs().map((l) => JSON.stringify({ ...JSON.parse(l), timestamp: undefined }));
+            expect(extractBackgroundTasks(undated, { now: far })[0].status).toBe("running");
+        });
+
+        it("a Monitor with no command (a ws: source) is a task labelled by its description", () => {
+            const ws = asst([
+                {
+                    type: "tool_use",
+                    id: "m9",
+                    name: "Monitor",
+                    input: { description: "Watch the socket", timeout_ms: TIMEOUT, ws: { url: "ws://x" } },
+                },
+            ]);
+            const [t] = extractBackgroundTasks([ws, result("m9", "Monitor started (task bm9, expires in 30m)")]);
+            expect(t).toMatchObject({ taskId: "bm9", label: "Watch the socket", monitor: true });
+            expect(t).not.toHaveProperty("command");
+        });
     });
 });
 

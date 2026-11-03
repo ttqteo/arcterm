@@ -779,11 +779,50 @@ func TestCouncilBenchGateBeforeStart(t *testing.T) {
 	if !reflect.DeepEqual(dry, asked) || !reflect.DeepEqual(real, asked) {
 		t.Errorf("calls = %+v and %+v, want the request %+v both times", f.data[0], f.data[1], asked)
 	}
-	if !strings.Contains(out.String(), "bench started: 4 councils over 2 cases") || !strings.Contains(out.String(), "~3.9M tokens") {
-		t.Errorf("output = %q, want the started line with the councils, cases and estimate", out.String())
+	if !strings.Contains(out.String(), "bench started: 4 runs (2 solo, 2 council) over 2 cases") || !strings.Contains(out.String(), "~3.9M tokens") {
+		t.Errorf("output = %q, want the started line with the runs and their split, the cases and the estimate", out.String())
+	}
+	if !strings.Contains(out.String(), "; the runs go one at a time.") || strings.Contains(out.String(), "councils") {
+		t.Errorf("output = %q, want the runs, not councils, going one at a time", out.String())
 	}
 	if !strings.Contains(errOut.String(), "skipped case gamma") {
 		t.Errorf("stderr = %q, want the skipped case named", errOut.String())
+	}
+}
+
+func TestCouncilBenchPlanLineCountsRuns(t *testing.T) {
+	item := func(c, v string) bench.CouncilBenchPlanItem {
+		return bench.CouncilBenchPlanItem{Case: c, Variant: v, Run: 1}
+	}
+	cases := []struct {
+		name  string
+		items []bench.CouncilBenchPlanItem
+		want  string
+	}{
+		{"one variant has no brackets", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantCouncil), item("beta", bench.VariantCouncil)},
+			"2 runs over 2 cases · ~1.5M tokens"},
+		{"one run, one case", []bench.CouncilBenchPlanItem{item("alpha", bench.VariantTeam)},
+			"1 run over 1 case · ~1.5M tokens"},
+		{"two variants are split council then team", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantTeam), item("alpha", bench.VariantCouncil),
+			item("beta", bench.VariantTeam), item("beta", bench.VariantCouncil)},
+			"4 runs (2 council, 2 team) over 2 cases · ~1.5M tokens"},
+		{"three variants are split solo, council, team", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantTeam), item("alpha", bench.VariantCouncil), item("alpha", bench.VariantSolo),
+			item("alpha", bench.VariantCouncil)},
+			"4 runs (1 solo, 2 council, 1 team) over 1 case · ~1.5M tokens"},
+		{"a variant with no items is left out", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantSolo), item("beta", bench.VariantTeam), item("beta", bench.VariantTeam)},
+			"3 runs (1 solo, 2 team) over 2 cases · ~1.5M tokens"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := councilBenchPlanLine(&wshrpc.CouncilBenchRtnData{Items: tc.items, Estimate: 1_500_000})
+			if got != tc.want {
+				t.Errorf("plan line = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -888,6 +927,70 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 
 	if got := councilBenchTable(&wshrpc.CouncilBenchResultsRtnData{}); !strings.Contains(got, "no bench results yet") {
 		t.Errorf("empty table = %q, want it to say there are no results", got)
+	}
+	if strings.Contains(councilBenchTable(res), "verdict") {
+		t.Errorf("table = %q, want no verdict line when the results carry none", councilBenchTable(res))
+	}
+}
+
+func TestCouncilBenchTablePrintsTheVerdict(t *testing.T) {
+	verdict := &bench.CouncilBenchDecision{Outcome: bench.DecisionGo, Reason: "the team is within one key line (team 5 of 12 keys, council 5 of 12)"}
+	line := "verdict: go: the team is within one key line (team 5 of 12 keys, council 5 of 12)"
+	runs := bench.Summarize([]bench.CouncilBenchResult{
+		{Harness: "2026-11-03.1", Variant: bench.VariantCouncil, State: "done", Recall: 5, Keys: 12, Tokens: 8_000_000},
+		{Harness: "2026-11-03.1", Variant: bench.VariantTeam, State: "done", Recall: 5, Keys: 12, Tokens: 4_000_000},
+	})
+	ratings := bench.SummarizeRatings([]bench.CouncilBenchRating{
+		{Harness: "2026-11-03.1", Mode: council.ModeReview, Council: "c1", Rating: bench.RatingUseful},
+	})
+
+	// under the runs table, before the ratings
+	lines := strings.Split(strings.TrimRight(councilBenchTable(&wshrpc.CouncilBenchResultsRtnData{Runs: runs, Ratings: ratings, Verdict: verdict}), "\n"), "\n")
+	at := slices.Index(lines, line)
+	if at != 4 || lines[3] != "" || !strings.HasPrefix(lines[0], "harness") || len(lines) < 7 || lines[5] != "" || !strings.HasPrefix(lines[6], "harness") {
+		t.Errorf("table lines = %q, want the runs table (header and 2 rows), a blank line, the verdict line, a blank line, then the ratings", lines)
+	}
+
+	// no runs yet: the verdict stands in for "no bench results yet"
+	got := councilBenchTable(&wshrpc.CouncilBenchResultsRtnData{Verdict: &bench.CouncilBenchDecision{
+		Outcome: bench.DecisionNotDecided, Reason: "incomplete: spec-live-agents council has 0 of 2 scored runs",
+	}})
+	if want := "verdict: not decided: incomplete: spec-live-agents council has 0 of 2 scored runs\n"; got != want {
+		t.Errorf("table with a verdict and no runs = %q, want %q", got, want)
+	}
+
+	// without a verdict the table is the runs alone
+	if got := councilBenchTable(&wshrpc.CouncilBenchResultsRtnData{Runs: runs}); strings.Contains(got, "verdict") {
+		t.Errorf("table = %q, want no verdict line", got)
+	}
+}
+
+func TestCouncilBenchAsksForTwoRunsByDefault(t *testing.T) {
+	f := &benchFakes{plan: benchPlan(), verdict: tokengate.Verdict{Run: true}}
+	useBenchFakes(t, f)
+
+	if err := councilBenchCmd.RunE(councilBenchCmd, nil); err != nil {
+		t.Fatalf("a bare bench: %v", err)
+	}
+	if len(f.data) != 2 {
+		t.Fatalf("calls = %+v, want a dry run and the real call", f.data)
+	}
+	for _, d := range f.data {
+		if d.Runs != 2 || len(d.Cases) != 0 || len(d.Variants) != 0 {
+			t.Errorf("call = %+v, want 2 runs of every case and the default variants", d)
+		}
+	}
+	// the help names the variants and the defaults it now has
+	variant := councilBenchCmd.Flags().Lookup("variant").Usage
+	for _, word := range []string{"council", "team", "solo"} {
+		if !strings.Contains(variant, word) {
+			t.Errorf("--variant help = %q, want it to name %s", variant, word)
+		}
+	}
+	for _, word := range []string{"50M", "team", "twice"} {
+		if !strings.Contains(councilBenchCmd.Long, word) {
+			t.Errorf("bench help is missing %q: %s", word, councilBenchCmd.Long)
+		}
 	}
 }
 

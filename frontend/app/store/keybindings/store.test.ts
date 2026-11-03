@@ -43,6 +43,7 @@ import {
     buildGlobalBindings,
     buildJarvisBindings,
     buildListNavBindings,
+    buildMemoryBindings,
     buildUsageBindings,
 } from "./bindings";
 import { listNavAtom } from "./listnav";
@@ -94,7 +95,18 @@ function b(id: string, keys = "j"): Binding {
 }
 
 // A representative sample of contexts the dispatcher can be in.
-const SURFACES: SurfaceKey[] = ["cockpit", "agent", "jarvis", "radar", "files", "usage", "code", "settings", "app"];
+const SURFACES: SurfaceKey[] = [
+    "cockpit",
+    "agent",
+    "jarvis",
+    "radar",
+    "files",
+    "usage",
+    "code",
+    "setup",
+    "settings",
+    "app",
+];
 function contexts(): KeyContext[] {
     const out: KeyContext[] = [];
     for (const surface of SURFACES) {
@@ -165,6 +177,15 @@ describe("keybinding conflict invariant", () => {
         expect(() => assertNoConflicts([...buildGlobalBindings(model), ...buildAgentBindings(model)])).not.toThrow();
     });
 
+    // j, k and the arrows also move a list-nav cursor, which the Setup surface never sets
+    it("global + list-nav + memory-tab bindings do not conflict", () => {
+        const model = { ...stubModel(), surfaceAtom: {}, paletteOpenAtom: {}, launcherAtom: {} };
+        globalStore.set(listNavAtom, null);
+        expect(() =>
+            assertNoConflicts([...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildMemoryBindings()])
+        ).not.toThrow();
+    });
+
     // c, m, [ and ] each carry two meanings on the agent surface, split by the canvas's state
     it("global + list-nav + agent bindings do not conflict in any canvas state", () => {
         const model = withCanvas();
@@ -221,6 +242,7 @@ describe("keybinding conflict invariant", () => {
             ...buildFilesBindings(),
             ...buildCodeBindings(),
             ...buildCouncilBindings(),
+            ...buildMemoryBindings(),
         ];
         const open = all.find((x) => x.id === "agent:brainstorm-open")!;
         const close = all.find((x) => x.id === "agent:brainstorm-close")!;

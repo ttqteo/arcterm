@@ -352,7 +352,7 @@ func childRunPlan(resolved waveobj.JarvisProfile, reqMode string) (string, []wav
 // the run's LandPath. The engine merges that branch back when the run completes (orchestrate.LandRun); its
 // lanes never land in the project checkout.
 func landRunOnBranch(ctx context.Context, channelId string, run *waveobj.Run) error {
-	wt, err := orchestrate.CreateRunWorktree(ctx, run.ProjectPath, run.ID, run.BaseCommit)
+	wt, err := createRunWorktree(ctx, run.ProjectPath, run.ID, run.BaseCommit)
 	if err != nil {
 		return err
 	}
@@ -396,6 +396,17 @@ func planSpecInLandTree(ctx context.Context, run *waveobj.Run, planPath string) 
 
 // readCreatedRun reads a just-created run back for the reply. A var so a test can fail the read.
 var readCreatedRun = wstore.GetRun
+
+// createRunWorktree is orchestrate.CreateRunWorktree, a var so a test can make the checkout slow.
+var createRunWorktree = orchestrate.CreateRunWorktree
+
+// landingTreeWait is how long CreateRun waits on a run's landing tree before it replies and finishes the start in the
+// background. A large repo's checkout under memory pressure took five minutes, past the launcher's 180 s, and the
+// deadline cancelled a run whose tree was nearly done (0f769259). A var for tests.
+var landingTreeWait = 45 * time.Second
+
+// landingTreeTimeout bounds a landing tree and the start after it once the caller has stopped waiting.
+const landingTreeTimeout = 30 * time.Minute
 
 // cancelUnstartedRun cancels a run CreateRun persisted but could not start. It runs on its own deadline: the step that
 // failed is often the one that spent the caller's (a landing tree under memory pressure), and a cancel on that spent
@@ -560,14 +571,68 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	appendRunEvent(ctx, data.ChannelId, run.ID, waveobj.RunEventKindCreated, nil, map[string]any{"runtime": run.Runtime, "mode": run.Mode})
 	// an unborn repo has no base to branch from, and a non-git project has no lanes to land
 	if engineLaunch && jarvis.EffectiveLanding(data.Landing, resolved.Landing) == jarvis.Landing_Branch && run.BaseCommit != "" {
-		if err := landRunOnBranch(ctx, data.ChannelId, &run); err != nil {
-			// a run that asked for its own branch must not fall back to landing in the checkout
-			if cerr := ws.cancelUnstartedRun(ctx, data.ChannelId, run.ID); cerr != nil {
-				log.Printf("CreateRun: cancelling run %s after its landing tree failed: %v", run.ID, cerr)
-			}
+		// detached: the checkout must not die on the caller's deadline, and a slow one outlives the reply
+		lctx, lcancel := context.WithTimeout(context.WithoutCancel(ctx), landingTreeTimeout)
+		landed := run
+		done := make(chan error, 1)
+		go func() { done <- landRunOnBranch(lctx, data.ChannelId, &landed) }()
+		wait := time.NewTimer(landingTreeWait)
+		defer wait.Stop()
+		var err error
+		slow := false
+		select {
+		case err = <-done:
+		case <-wait.C:
+			slow = true
+		case <-ctx.Done():
+			slow = true
+		}
+		if slow {
+			log.Printf("CreateRun: run %s's landing tree is still checking out after %s; its start finishes in the background", run.ID, landingTreeWait)
+			go ws.finishStartAfterTree(lctx, lcancel, done, data, ch.Name, &landed, effortRef)
+			return ws.createdRunReply(ctx, data.ChannelId, &run), nil
+		}
+		lcancel()
+		if err != nil {
+			ws.abandonTreelessRun(ctx, data.ChannelId, run.ID, err)
 			return nil, fmt.Errorf("creating landing tree: %w", err)
 		}
+		run.LandPath = landed.LandPath
 	}
+	if err := ws.startCreatedRun(ctx, data, ch.Name, run, effortRef); err != nil {
+		return nil, err
+	}
+	return ws.createdRunReply(ctx, data.ChannelId, &run), nil
+}
+
+// abandonTreelessRun cancels a run whose landing tree could not be made: a run that asked for its own branch must not
+// fall back to landing in the checkout.
+func (ws *WshServer) abandonTreelessRun(ctx context.Context, channelId, runId string, err error) {
+	log.Printf("CreateRun: run %s: creating its landing tree: %v", runId, err)
+	if cerr := ws.cancelUnstartedRun(ctx, channelId, runId); cerr != nil {
+		log.Printf("CreateRun: cancelling run %s after its landing tree failed: %v", runId, cerr)
+	}
+}
+
+// finishStartAfterTree is the rest of a start whose landing tree outlasted landingTreeWait, once the tree is made. Its
+// caller has replied, so a failure is logged and leaves the run cancelled (or blocked, for a worker that would not
+// start), as the same failure in the reply would.
+func (ws *WshServer) finishStartAfterTree(ctx context.Context, cancel context.CancelFunc, landed <-chan error, data wshrpc.CommandCreateRunData, projectName string, run *waveobj.Run, effortRef *waveobj.RunEffortRef) {
+	defer cancel()
+	defer wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, data.ChannelId))
+	if err := <-landed; err != nil {
+		ws.abandonTreelessRun(ctx, data.ChannelId, run.ID, err)
+		return
+	}
+	publishRunUpdate(data.ChannelId, run.ID)
+	if err := ws.startCreatedRun(ctx, data, projectName, *run, effortRef); err != nil {
+		log.Printf("CreateRun: run %s: starting it after its landing tree: %v", run.ID, err)
+	}
+}
+
+// startCreatedRun starts a persisted run, its landing tree made: the effort, radar and dossier records, then the plan's
+// dag or the first phase's worker.
+func (ws *WshServer) startCreatedRun(ctx context.Context, data wshrpc.CommandCreateRunData, projectName string, run waveobj.Run, effortRef *waveobj.RunEffortRef) error {
 	if effortRef != nil {
 		// non-fatal: the run is already persisted; a failed attach only loses the live marker, the
 		// ref stays on the run itself.
@@ -618,34 +683,39 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 					log.Printf("CreateRun: removing run %s's landing tree after its plan was refused: %v", run.ID, rerr)
 				}
 			}
-			return nil, fmt.Errorf("submitting plan: %w", err)
+			return fmt.Errorf("submitting plan: %w", err)
 		}
 	case !data.DeferStart:
 		phaseZero := 0
 		appendRunEvent(ctx, data.ChannelId, run.ID, waveobj.RunEventKindPhaseStarted, &phaseZero, map[string]any{})
-		if err := spawnRunWorkers(ctx, data.ChannelId, run.ID, ch.Name); err != nil {
+		if err := spawnRunWorkers(ctx, data.ChannelId, run.ID, projectName); err != nil {
 			// the run is persisted; surface the spawn failure but return the run so the UI can show blocked/retry
 			wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, data.ChannelId))
-			return nil, fmt.Errorf("spawning first worker: %w", err)
+			return fmt.Errorf("spawning first worker: %w", err)
 		}
 	}
-	out, err := readCreatedRun(ctx, data.ChannelId, run.ID)
+	return nil
+}
+
+// createdRunReply reads a started run back for CreateRun's reply.
+func (ws *WshServer) createdRunReply(ctx context.Context, channelId string, run *waveobj.Run) *wshrpc.CommandCreateRunRtnData {
+	out, err := readCreatedRun(ctx, channelId, run.ID)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		// an engine launch can outlast the handler's budget, and the ctx that expired cannot also be the
 		// thing that reports a durable run as a failed launch. Key off the error, not ctx.Err().
-		out, err = readCreatedRun(context.WithoutCancel(ctx), data.ChannelId, run.ID)
+		out, err = readCreatedRun(context.WithoutCancel(ctx), channelId, run.ID)
 	}
 	// the run exists either way, so its channel's run list must still refresh
-	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, data.ChannelId))
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, channelId))
 	if err != nil {
 		// A run that is persisted and whose workers are spawned has launched, so a failed read-back is
 		// not a failed launch. Replying with the copy we hold keeps the launcher from telling the user
 		// the run failed while the run is running in front of them; run.OID and run.ChannelOID were
 		// mirrored above, which is everything the caller needs to open it.
 		log.Printf("CreateRun: run %s was created, but reading it back failed (non-fatal): %v", run.ID, err)
-		out = &run
+		out = run
 	}
-	return &wshrpc.CommandCreateRunRtnData{Run: out}, nil
+	return &wshrpc.CommandCreateRunRtnData{Run: out}
 }
 
 // handSetupToLead starts a plan start's lead on its failed Setup, and reports whether it did. The run and its

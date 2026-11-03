@@ -573,3 +573,60 @@ func TestRunOfWorktreeNamesTheOwnerRun(t *testing.T) {
 		t.Fatal("a name the engine never makes has no run")
 	}
 }
+
+// a project that is a folder of a monorepo checks out only its folder (plus the files above it), and a lane's
+// change outside that folder still merges into the sparse landing tree
+func TestCreateRunWorktreeOfAFolderProjectIsSparse(t *testing.T) {
+	repo := newGitRepo(t)
+	project := filepath.Join(repo, "apps", "portal")
+	writeFile(t, filepath.Join(project, "app.txt"), "app\n")
+	writeFile(t, filepath.Join(repo, "apps", "beside.txt"), "beside\n")
+	writeFile(t, filepath.Join(repo, "other", "far.txt"), "far\n")
+	gitCmd(t, repo, "add", ".")
+	gitCmd(t, repo, "commit", "-m", "monorepo")
+	ctx := context.Background()
+
+	tree, err := CreateRunWorktree(ctx, project, "run-1", gitCmd(t, repo, "rev-parse", "HEAD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"base.txt", filepath.Join("apps", "beside.txt"), filepath.Join("apps", "portal", "app.txt")} {
+		if _, err := os.Stat(filepath.Join(tree, rel)); err != nil {
+			t.Fatalf("%s is in the project's cone but not in the tree: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tree, "other")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("a folder outside the project is checked out: %v", err)
+	}
+	if st := gitCmd(t, tree, "status", "--porcelain"); st != "" {
+		t.Fatalf("a fresh sparse tree is clean, got:\n%s", st)
+	}
+	if out, err := exec.Command("git", "-C", repo, "sparse-checkout", "list").CombinedOutput(); err == nil {
+		t.Fatalf("the checkout itself stays whole, but it lists a cone:\n%s", out)
+	}
+
+	gitCmd(t, repo, "checkout", "-q", "-b", "lane")
+	writeFile(t, filepath.Join(repo, "other", "far.txt"), "far, changed\n")
+	writeFile(t, filepath.Join(project, "app.txt"), "app, changed\n")
+	gitCmd(t, repo, "commit", "-qam", "lane")
+	gitCmd(t, repo, "checkout", "-q", "main")
+	gitCmd(t, tree, "merge", "-q", "--no-ff", "-m", "land", "lane")
+	if got := gitCmd(t, tree, "show", "HEAD:other/far.txt"); got != "far, changed" {
+		t.Fatalf("the merge carries the change outside the cone, got %q", got)
+	}
+}
+
+// a project at its repo's root keeps a whole tree
+func TestCreateRunWorktreeOfARootProjectIsWhole(t *testing.T) {
+	repo := newGitRepo(t)
+	writeFile(t, filepath.Join(repo, "other", "far.txt"), "far\n")
+	gitCmd(t, repo, "add", ".")
+	gitCmd(t, repo, "commit", "-m", "more")
+	tree, err := CreateRunWorktree(context.Background(), repo, "run-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(tree, "other", "far.txt")); err != nil {
+		t.Fatalf("a root project's tree holds every folder: %v", err)
+	}
+}

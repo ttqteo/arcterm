@@ -3,18 +3,27 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    applyAllIds,
+    canApply,
     changeGroups,
     checkLine,
+    checkResult,
     closedText,
     fileLabel,
     indexCards,
     kindLabel,
+    kindTone,
     LIMIT_BYTES,
     LIMIT_LINES,
+    nextPending,
+    pickChange,
     projectsToReview,
+    railOrder,
     railRow,
+    resolveSelection,
     splitText,
     statusOf,
+    stepChange,
     switchGate,
     toolbarStatus,
 } from "./memorymodel";
@@ -125,6 +134,29 @@ describe("limits", () => {
     });
 });
 
+describe("checkResult", () => {
+    it("counts the changes still to review, leaving out decided ones", () => {
+        const p = project({
+            changes: [change("1"), change("2", { status: "conflict" }), change("3", { status: "applied" })],
+        });
+        expect(checkResult(p)).toEqual({ text: "Checked · 2 to review", tone: "warn" });
+    });
+
+    it("says so when the check left nothing to review", () => {
+        expect(checkResult(project({ changes: [change("1", { status: "kept" })] }))).toEqual({
+            text: "Checked · nothing to review",
+            tone: "ok",
+        });
+    });
+
+    it("reports a failure even over changes kept from the last good check", () => {
+        expect(checkResult(project({ lasterror: "model run timed out", changes: [change("1")] }))).toEqual({
+            text: "Check failed",
+            tone: "warn",
+        });
+    });
+});
+
 describe("projectsToReview and toolbarStatus", () => {
     it("counts projects with an undecided change, including a conflict", () => {
         const ps = [
@@ -160,6 +192,7 @@ describe("railRow", () => {
             meter: "50 lines · 20.0 of 25 KB",
             status: "1 to review",
             tone: "warn",
+            empty: false,
         });
         expect(railRow(project({ index: { exists: true, lines: 89, bytes: 12561 } })).meter).toBe(
             "89 lines · 12.6 of 25 KB"
@@ -231,6 +264,7 @@ describe("railRow", () => {
             meter: "",
             status: "Not checked yet",
             tone: "none",
+            empty: false,
         });
     });
 
@@ -247,6 +281,129 @@ describe("railRow", () => {
             tone: "warn",
         });
         expect(railRow(project())).toMatchObject({ status: "Nothing to review", tone: "ok" });
+    });
+});
+
+describe("railRow empty", () => {
+    it("draws a checked project with an empty index and nothing to review on one line", () => {
+        expect(railRow(project({ index: { exists: false, lines: 0, bytes: 0 } })).empty).toBe(true);
+        expect(railRow(project({ index: { exists: true, lines: 0, bytes: 0 } })).empty).toBe(true);
+    });
+
+    it("keeps the full row for an index with lines, a change to review, a failed check, a split or no check", () => {
+        const none = { exists: false, lines: 0, bytes: 0 };
+        expect(railRow(project()).empty).toBe(false);
+        expect(railRow(project({ index: none, changes: [change("1")] })).empty).toBe(false);
+        expect(railRow(project({ index: none, lasterror: "boom" })).empty).toBe(false);
+        expect(railRow(project({ index: none, checkedat: 0 })).empty).toBe(false);
+        expect(railRow(project({ index: none, checking: true })).empty).toBe(false);
+        expect(railRow(splitProject([], { index: none })).empty).toBe(false);
+    });
+
+    it("reads an empty index as 0 KB, not 0.0", () => {
+        expect(railRow(project({ index: { exists: true, lines: 0, bytes: 0 }, changes: [change("1")] })).meter).toBe(
+            "0 lines · 0 of 25 KB"
+        );
+        expect(indexCards(project({ index: { exists: true, lines: 0, bytes: 0 } }))[0].kb).toBe("0 of 25 KB");
+    });
+});
+
+describe("railOrder", () => {
+    it("puts projects with a change to review first, each half in the given order", () => {
+        const ps = [
+            project({ project: "a" }),
+            project({ project: "b", changes: [change("1")] }),
+            project({ project: "c", changes: [change("2", { status: "applied" })] }),
+            project({ project: "d", changes: [change("3", { status: "conflict" })] }),
+        ];
+        expect(railOrder(ps).map((p) => p.project)).toEqual(["b", "d", "a", "c"]);
+    });
+});
+
+describe("selection", () => {
+    // listed shared, own, switch whatever order the changes come in
+    const split = () =>
+        splitProject([
+            settings(),
+            change("o1", { kind: "delete", group: "own" }),
+            change("m1", { kind: "move-here", group: "shared", status: "applied" }),
+            change("m2", { kind: "move-here", group: "shared" }),
+        ]);
+
+    it("picks the chosen change, else the first still to review in table order", () => {
+        expect(pickChange(split(), "o1")?.id).toBe("o1");
+        expect(pickChange(split(), null)?.id).toBe("m2");
+        expect(pickChange(split(), "gone")?.id).toBe("m2");
+        expect(pickChange(project(), null)).toBeNull();
+    });
+
+    it("opens the rail's first project, one with a change to review, when none is chosen", () => {
+        const ps = [project({ project: "a" }), project({ project: "b", changes: [change("1")] })];
+        expect(resolveSelection(ps, null, null)).toEqual({ project: ps[1], change: ps[1].changes[0] });
+        expect(resolveSelection(ps, "a", null)).toEqual({ project: ps[0], change: null });
+        expect(resolveSelection(null, "a", null)).toEqual({ project: null, change: null });
+    });
+
+    it("steps through the table order and stops at either end", () => {
+        const p = split();
+        expect(stepChange(p, "m1", 1)).toBe("m2");
+        expect(stepChange(p, "m2", 1)).toBe("o1");
+        expect(stepChange(p, "s1", 1)).toBe("s1");
+        expect(stepChange(p, "m1", -1)).toBe("m1");
+        expect(stepChange(p, null, 1)).toBe("m1");
+        expect(stepChange(project(), null, 1)).toBeNull();
+    });
+
+    it("moves on to the next change still to review, wrapping to the top, and to none when all are decided", () => {
+        const p = split();
+        expect(nextPending(p, "m2")).toBe("o1");
+        expect(nextPending(p, "s1")).toBe("m2");
+        const done = project({ changes: [change("1", { status: "applied" }), change("2", { status: "kept" })] });
+        expect(nextPending(done, "1")).toBeNull();
+    });
+});
+
+describe("canApply", () => {
+    it("allows an open change, and holds a decided one, a conflict and a gated switch-over", () => {
+        const p = splitProject([change("m1", { kind: "move-here", group: "shared" }), settings()]);
+        expect(canApply(p, p.changes[0])).toBe(true);
+        expect(canApply(p, p.changes[1])).toBe(false);
+        expect(canApply(p, change("c", { status: "conflict" }))).toBe(false);
+        expect(canApply(p, change("a", { status: "applied" }))).toBe(false);
+    });
+});
+
+describe("applyAllIds", () => {
+    it("offers a labelled group's open changes when there are at least two, leaving conflicts out", () => {
+        const p = splitProject([
+            change("m1", { kind: "move-here", group: "shared" }),
+            change("m2", { kind: "copy-here", group: "shared" }),
+            change("m3", { kind: "move-here", group: "shared", status: "conflict" }),
+            change("m4", { kind: "move-here", group: "shared", status: "applied" }),
+            change("o1", { kind: "delete", group: "own" }),
+            settings(),
+        ]);
+        const [shared, own, sw] = changeGroups(p);
+        expect(applyAllIds(shared)).toEqual(["m1", "m2"]);
+        expect(applyAllIds(own)).toEqual([]);
+        expect(applyAllIds(sw)).toEqual([]);
+    });
+
+    it("never offers it on an own folder's unlabelled list", () => {
+        expect(applyAllIds(changeGroups(project({ changes: [change("1"), change("2")] }))[0])).toEqual([]);
+    });
+});
+
+describe("kindTone", () => {
+    it("sets removals apart from additions and edits in place", () => {
+        expect(["delete", "remove-shared"].map(kindTone)).toEqual(["remove", "remove"]);
+        expect(["move-here", "copy-here", "add-to-index", "move-to-doc"].map(kindTone)).toEqual([
+            "add",
+            "add",
+            "add",
+            "add",
+        ]);
+        expect(["trim", "merge", "settings"].map(kindTone)).toEqual(["edit", "edit", "edit"]);
     });
 });
 

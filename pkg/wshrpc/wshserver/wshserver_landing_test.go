@@ -5,11 +5,13 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -992,6 +994,78 @@ func TestCreateRunCancelsWhenTheLandingTreeFails(t *testing.T) {
 	if len(runs) != 1 || runs[0].Status != jarvis.RunStatus_Cancelled {
 		t.Fatalf("the failed launch leaves one cancelled run, got %+v", runs)
 	}
+}
+
+// slowLandingTree makes the landing tree wait for release, then fail with fail (nil makes the real tree), and
+// shortens CreateRun's wait on it.
+func slowLandingTree(t *testing.T, fail error) (release func()) {
+	t.Helper()
+	gate := make(chan struct{})
+	oldCreate, oldWait := createRunWorktree, landingTreeWait
+	createRunWorktree = func(ctx context.Context, projectPath, runID, baseCommit string) (string, error) {
+		<-gate
+		if fail != nil {
+			return "", fail
+		}
+		return oldCreate(ctx, projectPath, runID, baseCommit)
+	}
+	landingTreeWait = 20 * time.Millisecond
+	var once sync.Once
+	release = func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(func() {
+		release()
+		createRunWorktree, landingTreeWait = oldCreate, oldWait
+	})
+	return release
+}
+
+// waitForRun polls the stored run until done reports true.
+func waitForRun(t *testing.T, ctx context.Context, channelId, runId string, done func(*waveobj.Run) bool) *waveobj.Run {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		run, err := wstore.GetRun(ctx, channelId, runId)
+		if err == nil && done(run) {
+			return run
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("run %s never got there: %+v (err %v)", runId, run, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A slow checkout (a monorepo under memory pressure took five minutes) outlasts the launcher's deadline: CreateRun
+// replies with the run and makes its tree in the background instead of cancelling it.
+func TestCreateRunFinishesASlowLandingTreeInTheBackground(t *testing.T) {
+	ctx := context.Background()
+	projectDir, _ := newLandingRepo(t)
+	release := slowLandingTree(t, nil)
+	ch, run, err := createLandingRun(t, ctx, projectDir, jarvis.RunMode_Orchestrator, strPtr(jarvis.Landing_Branch))
+	if err != nil {
+		t.Fatalf("a slow tree is not a failed launch: %v", err)
+	}
+	if run.Status == jarvis.RunStatus_Cancelled || run.LandPath != "" {
+		t.Fatalf("the reply comes before the tree: status %s landpath %q", run.Status, run.LandPath)
+	}
+	release()
+	got := waitForRun(t, ctx, ch.OID, run.ID, func(r *waveobj.Run) bool { return r.LandPath != "" })
+	if got.LandPath != orchestrate.WorktreeDir(projectDir, run.ID) || got.Status == jarvis.RunStatus_Cancelled {
+		t.Fatalf("the background start lands the tree and keeps the run: %+v", got)
+	}
+}
+
+// A slow tree that then fails still cancels its run, as a quick failure does.
+func TestCreateRunCancelsWhenASlowLandingTreeFails(t *testing.T) {
+	ctx := context.Background()
+	projectDir, _ := newLandingRepo(t)
+	release := slowLandingTree(t, errors.New("checkout failed"))
+	ch, run, err := createLandingRun(t, ctx, projectDir, jarvis.RunMode_Orchestrator, strPtr(jarvis.Landing_Branch))
+	if err != nil {
+		t.Fatalf("the reply comes before the failure: %v", err)
+	}
+	release()
+	waitForRun(t, ctx, ch.OID, run.ID, func(r *waveobj.Run) bool { return r.Status == jarvis.RunStatus_Cancelled })
 }
 
 func TestSetChannelProfileRejectsUnknownLanding(t *testing.T) {

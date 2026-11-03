@@ -315,26 +315,27 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, chevrons }) };
         });
 
-        await step("a seat in the glance opens the Discussion's list on the ideas it wrote or replied to (its filter on), a row opens that idea's thread with the seat's reply in it, and Everyone brings the rest back", async () => {
+        await step("a seat in the glance opens the Discussion on that seat's messages (its filter on) and the Ideas rail on the ideas it wrote or replied to, its reply's link opens that idea's thread with the reply in it, and Everyone brings the rest back", async () => {
             await click(h, `${SUMMARY} [data-council-glance] [data-council-expert='ux']`);
             const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
             const only = await h.ev(`({
-                // UX wrote P1 and P2 and replied to the other four, so every idea keeps its row, in the Report's order
-                ideas: [...document.querySelectorAll("[data-council-list] [data-council-idea]")].map((e) => e.dataset.councilIdea),
+                // UX wrote P1 and P2 and replied to the other four, so every idea keeps its rail row, in the Report's order
+                ideas: [...document.querySelectorAll("[data-council-rail] [data-council-rail-idea]")].map((e) => e.dataset.councilRailIdea),
                 bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
                 // the button: the Agent tree's council row and Setup's seat list carry data-council-seats too
                 pressed: document.querySelector("button[data-council-seats]")?.getAttribute("data-only") ?? null,
             })`);
             await h.shot("cdp-shots/council-discussion-only.png");
-            await click(h, "[data-council-list] [data-council-thread-open='P3']");
-            // P3 is RAM's idea; UX's reply on it (r7) is in its thread, not in the list
+            // P3 is RAM's idea: the channel holds UX's reply on it (r7), whose link opens P3's thread on the rail's second tab,
+            // which stays open when Everyone brings the six ideas back to the channel
+            const inChannel = await exists(h, "[data-council-channel] [data-council-reply-post='r7']");
+            await click(h, "[data-council-channel] [data-council-reply-on='P3']");
             const thread = await until(
                 h,
                 `!!document.querySelector("[data-council-thread='P3'] [data-council-post='P3']") && !!document.querySelector("[data-council-thread='P3'] [data-council-reply-post='r7']")`
             );
-            const inList = await exists(h, "[data-council-list] [data-council-reply-post]");
             await click(h, "[data-council-action='show-everyone']");
-            const all = await until(h, `!document.querySelector("[data-council-only]") && document.querySelectorAll("[data-council-list] [data-council-idea]").length === 6`);
+            const all = await until(h, `!document.querySelector("[data-council-only]") && document.querySelectorAll("[data-council-channel] [data-council-idea]").length === 6 && document.querySelector("[data-council-rail]")?.getAttribute("data-rail-tab") === "thread"`);
             await openSummary(h, ctx);
             const ok =
                 shown &&
@@ -342,9 +343,9 @@ export const councilSummary = {
                 only.bar === "Only UX: 2 ideas and 4 replies" &&
                 only.pressed === "ux" &&
                 thread &&
-                !inList &&
+                inChannel &&
                 all;
-            return { ok, detail: JSON.stringify({ shown, only, thread, inList, all }) };
+            return { ok, detail: JSON.stringify({ shown, only, thread, inChannel, all }) };
         });
 
         await step("the Discussion tab opens the Discussion", async () => {
@@ -977,10 +978,10 @@ export const councilSummary = {
             await click(h, `${DETAIL(1)} [data-council-action='ask-again']`);
             const shown = await until(h, `!!document.querySelector("[data-council-discussion]")`);
             const open = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
-            // the Discussion opens that idea's thread: its panel carries the idea on top, and the list marks its row open
+            // the Discussion opens that idea's thread: the rail carries the idea on top, and the channel rings its message
             const post = await until(
                 h,
-                `!!document.querySelector("[data-council-discussion] [data-council-thread='P5'] [data-council-post='P5']") && document.querySelector("[data-council-list] [data-council-idea='P5']")?.getAttribute("data-open") === "true"`
+                `!!document.querySelector("[data-council-discussion] [data-council-thread='P5'] [data-council-post='P5']") && document.querySelector("[data-council-channel] [data-council-idea='P5']")?.getAttribute("data-open") === "true"`
             );
             await openSummary(h, ctx);
             return { ok: shown && open === "P5" && post, detail: JSON.stringify({ shown, before, open, post }) };

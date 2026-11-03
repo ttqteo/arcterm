@@ -4,12 +4,12 @@
 // The seats of a council in the Discussion's header row: one button, the seats' avatars stacked (a dot on each one at
 // work, waiting or failed; the others dimmed while one seat is the filter), at most six of them, three under 900px of
 // pane, then +N. A hover or a click opens the whole list under it: each seat a row with its name, its kind, what it is
-// doing and its count of messages. A click on a row shows only the ideas that seat wrote or replied to, a click on it again
-// shows everyone; an agent's row holds a button for its terminal and, on every row, a Timeline button that swaps the
-// popover's body for that seat's timeline (counciltimeline.tsx), with Back to the list. The popover opens whenever
-// councilTimelineAtom is set (a Timeline button, an expert card on the Map or in the Discussion) and clears it when it
-// closes. A failed seat's Retry is its failure line's, over the list (councilchat.tsx). The stack never scrolls or clips,
-// so it no longer cuts a seat in half at a narrow pane.
+// doing and its count of messages. A click on a row shows that seat's messages alone in the channel and its ideas alone in
+// the Ideas rail, a click on it again shows everyone; an agent's row holds a button for its terminal and, on every row, a
+// Timeline button that swaps the popover's body for that seat's timeline (counciltimeline.tsx), with Back to the list. The
+// popover opens whenever councilTimelineAtom is set (a Timeline button, an expert card on the Map or in the Discussion)
+// and clears it when it closes. A failed seat's Retry is its failure line's, in the channel (councilchat.tsx). The stack
+// never scrolls or clips, so it no longer cuts a seat in half at a narrow pane.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn } from "@/util/util";
@@ -103,8 +103,8 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
     ]);
 
     const label = onlyChip
-        ? `Seats: showing only the ideas ${onlyChip.name} wrote or replied to. Open the list to pick another seat or everyone`
-        : `Seats: ${chips.length}. Open the list to show one seat's ideas`;
+        ? `Seats: showing ${onlyChip.name}'s messages alone. Open the list to pick another seat or everyone`
+        : `Seats: ${chips.length}. Open the list to show one seat's messages`;
 
     return (
         <>
@@ -241,7 +241,7 @@ function SeatRow({
                 type="button"
                 data-council-filter={chip.id}
                 aria-pressed={on}
-                aria-label={`${chip.name}, ${count} messages. ${on ? "Show everyone" : "Show only their ideas"}`}
+                aria-label={`${chip.name}, ${count} messages. ${on ? "Show everyone" : "Show only their messages"}`}
                 disabled={count === 0}
                 onClick={onToggle}
                 className={cn(

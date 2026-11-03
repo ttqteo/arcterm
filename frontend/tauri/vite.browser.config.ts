@@ -11,6 +11,10 @@ const appVersion: string = JSON.parse(readFileSync(resolve(__dirname, "../../pac
 
 export default defineConfig(() =>
     mergeConfig(base, {
+        // its own deps cache: the stand-ins drop Tauri's packages from the optimized deps, so sharing
+        // node_modules/.vite with a `task dev` running at the same time deletes the files that app's page
+        // loads (a 504 on @tauri-apps_plugin-http.js and a boot error), and each server keeps re-optimizing
+        cacheDir: resolve(__dirname, "../../node_modules/.vite-browser"),
         resolve: { alias: browserAliases(resolve(__dirname, "browsershim")) },
         define: { __ARC_BROWSER_INIT__: JSON.stringify(browserInit(process.env, appVersion)) },
         server: { proxy: browserProxy(process.env) },

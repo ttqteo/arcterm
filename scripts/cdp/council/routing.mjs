@@ -607,14 +607,9 @@ async function openRouted(h, ctx, phase, key, reject) {
         edit: (c) => routedCouncil(c, key),
     });
     await openCouncil(h, id, "discussion");
-    // the person's messages to the whole council and the answers to them are the Chat's: the list's Chat row opens it
-    const chatRow = `[data-council-discussion="${id}"] [data-council-list] [data-council-row="chat"]`;
-    if (!(await until(h, `!!document.querySelector(${sel(chatRow)})`))) {
-        throw new Error(`the Chat row of ${id} did not show within ${WAIT_MS / 1000}s`);
-    }
-    await click(h, chatRow);
-    if (!(await until(h, `!!document.querySelector(${sel(`[data-council-thread="chat"] ${POST("r7")}`)})`))) {
-        throw new Error(`the person's message of ${id} did not show in the Chat within ${WAIT_MS / 1000}s`);
+    // the person's messages to the whole council and the answers to them are in the channel
+    if (!(await until(h, `!!document.querySelector(${sel(`[data-council-channel] ${POST("r7")}`)})`))) {
+        throw new Error(`the person's message of ${id} did not show in the channel within ${WAIT_MS / 1000}s`);
     }
     return id;
 }
@@ -735,7 +730,7 @@ async function routerPending(h, ctx, rec) {
     const mine = await postOf(h, "r7");
     const lines = await countOf(h, "[data-council-router]");
     const chips = await countOf(h, CHIPS);
-    const everyone = await h.ev(`(document.querySelector('[data-council-thread="chat"]')?.textContent ?? "").includes("For everyone")`);
+    const everyone = await h.ev(`(document.querySelector('[data-council-channel]')?.textContent ?? "").includes("For everyone")`);
     rec(
         "router-pending: the person's post reads `Router is choosing a seat…`, shows no reach (not `For everyone`), and no router line or chip shows",
         mine?.waits === "Router is choosing a seat…" && mine.reaches === null && !everyone && lines === 0 && chips === 0,

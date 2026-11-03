@@ -16,6 +16,7 @@ function defaultEditorOptions(): MonacoTypes.editor.IEditorOptions {
         scrollBeyondLastLine: false,
         fontSize: 12,
         fontFamily: "var(--font-mono)",
+        fontLigatures: true,
         smoothScrolling: true,
         scrollbar: {
             useShadows: false,

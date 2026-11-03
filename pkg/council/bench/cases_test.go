@@ -6,6 +6,7 @@ package bench
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -174,8 +175,11 @@ func TestLoadCasesNoFile(t *testing.T) {
 	if !strings.Contains(err.Error(), path) {
 		t.Errorf("err = %q, want it to name %s", err, path)
 	}
-	if !strings.Contains(err.Error(), "Phase 0b") {
-		t.Errorf("err = %q, want it to say Phase 0b's tasks build the cases", err)
+	if !strings.Contains(err.Error(), "scripts/council-bench-cases.mjs builds them") {
+		t.Errorf("err = %q, want it to name the script that builds the cases", err)
+	}
+	if strings.Contains(err.Error(), "Phase 0b") {
+		t.Errorf("err = %q, still names Phase 0b's tasks, which are not the builder any more", err)
 	}
 }
 
@@ -192,24 +196,50 @@ func TestLoadCasesBadFile(t *testing.T) {
 	}
 }
 
+// planNames is a plan's items as case/variant/run, in order.
+func planNames(items []CouncilBenchPlanItem) string {
+	var got []string
+	for _, it := range items {
+		got = append(got, fmt.Sprintf("%s/%s/%d", it.Case, it.Variant, it.Run))
+	}
+	return strings.Join(got, " ")
+}
+
+func TestLoadCasesReadsRetiredAndTag(t *testing.T) {
+	dir := t.TempDir()
+	old := phase0Case(dir, "old", "review")
+	old["retired"] = true
+	fresh := phase0Case(dir, "fresh", "review")
+	fresh["tag"] = TeamPassTag
+	writeBench(t, dir, []map[string]any{old, fresh, phase0Case(dir, "plain", "review")}, map[string]string{"old": newcomerKey, "fresh": newcomerKey, "plain": newcomerKey})
+
+	got, warnings, err := LoadCases(dir)
+	if err != nil || len(warnings) != 0 || len(got) != 3 {
+		t.Fatalf("cases = %+v, warnings = %v, err = %v, want 3 and no warnings", got, warnings, err)
+	}
+	if !got[0].Retired || got[0].Tag != "" {
+		t.Errorf("old = %+v, want retired and untagged", got[0])
+	}
+	if got[1].Retired || got[1].Tag != TeamPassTag {
+		t.Errorf("fresh = %+v, want not retired and tagged %s", got[1], TeamPassTag)
+	}
+	if got[2].Retired || got[2].Tag != "" {
+		t.Errorf("plain = %+v, want neither (a case from before the fields)", got[2])
+	}
+}
+
 func TestPlanOrderAndEstimate(t *testing.T) {
 	cases := []Case{{Id: "alpha"}, {Id: "beta"}}
 	items, estimate, err := Plan(cases, Options{Runs: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
-	for _, it := range items {
-		got = append(got, it.Case+"/"+it.Variant+"/"+string(rune('0'+it.Run)))
+	// run 1 of every cell before any run 2, and a case's council and team back to back (a cut leaves whole pairs)
+	want := "alpha/council/1 alpha/team/1 beta/council/1 beta/team/1 alpha/council/2 alpha/team/2 beta/council/2 beta/team/2"
+	if got := planNames(items); got != want {
+		t.Errorf("items = %s\nwant    %s", got, want)
 	}
-	want := []string{
-		"alpha/solo/1", "alpha/solo/2", "alpha/council/1", "alpha/council/2",
-		"beta/solo/1", "beta/solo/2", "beta/council/1", "beta/council/2",
-	}
-	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("items = %v\nwant    %v", got, want)
-	}
-	if wantEst := int64(2 * 2 * (550_000 + 1_400_000)); estimate != wantEst {
+	if wantEst := int64(2 * 2 * (8_800_000 + 4_500_000)); estimate != wantEst {
 		t.Errorf("estimate = %d, want %d", estimate, wantEst)
 	}
 }
@@ -221,10 +251,10 @@ func TestPlanDefaultsAndSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 6 || items[0].Run != 1 {
-		t.Errorf("default plan = %+v, want 3 cases x solo and council x 1 run", items)
+	if len(items) != 6 || items[0].Run != 1 || items[0].Variant != VariantCouncil || items[1].Variant != VariantTeam {
+		t.Errorf("default plan = %+v, want 3 cases x council and team x 1 run", items)
 	}
-	if estimate != 3*(550_000+1_400_000) {
+	if estimate != 3*(8_800_000+4_500_000) {
 		t.Errorf("default estimate = %d", estimate)
 	}
 
@@ -235,8 +265,64 @@ func TestPlanDefaultsAndSelection(t *testing.T) {
 	if len(items) != 2 || items[0].Case != "gamma" || items[1].Case != "alpha" || items[0].Variant != "council" {
 		t.Errorf("selected plan = %+v, want gamma then alpha (the repeat dropped), council only", items)
 	}
-	if estimate != 2*1_400_000 {
+	if estimate != 2*8_800_000 {
 		t.Errorf("selected estimate = %d", estimate)
+	}
+}
+
+func TestPlanPricesEachVariantFromPhase0bMeans(t *testing.T) {
+	for variant, want := range map[string]int64{VariantSolo: 2_300_000, VariantCouncil: 8_800_000, VariantTeam: 4_500_000} {
+		items, estimate, err := Plan([]Case{{Id: "alpha"}}, Options{Variants: []string{variant}})
+		if err != nil || len(items) != 1 || items[0].Variant != variant {
+			t.Fatalf("%s: plan = %+v, %v, want its one item", variant, items, err)
+		}
+		if estimate != want {
+			t.Errorf("%s: estimate = %d, want %d", variant, estimate, want)
+		}
+	}
+}
+
+func TestPlanSoloStaysRunnableWhenNamed(t *testing.T) {
+	cases := []Case{{Id: "alpha"}}
+	if got := AllVariants(); strings.Join(got, " ") != "council team" {
+		t.Errorf("AllVariants = %v, want council then team", got)
+	}
+	items, estimate, err := Plan(cases, Options{Variants: []string{"team", "solo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := planNames(items); got != "alpha/team/1 alpha/solo/1" {
+		t.Errorf("items = %s, want the variants in the order named", got)
+	}
+	if estimate != 4_500_000+2_300_000 {
+		t.Errorf("estimate = %d, want the team's and the solo's price", estimate)
+	}
+}
+
+func TestPlanRetiredCases(t *testing.T) {
+	cases := []Case{{Id: "old", Retired: true}, {Id: "fresh"}}
+	council := []string{VariantCouncil}
+
+	items, _, err := Plan(cases, Options{Variants: council})
+	if err != nil || planNames(items) != "fresh/council/1" {
+		t.Errorf("a bare plan = %s, %v, want the retired case left out", planNames(items), err)
+	}
+	items, _, err = Plan(cases, Options{Cases: []string{"old"}, Variants: council})
+	if err != nil || planNames(items) != "old/council/1" {
+		t.Errorf("a plan that names the retired case = %s, %v, want it included", planNames(items), err)
+	}
+	items, _, err = Plan(cases, Options{Cases: []string{"fresh", "old"}, Variants: council, Runs: 2})
+	if err != nil || planNames(items) != "fresh/council/1 old/council/1 fresh/council/2 old/council/2" {
+		t.Errorf("a plan that names both = %s, %v", planNames(items), err)
+	}
+	if _, _, err := Plan(cases, Options{Cases: []string{"nope"}}); err == nil || !strings.Contains(err.Error(), "old") {
+		t.Errorf("unknown case: err = %v, want the retired case listed among the known ones (it runs when named)", err)
+	}
+
+	// every case retired: nothing to run, which the callers turn into their own error
+	items, estimate, err := Plan([]Case{{Id: "old", Retired: true}}, Options{})
+	if err != nil || len(items) != 0 || estimate != 0 {
+		t.Errorf("a bare plan of retired cases = %+v, %d, %v, want no items", items, estimate, err)
 	}
 }
 
@@ -245,10 +331,14 @@ func TestPlanUnknownName(t *testing.T) {
 	if _, _, err := Plan(cases, Options{Cases: []string{"nope"}}); err == nil || !strings.Contains(err.Error(), `"nope"`) || !strings.Contains(err.Error(), "alpha") {
 		t.Errorf("unknown case: err = %v, want it to name nope and the known cases", err)
 	}
-	if _, _, err := Plan(cases, Options{Variants: []string{"v3"}}); err == nil || !strings.Contains(err.Error(), `"v3"`) || !strings.Contains(err.Error(), "solo") {
-		t.Errorf("unknown variant: err = %v, want it to name v3 and the known variants", err)
+	if _, _, err := Plan(cases, Options{Variants: []string{"v3"}}); err == nil || !strings.Contains(err.Error(), `"v3"`) ||
+		!strings.Contains(err.Error(), "solo") || !strings.Contains(err.Error(), "team") {
+		t.Errorf("unknown variant: err = %v, want it to name v3 and every known variant, solo included", err)
 	}
 	if _, _, err := Plan(cases, Options{Runs: -1}); err == nil {
 		t.Error("negative runs: want an error")
+	}
+	if _, _, err := Plan(cases, Options{Cap: -1}); err == nil || !strings.Contains(err.Error(), "cap") {
+		t.Errorf("negative cap: err = %v, want an error naming the cap", err)
 	}
 }

@@ -25,7 +25,7 @@ function count(n: number, one: string, many = `${one}s`): string {
 }
 
 function kb(bytes: number): string {
-    return (bytes / 1000).toFixed(1);
+    return bytes === 0 ? "0" : (bytes / 1000).toFixed(1);
 }
 
 function pctOf(n: number, of: number): number {
@@ -95,8 +95,29 @@ function switched(p: MemHygieneProject): boolean {
     return isSplit(p) && settingsChange(p)?.status === "applied";
 }
 
+function hasPending(p: MemHygieneProject): boolean {
+    return p.changes.some(isPending);
+}
+
+// the note beside Check now once a check the user started has ended. a check with nothing new to judge
+// ends in well under a second, so without it the click reads as dead. a failure's reason is on the check line.
+export function checkResult(p: MemHygieneProject): StatusText {
+    if (p.lasterror) {
+        return { text: "Check failed", tone: "warn" };
+    }
+    const n = p.changes.filter(isPending).length;
+    return n > 0
+        ? { text: `Checked · ${n} to review`, tone: "warn" }
+        : { text: "Checked · nothing to review", tone: "ok" };
+}
+
 export function projectsToReview(projects: MemHygieneProject[]): number {
-    return projects.filter((p) => p.changes.some(isPending)).length;
+    return projects.filter(hasPending).length;
+}
+
+// projects with something to review lead the rail, each half in the backend's order
+export function railOrder(projects: MemHygieneProject[]): MemHygieneProject[] {
+    return [...projects.filter(hasPending), ...projects.filter((p) => !hasPending(p))];
 }
 
 export function toolbarStatus(projects: MemHygieneProject[]): StatusText {
@@ -113,6 +134,8 @@ export interface RailRow {
     meter: string;
     status: string;
     tone: Tone;
+    // checked, with an empty index and nothing to review: the rail draws it on one line
+    empty: boolean;
 }
 
 function indexMeter(ix: MemIndexStats): string {
@@ -141,7 +164,8 @@ function railStatus(p: MemHygieneProject): StatusText {
 
 export function railRow(p: MemHygieneProject): RailRow {
     const { text: status, tone } = railStatus(p);
-    const row = { name: p.project, status, tone };
+    const empty = tone === "ok" && !isSplit(p) && p.index.lines === 0;
+    const row = { name: p.project, status, tone, empty };
     if (!p.checkedat) {
         // the status already says "Not checked yet"; repeating it in the meter shows it twice
         return { ...row, pct: 0, meter: "" };
@@ -295,6 +319,84 @@ export function changeGroups(p: MemHygieneProject): ChangeGroup[] {
         g.changes = p.changes.filter((c) => c.group === g.key);
     }
     return groups.filter((g) => g.changes.length > 0);
+}
+
+// the changes in the order the table lists them
+function changeOrder(p: MemHygieneProject): MemChange[] {
+    return changeGroups(p).flatMap((g) => g.changes);
+}
+
+// with nothing chosen yet, or the chosen one gone, open the first change still to review
+export function pickChange(p: MemHygieneProject, id: string | null): MemChange | null {
+    const order = changeOrder(p);
+    return order.find((c) => c.id === id) ?? order.find(isPending) ?? order[0] ?? null;
+}
+
+export interface MemorySelection {
+    project: MemHygieneProject | null;
+    change: MemChange | null;
+}
+
+// the rail opens on its first project, so with nothing chosen that is one with changes to review
+export function resolveSelection(
+    projects: MemHygieneProject[] | null,
+    projectName: string | null,
+    changeId: string | null
+): MemorySelection {
+    const project = projects?.find((x) => x.project === projectName) ?? railOrder(projects ?? [])[0] ?? null;
+    return { project, change: project == null ? null : pickChange(project, changeId) };
+}
+
+// j and k: the change delta rows away in table order, stopping at either end
+export function stepChange(p: MemHygieneProject, id: string | null, delta: number): string | null {
+    const order = changeOrder(p);
+    if (order.length === 0) {
+        return null;
+    }
+    const i = order.findIndex((c) => c.id === id);
+    const next = i < 0 ? 0 : Math.max(0, Math.min(order.length - 1, i + delta));
+    return order[next].id;
+}
+
+// after a verdict, the next change still to review below the decided one, else the first above it
+export function nextPending(p: MemHygieneProject, id: string): string | null {
+    const order = changeOrder(p);
+    const i = order.findIndex((c) => c.id === id);
+    const rotated = [...order.slice(i + 1), ...order.slice(0, Math.max(i, 0))];
+    return rotated.find(isPending)?.id ?? null;
+}
+
+// a conflict needs a fresh check, and the switch-over waits on the shared changes
+export function canApply(p: MemHygieneProject, change: MemChange): boolean {
+    return isPending(change) && change.status !== "conflict" && !switchGate(p, change).blocked;
+}
+
+// a labelled group short of the switch-over can be applied as a whole: the split's moves and copies run to
+// dozens, each already sorted by the check. conflicts are left for their own review.
+export function applyAllIds(g: ChangeGroup): string[] {
+    if (g.key === "" || g.key === "switch") {
+        return [];
+    }
+    const ids = g.changes.filter((c) => c.status === "open").map((c) => c.id);
+    return ids.length > 1 ? ids : [];
+}
+
+export type KindTone = "remove" | "add" | "edit";
+
+// what a change does to the memory, for the kind chip's tint
+export function kindTone(kind: string): KindTone {
+    switch (kind) {
+        case "delete":
+        case "remove-shared":
+            return "remove";
+        case "move-here":
+        case "copy-here":
+        case "add-to-index":
+        case "move-to-doc":
+            return "add";
+        default:
+            return "edit";
+    }
 }
 
 export interface Gate {

@@ -9,11 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1791,27 +1794,31 @@ func writeBenchCases(t *testing.T, dataDir string, withGone bool, ids ...string)
 
 // useCouncilBench points the data dir at a temp dir and the bench's wiring at wire (nil: any call of it fails the
 // test). At the end a bench still running is stopped and waited for, so nothing writes when the temp dirs go.
-func useCouncilBench(t *testing.T, wire func() councilBenchWiring) string {
+func useCouncilBench(t *testing.T, wire func() bench.Funcs) string {
 	t.Helper()
 	dataDir := t.TempDir()
 	prevDir, prevWire := wavebase.DataHome_VarCache, councilBenchWire
 	wavebase.DataHome_VarCache = dataDir
 	if wire == nil {
-		wire = func() councilBenchWiring {
-			return councilBenchWiring{
-				start: func(context.Context, *council.Council) (*council.Council, error) {
+		wire = func() bench.Funcs {
+			return bench.Funcs{
+				Start: func(context.Context, *council.Council) (*council.Council, error) {
 					t.Error("the bench started a council")
 					return nil, errors.New("not wired")
 				},
-				wait: func(context.Context, string) (*council.Council, error) {
+				Wait: func(context.Context, string) (*council.Council, error) {
 					t.Error("the bench waited")
 					return nil, errors.New("not wired")
 				},
-				judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+				Judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
 					t.Error("the bench judged")
 					return bench.Verdict{}, errors.New("not wired")
 				},
-				remind: func(context.Context) error { t.Error("the bench reminded"); return errors.New("not wired") },
+				Remind: func(context.Context) error { t.Error("the bench reminded"); return errors.New("not wired") },
+				Team: func(context.Context, bench.Case) (bench.TeamOutcome, error) {
+					t.Error("the bench ran a team")
+					return bench.TeamOutcome{}, errors.New("not wired")
+				},
 			}
 		}
 	}
@@ -1842,10 +1849,11 @@ func waitBenchIdle(t *testing.T) {
 }
 
 // benchFake is the bench's wiring with no council behind it: start numbers the councils it is given, wait ends them done,
-// the judge finds K1, and the hooks let a test hold the bench at its first council.
+// team ends done with a report, the judge finds K1, and the hooks let a test hold the bench at its first council.
 type benchFake struct {
 	mu      sync.Mutex
 	started []*council.Council
+	teamed  []string // the case ids team was given
 	reminds int
 
 	entered chan struct{} // receives once for each council start is given
@@ -1854,9 +1862,9 @@ type benchFake struct {
 
 func newBenchFake() *benchFake { return &benchFake{entered: make(chan struct{}, 16)} }
 
-func (f *benchFake) wiring() councilBenchWiring {
-	return councilBenchWiring{
-		start: func(ctx context.Context, c *council.Council) (*council.Council, error) {
+func (f *benchFake) wiring() bench.Funcs {
+	return bench.Funcs{
+		Start: func(ctx context.Context, c *council.Council) (*council.Council, error) {
 			f.mu.Lock()
 			f.started = append(f.started, c)
 			id := fmt.Sprintf("fake%d", len(f.started))
@@ -1871,17 +1879,23 @@ func (f *benchFake) wiring() councilBenchWiring {
 			}
 			return &council.Council{Id: id, State: council.StateRunning, Bench: true}, nil
 		},
-		wait: func(ctx context.Context, id string) (*council.Council, error) {
+		Wait: func(ctx context.Context, id string) (*council.Council, error) {
 			return &council.Council{Id: id, State: council.StateDone, Harness: "test.1", Tokens: 100}, nil
 		},
-		judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
-			return bench.Verdict{Matches: map[string]int{"K1": 1}}, nil
+		Judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+			return bench.Verdict{Matches: map[string]int{"K1": 1}, Tokens: 10}, nil
 		},
-		remind: func(context.Context) error {
+		Remind: func(context.Context) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.reminds++
 			return nil
+		},
+		Team: func(ctx context.Context, c bench.Case) (bench.TeamOutcome, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.teamed = append(f.teamed, c.Id)
+			return bench.TeamOutcome{Session: "lead-" + c.Id, State: bench.TeamDone, Summary: &council.CouncilSummary{Answer: "team"}, Tokens: 200}, nil
 		},
 	}
 }
@@ -1903,12 +1917,12 @@ func TestCouncilBenchDryRunStartsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CouncilBenchCommand dry run: %v", err)
 	}
-	wantItems := []bench.CouncilBenchPlanItem{{Case: "alpha", Variant: bench.VariantSolo, Run: 1}, {Case: "alpha", Variant: bench.VariantCouncil, Run: 1}}
+	wantItems := []bench.CouncilBenchPlanItem{{Case: "alpha", Variant: bench.VariantCouncil, Run: 1}, {Case: "alpha", Variant: bench.VariantTeam, Run: 1}}
 	if !reflect.DeepEqual(got.Items, wantItems) {
 		t.Errorf("items = %+v, want %+v", got.Items, wantItems)
 	}
-	if got.Estimate != 550_000+1_400_000 {
-		t.Errorf("estimate = %d, want Phase 0's solo and council figures summed (1950000)", got.Estimate)
+	if got.Estimate != 8_800_000+4_500_000 {
+		t.Errorf("estimate = %d, want Phase 0b's council and team means summed (13300000)", got.Estimate)
 	}
 	if len(got.Skipped) != 1 || !strings.Contains(got.Skipped[0], "gamma") {
 		t.Errorf("skipped = %v, want the one case whose project folder is gone, named", got.Skipped)
@@ -1916,8 +1930,8 @@ func TestCouncilBenchDryRunStartsNothing(t *testing.T) {
 
 	// --runs multiplies the plan, a variant narrows it
 	got, err = ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true, Variants: []string{bench.VariantCouncil}, Runs: 3})
-	if err != nil || len(got.Items) != 3 || got.Estimate != 3*1_400_000 {
-		t.Errorf("3 runs of the council variant = %+v, %v, want 3 items at 4.2M", got, err)
+	if err != nil || len(got.Items) != 3 || got.Estimate != 3*8_800_000 {
+		t.Errorf("3 runs of the council variant = %+v, %v, want 3 items at 26.4M", got, err)
 	}
 
 	// a case named with --case that was skipped is unknown, and the error says why it was left out
@@ -1994,9 +2008,17 @@ func TestCouncilBenchOneAtATime(t *testing.T) {
 		t.Fatalf("results = %+v, %v, want one line per council", runs, err)
 	}
 	for _, r := range runs {
-		if r.State != "done" || r.Case != "alpha" || r.Recall != 1 || r.Keys != 2 || r.Harness != "test.1" {
-			t.Errorf("result line = %+v, want a done alpha run with recall 1 of 2 under test.1", r)
+		// a council row carries the harness version its council was saved with; a team has no council to save one
+		wantHarness := "test.1"
+		if r.Variant == bench.VariantTeam {
+			wantHarness = council.HarnessVersion
 		}
+		if r.State != "done" || r.Case != "alpha" || r.Recall != 1 || r.Keys != 2 || r.Harness != wantHarness || r.JudgeTokens != 10 {
+			t.Errorf("result line = %+v, want a done alpha run with recall 1 of 2 under %s and the judge's 10 tokens", r, wantHarness)
+		}
+	}
+	if len(runs) == 2 && (runs[0].Variant != bench.VariantCouncil || runs[1].Variant != bench.VariantTeam || runs[1].Council != "lead-alpha" || runs[1].Tokens != 200) {
+		t.Errorf("result lines = %+v, want the council's, then the team's with its lead's session and tokens", runs)
 	}
 	fake.mu.Lock()
 	reminds := fake.reminds
@@ -2037,23 +2059,23 @@ func TestCouncilBenchStop(t *testing.T) {
 	dataDir := useCouncilBench(t, nil)
 	project := t.TempDir()
 	entered := make(chan struct{}, 1)
-	councilBenchWire = func() councilBenchWiring {
-		return councilBenchWiring{
+	councilBenchWire = func() bench.Funcs {
+		return bench.Funcs{
 			// the council in flight is really saved, as the runner would have: Stop must end it, not just the bench
-			start: func(ctx context.Context, c *council.Council) (*council.Council, error) {
+			Start: func(ctx context.Context, c *council.Council) (*council.Council, error) {
 				saved := &council.Council{Id: "inflight", Project: project, Feature: c.Feature, State: council.StateRunning, Round: 1, Bench: true}
 				return saved, council.Save(saved)
 			},
-			wait: func(ctx context.Context, id string) (*council.Council, error) {
+			Wait: func(ctx context.Context, id string) (*council.Council, error) {
 				entered <- struct{}{}
 				<-ctx.Done()
 				return nil, ctx.Err()
 			},
-			judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+			Judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
 				t.Error("the stopped council was judged")
 				return bench.Verdict{}, nil
 			},
-			remind: func(context.Context) error { t.Error("a stopped bench reminded"); return nil },
+			Remind: func(context.Context) error { t.Error("a stopped bench reminded"); return nil },
 		}
 	}
 	writeBenchCases(t, dataDir, false, "alpha")
@@ -2098,6 +2120,62 @@ func TestCouncilBenchStop(t *testing.T) {
 	}
 }
 
+// TestCouncilBenchWireHasEveryCall: the real wiring gives the bench its team runner beside the council calls, so a bare
+// bench's team cells run instead of failing for want of one.
+func TestCouncilBenchWireHasEveryCall(t *testing.T) {
+	f := councilBenchWire()
+	if f.Start == nil || f.Wait == nil || f.Judge == nil || f.Remind == nil || f.Team == nil {
+		t.Errorf("wiring = %+v, want every call set, the team runner included", f)
+	}
+}
+
+// TestCouncilBenchStopEndsATeamCell: a team cell has no council to stop, so Stop ends it by cancelling the run's context.
+func TestCouncilBenchStopEndsATeamCell(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	entered := make(chan struct{}, 1)
+	councilBenchWire = func() bench.Funcs {
+		return bench.Funcs{
+			Team: func(ctx context.Context, c bench.Case) (bench.TeamOutcome, error) {
+				entered <- struct{}{}
+				<-ctx.Done()
+				return bench.TeamOutcome{}, ctx.Err()
+			},
+			Judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+				t.Error("the stopped team was judged")
+				return bench.Verdict{}, nil
+			},
+			Remind: func(context.Context) error { t.Error("a stopped bench reminded"); return nil },
+		}
+	}
+	writeBenchCases(t, dataDir, false, "alpha")
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if _, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{Variants: []string{bench.VariantTeam}}); err != nil {
+		t.Fatalf("bench: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the bench never began its team cell")
+	}
+
+	stopped, err := ws.CouncilBenchStopCommand(ctx)
+	if err != nil || !stopped.Stopped {
+		t.Fatalf("stop = %+v, %v, want Stopped true", stopped, err)
+	}
+	councilBenchMu.Lock()
+	running := councilBenchCur != nil
+	councilBenchMu.Unlock()
+	if running {
+		t.Error("the bench still holds its slot after Stop returned")
+	}
+	if runs, _, _ := bench.LoadResults(dataDir); len(runs) != 0 {
+		t.Errorf("results = %+v, want no line for the interrupted team cell", runs)
+	}
+}
+
 // TestCouncilBenchRunsCouncilsThroughTheRunner wires the real start and wait to a runner with a fake caller: the panel
 // is filled from the case's group, the council is a bench one (not listed, no document), and its row carries the harness
 // version and the tokens it spent.
@@ -2106,14 +2184,14 @@ func TestCouncilBenchRunsCouncilsThroughTheRunner(t *testing.T) {
 	useCouncilRig(t, fake)
 	dataDir := useCouncilBench(t, nil)
 	reminds := 0
-	councilBenchWire = func() councilBenchWiring {
-		return councilBenchWiring{
-			start: benchStartCouncil,
-			wait:  benchWaitCouncil,
-			judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+	councilBenchWire = func() bench.Funcs {
+		return bench.Funcs{
+			Start: benchStartCouncil,
+			Wait:  benchWaitCouncil,
+			Judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
 				return bench.Verdict{Matches: map[string]int{"K1": 1}}, nil
 			},
-			remind: func(context.Context) error { reminds++; return nil },
+			Remind: func(context.Context) error { reminds++; return nil },
 		}
 	}
 	writeBenchCases(t, dataDir, false, "alpha")
@@ -2289,6 +2367,146 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	}
 	if want := []bench.CouncilBenchRatingRow{{Harness: "2026-10-23.1", Mode: council.ModeReview, Useful: 1}}; !reflect.DeepEqual(got.Ratings, want) {
 		t.Errorf("ratings = %+v, want %+v", got.Ratings, want)
+	}
+	if got.Verdict != nil {
+		t.Errorf("verdict = %+v, want none: no case in this results file is built for the team pass", got.Verdict)
+	}
+}
+
+// markBenchCases sets fields on the cases of cases.json with these ids, as the builder script does when it tags a case
+// for a pass or retires it.
+func markBenchCases(t *testing.T, dataDir string, fields map[string]any, ids ...string) {
+	t.Helper()
+	path := bench.CasesPath(dataDir)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []map[string]any
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		if slices.Contains(ids, c["id"].(string)) {
+			maps.Copy(c, fields)
+		}
+	}
+	if data, err = json.Marshal(cases); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// benchTwoRuns appends a cell's two scored runs of the current harness, each with these recall and token figures.
+func benchTwoRuns(t *testing.T, dataDir, caseId, variant string, recall int, tokens int64) {
+	t.Helper()
+	for run := 1; run <= 2; run++ {
+		err := bench.AppendResult(dataDir, bench.CouncilBenchResult{
+			Date: fmt.Sprintf("2026-11-04T1%d:00:00Z", run), Harness: council.HarnessVersion, Case: caseId, Variant: variant, Run: run,
+			State: "done", Recall: recall, Keys: 2, Tokens: tokens,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestCouncilBenchResultsSetsTheVerdictForTaggedCases(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	writeBenchCases(t, dataDir, false, "alpha", "beta", "other", "older")
+	// beta is retired and still part of the pass; "older" is tagged for another pass and "other" for none
+	markBenchCases(t, dataDir, map[string]any{"tag": bench.TeamPassTag}, "alpha")
+	markBenchCases(t, dataDir, map[string]any{"tag": bench.TeamPassTag, "retired": true}, "beta")
+	markBenchCases(t, dataDir, map[string]any{"tag": "an-older-pass"}, "older")
+	// the team keeps both keys of each case at 0.4× the council's tokens
+	for _, id := range []string{"alpha", "beta"} {
+		benchTwoRuns(t, dataDir, id, bench.VariantCouncil, 2, 1_000_000)
+		benchTwoRuns(t, dataDir, id, bench.VariantTeam, 2, 400_000)
+	}
+	// the untagged cases have no runs: reading them would make the verdict "incomplete"
+	ws := &WshServer{}
+
+	got, err := ws.CouncilBenchResultsCommand(context.Background())
+	if err != nil {
+		t.Fatalf("CouncilBenchResultsCommand: %v", err)
+	}
+	want := bench.CouncilBenchDecision{
+		Outcome: bench.DecisionGo, CouncilRecall: 4, TeamRecall: 4, Keys: 4, CouncilTokens: 2_000_000, TeamTokens: 800_000,
+	}
+	if got.Verdict == nil {
+		t.Fatal("verdict is missing, want one for the two cases tagged with the team pass")
+	}
+	want.Reason = got.Verdict.Reason
+	if *got.Verdict != want || want.Reason == "" {
+		t.Errorf("verdict = %+v, want %+v with a reason", *got.Verdict, want)
+	}
+	if len(got.Runs) != 2 {
+		t.Errorf("rows = %+v, want the council and team rows beside the verdict", got.Runs)
+	}
+
+	// a tagged case with no rows yet is a verdict too, naming what is missing
+	markBenchCases(t, dataDir, map[string]any{"tag": bench.TeamPassTag}, "other")
+	got, err = ws.CouncilBenchResultsCommand(context.Background())
+	if err != nil || got.Verdict == nil || got.Verdict.Outcome != bench.DecisionNotDecided || !strings.Contains(got.Verdict.Reason, "other council has 0 of 2") {
+		t.Errorf("with a third tagged case that has no runs: verdict = %+v, %v, want not decided naming other", got.Verdict, err)
+	}
+}
+
+func TestCouncilBenchResultsLeavesTheVerdictOut(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	// cases that carry no tag of the pass
+	writeBenchCases(t, dataDir, false, "alpha")
+	benchTwoRuns(t, dataDir, "alpha", bench.VariantCouncil, 1, 1_000_000)
+	got, err := ws.CouncilBenchResultsCommand(ctx)
+	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
+		t.Errorf("an untagged case: results = %+v, %v, want the row and no verdict", got, err)
+	}
+
+	// cases.json that cannot be read: the table still comes back, the verdict is left out and the reason is logged
+	if err := os.WriteFile(bench.CasesPath(dataDir), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logged strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	got, err = ws.CouncilBenchResultsCommand(ctx)
+	log.SetOutput(prev)
+	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
+		t.Errorf("unreadable cases.json: results = %+v, %v, want the row, no verdict and no error", got, err)
+	}
+	if !strings.Contains(logged.String(), "[council-bench]") || !strings.Contains(logged.String(), "not a JSON list of cases") {
+		t.Errorf("log = %q, want the cases error logged", logged.String())
+	}
+}
+
+// A data dir with no cases.json (someone who only rates councils) has no verdict, and that is not worth a log line on
+// every results call.
+func TestCouncilBenchResultsWithNoCasesFileLogsNothing(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	benchTwoRuns(t, dataDir, "alpha", bench.VariantCouncil, 1, 1_000_000)
+	if _, err := os.Stat(bench.CasesPath(dataDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the data dir has a cases.json (%v), want none", err)
+	}
+	var logged strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	got, err := (&WshServer{}).CouncilBenchResultsCommand(context.Background())
+	log.SetOutput(prev)
+	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
+		t.Errorf("no cases.json: results = %+v, %v, want the row, no verdict and no error", got, err)
+	}
+	if logged.Len() != 0 {
+		t.Errorf("log = %q, want nothing for a missing cases.json", logged.String())
 	}
 }
 

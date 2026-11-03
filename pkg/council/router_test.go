@@ -25,13 +25,24 @@ func TestParseRoute(t *testing.T) {
 	cands := routerCands()
 	long := strings.Repeat("é", 300)
 	tests := []struct {
-		name      string
-		text      string
-		wantSeats []string
-		wantTools bool
-		wantErr   bool
-		wantWhy   string
+		name       string
+		text       string
+		wantSeats  []string
+		wantTools  bool
+		wantErr    bool
+		wantWhy    string
+		wantAnswer string
 	}{
+		{name: "the router answers itself", text: `{"seats":[],"answer":"  Hi! What next?\n","reason":"a greeting"}`,
+			wantAnswer: "Hi! What next?", wantWhy: "a greeting"},
+		{name: "an answer with no seats field", text: `{"answer":"Thanks!"}`, wantAnswer: "Thanks!"},
+		{name: "an answer over 600 characters is cut", text: `{"seats":[],"answer":"` + strings.Repeat("a", 700) + `"}`,
+			wantAnswer: strings.Repeat("a", 600)},
+		{name: "a seat wins over an answer", text: `{"seats":["ux"],"answer":"Hi","reason":"r"}`,
+			wantSeats: []string{"ux"}, wantWhy: "r"},
+		{name: "an unknown seat and an answer is the answer", text: `{"seats":["ghost"],"answer":"Hi","reason":"r"}`,
+			wantAnswer: "Hi", wantWhy: "r"},
+		{name: "a blank answer and no seat", text: `{"seats":[],"answer":"   ","reason":"r"}`, wantErr: true},
 		{name: "one seat", text: `{"seats":["ux"],"tools":false,"reason":"a layout question"}`,
 			wantSeats: []string{"ux"}, wantWhy: "a layout question"},
 		{name: "two seats", text: `{"seats":["ram","ux"],"tools":false,"reason":"memory and layout"}`,
@@ -90,6 +101,9 @@ func TestParseRoute(t *testing.T) {
 			}
 			if got.Reason != tt.wantWhy {
 				t.Errorf("reason = %q, want %q", got.Reason, tt.wantWhy)
+			}
+			if got.Answer != tt.wantAnswer {
+				t.Errorf("answer = %q, want %q", got.Answer, tt.wantAnswer)
 			}
 		})
 	}
@@ -271,8 +285,8 @@ func TestRouteCallNoTools(t *testing.T) {
 		t.Fatalf("%d calls, want exactly 1", len(f.reqs))
 	}
 	req := f.reqs[0]
-	if req.Tools || req.Expert.Model != "sonnet" || req.Cwd != c.Project || req.Expert.Id != "router" || req.Expert.Name != "Router" {
-		t.Errorf("request = tools %v model %q cwd %q expert %q/%q, want no tools on sonnet in the project as the router",
+	if req.Tools || req.Expert.Model != "haiku" || req.Cwd != c.Project || req.Expert.Id != "router" || req.Expert.Name != "Router" {
+		t.Errorf("request = tools %v model %q cwd %q expert %q/%q, want no tools on haiku in the project as the router",
 			req.Tools, req.Expert.Model, req.Cwd, req.Expert.Id, req.Expert.Name)
 	}
 	if len(req.AddDirs) != 0 {

@@ -2476,6 +2476,17 @@ declare global {
         mode: string;
     };
 
+    // bench.CouncilBenchDecision
+    type CouncilBenchDecision = {
+        outcome: string;
+        reason: string;
+        councilrecall: number;
+        teamrecall: number;
+        keys: number;
+        counciltokens: number;
+        teamtokens: number;
+    };
+
     // bench.CouncilBenchPlanItem
     type CouncilBenchPlanItem = {
         case: string;
@@ -2495,6 +2506,7 @@ declare global {
     type CouncilBenchResultsRtnData = {
         runs: CouncilBenchRow[];
         ratings: CouncilBenchRatingRow[];
+        verdict?: CouncilBenchDecision;
     };
 
     // bench.CouncilBenchRow

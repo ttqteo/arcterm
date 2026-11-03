@@ -50,6 +50,7 @@ const MonacoCodeEditor = lazy(() => import("@/app/monaco/monaco-react").then((m)
 const OPTIONS: MonacoTypes.editor.IEditorOptions = {
     fontSize: 12,
     fontFamily: "var(--font-mono)",
+    fontLigatures: true,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     folding: false,

@@ -1730,8 +1730,8 @@ func TestReplyRoutedOneSeat(t *testing.T) {
 	c := h.wait("c1")
 
 	req := routerCall(t, h.f)
-	if req.Tools || req.Expert.Id != "router" || req.Expert.Model != "sonnet" {
-		t.Errorf("router call = tools %v, %s on %s, want no tools, the router on sonnet", req.Tools, req.Expert.Id, req.Expert.Model)
+	if req.Tools || req.Expert.Id != "router" || req.Expert.Model != "haiku" {
+		t.Errorf("router call = tools %v, %s on %s, want no tools, the router on haiku", req.Tools, req.Expert.Id, req.Expert.Model)
 	}
 	mustContain(t, "the router's prompt", req.Prompt, wholeAsk)
 	if got := answerIds(h.f); !slices.Equal(got, []string{"ram"}) {
@@ -1789,6 +1789,49 @@ func TestReplyRoutedTwoSeats(t *testing.T) {
 	}
 	if !answeredBy(c, "r13", "skeptic") || !answeredBy(c, "r13", "ux") || answeredBy(c, "r13", "ram") {
 		t.Errorf("answers under r13 are not the skeptic's and ux's alone")
+	}
+}
+
+// Small talk the router answers itself: its answer is posted under the message as the router's reply, no seat is called,
+// the message is answered with no seat in To, and Ask <seat> too still brings a seat in under it.
+func TestReplyRouterAnswersItself(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	h.f.setText("router/route", mustJSON(map[string]any{"seats": []string{}, "answer": "  Chào bạn! Bạn muốn xem phần nào?  ", "reason": "a greeting"}))
+
+	if _, err := h.r.Reply("c1", "", "", "hello", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+
+	if got := answerIds(h.f); len(got) != 0 {
+		t.Errorf("answer calls to %v, want none: the router answered", got)
+	}
+	reply := replyOf(t, c, "r13")
+	if want := (&CouncilRouted{Reason: "a greeting"}); !reflect.DeepEqual(reply.Routed, want) || len(reply.To) != 0 || !reply.Answered {
+		t.Errorf("the message = To %v routed %+v answered %v, want To empty, answered, routed %+v", reply.To, reply.Routed, reply.Answered, want)
+	}
+	answer := replyOf(t, c, "r14")
+	if answer.Author != "router" || answer.ParentId != "r13" || answer.Text != "Chào bạn! Bạn muốn xem phần nào?" || answer.Draft != "" {
+		t.Errorf("the router's answer = %+v, want the router's sent reply under r13, trimmed", answer)
+	}
+	if c.Calls != done.Calls+1 {
+		t.Errorf("calls %d, want %d: the router's call alone", c.Calls, done.Calls+1)
+	}
+	if _, ok := c.Stats["router"]; ok {
+		t.Errorf("Stats has a router entry %+v, want none: it is no seat", c.Stats["router"])
+	}
+
+	// Ask RAM too: RAM answers under the same message and is shown the router's answer
+	if _, err := h.r.AskToo("c1", "r13", "ram"); err != nil {
+		t.Fatalf("AskToo: %v", err)
+	}
+	c = h.wait("c1")
+	if got := answerIds(h.f); !slices.Equal(got, []string{"ram"}) {
+		t.Errorf("answer calls to %v, want ram alone", got)
+	}
+	if !answeredBy(c, "r13", "ram") {
+		t.Errorf("ram did not answer r13")
 	}
 }
 

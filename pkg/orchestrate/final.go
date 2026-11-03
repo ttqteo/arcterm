@@ -850,7 +850,7 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 		wt = standIn
 	}
 	takeFinalTreeDir(wt)
-	if _, err := addWorktree(ctx, owner.ProjectPath, "--detach", wt, "HEAD"); err != nil {
+	if _, err := addWorktree(ctx, owner.ProjectPath, wt, []string{"--detach"}, "HEAD"); err != nil {
 		return "", nil, fmt.Errorf("creating the final tree: %w", err)
 	}
 	cleanup := func() {

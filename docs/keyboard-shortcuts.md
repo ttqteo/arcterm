@@ -456,6 +456,15 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `a` | On the Claude tab, Analyze: have Claude read the per-tab numbers and say where the quota goes. Does nothing while an analysis runs, with no Claude tabs in the window, or while Claude's 5-hour or weekly window is at 95% or more |
 | `Esc` | Back to the Cockpit |
 
+### Setup: Memory tab
+
+| Keys | Action |
+|---|---|
+| `j` / `k` (or `↓` / `↑`) | Next / previous change in the table |
+| `a` | Apply the selected change (when its Apply button is enabled), then move to the next change to review |
+| `x` | Keep the selected change as is, then move to the next change to review |
+| `u` | Undo an applied change, or review a kept one again |
+
 ### Route DAG (the orchestrator run's graph)
 
 | Keys | Action |

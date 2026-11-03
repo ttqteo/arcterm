@@ -29,6 +29,7 @@ const OPTIONS: MonacoTypes.editor.IDiffEditorOptions = {
     minimap: { enabled: false },
     fontSize: 12,
     fontFamily: "var(--font-mono)",
+    fontLigatures: true,
     lineNumbersMinChars: 3,
     scrollbar: { useShadows: false, verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
 };

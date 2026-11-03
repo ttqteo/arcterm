@@ -60,10 +60,16 @@ func dropProgress(out string) string {
 	return strings.Join(kept, "\n")
 }
 
-// addWorktree runs `git worktree add` in project. A tree's root (worktreeDir) can be longer than the project's, so
-// on Windows a path that fits under MAX_PATH in the project can pass it in the tree; core.longpaths, set in the repo
-// config rather than per command, lets the worker's own git in the tree reach those paths too.
-func addWorktree(ctx context.Context, project string, args ...string) (string, error) {
+// addWorktree runs `git worktree add <opts> <wt> [<commitish>]` in project. A tree's root (worktreeDir) can be longer
+// than the project's, so on Windows a path that fits under MAX_PATH in the project can pass it in the tree;
+// core.longpaths, set in the repo config rather than per command, lets the worker's own git in the tree reach those
+// paths too.
+//
+// A project that is a folder inside its repo (apps/portal in a monorepo) gets a sparse tree of that folder: checking
+// out all 14,000 files of such a repo took five minutes under memory pressure, past the launcher's deadline, and
+// cancelled the run (0f769259). Cone mode keeps the files at the repo root and in each folder above the project, and
+// a merge still carries a lane's changes outside the cone; only staging a path outside it in the tree is refused.
+func addWorktree(ctx context.Context, project, wt string, opts []string, commitish string) (string, error) {
 	if runtime.GOOS == "windows" {
 		// a value set at any level, false included, is the user's choice
 		if _, err := git(ctx, project, "config", "--get", "core.longpaths"); err != nil {
@@ -72,7 +78,31 @@ func addWorktree(ctx context.Context, project string, args ...string) (string, e
 			}
 		}
 	}
-	return gitLocked(ctx, project, append([]string{"worktree", "add"}, args...)...)
+	_, prefix, perr := repoTop(ctx, project)
+	sparse := perr == nil && prefix != ""
+	args := append([]string{"worktree", "add"}, opts...)
+	if sparse {
+		args = append(args, "--no-checkout")
+	}
+	args = append(args, wt)
+	if commitish != "" {
+		args = append(args, commitish)
+	}
+	// one hold: sparse-checkout writes the repo config (extensions.worktreeConfig), which a concurrent git can fail on
+	repoAdminMu.Lock()
+	defer repoAdminMu.Unlock()
+	out, err := git(ctx, project, args...)
+	if err != nil || !sparse {
+		return out, err
+	}
+	if _, serr := git(ctx, wt, "sparse-checkout", "set", "--cone", strings.TrimSuffix(prefix, "/")); serr != nil {
+		log.Printf("worktree %s: a sparse checkout of %s failed, so it checks out the whole repo: %v", wt, prefix, serr)
+	}
+	// --no-checkout left the index empty: the reset fills it and the tree, within the cone when the set took
+	if _, err := git(ctx, wt, "reset", "-q", "--hard"); err != nil {
+		return "", fmt.Errorf("checking out %s: %w", wt, err)
+	}
+	return out, nil
 }
 
 // repoAdminMu serializes the engine's git commands that change a repo's worktree registry and its branches. git does
@@ -121,11 +151,7 @@ func CreateRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 	if err != nil {
 		return "", fmt.Errorf("creating worktree: %w", err)
 	}
-	args := []string{"-b", "wave/" + runID, wt}
-	if baseCommit != "" {
-		args = append(args, baseCommit)
-	}
-	if _, err := addWorktree(ctx, projectPath, args...); err != nil {
+	if _, err := addWorktree(ctx, projectPath, wt, []string{"-b", "wave/" + runID}, baseCommit); err != nil {
 		return "", fmt.Errorf("creating worktree: %w", err)
 	}
 	return wt, nil
@@ -384,7 +410,7 @@ func EnsureRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 	if err != nil {
 		return "", "", false, fmt.Errorf("checking out worktree from wave/%s: %w", runID, err)
 	}
-	if _, err := addWorktree(ctx, projectPath, wt, "wave/"+runID); err != nil {
+	if _, err := addWorktree(ctx, projectPath, wt, nil, "wave/"+runID); err != nil {
 		return "", "", false, fmt.Errorf("checking out worktree from wave/%s: %w", runID, err)
 	}
 	return wt, head, true, nil

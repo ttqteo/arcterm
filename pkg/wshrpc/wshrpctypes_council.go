@@ -228,9 +228,9 @@ type CommandCouncilThumbData struct {
 	Thumb string `json:"thumb,omitempty"`
 }
 
-// CommandCouncilBenchData picks a benchmark: the cases (all when empty), the variants (solo and council when empty) and
-// how many runs of each case × variant (1 when 0). DryRun only plans it: it lists the runs and prices them, and starts
-// nothing, so the caller can ask the Token burn gate before the real call.
+// CommandCouncilBenchData picks a benchmark: the cases (every case not retired when empty), the variants (council and
+// team when empty; solo is named to run it) and how many runs of each case × variant (1 when 0). DryRun only plans it:
+// it lists the runs and prices them, and starts nothing, so the caller can ask the Token burn gate before the real call.
 type CommandCouncilBenchData struct {
 	Cases    []string `json:"cases,omitempty"`
 	Variants []string `json:"variants,omitempty"`
@@ -249,10 +249,12 @@ type CouncilBenchRtnData struct {
 
 // CouncilBenchResultsRtnData is the results file read back: a row per harness version and variant for the bench runs,
 // and per harness version and mode for the ratings, the newest version first, so one version's score is never read as
-// another's.
+// another's. Verdict is the go / no-go on the council against the agent team, read from the cases tagged for that pass;
+// it is left out when no case carries the tag, or the cases cannot be read.
 type CouncilBenchResultsRtnData struct {
 	Runs    []bench.CouncilBenchRow       `json:"runs"`
 	Ratings []bench.CouncilBenchRatingRow `json:"ratings"`
+	Verdict *bench.CouncilBenchDecision   `json:"verdict,omitempty"`
 }
 
 // CouncilBenchStopRtnData says whether a bench was running to stop.

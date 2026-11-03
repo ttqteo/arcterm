@@ -175,6 +175,21 @@ func TestSummarizeByHarness(t *testing.T) {
 	}
 }
 
+func TestSummarizeOrdersVariantsSoloCouncilTeam(t *testing.T) {
+	// given in the opposite order, with one variant this build does not know
+	var results []CouncilBenchResult
+	for _, v := range []string{"zzz", VariantTeam, VariantCouncil, VariantSolo} {
+		results = append(results, CouncilBenchResult{Harness: "2026-11-03.1", Variant: v, State: "done"})
+	}
+	var got []string
+	for _, r := range Summarize(results) {
+		got = append(got, r.Variant)
+	}
+	if want := "solo council team zzz"; strings.Join(got, " ") != want {
+		t.Errorf("variants = %v, want %s: a harness's rows list solo, council, team, then any other", got, want)
+	}
+}
+
 func TestSummarizeOnlyFailedRunsScoreNothing(t *testing.T) {
 	rows := Summarize([]CouncilBenchResult{
 		{Harness: "h", Variant: VariantSolo, State: "failed", Tokens: 200_000},

@@ -103,7 +103,7 @@ func withDetachedTree(ctx context.Context, project, name, label, commit, setup s
 	if err != nil {
 		return &treeStepError{"creating the " + label, err}
 	}
-	if _, err := addWorktree(ctx, project, "--detach", wt, commit); err != nil {
+	if _, err := addWorktree(ctx, project, wt, []string{"--detach"}, commit); err != nil {
 		return &treeStepError{"creating the " + label, err}
 	}
 	defer func() {

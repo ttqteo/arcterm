@@ -4,9 +4,9 @@
 // The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html, M1-discussion-tab.dc.html): a header in one 52px
 // row (the Report / Discussion / Map tabs, the mode, the feature, the step chip, the seats' stack, its list the filters
 // and each seat's timeline, the cost line, Summarize while there is a summary to make, Stop council, and Pin), and a body that
-// depends on where the council is. Once the seats have proposed it is the list of ideas (councilchat.tsx): a Chat row and
-// a row per idea, each opening its thread on the right, for a council that runs its replies or its summary, one that is
-// over, and one that waits on the drafts of its seats; while
+// depends on where the council is. Once the seats have proposed it is the chat (councilchat.tsx): a channel of messages
+// beside the Ideas rail, whose second tab is an idea's thread, for a council that runs its replies or its summary, one
+// that is over, and one that waits on the drafts of its seats; while
 // the experts first read and propose it is each expert's card with what it is reading (a button: it opens that seat's
 // timeline) and the ideas as they arrive; at
 // the pause it is the ticks and the question for the argument; a council the token gate did not run offers Start
@@ -180,6 +180,7 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
                     acts={acts}
                     chats={chats}
                     notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
+                    onOpenTerminal={(tab) => model.openTerminal(tab)}
                     onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}
                 />
             )}

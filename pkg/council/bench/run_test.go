@@ -30,7 +30,10 @@ type runBench struct {
 	waited   []string
 	judged   []string // the council ids judge was given
 	reminds  int
+	teamed   []string // the case ids team was given, one per call
+	noTeam   bool     // leave Funcs.Team nil
 
+	team       func(n int, c Case) (TeamOutcome, error)                  // what the nth team call returns; default a done outcome
 	startState func(n int) council.CouncilState                          // what start returns the nth council as; default running
 	startErr   func(n int) error                                         // fail the nth start; default none
 	end        func(n int, c *council.Council) (*council.Council, error) // what the nth wait returns; default a done council
@@ -118,8 +121,49 @@ func (b *runBench) remind(ctx context.Context) error {
 	return nil
 }
 
+// teamRun is the team runner, faked: it checks nothing else is in flight and answers a done outcome with a report to
+// judge, as the nth team (t1, t2, …), 4.5M tokens, 12.3 minutes and 7 messages.
+func (b *runBench) teamRun(ctx context.Context, c Case) (TeamOutcome, error) {
+	b.mu.Lock()
+	if b.inFlight != 0 {
+		b.t.Errorf("team called with a council still in flight (%d)", b.inFlight)
+	}
+	b.teamed = append(b.teamed, c.Id)
+	n := len(b.teamed)
+	b.mu.Unlock()
+	if b.team != nil {
+		return b.team(n, c)
+	}
+	return TeamOutcome{
+		Session: fmt.Sprintf("t%d", n), State: TeamDone, Summary: &council.CouncilSummary{Answer: "team yes"},
+		Tokens: 4_500_000, Minutes: 12.3, Messages: 7,
+	}, nil
+}
+
+func (b *runBench) funcs() Funcs {
+	f := Funcs{Start: b.start, Wait: b.wait, Judge: b.judge, Remind: b.remind}
+	if !b.noTeam {
+		f.Team = b.teamRun
+	}
+	return f
+}
+
 func (b *runBench) run(ctx context.Context, dir string, opts Options) error {
-	return Run(ctx, dir, opts, b.start, b.wait, b.judge, b.remind)
+	return Run(ctx, dir, opts, b.funcs())
+}
+
+// rowNames is the results file's rows as case/variant/run, in file order.
+func rowNames(t *testing.T, dir string) string {
+	t.Helper()
+	runs, _, err := LoadResults(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range runs {
+		got = append(got, fmt.Sprintf("%s/%s/%d", r.Case, r.Variant, r.Run))
+	}
+	return strings.Join(got, " ")
 }
 
 // doneCouncil is the council as the store holds it after a clean run: 3 proposals and 2 replies, 1.5 minutes, 1.4M tokens.
@@ -176,36 +220,48 @@ func TestRunOneAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// plan order: case by case, each case's variants in turn (solo, then council), each variant's runs in turn
-	want := []string{
-		"a/solo-ui", "a/solo-ui", "a/ui-feature", "a/ui-feature",
-		"b/solo-ui", "b/solo-ui", "b/ui-feature", "b/ui-feature",
+	// plan order: run 1 of every cell before any run 2, a case's council and team back to back
+	want := "a/council/1 a/team/1 b/council/1 b/team/1 a/council/2 a/team/2 b/council/2 b/team/2"
+	if got := rowNames(t, dir); got != want {
+		t.Errorf("rows in order\n got %s\nwant %s", got, want)
 	}
-	if got := startedNames(b); strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("started in order\n got %v\nwant %v", got, want)
+	if got := strings.Join(startedNames(b), " "); got != "a/ui-feature b/ui-feature a/ui-feature b/ui-feature" {
+		t.Errorf("councils started = %s, want the council items only, on the council panel", got)
+	}
+	if got := strings.Join(b.teamed, " "); got != "a b a b" {
+		t.Errorf("teams run for cases %s, want a b a b", got)
 	}
 	if b.inFlight != 0 {
 		t.Errorf("in flight at the end = %d, want 0", b.inFlight)
 	}
 
-	runs, _, err := LoadResults(dir)
-	if err != nil {
+	runs, _, _ := LoadResults(dir)
+	var councilRow, teamRow int
+	for i, r := range runs {
+		want := fmt.Sprintf("c%d", councilRow+1)
+		if r.Variant == VariantTeam {
+			want = fmt.Sprintf("t%d", teamRow+1)
+			teamRow++
+		} else {
+			councilRow++
+		}
+		if r.Council != want {
+			t.Errorf("row %d council = %q, want %s", i, r.Council, want)
+		}
+	}
+}
+
+func TestRunSoloStillRunsWhenNamed(t *testing.T) {
+	dir := benchData(t, [2]string{"a", "review"})
+	b := newRunBench(t)
+	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantSolo}}); err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 8 {
-		t.Fatalf("result rows = %d, want 8", len(runs))
+	if got := strings.Join(startedNames(b), " "); got != "a/solo-ui" {
+		t.Errorf("started %s, want the case's solo panel", got)
 	}
-	for i, r := range runs {
-		wantCase, wantVariant, wantRun := want[i][:1], VariantSolo, i%2+1
-		if i/2%2 == 1 {
-			wantVariant = VariantCouncil
-		}
-		if r.Case != wantCase || r.Variant != wantVariant || r.Run != wantRun {
-			t.Errorf("row %d = %s/%s run %d, want %s/%s run %d", i, r.Case, r.Variant, r.Run, wantCase, wantVariant, wantRun)
-		}
-		if r.Council != fmt.Sprintf("c%d", i+1) {
-			t.Errorf("row %d council = %q, want c%d", i, r.Council, i+1)
-		}
+	if got := rowNames(t, dir); got != "a/solo/1" || len(b.teamed) != 0 {
+		t.Errorf("rows %s, teams %v, want one solo row and no team", got, b.teamed)
 	}
 }
 
@@ -217,6 +273,7 @@ func TestRunRowFields(t *testing.T) {
 			Matches: map[string]int{"K1": 1, "K3": 2},
 			Kept:    map[string]int{"K2": 1},
 			Items:   []ItemVerdict{{Rank: 1, Verdict: "key:K1"}, {Rank: 2, Verdict: "key:K3"}, {Rank: 3, Verdict: "wrong"}},
+			Tokens:  123_456,
 		}, nil
 	}
 	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantCouncil}}); err != nil {
@@ -229,7 +286,7 @@ func TestRunRowFields(t *testing.T) {
 	got := runs[0]
 	want := CouncilBenchResult{
 		Kind: KindRun, Date: got.Date, Harness: "2026-10-22.1", Case: "a", Variant: VariantCouncil, Run: 1, Council: "c1",
-		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 1_400_000, Minutes: 1.5, Messages: 5,
+		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 1_400_000, Minutes: 1.5, Messages: 5, JudgeTokens: 123_456,
 	}
 	if got != want {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
@@ -256,7 +313,9 @@ func TestRunWaitsOnQueuedCouncil(t *testing.T) {
 		}
 	}
 	done := make(chan error, 1)
-	go func() { done <- b.run(context.Background(), dir, Options{}) }()
+	go func() {
+		done <- b.run(context.Background(), dir, Options{Variants: []string{VariantSolo, VariantCouncil}})
+	}()
 
 	select {
 	case id := <-entered:
@@ -338,13 +397,18 @@ func TestRunFailureShapesWriteFailedRows(t *testing.T) {
 		dir := benchData(t, [2]string{"a", "review"})
 		logs := captureLog(t)
 		b := newRunBench(t)
-		b.verdict = func(Case, *council.Council) (Verdict, error) { return Verdict{}, errors.New("not the verdict JSON") }
+		b.verdict = func(Case, *council.Council) (Verdict, error) {
+			return Verdict{Tokens: 77_000}, errors.New("not the verdict JSON") // the call was made, so it was paid for
+		}
 		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantSolo}}); err != nil {
 			t.Fatal(err)
 		}
 		runs, _, _ := LoadResults(dir)
 		if len(runs) != 1 || runs[0].State != "failed" || runs[0].Council != "c1" || runs[0].Recall != 0 || runs[0].Keys != 0 {
 			t.Errorf("rows = %+v, want one failed row, with its council and no scores", runs)
+		}
+		if len(runs) == 1 && runs[0].JudgeTokens != 77_000 {
+			t.Errorf("judge tokens = %d, want the failed judging's 77000 in the row", runs[0].JudgeTokens)
 		}
 		if !strings.Contains(logs.String(), "not the verdict JSON") {
 			t.Errorf("log = %q, want the judge's error", logs.String())
@@ -360,7 +424,7 @@ func TestRunFailureShapesWriteFailedRows(t *testing.T) {
 			}
 			return nil
 		}
-		if err := b.run(context.Background(), dir, Options{}); err != nil {
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantSolo, VariantCouncil}}); err != nil {
 			t.Fatal(err)
 		}
 		runs, _, _ := LoadResults(dir)
@@ -399,7 +463,7 @@ func TestRunFailureShapesWriteFailedRows(t *testing.T) {
 func TestRunMarksBenchCouncils(t *testing.T) {
 	dir := benchData(t, [2]string{"a", "review"}, [2]string{"b", "brainstorm"})
 	b := newRunBench(t)
-	if err := b.run(context.Background(), dir, Options{}); err != nil {
+	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantSolo, VariantCouncil}}); err != nil {
 		t.Fatal(err)
 	}
 	cases, _, _ := LoadCases(dir)
@@ -471,7 +535,7 @@ func TestRunRemindsOnFullBenchOnly(t *testing.T) {
 				cancel()
 			}
 		}
-		err := b.run(ctx, dir, Options{})
+		err := b.run(ctx, dir, Options{Variants: []string{VariantSolo, VariantCouncil}})
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("Run = %v, want context.Canceled", err)
 		}
@@ -503,11 +567,11 @@ func TestRunSkipsMissingCase(t *testing.T) {
 	if !strings.Contains(logs.String(), "gone") || !strings.Contains(logs.String(), "project folder") {
 		t.Errorf("log = %q, want one line naming the skipped case and its project", logs.String())
 	}
-	if got := strings.Join(startedNames(b), " "); got != "kept/solo-ui kept/ui-feature" {
-		t.Errorf("started %s, want only the case that is still there", got)
+	if got := strings.Join(startedNames(b), " "); got != "kept/ui-feature" || strings.Join(b.teamed, " ") != "kept" {
+		t.Errorf("started %s, teams %v, want only the case that is still there", got, b.teamed)
 	}
-	if runs, _, _ := LoadResults(dir); len(runs) != 2 {
-		t.Errorf("rows = %d, want 2", len(runs))
+	if got := rowNames(t, dir); got != "kept/council/1 kept/team/1" {
+		t.Errorf("rows = %s, want kept's council and team", got)
 	}
 }
 
@@ -540,6 +604,277 @@ func TestRunNothingToRun(t *testing.T) {
 		}
 		if len(b.started) != 0 {
 			t.Errorf("started %d councils for an unknown case", len(b.started))
+		}
+	})
+}
+
+func TestRunTeamDoneOutcomeIsJudgedAndScored(t *testing.T) {
+	dir := benchData(t, [2]string{"a", "brainstorm"})
+	b := newRunBench(t)
+	summary := &council.CouncilSummary{Answer: "team yes", Directions: []council.CouncilDirection{{Title: "retry"}}}
+	b.team = func(n int, c Case) (TeamOutcome, error) {
+		return TeamOutcome{Session: "lead-1", State: TeamDone, Summary: summary, Tokens: 4_100_000, Minutes: 31.4, Messages: 9}, nil
+	}
+	var judged *council.Council
+	b.verdict = func(c Case, report *council.Council) (Verdict, error) {
+		judged = report
+		return Verdict{Matches: map[string]int{"K1": 1, "K2": 2}, Kept: map[string]int{"K3": 1}, Items: []ItemVerdict{{Rank: 1, Verdict: "key:K1"}, {Rank: 2, Verdict: "wrong"}}, Tokens: 90_000}, nil
+	}
+	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantTeam}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if judged == nil || judged.Id != "lead-1" || judged.Mode != council.ModeBrainstorm || judged.Summary != summary {
+		t.Errorf("the judge was given %+v, want the lead's session as the council id, the case's mode and the parsed summary", judged)
+	}
+	if len(b.started) != 0 {
+		t.Errorf("a team item started %d councils", len(b.started))
+	}
+	runs, _, _ := LoadResults(dir)
+	if len(runs) != 1 {
+		t.Fatalf("rows = %+v, want 1", runs)
+	}
+	got := runs[0]
+	want := CouncilBenchResult{
+		Kind: KindRun, Date: got.Date, Harness: council.HarnessVersion, Case: "a", Variant: VariantTeam, Run: 1, Council: "lead-1",
+		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 4_100_000, Minutes: 31.4, Messages: 9, JudgeTokens: 90_000,
+	}
+	if got != want {
+		t.Errorf("row\n got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestRunTeamOutcomesThatAreNotDoneAreUnscoredRows(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		outcome   TeamOutcome
+		wantState string
+	}{
+		{"failed", TeamOutcome{Session: "lead-f", State: TeamFailed, Tokens: 1_200_000, Minutes: 4.5, Messages: 2}, "failed"},
+		{"timed out", TeamOutcome{Session: "lead-t", State: TeamTimedOut, Tokens: 6_000_000, Minutes: 45, Messages: 11}, "timed-out"},
+		{"no state", TeamOutcome{Tokens: 300_000}, "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := benchData(t, [2]string{"a", "review"})
+			b := newRunBench(t)
+			b.team = func(int, Case) (TeamOutcome, error) { return tc.outcome, nil }
+			if err := b.run(context.Background(), dir, Options{Variants: []string{VariantTeam}}); err != nil {
+				t.Fatal(err)
+			}
+			if len(b.judged) != 0 {
+				t.Errorf("judged %v, want nothing: a team that did not finish has no report", b.judged)
+			}
+			runs, _, _ := LoadResults(dir)
+			if len(runs) != 1 {
+				t.Fatalf("rows = %+v, want 1", runs)
+			}
+			r := runs[0]
+			if r.State != tc.wantState || r.Harness != council.HarnessVersion || r.Variant != VariantTeam {
+				t.Errorf("row = %+v, want state %s, variant team and this binary's harness", r, tc.wantState)
+			}
+			if r.Recall != 0 || r.Keys != 0 || r.Kept != 0 || r.Wrong != 0 || r.JudgeTokens != 0 {
+				t.Errorf("row = %+v, want no scores and no judge spend", r)
+			}
+			if r.Council != tc.outcome.Session || r.Tokens != tc.outcome.Tokens || r.Minutes != tc.outcome.Minutes || r.Messages != tc.outcome.Messages {
+				t.Errorf("row = %+v, want the outcome's session, tokens, minutes and messages (real spend)", r)
+			}
+		})
+	}
+}
+
+func TestRunTeamWithoutARunnerIsAFailedRow(t *testing.T) {
+	dir := benchData(t, [2]string{"a", "review"})
+	logs := captureLog(t)
+	b := newRunBench(t)
+	b.noTeam = true
+	if err := b.run(context.Background(), dir, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, _ := LoadResults(dir)
+	if len(runs) != 2 || runs[0].Variant != VariantCouncil || runs[0].State != "done" {
+		t.Fatalf("rows = %+v, want the council's done row, then the team's", runs)
+	}
+	r := runs[1]
+	if r.Variant != VariantTeam || r.State != "failed" || r.Recall != 0 || r.Keys != 0 || r.Tokens != 0 || r.Harness != council.HarnessVersion {
+		t.Errorf("team row = %+v, want a failed row with no scores", r)
+	}
+	if len(b.judged) != 1 {
+		t.Errorf("judged %v, want only the council's report", b.judged)
+	}
+	if !strings.Contains(logs.String(), "a team run 1 not run") {
+		t.Errorf("log = %q, want a line saying the team item was not run", logs.String())
+	}
+}
+
+func TestRunTeamJudgeFailureIsAFailedRow(t *testing.T) {
+	dir := benchData(t, [2]string{"a", "review"})
+	logs := captureLog(t)
+	b := newRunBench(t)
+	b.verdict = func(Case, *council.Council) (Verdict, error) {
+		return Verdict{Tokens: 55_000}, errors.New("not the verdict JSON")
+	}
+	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantTeam}}); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, _ := LoadResults(dir)
+	if len(runs) != 1 || runs[0].State != "failed" || runs[0].Council != "t1" || runs[0].Recall != 0 || runs[0].Keys != 0 {
+		t.Fatalf("rows = %+v, want one failed row with the lead's session and no scores", runs)
+	}
+	if runs[0].Tokens != 4_500_000 || runs[0].JudgeTokens != 55_000 {
+		t.Errorf("row = %+v, want the team's tokens and the failed judging's kept: both were spent", runs[0])
+	}
+	if !strings.Contains(logs.String(), "not the verdict JSON") {
+		t.Errorf("log = %q, want the judge's error", logs.String())
+	}
+}
+
+func TestRunTeamErrorEndsTheBenchOnlyWithTheContext(t *testing.T) {
+	t.Run("the context ended", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"}, [2]string{"b", "review"})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		b := newRunBench(t)
+		b.team = func(int, Case) (TeamOutcome, error) {
+			cancel()
+			return TeamOutcome{}, ctx.Err()
+		}
+		err := b.run(ctx, dir, Options{})
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Run = %v, want context.Canceled", err)
+		}
+		if b.reminds != 0 {
+			t.Errorf("reminds = %d, want 0 for a bench that did not finish", b.reminds)
+		}
+		// the council item before it ended; the team cell the cancel cut has no row, and nothing started after it
+		if got := rowNames(t, dir); got != "a/council/1" || len(b.started) != 1 || len(b.teamed) != 1 {
+			t.Errorf("rows = %s, councils started = %d, teams = %d, want a/council/1, 1 and 1", got, len(b.started), len(b.teamed))
+		}
+	})
+	t.Run("any other error is a failed row", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"})
+		logs := captureLog(t)
+		b := newRunBench(t)
+		b.team = func(int, Case) (TeamOutcome, error) { return TeamOutcome{}, errors.New("claude is not installed") }
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantTeam}, Runs: 2}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/team/1 a/team/2" {
+			t.Errorf("rows = %s, want a failed row for each, the bench going on", got)
+		}
+		if runs, _, _ := LoadResults(dir); runs[0].State != "failed" || !strings.Contains(logs.String(), "claude is not installed") {
+			t.Errorf("first row = %+v, log = %q, want it failed and the error logged", runs[0], logs.String())
+		}
+	})
+}
+
+func TestRunTokenCap(t *testing.T) {
+	logLine := func(logs *bytes.Buffer) string {
+		for line := range strings.SplitSeq(logs.String(), "\n") {
+			if strings.Contains(line, "token cap") {
+				return line
+			}
+		}
+		return ""
+	}
+
+	t.Run("stops starting items once the rows' tokens plus judge tokens reach it", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"})
+		logs := captureLog(t)
+		b := newRunBench(t)
+		// each council item is 1.4M and its judging 100k: 1.5M an item, 4.5M after the third
+		b.verdict = func(Case, *council.Council) (Verdict, error) {
+			return Verdict{Matches: map[string]int{"K1": 1}, Tokens: 100_000}, nil
+		}
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantCouncil}, Runs: 5, Cap: 4_000_000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/council/1 a/council/2 a/council/3" {
+			t.Errorf("rows = %s, want 3: the third started under the cap and finished past it, the fourth never started", got)
+		}
+		if len(b.started) != 3 {
+			t.Errorf("started %d councils, want 3", len(b.started))
+		}
+		if b.reminds != 0 {
+			t.Errorf("reminds = %d, want none: a bench the cap cut short is not a full bench", b.reminds)
+		}
+		line := logLine(logs)
+		for _, want := range []string{"4500000", "4000000", "2 of 5"} {
+			if !strings.Contains(line, want) {
+				t.Errorf("cap log line = %q, want it to name the spend, the cap and the items not run (%s)", line, want)
+			}
+		}
+	})
+
+	t.Run("a spend exactly at the cap stops the next item", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"})
+		b := newRunBench(t)
+		// 1.4M an item, the default verdict spends no judge tokens: 2.8M after two
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantCouncil}, Runs: 4, Cap: 2_800_000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/council/1 a/council/2" {
+			t.Errorf("rows = %s, want 2: the cap is reached, not exceeded, before the third", got)
+		}
+	})
+
+	t.Run("judge tokens count", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"})
+		b := newRunBench(t)
+		// the council alone is 1.4M, under the 3M cap three times over; with a 2M judging each item is 3.4M
+		b.verdict = func(Case, *council.Council) (Verdict, error) { return Verdict{Tokens: 2_000_000}, nil }
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantCouncil}, Runs: 3, Cap: 3_000_000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/council/1" {
+			t.Errorf("rows = %s, want 1: the first item's 3.4M reached the cap", got)
+		}
+	})
+
+	t.Run("team items count, and a cut leaves whole pairs", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"}, [2]string{"b", "review"})
+		b := newRunBench(t)
+		// 1.4M for a council, 4.5M for a team: a's council leaves the bench under a 5M cap, so its team starts; the pair
+		// is 5.9M, past the cap, so b's council never starts
+		if err := b.run(context.Background(), dir, Options{Cap: 5_000_000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/council/1 a/team/1" {
+			t.Errorf("rows = %s, want a's council and team: the team's 4.5M took the spend past the cap", got)
+		}
+	})
+
+	t.Run("a cap that is never reached runs every item and reminds", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"})
+		b := newRunBench(t)
+		if err := b.run(context.Background(), dir, Options{Runs: 3, Cap: 1_000_000_000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/council/1 a/team/1 a/council/2 a/team/2 a/council/3 a/team/3" {
+			t.Errorf("rows = %s, want all 6", got)
+		}
+		if b.reminds != 1 {
+			t.Errorf("reminds = %d, want 1", b.reminds)
+		}
+	})
+
+	t.Run("no cap named is the 50M default", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "review"})
+		logs := captureLog(t)
+		b := newRunBench(t)
+		// 20M a council: the third item starts at 40M, the fourth at 60M finds the 50M default reached
+		b.end = func(n int, from *council.Council) (*council.Council, error) {
+			c := doneCouncil(fmt.Sprintf("c%d", n), from)
+			c.Tokens = 20_000_000
+			return c, nil
+		}
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantCouncil}, Runs: 5}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/council/1 a/council/2 a/council/3" {
+			t.Errorf("rows = %s, want 3 under the default cap of %d", got, TokenCap)
+		}
+		if line := logLine(logs); !strings.Contains(line, "60000000") || !strings.Contains(line, "50000000") || !strings.Contains(line, "2 of 5") {
+			t.Errorf("cap log line = %q, want 60000000 spent of 50000000 and 2 of 5 items not run", line)
 		}
 	})
 }

@@ -59,17 +59,19 @@ import {
     PenTool,
     Play,
     Plus,
+    Radio,
     RotateCcw,
     Square,
     SquareTerminal,
     Sun,
+    Terminal,
     Trash2,
     Users,
     Workflow,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
@@ -77,6 +79,7 @@ import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import {
     agentsInCouncil,
+    backgroundTaskRows,
     buildAgentTree,
     discussTogetherSeats,
     extendRow,
@@ -86,12 +89,14 @@ import {
     selectOnly,
     stageSubline,
     toggleRow,
+    type BackgroundTaskRow,
     type ChecksFold,
     type RowSelection,
     type StageOutcome,
 } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
+import { BackgroundTaskPeek } from "./backgroundtaskpeek";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
 import { treeLine, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
@@ -250,7 +255,8 @@ import {
 import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
 import { DigitHint } from "./digithint";
 import { ServerMark, StatusDot } from "./statusdot";
-import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
+import { clockTime } from "./monitortasks";
+import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
 import { rowFieldsAtom } from "./rowfieldsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
@@ -957,6 +963,138 @@ function RunSubline({
     );
 }
 
+// The Monitors and shell commands an agent left running in the background (backgroundTaskRows), one row each under it,
+// nested like its subagents. A row with something to show opens BackgroundTaskPeek beside the tree, and a second press
+// on it closes the peek. The rows sit beside the agent's own row, not inside it, so a press here never selects the
+// agent: it sets monitorPeekAtom and nothing else (no focusIdAtom, no pane). Always mounted, though it draws nothing
+// without rows, so a peek whose row went away (the task ended, the agent fell asleep, the project folded) is cleared
+// rather than coming back with the row.
+function BackgroundTaskRows({
+    model,
+    agentId,
+    rows,
+}: {
+    model: AgentsViewModel;
+    agentId: string;
+    rows: BackgroundTaskRow[];
+}) {
+    const peek = useAtomValue(monitorPeekAtom);
+    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    const peeked = peek?.agentId === agentId ? rows.find((r) => r.peekId === peek.taskId) : undefined;
+    const orphaned = peek?.agentId === agentId && peeked == null;
+    useEffect(() => {
+        if (orphaned) {
+            globalStore.set(monitorPeekAtom, null);
+        }
+    }, [orphaned]);
+    useEffect(
+        () => () => {
+            if (globalStore.get(monitorPeekAtom)?.agentId === agentId) {
+                globalStore.set(monitorPeekAtom, null);
+            }
+        },
+        [agentId]
+    );
+    // read the atom, not the render's copy: the press that opens another row has just closed this one's peek
+    const toggle = (r: BackgroundTaskRow) => {
+        if (r.peekId == null) {
+            return;
+        }
+        const cur = globalStore.get(monitorPeekAtom);
+        const same = cur?.agentId === agentId && cur.taskId === r.peekId;
+        globalStore.set(monitorPeekAtom, same ? null : { agentId, taskId: r.peekId });
+    };
+    return (
+        <>
+            {rows.length > 0 ? (
+                <div data-testid="background-task-rows" data-task-agent={agentId}>
+                    {rows.map((r) => {
+                        const open = peeked?.key === r.key;
+                        const monitor = r.kind === "monitor";
+                        const peekable = r.peekId != null;
+                        return (
+                            <div
+                                key={r.key}
+                                ref={open ? setAnchor : undefined}
+                                data-testid="background-task-row"
+                                data-task-kind={r.kind}
+                                data-task-id={r.peekId ?? undefined}
+                                data-tool-use-id={r.key}
+                                data-task-agent={agentId}
+                                title={r.task.command}
+                                {...(peekable
+                                    ? {
+                                          role: "button",
+                                          tabIndex: 0,
+                                          "aria-haspopup": "dialog" as const,
+                                          "aria-expanded": open,
+                                          onClick: () => toggle(r),
+                                          onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+                                              if (
+                                                  e.target === e.currentTarget &&
+                                                  (e.key === "Enter" || e.key === " ")
+                                              ) {
+                                                  e.preventDefault();
+                                                  toggle(r);
+                                              }
+                                          },
+                                      }
+                                    : {})}
+                                className={cn(
+                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                                    peekable && "cursor-pointer",
+                                    open ? "bg-accentbg" : peekable && "hover:bg-surface-hover"
+                                )}
+                            >
+                                <Guides depth={1} />
+                                <Slot>
+                                    {monitor ? (
+                                        <Radio size={12} aria-label="Monitor" className="shrink-0 text-accent" />
+                                    ) : (
+                                        <Terminal size={12} aria-label="Shell task" className="shrink-0 text-accent" />
+                                    )}
+                                </Slot>
+                                <div className="min-w-0 flex-1">
+                                    <div
+                                        data-testid="background-task-row-label"
+                                        className="truncate text-[11.5px] font-medium text-secondary"
+                                    >
+                                        {r.label}
+                                    </div>
+                                    <div
+                                        data-testid="background-task-row-sub"
+                                        className="mt-[3px] truncate text-[10.5px] text-muted"
+                                    >
+                                        {r.sub}
+                                    </div>
+                                </div>
+                                {r.left != null && r.expiresAt != null ? (
+                                    <span
+                                        data-testid="background-task-row-left"
+                                        title={`expires ${clockTime(r.expiresAt)}`}
+                                        className="shrink-0 text-[10.5px] tabular-nums text-muted"
+                                    >
+                                        {r.left}
+                                    </span>
+                                ) : null}
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : null}
+            {peeked != null && anchor != null ? (
+                <BackgroundTaskPeek
+                    key={peeked.key}
+                    model={model}
+                    agentId={agentId}
+                    task={peeked.task}
+                    anchor={anchor}
+                />
+            ) : null}
+        </>
+    );
+}
+
 // What the tree hands an agent row so it can take part in the multi-selection: whether it is picked, whether any row is
 // (then only the picked rows read as selected, the focused one included), the click that picks (Ctrl/Cmd toggles, Shift
 // ranges) and the menu items the pick adds for this row.
@@ -1035,6 +1173,9 @@ function ParentRow({
     const shown = shownState(agent.state, backgroundActivity(bgTasks, machineServers));
     // the dev servers it left listening: not work, so a green server glyph beside the state instead of a working dot
     const servers = launchedServers(bgTasks, machineServers);
+    // its running ones as rows under it: only while its process lives, since a sleeping or terminal-less agent's
+    // transcript still reads them as running
+    const taskRows = backgroundTaskRows(bgTasks, agent.blockId != null && !agent.sleeping, now);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
     // where the runs and queued plans it started stand: one chip at the head of its meta line
     const originRuns = useOriginRuns(agent, lineageRuns);
@@ -1355,6 +1496,7 @@ function ParentRow({
                     </motion.div>
                 ) : null}
             </AnimatePresence>
+            <BackgroundTaskRows model={model} agentId={agent.id} rows={taskRows} />
         </>
     );
 }
