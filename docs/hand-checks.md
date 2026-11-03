@@ -14,12 +14,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   pass in headless Chrome (`task dev:browser`) and in the Tauri dev app on Windows (2026-11-03, 138 + 21 + 28 steps,
   the rail steps included); left: the fold kept after a real restart, and WKWebView (`councilchat.tsx` `CouncilRail`).
 
-- [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
-  that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
-  Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
-  unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
-  steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
-  (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
+- [ ] (arcterm) Pin on a council in Overview → History: in a project's Overview → History, unfold a council row → Pin
+  sits beside Open council, and right-click offers Pin / Unpin. No scenario reaches it (`project-overview-history`
+  opens the council but never pins). The tree half (Close on an ended council, no Pin in the tree) holds: `council-tree`
+  passed 26/26 twice in the Tauri dev app on 2026-11-03, steps 11b, 11g and 11h included (`projecthistory.tsx`).
 
 - [ ] (arcterm) The council router answers small talk itself, and a failed seat shows under your message: in a done
   council with two or more seats, send `hello` to the whole council in the Chat → within seconds a Router reply
@@ -49,26 +47,27 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `wsh jarvis dag amend` and runs `wsh jarvis dag planreview accept` on its own, with no Plan review ask, and
   `wsh runs show` reads "failed, then accepted by the lead"; only a finding that changes the spec's decisions still
   comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
-  3520d3a3f); no live run yet.
+  3520d3a3f); no live run yet. Run 40deb36e already reads "failed, then accepted by the lead" with no answered ask, but
+  it started (~15:00) before 3520d3a3f, so it does not count: the next run started from a spec on the c7523d59a build
+  or later decides it.
 
 - [ ] (arcterm) A done run's closed dag reads done, not cancelled: `wsh runs show 40deb36e` and `c06ba9cb` print
   `status=closed (the run ended done)`; in Conversations, run 40deb36e's group head and a brainstorm whose Run step
-  points at a landed run with a failed task do not read cancelled. Unit tests only (`sessionsruns.ts`,
-  `brainstormrunmodel.ts`, `wshcmd-runs.go`); the app was not opened, and the installed wsh still prints the old line
-  until the next build.
+  points at a landed run with a failed task do not read cancelled. The wsh half holds: a dev wsh built from 07a21f3fd
+  prints `status=closed (the run ended done)` for both runs (2026-11-03). Left: the Conversations half, in the
+  installed app after the next build (the dev app's store has neither run) (`sessionsruns.ts`, `brainstormrunmodel.ts`).
 
 - [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
   has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final
-  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219).
+  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219). Not
+  decidable from 40deb36e: its base (8860c5e) predates b47694219, so its merges ran the old script; the Kael sync run
+  a1c7dbff (started 17:37 on 2026-11-03) is the first on the new script.
 
 - [ ] (arcterm) A force-landed run reads Landed: in the Agent tree and the Brief, find run c06ba9cb (Council UX pass,
   landed with Land anyway after Final round 2 failed) → its stage reads Landed with the Final check pip failed, not
-  Cancelled; `wsh runs show` adds "(closed when the run ended: the run is done, not cancelled)" to its dag line. Unit
-  tests only (`frontend/app/view/agents/runstage.ts`, `cmd/wsh/cmd/wshcmd-runs.go`); the app was not opened.
-
-- [ ] (arcterm) council-tree step 11b no longer flakes: `task verify:ui -- council-tree` passes 11b, 11c and 11g (the
-  hovers now retry at the row's current place, `hoverUntil` in `scripts/cdp/council/tree.mjs`). Not run: no dev app
-  was up.
+  Cancelled. The wsh half holds (2026-11-03): the installed wsh adds "(closed when the run ended: the run is done, not
+  cancelled)", and 093b00b93 has since replaced it with `status=closed (the run ended done)`. Left: the tree and the
+  Brief in the installed app (`frontend/app/view/agents/runstage.ts`).
 
 - [ ] (arcterm) Council thread replies stay in their thread, with a live seat: on a running council's Discussion, open
   an idea's reply chip and send a reply in the thread → it shows in the thread and the idea's chip counts it, no copy
@@ -79,8 +78,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Tidier app page header: open a running app (service) on the Agent surface → the header reads
   Page | Log, the state line, then ← → ⟳ ⌂ ↗ in one tight group, a thin divider, ⋯ and Stop; switch to Log → only ↗,
   ⋯ and Stop stay; click ⋯ → the tree row's menu (Stop, Restart, Stop and hide, Keep running, Pin…), and Restart there
-  restarts it. Not run: the dev app was down; the CDP scenarios `tools-app` / `services-tree` were updated for
-  `data-service-more` but not run (`frontend/app/view/agents/terminalpaneheadview.tsx`).
+  restarts it. `tools-app` (14/14) and `services-tree` (12/12) pass in the Tauri dev app (2026-11-03): Page | Log,
+  back / forward / home, ↗, ⋯ and Stop, no close. Left: the buttons Log leaves, and ⋯ → Restart from the page header
+  (`frontend/app/view/agents/terminalpaneheadview.tsx`).
 
 - [ ] (arcterm) Zoom is kept: press Ctrl+= twice, quit arcterm and open it again, then install a new build over it →
   the app opens at 120% both times; Ctrl+0 → 100%, and it stays 100% after the next restart. The factor is saved in
@@ -268,7 +268,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Type a question naming a file (`rail-apps.json`): Let them read files turns on and says `it names rail-apps.json`;
   one naming none leaves it off, and the cost line reads about a fifth. In a new council's round 2, no reply calls a
   seat by its role ("Phương pháp ơi"). Unit tests and two CDP steps (discussion `done`, summary Ask next) cover it;
-  the CDP steps were not run.
+  both passed in the Tauri dev app on 2026-11-03. Left: a real council (the report's questions, round 2's wording).
 - [ ] (arcterm) Council as a group chat: in a council past round 2 (or a new one), the round 1 ideas alternate between
   the experts, with no bold title in the bubbles; round 2 shows every reply in the chat, a `↳ <idea>` quote over the
   first of each idea's replies, those replies together and in the ideas' order. While a round runs, its messages stay
