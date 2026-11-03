@@ -1596,6 +1596,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   avatar on a message: the tooltip is the chat's session title; click either: the Agent surface opens on that chat's
   terminal. Close the chat's tab: the name and avatar stop being buttons. `frontend/app/view/agents/councilchat.tsx`
   (`Byline`, `SeatAvatar`), commit be7c8b9a7; no dev app was running to try it.
+- [ ] (arcterm) **Whom a council message goes to is chips in its bubble; an answer quotes its message.** In a done
+  council, send three plain questions in a row, one of them `@RAM …`: each routed one opens on a row of seat chips
+  behind the router mark, and hovering the row shows `Router chose …: <reason>` cut with "…" at a word; the `@RAM` one
+  has no row and `@RAM` is RAM's chip in its text; no "For …" line under any, and no "Router chose" line above any
+  answer. An answer that is not right under its question opens on `↳ You · <question>`; click it → the channel glides
+  up to that question (a jump with reduced motion). `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits
+  ac887746b and 475a41d13; the `council-routing` scenario (its new `quote-stacked` step) has not run: no dev app was up.
 - [ ] (arcterm) Kael sync: run a real workflow scan: in a project with a fortnight of runs, `wsh workflow scan --start`
   (or the palette's Scan workflow row) → an Opus agent opens and its `wsh workflow scan` returns after the Sonnet
   pass with each recounted pattern, its quote per run and a fix target; the agent asks one `AskUserQuestion` question
