@@ -779,11 +779,50 @@ func TestCouncilBenchGateBeforeStart(t *testing.T) {
 	if !reflect.DeepEqual(dry, asked) || !reflect.DeepEqual(real, asked) {
 		t.Errorf("calls = %+v and %+v, want the request %+v both times", f.data[0], f.data[1], asked)
 	}
-	if !strings.Contains(out.String(), "bench started: 4 councils over 2 cases") || !strings.Contains(out.String(), "~3.9M tokens") {
-		t.Errorf("output = %q, want the started line with the councils, cases and estimate", out.String())
+	if !strings.Contains(out.String(), "bench started: 4 runs (2 solo, 2 council) over 2 cases") || !strings.Contains(out.String(), "~3.9M tokens") {
+		t.Errorf("output = %q, want the started line with the runs and their split, the cases and the estimate", out.String())
+	}
+	if !strings.Contains(out.String(), "; the runs go one at a time.") || strings.Contains(out.String(), "councils") {
+		t.Errorf("output = %q, want the runs, not councils, going one at a time", out.String())
 	}
 	if !strings.Contains(errOut.String(), "skipped case gamma") {
 		t.Errorf("stderr = %q, want the skipped case named", errOut.String())
+	}
+}
+
+func TestCouncilBenchPlanLineCountsRuns(t *testing.T) {
+	item := func(c, v string) bench.CouncilBenchPlanItem {
+		return bench.CouncilBenchPlanItem{Case: c, Variant: v, Run: 1}
+	}
+	cases := []struct {
+		name  string
+		items []bench.CouncilBenchPlanItem
+		want  string
+	}{
+		{"one variant has no brackets", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantCouncil), item("beta", bench.VariantCouncil)},
+			"2 runs over 2 cases · ~1.5M tokens"},
+		{"one run, one case", []bench.CouncilBenchPlanItem{item("alpha", bench.VariantTeam)},
+			"1 run over 1 case · ~1.5M tokens"},
+		{"two variants are split council then team", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantTeam), item("alpha", bench.VariantCouncil),
+			item("beta", bench.VariantTeam), item("beta", bench.VariantCouncil)},
+			"4 runs (2 council, 2 team) over 2 cases · ~1.5M tokens"},
+		{"three variants are split solo, council, team", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantTeam), item("alpha", bench.VariantCouncil), item("alpha", bench.VariantSolo),
+			item("alpha", bench.VariantCouncil)},
+			"4 runs (1 solo, 2 council, 1 team) over 1 case · ~1.5M tokens"},
+		{"a variant with no items is left out", []bench.CouncilBenchPlanItem{
+			item("alpha", bench.VariantSolo), item("beta", bench.VariantTeam), item("beta", bench.VariantTeam)},
+			"3 runs (1 solo, 2 team) over 2 cases · ~1.5M tokens"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := councilBenchPlanLine(&wshrpc.CouncilBenchRtnData{Items: tc.items, Estimate: 1_500_000})
+			if got != tc.want {
+				t.Errorf("plan line = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -2487,6 +2487,29 @@ func TestCouncilBenchResultsLeavesTheVerdictOut(t *testing.T) {
 	}
 }
 
+// A data dir with no cases.json (someone who only rates councils) has no verdict, and that is not worth a log line on
+// every results call.
+func TestCouncilBenchResultsWithNoCasesFileLogsNothing(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	benchTwoRuns(t, dataDir, "alpha", bench.VariantCouncil, 1, 1_000_000)
+	if _, err := os.Stat(bench.CasesPath(dataDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the data dir has a cases.json (%v), want none", err)
+	}
+	var logged strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	got, err := (&WshServer{}).CouncilBenchResultsCommand(context.Background())
+	log.SetOutput(prev)
+	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
+		t.Errorf("no cases.json: results = %+v, %v, want the row, no verdict and no error", got, err)
+	}
+	if logged.Len() != 0 {
+		t.Errorf("log = %q, want nothing for a missing cases.json", logged.String())
+	}
+}
+
 // ---- "Was this useful?" ----
 
 func TestCouncilRateKeepsTheRatingAndFeedsTheBenchFile(t *testing.T) {

@@ -642,8 +642,8 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 
 // CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
 // bench runs, and per harness version and mode for the ratings. With cases tagged bench.TeamPassTag (retired or not) it
-// adds the go / no-go verdict on the council against the agent team; with none, or cases that cannot be read, there is
-// no verdict (the second is logged: the table is still the results).
+// adds the go / no-go verdict on the council against the agent team; with none, no cases.json, or cases that cannot be
+// read, there is no verdict (only the last is logged: the table is still the results).
 func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
 	dataDir := wavebase.GetWaveDataDir()
 	runs, ratings, err := bench.LoadResults(dataDir)
@@ -659,7 +659,10 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	}
 	cases, _, err := bench.LoadCases(dataDir)
 	if err != nil {
-		log.Printf("[council-bench] no verdict: %v", err)
+		// a data dir with no cases.json (someone who only rates councils) has no verdict and nothing to say about it
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("[council-bench] no verdict: %v", err)
+		}
 		return rtn, nil
 	}
 	var ids []string

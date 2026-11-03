@@ -175,8 +175,11 @@ func TestLoadCasesNoFile(t *testing.T) {
 	if !strings.Contains(err.Error(), path) {
 		t.Errorf("err = %q, want it to name %s", err, path)
 	}
-	if !strings.Contains(err.Error(), "Phase 0b") {
-		t.Errorf("err = %q, want it to say Phase 0b's tasks build the cases", err)
+	if !strings.Contains(err.Error(), "scripts/council-bench-cases.mjs builds them") {
+		t.Errorf("err = %q, want it to name the script that builds the cases", err)
+	}
+	if strings.Contains(err.Error(), "Phase 0b") {
+		t.Errorf("err = %q, still names Phase 0b's tasks, which are not the builder any more", err)
 	}
 }
 

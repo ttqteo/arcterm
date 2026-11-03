@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -1066,15 +1067,28 @@ func councilBenchSpawn(plan *wshrpc.CouncilBenchRtnData) tokengate.Spawn {
 	return tokengate.Spawn{Tool: "Council", Agents: len(plan.Items), EstimateTokens: plan.Estimate}
 }
 
-// councilBenchPlanLine is what a bench prints before it asks the gate and once it has started: how many councils over
-// how many cases, and the estimate.
+// councilBenchPlanLine is what a bench prints before it asks the gate and once it has started: how many runs over how
+// many cases, and the estimate. An item is a solo agent, a council or an agent team, so the runs are counted, and when
+// more than one variant is planned the split follows in brackets, in solo, council, team order:
+// "8 runs (4 council, 4 team) over 2 cases · ~53.2M tokens".
 func councilBenchPlanLine(plan *wshrpc.CouncilBenchRtnData) string {
 	cases := map[string]bool{}
+	perVariant := map[string]int{}
 	for _, it := range plan.Items {
 		cases[it.Case] = true
+		perVariant[it.Variant]++
 	}
-	return fmt.Sprintf("%s over %s · ~%s tokens", councilCountText(len(plan.Items), "council"), councilCountText(len(cases), "case"),
-		council.FormatTokens(plan.Estimate))
+	var split []string
+	for _, v := range []string{bench.VariantSolo, bench.VariantCouncil, bench.VariantTeam} {
+		if n := perVariant[v]; n > 0 {
+			split = append(split, fmt.Sprintf("%d %s", n, v))
+		}
+	}
+	runs := councilCountText(len(plan.Items), "run")
+	if len(split) > 1 {
+		runs += " (" + strings.Join(split, ", ") + ")"
+	}
+	return fmt.Sprintf("%s over %s · ~%s tokens", runs, councilCountText(len(cases), "case"), council.FormatTokens(plan.Estimate))
 }
 
 func councilCountText(n int, word string) string {
@@ -1119,7 +1133,7 @@ func councilBenchStart(ctx context.Context, out, errOut io.Writer, data wshrpc.C
 	if plan, err = councilBenchCall(data); err != nil {
 		return fmt.Errorf("starting the bench: %w", err)
 	}
-	fmt.Fprintf(out, "bench started: %s; the councils run one at a time. `wsh council bench results` reads the table, `wsh council bench stop` ends it\n",
+	fmt.Fprintf(out, "bench started: %s; the runs go one at a time. `wsh council bench results` reads the table, `wsh council bench stop` ends it\n",
 		councilBenchPlanLine(plan))
 	return nil
 }

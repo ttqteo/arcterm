@@ -121,7 +121,7 @@ func LoadCases(dataDir string) ([]Case, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil, fmt.Errorf("no benchmark cases at %s; Phase 0b's tasks 1–2 build them: %w", path, err)
+			return nil, nil, fmt.Errorf("no benchmark cases at %s; scripts/council-bench-cases.mjs builds them: %w", path, err)
 		}
 		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
