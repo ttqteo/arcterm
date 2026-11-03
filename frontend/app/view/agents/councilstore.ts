@@ -13,7 +13,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { createTempFileFromBlob, createTempFileFromFile } from "@/app/view/term/termutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily, atomWithStorage } from "jotai/utils";
 import { useEffect, useState } from "react";
 import { isOversize } from "./composerattachments";
 import {
@@ -488,6 +488,11 @@ export function clearCouncilImages(councilId: string, key: string): void {
 export const councilLastViewAtom = atomFamily(
     (_id: string) => atom<KeptCouncilView | null>(null) as PrimitiveAtom<KeptCouncilView | null>
 );
+
+/** Whether the Ideas rail beside a council's channel is folded: one choice for every council, kept per browser. */
+export const councilIdeasRailFoldedAtom = atomWithStorage<boolean>("council.ideasRail.folded", false, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<boolean>;
 
 /** The seat whose messages alone a council's Discussion shows, per council; null shows everyone. The Summary's column
  *  sets it (showCouncil's `only`); every other way into a council clears it. */

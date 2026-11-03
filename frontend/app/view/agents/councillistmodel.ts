@@ -185,3 +185,31 @@ export function councilList(c: Council, openedAt: number, only?: string): Counci
 export function listNavOrder(list: CouncilList): string[] {
     return [CHAT_THREAD, ...list.ideas.map((r) => r.id)];
 }
+
+/** Pure: the quiet line under an idea in the Ideas rail: its replies when it has any, the stances taken on it when any
+ *  is, and `draft waits` while the idea or a reply on it waits for the person; empty when none applies (an idea nobody
+ *  answered says nothing). */
+export function railMeta(row: IdeaRow): string {
+    const parts: string[] = [];
+    if (row.replies > 0) {
+        parts.push(row.repliesLabel);
+    }
+    if (row.agrees > 0) {
+        parts.push(plural(row.agrees, "agrees", "agree"));
+    }
+    if (row.doubts > 0) {
+        parts.push(plural(row.doubts, "has doubts", "have doubts"));
+    }
+    if (row.against > 0) {
+        parts.push(plural(row.against, "is against it", "are against it"));
+    }
+    if (row.draft) {
+        parts.push("draft waits");
+    }
+    return parts.join(" · ");
+}
+
+/** Pure: the caption over the Ideas rail, which says the order `listOrder` keeps. */
+export function railOrderLabel(c: Council): string {
+    return c.summary == null ? "in the order they came" : "in the Report's order";
+}

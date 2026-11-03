@@ -2332,7 +2332,7 @@ func (r *Runner) routeReply(ctx context.Context, id, replyId string) {
 			c.Calls++
 			c.Tokens += res.Tokens
 		}
-		settleRoute(c, pr, route, err)
+		settleRoute(c, pr, route, err, r.now())
 	})
 }
 
@@ -2359,8 +2359,21 @@ func (r *Runner) saveRoute(id, replyId string, change func(c *Council, pr *Counc
 // settleRoute stores the router's pick on pr, or, when err is set or none of the seats it named can still answer, the first
 // seat that can: To is the pick, in the router's order, and Chose keeps it apart from To. Tools is the router's only when
 // the composer left it Auto (AutoTools). With no seat left to answer at all the reply goes to the whole panel, unrouted.
-func settleRoute(c *Council, pr *CouncilReply, route Route, err error) {
+//
+// A route that answers the message itself (route.Answer, small talk no seat is needed for) posts that answer under pr
+// as the router's reply, sent at once and dated now, and settles pr with no seat: To and Chose stay empty and pr is
+// answered, so no seat is called. Ask <seat> too still brings a seat in under it.
+func settleRoute(c *Council, pr *CouncilReply, route Route, err error, now int64) {
 	cands := routeCandidates(c)
+	if err == nil && route.Answer != "" {
+		c.Replies = append(c.Replies, CouncilReply{
+			Id: nextReplyId(c), ProposalId: pr.ProposalId, ParentId: pr.Id, Author: routerId, Text: route.Answer,
+			Round: pr.Round, Ts: now,
+		})
+		pr.Routed.Chose, pr.Routed.Reason, pr.Routed.Failed, pr.Routed.Pending = nil, route.Reason, false, false
+		pr.To, pr.Answered = nil, true
+		return
+	}
 	var chose []string
 	if err == nil {
 		for _, id := range route.Seats {

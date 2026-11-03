@@ -91,7 +91,11 @@ chữ cái (ĐV, KT) để phân biệt những ghế có tên đầu giống nh
 và mỗi câu trả lời nằm dưới phần trích của ý mà nó đáp lại. Câu hỏi của bạn nằm bên phải, gấp còn ba dòng, các giới hạn
 bạn đặt thành chip.
 
-- **Thread**: chip trả lời trên một ý mở thread của nó trong panel bên phải.
+- **Rail Ideas**: bên phải kênh, mỗi ý một dòng như Decided so far của brainstorm: số thứ tự, người viết, tiêu đề, và
+  một dòng mờ ghi số câu trả lời và lập trường các ghế đã chọn. Bấm một dòng để cuộn kênh tới ý đó. Nút » gấp rail lại,
+  nút **Ideas · N** trên kênh mở lại; arcterm nhớ lựa chọn này.
+- **Thread**: chip trả lời trên một ý mở thread của nó ở tab thứ hai của rail; tab **Ideas** quay về danh sách, nút ×
+  đóng thread.
 - **Lọc theo ghế**: các ghế trên cùng là bộ lọc, mỗi ghế có số tin nó đã viết; ghế đang làm việc chỉ hiện một chấm, rê
   chuột để xem nó đang làm gì.
 - **Top**, **Latest**, rồi **Back**: ba nút ở góc dưới bên phải kênh để nhảy lên đầu, xuống tin mới nhất, và quay về chỗ

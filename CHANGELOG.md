@@ -33,6 +33,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- `wsh council bench` now runs the council against a Claude Code agent team on two new cases, stops at a 50M token cap, and `wsh council bench results` says whether the team is a go.
 - The Memory tab is made for a backlog of changes. Apply and Keep move on to the next change still to review, and `j` / `k` step through the table, `a` applies, `x` keeps and `u` undoes. Each labelled group of a split project has an Apply all (two clicks) that applies its open changes one at a time and shows its progress. The project list puts projects with changes to review first and draws a checked project with an empty index on one line; a change's kind is tinted by what it does (remove, bring in, edit in place), an empty size reads 0 KB, and a long path shortens its folder, not its file name.
 - Check now in the Memory tab spins and reads Checking… while it runs, and a note says what the check found (Checked · N to review, Checked · nothing to review, or Check failed) for five seconds. The tab fades when you switch project or change, and its meters ease to their new width; with reduced motion on, nothing animates.
 - The Diff, Code and File views draw the ligatures of the code font (`->`, `!=`, `=>` in JetBrains Mono, the default, and in Fira Code); Hack has none.
@@ -45,14 +46,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A like or dislike you give a council expert's message shows as a Liked or Disliked chip under it, which a press takes back; the time and the two thumbs sit together at the right end of the message's byline and show on hover.
 - An evidence chip that cites many lines of a file keeps the file's name and cuts the list of lines with an ellipsis (the tooltip holds all of them), where a long list used to push the name out.
 - The questions Ask next offers in a council, and the replies a seat suggests in a thread, stay while you type; pressing one puts its text in the box in place of what you typed.
-- The question at the top of a council's Chat folds under its text: Show more sits beneath the question and its limits, the text grows to its full height and the rest of the limits fade in, and Show less folds it back. It stays still when you ask for reduced motion.
+- The question at the top of a council's Discussion folds under its text: Show more sits beneath the question and its limits, the text grows to its full height and the rest of the limits fade in, and Show less folds it back. It stays still when you ask for reduced motion.
 - Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, Councils and a project Overview's History keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other. Close on an ended council's tree row (on hover, and in its right-click menu) takes it off the tree at once; Councils still lists it.
-- A council's Discussion is a list of its ideas, one row each with its author, a New badge and its count of agrees, doubts and objections; a Chat row on top holds your messages and the answers to them, and a click opens a row's thread beside it.
+- A council's Discussion keeps its chat and puts its ideas in a quiet rail beside it: one entry per idea with its number, author, title and a line of its replies and stances. A click scrolls the chat to that idea, an idea's replies open its thread on the rail's second tab, and the rail folds away.
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
 - A council's minutes count the time it ran, not the clock since it started, so a council chatted in the next day no longer reads hundreds of minutes.
 - A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
 - A run started from a spec (Build … as specified in …, as a brainstorm starts it) no longer stops for your Plan review click after the plan's second review: the lead carries the findings into the tasks and goes on, and asks you only about a finding that would change what the spec decided.
 - An app's page header on the Agent surface is tidier: Back, Forward, Reload and Home show only while the page does, and Restart moved into a ⋯ menu beside Stop (with Keep running and Pin), so its arrow no longer sits next to Reload's.
+- A message to the whole council that needs no expert, such as a greeting, thanks or an ok, is answered by the router itself at once, with Ask <seat> too under it to bring a seat in; the router also picks a seat faster than before.
 
 ### Fixed
 
@@ -65,6 +67,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council with a long question keeps its status chip readable in the Discussion and Map headers: the title shortens first, where the chip used to be cut to its first letter.
 - In a project's Overview, a run's diamond in History is no longer cut off on its left, and a Branches row with long branch names shortens them instead of spilling over the History column.
 - Starting a run in a project that is one folder of a large repo no longer fails and cancels itself while its tree checks out: the run's trees check out only that folder, and a tree that still takes long finishes in the background while the run waits for it.
+- A council message that a seat failed to answer, because of a usage limit or a failed call, now says so under it (`New user could not answer: …`), where it used to read as answered with no reply.
 
 ## 0.15.21 — 2026-11-03
 

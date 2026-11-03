@@ -6,6 +6,25 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council's Discussion is the chat again, with a quiet Ideas rail beside it: open a council that has
+  ideas → the channel of messages fills the pane and the rail on its right lists each idea (number · author, title, a
+  muted line of replies and stances); a row scrolls the channel to that idea. An idea's replies button opens its thread
+  on the rail's second tab (`Idea N · M replies`), × closes it; » folds the rail and `Ideas · N` over the channel brings
+  it back, still folded after a restart. The `council-discussion`, `council-routing` and `council-summary` scenarios
+  pass in headless Chrome (`task dev:browser`) and in the Tauri dev app on Windows (2026-11-03, 138 + 21 + 28 steps,
+  the rail steps included); left: the fold kept after a real restart, and WKWebView (`councilchat.tsx` `CouncilRail`).
+
+- [ ] (arcterm) Pin on a council in Overview → History: in a project's Overview → History, unfold a council row → Pin
+  sits beside Open council, and right-click offers Pin / Unpin. No scenario reaches it (`project-overview-history`
+  opens the council but never pins). The tree half (Close on an ended council, no Pin in the tree) holds: `council-tree`
+  passed 26/26 twice in the Tauri dev app on 2026-11-03, steps 11b, 11g and 11h included (`projecthistory.tsx`).
+
+- [ ] (arcterm) The council router answers small talk itself, and a failed seat shows under your message: in a done
+  council with two or more seats, send `hello` to the whole council in the Chat → within seconds a Router reply
+  answers it, with Ask <seat> too chips under it, and no seat is called. Send a real question → the router picks a seat
+  as before. With a seat whose call fails (a 5-hour limit), the line under your message reads `<seat> could not
+  answer: <error>`. Go tests and vitest only (`pkg/council/router.go`, `settleRoute`, `councilmodel.ts` `replyLabel`).
+
 - [ ] (arcterm) Kael sync: a real Claude Code Monitor in the Agent tree: in a live Claude session ask for a Monitor
   (a command that prints a line every few seconds, with a timeout) → a row appears under that agent with its label and
   an "N m left" chip; click it → the peek's Events tab gains an event each time the command prints, and the footer
@@ -18,13 +37,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   open a file in Code, Diff or an agent's File tab with `->`, `!=`, `=>` and `>=` in it → each draws as one joined
   glyph; with Hack picked they stay plain pairs (Hack has none). The `code-diff` scenario reads the option and the
   computed `font-feature-settings`, not the glyphs (`diffoptions.ts`).
-
-- [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
-  that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
-  Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
-  unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
-  steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
-  (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
 
 - [ ] (arcterm) A run in a monorepo folder starts and checks out only that folder: start an orchestrator run in the
   portal project (`D:\Workspace\SIEM\apps\portal`) → it starts without "creating landing tree" and is not cancelled;
@@ -48,26 +60,27 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `wsh jarvis dag amend` and runs `wsh jarvis dag planreview accept` on its own, with no Plan review ask, and
   `wsh runs show` reads "failed, then accepted by the lead"; only a finding that changes the spec's decisions still
   comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
-  3520d3a3f); no live run yet.
+  3520d3a3f); no live run yet. Run 40deb36e already reads "failed, then accepted by the lead" with no answered ask, but
+  it started (~15:00) before 3520d3a3f, so it does not count: the next run started from a spec on the c7523d59a build
+  or later decides it.
 
 - [ ] (arcterm) A done run's closed dag reads done, not cancelled: `wsh runs show 40deb36e` and `c06ba9cb` print
   `status=closed (the run ended done)`; in Conversations, run 40deb36e's group head and a brainstorm whose Run step
-  points at a landed run with a failed task do not read cancelled. Unit tests only (`sessionsruns.ts`,
-  `brainstormrunmodel.ts`, `wshcmd-runs.go`); the app was not opened, and the installed wsh still prints the old line
-  until the next build.
+  points at a landed run with a failed task do not read cancelled. The wsh half holds: a dev wsh built from 07a21f3fd
+  prints `status=closed (the run ended done)` for both runs (2026-11-03). Left: the Conversations half, in the
+  installed app after the next build (the dev app's store has neither run) (`sessionsruns.ts`, `brainstormrunmodel.ts`).
 
 - [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
   has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final
-  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219).
+  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219). Not
+  decidable from 40deb36e: its base (8860c5e) predates b47694219, so its merges ran the old script; the Kael sync run
+  a1c7dbff (started 17:37 on 2026-11-03) is the first on the new script.
 
 - [ ] (arcterm) A force-landed run reads Landed: in the Agent tree and the Brief, find run c06ba9cb (Council UX pass,
   landed with Land anyway after Final round 2 failed) → its stage reads Landed with the Final check pip failed, not
-  Cancelled; `wsh runs show` adds "(closed when the run ended: the run is done, not cancelled)" to its dag line. Unit
-  tests only (`frontend/app/view/agents/runstage.ts`, `cmd/wsh/cmd/wshcmd-runs.go`); the app was not opened.
-
-- [ ] (arcterm) council-tree step 11b no longer flakes: `task verify:ui -- council-tree` passes 11b, 11c and 11g (the
-  hovers now retry at the row's current place, `hoverUntil` in `scripts/cdp/council/tree.mjs`). Not run: no dev app
-  was up.
+  Cancelled. The wsh half holds (2026-11-03): the installed wsh adds "(closed when the run ended: the run is done, not
+  cancelled)", and 093b00b93 has since replaced it with `status=closed (the run ended done)`. Left: the tree and the
+  Brief in the installed app (`frontend/app/view/agents/runstage.ts`).
 
 - [ ] (arcterm) Council thread replies stay in their thread, with a live seat: on a running council's Discussion, open
   an idea's reply chip and send a reply in the thread → it shows in the thread and the idea's chip counts it, no copy
@@ -78,8 +91,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Tidier app page header: open a running app (service) on the Agent surface → the header reads
   Page | Log, the state line, then ← → ⟳ ⌂ ↗ in one tight group, a thin divider, ⋯ and Stop; switch to Log → only ↗,
   ⋯ and Stop stay; click ⋯ → the tree row's menu (Stop, Restart, Stop and hide, Keep running, Pin…), and Restart there
-  restarts it. Not run: the dev app was down; the CDP scenarios `tools-app` / `services-tree` were updated for
-  `data-service-more` but not run (`frontend/app/view/agents/terminalpaneheadview.tsx`).
+  restarts it. `tools-app` (14/14) and `services-tree` (12/12) pass in the Tauri dev app (2026-11-03): Page | Log,
+  back / forward / home, ↗, ⋯ and Stop, no close. Left: the buttons Log leaves, and ⋯ → Restart from the page header
+  (`frontend/app/view/agents/terminalpaneheadview.tsx`).
 
 - [ ] (arcterm) Zoom is kept: press Ctrl+= twice, quit arcterm and open it again, then install a new build over it →
   the app opens at 120% both times; Ctrl+0 → 100%, and it stays 100% after the next restart. The factor is saved in
@@ -267,7 +281,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Type a question naming a file (`rail-apps.json`): Let them read files turns on and says `it names rail-apps.json`;
   one naming none leaves it off, and the cost line reads about a fifth. In a new council's round 2, no reply calls a
   seat by its role ("Phương pháp ơi"). Unit tests and two CDP steps (discussion `done`, summary Ask next) cover it;
-  the CDP steps were not run.
+  both passed in the Tauri dev app on 2026-11-03. Left: a real council (the report's questions, round 2's wording).
 - [ ] (arcterm) Council as a group chat: in a council past round 2 (or a new one), the round 1 ideas alternate between
   the experts, with no bold title in the bubbles; round 2 shows every reply in the chat, a `↳ <idea>` quote over the
   first of each idea's replies, those replies together and in the ideas' order. While a round runs, its messages stay
@@ -526,15 +540,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   checked); Save as doc (in the ⋯ menu) writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
-- [ ] (arcterm) Council benchmark, a smoke check (the tests own the logic): Phase 0b built the cases in this machine's
-  data dir (bare `wsh council bench` would also run the dropped agents-bugs), so run `wsh council bench --case
-  newcomer` on the installed app and allow the Token burn card. It starts at once
-  and the councils run one at a time, with no row, toast or dot in the app and no `docs/council/` file in the case's
-  project. When it ends, `wsh council bench results` shows the row (council and solo, under the harness version); the
-  judge's matches agree with the newcomer key read by hand (the spec's spot check); and `Council benchmark` gained no
-  chunk (a single case adds no reminder; only a bench with no `--case` moves its re-measure chunk). Refuse the card
-  once: it prints `Not run: …` and nothing is saved. `cmd/wsh/cmd/wshcmd-council.go`, `pkg/council/bench`; spec
-  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` ("Benchmark").
+- [ ] (arcterm) Council bench, council against a Claude Code agent team: on the installed app run `wsh council bench`
+  (no flags: the two `team-bench-2026-11` cases, council and team, twice each; the four 0b cases are retired) and
+  allow the Token burn card. The plan line reads `8 runs (4 council, 4 team) over 2 cases` and the runs go one at a
+  time, with no row, toast or dot in the app. A team cell runs `claude -p` on a temp copy of the case and leaves no
+  folder behind; one that read the key or worked alone is a failed row. The estimate (~53.2M) is above the 50M cap,
+  so the last cell may be cut. `wsh council bench results` then shows the rows and `verdict: go | no-go | not
+  decided: <reason>`. `pkg/council/bench`, `cmd/wsh/cmd/wshcmd-council.go`; spec
+  `docs/superpowers/specs/2026-11-03-council-bench-team-design.md`.
 - [ ] (arcterm) Council "Was this useful?": on a real finished council's report, click Useful: the row turns into a
   thanks line with Change. Click Change and answer Not really. `wsh council bench results` then counts that council
   once, as not really, in the ratings table under its harness version and mode (the file keeps both answers; only the

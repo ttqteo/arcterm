@@ -1,29 +1,32 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council's discussion as a list of ideas with threads (board Discussion-list.dc.html in
-// .superpowers/design/council-ux; councillistmodel.ts derives the list, councilchatmodel.ts the threads). The seat
-// filters sit in the discussion's header (councilseats.tsx); here, while one is on, an Only line with Show everyone;
-// with two or more seats failed a Retry all bar with a model pick per seat, else one line per failed seat with Retry;
-// then the list: a Chat row on top for the person's own messages and the answers to them (its `N new`, its newest line,
-// its count), then `N ideas` and one 40px row per idea (its number, its author, its title, New, the counts of Agrees /
-// Has doubts / Is against it, its replies), an amber Draft on a row whose idea or reply waits for the person, in an
-// order that never moves; past the first screen it scrolls. Under it the composer, which posts to everyone, and `@`
-// lists the seats (a pick asks that one), the project's files (a pick names the file; the seats that answer read it)
-// and the live claude and pi chats no seat holds under Add a live chat (a pick puts its mention key in the message;
-// Send seats the chats the text still names and posts the message to them); an image pasted or dropped into the box
-// waits above the text as a chip and goes with the message. A click on a row, or Enter on the row the keyboard cursor
-// is on, slides its thread in from the right (sheetPanel): the idea on top, then its replies with their stance pills,
-// the replies held as drafts with Send / Edit / Drop, and a reply box that names who will answer; a held idea's thread
-// is its draft; the Chat's is the person's question and the messages tied to no idea, the person's own showing their
-// images as thumbnails and each `@file` as a chip. j and k move the cursor over the rows, Enter opens the thread and
-// Escape closes it, while focus is inside the list or the thread (buildCouncilBindings reads the cursor
-// councilchatnav.ts publishes). A message's evidence is a link per cited file (councilsourcespanel.tsx): a click opens
-// the Sources panel in the thread's place, and Escape or its close button goes back to the thread it was opened from.
-// Every part carries a data-council-* attribute for the CDP scenario `council-discussion`. The store's actions answer
-// `{ ok, error }`; a refusal shows in the header (the `acts` the discussion shares).
+// The council's discussion as a channel of speech bubbles with threads (boards J-chat-bubbles and J3-seat-filter-panel in
+// .superpowers/design/council-report; councilchatmodel.ts derives what it draws). The seat filters sit in the
+// discussion's header (councilseats.tsx); here, while one is on, an Only line with Show everyone, and with two or more
+// seats failed a Retry all bar with a model pick per seat; then the channel, one column: the person's question on the
+// right in their bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble
+// in its seat's colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
+// Edit, Drop); the line where an agent skipped a turn, a failure with Retry, and a typing row for whoever is at work;
+// under it the composer, which posts to everyone, and `@` lists the seats (a pick asks that one), the project's files
+// (a pick names the file; the seats that answer read it) and the live claude and pi chats no seat holds under Add a live
+// chat (a pick puts its mention key in the message; Send seats the chats the text still names and posts the message to
+// them); an image pasted or dropped into the box waits above the text as a chip and goes with the message, and the
+// person's own message shows its images as thumbnails and each `@file` as a chip. Beside the channel is the Ideas rail
+// (boards A-decided-rail and A2-decided-rail-thread in .superpowers/design/council-discussion), shaped like the
+// brainstorm's Decided so far: each idea's number, author, title and a quiet line of its replies and stances; a row
+// brings its idea to the top of the channel, and the rail folds away (councilIdeasRailFoldedAtom). A click on an idea's
+// reply chip, or Enter on the idea the keyboard cursor is on, opens its thread on the rail's second tab: the idea on
+// top, then its replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and k move
+// the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
+// thread (buildCouncilBindings reads the cursor councilchatnav.ts publishes). A message's evidence is a link per cited
+// file (councilsourcespanel.tsx): a click opens the Sources panel in the rail's place, and Escape or its close button
+// goes back to the rail. Every part carries a data-council-* attribute for the CDP scenario
+// `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the header (the `acts` the
+// discussion shares).
 
 import { MOTION, computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
+import { PopoverReveal } from "@/app/element/popoverreveal";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { reloadFileIndex } from "@/app/view/code/codestore";
@@ -33,10 +36,11 @@ import {
     Check,
     ChevronDown,
     ChevronUp,
+    ChevronsLeft,
+    ChevronsRight,
     CornerDownRight,
     FileText,
     Loader2,
-    MessageSquare,
     Plus,
     SendHorizontal,
     ThumbsDown,
@@ -63,11 +67,12 @@ import {
     DRAFT_WAIT,
     askChips,
     contextLabel,
+    councilChannel,
     councilThread,
-    failureLines,
     foldSettle,
     foldToggle,
     foldView,
+    ideaOrder,
     insertAllMention,
     insertChatMention,
     insertFileMention,
@@ -85,34 +90,31 @@ import {
     threadAsks,
     toolsOfChoice,
     type AskChip,
+    type ChannelItem,
     type ChatPick,
     type ChatThread,
     type DraftPost,
     type FailureLine,
+    type IdeaPost,
     type PillTone,
     type QuestionFold,
     type QuestionPost,
     type ReplyPost,
+    type SkipLine,
     type ThreadItem,
     type TypingRow,
     type Who,
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
-import {
-    CHAT_THREAD,
-    councilList,
-    listNavOrder,
-    type ChatRow,
-    type CouncilList,
-    type IdeaRow,
-} from "./councillistmodel";
+import { councilList, railMeta, railOrderLabel, type IdeaRow } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import {
     ANSWERING,
     ROUTER_PICKS_WHO,
     answerers,
     councilProjectName,
+    draftsWaitWord,
     followupLabel,
     nextThumb,
     routedLabel,
@@ -124,13 +126,24 @@ import { councilOpenedAtom, openedAt } from "./councilopened";
 import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
 import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import {
+    NO_PILLS,
     followsEnd,
+    glideAt,
+    glideMs,
+    jumpPills,
     keepPlace,
     keptPlace,
     ownPosts,
     placeOf,
+    readingRow,
+    returnTop,
     sentSince,
+    stillLanded,
     topFor,
+    type JumpPills,
+    type Landing,
+    type ReadingPlace,
+    type RowBox,
     type ScrollPlace,
 } from "./councilscroll";
 import { sendState, shownItems, type SendState, type SendStatus } from "./councilseen";
@@ -142,6 +155,7 @@ import {
     clearCouncilImages,
     closeCouncilSources,
     councilChatDraftAtom,
+    councilIdeasRailFoldedAtom,
     councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
@@ -209,6 +223,19 @@ const TONE_BUBBLE: Record<AvatarTone, string> = {
     "conn-6": "border-conn-6/25 bg-conn-6/8",
     "conn-7": "border-conn-7/25 bg-conn-7/8",
     "conn-8": "border-conn-8/25 bg-conn-8/8",
+};
+
+// the bubble of the idea whose thread is open, and a seat's filter while it is on
+const TONE_BUBBLE_ON: Record<AvatarTone, string> = {
+    you: "border-accent/55 bg-accent/18",
+    coordinator: "border-primary/45 bg-primary/12",
+    muted: "border-edge-strong bg-surface-selected",
+    "conn-1": "border-conn-1/55 bg-conn-1/16",
+    "conn-2": "border-conn-2/55 bg-conn-2/16",
+    "conn-3": "border-conn-3/55 bg-conn-3/16",
+    "conn-6": "border-conn-6/55 bg-conn-6/16",
+    "conn-7": "border-conn-7/55 bg-conn-7/16",
+    "conn-8": "border-conn-8/55 bg-conn-8/16",
 };
 
 /** The dot on an avatar's corner: an expert writing is green, one whose call failed red. Its word is in the avatar's
@@ -458,16 +485,145 @@ function ThumbChip({
     );
 }
 
-// shown while its message is hovered or focused: a post's time, which says little at a glance, and the thumbs
+function IdeaMessage({
+    councilId,
+    item,
+    open,
+    focused,
+    onOpen,
+    acts,
+}: {
+    councilId: string;
+    item: IdeaPost;
+    open: boolean;
+    focused: boolean;
+    onOpen: (id: string) => void;
+    acts: Actions;
+}) {
+    const t = item.thread;
+    return (
+        <article
+            data-council-item
+            data-item-kind="idea"
+            data-council-idea={item.id}
+            data-item-label={item.label}
+            data-open={open ? "true" : undefined}
+            data-focused={focused ? "true" : undefined}
+            className="flex gap-[10px]"
+        >
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} large />
+            <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-[6px]">
+                <Byline who={item}>
+                    {item.wild ? (
+                        <CouncilPill word={item.label} tone="neutral" />
+                    ) : (
+                        <span className="text-muted">{item.label}</span>
+                    )}
+                    <PostTime at={item.at} when={item.when} />
+                    {item.edited && <span className="text-muted">edited</span>}
+                </Byline>
+                <div
+                    className={cn(
+                        "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
+                        open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
+                        focused && "ring-1 ring-edge-strong"
+                    )}
+                >
+                    {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
+                        it is quoted (a reply's ↳, the thread's header, the report) */}
+                    <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
+                    <EvidenceChips {...item.claim} source={{ councilId, owner: item.id, title: item.title }} />
+                    <div className="flex flex-wrap items-center gap-[10px]">
+                        <button
+                            type="button"
+                            data-council-thread-open={item.id}
+                            data-replies={t.count}
+                            aria-label={`Open the thread: ${t.label}`}
+                            onClick={() => onOpen(item.id)}
+                            className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            {t.repliers.length > 0 && (
+                                <span className="flex">
+                                    {t.repliers.map((w, i) => (
+                                        <CouncilAvatar
+                                            key={w.author}
+                                            tone={w.tone}
+                                            name={w.name}
+                                            initials={w.initials}
+                                            small
+                                            data-council-replier={w.author}
+                                            className={i > 0 ? "-ml-[5px]" : undefined}
+                                        />
+                                    ))}
+                                </span>
+                            )}
+                            <span className="font-semibold text-accent">{t.label}</span>
+                            {t.last !== "" && (
+                                <span className="text-muted" title={t.lastWhen}>
+                                    {t.last}
+                                </span>
+                            )}
+                            {t.drafts > 0 && <span className="text-warning-soft">{draftsWaitWord(t.drafts)}</span>}
+                        </button>
+                        {item.agrees.map((text, i) => (
+                            <Reaction key={i} text={text} />
+                        ))}
+                        <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
+                        {item.picks != null && (
+                            <span
+                                data-council-picks
+                                title={item.picks.title}
+                                className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
+                            >
+                                {item.picks.label}
+                            </span>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </article>
+    );
+}
+
+// the pill and the time beside a reply's author; a thread's reply drawn in the channel (one seat's messages) also names
+// the idea it is on, a click opening that thread
+// a reply's way to its idea's thread, in the channel: `↳` and the idea's title
+function ReplyOn({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: string) => void }) {
+    if (onOpenIdea == null || item.on === "") {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-council-reply-on={item.proposalid}
+            onClick={() => onOpenIdea(item.proposalid)}
+            className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[12px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            <CornerDownRight size={11} aria-hidden className="flex-none" />
+            <span className="min-w-0 truncate">{item.on}</span>
+        </button>
+    );
+}
+
+// shown while its reply is hovered or focused: a post's time, which says little at a glance
 const HOVER_ONLY = "opacity-0 group-hover/reply:opacity-100 group-focus-within/reply:opacity-100";
 
-// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and at the right end, on hover
-// or focus, its time and the thumbs
-function ReplyHeader({ item, thumbs }: { item: ReplyPost; thumbs?: ReactNode }) {
+// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and on hover its time and
+// the thumbs
+function ReplyHeader({
+    item,
+    onOpenIdea,
+    thumbs,
+}: {
+    item: ReplyPost;
+    onOpenIdea?: (id: string) => void;
+    thumbs?: ReactNode;
+}) {
     return (
         <Byline who={item}>
             {item.pill !== "neutral" && <CouncilPill word={item.label} tone={item.pill} />}
             {item.edited && <span className="text-muted">edited</span>}
+            <ReplyOn item={item} onOpenIdea={onOpenIdea} />
             <HoverEnd>
                 <PostTime at={item.at} when={item.when} />
                 {thumbs}
@@ -478,10 +634,19 @@ function ReplyHeader({ item, thumbs }: { item: ReplyPost; thumbs?: ReactNode }) 
 
 // under the person's own post, as a messenger has it: who it reaches when not the usual ones, `edited`, what it waits
 // on, and on the newest one Sent or Seen; nothing at all when none of them applies
-function MineLine({ item, status }: { item: ReplyPost; status?: SendStatus }) {
+function MineLine({
+    item,
+    status,
+    onOpenIdea,
+}: {
+    item: ReplyPost;
+    status?: SendStatus;
+    onOpenIdea?: (id: string) => void;
+}) {
     const reach = item.reachIsDefault ? "" : item.reaches;
     const waits = item.pending === ANSWERING ? "" : item.pending;
-    if (reach === "" && waits === "" && !item.edited && status == null) {
+    const on = onOpenIdea != null && item.on !== "";
+    if (reach === "" && waits === "" && !item.edited && status == null && !on) {
         return null;
     }
     return (
@@ -489,6 +654,7 @@ function MineLine({ item, status }: { item: ReplyPost; status?: SendStatus }) {
             data-council-mine-line
             className="flex flex-wrap items-center justify-end gap-x-[7px] gap-y-[2px] text-[12px] text-muted"
         >
+            <ReplyOn item={item} onOpenIdea={onOpenIdea} />
             {reach !== "" && <span data-council-reaches>{reach}</span>}
             {item.edited && <span>edited</span>}
             {waits !== "" && <span data-council-waits>{waits}</span>}
@@ -628,15 +794,20 @@ function ReplyMessage({
     councilId,
     item,
     acts,
+    inThread,
+    onOpenIdea,
     rise,
     status,
 }: {
     councilId: string;
     item: ReplyPost;
     acts: Actions;
+    inThread?: boolean;
+    onOpenIdea?: (id: string) => void;
     rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
     status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
+    const openIdea = inThread ? undefined : onOpenIdea;
     return (
         <motion.article
             data-council-item
@@ -644,7 +815,7 @@ function ReplyMessage({
             data-council-reply-post={item.id}
             data-item-label={item.label}
             data-item-mine={item.mine ? "true" : undefined}
-            data-in-thread="true"
+            data-in-thread={inThread ? "true" : undefined}
             variants={sentRise}
             initial={rise ? "initial" : false}
             animate="animate"
@@ -657,6 +828,7 @@ function ReplyMessage({
                 {!item.mine && (
                     <ReplyHeader
                         item={item}
+                        onOpenIdea={openIdea}
                         thumbs={
                             // at the right end of its byline with the time, shown on hover or focus, so a reply is no taller
                             <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
@@ -702,7 +874,7 @@ function ReplyMessage({
                 {item.askToo.length > 0 && (
                     <AskTooChips councilId={councilId} replyId={item.routedReply} seats={item.askToo} />
                 )}
-                {item.mine && <MineLine item={item} status={status} />}
+                {item.mine && <MineLine item={item} status={status} onOpenIdea={openIdea} />}
             </div>
             {item.mine && (
                 // the time beside the bubble, on hover
@@ -853,6 +1025,21 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
     );
 }
 
+function Divider({ text, round }: { text: string; round: number }) {
+    return (
+        <div
+            data-council-item
+            data-item-kind="divider"
+            data-council-divider={round}
+            className="flex items-center gap-[10px] px-[10px] py-[6px] text-[12.5px] text-muted"
+        >
+            <span aria-hidden className="h-px flex-1 bg-edge-faint" />
+            <span>{text}</span>
+            <span aria-hidden className="h-px flex-1 bg-edge-faint" />
+        </div>
+    );
+}
+
 // the person's question as their message on the right, on top of the Chat's thread: three lines and two of the limits
 // it set until Show more opens the rest, with Show more / Show less under them. line-clamp cannot be transitioned, so the
 // fold moves the height of the text's wrapper, and of the limits' row, between two measured values: over the whole text,
@@ -976,6 +1163,36 @@ function QuestionMessage({ item }: { item: QuestionPost }) {
     );
 }
 
+function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal: (tab: string) => void }) {
+    // the seat's name is the line's lead, drawn heavier
+    const rest = item.text.startsWith(item.name) ? item.text.slice(item.name.length) : item.text;
+    return (
+        <div
+            role="status"
+            data-council-item
+            data-item-kind="skip"
+            data-council-skip={item.author}
+            className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[13px] text-muted"
+        >
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} small dim />
+            <span>
+                {rest === item.text ? null : <span className="font-semibold text-secondary">{item.name}</span>}
+                {rest}
+            </span>
+            {item.tab !== "" && (
+                <button
+                    type="button"
+                    data-council-open-terminal={item.tab}
+                    onClick={() => onOpenTerminal(item.tab)}
+                    className="h-[22px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[12px] font-semibold text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    Open its terminal
+                </button>
+            )}
+        </div>
+    );
+}
+
 function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Actions }) {
     const key = `retry:${item.author}`;
     const running = c.state === "running"; // a retry while it runs is refused: one job at a time
@@ -1017,7 +1234,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
 // a seat at work: its avatar and a bubble of three dots that rise in turn, as a messenger shows someone typing (the
 // words stay for a screen reader); a seat waiting on its own agent says what it waits for instead. In a thread the
 // idea it replies on goes without saying.
-function TypingLine({ item }: { item: TypingRow }) {
+function TypingLine({ item, inThread }: { item: TypingRow; inThread?: boolean }) {
     return (
         <div
             data-council-item
@@ -1051,6 +1268,12 @@ function TypingLine({ item }: { item: TypingRow }) {
                             className="pulse-typing h-[6px] w-[6px] rounded-full bg-current"
                         />
                     ))}
+                </span>
+            )}
+            {!inThread && item.on !== "" && (
+                <span className="flex min-w-0 items-center gap-[5px] text-[12px] text-muted">
+                    <CornerDownRight size={11} aria-hidden className="flex-none" />
+                    <span className="min-w-0 truncate">{item.on}</span>
                 </span>
             )}
         </div>
@@ -1690,8 +1913,8 @@ function Composer({
 
 // ---- the report's questions to ask next ----
 
-// the last line of the list, under the last idea, so it scrolls away with the rest; a click puts the question in the
-// box under the list, `@` seat and all, to edit and send
+// the last line of the channel, under the newest message, so it shows to a reader at the latest and scrolls away with
+// the rest; a click puts the question in the channel's box, `@` seat and all, to edit and send
 function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
     const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
     const fill = (t: string) => {
@@ -1762,7 +1985,7 @@ function ThreadAsks({ c, proposalId, asks }: { c: Council; proposalId: string; a
 
 // the person's newest post's Sent / Seen and whether the typing bubbles wait (councilseen.ts), drawn again when either
 // changes by itself, a second after the send
-function useSendState(items: readonly ThreadItem[]): SendState {
+function useSendState(items: readonly (ChannelItem | ThreadItem)[]): SendState {
     const [, redraw] = useState(0);
     const state = sendState(items, Date.now());
     useEffect(() => {
@@ -1798,6 +2021,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
         <article data-council-post={idea.id} className="group/reply flex flex-col gap-[8px]">
             <h2 className="m-0 text-[15px] font-semibold leading-[1.4] text-primary">{idea.title}</h2>
             <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
+                <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
                 {idea.edited && <span>edited</span>}
                 <HoverEnd>
@@ -1828,32 +2052,27 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
     );
 }
 
-// what the panel's header names: `Idea 2 · by New user`, `Chat`
-function threadHeading(thread: ChatThread, n: number | undefined): string {
+// what the rail's second tab names: `Idea 2 · 14 replies`, `Idea 2 · draft`, `Chat`
+function threadTab(thread: ChatThread, n: number | undefined): string {
     if (thread.kind === "chat") {
         return "Chat";
     }
-    const who = thread.kind === "idea" ? thread.idea.name : thread.draft.name;
-    return n == null ? `Idea · by ${who}` : `Idea ${n} · by ${who}`;
+    const idea = n == null ? "Idea" : `Idea ${n}`;
+    return thread.kind === "idea" ? `${idea} · ${thread.idea.thread.label}` : `${idea} · draft`;
 }
 
-/** The panel a row opens on the right of the list: an idea's thread (the idea, its replies with their stance pills, the
- *  held reply drafts with Send / Edit / Drop, a reply box that names who answers), a held idea's draft, or the Chat
- *  (the person's question and the messages tied to no idea; the box under the list writes to it). `n` is the idea's
- *  number in the list. */
+/** The Ideas rail's second tab, an idea's thread: the idea, its replies with their stance pills, the held reply drafts
+ *  with Send / Edit / Drop, and a reply box that names who answers; or a held idea's draft. The rail draws its tab and
+ *  its close button. */
 function ThreadPanel({
     c,
     thread,
-    n,
     acts,
-    onClose,
     chats,
 }: {
     c: Council;
     thread: ChatThread;
-    n: number | undefined;
     acts: Actions;
-    onClose: () => void;
     chats: readonly SeatableAgent[];
 }) {
     const scroller = useRef<HTMLDivElement>(null);
@@ -1874,32 +2093,19 @@ function ThreadPanel({
         thread.items.map((item) => item.id)
     );
     return (
-        <aside
+        <div
+            id="council-rail-thread"
+            role="tabpanel"
             data-council-thread={thread.id}
             data-thread-kind={thread.kind}
             tabIndex={-1}
             aria-label={thread.kind === "chat" ? "Chat" : "Thread"}
-            className="flex h-full min-h-0 w-[420px] flex-none flex-col border-l border-edge-faint bg-surface outline-none"
+            className="flex min-h-0 flex-1 flex-col outline-none"
         >
-            <div className="flex h-[44px] flex-none items-center gap-[8px] border-b border-edge-faint pl-[18px] pr-3">
-                <span data-council-thread-heading className="min-w-0 flex-1 truncate text-[12.5px] text-muted">
-                    {threadHeading(thread, n)}
-                </span>
-                <button
-                    type="button"
-                    data-council-thread-close
-                    aria-label="Close the thread (Esc)"
-                    title="Close the thread (Esc)"
-                    onClick={onClose}
-                    className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <X size={15} strokeWidth={2} aria-hidden />
-                </button>
-            </div>
             <div
                 ref={scroller}
                 onScroll={onScroll}
-                className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[18px] py-4"
+                className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-6 pb-4 pt-[10px]"
             >
                 {thread.kind === "idea" && (
                     <>
@@ -1955,236 +2161,193 @@ function ThreadPanel({
                     />
                 </div>
             )}
-        </aside>
+        </div>
     );
 }
 
-// ---- the list ----
-
-// the counts of a row: Agrees (a tick), Has doubts (a ?) and Is against it (a cross); each word is the count's title
-// and its label, so the colour never stands alone
-function StanceCounts({ row }: { row: IdeaRow }) {
-    const parts = [
-        {
-            key: "agrees",
-            n: row.agrees,
-            word: "Agrees",
-            tone: "text-success",
-            mark: <Check size={11} strokeWidth={2.5} />,
-        },
-        {
-            key: "doubts",
-            n: row.doubts,
-            word: "Has doubts",
-            tone: "text-warning",
-            mark: <span className="text-[12px] font-bold leading-none">?</span>,
-        },
-        {
-            key: "against",
-            n: row.against,
-            word: "Is against it",
-            tone: "text-error",
-            mark: <X size={11} strokeWidth={2.5} />,
-        },
-    ];
-    return (
-        <span className="flex w-[132px] flex-none justify-end gap-[10px] text-[12px] tabular-nums text-secondary">
-            {parts.map((p) => (
-                <span
-                    key={p.key}
-                    data-council-stance={p.key}
-                    data-count={p.n}
-                    title={`${p.word}: ${p.n}`}
-                    aria-label={`${p.word}: ${p.n}`}
-                    className="flex items-center gap-[4px]"
-                >
-                    <span aria-hidden className={cn("flex items-center", p.tone)}>
-                        {p.mark}
-                    </span>
-                    <span aria-hidden>{p.n}</span>
-                </span>
-            ))}
-        </span>
-    );
-}
-
-const DraftBadge = () => (
-    <span
-        data-council-row-draft
-        title={DRAFT_WAIT}
-        className="flex h-[18px] flex-none items-center rounded-full bg-askingbg px-[7px] text-[10.5px] font-semibold text-warning-soft"
-    >
-        Draft
-    </span>
-);
-
-const ROW =
-    "flex w-full min-w-0 flex-none cursor-pointer items-center gap-3 rounded-[6px] border-0 px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent";
-
-function ChatRowButton({
-    row,
-    open,
-    focused,
-    onOpen,
+// one of the Ideas rail's tabs: a word underlined while its tab shows
+function RailTab({
+    on,
+    controls,
+    onClick,
+    children,
+    ...rest
 }: {
-    row: ChatRow;
-    open: boolean;
-    focused: boolean;
-    onOpen: () => void;
-}) {
+    on: boolean;
+    controls: string;
+    onClick: () => void;
+    children: ReactNode;
+} & Record<`data-${string}`, string>) {
     return (
         <button
             type="button"
-            data-council-row={CHAT_THREAD}
-            data-council-chat-row-open
-            data-council-thread-open={CHAT_THREAD}
-            data-replies={row.count}
-            data-open={open ? "true" : undefined}
-            data-focused={focused ? "true" : undefined}
-            aria-label={`Open the chat: ${row.label}${row.freshLabel === "" ? "" : `, ${row.freshLabel}`}`}
-            onClick={onOpen}
+            role="tab"
+            aria-selected={on}
+            aria-controls={controls}
+            onClick={onClick}
+            {...rest}
             className={cn(
-                ROW,
-                "h-[44px] rounded-[8px] border border-edge-mid bg-surface text-primary hover:bg-surface-hover",
-                (open || focused) && "border-edge-strong bg-surface-selected"
+                "min-w-0 cursor-pointer truncate border-0 border-b-2 bg-transparent px-0 text-[12.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                on ? "border-primary font-semibold text-primary" : "border-transparent text-muted hover:text-secondary"
             )}
         >
-            <MessageSquare size={15} strokeWidth={2} aria-hidden className="flex-none text-secondary" />
-            <span className="flex-none text-[13px] font-semibold">Chat</span>
-            {row.freshLabel !== "" && (
-                <span
-                    data-council-chat-new={row.fresh}
-                    className="flex h-[18px] flex-none items-center rounded-full bg-primary px-[7px] text-[10.5px] font-bold text-background"
-                >
-                    {row.freshLabel}
-                </span>
-            )}
-            {row.draft && <DraftBadge />}
-            <span data-council-chat-latest className="min-w-0 flex-1 truncate text-[12.5px] text-muted">
-                {row.latest}
-            </span>
-            <span data-council-chat-count className="flex-none text-[12px] tabular-nums text-muted">
-                {row.label}
-            </span>
+            {children}
         </button>
     );
 }
 
-function IdeaRowButton({
-    row,
-    open,
-    focused,
-    onOpen,
-}: {
-    row: IdeaRow;
-    open: boolean;
-    focused: boolean;
-    onOpen: (id: string) => void;
-}) {
-    const on = open || focused;
-    return (
-        <button
-            type="button"
-            data-council-row={row.id}
-            data-council-idea={row.id}
-            data-council-thread-open={row.id}
-            data-replies={row.replies}
-            data-item-label={row.label}
-            data-new={row.isNew ? "true" : undefined}
-            data-draft={row.draft ? "true" : undefined}
-            data-open={open ? "true" : undefined}
-            data-focused={focused ? "true" : undefined}
-            aria-label={`Idea ${row.n} by ${row.name}: ${row.title}`}
-            onClick={() => onOpen(row.id)}
-            className={cn(ROW, "h-[40px]", on ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover")}
-        >
-            <span className="w-[18px] flex-none text-right text-[12px] tabular-nums text-muted">{row.n}</span>
-            <CouncilAvatar tone={row.tone} name={row.name} initials={row.initials} title={row.name} />
-            <span
-                data-council-row-title
-                className={cn("min-w-0 flex-1 truncate text-[13px]", on ? "text-primary" : "text-secondary")}
-            >
-                {row.title}
-            </span>
-            {row.isNew && (
-                <span
-                    data-council-row-new
-                    className="flex h-[18px] flex-none items-center rounded-full border border-edge-strong px-[7px] text-[10.5px] font-semibold text-primary"
-                >
-                    New
-                </span>
-            )}
-            {row.draft && <DraftBadge />}
-            <StanceCounts row={row} />
-            <span data-council-row-replies className="w-[70px] flex-none text-right text-[12px] text-muted">
-                {row.repliesLabel}
-            </span>
-        </button>
-    );
-}
-
-// the list: the Chat row, `N ideas` with the counts' legend, a row per idea, and Ask next under them. It scrolls past
-// the first screen and stays where the reader left it.
-function IdeaList({
+/** The Ideas rail's first tab, shaped like the brainstorm's Decided so far: per idea its number and author, its title,
+ *  and a quiet line with its replies and the stances on it, in the list's fixed order; nothing ranked and no columns.
+ *  A click scrolls the channel to the idea and puts the j / k cursor on it; the idea's own replies button opens its
+ *  thread. */
+function IdeasList({
     c,
-    list,
-    openId,
-    focusedId,
-    onOpen,
-    asks,
-    boxRef,
+    ideas,
+    on,
+    onPick,
 }: {
     c: Council;
-    list: CouncilList;
-    openId: string | null;
-    focusedId: string | null;
-    onOpen: (id: string) => void;
-    asks: AskChip[];
-    boxRef: RefObject<HTMLDivElement | null>;
+    ideas: readonly IdeaRow[];
+    on: string | null; // the idea under the cursor or with its thread open
+    onPick: (row: IdeaRow) => void;
 }) {
-    const onScroll = useKeptScroll(boxRef, `list:${c.id}`);
     return (
         <div
-            ref={boxRef}
-            data-council-channel
-            data-council-list
-            tabIndex={-1}
-            role="group"
-            aria-label="Council discussion"
-            onScroll={onScroll}
-            // the gutter is kept with or without a scrollbar, so the column lines up with the composer's below it
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pb-2 pt-[18px] outline-none [scrollbar-gutter:stable]"
+            id="council-rail-ideas"
+            role="tabpanel"
+            aria-label="Ideas"
+            data-council-rail-ideas
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-[22px] pt-[4px] [scrollbar-gutter:stable]"
         >
-            <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-[4px]">
-                <ChatRowButton
-                    row={list.chat}
-                    open={openId === CHAT_THREAD}
-                    focused={focusedId === CHAT_THREAD}
-                    onOpen={() => onOpen(CHAT_THREAD)}
-                />
-                <div className="flex items-center gap-[10px] px-3 pb-[6px] pt-[14px] text-[11.5px] text-muted">
-                    <span data-council-list-count className="font-semibold text-secondary">
-                        {list.label}
-                    </span>
-                    <span className="flex-1" />
-                    <span>Agrees · Has doubts · Is against it</span>
-                </div>
-                {list.ideas.map((row) => (
-                    <IdeaRowButton
+            <span className="pb-[8px] text-[12px] text-muted">{railOrderLabel(c)}</span>
+            {ideas.length === 0 && (
+                <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
+                    Each idea lands here as a seat proposes it.
+                </p>
+            )}
+            {ideas.map((row) => {
+                const meta = railMeta(row);
+                return (
+                    <button
                         key={row.id}
-                        row={row}
-                        open={openId === row.id}
-                        focused={focusedId === row.id}
-                        onOpen={onOpen}
-                    />
-                ))}
-                {asks.length > 0 && (
-                    <div className="px-3 pt-3">
-                        <AskNext c={c} asks={asks} />
-                    </div>
+                        type="button"
+                        data-council-rail-idea={row.id}
+                        data-on={row.id === on ? "true" : undefined}
+                        onClick={() => onPick(row)}
+                        className={cn(
+                            "-mx-2 flex flex-none cursor-pointer flex-col gap-[4px] border-0 border-t border-border px-2 py-[11px] text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                            row.id === on ? "bg-surface-selected" : "bg-transparent"
+                        )}
+                    >
+                        <span className="text-[11px] text-muted">
+                            Idea {row.n} · {row.name}
+                            {row.isNew && <span className="text-accent-soft"> · new</span>}
+                        </span>
+                        <span className="text-[12.5px] leading-[1.45] text-secondary">{row.title}</span>
+                        {meta !== "" && (
+                            <span data-council-rail-meta className="text-[12px] text-muted">
+                                {meta}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/** The rail beside the channel (board A-decided-rail): Ideas on its first tab, and once an idea's replies are opened its
+ *  thread on a second tab (board A2-decided-rail-thread), so the channel never shares the pane with two columns. The
+ *  close button closes the thread; with none open, the rail folds (councilIdeasRailFoldedAtom). */
+function CouncilRail({
+    c,
+    ideas,
+    thread,
+    n,
+    tab,
+    on,
+    acts,
+    chats,
+    onTab,
+    onPick,
+    onClose,
+    onFold,
+}: {
+    c: Council;
+    ideas: readonly IdeaRow[];
+    thread: ChatThread | null;
+    n: number | undefined;
+    tab: "ideas" | "thread";
+    on: string | null;
+    acts: Actions;
+    chats: readonly SeatableAgent[];
+    onTab: (tab: "ideas" | "thread") => void;
+    onPick: (row: IdeaRow) => void;
+    onClose: () => void;
+    onFold: () => void;
+}) {
+    const shows = thread != null && tab === "thread" ? "thread" : "ideas";
+    return (
+        <aside
+            data-council-rail
+            data-rail-tab={shows}
+            aria-label="Ideas rail"
+            className="flex h-full min-h-0 w-[380px] flex-none flex-col border-l border-edge-faint bg-background"
+        >
+            <div
+                role="tablist"
+                aria-label="Ideas rail"
+                className="flex h-[44px] flex-none items-stretch gap-4 pl-6 pr-3"
+            >
+                <RailTab
+                    on={shows === "ideas"}
+                    controls="council-rail-ideas"
+                    onClick={() => onTab("ideas")}
+                    data-council-rail-tab="ideas"
+                >
+                    Ideas · {ideas.length}
+                </RailTab>
+                {thread != null && (
+                    <RailTab
+                        on={shows === "thread"}
+                        controls="council-rail-thread"
+                        onClick={() => onTab("thread")}
+                        data-council-rail-tab="thread"
+                    >
+                        {threadTab(thread, n)}
+                    </RailTab>
+                )}
+                <span className="flex-1" />
+                {thread != null ? (
+                    <button
+                        type="button"
+                        data-council-thread-close
+                        aria-label="Close the thread (Esc)"
+                        title="Close the thread (Esc)"
+                        onClick={onClose}
+                        className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center self-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <X size={15} strokeWidth={2} aria-hidden />
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        data-council-rail-fold
+                        aria-label="Fold the Ideas rail"
+                        title="Fold the Ideas rail"
+                        onClick={onFold}
+                        className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center self-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <ChevronsRight size={15} strokeWidth={2} aria-hidden />
+                    </button>
                 )}
             </div>
-        </div>
+            {shows === "thread" && thread != null ? (
+                <ThreadPanel c={c} thread={thread} acts={acts} chats={chats} />
+            ) : (
+                <IdeasList c={c} ideas={ideas} on={on} onPick={onPick} />
+            )}
+        </aside>
     );
 }
 
@@ -2263,57 +2426,307 @@ export function useKeptScroll(
     }, [ref, key]);
 }
 
-/** The council's discussion as a list of ideas with threads. `notes` is what the discussion draws above the list (the
- *  failed summary and its Retry); `onOpenFile` opens a cited file in the editor; `chats` are the live claude and pi
- *  chats the composers' `@` can add to the council (the cockpit's roster by the one seat rule, seated ones included:
- *  the picker lists the ones no seat holds). */
+// where a row of the channel sits in its scroller's content, as scrollTop counts
+function contentBox(row: Element, el: HTMLElement): RowBox {
+    const base = el.getBoundingClientRect().top - el.scrollTop;
+    const r = row.getBoundingClientRect();
+    return { top: r.top - base, bottom: r.bottom - base };
+}
+
+// the place a jump saved: the row the reader was on (kept by node, so rows that grew above it do not move the way back)
+type SavedPlace = ReadingPlace & { row: Element | null };
+
+/** The channel's jumps (councilscroll.ts): Top and Latest, and after either, Back to the message the reader was on.
+ *  `reset` drops the saved place (another council, another seat filter); `onKeptScroll` is useKeptScroll's, called at
+ *  once on a jump so a line that lands before the scroll event does not pull the reader back to the end. Returns the
+ *  pills to show, the scroller's onScroll, and the three jumps. */
+function useChannelJumps(
+    boxRef: RefObject<HTMLDivElement | null>,
+    rowsRef: RefObject<HTMLDivElement | null>,
+    reset: string,
+    count: number,
+    onKeptScroll: () => void
+) {
+    const saved = useRef<SavedPlace | null>(null);
+    const landing = useRef<Landing | null>(null);
+    // the glide in flight: its frame, and the scrollTop it last set (a scroll the reader makes moves off it, and stops it)
+    const flight = useRef<{ frame: number; at: number } | null>(null);
+    const [pills, setPills] = useState<JumpPills>(NO_PILLS);
+    const backTop = useCallback((el: HTMLElement): number | null => {
+        const p = saved.current;
+        if (p == null) {
+            return null;
+        }
+        return returnTop(p, p.row?.isConnected ? contentBox(p.row, el).top : null, el);
+    }, []);
+    const sync = useCallback(() => {
+        const el = boxRef.current;
+        // a hidden scroller has no height: its pills wait until it shows
+        if (el == null || el.clientHeight === 0) {
+            return;
+        }
+        const next = jumpPills(el, backTop(el));
+        // the reader came back to the saved place by hand: nothing left to go back to (a glide leaving it is not that)
+        if (saved.current != null && !next.back && flight.current == null) {
+            saved.current = null;
+            landing.current = null;
+        }
+        setPills((prev) =>
+            prev.top === next.top && prev.latest === next.latest && prev.back === next.back ? prev : next
+        );
+    }, [boxRef, backTop]);
+    const land = useCallback(() => {
+        if (flight.current != null) {
+            cancelAnimationFrame(flight.current.frame);
+            flight.current = null;
+        }
+    }, []);
+    /** Scrolls the channel to `target()` (read each frame, so Latest follows a line that lands meanwhile) with a short
+     *  ease-out glide, or at once under reduced motion; a scroll the reader makes stops it where it is. */
+    const glide = useCallback(
+        (el: HTMLElement, target: () => number) => {
+            land();
+            const from = el.scrollTop;
+            const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+            const ms = glideMs(target() - from);
+            if (reduce || Math.abs(target() - from) < 2) {
+                el.scrollTop = target();
+                onKeptScroll();
+                sync();
+                return;
+            }
+            const start = performance.now();
+            const step = (now: number) => {
+                const f = flight.current;
+                // the reader scrolled meanwhile: theirs wins
+                if (f == null || Math.abs(el.scrollTop - f.at) > 2) {
+                    flight.current = null;
+                    sync();
+                    return;
+                }
+                const t = (now - start) / ms;
+                el.scrollTop = glideAt(from, target(), t);
+                f.at = el.scrollTop;
+                if (t >= 1) {
+                    flight.current = null;
+                    onKeptScroll();
+                    sync();
+                    return;
+                }
+                f.frame = requestAnimationFrame(step);
+            };
+            flight.current = { frame: requestAnimationFrame(step), at: from };
+        },
+        [land, onKeptScroll, sync]
+    );
+    useEffect(() => land, [land]);
+    useEffect(() => {
+        land();
+        saved.current = null;
+        landing.current = null;
+        sync();
+    }, [reset, sync, land]);
+    // a new line can take the reader off the end without a scroll
+    useEffect(sync, [count, sync]);
+    const jump = useCallback(
+        (to: Landing) => {
+            const el = boxRef.current;
+            if (el == null) {
+                return;
+            }
+            // mid-glide the place the first jump saved still stands (Top then Latest at once goes back to it)
+            if (saved.current == null || (flight.current == null && !stillLanded(landing.current, el))) {
+                const rows = Array.from(rowsRef.current?.children ?? []);
+                const i = readingRow(
+                    rows.map((row) => contentBox(row, el)),
+                    el.scrollTop
+                );
+                saved.current = {
+                    row: i < 0 ? null : rows[i],
+                    offset: i < 0 ? 0 : contentBox(rows[i], el).top - el.scrollTop,
+                    top: el.scrollTop,
+                };
+            }
+            landing.current = to;
+            // the pill clicked may go away: the channel keeps focus, and with it j and k
+            el.focus({ preventScroll: true });
+            glide(el, () => (to === "top" ? 0 : Math.max(0, el.scrollHeight - el.clientHeight)));
+        },
+        [boxRef, rowsRef, glide]
+    );
+    const back = useCallback(() => {
+        const el = boxRef.current;
+        const p = saved.current;
+        if (el == null || p == null || backTop(el) == null) {
+            return;
+        }
+        saved.current = null;
+        landing.current = null;
+        el.focus({ preventScroll: true });
+        // the row is read again each frame, so lines landing above it meanwhile do not throw the glide off
+        glide(el, () => returnTop(p, p.row?.isConnected ? contentBox(p.row, el).top : null, el));
+    }, [boxRef, backTop, glide]);
+    const onScroll = useCallback(() => {
+        onKeptScroll();
+        sync();
+    }, [onKeptScroll, sync]);
+    return { pills, onScroll, toTop: () => jump("top"), toLatest: () => jump("latest"), back };
+}
+
+function JumpPill({
+    show,
+    jump,
+    label,
+    onClick,
+    children,
+}: {
+    show: boolean;
+    jump: string;
+    label: string;
+    onClick: () => void;
+    children: ReactNode;
+}) {
+    return (
+        <PopoverReveal open={show} origin="bottom right" className="pointer-events-auto">
+            <button
+                type="button"
+                data-council-jump={jump}
+                title={label}
+                aria-label={label}
+                onClick={onClick}
+                className="flex size-[28px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-[14px] leading-none text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                <span aria-hidden>{children}</span>
+            </button>
+        </PopoverReveal>
+    );
+}
+
+// the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it; Top,
+// Back and Latest float in its bottom right corner
+function Channel({
+    children,
+    councilId,
+    view,
+    count,
+    sent,
+    boxRef,
+}: {
+    children: ReactNode;
+    councilId: string;
+    view: string;
+    count: number;
+    sent: number; // the person's own posts in it (councilscroll.ownPosts)
+    boxRef: RefObject<HTMLDivElement | null>;
+}) {
+    const rowsRef = useRef<HTMLDivElement>(null);
+    const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count, sent });
+    const jumps = useChannelJumps(boxRef, rowsRef, `${councilId}:${view}`, count, onKeptScroll);
+    return (
+        <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+                ref={boxRef}
+                data-council-channel
+                tabIndex={0}
+                role="log"
+                aria-label="Council channel"
+                onScroll={jumps.onScroll}
+                // the gutter is kept with or without a scrollbar, so the column lines up with the composer's below it
+                className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none [scrollbar-gutter:stable] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
+            >
+                <div ref={rowsRef} className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">
+                    {children}
+                </div>
+            </div>
+            <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
+                <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
+                    ↑
+                </JumpPill>
+                <JumpPill
+                    show={jumps.pills.back}
+                    jump="back"
+                    label="Back to the message you were reading"
+                    onClick={jumps.back}
+                >
+                    ↩
+                </JumpPill>
+                <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
+                    ↓
+                </JumpPill>
+            </div>
+        </div>
+    );
+}
+
+/** The council's discussion as a channel with threads. `notes` is what the discussion draws above the channel (the failed
+ *  summary and its Retry); `onOpenTerminal` takes an agent's tab id; `chats` are the live claude and pi chats the
+ *  composers' `@` can add to the council (the cockpit's roster by the one seat rule, seated ones included: the picker
+ *  lists the ones no seat holds). */
 export function CouncilChat({
     c,
     acts,
     chats,
     notes,
+    onOpenTerminal,
     onOpenFile,
 }: {
     c: Council;
     acts: Actions;
     chats: readonly SeatableAgent[];
     notes?: ReactNode;
+    onOpenTerminal: (tab: string) => void;
     onOpenFile?: (path: string, line?: number) => void;
 }) {
     const [openId, setOpenId] = useAtom(councilOpenProposalAtom(c.id));
     const [sources, setSources] = useAtom(councilSourcesAtom(c.id));
     const [focusedId, setFocusedId] = useState<string | null>(null);
-    const listBox = useRef<HTMLDivElement>(null);
+    const channel = useRef<HTMLDivElement>(null);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;
     const sourcesOpen = !threadOpen && sources != null;
-    // a thread that is gone (the id of another council, a dropped idea) closes the panel
+    // an idea that is gone (the id of another council, a dropped idea) closes the panel
     useEffect(() => {
         if (openId != null && !threadOpen) {
             setOpenId(null);
         }
     }, [openId, threadOpen, setOpenId]);
-    // a thread opened another way (Enter on a row, the Summary's link) takes the right of the list from the sources
+    // a thread opened another way (Enter on an idea, the Summary's link) takes the right of the chat from the sources
     useEffect(() => {
         if (threadOpen && sources != null) {
             setSources(null);
         }
     }, [threadOpen, sources, setSources]);
 
-    // one seat's ideas only, while the Seats chip (or the Summary's column) picks one; a seat no longer on the panel
-    // shows everyone
+    // one seat's messages only, when the Summary's column asked for them (a seat no longer on the panel shows everyone)
     const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
-    // New is measured against the time the person last left this council (councilopened.ts)
+    const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    // the rail's rows: New is measured against the time the person last left this council (councilopened.ts)
     const since = openedAt(useAtomValue(councilOpenedAtom), c.id);
     const list = useMemo(() => councilList(c, since, onlyId ?? undefined), [c, since, onlyId]);
     // an idea's number is the same whatever the filter: read from the whole list
     const numbers = useMemo(() => new Map(councilList(c, 0).ideas.map((r) => [r.id, r.n])), [c]);
+    const [folded, setFolded] = useAtom(councilIdeasRailFoldedAtom);
+    const [railTab, setRailTab] = useState<"ideas" | "thread">("thread");
+    // a thread opened any way (its replies button, Enter on the cursor, the Summary's link) shows on the rail's second tab
+    useEffect(() => {
+        if (openId != null) {
+            setRailTab("thread");
+        }
+    }, [openId]);
+    const railShown = !folded || threadOpen;
+    // the person's newest post's Sent / Seen, and the typing bubbles held a moment after it (councilseen.ts)
+    const send = useSendState(all);
+    const items = useMemo(() => shownItems(all, send.holdTyping), [all, send.holdTyping]);
     // Ask next stays while the person types: a click replaces what is in the box
     const asks = isFollowUp(c) ? askChips(c) : [];
     const seats = useMemo(() => seatChips(c), [c]);
     const onlySeat = onlyId == null ? null : (seats.find((chip) => chip.id === onlyId) ?? null);
-    const order = useMemo(() => listNavOrder(list), [list]);
+    const order = useMemo(() => ideaOrder(items), [items]);
+    const entering = useEntering(
+        `${c.id}:${onlyId ?? ""}`,
+        items.map((item) => item.id)
+    );
     const open = useCallback(
         (id: string) => {
             setOpenId(id);
@@ -2321,6 +2734,12 @@ export function CouncilChat({
         },
         [setOpenId]
     );
+    // a rail row brings its idea, or a held idea's draft, to the top of the channel under the cursor
+    const pick = useCallback((row: IdeaRow) => {
+        setFocusedId(row.id);
+        const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
+        channel.current?.querySelector(at)?.scrollIntoView?.({ block: "start" });
+    }, []);
     const closeSources = useCallback(() => closeCouncilSources(c.id), [c.id]);
     // Escape closes the sources first, back to the thread they were opened from, then the thread
     const close = useCallback(
@@ -2334,22 +2753,19 @@ export function CouncilChat({
     useCouncilChatNav(nav);
     const bindings = useMemo(buildCouncilBindings, []);
     useKeybindings(bindings);
-    // the cursor stays in view as j and k move it, and takes the focus so Enter opens its row
+    // the cursor stays in view as j and k move it
     useEffect(() => {
-        if (focusedId == null) {
-            return;
-        }
-        const row = listBox.current?.querySelector<HTMLElement>(`[data-council-row="${focusedId}"]`);
-        row?.scrollIntoView?.({ block: "nearest" });
-        if (listBox.current?.contains(document.activeElement)) {
-            row?.focus({ preventScroll: true });
+        if (focusedId != null) {
+            channel.current
+                ?.querySelector(`[data-council-idea="${focusedId}"]`)
+                ?.scrollIntoView?.({ block: "nearest" });
         }
     }, [focusedId]);
 
+    const coordinators = new Set(c.experts.filter((e) => e.coordinator).map((e) => e.id));
     // two or more failed seats retry together (Retry all), each on the model picked beside it; the picks belong to
     // this council, so another one opened here starts from its seats' own models
     const retryAll = offersRetryAll(c);
-    const failures = retryAll ? [] : failureLines(c);
     const [pickState, setPickState] = useState<{ id: string; picks: Record<string, string> }>({ id: c.id, picks: {} });
     const picks = pickState.id === c.id ? pickState.picks : {};
     const setPick = (seat: string, model: string | undefined) =>
@@ -2364,9 +2780,21 @@ export function CouncilChat({
         });
     return (
         <div className="flex min-h-0 flex-1">
-            <div data-council-main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div data-council-main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                {!railShown && !sourcesOpen && (
+                    <button
+                        type="button"
+                        data-council-rail-unfold
+                        title="Show the Ideas rail"
+                        onClick={() => setFolded(false)}
+                        className="absolute right-6 top-3 z-20 flex h-[28px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-muted outline-none hover:border-edge-strong hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <ChevronsLeft size={13} strokeWidth={2} aria-hidden />
+                        Ideas · {list.ideas.length}
+                    </button>
+                )}
                 {onlySeat != null && (
-                    <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-7 py-2 text-[13px] text-muted">
+                    <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted">
                         <span role="status" data-council-only={onlySeat.id}>
                             {onlyLine(onlySeat)}
                         </span>
@@ -2383,7 +2811,7 @@ export function CouncilChat({
                 {retryAll && (
                     <div
                         data-council-retry-all-bar
-                        className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge-faint px-7 py-2 text-[13px] text-muted"
+                        className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted"
                     >
                         <span>{retryAllSeats(c).length} seats failed</span>
                         {retryAllSeats(c).map((e) => (
@@ -2419,26 +2847,62 @@ export function CouncilChat({
                         </button>
                     </div>
                 )}
-                {failures.length > 0 && (
-                    <div className="flex flex-none flex-col border-b border-edge-faint px-[18px] py-1">
-                        {failures.map((f) => (
-                            <FailedLine key={f.id} c={c} item={f} acts={acts} />
-                        ))}
-                    </div>
-                )}
-                <div className="flex-none px-7 pt-3 empty:hidden">{notes}</div>
-                <IdeaList
-                    c={c}
-                    list={list}
-                    openId={threadOpen ? openId : null}
-                    focusedId={focusedId}
-                    onOpen={open}
-                    asks={asks}
-                    boxRef={listBox}
-                />
-                {/* the list's column: its px-7, its scrollbar gutter on the right, its 1000px centred */}
-                <div className="flex-none pb-[18px] pl-7 pr-[38px] pt-3">
-                    <div className="mx-auto w-full max-w-[1000px]">
+                {notes}
+                <Channel
+                    boxRef={channel}
+                    councilId={c.id}
+                    view={onlyId ?? ""}
+                    count={items.length + (asks.length > 0 ? 1 : 0)}
+                    sent={ownPosts(items)}
+                >
+                    {items.map((item) => {
+                        switch (item.kind) {
+                            case "question":
+                                return <QuestionMessage key={item.id} item={item} />;
+                            case "divider":
+                                return <Divider key={item.id} text={item.text} round={item.round} />;
+                            case "idea":
+                                return (
+                                    <IdeaMessage
+                                        key={item.id}
+                                        councilId={c.id}
+                                        item={item}
+                                        acts={acts}
+                                        open={threadOpen && item.id === openId}
+                                        focused={item.id === focusedId}
+                                        onOpen={open}
+                                    />
+                                );
+                            case "draft":
+                                return <DraftCard key={item.id} c={c} item={item} acts={acts} />;
+                            case "reply":
+                                return (
+                                    <ReplyMessage
+                                        key={item.id}
+                                        councilId={c.id}
+                                        item={item}
+                                        acts={acts}
+                                        onOpenIdea={open}
+                                        rise={item.mine && entering.has(item.id)}
+                                        status={send.status?.postId === item.id ? send.status : undefined}
+                                    />
+                                );
+                            case "skip":
+                                return <SkippedLine key={item.id} item={item} onOpenTerminal={onOpenTerminal} />;
+                            case "failure":
+                                // the coordinator's failure has the Summary failed panel, in `notes`
+                                return coordinators.has(item.author) ? null : (
+                                    <FailedLine key={item.id} c={c} item={item} acts={acts} />
+                                );
+                            case "typing":
+                                return <TypingLine key={item.id} item={item} />;
+                        }
+                    })}
+                    {asks.length > 0 && <AskNext c={c} asks={asks} />}
+                </Channel>
+                {/* the channel's column: its px-6, its 10px scrollbar gutter on the right, its 860px centred */}
+                <div className="flex-none pb-4 pl-6 pr-[34px] pt-[10px]">
+                    <div className="mx-auto w-full max-w-[860px]">
                         <span id="council-channel-label" className="sr-only">
                             Message the council
                         </span>
@@ -2449,16 +2913,16 @@ export function CouncilChat({
                             placeholder="Message everyone · @ to ask one seat · paste an image · @ for a file"
                             sendLabel="Send"
                             labelledBy="council-channel-label"
-                            returnTo={() => listBox.current}
+                            returnTo={() => channel.current}
                             chats={chats}
                         />
                     </div>
                 </div>
             </div>
-            {/* the right panel slides in from its edge and back out (sheetPanel); the thread and the Sources it opens
-                take each other's place in it without moving */}
+            {/* the right column slides in from its edge and back out (sheetPanel) as the rail folds and unfolds; the
+                Sources a citation opens take the rail's place in it without moving */}
             <AnimatePresence initial={false}>
-                {thread != null || sources != null ? (
+                {sourcesOpen || railShown ? (
                     <motion.div
                         key="panel"
                         variants={sheetPanel}
@@ -2467,18 +2931,24 @@ export function CouncilChat({
                         exit="exit"
                         className="flex min-h-0 flex-none"
                     >
-                        {thread != null ? (
-                            <ThreadPanel
-                                c={c}
-                                thread={thread}
-                                n={numbers.get(thread.id)}
-                                acts={acts}
-                                onClose={close}
-                                chats={chats}
-                            />
-                        ) : sources != null ? (
+                        {sourcesOpen ? (
                             <CouncilSourcesPanel c={c} view={sources} onClose={closeSources} onOpenFile={onOpenFile} />
-                        ) : null}
+                        ) : (
+                            <CouncilRail
+                                c={c}
+                                ideas={list.ideas}
+                                thread={thread}
+                                n={thread == null ? undefined : numbers.get(thread.id)}
+                                tab={railTab}
+                                on={threadOpen ? openId : focusedId}
+                                acts={acts}
+                                chats={chats}
+                                onTab={setRailTab}
+                                onPick={pick}
+                                onClose={() => setOpenId(null)}
+                                onFold={() => setFolded(true)}
+                            />
+                        )}
                     </motion.div>
                 ) : null}
             </AnimatePresence>
