@@ -18,13 +18,14 @@ import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
-import { Check, ListChecks, RotateCcw, X } from "lucide-react";
+import { Check, ListChecks, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
 import { CouncilAvatar, CouncilChat } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
+import { CouncilCloseButton } from "./councilclose";
 import {
     avatarStackLabel,
     avatarTone,
@@ -52,8 +53,6 @@ import {
 } from "./councildiscussionmodel";
 import {
     callSegments,
-    canRemoveCouncil,
-    isClosedCouncil,
     canSummarize,
     estimateLabel,
     expertStat,
@@ -68,7 +67,6 @@ import { CouncilSeats } from "./councilseats";
 import { seatableAgents } from "./councilsetupmodel";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
-    closeCouncil,
     continueCouncil,
     councilSelAtom,
     retryExpert,
@@ -366,26 +364,7 @@ function Header({
                             {acts.busy.has("stop") ? "Stopping…" : "Stop"}
                         </button>
                     )}
-                    {canRemoveCouncil(c) && (
-                        <button
-                            type="button"
-                            data-council-close={isClosedCouncil(c) ? "reopen" : "close"}
-                            title={
-                                isClosedCouncil(c)
-                                    ? "Put this council back in the tree"
-                                    : "Take this council off the tree; Councils still lists it, nothing is deleted"
-                            }
-                            aria-label={isClosedCouncil(c) ? "Reopen council" : "Close council"}
-                            onClick={() => void closeCouncil(c.id, !isClosedCouncil(c))}
-                            className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[6px] border border-transparent bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            {isClosedCouncil(c) ? (
-                                <RotateCcw size={14} strokeWidth={2} aria-hidden />
-                            ) : (
-                                <X size={16} strokeWidth={2} aria-hidden />
-                            )}
-                        </button>
-                    )}
+                    <CouncilCloseButton c={c} />
                 </div>
             </div>
             {(showBar || (c.state === "running" && c.round <= 1) || acts.error != null) && (

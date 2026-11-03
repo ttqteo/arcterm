@@ -464,11 +464,10 @@ export const councilTree = {
         const listed = await until(`!!document.querySelector(${historyRow})?.hasAttribute("data-council-history-closed")`);
         await h.shot("cdp-shots/council-history-closed.png");
         await h.ev(`document.querySelector(${historyRow})?.click()`);
-        // a council with a summary opens on its Report unless it was left on the Discussion, and Reopen sits in the
-        // Discussion's header alone
-        await until(`!!document.querySelector('[data-council-tab="discussion"]')`);
-        await h.ev(`document.querySelector('[data-council-tab="discussion"]')?.click()`);
+        // it lands on its Report (it has a summary) or on the Discussion, whichever it was left on: both offer Reopen
         const reopen = await until(`!!document.querySelector('[data-council-close="reopen"]')`);
+        const landed = await h.ev(`document.querySelector("[data-council-tabbar]") ? "report" : "discussion"`);
+        await h.shot("cdp-shots/council-history-reopen.png");
         // back to the terminal for the steps that follow
         await pressEscape(h);
         rec(
@@ -483,7 +482,7 @@ export const councilTree = {
                 !fold &&
                 listed &&
                 reopen,
-            JSON.stringify({ doneClose, closes, confirmed, deleted, gone, fold, listed, reopen })
+            JSON.stringify({ doneClose, closes, confirmed, deleted, gone, fold, listed, reopen, landed })
         );
 
         // ---- the room's agents (steps 12 on) ----
