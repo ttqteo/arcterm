@@ -31,7 +31,17 @@ func routedCouncil(id string, state CouncilState) *Council {
 
 func TestAskTooAddsSeatAndStartsFollowup(t *testing.T) {
 	h := newHarness(t)
-	h.save(routedCouncil("c1", StateDone))
+	// r6, the message the router has not chosen a seat for, is there for TestAskTooRefuses: the follow-up this
+	// starts would route it and have its seat answer it, an answer call this test does not count on
+	c := routedCouncil("c1", StateDone)
+	kept := c.Replies[:0]
+	for _, rp := range c.Replies {
+		if rp.Id != "r6" {
+			kept = append(kept, rp)
+		}
+	}
+	c.Replies = kept
+	h.save(c)
 
 	saved, err := h.r.AskToo("c1", "r3", "ram")
 	if err != nil {
@@ -51,7 +61,11 @@ func TestAskTooAddsSeatAndStartsFollowup(t *testing.T) {
 	}
 	ans := h.f.calls("ans")
 	if len(ans) != 1 || ans[0].Expert.Id != "ram" {
-		t.Fatalf("answer calls = %d (first to %s), want one, to ram", len(ans), ans[0].Expert.Id)
+		var first string
+		if len(ans) > 0 {
+			first = ans[0].Expert.Id
+		}
+		t.Fatalf("answer calls = %d (first to %q), want one, to ram", len(ans), first)
 	}
 	mustContain(t, "ram's prompt", ans[0].Prompt, "- UX: Answer from ux", othersAnsweredRule)
 
@@ -69,8 +83,8 @@ func TestAskTooAddsSeatAndStartsFollowup(t *testing.T) {
 	if !ramAnswered {
 		t.Errorf("ram's answer to r3 is missing: %+v", repliesBy(got, "ram"))
 	}
-	if n := len(h.f.calls("?")); n != 0 {
-		t.Errorf("%d calls that were no answer (a router call?), want none: Ask seat too does not route again", n)
+	if n := len(h.f.calls("route")) + len(h.f.calls("?")); n != 0 {
+		t.Errorf("%d router or unknown calls, want none: Ask seat too does not route again", n)
 	}
 }
 
