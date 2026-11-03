@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -798,6 +802,176 @@ func TestVerifyTailIsBounded(t *testing.T) {
 	got := verifyTail("first\n" + long)
 	if len(got) > 32<<10 || !strings.HasSuffix(got, "xxx") || strings.Contains(got, "first") {
 		t.Errorf("a tail of one huge line is %d bytes, want it bounded and keeping the end", len(got))
+	}
+}
+
+// ---- the real launcher ----
+//
+// Every RunVerifies test above swaps in a fake launcher, so these call realVerifyCmd itself: on a tiny Go module in a temp
+// dir (a go.mod and one test file), with `go test`, as a council's verify command runs it.
+
+// verifyModule writes a one-file Go module into a temp dir and returns it. The child `go test` gets an environment that
+// needs no C compiler and no workspace, whatever the machine running this test has set.
+func verifyModule(t *testing.T, testSource string) string {
+	t.Helper()
+	for k, v := range map[string]string{"CGO_ENABLED": "0", "GOFLAGS": "", "GOWORK": "off"} {
+		t.Setenv(k, v)
+	}
+	dir := t.TempDir()
+	vWriteFile(t, filepath.Join(dir, "go.mod"), "module verifytmp\n\ngo 1.21\n")
+	vWriteFile(t, filepath.Join(dir, "x_test.go"), "package verifytmp\n\n"+testSource)
+	return dir
+}
+
+func verifyGoTest(name string, extra ...string) []string {
+	return append([]string{"go", "test", ".", "-run", "^" + name + "$", "-count=1"}, extra...)
+}
+
+func TestRealVerifyCmdPassingTestExitsZero(t *testing.T) {
+	dir := verifyModule(t, `import "testing"
+
+func TestPasses(t *testing.T) {}
+`)
+	out, exit, err := realVerifyCmd(context.Background(), dir, verifyGoTest("TestPasses"))
+	if err != nil || exit != 0 {
+		t.Fatalf("a passing test = exit %d, err %v, want 0 and no error\n%s", exit, err, out)
+	}
+	if !strings.Contains(out, "ok") {
+		t.Errorf("output of a passing test = %q, want go test's ok line", out)
+	}
+}
+
+func TestRealVerifyCmdFailingTestExitsNonZeroWithItsFailureLine(t *testing.T) {
+	dir := verifyModule(t, `import "testing"
+
+func TestFails(t *testing.T) { t.Fatal("the-failure-line") }
+`)
+	out, exit, err := realVerifyCmd(context.Background(), dir, verifyGoTest("TestFails"))
+	if err != nil {
+		t.Fatalf("a failing test is a result, not an error: err = %v\n%s", err, out)
+	}
+	if exit == 0 {
+		t.Errorf("a failing test = exit 0, want non-zero\n%s", out)
+	}
+	if !strings.Contains(out, "the-failure-line") || !strings.Contains(out, "FAIL") {
+		t.Errorf("output of a failing test = %q, want its failure line and FAIL", out)
+	}
+}
+
+func TestRealVerifyCmdKeepsOnlyTheEndOfLongOutput(t *testing.T) {
+	// about 1.1 MB, over four times verifyKeepBytes; -v so that a passing test's output is printed
+	dir := verifyModule(t, `import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func TestLong(t *testing.T) {
+	fmt.Println("FIRST-LINE-MARKER")
+	fmt.Print(strings.Repeat("filler filler filler filler filler filler filler filler\n", 20000))
+	fmt.Println("LAST-LINE-MARKER")
+}
+`)
+	out, exit, err := realVerifyCmd(context.Background(), dir, verifyGoTest("TestLong", "-v"))
+	if err != nil || exit != 0 {
+		t.Fatalf("a long-output test = exit %d, err %v, want 0 and no error\n%.2000s", exit, err, out)
+	}
+	if len(out) > verifyKeepBytes || len(out) < verifyKeepBytes/2 {
+		t.Errorf("output is %d bytes, want the last ~%d (verifyKeepBytes)", len(out), verifyKeepBytes)
+	}
+	if !strings.Contains(out, "LAST-LINE-MARKER") {
+		t.Errorf("output lost its last line; it ends %q", out[max(0, len(out)-200):])
+	}
+	if strings.Contains(out, "FIRST-LINE-MARKER") {
+		t.Errorf("output still holds the first line, want only the end")
+	}
+}
+
+// verifyProcessAlive reports whether a process of that pid is still running.
+func verifyProcessAlive(t *testing.T, pid int) bool {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid), "/NH", "/FO", "CSV").Output()
+		if err != nil {
+			t.Fatalf("tasklist: %v", err)
+		}
+		return strings.Contains(string(out), fmt.Sprintf(`,"%d",`, pid))
+	}
+	p, err := os.FindProcess(pid)
+	return err == nil && p.Signal(syscall.Signal(0)) == nil
+}
+
+func TestRealVerifyCmdEndedContextKillsTheWholeTree(t *testing.T) {
+	// The test binary is a grandchild of realVerifyCmd's launcher (go test), and it sleeps a minute: killing only the
+	// launcher leaves it running. It writes its pid before it sleeps, so the context ends once the test is asleep, not on
+	// a clock that a slow compile and link could pass first.
+	dir := verifyModule(t, `import (
+	"os"
+	"strconv"
+	"testing"
+	"time"
+)
+
+func TestSleeps(t *testing.T) {
+	if err := os.WriteFile("pid.tmp", []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename("pid.tmp", "pid.txt"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Minute)
+}
+`)
+	// the backstop only ends a test that never starts
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	type asleep struct {
+		pid int
+		at  time.Time
+	}
+	asleepc := make(chan asleep, 1)
+	go func() {
+		for ctx.Err() == nil {
+			if b, err := os.ReadFile(filepath.Join(dir, "pid.txt")); err == nil {
+				if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+					asleepc <- asleep{pid, time.Now()}
+					cancel()
+					return
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	out, _, err := realVerifyCmd(ctx, dir, verifyGoTest("TestSleeps"))
+	returned := time.Now()
+
+	var s asleep
+	select {
+	case s = <-asleepc:
+	default:
+		t.Fatalf("the sleeping test never started (err %v)\n%.2000s", err, out)
+	}
+	t.Cleanup(func() {
+		if verifyProcessAlive(t, s.pid) {
+			if p, err := os.FindProcess(s.pid); err == nil {
+				_ = p.Kill()
+			}
+		}
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled (ctx.Err())", err)
+	}
+	// the launcher's WaitDelay is 5 s: a return that waited it out means a process still held the output
+	if took := returned.Sub(s.at); took > 4*time.Second {
+		t.Errorf("returned %v after the context ended, want within a few seconds", took.Round(time.Millisecond))
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for verifyProcessAlive(t, s.pid) && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if verifyProcessAlive(t, s.pid) {
+		t.Errorf("the test binary (pid %d) is still running after the context ended, want the whole tree killed", s.pid)
 	}
 }
 

@@ -26,7 +26,7 @@ import (
 )
 
 // The groups a start or an estimate takes when --group is left out: the UI feature panel for a review and the Product
-// ideas panel for a brainstorm; with --agent, the Skeptic's panel for a review and the Contrarian's for a brainstorm.
+// ideas panel for a brainstorm; with --agent, the Bug hunter's panel for a review and the Other side's for a brainstorm.
 // All four ship with arcterm, and a councilroles.json group of the same id replaces rather than removes them.
 const (
 	councilDefaultGroup    = "ui-feature"
@@ -68,8 +68,8 @@ func councilModeFlag(word string) (string, error) {
 }
 
 // councilGroupFor is the group of a start or an estimate: the one --group names, else the group that fits the mode,
-// and with chats seated (--agent) the one that sits beside them: a Skeptic and a coordinator for a review, a
-// Contrarian and the Facilitator for a brainstorm.
+// and with chats seated (--agent) the one that sits beside them: a Bug hunter and the Summarizer for a review, the
+// Other side and the Host for a brainstorm.
 func councilGroupFor(group, mode string, withAgents bool) string {
 	switch {
 	case group != "":
@@ -349,7 +349,7 @@ func councilPanel(roles *wshrpc.CouncilRolesRtnData, groupId string) (council.Co
 }
 
 // councilModelsText names the experts by model: those on one model share a clause, the clauses in the order their
-// model first appears among the experts, the names in expert order: "UX, RAM, New user, Skeptic on sonnet, Coordinator on opus".
+// model first appears among the experts, the names in expert order: "Ease of use, Memory watcher, New user, Bug hunter on sonnet, Summarizer on opus".
 func councilModelsText(experts []council.CouncilExpert) string {
 	var models []string
 	names := map[string][]string{}
@@ -415,7 +415,7 @@ func councilChatsText(n int) string {
 }
 
 // councilSeatsText names who sits in a started council, counted from the council wavesrv returned: "4 experts" when no
-// chat is seated, else the chats and the role experts beside them, "2 chats + Skeptic".
+// chat is seated, else the chats and the role experts beside them, "2 chats + Bug hunter".
 func councilSeatsText(experts []council.CouncilExpert) string {
 	chats := 0
 	var names []string
@@ -604,8 +604,8 @@ the ones the experts would read, whose size is part of the estimate. With no --g
 product-ideas group and review (the default) the ui-feature one.
 
 --agent <tab id> (repeatable) prices a live chat as a seat: its current context times the rounds. --agent self is the
-tab this command runs in. With --agent and no --group, review prices the agents group (a Skeptic and the coordinator)
-and brainstorm the agents-ideas group (a Contrarian and the Facilitator). --expert <role id> (repeatable) adds that role
+tab this command runs in. With --agent and no --group, review prices the agents group (a Bug hunter and the Summarizer)
+and brainstorm the agents-ideas group (the Other side and the Host). --expert <role id> (repeatable) adds that role
 from the role library before the coordinator. --model prices the seats on other models, as "wsh council start" takes it.
 A tab id that is not a live claude or pi tab fails, listing the live ones.`,
 	PreRunE: preRunSetupRpcClient,
@@ -643,8 +643,8 @@ named: it speaks from its own context, in its own tab, not from a summary writte
 chat running this command, and only when the person named it ("this chat"); a council with no chat named stays
 expert-only. A tab named twice sits once. An id that is not a live claude or pi tab fails before the Token burn gate,
 listing the live tabs: ask the person which they meant, and never start without a seat they named. With --agent and no
---group, review takes the agents group (a Skeptic beside the chats, then the coordinator) and brainstorm the
-agents-ideas group (a Contrarian, then the Facilitator); an explicit --group adds its roles beside the chats.
+--group, review takes the agents group (a Bug hunter beside the chats, then the Summarizer) and brainstorm the
+agents-ideas group (the Other side, then the Host); an explicit --group adds its roles beside the chats.
 --expert <role id> (repeatable) adds one more role from the role library before the coordinator, when the question
 needs a view no seat has; an unknown or repeated id, or a coordinator role, fails, listing the ids it takes.
 --model sets the role seats' models for this council only, as Setup's model menus do: --model sonnet puts every role
