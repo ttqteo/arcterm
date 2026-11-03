@@ -47,6 +47,7 @@ import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import {
     arrangeSetupFixture,
@@ -59749,6 +59750,7 @@ export const SCENARIOS = [
     agentUploads,
     agentRailTabs,
     ...railTranscriptScenarios(RT_KIT),
+    ...monitorTasksScenarios(RT_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,
