@@ -856,7 +856,9 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
         while (list != null && list.querySelector(at) == null) {
             list = list.parentElement;
         }
-        list?.querySelector(at)?.scrollIntoView?.({ block: "center" });
+        // a glide up the channel, so the eye follows it back to the question; a jump with reduced motion
+        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        list?.querySelector(at)?.scrollIntoView?.({ block: "center", behavior: smooth ? "smooth" : "auto" });
     };
     return (
         <button
