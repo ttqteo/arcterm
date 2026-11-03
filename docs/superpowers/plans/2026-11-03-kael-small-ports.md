@@ -28,10 +28,9 @@ it from a screenshot; a hand-check line is only for what no scenario can show.
 ### Task 1: The Memory tab works through a backlog
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/memorymodel.ts`, `memorymodel.test.ts`, `memorystore.ts`, `setupmemory.tsx`,
-`setupsurface.tsx`, new `pathtail.tsx` (all under `frontend/app/view/agents/`), `frontend/app/store/keybindings/bindings.ts`,
-`frontend/app/store/keybindings/store.test.ts`, `docs/keyboard-shortcuts.md`, `scripts/cdp/scenarios.mjs` (the
-`setup-memory` scenario only, ~line 55190).
+**Files:** `frontend/app/view/agents/memorymodel.ts`, `frontend/app/view/agents/memorymodel.test.ts`, `frontend/app/view/agents/memorystore.ts`, `frontend/app/view/agents/setupmemory.tsx`, `frontend/app/view/agents/setupsurface.tsx`, `frontend/app/view/agents/pathtail.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/store/keybindings/store.test.ts`, `docs/keyboard-shortcuts.md`, `scripts/cdp/scenarios.mjs`
+
+`pathtail.tsx` is new. In `scripts/cdp/scenarios.mjs` edit only the `setup-memory` scenario (~line 55190).
 
 Commit `9fd916309`: Apply and Keep move to the next change still to review; j/k/a/x/u drive the table from the
 keyboard; each labelled split group gets a two-click Apply all that applies its open changes one at a time with
@@ -52,7 +51,9 @@ with a to-review project above a checked one drawn on one line; a long path trun
 ### Task 2: The Memory tab animates its state changes
 **Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/setupmemory.tsx`, `scripts/cdp/scenarios.mjs` (the `setup-memory` scenario only).
+**Files:** `frontend/app/view/agents/setupmemory.tsx`, `scripts/cdp/scenarios.mjs`
+
+In `scripts/cdp/scenarios.mjs` edit only the `setup-memory` scenario.
 
 Commit `d71af8f76`: the project pane and change detail fade in with `viewFade` when they switch what they show, the
 Check now result note and a row's status fade with `microFade`, and the meters ease their width with `widthTween`
@@ -66,10 +67,9 @@ and assert the result note carries `microFade`, and read a meter's computed `tra
 ### Task 3: Monaco draws the code font's ligatures
 **Depends on:** Task 2
 
-**Files:** `frontend/app/view/agents/diffoptions.ts`, `diffoptions.test.ts`, `filetab.tsx`, `filetabdiff.tsx` (under
-`frontend/app/view/agents/`), `frontend/app/view/code/codediffview.tsx`, `frontend/app/view/code/codesidepane.tsx`,
-`frontend/app/view/codeeditor/codeeditor.tsx`, `scripts/cdp/scenarios.mjs` (the `code-diff` scenario only, ~line
-11042). It depends on Task 2 only so the `scenarios.mjs` edits run one after another.
+**Files:** `frontend/app/view/agents/diffoptions.ts`, `frontend/app/view/agents/diffoptions.test.ts`, `frontend/app/view/agents/filetab.tsx`, `frontend/app/view/agents/filetabdiff.tsx`, `frontend/app/view/code/codediffview.tsx`, `frontend/app/view/code/codesidepane.tsx`, `frontend/app/view/codeeditor/codeeditor.tsx`, `scripts/cdp/scenarios.mjs`
+
+In `scripts/cdp/scenarios.mjs` edit only the `code-diff` scenario (~line 11042). The task depends on Task 2 only so the `scenarios.mjs` edits run one after another.
 
 Commit `7bb41e97d`: turn on `fontLigatures` wherever we create a Monaco editor or diff editor with the code font.
 Ours has more option sites than the fork's three: every site above that sets `fontFamily: "var(--font-mono)"`. Our
@@ -84,8 +84,9 @@ bundled code font has ligatures; if it has none, say so in the commit and still 
 ### Task 4: Monitor and background-task model
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/transcriptprojection.ts` and its test, new `frontend/app/view/agents/monitortasks.ts`
-and `monitortasks.test.ts`, `frontend/app/view/agents/subagentsstore.ts`.
+**Files:** `frontend/app/view/agents/transcriptprojection.ts`, `frontend/app/view/agents/transcriptprojection.test.ts`, `frontend/app/view/agents/monitortasks.ts`, `frontend/app/view/agents/monitortasks.test.ts`, `frontend/app/view/agents/subagentsstore.ts`
+
+`monitortasks.ts` and its test are new.
 
 The fork's monitor commits (`a06397716`, `f9a615b6a`) are deltas on ~14 earlier shell-task commits
 (`1909f225f..e6717e32d`) and will not cherry-pick: our tree has no `ShellTask`, `shelltasks.ts`, `shelltasksstore.ts`
@@ -106,7 +107,9 @@ passes with the fork's `shelltasks.test.ts` cases for kinds, labels and transcri
 ### Task 5: The Events and Output peek for a monitor
 **Depends on:** Task 4
 
-**Files:** new `frontend/app/view/agents/backgroundtaskpeek.tsx`.
+**Files:** `frontend/app/view/agents/backgroundtaskpeek.tsx`
+
+The file is new.
 
 Commit `b139c36e7` (the fork's `shelltaskpeek.tsx` at `kael/main`): a popover anchored to a task's tree row with an
 Events tab (a monitor's events) and an Output tab (the output tail, sticking to the bottom with
@@ -119,8 +122,9 @@ Events tab (a monitor's events) and an Output tab (the output tail, sticking to 
 ### Task 6: Monitor rows in the Agent tree
 **Depends on:** Task 4, Task 5
 
-**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/agenttreemodel.ts` and
-`agenttreemodel.test.ts` (only if the row list is derived there).
+**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/agenttreemodel.ts`, `frontend/app/view/agents/agenttreemodel.test.ts`
+
+Touch `agenttreemodel.ts` and its test only if the row list is derived there.
 
 Commit `a019e532d`: a row per running monitor and background shell under its agent in the project tree (our tree is
 `projectTree` in `agentsidebarmodel.ts`; the agent row reads `backgroundTasksByIdAtom` at `agenttree.tsx` ~line
@@ -134,9 +138,9 @@ views are shot by Task 7's scenario.
 ### Task 7: The `monitor-tasks` scenario
 **Depends on:** Task 3, Task 6
 
-**Files:** new `scripts/cdp/scenarios-monitor-tasks.mjs`; `scripts/cdp/scenarios.mjs` only to import it and spread it
-into the scenario list, as `scenarios-rail-transcript.mjs` is (~lines 50 and 59239). It depends on Task 3 so the
-`scenarios.mjs` edits run one after another.
+**Files:** `scripts/cdp/scenarios-monitor-tasks.mjs`, `scripts/cdp/scenarios.mjs`
+
+`scenarios-monitor-tasks.mjs` is new; edit `scripts/cdp/scenarios.mjs` only to import it and spread it into the scenario list, as `scenarios-rail-transcript.mjs` is (~lines 50 and 59239). The task depends on Task 3 so the `scenarios.mjs` edits run one after another.
 
 Commit `798335c28`: scenario `monitor-tasks` (keep the name), adapted to our tree and to a fixture agent whose
 transcript holds a Monitor and a background shell. Steps that shoot and assert: the monitor row and the shell row
@@ -149,7 +153,7 @@ unchanged).
 ### Task 8: What's new and the hand checks
 **Depends on:** Task 1, Task 2, Task 3, Task 7
 
-**Files:** `CHANGELOG.md`, `docs/hand-checks.md`.
+**Files:** `CHANGELOG.md`, `docs/hand-checks.md`
 
 One user-facing line per feature under `## Unreleased` in `CHANGELOG.md` (open the section if the top one is dated):
 monitors and background shells in the Agent tree with their peek, the Memory tab's backlog flow, its animations, and
