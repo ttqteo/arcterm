@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council's status chip keeps its word beside a long title: open a council with a long question on
+  Discussion and on Map in a narrow pane → the title ends in an ellipsis first and the chip still reads "Stopped" (or
+  its step) in full; it truncates only once the title is down to its 72px floor. Not tried in the app
+  (`councildiscussion.tsx`, `councilmap.tsx`: the title shrinks with weight 1000).
+
 - [ ] (arcterm) Deleting a just-closed session says how long to wait: after the next build, close an agent, then at
   once delete its session in History → the toast reads "…it was written to 20s ago (a closed agent writes its last
   lines as it exits), try again in 1m40s", and a delete after that wait goes through. Unit tests only
