@@ -28,18 +28,25 @@ const BenchDir = "council-bench"
 const CasesFile = "cases.json"
 
 // The variants. A variant is a way of running a case: solo is one agent (Phase 0's V0, the case's solo_group), council
-// is today's harness (V2, the case's group). A new variant is one more name in variantTokens and one more branch in
-// the run, nothing else.
+// is today's harness (V2, the case's group), team is a Claude Code agent team with the council's roles (V3). A new
+// variant is one more name in variantTokens and one more branch in the run, nothing else.
 const (
 	VariantSolo    = "solo"
 	VariantCouncil = "council"
+	VariantTeam    = "team"
 )
 
-// Phase 0's measured cost of one run of a case, in pkg/consult's token count: solo came to 0.54M, a council to 1.4M.
+// TeamPassTag marks the cases built for the pass that weighs the council against an agent team; the verdict reads only
+// the cases that carry it.
+const TeamPassTag = "team-bench-2026-11"
+
+// The cost of one run of a case, in pkg/consult's token count. The team's 4.5M is Phase 0b's measured mean (V3); solo and
+// council still hold Phase 0's older figures (0.54M and 1.4M), which 0b's means (2.3M and 8.8M) outgrew.
 // `wsh council estimate` reads low (a flat 0.3M for solo), so the plan prices from these.
 var variantTokens = map[string]int64{
 	VariantSolo:    550_000,
 	VariantCouncil: 1_400_000,
+	VariantTeam:    4_500_000,
 }
 
 // AllVariants are the variants a bench runs when none is named, in the order they run.
@@ -60,8 +67,10 @@ type Case struct {
 	SoloGroup string `json:"solo_group"` // the one-agent panel of the solo variant
 	Feature   string `json:"feature"`
 	Question  string `json:"question"`
-	Files     string `json:"files"` // comma-separated, as `wsh council start --files` takes them
-	Key       string `json:"key"`   // the key file's path
+	Files     string `json:"files"`             // comma-separated, as `wsh council start --files` takes them
+	Key       string `json:"key"`               // the key file's path
+	Retired   bool   `json:"retired,omitempty"` // set aside: a bare bench skips it, one that names it with Options.Cases runs it
+	Tag       string `json:"tag,omitempty"`     // names the pass the case was built for (TeamPassTag)
 
 	KeyLines []KeyLine `json:"-"`
 }

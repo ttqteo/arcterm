@@ -54,6 +54,8 @@ type CouncilBenchResult struct {
 	Tokens   int64   `json:"tokens"`
 	Minutes  float64 `json:"minutes"`
 	Messages int     `json:"messages"`
+
+	JudgeTokens int64 `json:"judgetokens,omitempty"` // the judge's call, apart from Tokens: the bench's cap counts both
 }
 
 // CouncilBenchRating is a "rating" line: the person's verdict on one real council's report.

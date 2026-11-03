@@ -51,6 +51,7 @@ type Verdict struct {
 	Matches map[string]int // key line id -> rank among the top items
 	Kept    map[string]int // Brainstorm: key line id -> rank among the wild ideas kept aside
 	Items   []ItemVerdict  // one per top item
+	Tokens  int64          // what the judge's call consumed, so a bench's spend counts it
 }
 
 // Recall is the key lines the top items matched.
@@ -90,7 +91,8 @@ func judgedItems(c Case, s *council.CouncilSummary) []council.CouncilDirection {
 }
 
 // Judge scores a done council's report against the case's key with one opus call and no tools. A call that fails, and a
-// reply that does not hold the verdict JSON, are errors: the run is then not scored, never scored as nothing found.
+// reply that does not hold the verdict JSON, are errors: the run is then not scored, never scored as nothing found. The
+// returned Verdict carries the call's Tokens even then, so the spend of a failed judging still counts.
 func Judge(ctx context.Context, c Case, report *council.Council) (Verdict, error) {
 	if report == nil || report.Summary == nil {
 		return Verdict{}, errors.New("the council has no summary to judge")
@@ -98,11 +100,14 @@ func Judge(ctx context.Context, c Case, report *council.Council) (Verdict, error
 	callCtx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
 	// no tools, and a folder of nobody's: the judge reads the prompt and nothing of the project
-	reply, _, err := runClaude(callCtx, os.TempDir(), judgePrompt(c, report), consult.CallOpts{Model: judgeModel}, nil)
+	reply, usage, err := runClaude(callCtx, os.TempDir(), judgePrompt(c, report), consult.CallOpts{Model: judgeModel}, nil)
+	tokens := int64(usage.TotalTokens)
 	if err != nil {
-		return Verdict{}, fmt.Errorf("the judge's call failed: %w", err)
+		return Verdict{Tokens: tokens}, fmt.Errorf("the judge's call failed: %w", err)
 	}
-	return parseVerdict(reply, c, report)
+	v, err := parseVerdict(reply, c, report)
+	v.Tokens = tokens // spent whether or not the reply could be read
+	return v, err
 }
 
 // judgePrompt is the whole of the judge's input: the rubric, the key, the report cut to its top items (judgedItems), and

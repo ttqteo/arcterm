@@ -166,6 +166,25 @@ func TestJudgeParse(t *testing.T) {
 	}
 }
 
+func TestJudgeCarriesTheCallsTokens(t *testing.T) {
+	// useFakeClaude's stub reports 1234 tokens for the one call
+	useFakeClaude(t, &fakeClaude{reply: `{"matches":{"K1":1},"items":[{"rank":1,"verdict":"key:K1"}]}`})
+	v, err := Judge(context.Background(), judgeCase(council.ModeReview), judgeReport(council.ModeReview, 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Tokens != 1234 {
+		t.Errorf("Verdict.Tokens = %d, want the judge call's 1234", v.Tokens)
+	}
+
+	// a reply that holds no verdict is still spend
+	useFakeClaude(t, &fakeClaude{reply: "no verdict here"})
+	v, err = Judge(context.Background(), judgeCase(council.ModeReview), judgeReport(council.ModeReview, 3))
+	if err == nil || v.Tokens != 1234 {
+		t.Errorf("unreadable reply: Tokens = %d, err = %v, want an error and the call's 1234", v.Tokens, err)
+	}
+}
+
 func TestJudgeParseErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
 		reply string
