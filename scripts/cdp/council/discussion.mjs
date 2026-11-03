@@ -395,15 +395,47 @@ const headerRow = (h) =>
         };
     })()`);
 
+// the tab strip of the Discussion's header as drawn: each tab's word (and whether it shows), its title and aria-label, its icon
+// and its count pill. Under 900px of pane the word is for a screen reader only (sr-only: a 1px box)
+const tabFacts = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-council-discussion] header [data-council-tab]")].map((b) => {
+        const word = b.querySelector("[data-council-tab-label]");
+        const wb = word.getBoundingClientRect();
+        const count = b.querySelector("[data-council-tab-count]");
+        return {
+            id: b.dataset.councilTab,
+            word: word.textContent.trim(),
+            wordShown: wb.width > 2 && wb.height > 2,
+            title: b.getAttribute("title"),
+            aria: b.getAttribute("aria-label"),
+            icon: !!b.querySelector("svg"),
+            count: count ? count.textContent.trim() : null,
+            countShown: count ? count.getBoundingClientRect().width > 2 : null,
+            width: Math.round(b.getBoundingClientRect().width),
+            height: Math.round(b.getBoundingClientRect().height),
+        };
+    })`);
+
 async function header(h, ctx, rec) {
     // a feature longer than the title's floor, so the narrow pane has something to truncate (the fixture's own is 9 letters)
+    const LONG_FEATURE = "Which changes to the pinned apps on the nav rail are worth making first, and in what order";
     await openFixture(h, ctx, "round2", {
         id: `${councilFixtureId("round2")}-header`,
         edit: (c) => {
-            c.feature = "Which changes to the pinned apps on the nav rail are worth making first, and in what order";
+            c.feature = LONG_FEATURE;
         },
     });
     await until(h, `!!document.querySelector("[data-council-channel]")`);
+    const wideTabs = await tabFacts(h);
+    rec(
+        "header: in a wide pane the Report, Discussion and Map tabs show their words beside the icon, each word is also the tab's title, and the Discussion's count shows",
+        wideTabs.map((t) => t.id).join() === "summary,discussion,map" &&
+            wideTabs.map((t) => t.word).join("|") === "Report|Discussion|Map" &&
+            wideTabs.every((t) => t.wordShown && t.icon && t.title === t.word) &&
+            wideTabs[1].countShown === true &&
+            wideTabs[1].aria === `Discussion ${wideTabs[1].count}`,
+        wideTabs
+    );
     const wide = await headerRow(h);
     rec(
         "header: the header is one 52px row holding the tabs, the title, the seats' stack (an avatar for each of the five) and the cost",
@@ -439,6 +471,47 @@ async function header(h, ctx, rec) {
             narrow
         );
         await h.shot("cdp-shots/council-discussion-header-narrow.png");
+
+        // under 900px of pane the three tabs are icon-only: the word moves into the title and the aria-label, the count stays
+        const narrowTabs = await tabFacts(h);
+        rec(
+            "header: at a 1000px window the Report, Discussion and Map tabs are icon-only (an icon and no visible word), the word is each tab's title and aria-label, and the Discussion's count still shows beside its icon",
+            narrowTabs.map((t) => t.word).join("|") === "Report|Discussion|Map" &&
+                narrowTabs.every((t) => !t.wordShown && t.icon && t.title === t.word && t.height >= 40) &&
+                narrowTabs[0].aria === "Report" &&
+                narrowTabs[2].aria === "Map" &&
+                narrowTabs[1].countShown === true &&
+                narrowTabs[1].aria === `Discussion ${narrowTabs[1].count}` &&
+                // narrower than the three words would be
+                narrowTabs.reduce((sum, t) => sum + t.width, 0) < 200,
+            narrowTabs
+        );
+
+        // the same in a Vietnamese council: the Map's word is Bản đồ, and the row still holds the cost and the last control
+        await openFixture(h, ctx, "round2", {
+            id: `${councilFixtureId("round2")}-header-vi`,
+            edit: (c) => {
+                c.lang = "vi";
+                c.feature = LONG_FEATURE;
+            },
+        });
+        await until(h, `!!document.querySelector("[data-council-channel]")`);
+        await new Promise((r) => setTimeout(r, 400));
+        const viTabs = await tabFacts(h);
+        const viRow = await headerRow(h);
+        await h.shot("cdp-shots/council-discussion-header-narrow-vi.png");
+        rec(
+            "header: a Vietnamese council at a 1000px window has the same icon-only tabs (Bản đồ in the title and aria-label of the Map's), a 52px row, the title kept at 60px or more, and the cost and the last control in the pane",
+            viTabs.map((t) => t.word).join("|") === "Report|Discussion|Bản đồ" &&
+                viTabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+                viTabs[2].aria === "Bản đồ" &&
+                viRow != null &&
+                Math.abs(viRow.height - 52) <= 1 &&
+                viRow.titleW >= 60 &&
+                viRow.costIn === true &&
+                viRow.lastIn,
+            { viTabs, viRow }
+        );
     } finally {
         await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
         await new Promise((r) => setTimeout(r, 400));
@@ -1047,19 +1120,38 @@ async function done(h, ctx, rec) {
     const box = sel(`${CHANNEL_COMPOSER} [data-council-composer-input]`);
     await until(h, `document.querySelector(${box})?.value !== ""`).catch(() => {});
     const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
-    const hidden = !(await exists(h, "[data-council-asks]"));
+    // the box now holds text, and the questions stay: Ask next no longer hides while the person types
+    const staysAfterFill = await count(h, "[data-council-channel] [data-council-ask]");
     rec(
-        "done: Ask next offers the report's three questions as the list's last line, not over the box, and a click fills the box with the @ seat",
-        asks === 3 && last && overBox === 0 && filled.startsWith("@RAM How much RAM") && hidden,
-        { asks, last, overBox, filled, hidden }
+        "done: Ask next offers the report's three questions as the list's last line, not over the box, and a click fills the box with the @ seat and leaves the three questions where they are",
+        asks === 3 && last && overBox === 0 && filled.startsWith("@RAM How much RAM") && staysAfterFill === 3,
+        { asks, last, overBox, filled, staysAfterFill }
     );
-    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "What does rail-apps.json hold?");
-    const auto = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "aria-checked");
+    // one letter in the box and the questions are still there; a click on another replaces the letter with its text
+    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "W");
+    await new Promise((r) => setTimeout(r, 200));
+    const typed = await count(h, "[data-council-channel] [data-council-ask]");
+    const second = await text(h, '[data-council-channel] [data-council-ask="1"]');
+    await click(h, '[data-council-channel] [data-council-ask="1"]');
+    await until(h, `document.querySelector(${box})?.value !== "W"`).catch(() => {});
+    const replaced = await h.ev(`document.querySelector(${box})?.value ?? ""`);
+    const afterReplace = await count(h, "[data-council-channel] [data-council-ask]");
+    await h.shot("cdp-shots/council-discussion-asknext-typing.png");
+    rec(
+        "done: Ask next stays while the person types: one letter in the box and all three questions are still there, and a click puts its text in the box in place of the letter",
+        typed === 3 && second !== "" && replaced.replace(/\s+/g, " ").trim() === second && replaced !== "W" && afterReplace === 3,
+        { typed, second, replaced, afterReplace }
+    );
+    // it names a seat, so the router does not take it: Read files stays on Auto and the question decides (the routed Auto
+    // case, where the router decides, is council-routing's composer-auto step)
+    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "@UX What does rail-apps.json hold?");
+    const state = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-state");
+    const readsNow = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-on");
     const why = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-why");
     rec(
-        "done: a question that names a file turns Let them read files on by itself and says which file",
-        auto === "true" && why === "rail-apps.json",
-        { auto, why }
+        "done: a question that names a file turns Read files (on Auto) on by itself and says which file",
+        state === "auto" && readsNow === "true" && why === "rail-apps.json",
+        { state, readsNow, why }
     );
     await h.shot("cdp-shots/council-discussion-readsfiles.png");
     await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "");
@@ -1073,12 +1165,12 @@ async function done(h, ctx, rec) {
     await typeInto(h, `${THREAD_COMPOSER} [data-council-composer-input]`, FOLLOWUP_TEXT);
     const plain = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /^1 expert answers · ≈ 1 call · ~\d+k tokens$/);
 
-    await click(h, `${THREAD_COMPOSER} [data-council-tools]`);
+    await click(h, `${THREAD_COMPOSER} [data-council-tools-option="on"]`);
     const reading = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /reading files · ≈ 1 call · ~[\d.]+[kM] tokens$/);
-    const on = await attr(h, `${THREAD_COMPOSER} [data-council-tools]`, "aria-checked");
+    const on = await attr(h, `${THREAD_COMPOSER} [data-council-tools]`, "data-council-tools-state");
     rec(
-        "follow-up: Let them read files changes the cost label from `≈ 1 call` to one that says `reading files` with more tokens",
-        !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "true",
+        "follow-up: Read files On changes the cost label from `≈ 1 call` to one that says `reading files` with more tokens",
+        !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "on",
         `${plain}  →  ${reading}`
     );
     // the one reply after the summary is the person's own, which leaves it current (spec decision 5): the header draws
@@ -1390,17 +1482,19 @@ async function roomComposer(h, ctx, rec) {
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     await stubRpc(h, ["CouncilReplyCommand"]);
 
+    // a plain message goes to the router now; `@all` is how a message asks everyone
     const input = `${CHANNEL_COMPOSER} [data-council-composer-input]`;
-    await typeInto(h, input, FOLLOWUP_TEXT);
+    const ASK_ALL = `@all ${FOLLOWUP_TEXT}`;
+    await typeInto(h, input, ASK_ALL);
     const everyone = await settledText(h, `${CHANNEL_COMPOSER} [data-council-composer-hint]`, /Everyone answers/);
     await click(h, `${CHANNEL_COMPOSER} [data-council-composer-send]`);
     await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilReplyCommand").length >= 1`);
     const first = (await rpcCalls(h, "CouncilReplyCommand"))[0]?.data;
     rec(
-        "composer: a message to the box posts to everyone (`Everyone answers`): CouncilReplyCommand (stubbed) carries its text and no idea",
+        "composer: an `@all` message to the box posts to everyone (`Everyone answers`): CouncilReplyCommand (stubbed) carries its text and no idea",
         everyone === "Everyone answers" &&
             first?.id === id &&
-            first.text === FOLLOWUP_TEXT &&
+            first.text === ASK_ALL &&
             first.proposalid === undefined &&
             first.tools === undefined,
         first
@@ -1661,10 +1755,21 @@ async function addChatPicker(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-add-chat-picker.png");
 
-    // the arrow keys run on from the last chat row back to the first seat
+    // the arrow keys run on from the last chat row back to the first row, All seats, and on to the first seat
+    const selectedMention = () =>
+        h.ev(`(() => {
+            const r = document.querySelector('[data-council-mentions] [data-selected="true"]');
+            return r?.hasAttribute("data-council-mention-all") ? "all" : (r?.getAttribute("data-council-mention") ?? null);
+        })()`);
     for (let i = 0; i < 2; i++) await pressArrowDown(h);
-    const wrapped = await h.ev(`document.querySelector('[data-council-mentions] [data-selected="true"]')?.getAttribute("data-council-mention") ?? null`);
-    rec("add-chat-picker: the arrow keys wrap from the last chat row to the first seat", wrapped === "witness", wrapped);
+    const toAll = await selectedMention();
+    await pressArrowDown(h);
+    const wrapped = await selectedMention();
+    rec(
+        "add-chat-picker: the arrow keys wrap from the last chat row to the first row, All seats, then the first seat",
+        toAll === "all" && wrapped === "witness",
+        { toAll, wrapped }
+    );
     await typeInto(h, CHAT_INPUT, "");
 }
 
@@ -1961,10 +2066,19 @@ const clearChips = (h, scope) =>
     h.ev(`document.querySelectorAll(${sel(`${scope} [data-council-image-remove]`)}).forEach((b) => b.click())`);
 const sendDisabled = (h, send = CHAT_SEND) => h.ev(`document.querySelector(${sel(send)})?.disabled ?? null`);
 const valueOf = (h, input) => h.ev(`document.querySelector(${sel(input)})?.value ?? ""`);
+// the Read files control of a box: `state` is the option pressed (auto / on / off), `on` whether the seats read files now,
+// `disabled` whether an image or an @file locks it (Auto and Off cannot be pressed), `why` what decided it
 const toolsSwitch = (h, scope) =>
     h.ev(`(() => {
-        const b = document.querySelector(${sel(`${scope} [data-council-tools]`)});
-        return b ? { on: b.getAttribute("aria-checked") === "true", disabled: b.disabled === true, why: b.getAttribute("data-council-tools-why") } : null;
+        const g = document.querySelector(${sel(`${scope} [data-council-tools]`)});
+        return g
+            ? {
+                  state: g.getAttribute("data-council-tools-state"),
+                  on: g.getAttribute("data-council-tools-on") === "true",
+                  disabled: g.getAttribute("data-council-tools-locked") === "true",
+                  why: g.getAttribute("data-council-tools-why"),
+              }
+            : null;
     })()`);
 const replyCalls = (h) => rpcCalls(h, "CouncilReplyCommand");
 
@@ -2175,7 +2289,8 @@ async function attachLocked(h, ctx, rec) {
     await pasteImage(h, CHAT_INPUT);
     await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
     const image = await toolsSwitch(h, CHANNEL_COMPOSER);
-    await h.ev(`document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-tools]`)})?.click()`);
+    // a click on Off (disabled while the image is in) leaves it on
+    await h.ev(`document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-tools-option="off"]`)})?.click()`);
     const afterClick = await toolsSwitch(h, CHANNEL_COMPOSER);
     const priced = await until(
         h,
@@ -2188,17 +2303,22 @@ async function attachLocked(h, ctx, rec) {
     await typeInto(h, CHAT_INPUT, `Look at @${ATTACH_FILE} for this`);
     const file = await toolsSwitch(h, CHANNEL_COMPOSER);
     rec(
-        "attach-locked-switch: Let them read files is off and free for a plain question; with an image attached, or an @file in the text, it is on and disabled (a click leaves it on), the estimate is asked with `tools: true`, and without them it is free again",
-        plain?.on === false &&
+        "attach-locked-switch: Read files is Auto, off and free for a plain question; with an image attached, or an @file in the text, it is On and locked (a click on Off leaves it on), the estimate is asked with `tools: true`, and without them it is free again",
+        plain?.state === "auto" &&
+            plain.on === false &&
             plain.disabled === false &&
-            image?.on === true &&
+            image?.state === "on" &&
+            image.on === true &&
             image.disabled === true &&
             image.why === "an image" &&
             afterClick?.on === true &&
+            afterClick.state === "on" &&
             priced &&
-            released?.on === false &&
+            released?.state === "auto" &&
+            released.on === false &&
             released.disabled === false &&
-            file?.on === true &&
+            file?.state === "on" &&
+            file.on === true &&
             file.disabled === true &&
             file.why === ATTACH_FILE,
         { plain, image, afterClick, priced, released, file }
@@ -2296,14 +2416,15 @@ async function attachPicker(h, ctx, rec) {
     );
 
     // a message that names a file is sent with the seats reading it, in a round as in a follow-up, and it names no seat
-    const BODY = `@${ATTACH_FILE} what do you make of this plan?`;
+    // (`@all` asks everyone: a plain message would go to the router)
+    const BODY = `@all @${ATTACH_FILE} what do you make of this plan?`;
     await typeInto(h, CHAT_INPUT, BODY);
     const hint = await settledText(h, CHAT_HINT, /^Everyone answers/);
     await click(h, CHAT_SEND);
     await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilReplyCommand")`);
     const sent = (await replyCalls(h))[0]?.data;
     rec(
-        "attach-send-call: in a round, a message that names @docs/recap-notes.md reaches everyone, and Send (stubbed) records `tools: true` with the text as typed and no attachments",
+        "attach-send-call: in a round, an `@all` message that names @docs/recap-notes.md reaches everyone, and Send (stubbed) records `tools: true` with the text as typed and no attachments",
         hint === "Everyone answers" &&
             sent?.id === id &&
             sent.text === BODY &&
@@ -2387,6 +2508,788 @@ async function attachSent(h, ctx, rec) {
     await click(h, "[data-council-sources-close]");
 }
 
+// ---- a seat's timeline in the Seats popover (docs/superpowers/plans/2026-11-03-council-stronger.md, Task 11) ----
+
+// RAM's steps: it read a file, searched, ran a verify command that failed, proposed, and runs a second one now (the last
+// step is a run with no result, in a council that runs)
+const IDLE_TEST = "go test ./pkg/services -run TestIdleStop";
+const VITEST_RUN = "npx vitest run frontend/app/view/agents/railapps.test.ts";
+const timelineSteps = (c) => [
+    { ts: c.started + 5_000, kind: "read", target: "pkg/services/model.go" },
+    { ts: c.started + 9_000, kind: "search", target: "IdleSleep", result: "7 matches" },
+    { ts: c.started + 60_000, kind: "run", target: IDLE_TEST, result: "fail" },
+    { ts: c.started + 100_000, kind: "propose", target: "Keep the last-used pinned app awake" },
+    { ts: c.started + 120_000, kind: "run", target: VITEST_RUN },
+];
+
+const TL = "[data-council-timeline]";
+const timelineOpen = (h, id) => h.ev(`window.__arcCouncil.timeline(${sel(id)})`);
+
+// the rows of the open timeline as drawn: the kind and its word, the time, the target (a command in mono) and the result
+const timelineRows = (h) =>
+    h.ev(`[...document.querySelectorAll("${TL} [data-council-timeline-row]")].map((r) => {
+        const cmd = r.querySelector("[data-council-timeline-command]");
+        const target = r.querySelector("[data-council-timeline-target]");
+        const result = r.querySelector("[data-council-timeline-result]");
+        return {
+            kind: r.getAttribute("data-council-timeline-row"),
+            word: (r.querySelector("[data-council-timeline-kind]")?.textContent ?? "")${NORM},
+            time: (r.querySelector("[data-council-timeline-time]")?.textContent ?? "")${NORM},
+            command: cmd ? cmd.textContent : null,
+            commandMono: cmd ? /mono/i.test(getComputedStyle(cmd).fontFamily) : null,
+            target: target ? target.textContent : null,
+            targetMono: target ? /mono/i.test(getComputedStyle(target).fontFamily) : null,
+            result: result?.getAttribute("data-council-timeline-result") ?? null,
+            resultText: (result?.textContent ?? "")${NORM},
+            top: Math.round(r.getBoundingClientRect().top),
+        };
+    })`);
+
+async function seatTimeline(h, ctx, rec) {
+    const id = await openFixture(h, ctx, "round1", {
+        id: `${councilFixtureId("round1")}-timeline`,
+        edit: (c) => void (c.timeline = { ram: timelineSteps(c) }),
+    });
+    await settledText(h, "[data-council-chip]", /^Round 1 of 2/);
+
+    // the experts' cards are buttons: the cover is the button, the card keeps its place and its text
+    const cards = await h.ev(`[...document.querySelectorAll("[data-council-expert-card]")].map((c) => {
+        const open = c.querySelector("[data-council-expert-card-open]");
+        return {
+            id: c.getAttribute("data-council-expert-card"),
+            tag: open?.tagName ?? null,
+            label: open?.getAttribute("aria-label") ?? null,
+            cursor: open ? getComputedStyle(open).cursor : null,
+            nested: !!c.querySelector("button button"),
+            state: (c.querySelector("[data-council-expert-state]")?.textContent ?? "").trim(),
+        };
+    })`);
+    const names = Object.fromEntries(loadCouncilFixture("round1").experts.map((e) => [e.id, e.name]));
+    rec(
+        "timeline: each round 1 expert card is a button named `Open <name>'s timeline`, no button inside another, and the card still reads what the expert is doing",
+        cards.length === 4 &&
+            cards.every((c) => c.tag === "BUTTON" && c.label === `Open ${names[c.id]}'s timeline` && c.cursor === "pointer" && !c.nested) &&
+            cards.find((c) => c.id === "ram")?.state === 'Grep "IdleSleep" in pkg/services',
+        cards
+    );
+    rec("timeline: the Seats button is in the header in round 1 too, and no timeline is asked for", (await exists(h, SEATS)) && (await timelineOpen(h, id)) === null);
+
+    // a click on RAM's card opens the Seats popover on RAM's timeline
+    await click(h, '[data-council-expert-card-open="ram"]');
+    const open = await until(h, `!!document.querySelector('${TL}[data-council-timeline="ram"]')`);
+    const rows = await timelineRows(h);
+    const title = await text(h, "[data-council-timeline-title]");
+    const back = await text(h, "[data-council-timeline-back]");
+    const asked = await timelineOpen(h, id);
+    await h.shot("cdp-shots/council-discussion-timeline.png");
+    rec(
+        "timeline: a click on RAM's card opens the Seats popover on RAM's timeline: five rows, oldest first and the newest at the bottom, each with a clock time, its kind word and its target, and a way back to the list",
+        open &&
+            asked === "ram" &&
+            title === "Timeline of RAM" &&
+            back === "Back to the list" &&
+            rows.map((r) => r.kind).join() === "read,search,run,propose,run" &&
+            rows.map((r) => r.word).join("|") === "Read|Search|Ran command|Proposed|Ran command" &&
+            rows.every((r) => /^\d\d:\d\d:\d\d$/.test(r.time)) &&
+            rows.every((r, i) => i === 0 || r.top > rows[i - 1].top) &&
+            rows[0].target === "pkg/services/model.go" &&
+            rows[3].target === "Keep the last-used pinned app awake",
+        { asked, title, back, rows }
+    );
+    rec(
+        "timeline: a command is drawn in mono and nothing else is; a command that failed says Failed with a cross, a search says what it found, and the one running now says Running",
+        rows[2].command === IDLE_TEST &&
+            rows[4].command === VITEST_RUN &&
+            rows[2].commandMono === true &&
+            rows[4].commandMono === true &&
+            rows.filter((r) => r.kind !== "run").every((r) => r.command === null && r.targetMono === false) &&
+            rows[2].result === "fail" &&
+            rows[2].resultText === "Failed" &&
+            rows[1].result === "text" &&
+            rows[1].resultText === "7 matches" &&
+            rows[4].result === "running" &&
+            rows[4].resultText === "Running",
+        rows.map((r) => [r.kind, r.commandMono, r.result, r.resultText])
+    );
+
+    // a second card swaps the timeline in the popover that is already open, rather than closing it and opening it again
+    await h.ev(`document.querySelector('${TL}').parentElement.__keptOpen = true`);
+    await click(h, '[data-council-expert-card-open="newuser"]');
+    const second = await until(h, `!!document.querySelector('${TL}[data-council-timeline="newuser"]')`);
+    const kept = await h.ev(`document.querySelectorAll("${TL}").length === 1 && document.querySelector("${TL}").parentElement.__keptOpen === true`);
+    const empty = await text(h, "[data-council-timeline-empty]");
+    rec(
+        "timeline: a click on another card shows that seat's timeline in the same popover (no close and reopen), and a seat that did nothing says `No steps yet`",
+        second && kept && (await timelineOpen(h, id)) === "newuser" && empty === "No steps yet",
+        { second, kept, empty }
+    );
+
+    // Back goes to the list of seats, the popover stays
+    await click(h, "[data-council-timeline-back]");
+    const list = await until(h, `!!document.querySelector("${SEAT_LIST}")`);
+    rec(
+        "timeline: Back shows the list of seats again, with no timeline asked for",
+        list && !(await exists(h, TL)) && (await timelineOpen(h, id)) === null,
+        { list }
+    );
+
+    // the list's own way in: each row has a Timeline button, and a click on the row still filters
+    const buttons = await count(h, `${SEAT_LIST} [data-council-chip-timeline]`);
+    await click(h, `${SEAT_LIST} [data-council-chip-timeline="ram"]`);
+    const fromRow = await until(h, `!!document.querySelector('${TL}[data-council-timeline="ram"]')`);
+    const rowsFromList = await timelineRows(h);
+    const rowsAgain = rowsFromList.length;
+    rec(
+        "timeline: every seat's row in the list has a Timeline button (five), and its click opens that seat's timeline in the popover: five rows, the commands in mono, and Back",
+        buttons === 5 &&
+            fromRow &&
+            rowsAgain === 5 &&
+            rowsFromList[2]?.command === IDLE_TEST &&
+            rowsFromList[2].commandMono === true &&
+            rowsFromList[0]?.commandMono === null &&
+            (await exists(h, "[data-council-timeline-back]")) &&
+            (await timelineOpen(h, id)) === "ram",
+        { buttons, fromRow, rowsAgain, rowsFromList: rowsFromList.map((r) => [r.kind, r.commandMono]) }
+    );
+
+    // closing the popover (the Seats button) clears the atom, so the next render does not open it again
+    await click(h, SEATS);
+    const closed = await until(h, `!document.querySelector("${TL}") && !document.querySelector("${SEAT_LIST}")`);
+    await new Promise((r) => setTimeout(r, 300));
+    rec(
+        "timeline: closing the popover clears the timeline that was asked for, and it stays closed",
+        closed && (await timelineOpen(h, id)) === null && !(await exists(h, TL)),
+        { closed }
+    );
+
+    // a Vietnamese council words the timeline in Vietnamese
+    const vi = await openFixture(h, ctx, "round1", {
+        id: `${councilFixtureId("round1")}-timeline-vi`,
+        edit: (c) => {
+            c.lang = "vi";
+            c.timeline = { ram: timelineSteps(c) };
+        },
+    });
+    await click(h, '[data-council-expert-card-open="ram"]');
+    await until(h, `!!document.querySelector('${TL}[data-council-timeline="ram"]')`);
+    const viRows = await timelineRows(h);
+    const viTitle = await text(h, "[data-council-timeline-title]");
+    const viBack = await text(h, "[data-council-timeline-back]");
+    const viLabel = await attr(h, '[data-council-expert-card-open="ram"]', "aria-label");
+    await h.shot("cdp-shots/council-discussion-timeline-vi.png");
+    rec(
+        "timeline: a Vietnamese council reads Dòng thời gian của RAM, Đọc / Tìm / Chạy lệnh, Thất bại and Đang chạy, with Quay lại danh sách",
+        viTitle === "Dòng thời gian của RAM" &&
+            viBack === "Quay lại danh sách" &&
+            viLabel === "Mở dòng thời gian của RAM" &&
+            viRows.map((r) => r.word).join("|") === "Đọc|Tìm|Chạy lệnh|Đưa ra ý|Chạy lệnh" &&
+            viRows[2].resultText === "Thất bại" &&
+            viRows[4].resultText === "Đang chạy",
+        { vi, viTitle, viBack, viLabel, words: viRows.map((r) => r.word), results: viRows.map((r) => r.resultText) }
+    );
+    await click(h, SEATS);
+    await until(h, `!document.querySelector("${TL}")`);
+
+    // a failed seat's Retry sits on its card, and a press on it retries and never opens the timeline
+    const failedId = await openFixture(h, ctx, "failed", {
+        id: `${councilFixtureId("failed")}-card-retry`,
+        edit: (c) => {
+            c.proposals = [];
+            c.replies = [];
+            delete c.summary;
+        },
+    });
+    await until(h, `!!document.querySelector('[data-council-expert-card="skeptic"] [data-council-retry="skeptic"]')`);
+    const nested = await h.ev(`(() => {
+        const retry = document.querySelector('[data-council-expert-card="skeptic"] [data-council-retry="skeptic"]');
+        return { inButton: !!retry.parentElement.closest("button"), disabled: retry.disabled, cover: !!document.querySelector('[data-council-expert-card="skeptic"] [data-council-expert-card-open]') };
+    })()`);
+    await stubRpc(h, ["CouncilRetryCommand"]);
+    await click(h, '[data-council-expert-card="skeptic"] [data-council-retry="skeptic"]');
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilRetryCommand")`);
+    await new Promise((r) => setTimeout(r, 300));
+    const calls = await rpcCalls(h, "CouncilRetryCommand");
+    rec(
+        "timeline: Retry on a failed seat's card is not inside the card's button, retries that seat (stubbed) and does not open its timeline",
+        !nested.inButton &&
+            !nested.disabled &&
+            nested.cover &&
+            calls.length === 1 &&
+            calls[0].data?.id === failedId &&
+            calls[0].data?.expertid === "skeptic" &&
+            (await timelineOpen(h, failedId)) === null &&
+            !(await exists(h, TL)),
+        { nested, calls }
+    );
+    await unstubRpc(h);
+    // a press on the rest of the card does open it
+    await click(h, '[data-council-expert-card-open="skeptic"]');
+    const failedTimeline = await until(h, `!!document.querySelector('${TL}[data-council-timeline="skeptic"]')`);
+    rec("timeline: a press on the rest of a failed seat's card opens its timeline", failedTimeline, failedTimeline);
+    await click(h, SEATS);
+    await until(h, `!document.querySelector("${TL}")`);
+}
+
+// ---- the check badge on a claim's evidence, and the Wrong cite chip ----
+
+const WRONG_NOTE = "line 900 is past the end (412 lines)";
+const WRONG_REF = "pkg/services/model.go:900";
+
+// the badge, the file links, the wrong cites and the weak chip of one evidence row, as drawn
+const evidenceRow = (h, scope) =>
+    h.ev(`(() => {
+        const root = document.querySelector(${sel(scope)});
+        if (!root) return null;
+        const t = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+        // a flex item's innerText breaks before the next one, which the chip's parts need to read as words
+        const words = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+        const badge = root.querySelector('[data-council-evidence="badge"]');
+        const wrong = [...root.querySelectorAll('[data-council-evidence="wrong"]')];
+        return {
+            badge: badge ? words(badge) : null,
+            check: badge?.getAttribute("data-check") ?? null,
+            icon: !!badge?.querySelector("svg"),
+            badgeFirst: badge ? !badge.previousElementSibling : null,
+            meaning: badge?.getAttribute("title") ?? null,
+            // a link where the chip can open Sources, a plain name where it cannot (the ideas as they arrive): both are "ref"
+            links: [...root.querySelectorAll('[data-council-evidence="ref"]')].map((e) => t(e)),
+            wrong: wrong.map((e) => words(e)),
+            wrongIcon: wrong.map((e) => !!e.querySelector("svg")),
+            wrongRef: wrong.map((e) => e.getAttribute("data-wrong-ref")),
+            weak: [...root.querySelectorAll('[data-council-evidence="weak"]')].map((e) => t(e)),
+        };
+    })()`);
+
+// P2 of the done council as the checks leave it: Read code with one cite that holds, one that is wrong, and a weak claim;
+// RAM's reply Ran (its cite holds), Skeptic's is a Guess (it cites nothing), New user's reply is plain
+function checked(c) {
+    const p2 = c.proposals.find((p) => p.id === "P2");
+    p2.label = "read";
+    p2.evidence = [
+        { ref: "pkg/services/model.go:38", cite: "ok" },
+        { ref: WRONG_REF, cite: "wrong", citenote: WRONG_NOTE },
+        { ref: "", weak: true, note: '"about 3 s" has no measurement' },
+    ];
+    const r4 = c.replies.find((r) => r.id === "r4");
+    r4.label = "ran";
+    r4.evidence = [{ ref: "pkg/services/model.go:36", cite: "ok" }];
+    c.replies.find((r) => r.id === "r5").label = "guess";
+}
+
+async function claimBadges(h, ctx, rec) {
+    // round 1: the ideas as they arrive wear their badges: Ran, Disproved and Guess, whose idea cites nothing
+    await openFixture(h, ctx, "round1", {
+        id: `${councilFixtureId("round1")}-badges`,
+        edit: (c) => {
+            const by = (id) => c.proposals.find((p) => p.id === id);
+            by("P1").label = "ran";
+            by("P1").evidence = [{ ref: "railapps.ts:72", cite: "ok" }];
+            by("P2").label = "disproved";
+            by("P4").label = "guess";
+            by("P4").evidence = [];
+        },
+    });
+    await until(h, `!!document.querySelector('[data-council-arrived="P4"]')`);
+    const p1 = await evidenceRow(h, '[data-council-arrived="P1"]');
+    const p2 = await evidenceRow(h, '[data-council-arrived="P2"]');
+    const p4 = await evidenceRow(h, '[data-council-arrived="P4"]');
+    await h.shot("cdp-shots/council-discussion-badges-round1.png");
+    rec(
+        "badges: in round 1 an idea's evidence row starts with its badge, an icon and a word: Ran, Disproved, and a Guess that cites nothing is the badge alone",
+        p1?.badge === "Ran" &&
+            p1.check === "ran" &&
+            p1.icon &&
+            p1.badgeFirst &&
+            p1.links.length === 1 &&
+            p2?.badge === "Disproved" &&
+            p2.check === "disproved" &&
+            p2.icon &&
+            p4?.badge === "Guess" &&
+            p4.check === "guess" &&
+            p4.links.length === 0,
+        { p1, p2, p4 }
+    );
+
+    // an idea that Go did not label (an old council, a Brainstorm) has no badge
+    const plain = await openFixture(h, ctx, "round1", { id: `${councilFixtureId("round1")}-nobadge` });
+    await until(h, `!!document.querySelector('[data-council-arrived="P1"]')`);
+    const none = await evidenceRow(h, '[data-council-arrived="P1"]');
+    rec("badges: an idea Go did not label draws no badge, only its file link", none?.badge === null && none.links.length === 1, { plain, none });
+
+    // a thread: the idea's badge and its Wrong cite chip, a reply's badge
+    await openFixture(h, ctx, "done", { id: `${councilFixtureId("done")}-checked`, edit: checked });
+    await click(h, `${LIST} [data-council-idea="P2"]`);
+    await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-post="P2"]')`);
+    const idea = await evidenceRow(h, '[data-council-post="P2"]');
+    const ran = await evidenceRow(h, '[data-council-reply-post="r4"]');
+    const guess = await evidenceRow(h, '[data-council-reply-post="r5"]');
+    const plainReply = await evidenceRow(h, '[data-council-reply-post="r6"]');
+    await h.shot("cdp-shots/council-discussion-badges-thread.png");
+    rec(
+        "badges: in an idea's thread the idea says Read code; its cite that does not hold is a Wrong cite chip with Go's note (the file, the line and why), not a link; the weak claim keeps its amber chip",
+        idea?.badge === "Read code" &&
+            idea.check === "read" &&
+            idea.badgeFirst &&
+            idea.icon &&
+            idea.links.length === 1 &&
+            idea.links[0] === "model.go:38" &&
+            idea.wrong.length === 1 &&
+            idea.wrong[0] === `Wrong cite model.go:900 · ${WRONG_NOTE}` &&
+            idea.wrongIcon[0] &&
+            idea.wrongRef[0] === WRONG_REF &&
+            idea.weak.length === 1 &&
+            idea.weak[0].startsWith("Weak"),
+        idea
+    );
+    rec(
+        "badges: a reply wears its own badge: RAM's reply Ran with its file link, Skeptic's a Guess with nothing else, New user's plain reply none",
+        ran?.badge === "Ran" &&
+            ran.links.length === 1 &&
+            ran.wrong.length === 0 &&
+            guess?.badge === "Guess" &&
+            guess.links.length === 0 &&
+            (plainReply === null || plainReply.badge === null),
+        { ran, guess, plainReply }
+    );
+
+    // the file link still opens the Sources panel, on the cite that holds (line 38, its hunk starting at 37)
+    writeCitedFiles(ctx);
+    await click(h, '[data-council-post="P2"] [data-council-source]');
+    const panel = await until(h, `document.querySelector("[data-council-sources-body]")?.getAttribute("data-state") === "ok"`);
+    const hunks = await h.ev(`[...document.querySelectorAll("[data-council-sources-hunk]")].map((e) => e.getAttribute("data-council-sources-hunk"))`);
+    const listed = await count(h, "[data-council-sources-file]");
+    rec(
+        "badges: the file link beside a Wrong cite chip still opens Sources on the cite that holds, and the wrong cite is not among its files",
+        panel && hunks.join() === "37" && listed === 0,
+        { panel, hunks, listed }
+    );
+    await click(h, "[data-council-sources-close]");
+    await click(h, "[data-council-thread-close]");
+
+    // a Vietnamese council words them in Vietnamese
+    await openFixture(h, ctx, "done", {
+        id: `${councilFixtureId("done")}-checked-vi`,
+        edit: (c) => {
+            checked(c);
+            c.lang = "vi";
+        },
+    });
+    await click(h, `${LIST} [data-council-idea="P2"]`);
+    await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-post="P2"]')`);
+    const viIdea = await evidenceRow(h, '[data-council-post="P2"]');
+    const viRan = await evidenceRow(h, '[data-council-reply-post="r4"]');
+    const viGuess = await evidenceRow(h, '[data-council-reply-post="r5"]');
+    await h.shot("cdp-shots/council-discussion-badges-vi.png");
+    rec(
+        "badges: in a Vietnamese council the words are Đã đọc code, Trích sai, Đã chạy and Chỉ đoán",
+        viIdea?.badge === "Đã đọc code" &&
+            viIdea.wrong[0] === `Trích sai model.go:900 · ${WRONG_NOTE}` &&
+            viRan?.badge === "Đã chạy" &&
+            viGuess?.badge === "Chỉ đoán",
+        { viIdea, viRan, viGuess }
+    );
+}
+
+// ---- the question's fold: Show more under the text, the height moving ----
+
+const LONG_SENTENCE =
+    "We measured the rail on three machines and the numbers disagree about when a pinned app should sleep, so weigh every option against how often a person goes back to the app they used last, and say what each change would cost to build.";
+const LONG_QUESTION = `Which changes to pinned apps on the nav rail are worth making first? ${LONG_SENTENCE} ${LONG_SENTENCE} Keep to: one release; no new settings; nothing that touches the terminal; no new dependencies.`;
+const BUBBLE = '[data-council-thread="chat"] [data-item-kind="question"] > div';
+
+// the question bubble as drawn
+const questionFacts = (h) =>
+    h.ev(`(() => {
+        const bubble = document.querySelector(${sel(BUBBLE)});
+        const box = bubble.querySelector("[data-council-question-box]");
+        const text = bubble.querySelector("[data-council-question]");
+        const limits = bubble.querySelector("[data-council-limits]");
+        const toggle = bubble.querySelector("[data-council-question-toggle]");
+        const header = bubble.firstElementChild;
+        const r = (el) => el.getBoundingClientRect();
+        return {
+            fold: bubble.getAttribute("data-council-question-fold"),
+            clamp: getComputedStyle(text).webkitLineClamp,
+            boxH: Math.round(r(box).height),
+            // the whole text's height: a cut span is a block with a scrollHeight, an uncut one is inline and has none
+            fullH: Math.round(text.scrollHeight || r(box).height),
+            limits: [...bubble.querySelectorAll("[data-council-limit]")].map((e) => e.textContent.trim()),
+            more: [...bubble.querySelectorAll("button")].filter((b) => /^\\+\\d+ more$/.test(b.textContent.trim())).map((b) => b.textContent.trim()),
+            toggle: toggle ? toggle.textContent.replace(/\\s+/g, " ").trim() : null,
+            expanded: toggle?.getAttribute("aria-expanded") ?? null,
+            inHeader: toggle ? header.contains(toggle) : null,
+            // the control sits under the text and under the limits, inside the bubble
+            under: toggle ? r(toggle).top >= r(limits).bottom - 1 && r(limits).top >= r(box).bottom - 1 : null,
+            bubbleBottom: Math.round(r(bubble).bottom),
+            toggleBottom: toggle ? Math.round(r(toggle).bottom) : null,
+            extraOpacity: [...bubble.querySelectorAll("[data-council-limit-extra]")].map((e) => getComputedStyle(e).opacity),
+            overflow: getComputedStyle(box).overflow,
+        };
+    })()`);
+
+// clicks the control and samples the text box's height on every frame until `ms` have passed: [ms, height, fold phase]
+const foldSamples = (h, ms) =>
+    h.ev(`new Promise((resolve) => {
+        const bubble = document.querySelector(${sel(BUBBLE)});
+        const box = bubble.querySelector("[data-council-question-box]");
+        const samples = [];
+        const t0 = performance.now();
+        bubble.querySelector("[data-council-question-toggle]").click();
+        samples.push([0, Math.round(box.getBoundingClientRect().height), bubble.getAttribute("data-council-question-fold")]);
+        const tick = () => {
+            const now = performance.now() - t0;
+            samples.push([Math.round(now), Math.round(box.getBoundingClientRect().height), bubble.getAttribute("data-council-question-fold")]);
+            if (now < ${ms}) requestAnimationFrame(tick);
+            else resolve(samples);
+        };
+        requestAnimationFrame(tick);
+    })`);
+
+async function questionFold(h, ctx, rec) {
+    await openFixture(h, ctx, "done", {
+        id: `${councilFixtureId("done")}-longquestion`,
+        edit: (c) => void (c.question = LONG_QUESTION),
+    });
+    await click(h, CHAT_ROW);
+    await until(h, `!!document.querySelector(${sel(BUBBLE)})`);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const folded = await questionFacts(h);
+    await h.shot("cdp-shots/council-discussion-question-folded.png");
+    rec(
+        "question: a long question shows three lines and two of its four limits with `+2 more`, and `Show more` under the text and the limits, inside the bubble, not in its header row",
+        folded.fold === "folded" &&
+            folded.clamp === "3" &&
+            folded.fullH > folded.boxH + 10 &&
+            folded.limits.length === 2 &&
+            folded.more.join() === "+2 more" &&
+            folded.toggle === "Show more" &&
+            folded.expanded === "false" &&
+            folded.inHeader === false &&
+            folded.under === true &&
+            folded.toggleBottom <= folded.bubbleBottom,
+        folded
+    );
+
+    // a click opens the whole text; the height moves between the two values over a few frames, and the limits fade in
+    const opening = await foldSamples(h, 700);
+    const first = opening[0];
+    const mid = opening.filter(([, , fold]) => fold === "opening");
+    const heights = opening.map(([, height]) => height);
+    const inBetween = heights.some((v) => v > folded.boxH + 2 && v < folded.fullH - 2);
+    const open = await questionFacts(h);
+    await h.shot("cdp-shots/council-discussion-question-open.png");
+    rec(
+        "question: Show more grows the text from its three lines to its full height over about a third of a second (a frame between the two heights), then reads `Show less` with aria-expanded true, no cut, all four limits at full strength and no `+N more`",
+        first[2] === "opening" &&
+            mid.length > 3 &&
+            inBetween &&
+            heights.every((v, i) => i === 0 || v >= heights[i - 1] - 1) &&
+            open.fold === "open" &&
+            open.clamp === "none" &&
+            Math.abs(open.boxH - folded.fullH) <= 2 &&
+            open.toggle === "Show less" &&
+            open.expanded === "true" &&
+            open.limits.length === 4 &&
+            open.more.length === 0 &&
+            open.extraOpacity.every((o) => o === "1") &&
+            open.overflow === "visible" &&
+            open.under === true,
+        { first, frames: mid.length, inBetween, open }
+    );
+
+    // a second click folds it back, the height coming down, and the cut and the two limits return
+    const closing = await foldSamples(h, 700);
+    const downs = closing.map(([, height]) => height);
+    const closingInBetween = downs.some((v) => v < open.boxH - 2 && v > folded.boxH + 2);
+    const rises = downs.map((v, i) => (i > 0 && v > downs[i - 1] + 1 ? [i, downs[i - 1], v] : null)).filter(Boolean);
+    const back = await questionFacts(h);
+    rec(
+        "question: Show less folds it back: the height comes down through values between the two, then three lines, two limits, `+2 more` and `Show more` return",
+        closing[0][2] === "closing" &&
+            closingInBetween &&
+            rises.length === 0 &&
+            back.fold === "folded" &&
+            back.clamp === "3" &&
+            Math.abs(back.boxH - folded.boxH) <= 1 &&
+            back.limits.length === 2 &&
+            back.more.join() === "+2 more" &&
+            back.toggle === "Show more" &&
+            back.expanded === "false",
+        { first: closing[0], phases: [...new Set(closing.map((s) => s[2]))], head: closing.slice(0, 4), rises, closingInBetween, back }
+    );
+
+    // `+2 more` opens it too
+    await h.ev(`[...document.querySelector(${sel(BUBBLE)}).querySelectorAll("button")].find((b) => /^\\+\\d+ more$/.test(b.textContent.trim())).click()`);
+    const viaMore = await until(h, `document.querySelector(${sel(BUBBLE)})?.getAttribute("data-council-question-fold") === "open"`);
+    rec("question: the inline `+2 more` opens the whole question as well", viaMore && (await questionFacts(h)).limits.length === 4, viaMore);
+    await foldSamples(h, 700); // folded again for the next check
+
+    // reduced motion: no moving phase at all, the new state at once. React draws a click's state a tick after the click
+    // returns, so each state is read on the next frame, and every frame in between is kept to show no phase moved
+    await h.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    try {
+        await new Promise((r) => setTimeout(r, 200));
+        const instant = await h.ev(`new Promise((resolve) => {
+            const bubble = document.querySelector(${sel(BUBBLE)});
+            const phase = () => bubble.getAttribute("data-council-question-fold");
+            const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+            const seen = [phase()];
+            (async () => {
+                for (let i = 0; i < 2; i++) {
+                    bubble.querySelector("[data-council-question-toggle]").click();
+                    for (let f = 0; f < 6; f++) {
+                        await frame();
+                        seen.push(phase());
+                    }
+                }
+                resolve(seen);
+            })();
+        })`);
+        rec(
+            "question: with reduced motion Show more and Show less switch at once, through no opening or closing phase",
+            // [folded, then six frames after the first click, then six after the second]
+            instant.length === 13 &&
+                instant[0] === "folded" &&
+                instant.slice(1, 7).every((p) => p === "open") &&
+                instant.slice(7).every((p) => p === "folded"),
+            instant
+        );
+    } finally {
+        await h.cdp("Emulation.setEmulatedMedia", { features: [] });
+    }
+}
+
+// ---- the thumbs: a chip under the message, the buttons at the byline's right end on hover; and a long list of lines ----
+
+const IDLE_FILE = "pkg/services/idle_sleep_manager.go";
+const MANY_LINES = [41, 110, 423, 449, 520, 600, 777, 812];
+const MANY_LABEL = ":41, 110, 423, 449, 520, 600, 777, 812";
+
+// the like or dislike of one message as drawn: the byline's right end (its opacity, where it sits, the buttons and which is
+// pressed), the chip under the bubble, and the boxes of all of them (to see that nothing moves)
+const thumbFacts = (h, post) =>
+    h.ev(`(() => {
+        const art = document.querySelector(${sel(post)});
+        if (!art) return null;
+        const box = (el) => {
+            if (!el) return null;
+            const b = el.getBoundingClientRect();
+            return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)].join(",");
+        };
+        const thumbs = art.querySelector("[data-council-thumbs]");
+        const end = thumbs.parentElement;
+        const byline = end.parentElement;
+        const bubble = art.querySelector("[data-council-bubble]");
+        const chip = art.querySelector("[data-council-thumb-chip]");
+        const name = byline.firstElementChild;
+        return {
+            endOpacity: getComputedStyle(end).opacity,
+            endRight: Math.round(end.getBoundingClientRect().right),
+            bylineRight: Math.round(byline.getBoundingClientRect().right),
+            endAfterName: end.getBoundingClientRect().left >= name.getBoundingClientRect().right,
+            inEnd: [...end.children].map((e) => (e.hasAttribute("data-council-thumbs") ? "thumbs" : "time")).join(),
+            buttons: [...thumbs.querySelectorAll("[data-council-thumb]")].map((b) => b.dataset.councilThumb + "=" + b.getAttribute("aria-pressed")),
+            chip: chip
+                ? {
+                      kind: chip.dataset.councilThumbChip,
+                      text: chip.textContent.replace(/\\s+/g, " ").trim(),
+                      icon: !!chip.querySelector("svg"),
+                      pressed: chip.getAttribute("aria-pressed"),
+                      tone: chip.classList.contains("text-success-soft") ? "success" : chip.classList.contains("text-error-soft") ? "error" : "other",
+                      title: chip.getAttribute("title"),
+                      below: bubble ? chip.getBoundingClientRect().top >= bubble.getBoundingClientRect().bottom - 1 : null,
+                  }
+                : null,
+            boxes: [box(byline), box(bubble), box(chip), box(thumbs)].join("|"),
+        };
+    })()`);
+
+const movePointer = (h, x, y) => h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+const centreOf = (h, s) =>
+    h.ev(`(() => {
+        const el = document.querySelector(${sel(s)});
+        el.scrollIntoView({ block: "nearest" });
+        const b = el.getBoundingClientRect();
+        return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+    })()`);
+
+async function thumbsAndLines(h, ctx, rec) {
+    const id = await openFixture(h, ctx, "done", {
+        id: `${councilFixtureId("done")}-thumbs`,
+        edit: (c) => {
+            const p2 = c.proposals.find((p) => p.id === "P2");
+            p2.thumb = "like";
+            p2.evidence = [{ ref: "pkg/services/model.go:38" }, ...MANY_LINES.map((n) => ({ ref: `${IDLE_FILE}:${n}` }))];
+            c.replies.find((r) => r.id === "r4").thumb = "like";
+            c.replies.find((r) => r.id === "r5").thumb = "dislike";
+        },
+    });
+    await click(h, `${LIST} [data-council-idea="P2"]`);
+    await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-reply-post="r5"]')`);
+    const R4 = '[data-council-reply-post="r4"]';
+    const R5 = '[data-council-reply-post="r5"]';
+    const IDEA = '[data-council-post="P2"]';
+    await movePointer(h, 2, 2);
+    await new Promise((r) => setTimeout(r, 300));
+
+    // a like or dislike that is on is a chip under the message, in its tone with its icon and word
+    const r4 = await thumbFacts(h, R4);
+    const r5 = await thumbFacts(h, R5);
+    const idea = await thumbFacts(h, IDEA);
+    await h.shot("cdp-shots/council-discussion-thumbs.png");
+    rec(
+        "thumbs: a reply with a like shows a `Liked` chip (a thumb up, the success colours) under its bubble, a disliked one `Disliked` (a thumb down, the error colours), and the idea's own `Liked` sits under its evidence; each is a pressed button that names what it takes back",
+        r4.chip?.kind === "like" &&
+            r4.chip.text === "Liked" &&
+            r4.chip.icon &&
+            r4.chip.pressed === "true" &&
+            r4.chip.tone === "success" &&
+            r4.chip.below === true &&
+            r4.chip.title === "Take back your like" &&
+            r5.chip?.kind === "dislike" &&
+            r5.chip.text === "Disliked" &&
+            r5.chip.icon &&
+            r5.chip.tone === "error" &&
+            r5.chip.below === true &&
+            r5.chip.title === "Take back your dislike" &&
+            idea.chip?.kind === "like" &&
+            idea.chip.text === "Liked",
+        { r4: r4.chip, r5: r5.chip, idea: idea.chip }
+    );
+
+    // with the pointer away, no thumb button shows in the byline: the time and the buttons are at its right end, dimmed out
+    rec(
+        "thumbs: with the pointer away the byline's time and both thumb buttons are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
+        [r4, r5, idea].every(
+            (f) =>
+                f.endOpacity === "0" &&
+                f.endRight === f.bylineRight &&
+                f.endAfterName &&
+                f.inEnd === "time,thumbs" &&
+                f.buttons.length === 2
+        ) &&
+            r4.buttons.join() === "like=true,dislike=false" &&
+            r5.buttons.join() === "like=false,dislike=true",
+        { r4, r5, idea }
+    );
+
+    // a hover shows them, and nothing moves
+    const at = await centreOf(h, R4);
+    await movePointer(h, at.x, at.y);
+    await new Promise((r) => setTimeout(r, 300));
+    const hovered = await thumbFacts(h, R4);
+    await h.shot("cdp-shots/council-discussion-thumbs-hover.png");
+    rec(
+        "thumbs: a hover on the reply shows the time and both buttons (the like pressed) and moves nothing: the byline, the bubble, the chip and the buttons keep their boxes",
+        hovered.endOpacity === "1" &&
+            hovered.buttons.join() === "like=true,dislike=false" &&
+            hovered.boxes === r4.boxes,
+        { before: r4.boxes, after: hovered.boxes, opacity: hovered.endOpacity }
+    );
+
+    // the chip takes the like back, as a press on the thumb that is on does; the other thumb sets a dislike. The command is
+    // replaced in the page, so nothing is written
+    await stubRpc(h, ["CouncilThumbCommand"]);
+    await click(h, `${R4} [data-council-thumb-chip]`);
+    await until(h, `!document.querySelector('${R4} [data-council-thumb-chip]')`);
+    const taken = await thumbFacts(h, R4);
+    await click(h, `${R4} [data-council-thumb="dislike"]`);
+    await until(h, `document.querySelector('${R4} [data-council-thumb-chip]')?.dataset.councilThumbChip === "dislike"`);
+    const set = await thumbFacts(h, R4);
+    await click(h, `${R4} [data-council-thumb="dislike"]`);
+    await until(h, `!document.querySelector('${R4} [data-council-thumb-chip]')`);
+    const calls = await rpcCalls(h, "CouncilThumbCommand");
+    rec(
+        "thumbs: a press on the chip takes the like back (one CouncilThumbCommand with an empty thumb, the chip gone, the like no longer pressed); the dislike button sets a `Disliked` chip, and a press on that button takes it back too",
+        taken.chip === null &&
+            taken.buttons.join() === "like=false,dislike=false" &&
+            set.chip?.text === "Disliked" &&
+            set.buttons.join() === "like=false,dislike=true" &&
+            calls.length === 3 &&
+            calls.every((c) => c.data?.id === id && c.data?.item === "r4") &&
+            calls.map((c) => c.data?.thumb).join() === ",dislike,",
+        { taken, set, calls }
+    );
+    await unstubRpc(h);
+    await movePointer(h, 2, 2);
+
+    // an evidence chip with many cited lines keeps its file name; the line list is what is cut, and the title holds all of it
+    const chips = await h.ev(`[...document.querySelectorAll('${IDEA} [data-council-evidence="ref"]')].map((chip) => {
+        const name = chip.querySelector("[data-council-source-name]");
+        const lines = chip.querySelector("[data-council-source-lines]");
+        return {
+            name: name.textContent,
+            nameShown: name.getBoundingClientRect().width > 0 && name.scrollWidth <= name.clientWidth,
+            lines: lines?.textContent ?? null,
+            linesCut: lines ? lines.scrollWidth > lines.clientWidth : null,
+            width: Math.round(chip.getBoundingClientRect().width),
+            title: chip.getAttribute("title"),
+        };
+    })`);
+    await h.shot("cdp-shots/council-discussion-lines-chip.png");
+    const many = chips.find((c) => c.name === "idle_sleep_manager.go");
+    const short = chips.find((c) => c.name === "model.go");
+    rec(
+        "evidence: a chip citing eight lines of idle_sleep_manager.go still shows the whole file name, cuts the line list with an ellipsis inside the 260px chip, and holds the full list in its title; a chip with one line shows both whole",
+        many != null &&
+            many.nameShown &&
+            many.linesCut === true &&
+            many.lines === MANY_LABEL &&
+            many.width <= 261 &&
+            many.title === `${IDLE_FILE}${MANY_LABEL}` &&
+            short != null &&
+            short.nameShown &&
+            short.lines === ":38" &&
+            short.linesCut === false,
+        { many, short }
+    );
+}
+
+// ---- a thread's suggested replies stay while the person types ----
+
+async function threadAsksTyping(h, ctx, rec) {
+    const ASKS = ["How much RAM does a woken app hold?", "Does this change on a Mac?"];
+    await openFixture(h, ctx, "done", {
+        id: `${councilFixtureId("done")}-threadasks`,
+        edit: (c) => {
+            // a seat's newest answer in P2's thread, after everything else, with two replies it suggests
+            const last = Math.max(...c.replies.map((r) => r.ts));
+            c.replies.push({
+                id: "r30",
+                proposalid: "P2",
+                author: "ram",
+                stance: "accept",
+                text: "A cold reopen costs about 3 s on my machine.",
+                round: 3,
+                ts: last + 60_000,
+                asks: ASKS,
+            });
+        },
+    });
+    await click(h, `${LIST} [data-council-idea="P2"]`);
+    await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-thread-asks]')`);
+    const box = sel(`${THREAD_COMPOSER} [data-council-composer-input]`);
+    const asksOf = () => h.ev(`[...document.querySelectorAll("[data-council-thread-asks] [data-council-thread-ask]")].map((b) => b.textContent.trim())`);
+    const before = await asksOf();
+    await typeInto(h, `${THREAD_COMPOSER} [data-council-composer-input]`, "W");
+    await new Promise((r) => setTimeout(r, 200));
+    const typed = await asksOf();
+    await h.shot("cdp-shots/council-discussion-threadasks-typing.png");
+    await click(h, '[data-council-thread-ask="1"]');
+    await until(h, `document.querySelector(${box})?.value !== "W"`).catch(() => {});
+    const replaced = await h.ev(`document.querySelector(${box})?.value ?? ""`);
+    const after = await asksOf();
+    rec(
+        "thread asks: the seat's two suggested replies stay over the thread's box while the person types one letter, and a click puts its text in the box in place of the letter",
+        before.join("|") === ASKS.join("|") &&
+            typed.join("|") === ASKS.join("|") &&
+            replaced === ASKS[1] &&
+            after.join("|") === ASKS.join("|"),
+        { before, typed, replaced, after }
+    );
+}
+
 // ---- the hooks ----
 
 const PHASES = [
@@ -2398,6 +3301,11 @@ const PHASES = [
     ["brainstorm", brainstorm],
     ["queued", queued],
     ["round 1", round1],
+    ["seat timeline", seatTimeline],
+    ["claim badges", claimBadges],
+    ["question fold", questionFold],
+    ["thumbs", thumbsAndLines],
+    ["thread asks", threadAsksTyping],
     ["paused", awaiting],
     ["stopped", stopped],
     ["failed", failed],

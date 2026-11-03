@@ -9,6 +9,7 @@
 // Wave runtime imports (councilsetupmodel.test.ts).
 
 import { formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
+import { langOf, type CouncilLang } from "./councillang";
 import {
     agentSeat,
     councilProjectKey,
@@ -80,9 +81,30 @@ export function initialPanel(draft: CouncilSetupDraft, lib: RoleLibrary): Counci
     return applyGroup(draft, lib, lib.groups[0].id, false);
 }
 
+// ---- the language the names are shown in ----
+
+/** Pure: the language Setup shows the seat and group names in: the one the typed question reads, else the feature. This
+ *  is the preview of what wavesrv does at Start, from the same two texts (`LangOf` in pkg/council), which then names
+ *  the seats for the council. */
+export function setupLang(draft: Pick<CouncilSetupDraft, "feature" | "question">): CouncilLang {
+    return langOf(draft.question.trim() !== "" ? draft.question : draft.feature);
+}
+
+/** Pure: a seat's name in `lang`: its Vietnamese name in a Vietnamese council, else the name it has. A role with no
+ *  `namevi` (the person's own, a suggestion, a live agent) keeps its one name. */
+export function seatName(e: Pick<CouncilExpert, "name" | "namevi">, lang: CouncilLang): string {
+    return lang === "vi" && e.namevi ? e.namevi : e.name;
+}
+
+/** Pure: a group's name in `lang`, as seatName does for a seat. */
+export function groupLabel(g: Pick<CouncilGroup, "name" | "namevi">, lang: CouncilLang): string {
+    return lang === "vi" && g.namevi ? g.namevi : g.name;
+}
+
 /** Pure: a group's name for the group button; a panel with no group in the library is Custom. */
-export function groupName(lib: RoleLibrary, groupId: string): string {
-    return lib.groups.find((g) => g.id === groupId)?.name ?? "Custom";
+export function groupName(lib: RoleLibrary, groupId: string, lang: CouncilLang = "en"): string {
+    const group = lib.groups.find((g) => g.id === groupId);
+    return group != null ? groupLabel(group, lang) : "Custom";
 }
 
 // ---- the mode ----
@@ -211,8 +233,12 @@ export function pendingRoles(draft: CouncilSetupDraft): CouncilExpert[] {
     return (draft.suggestion?.roles ?? []).filter((r) => !draft.experts.some((x) => x.id === r.id));
 }
 
-export function expertInitial(e: CouncilExpert): string {
-    return Array.from(e.name.trim())[0]?.toUpperCase() ?? "?";
+/** Pure: the letter in a seat's circle: the first of the name shown in `lang`. Every Vietnamese role name starts with
+ *  `Người` (the person who…), which would give every circle an N, so its initial is the next word's. */
+export function expertInitial(e: CouncilExpert, lang: CouncilLang = "en"): string {
+    const words = seatName(e, lang).trim().split(/\s+/);
+    const word = words[0] === "Người" && words.length > 1 ? words[1] : words[0];
+    return Array.from(word ?? "")[0]?.toUpperCase() ?? "?";
 }
 
 export type ExpertTone = "conn-1" | "conn-2" | "conn-3" | "conn-6" | "conn-7" | "conn-8" | "coordinator";
@@ -336,6 +362,7 @@ export function moreProjects(draft: Pick<CouncilSetupDraft, "project" | "agents"
 /** One line of Setup's Seats list. */
 export interface SeatRow {
     expert: CouncilExpert;
+    name: string; // the name shown: an expert's in the question's language, an agent's as it is
     kind: "agent" | "expert";
     meta: string; // `claude · arc`, `sonnet · <its brief>`, `opus · writes the summary`
     cost: string; // what one turn costs: an agent's whole context, an expert's call, the coordinator's summary
@@ -346,9 +373,11 @@ export interface SeatRow {
 /** Pure: the Seats list: the agents first, then the experts and the coordinator, each with its cost per turn.
  *  `projectName` names the project an agent works in. */
 export function seatRows(draft: CouncilSetupDraft, projectName: (path: string) => string): SeatRow[] {
+    const lang = setupLang(draft);
     const agents = draft.agents.map(
         (a): SeatRow => ({
             expert: a.seat,
+            name: a.seat.name,
             kind: "agent",
             meta: [a.seat.harness, projectName(a.project)].filter(Boolean).join(" · "),
             cost: a.seat.context ? `${formatTokens(a.seat.context)} / turn` : "size unknown",
@@ -361,6 +390,7 @@ export function seatRows(draft: CouncilSetupDraft, projectName: (path: string) =
             e.coordinator
                 ? {
                       expert: e,
+                      name: seatName(e, lang),
                       kind: "expert",
                       meta: `${e.model} · writes the summary`,
                       cost: `≈${formatTokens(COORDINATOR_TOKENS)}`,
@@ -369,6 +399,7 @@ export function seatRows(draft: CouncilSetupDraft, projectName: (path: string) =
                   }
                 : {
                       expert: e,
+                      name: seatName(e, lang),
                       kind: "expert",
                       meta: [e.model, e.brief].filter(Boolean).join(" · "),
                       cost: `≈${formatTokens(EXPERT_TURN_TOKENS)} / turn`,
@@ -746,14 +777,16 @@ export function readingLine(draft: CouncilSetupDraft): string {
 /** Pure: the one line under the composer: the group, its experts by name, and the coordinator who writes the answer;
  *  empty with no expert. */
 export function expertsLine(draft: CouncilSetupDraft, lib: RoleLibrary): string {
-    const names = draft.experts.filter((e) => !e.coordinator).map((e) => e.name);
+    const lang = setupLang(draft);
+    const names = draft.experts.filter((e) => !e.coordinator).map((e) => seatName(e, lang));
     if (names.length === 0) {
         return "";
     }
     const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-    const coordinator = draft.experts.find((e) => e.coordinator)?.name;
+    const lead = draft.experts.find((e) => e.coordinator);
+    const coordinator = lead != null ? seatName(lead, lang) : undefined;
     const read = `${who} ${names.length === 1 ? "reads the code from its own side" : "each read the code from their own side"}`;
-    return `${groupName(lib, draft.group)}: ${read}${coordinator != null ? `; the ${coordinator} writes the answer` : ""}.`;
+    return `${groupName(lib, draft.group, lang)}: ${read}${coordinator != null ? `; the ${coordinator} writes the answer` : ""}.`;
 }
 
 // ---- Save as group ----

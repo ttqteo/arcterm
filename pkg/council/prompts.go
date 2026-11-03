@@ -14,7 +14,12 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-02.3"
+const HarnessVersion = "2026-11-03.1"
+
+// verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
+// seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
+const verifyField = `,
+      "verify": [{"command": "go test ./pkg/services -run TestIdleSleep", "expect": "fail", "why": "one line: what the result would show"}]`
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -26,12 +31,12 @@ const (
     {
       "title": "a short title for the change you propose",
       "argument": "why, in about 70 words, with a table, a list or a diagram when it compares or counts",
-      "evidence": [{"ref": "pkg/services/idle.go:42"}]
+      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]` + verifyField + `
     },
     {
       "title": "Sleep after one idle minute",
       "argument": "I'd put a service to sleep after one idle minute, not five. Here's what each wait holds:\n\n| Idle wait | RAM held | Wake time |\n|---|---|---|\n| 1 min | 40 MB | 2 s |\n| 5 min | 120 MB | 2 s |\n\nWaking takes as long either way, so the shorter wait only saves. To try it:\n\n1. Log the idle gaps for a day.\n2. Count how often a wake would cost 2 s.\n3. Ship it behind a setting.",
-      "evidence": [{"ref": "pkg/services/idle.go:42"}]
+      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]
     }
   ]
 }`
@@ -145,6 +150,9 @@ func shapeForRounds(c *Council, shape string) string {
 // for no answer.
 var synthesisShapeNoQuestion = strings.Replace(synthesisShape, answerLine, "", 1)
 
+// round1ShapeNoVerify is round1Shape for a live agent seat: the quote, and no verify request.
+var round1ShapeNoVerify = strings.Replace(round1Shape, verifyField, "", 1)
+
 // The Brainstorm shapes. They keep the keys the parsers read ("proposals" holds the ideas, "directions" the ideas worth
 // trying) and add the Brainstorm ones: a wild flag, a build flag, a first step and the ideas kept aside.
 const (
@@ -220,6 +228,34 @@ const (
 	evidenceRule = "Evidence is a path:line in the project, or a region of an attached screenshot written " +
 		"screenshot:<file>#<region>. Cite it for every claim: a claim that cites nothing is drawn weak, and the " +
 		"coordinator marks it as such."
+
+	// quoteRule follows evidenceRule in round 1 of a Review, and in an agent seat's: Go checks each cite against the files,
+	// and the quote is what it looks for at the line. A file outside the project folder, one the person attached, is only
+	// found by its absolute path.
+	quoteRule = `Go checks every path:line you cite against the project's files. For each cite you read, add the exact ` +
+		`text of that line (or of the lines a range covers) as "quote", copied from the file as you read it and never ` +
+		`written from memory: Go looks for it at or near the line, and marks a cite wrong when it cannot find the file, ` +
+		`the line or the quote. Leave "quote" out of a cite you did not read. Cite a file outside the project folder, such ` +
+		`as an attached file the person gave by its absolute path, by that absolute path.`
+
+	// verifyRule is in round 1 of a Review, an agent seat's excepted: a claim a test settles can ask Go to run it. The
+	// three forms are the allowlist (verify.go), and the cap and the three minutes are Go's.
+	verifyRule = `A claim a test settles can carry a check. In a proposal's "verify", ask Go to run a command for it: give ` +
+		`the "command", what you "expect" of it ("pass" or "fail") and, in "why", one line on what its result would show. ` +
+		`You run nothing yourself: after this round Go runs each command on a copy of the project as it is now, and every ` +
+		`expert reads the results. At most 2 commands in all, across your proposals; Go skips the rest. The command must ` +
+		`be exactly one of these three forms, with no pipe, no && or ;, no redirect and no variable: ` +
+		`go test <one package> -run <pattern>, npx vitest run <one file>, or cargo test <one test name> (put ` +
+		`--manifest-path <path to Cargo.toml> before the name when the crate is not at the project root). Anything else ` +
+		`is not run. Name a test that exists: a command that finds no test, does not build or takes over 3 minutes ` +
+		`tests nothing, and counts for nothing. Leave "verify" out of a proposal no test can settle.`
+
+	// verifyResultsRule is in a Review's reply pass when any proposal it shows carries a result; synthesisVerifyRule is the
+	// coordinator's. The results themselves sit under each proposal (writeRuns).
+	verifyResultsRule = `Under a proposal, the checks Go ran are facts it measured on a copy of the project, not opinions. ` +
+		`Argue from them: in a reason, say when a result backs a claim or contradicts it.`
+	synthesisVerifyRule = `Under a proposal, the checks Go ran are facts it measured on a copy of the project, not ` +
+		`opinions. Where a result backs a direction or contradicts it, say so in that direction's reasoning.`
 
 	stanceRule = `A stance is one of "accept", "challenge" or "oppose".`
 
@@ -482,7 +518,7 @@ func writeContext(b *strings.Builder, c *Council, e CouncilExpert, role string) 
 }
 
 // writeProposal writes one proposal under a heading of the given level. A Brainstorm's wild idea says so, and its
-// evidence line is left out: a Brainstorm asks for none.
+// evidence line is left out: a Brainstorm asks for none. The checks Go ran for it follow its evidence (writeResults).
 func writeProposal(b *strings.Builder, c *Council, p CouncilProposal, level string) {
 	title := p.Title
 	if p.Wild && isBrainstorm(c) {
@@ -492,7 +528,99 @@ func writeProposal(b *strings.Builder, c *Council, p CouncilProposal, level stri
 	if !isBrainstorm(c) || len(p.Evidence) > 0 {
 		fmt.Fprintf(b, "Evidence: %s\n", evidenceText(p.Evidence))
 	}
+	writeResults(b, c, p)
 	b.WriteString("\n")
+}
+
+// promptTailLines is how many of a result's last lines a prompt shows under its proposal. The record keeps 40; a prompt
+// keeps the end, where a test says what failed.
+const promptTailLines = 20
+
+// handledResults are the verify requests of p that Go handled, in the order they were asked: ran, or refused with a
+// reason. A request nothing handled yet has no result to show.
+func handledResults(p CouncilProposal) []CouncilRun {
+	var out []CouncilRun
+	for _, r := range p.Runs {
+		if r.State != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// hasVerifyResults says some proposal a Review's reply pass or synthesis shows carries a result: a cut proposal's is not
+// shown, and a Brainstorm asks for no check.
+func hasVerifyResults(c *Council) bool {
+	if isBrainstorm(c) {
+		return false
+	}
+	return slices.ContainsFunc(sentProposals(c), func(p CouncilProposal) bool { return !p.Cut && len(handledResults(p)) > 0 })
+}
+
+// resultCommand is a run's command as one line that cannot close a code span.
+func resultCommand(r CouncilRun) string {
+	return strings.ReplaceAll(strings.Join(strings.Fields(r.Command), " "), "`", "'")
+}
+
+// resultText is what became of one verify request, in words: "failed (exit 1), as its author expected", "passed, but
+// its author expected it to fail", "not run (timed out after 3 min)". Whether it matched is read from the state against
+// the expectation, as the label is (LabelOf), never from the stored flag.
+func resultText(r CouncilRun) string {
+	switch r.State {
+	case RunPass, RunFail:
+		word := "passed"
+		if r.State == RunFail {
+			word = "failed"
+			if r.Exit != 0 {
+				word += fmt.Sprintf(" (exit %d)", r.Exit)
+			}
+		}
+		if r.State == r.Expect {
+			return word + ", as its author expected"
+		}
+		return word + ", but its author expected it to " + r.Expect
+	case RunNotRun:
+		if reason := oneLine(r.Reason); reason != "" {
+			return "not run (" + reason + ")"
+		}
+		return "not run"
+	}
+	return "requested, never ran"
+}
+
+// resultLines are the last n lines of a result's output, without the blank lines that end it.
+func resultLines(tail string, n int) []string {
+	lines := strings.Split(strings.TrimRight(strings.ReplaceAll(tail, "\r\n", "\n"), " \t\r\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t\r")
+	}
+	return lines
+}
+
+// writeResults writes the checks Go ran for p under its proposal: each command with what became of it, and the last lines
+// of its output. Every seat reads them in its round 2 prompt, the author's own and the others', so the round argues over
+// results. A cut proposal's are left out, since it was not reviewed, and a Brainstorm has none.
+func writeResults(b *strings.Builder, c *Council, p CouncilProposal) {
+	if isBrainstorm(c) || p.Cut {
+		return
+	}
+	runs := handledResults(p)
+	if len(runs) == 0 {
+		return
+	}
+	b.WriteString("Checks Go ran for it:\n")
+	for _, r := range runs {
+		fmt.Fprintf(b, "- `%s`: %s\n", resultCommand(r), resultText(r))
+		for _, line := range resultLines(r.Tail, promptTailLines) {
+			b.WriteString("    " + line + "\n")
+		}
+	}
 }
 
 // writeFiles lists the files and screenshots the person put in front of the panel.
@@ -512,8 +640,9 @@ func writeFiles(b *strings.Builder, c *Council) {
 }
 
 // round1Task is what the ideas round asks, and the shape of the answer: the end of the round 1 prompt, and of an agent
-// seat's first turn.
-func round1Task(c *Council) string {
+// seat's first turn. verify says the expert may ask Go to run commands for its proposals, which a role expert in a Review
+// may and an agent seat may not; a Brainstorm asks for no evidence, so for no quote and no check either.
+func round1Task(c *Council, verify bool) string {
 	var b strings.Builder
 	if isBrainstorm(c) {
 		b.WriteString("Come up with ideas for the problem or goal from your angle only. Do not judge any idea, yours or " +
@@ -530,9 +659,15 @@ func round1Task(c *Council) string {
 		"proposals beat many weak ones, and none is a fair answer if you find nothing worth changing. " +
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
+	b.WriteString(quoteRule + "\n\n")
+	shape := round1ShapeNoVerify
+	if verify {
+		b.WriteString(verifyRule + "\n\n")
+		shape = round1Shape
+	}
 	b.WriteString(messageRules + "\n\n")
 	b.WriteString(pictureCheck + "\n\n")
-	b.WriteString(jsonRule + "\n```json\n" + round1Shape + "\n```\n")
+	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }
 
@@ -548,7 +683,7 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 		fmt.Fprintf(&b, "\nThis is round 1 of %d: proposals. You have Read, Grep and Glob in the project folder. "+
 			"You review; you never edit anything.\n\n", SynthesisRound(c))
 	}
-	b.WriteString(round1Task(c))
+	b.WriteString(round1Task(c, true))
 	return b.String()
 }
 
@@ -698,6 +833,9 @@ func round2Task(c *Council, round int, reads bool) string {
 	b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 		"when there are none.\n\n")
 	b.WriteString(titleRule + "\n\n")
+	if hasVerifyResults(c) {
+		b.WriteString(verifyResultsRule + "\n\n")
+	}
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(messageRules + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round2Shape + "\n```\n")
@@ -941,10 +1079,25 @@ func SynthesisPrompt(c *Council) string {
 		shape, summary = synthesisShape, summaryRule
 	}
 	b.WriteString("\n" + titleRule + "\n\n")
+	if hasVerifyResults(c) {
+		b.WriteString(synthesisVerifyRule + "\n\n")
+	}
 	b.WriteString(summary + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + shapeForRounds(c, shape) + "\n```\n")
 	return b.String()
+}
+
+// LangLine is the line that asks Setup's suggestion for its role names in the council's language: Vietnamese for a
+// Vietnamese council, and none for English, which the prompt is written in already, or for a language the council does
+// not hold. suggestPrompt carries it; the runner passes the language it read from the question.
+func LangLine(lang string) string {
+	if lang != LangVi {
+		return ""
+	}
+	return `The person writes in Vietnamese, so write each suggested role's "name" in Vietnamese too: a short plain ` +
+		`phrase for who the role is, the way the stock roles are called "Người soi lỗi" (a bug hunter), "Người dùng mới" ` +
+		`(a new user) and "Người canh RAM" (a memory watcher).`
 }
 
 // writeBrainstormSynthesisTask ends a Brainstorm's synthesis prompt: at most 3 ideas worth trying, each with why and a
@@ -1325,7 +1478,7 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 	}
 
 	if round == 1 {
-		b.WriteString(round1Task(c))
+		b.WriteString(round1Task(c, false)) // Go runs no command for a live seat
 		return
 	}
 	if first && briefedByReport(c, round) {

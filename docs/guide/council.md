@@ -41,14 +41,37 @@ Một council là một **nhóm** gồm các chuyên gia theo vai và một ngư
 
 | Nhóm | Chuyên gia | Người tổng kết |
 |---|---|---|
-| Review a UI feature | UX, RAM, người mới dùng, Skeptic | Coordinator |
-| Paper review | hai reviewer, một người đọc | Area chair |
-| Product ideas | người mới dùng, designer, builder, Contrarian | Facilitator |
-| Chats with a Skeptic | các chat bạn chọn + Skeptic | Coordinator |
-| Chats with a Contrarian | các chat bạn chọn + Contrarian | Facilitator |
+| Review a UI feature | Ease of use, Memory watcher, New user, Bug hunter | Summarizer |
+| Paper review | Reviewer A, Reviewer B, Reader | Final judge |
+| Product ideas | New user, Designer, Builder, Other side | Host |
+| Chats with a Bug hunter | các chat bạn chọn + Bug hunter | Summarizer |
+| Chats with the Other side | các chat bạn chọn + Other side | Host |
 
 Hai nhóm cuối dành cho council có xếp ghế cho chat. Bạn thêm vai của riêng mình trong `councilroles.json`, nằm trong
-thư mục config. Ngoài các vai, council còn xếp được ghế cho các **chat đang sống** của bạn:
+thư mục config.
+
+**Tên vai theo ngôn ngữ của câu hỏi.** Mỗi vai dựng sẵn có một tên tiếng Anh dễ hiểu và một tên tiếng Việt, và council hiện
+bộ tên khớp với ngôn ngữ bạn đặt câu hỏi: câu hỏi có chữ chỉ tiếng Việt mới viết (đ, ă, â, ê, ô, ơ, ư, hay nguyên âm có
+dấu thanh) thì hiện tên tiếng Việt, còn lại là tiếng Anh. Council đọc ngôn ngữ này một lần lúc bắt đầu và lưu lại; các vai
+Setup gợi ý thêm cũng được đặt tên bằng ngôn ngữ đó. Ghế bạn đã đổi tên, vai của riêng bạn và ghế agent giữ nguyên tên.
+Mã vai không đổi, nên council cũ vẫn mở bình thường.
+
+| Mã | Tiếng Anh | Tiếng Việt |
+|---|---|---|
+| `ux` | Ease of use | Người lo trải nghiệm |
+| `ram` | Memory watcher | Người canh RAM |
+| `newuser` | New user | Người dùng mới |
+| `skeptic` | Bug hunter | Người soi lỗi |
+| `coordinator` | Summarizer | Người tổng hợp |
+| `reviewer-a` / `reviewer-b` | Reviewer A / B | Người chấm A / B |
+| `reader` | Reader | Người đọc |
+| `areachair` | Final judge | Người chốt điểm |
+| `designer` | Designer | Người thiết kế |
+| `builder` | Builder | Người làm |
+| `contrarian` | Other side | Người cãi ngược |
+| `facilitator` | Host | Người dẫn dắt |
+
+Ngoài các vai, council còn xếp được ghế cho các **chat đang sống** của bạn:
 
 - Một agent claude hay pi đang chạy được ngồi như một ghế và trả lời bằng context của chính phiên đó. Với council do bạn
   mở trong app, mỗi câu trả lời của nó nằm chờ dưới dạng bản nháp: **Send to the others** (gửi cho cả nhóm), **Edit** hoặc
@@ -91,6 +114,80 @@ của ý đang chọn, `Esc` đóng thread, và khi không có thread mở thì 
 
 ![Discussion của council "Rail apps" ở vòng 2: hàng ghế lọc trên cùng (Everyone, UX, RAM, New user, Skeptic, Coordinator), các ý trong bong bóng màu kèm chip file và cảnh báo "Weak", câu trả lời vòng 2 bên dưới, thread của một ý mở ở panel phải, ô nhắn ở đáy](images/council-discussion.png)
 
+## Nhãn: ý nào đứng vững
+
+Chuyên gia chỉ có `Read`, `Grep` và `Glob`, và không model nào có Bash. Nhưng arcterm không nhận lời họ nói làm bằng
+chứng: sau vòng 1 và sau mỗi lượt trả lời, Go tự kiểm từng ý (và từng câu trả lời có lập trường: đồng ý, có nghi ngờ,
+phản đối) rồi gắn một **nhãn**. Nhãn do Go đặt từ những gì nó kiểm được, không bao giờ do model.
+
+| Nhãn | Nghĩa | Khi nào |
+|---|---|---|
+| **Ran** (Đã chạy) | Go đã chạy lệnh cho ý này và kết quả đúng như chuyên gia dự đoán | lệnh `verify` của ý chạy xong, pass hay fail đúng như họ nói trước |
+| **Disproved** (Bị bác) | Go đã chạy lệnh và kết quả ngược với dự đoán; màu đỏ, kèm dấu x | lệnh chạy xong, pass hay fail khác với `expect` |
+| **Read code** (Đã đọc code) | ý trích code và trích dẫn đứng vững | ít nhất một `path:line` có thật và đoạn chuyên gia trích có ở đó |
+| **Guess** (Chỉ đoán) | ý không trích gì, hoặc không trích dẫn nào đứng vững | không có bằng chứng, hoặc không cái nào khớp |
+
+Một trích dẫn không khớp (file không có, số dòng vượt cuối file, đoạn trích không thấy gần dòng đó) hiện **Wrong cite**
+(Trích sai) ngay trên chip và không được tính vào Read code; một ý có cả trích dẫn đúng lẫn sai vẫn là Read code, còn mỗi
+trích dẫn sai vẫn hiện riêng. "Gần dòng đó" là chính dòng hay đoạn được trích, cộng ba dòng mỗi bên, phân biệt hoa thường.
+Trích dẫn vào file hay thư mục bạn đính kèm cho council được kiểm theo đường dẫn đó (với file ngoài project, trích bằng
+đường dẫn tuyệt đối); trích dẫn của một ghế agent được kiểm theo thư mục làm việc của chính agent đó khi biết, không thì
+theo project; `screenshot:` không bị gắn nhãn hay đếm. Council **Brainstorm** không đòi bằng chứng, nên không có nhãn, không
+có thanh bằng chứng và không có bước chạy lệnh.
+
+### Lệnh kiểm chứng
+
+Ở vòng 1, một chuyên gia theo vai (không phải ghế agent) có thể xin Go chạy lệnh để kiểm một ý của mình, kèm điều nó
+đoán sẽ xảy ra (`pass` hay `fail`) và một dòng lý do. Chỉ ba dạng lệnh được phép, chạy thẳng không qua shell:
+
+- `go test ./pkg/x -run TestY`: đúng một package, bắt buộc có `-run` (cho thêm `-count=1`, `-v`…)
+- `npx vitest run path/to/file.test.ts`: đúng một file (cho thêm `-t "tên"`)
+- `cargo test [--manifest-path src-tauri/Cargo.toml] tên_test`: đúng một tên test
+
+Lệnh có `|`, `&&`, `;`, `>`, `<`, dấu backtick hay `$(`, lệnh của chương trình khác, hay đường dẫn chui ra ngoài cây thì không
+chạy; dòng timeline ghi "not run: not on the list" và ý giữ nhãn Read code hoặc Guess. Mỗi chuyên gia chạy tối đa **2** lệnh
+mỗi council, mỗi lệnh dừng sau **3 phút**, và mỗi lệnh xin một chỗ trong hàng đợi job như mọi lượt gọi của council.
+
+- **Chạy ở đâu**: lúc council bắt đầu, Go chụp project như nó đang là (HEAD cộng thay đổi chưa commit và file chưa theo
+  dõi) thành một commit mà không đụng index hay file của bạn, và các lệnh chạy trong một cây tạm tách khỏi branch ở commit
+  đó, tức là trên đúng đoạn code các chuyên gia đã đọc. Cây bị xóa khi council xong, lỗi hay bị dừng; checkout của bạn không
+  bao giờ bị ghi. Project không phải git repo thì không chạy lệnh nào, và timeline nói rõ vì sao.
+- **Lúc nào**: ngay sau vòng 1, trước chỗ dừng sau vòng 1, để kết quả nằm trước mắt bạn khi chọn ý nào cần cắt. Ý bạn cắt thì
+  kết quả của nó không đi tiếp vào vòng 2. Council một vòng cũng chạy bước này, và kết quả đi tới bản tổng kết.
+- **Kết quả**: mỗi lệnh ghi pass hay fail, mã thoát, 40 dòng cuối của output và việc nó có đúng như dự đoán không. Kết quả được
+  đưa vào lời nhắc vòng 2 của **mọi** ghế, không chỉ người xin lệnh, nên vòng 2 cãi nhau trên kết quả.
+- **Chỉ kết quả đã thật sự thử ý đó mới tính.** Lệnh quá giờ, lệnh không khớp test nào ("no tests to run", "No test files
+  found", "running 0 tests") hay không build được thì ghi **not run** kèm lý do, không bao giờ là pass hay fail, và không bao
+  giờ làm một ý thành Ran hay Disproved.
+
+### Timeline của từng chuyên gia
+
+Council giữ mọi việc mỗi chuyên gia đã làm, tối đa 200 dòng mỗi người (dòng cũ nhất rớt trước): giờ, loại việc (đọc file, tìm,
+chạy lệnh, đăng ý, trả lời), đích đến (file, mẫu tìm, lệnh) và kết quả khi có. Lệnh hiện bằng font mono. Mở timeline từ nút
+**Timeline** trên mỗi ghế trong popover Seats, hay từ thẻ chuyên gia trong tab **Map**. Với ghế agent, timeline lấy từ các
+dòng hoạt động agent báo trên roster, nên loại việc chỉ đoán được phần nào ("reading seat.go", "running go test…").
+
+## Tab Map
+
+Council có ba tab: **Report**, **Discussion** và **Map** (Bản đồ), mở được cả khi council đang chạy lẫn khi đã xong.
+
+- **Thẻ chuyên gia**: một thẻ mỗi ghế, trong một hàng: avatar, tên vai, việc đang làm (lệnh đang chạy hiện bằng font mono
+  kèm chấm làm việc), một thanh bằng chứng bốn đoạn (Ran xanh lá, Disproved đỏ, Read code trung tính, Guess vàng hổ phách) kèm
+  số đếm bằng chữ, rồi token, thời gian và số lượt gọi. Không có "độ tự tin" do model tự khai: thanh bằng chứng thay nó, và do
+  Go đếm. Bấm thẻ để mở timeline của ghế.
+- **Ma trận lập trường**: mỗi ý một hàng, xếp theo mức đồng thuận cao trước, mỗi ghế một cột. Mỗi ô là một viên thuốc:
+  **Proposed**, **Agrees**, **Has doubts**, **Against** hay "not said"; ô ghi "revised in round N" khi tác giả đã sửa ý sau một
+  lời thách thức. Dưới tên mỗi ý là nhãn kiểm của nó: Ran (kèm lệnh và kết quả), Read code (kèm chip `path:line`) hay Guess. Hai
+  cột cuối là thanh đồng thuận (xanh / vàng hổ phách / đỏ, kèm số bằng chữ, ví dụ "2 agree · 1 doubt") và kết cục lấy từ báo
+  cáo; ý bị rút lại bị làm mờ. Phía trên bảng có chú thích cho từng nhãn. Bấm một hàng (hay `Enter`) để mở lý do của từng ghế
+  dưới cột của họ; mỗi lúc mở một hàng, bấm lần nữa để đóng. Từ bảy ghế trở lên, ma trận cuộn ngang trong khung của nó, cột ý
+  đứng yên bên trái. Trước khi có bản tổng kết, lý do lấy từ chính các câu trả lời, nên Map dùng được ngay khi council còn chạy.
+- Trạng thái không bao giờ chỉ là màu: mỗi nhãn và mỗi viên thuốc có biểu tượng hay chữ.
+- Council **Brainstorm** không có nhãn và thanh bằng chứng; ma trận thêm viên thuốc **Builds on**, còn thẻ vẫn giữ token, thời
+  gian và số lượt gọi.
+
+Các nhãn cũng hiện trên chip bằng chứng trong Discussion và Report.
+
 ## Nhắn cho council
 
 Ô nhắn dưới kênh (và ô trả lời trong một thread) dùng được cả khi council đang chạy lẫn khi đã xong:
@@ -110,8 +207,9 @@ của ý đang chọn, `Esc` đóng thread, và khi không có thread mở thì 
 
 ## Báo cáo
 
-Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi các hướng đi. Một **ma trận** cho biết mỗi chuyên gia đứng ở
-đâu (**Agrees**, **Has doubts**, **Is against it**); các ý được xếp hạng theo ba lựa chọn hàng đầu của từng chuyên gia.
+Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi các hướng đi; các ý được xếp hạng theo ba lựa chọn hàng đầu của
+từng chuyên gia. Ai đồng ý với ý nào (**Agrees**, **Has doubts**, **Against**) nằm ở tab [**Map**](#tab-map): báo cáo có một
+dòng "See who agrees with which idea in Map" mở nó.
 
 - **Cột thông tin** bên cạnh, luôn hiện khi cuộn: trạng thái và chi phí, mục lục của báo cáo (bấm để nhảy tới; phần đang
   đọc có màu xám), từng chuyên gia với model của họ và những gì họ đã làm, và tài liệu đã lưu. Bấm một chuyên gia để

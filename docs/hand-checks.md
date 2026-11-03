@@ -6,6 +6,31 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Deleting a just-closed session says how long to wait: after the next build, close an agent, then at
+  once delete its session in History → the toast reads "…it was written to 20s ago (a closed agent writes its last
+  lines as it exits), try again in 1m40s", and a delete after that wait goes through. Unit tests only
+  (`pkg/sessiontrash`, 85223554b).
+
+- [ ] (arcterm) A run from a spec settles its last plan review itself: after the next build, start a run from a
+  brainstorm (Build … as specified in …) → if round 2 of the plan review fails, the lead carries the findings in with
+  `wsh jarvis dag amend` and runs `wsh jarvis dag planreview accept` on its own, with no Plan review ask, and
+  `wsh runs show` reads "failed, then accepted by the lead"; only a finding that changes the spec's decisions still
+  comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
+  3520d3a3f); no live run yet.
+
+- [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
+  has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final
+  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219).
+
+- [ ] (arcterm) A force-landed run reads Landed: in the Agent tree and the Brief, find run c06ba9cb (Council UX pass,
+  landed with Land anyway after Final round 2 failed) → its stage reads Landed with the Final check pip failed, not
+  Cancelled; `wsh runs show` adds "(closed when the run ended: the run is done, not cancelled)" to its dag line. Unit
+  tests only (`frontend/app/view/agents/runstage.ts`, `cmd/wsh/cmd/wshcmd-runs.go`); the app was not opened.
+
+- [ ] (arcterm) council-tree step 11b no longer flakes: `task verify:ui -- council-tree` passes 11b, 11c and 11g (the
+  hovers now retry at the row's current place, `hoverUntil` in `scripts/cdp/council/tree.mjs`). Not run: no dev app
+  was up.
+
 - [ ] (arcterm) Council thread replies stay in their thread, with a live seat: on a running council's Discussion, open
   an idea's reply chip and send a reply in the thread → it shows in the thread and the idea's chip counts it, no copy
   in the channel, and the seat's answer lands in the thread only. The fixtures passed in headless Chrome

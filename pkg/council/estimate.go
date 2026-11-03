@@ -4,7 +4,9 @@
 package council
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -17,6 +19,7 @@ const (
 	synthesisTokens      = 80_000
 	followupTokens       = 20_000  // one expert answering a reply from text
 	followupToolsTokens  = 110_000 // the same, with Read, Grep and Glob on: three sonnet answers took 80k–147k on 2026-11-01
+	routerTokens         = 15_000  // one router call: a sonnet call with no tools. A first guess: re-measure once real routed messages run
 	round1Minutes        = 3
 	replyPassMinutes     = 2 // round 2, and again for a third round
 	synthesisMinutes     = 1
@@ -26,12 +29,15 @@ const (
 )
 
 // CouncilEstimate is what a council, or part of one, is expected to cost. Tokens are counted, not priced: the
-// model an expert runs on does not enter the number.
+// model an expert runs on does not enter the number. CallsMax and TokensMax are set only for a range (EstimateRouted),
+// where Calls and Tokens are its low end and these its high end.
 type CouncilEstimate struct {
 	Calls       int   `json:"calls"`
 	Tokens      int64 `json:"tokens"`
 	Minutes     int   `json:"minutes"`
 	AgentTokens int64 `json:"agenttokens,omitempty"` // the share of Tokens the seated agents' turns take
+	CallsMax    int   `json:"callsmax,omitempty"`
+	TokensMax   int64 `json:"tokensmax,omitempty"`
 }
 
 // seatRounds is how many rounds the seats of c answer before the summary. Rounds counts only when an agent is seated,
@@ -103,21 +109,87 @@ func EstimateRemaining(c *Council) CouncilEstimate {
 // chat whose Context is unknown (0: a pi chat, or a claude chat with no transcript yet) takes the flat price too, never
 // nothing. Calls counts both; AgentTokens is the chats' share of Tokens.
 func EstimateFollowup(k int, agents []CouncilExpert, tools bool) CouncilEstimate {
-	per, minutes := int64(followupTokens), followupMinutes
-	if tools {
-		per, minutes = followupToolsTokens, followupToolsMinutes
-	}
+	per, minutes := followupPrice(tools)
 	var agentTokens int64
 	for _, a := range agents {
-		if a.Context > 0 {
-			agentTokens += a.Context
-		} else {
-			agentTokens += per
-		}
+		agentTokens += chatTokens(a, per)
 	}
 	return CouncilEstimate{
 		Calls:       k + len(agents),
 		Tokens:      int64(k)*per + agentTokens,
+		Minutes:     minutes,
+		AgentTokens: agentTokens,
+	}
+}
+
+// followupPrice is what one role expert answering a message costs, and how long a round of them takes: from text, or
+// with the read-only tools on.
+func followupPrice(tools bool) (tokens int64, minutes int) {
+	if tools {
+		return followupToolsTokens, followupToolsMinutes
+	}
+	return followupTokens, followupMinutes
+}
+
+// chatTokens is what a chat answering costs: the context it holds, or the flat price (per) when that is unknown (0: a pi
+// chat, or a claude chat with no transcript yet), never nothing.
+func chatTokens(chat CouncilExpert, per int64) int64 {
+	if chat.Context > 0 {
+		return chat.Context
+	}
+	return per
+}
+
+// routedSeat is one seat the router may pick, as the estimate prices it.
+type routedSeat struct {
+	price int64
+	chat  bool
+}
+
+// routedSeatsByPrice prices each candidate of a routed message, dearest first (a tie keeps the panel's order).
+func routedSeatsByPrice(candidates []CouncilExpert, tools bool) []routedSeat {
+	per, _ := followupPrice(tools)
+	seats := make([]routedSeat, 0, len(candidates))
+	for _, e := range candidates {
+		if IsAgent(e) {
+			seats = append(seats, routedSeat{price: chatTokens(e, per), chat: true})
+		} else {
+			seats = append(seats, routedSeat{price: per})
+		}
+	}
+	slices.SortStableFunc(seats, func(a, b routedSeat) int { return cmp.Compare(b.price, a.price) })
+	return seats
+}
+
+// EstimateRouted prices a whole-council message the router takes: one router call, then one seat (the low end) or two
+// (the high end), as a range. The router picks among routeCandidates, so a seat with a failed call and the coordinator
+// are never priced. A role seat costs the flat follow-up price, a chat its context (the flat price when that is unknown);
+// the low end prices the cheapest candidate and the high end the two dearest, one when there is only one. With toolsAuto
+// Let them read files is on Auto: the router has not decided, so the low end reads no files and the high end does;
+// otherwise both ends use tools. Calls and CallsMax count the router's call; Minutes is the high end's; AgentTokens is
+// the chats' share of the high end. No candidate is the zero estimate: nobody could answer.
+func EstimateRouted(c *Council, tools, toolsAuto bool) CouncilEstimate {
+	candidates := routeCandidates(c)
+	if len(candidates) == 0 {
+		return CouncilEstimate{}
+	}
+	lowTools, highTools := tools && !toolsAuto, tools || toolsAuto
+	cheapest := routedSeatsByPrice(candidates, lowTools)
+	dearest := routedSeatsByPrice(candidates, highTools)[:min(2, len(candidates))]
+	low := routerTokens + cheapest[len(cheapest)-1].price
+	high, agentTokens := int64(routerTokens), int64(0)
+	for _, s := range dearest {
+		high += s.price
+		if s.chat {
+			agentTokens += s.price
+		}
+	}
+	_, minutes := followupPrice(highTools)
+	return CouncilEstimate{
+		Calls:       2,
+		CallsMax:    1 + len(dearest),
+		Tokens:      low,
+		TokensMax:   high,
 		Minutes:     minutes,
 		AgentTokens: agentTokens,
 	}

@@ -170,6 +170,9 @@ func writeMatrix(b *strings.Builder, c *Council) {
 		if p.Wild && isBrainstorm(c) {
 			title += " (wild idea)"
 		}
+		if w := labelWord(p.Label); w != "" {
+			title += " (" + w + ")"
+		}
 		fmt.Fprintf(b, "| %s |", tableCell(p.Id+" · "+title))
 		for _, e := range panel {
 			b.WriteString(" " + matrixCell(c, p, e) + " |")
@@ -267,9 +270,81 @@ func proseOf(text string) string {
 	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
-// writeMessage is one message of the discussion: who, the label in plain words, what it is about, its words and its
-// evidence.
-func writeMessage(b *strings.Builder, who, label, about, body string, evidence []CouncilEvidence) {
+// labelWord is the word the document gives a claim's check label (the Label* values): "Ran", "Disproved", "Read code" or
+// "Guess". It is empty for no label, and for a word nothing labels with. The document's own words are English, whatever
+// the council's language; the Map and the chips draw the council's language from their own table.
+func labelWord(label string) string {
+	switch label {
+	case LabelRan:
+		return "Ran"
+	case LabelDisproved:
+		return "Disproved"
+	case LabelRead:
+		return "Read code"
+	case LabelGuess:
+		return "Guess"
+	}
+	return ""
+}
+
+// docTailLines is how much of a result's output the document keeps: all the record holds.
+const docTailLines = 40
+
+// resultFence is the code fence for lines of a result's output: three backticks, or one more than the longest run of them
+// in the output, so the output cannot close its own fence.
+func resultFence(lines []string) string {
+	longest, run := 0, 0
+	for _, l := range lines {
+		run = 0
+		for _, r := range l {
+			if r == '`' {
+				run++
+				longest = max(longest, run)
+			} else {
+				run = 0
+			}
+		}
+	}
+	return strings.Repeat("`", max(3, longest+1))
+}
+
+// docEvidenceText is evidenceText with a wrong cite named beside its ref, with why: the document keeps what the check
+// found, so a claim read as Read code shows which of its cites did not hold.
+func docEvidenceText(ev []CouncilEvidence) string {
+	marked := make([]CouncilEvidence, len(ev))
+	for i, e := range ev {
+		if e.Cite == CiteWrong && e.Ref != "" {
+			if note := oneLine(e.CiteNote); note != "" {
+				e.Ref += " (wrong cite: " + note + ")"
+			} else {
+				e.Ref += " (wrong cite)"
+			}
+		}
+		marked[i] = e
+	}
+	return evidenceText(marked)
+}
+
+// docChecks are the lines a message of the document carries for the check of its claim: the label word, then each verify
+// request with what became of it and the end of its output. It is empty for a claim nothing labels and nothing ran for.
+func docChecks(label string, runs []CouncilRun) string {
+	var b strings.Builder
+	if w := labelWord(label); w != "" {
+		fmt.Fprintf(&b, "Check: %s\n", w)
+	}
+	for _, r := range runs {
+		fmt.Fprintf(&b, "Verify `%s`: %s\n", resultCommand(r), resultText(r))
+		if lines := resultLines(r.Tail, docTailLines); len(lines) > 0 {
+			fence := resultFence(lines)
+			b.WriteString(fence + "text\n" + strings.Join(lines, "\n") + "\n" + fence + "\n")
+		}
+	}
+	return b.String()
+}
+
+// writeMessage is one message of the discussion: who, the label in plain words, what it is about, its words, its
+// evidence, and the check of its claim (docChecks), which is empty for a message that makes none.
+func writeMessage(b *strings.Builder, who, label, about, body string, evidence []CouncilEvidence, checks string) {
 	fmt.Fprintf(b, "- **%s** %s", who, label)
 	if about != "" {
 		b.WriteString(" · " + about)
@@ -279,7 +354,10 @@ func writeMessage(b *strings.Builder, who, label, about, body string, evidence [
 		b.WriteString(indent(body, "  ") + "\n")
 	}
 	if len(evidence) > 0 {
-		fmt.Fprintf(b, "  Evidence: %s\n", evidenceText(evidence))
+		fmt.Fprintf(b, "  Evidence: %s\n", docEvidenceText(evidence))
+	}
+	if strings.TrimSpace(checks) != "" {
+		b.WriteString(indent(checks, "  ") + "\n")
 	}
 }
 
@@ -333,7 +411,7 @@ func proposalMessage(c *Council, p CouncilProposal) string {
 	case p.Withdrawn:
 		about += " (withdrawn)"
 	}
-	writeMessage(&b, docName(c, p.Author), proposalLabel(c, p), about, p.Argument, p.Evidence)
+	writeMessage(&b, docName(c, p.Author), proposalLabel(c, p), about, p.Argument, p.Evidence, docChecks(p.Label, p.Runs))
 	return b.String()
 }
 
@@ -349,7 +427,7 @@ func replyMessage(c *Council, r CouncilReply) string {
 	if parent := findReply(c, r.ParentId); parent != nil {
 		about += " (replying to " + docName(c, parent.Author) + ")"
 	}
-	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), r.Text, r.Evidence)
+	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), r.Text, r.Evidence, docChecks(r.Label, nil))
 	return b.String()
 }
 
@@ -372,7 +450,7 @@ func writeDiscussion(b *strings.Builder, c *Council) {
 	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].ts < msgs[j].ts })
 	q := oneLine(c.Question)
 	if q != "" {
-		writeMessage(b, "You", "sets the goal", "", q, nil)
+		writeMessage(b, "You", "sets the goal", "", q, nil, "")
 	}
 	for _, m := range msgs {
 		b.WriteString(m.text)

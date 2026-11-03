@@ -4,6 +4,7 @@
 package council
 
 import (
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -81,6 +82,33 @@ func TestRound1Prompt(t *testing.T) {
 		"Read, Grep and Glob", "never edit",
 		evidenceRule, round1Shape, "```json")
 	mustNotContain(t, "round 1 prompt", p, "Title-one", "Text-r1")
+}
+
+func TestRound1PromptAsksForAQuoteAndVerifyRequests(t *testing.T) {
+	c := promptCouncil()
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, quoteRule, verifyRule, `"quote"`, `"verify"`, `"expect"`,
+		"go test <one package> -run <pattern>", "npx vitest run <one file>", "cargo test <one test name>", "--manifest-path",
+		"At most 2", `"pass" or "fail"`, "absolute path")
+	mustContain(t, "round 1 prompt", p, round1Shape)
+
+	// a Brainstorm asks for no evidence, so for no quote and no check either
+	b := brainstormCouncil()
+	pb := Round1Prompt(b, b.Experts[0])
+	mustNotContain(t, "brainstorm round 1 prompt", pb, quoteRule, verifyRule, `"quote"`, `"verify"`, `"expect"`)
+}
+
+func TestLangLine(t *testing.T) {
+	vi := LangLine(LangVi)
+	mustContain(t, "vi line", vi, "Vietnamese", `"name"`, "Người soi lỗi")
+	if got := LangLine(LangEn); got != "" {
+		t.Errorf("LangLine(en) = %q, want none: an English council needs no line", got)
+	}
+	for _, lang := range []string{"", "fr", "VI "} {
+		if got := LangLine(lang); got != "" {
+			t.Errorf("LangLine(%q) = %q, want none for a language the council does not hold", lang, got)
+		}
+	}
 }
 
 func TestRound1PromptLeavesOutWhatIsEmpty(t *testing.T) {
@@ -228,6 +256,109 @@ func TestSynthesisPromptNamesNoMissingExpertWhenNoneFailed(t *testing.T) {
 	c := promptCouncil()
 	c.Failed["lead"] = CouncilFailure{Round: 3, Error: "the synthesis itself"} // the coordinator being retried is not "missing"
 	mustNotContain(t, "synthesis prompt", SynthesisPrompt(c), "## Missing", "Lead (its")
+}
+
+// verifyCouncil is promptCouncil after the verify step: a run that matched, one that did not, one that never ran, a
+// request nothing handled, and the cut proposal's result, which no prompt carries.
+func verifyCouncil() *Council {
+	c := promptCouncil()
+	var lines []string
+	for i := 1; i <= 30; i++ {
+		lines = append(lines, fmt.Sprintf("out-%02d", i))
+	}
+	c.Proposals[0].Runs = []CouncilRun{{Command: "go test ./pkg/services -run TestIdle", Expect: RunFail, State: RunFail, Exit: 1,
+		Matched: true, Tail: strings.Join(lines, "\n")}}
+	c.Proposals[1].Runs = []CouncilRun{{Command: "npx vitest run frontend/a.test.ts", Expect: RunPass, State: RunFail, Exit: 1,
+		Tail: "AssertionError: expected 2 to be 3"}}
+	c.Proposals[2].Runs = []CouncilRun{
+		{Command: "cargo test idle_sleep", Expect: RunFail, State: RunNotRun, Reason: "timed out after 3 min"},
+		{Command: "go test ./pkg/pending -run TestPending", Expect: RunPass}, // nothing handled it
+	}
+	c.Proposals[3].Runs = []CouncilRun{{Command: "go test ./pkg/cutone -run TestCut", Expect: RunPass, State: RunPass, Matched: true, Tail: "ok-cut-output"}}
+	return c
+}
+
+// everySeatSees checks that prompt p holds the results a verify step recorded on P1 to P3, and none of the cut P4's.
+func everySeatSees(t *testing.T, what, p string) {
+	t.Helper()
+	mustContain(t, what, p,
+		"`go test ./pkg/services -run TestIdle`: failed (exit 1), as its author expected",
+		"`npx vitest run frontend/a.test.ts`: failed (exit 1), but its author expected it to pass",
+		"AssertionError: expected 2 to be 3",
+		"`cargo test idle_sleep`: not run (timed out after 3 min)",
+		"out-30", "out-11") // the last 20 lines of the 30 it kept
+	mustNotContain(t, what, p, "out-10", "out-01", "TestPending", "go test ./pkg/cutone", "ok-cut-output")
+}
+
+func TestRound2PromptVerifyResults(t *testing.T) {
+	c := verifyCouncil()
+	for _, e := range c.Experts[:3] { // every seat reads every result: its own proposals' and the others'
+		everySeatSees(t, e.Name+"'s round 2 prompt", Round2Prompt(c, e))
+	}
+	// under its proposal: UX's own P1 under its own heading, the others' under the review heading
+	ux := Round2Prompt(c, c.Experts[0])
+	own := section(t, ux, "## Your own proposals")
+	mustContain(t, "own section", own, "go test ./pkg/services -run TestIdle")
+	mustNotContain(t, "own section", own, "npx vitest run")
+	review := section(t, ux, "## Proposals to review")
+	mustContain(t, "review section", review, "npx vitest run frontend/a.test.ts", "cargo test idle_sleep")
+	mustNotContain(t, "review section", review, "go test ./pkg/services")
+	if i, j := strings.Index(review, "### P2 ·"), strings.Index(review, "npx vitest run"); i < 0 || j < i {
+		t.Errorf("a result is not under its proposal: P2 at %d, its result at %d\n%s", i, j, review)
+	}
+	mustContain(t, "round 2 prompt", ux, verifyResultsRule)
+
+	// a later reply pass shows them too
+	for _, e := range c.Experts[:3] {
+		everySeatSees(t, e.Name+"'s round 3 prompt", round2PromptFor(c, e, 3))
+	}
+
+	// a council with no result says nothing about results
+	plain := promptCouncil()
+	mustNotContain(t, "round 2 prompt", Round2Prompt(plain, plain.Experts[0]), verifyResultsRule, "Checks Go ran")
+
+	// a Brainstorm asks for no check, so shows none
+	b := verifyCouncil()
+	b.Mode = ModeBrainstorm
+	mustNotContain(t, "brainstorm round 2 prompt", Round2Prompt(b, b.Experts[0]), "go test ./pkg/services", verifyResultsRule)
+}
+
+func TestSynthesisPromptVerifyResults(t *testing.T) {
+	c := verifyCouncil()
+	p := SynthesisPrompt(c)
+	everySeatSees(t, "synthesis prompt", p)
+	mustContain(t, "synthesis prompt", p, synthesisVerifyRule)
+	// each under its own proposal, in the order the proposals come
+	last := -1
+	for _, w := range []string{"### P1 ·", "go test ./pkg/services", "### P2 ·", "npx vitest run", "### P3 ·", "cargo test idle_sleep", "### P4 ·"} {
+		i := strings.Index(p, w)
+		if i < 0 || i < last {
+			t.Errorf("%q is missing or out of order (at %d after %d) in\n%s", w, i, last, p)
+		}
+		last = max(last, i)
+	}
+	mustContain(t, "synthesis prompt", p, "The person cut this proposal at the pause")
+
+	plain := promptCouncil()
+	mustNotContain(t, "synthesis prompt", SynthesisPrompt(plain), synthesisVerifyRule)
+
+	b := verifyCouncil()
+	b.Mode = ModeBrainstorm
+	mustNotContain(t, "brainstorm synthesis prompt", SynthesisPrompt(b), "go test ./pkg/services", synthesisVerifyRule)
+}
+
+func TestAnswersPromptShowsTheResultsUnderAProposal(t *testing.T) {
+	c := verifyCouncil()
+	p := AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) // UX answers r3, on its own P1
+	mustContain(t, "answers prompt", p, "`go test ./pkg/services -run TestIdle`: failed (exit 1), as its author expected")
+}
+
+func TestAgentTurnShowsTheResultsOfTheIdeasItReviews(t *testing.T) {
+	c := verifyCouncil()
+	c.Experts[0].Agent, c.Experts[0].Harness = "tab-1", HarnessClaude
+	p := AgentFirstPrompt(c, c.Experts[0], 2)
+	mustContain(t, "agent round 2 prompt", p, "`npx vitest run frontend/a.test.ts`: failed (exit 1), but its author expected it to pass")
+	mustNotContain(t, "agent round 2 prompt", p, "go test ./pkg/cutone")
 }
 
 func TestAnswersPromptCarriesOnlyTheBranchAndTheExpertsOwnProposals(t *testing.T) {
@@ -642,8 +773,10 @@ func TestAgentPrompts(t *testing.T) {
 	first := AgentFirstPrompt(c, witness, 1)
 	mustContain(t, "first prompt", first, "You are Witness", "live agent", "Feature: Idle sleep for services", "Question for the council: Which direction first?",
 		`D:\proj`, "pkg/services/idle.go", "## Who sits in the council", "- Scout · agent", "- UX · expert", "- RAM · expert", "- Lead · expert · the coordinator",
-		"Nothing you say reaches the others until the person sends it", "This is round 1 of 4: proposals", round1Shape, evidenceRule)
+		"Nothing you say reaches the others until the person sends it", "This is round 1 of 4: proposals", round1ShapeNoVerify, evidenceRule, quoteRule)
 	mustNotContain(t, "first prompt", first, "- Witness ·", "Title-sent", "## What was said", "## What the person asks you")
+	// a live agent's cites are checked, but it gets no verify request: Go runs nothing for a seat
+	mustNotContain(t, "first prompt", first, round1Shape, verifyRule, `"verify"`, `"expect"`)
 	mustContain(t, "brainstorm first prompt", AgentFirstPrompt(&Council{Mode: ModeBrainstorm, Feature: "F", Experts: c.Experts}, witness, 1),
 		"brainstorms ideas", "Problem or goal: F", brainstormRound1Shape)
 

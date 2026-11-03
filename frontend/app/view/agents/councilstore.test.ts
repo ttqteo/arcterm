@@ -15,6 +15,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilListCommand: vi.fn(),
         CouncilStartCommand: vi.fn(),
         CouncilReplyCommand: vi.fn(),
+        CouncilAskTooCommand: vi.fn(),
         CouncilContinueCommand: vi.fn(),
         CouncilDraftCommand: vi.fn(),
         CouncilSummarizeCommand: vi.fn(),
@@ -51,6 +52,7 @@ import { emptyCouncilDraft } from "./councilmodel";
 import {
     addCouncilImages,
     addDraftImage,
+    askCouncilSeatToo,
     autoGenerateCouncil,
     clearCouncilImages,
     clearDraftImages,
@@ -275,6 +277,24 @@ describe("actions", () => {
             model: "sonnet",
         });
         expect(RpcApi.CouncilSaveGroupCommand).toHaveBeenCalledWith(TabRpcClient, group);
+    });
+
+    it("ask-too passes the council, the reply and the seat, and answers a refusal inline", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.mocked(RpcApi.CouncilAskTooCommand).mockResolvedValueOnce(undefined);
+        expect(await askCouncilSeatToo("h1", "r4", "ram")).toEqual({ ok: true, value: undefined });
+        expect(RpcApi.CouncilAskTooCommand).toHaveBeenCalledWith(TabRpcClient, {
+            id: "h1",
+            replyid: "r4",
+            expertid: "ram",
+        });
+        vi.mocked(RpcApi.CouncilAskTooCommand).mockRejectedValueOnce(new Error("seat ram already has reply r4"));
+        expect(await askCouncilSeatToo("h1", "r4", "ram")).toEqual({
+            ok: false,
+            error: "seat ram already has reply r4",
+        });
+        expect(quiet).toHaveBeenCalled();
+        quiet.mockRestore();
     });
 
     it("draft passes the council, the item, the action and the text of an edit", async () => {

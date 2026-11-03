@@ -6,6 +6,7 @@ package council
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,8 @@ type fakeLink struct {
 	mu       sync.Mutex
 	state    string
 	context  int64
+	cwd      string // the working directory the seat reports
+	activity string // the tool line the seat reports
 	answer   string
 	answerTs int64
 	seats    int
@@ -36,7 +39,7 @@ func (f *fakeLink) Seat(context.Context, string) (AgentSeatState, error) {
 	if f.onSeat != nil {
 		f.onSeat(f, f.seats)
 	}
-	return AgentSeatState{State: f.state, Context: f.context}, f.seatErr
+	return AgentSeatState{State: f.state, Context: f.context, Cwd: f.cwd, Activity: f.activity}, f.seatErr
 }
 
 func (f *fakeLink) Send(_ context.Context, _, text string) error {
@@ -133,6 +136,60 @@ func TestAgentCallerBusyThenIdle(t *testing.T) {
 	}
 	if len(tools) == 0 || tools[0] != "Waiting for Witness to finish its task" {
 		t.Errorf("activity = %q, want it to name the agent being waited for", tools)
+	}
+}
+
+// toolLines is what the agent does with a sent turn: on each Seat call after the send it is working on the next of the
+// lines (the tool line the roster shows; "" is the gap between two tool calls), then it rests with text as its newest
+// answer.
+func toolLines(text string, lines ...string) func(f *fakeLink) {
+	return func(f *fakeLink) {
+		sentAt := f.seats
+		f.onSeat = func(f *fakeLink, n int) {
+			if i := n - sentAt - 1; i < len(lines) {
+				f.state, f.activity = SeatWorking, lines[i]
+				return
+			}
+			f.state, f.activity, f.answer, f.answerTs = SeatIdle, "", text, f.answerTs+100
+		}
+	}
+}
+
+func TestAgentCallerActivity(t *testing.T) {
+	// each new tool line of the turn is reported once, in order; a line the next poll still shows is not repeated, and the
+	// gap between two tool calls reports nothing
+	f := &fakeLink{state: SeatIdle, answer: "old", answerTs: 100, onSend: toolLines("done",
+		"reading a.go", "reading a.go", "reading b.go", "", "reading b.go", "running go test", "running go test")}
+	var tools []string
+	res, err := agentCaller(f).Call(context.Background(), agentReq(func(s string) { tools = append(tools, s) }))
+	if err != nil || res.Text != "done" {
+		t.Fatalf("Call = %+v, %v, want the answer", res, err)
+	}
+	if want := []string{"reading a.go", "reading b.go", "running go test"}; !reflect.DeepEqual(tools, want) {
+		t.Errorf("activity = %q, want %q: each new tool line once, none for a gap or a repeat", tools, want)
+	}
+
+	// a seat that is busy with its own task when the turn comes: the one "Waiting for" line, then only the turn's own tools,
+	// since the task's tool lines are not the council's
+	busy := &fakeLink{state: SeatWorking, activity: "running npm test", answerTs: 100, onSend: toolLines("after", "reading c.go")}
+	busy.onSeat = func(f *fakeLink, n int) {
+		if n >= 4 {
+			f.state, f.activity = SeatIdle, ""
+		}
+	}
+	tools = nil
+	res, err = agentCaller(busy).Call(context.Background(), agentReq(func(s string) { tools = append(tools, s) }))
+	if err != nil || res.Text != "after" {
+		t.Fatalf("Call = %+v, %v, want the answer once the seat was free", res, err)
+	}
+	if want := []string{"Waiting for Witness to finish its task", "reading c.go"}; !reflect.DeepEqual(tools, want) {
+		t.Errorf("activity = %q, want %q", tools, want)
+	}
+
+	// a caller that wants no activity is left alone
+	quiet := &fakeLink{state: SeatIdle, onSend: toolLines("ok", "reading a.go", "reading b.go")}
+	if res, err = agentCaller(quiet).Call(context.Background(), agentReq(nil)); err != nil || res.Text != "ok" {
+		t.Fatalf("Call without OnTool = %+v, %v", res, err)
 	}
 }
 

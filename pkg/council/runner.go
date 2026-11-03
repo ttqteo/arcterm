@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -37,6 +38,10 @@ type Runner struct {
 	Caller Caller
 	// Agents is the caller for the seats with Agent set, an AgentCaller over the live agents; Caller serves the rest.
 	Agents Caller
+	// Trees makes and removes the throwaway tree the verify commands run in (RunVerifies). pkg/orchestrate implements it
+	// and wavesrv wires it: orchestrate imports this package, so this one cannot import it. Nil runs no command, and the
+	// timeline says so.
+	Trees TreeMaker
 	// OnChange is told after each save, with the council as saved. It may be called from several goroutines at once, and
 	// the council is the callee's to read, not to change.
 	OnChange func(c *Council)
@@ -45,6 +50,10 @@ type Runner struct {
 
 	mu     sync.Mutex // guards active and the queue, and orders a reply against the end of a run
 	active map[string]*run
+	// routing holds one channel per reply whose router call is in flight, keyed councilId + "/" + replyId and closed when
+	// the pick is saved: a pass that finds the reply still pending waits on it rather than make a second call. Guarded by
+	// mu, and made on first use.
+	routing map[string]chan struct{}
 }
 
 const (
@@ -127,6 +136,10 @@ func prevOf(c *Council) prevState { return prevState{c.State, c.Round, c.Error} 
 
 var errSkip = errors.New("nothing to save")
 
+// takeSnapshot is the snapshot a Review council takes of its project when its run begins (Snapshot). It is a variable so a
+// test never runs git unless it asks to.
+var takeSnapshot = Snapshot
+
 func (r *Runner) now() int64 {
 	if r.Now != nil {
 		return r.Now()
@@ -192,6 +205,18 @@ func panelOf(c *Council) []CouncilExpert {
 	out := make([]CouncilExpert, 0, len(c.Experts))
 	for _, e := range c.Experts {
 		if !e.Coordinator {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// routeCandidates are the seats the router may pick for a whole-council message: the panel's, in panel order, less any
+// seat whose call failed (it cannot answer), and so never the coordinator.
+func routeCandidates(c *Council) []CouncilExpert {
+	out := make([]CouncilExpert, 0, len(c.Experts))
+	for _, e := range panelOf(c) {
+		if _, failed := c.Failed[e.Id]; !failed {
 			out = append(out, e)
 		}
 	}
@@ -302,6 +327,7 @@ func (r *Runner) stampNew(c *Council) {
 	c.Activity, c.Failed, c.Skips, c.Stats = nil, nil, nil, nil
 	c.Tokens, c.Calls, c.Started, c.Error = 0, 0, 0, ""
 	c.RanMs, c.RunStarted = 0, 0
+	c.Timeline, c.Snapshot = nil, ""
 }
 
 // beginRun marks where a run (a council's rounds, or a follow-up: a reply, Continue, Summarize, Retry) begins; its
@@ -320,7 +346,9 @@ func endRun(c *Council, now int64) {
 // beginFresh is where a council's run begins, whether Start, StartSaved or the queue starts it, so it is where the
 // council records the harness it runs under, and where Rounds, which only a council with agents honours, is cleared from
 // one without: it runs today's two rounds. It is also where the draft mode is taken: cleared and frozen again from the
-// seats the council has now, so a re-run of a saved council takes the mode its seats give at that start.
+// seats the council has now, so a re-run of a saved council takes the mode its seats give at that start. And it is where
+// the council's language is read, from the question else the feature (LangOf), and each stock role's seat is named in it
+// (NameSeats): a seat the person renamed, an agent seat and a role of their own keep the name they have.
 func (r *Runner) beginFresh(c *Council) {
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
 	r.beginRun(c)
@@ -330,6 +358,17 @@ func (r *Runner) beginFresh(c *Council) {
 	if !HasAgents(c) {
 		c.Rounds = 0
 	}
+	c.Lang = councilLang(c.Question, c.Feature)
+	NameSeats(c)
+}
+
+// councilLang is the language a council is held in: the question's when it has one, else the feature's. It is the text
+// Setup reads too (setupLang in councilsetupmodel.ts), so the names Setup showed are the names Start gives.
+func councilLang(question, feature string) string {
+	if strings.TrimSpace(question) != "" {
+		return LangOf(question)
+	}
+	return LangOf(feature)
 }
 
 // absent is nil when nothing is saved under id yet.
@@ -763,6 +802,11 @@ func (r *Runner) roundsWork(from int) work {
 			return loadFailed(err)
 		}
 		synth, held, at := SynthesisRound(snap), HoldsDrafts(snap), snap.Round
+		snapped := func() {}
+		if from == 1 {
+			snapped = r.snapshotTree(ctx, rn, id, snap)
+		}
+		defer snapped() // a run that ends early still waits for it
 		for round := from; round < synth; round++ {
 			if round != at {
 				r.setRound(rn, id, round)
@@ -770,8 +814,23 @@ func (r *Runner) roundsWork(from int) work {
 			}
 			if round == 1 {
 				forEachExpert(panelOf(snap), func(e CouncilExpert) { r.round1(ctx, rn, id, snap, e) })
-			} else if err := r.replyPass(ctx, rn, id, round); err != nil {
-				return loadFailed(err)
+				snapped()
+				// the checks on what round 1 claimed come before the pause, so the person cuts ideas knowing which ones held up
+				r.settleClaims(ctx, rn, id)
+			} else {
+				// an idea the person sent after round 1 (held drafts) asked for commands too: they run before it is argued over
+				if r.verifyClaims(ctx, rn, id) && ctx.Err() == nil {
+					r.checkClaims(ctx, rn, id)
+				}
+				if ctx.Err() != nil {
+					return ending{}
+				}
+				if err := r.replyPass(ctx, rn, id, round); err != nil {
+					return loadFailed(err)
+				}
+				if ctx.Err() == nil {
+					r.checkClaims(ctx, rn, id)
+				}
 			}
 			if ctx.Err() != nil {
 				return ending{}
@@ -894,8 +953,12 @@ func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller
 		req.OnTool = func(text string) {
 			act := first
 			act.Text = text
+			step, tool := toolStep(text, r.now())
 			r.updateLogged(rn, id, func(c *Council) error {
 				setActivity(c, e.Id, act)
+				if tool {
+					addStep(c, e.Id, step)
+				}
 				return nil
 			})
 		}
@@ -947,7 +1010,9 @@ func (r *Runner) finishCall(ctx context.Context, rn *run, id string, e CouncilEx
 			setFailed(c, e.Id, CouncilFailure{Round: round, Error: errText(err)})
 		default:
 			delete(c.Failed, e.Id)
+			ideas, replies := len(c.Proposals), len(c.Replies)
 			apply(c)
+			recordPosts(c, e.Id, ideas, replies)
 			if res.fellBack != "" {
 				c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: round, Model: res.fellBack, Was: e.Model, Ts: r.now(), Auto: true})
 			}
@@ -1034,6 +1099,11 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 			} else {
 				p.Wild = false // only a Brainstorm has wild ideas
 			}
+			if isBrainstorm(c) || IsAgent(e) {
+				// a Brainstorm asks for no check and an agent seat is never offered the commands, but a model may send a
+				// verify list all the same: the parser cannot know the mode or the seat, so it is dropped here
+				p.Runs = nil
+			}
 			c.Proposals = append(c.Proposals, p)
 		}
 	})
@@ -1047,11 +1117,306 @@ func withoutNoEvidenceChip(ev []CouncilEvidence) []CouncilEvidence {
 	return ev
 }
 
+// ---- checked claims, verify requests and the timeline ----
+
+// seatLookup bounds how long the runner waits to learn where a live agent works.
+const seatLookup = 5 * time.Second
+
+// snapshotTree starts the snapshot (Snapshot) of a Review council's project as its run begins, and keeps the commit on the
+// council: the verify commands run on it. A Brainstorm runs no command, so it takes none. A project that is not a git repo
+// has none, and a snapshot that fails is logged and left out: the council runs all the same, and each command it asked for
+// says there was no tree to run it in.
+//
+// Hashing the whole tree takes from about a second to over ten on a cold file cache, and the experts only read, so it runs
+// beside round 1 instead of holding the first call back. The func it returns waits for it: the verify step needs the commit,
+// and a run must not end with the snapshot still writing to the council.
+func (r *Runner) snapshotTree(ctx context.Context, rn *run, id string, snap *Council) (wait func()) {
+	if isBrainstorm(snap) {
+		return func() {}
+	}
+	done := make(chan struct{})
+	project := snap.Project
+	go func() {
+		defer close(done)
+		commit, err := takeSnapshot(ctx, project)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("[council] %s: no snapshot of %s: %v", id, project, err)
+			}
+			return
+		}
+		if commit == "" {
+			return
+		}
+		r.updateLogged(rn, id, func(c *Council) error {
+			c.Snapshot = commit
+			return nil
+		})
+	}()
+	return func() { <-done }
+}
+
+// agentLink is the AgentLink behind the runner's Agents when they are an AgentCaller, nil for any other Caller.
+func (r *Runner) agentLink() AgentLink {
+	switch a := r.Agents.(type) {
+	case AgentCaller:
+		return a.Link
+	case *AgentCaller:
+		if a != nil {
+			return a.Link
+		}
+	}
+	return nil
+}
+
+// citeRoots are the folders and files the cites of a role expert are read against: the project first, then each file and
+// folder the council attached (c.Files, which Setup may write relative to the project) and the folder of each image the
+// person attached to a reply (the AddDirs of the call that answers it). All are absolute, as CheckEvidence needs them.
+func citeRoots(c *Council) []string {
+	var roots []string
+	add := func(p string) {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if p = filepath.Clean(p); !slices.Contains(roots, p) {
+			roots = append(roots, p)
+		}
+	}
+	if project := strings.TrimSpace(c.Project); project != "" {
+		add(project)
+	}
+	attached := func(p string) {
+		if p = strings.TrimSpace(p); p == "" {
+			return
+		}
+		if !filepath.IsAbs(p) && strings.TrimSpace(c.Project) != "" {
+			p = filepath.Join(c.Project, p)
+		}
+		add(p)
+	}
+	for _, f := range c.Files {
+		attached(f)
+	}
+	for _, x := range c.Replies {
+		if x.Author == YouId {
+			for _, a := range x.Attachments {
+				attached(filepath.Dir(a))
+			}
+		}
+	}
+	return roots
+}
+
+// checkRoots gives the folders each expert's cites are read against (ApplyChecks): citeRoots for a role expert, and for a
+// live agent's seat its own working directory first, when the link knows it, then the same. A seat whose folder is not
+// known reads against the project.
+func (r *Runner) checkRoots(ctx context.Context, c *Council) func(expertId string) []string {
+	base := citeRoots(c)
+	seats := map[string][]string{}
+	if link := r.agentLink(); link != nil {
+		for _, e := range c.Experts {
+			if !IsAgent(e) {
+				continue
+			}
+			lctx, cancel := context.WithTimeout(ctx, seatLookup)
+			st, err := link.Seat(lctx, e.Agent)
+			cancel()
+			cwd := strings.TrimSpace(st.Cwd)
+			if err != nil || cwd == "" {
+				continue
+			}
+			if abs, err := filepath.Abs(cwd); err == nil {
+				cwd = abs
+			}
+			roots := []string{filepath.Clean(cwd)}
+			for _, b := range base {
+				if !slices.Contains(roots, b) {
+					roots = append(roots, b)
+				}
+			}
+			seats[e.Id] = roots
+		}
+	}
+	return func(expertId string) []string {
+		if roots, ok := seats[expertId]; ok {
+			return roots
+		}
+		return base
+	}
+}
+
+// checkClaims checks the cites of what the experts have said so far and labels each claim (ApplyChecks), as one save. It
+// runs after round 1, after each reply pass, once a verify step has filled in its results, and when the person sends a
+// held idea. It starts every claim from scratch, so running it again is safe.
+func (r *Runner) checkClaims(ctx context.Context, rn *run, id string) {
+	snap, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: claims not checked: %v", id, err)
+		return
+	}
+	if isBrainstorm(snap) {
+		return
+	}
+	rootsFor := r.checkRoots(ctx, snap)
+	r.updateLogged(rn, id, func(c *Council) error {
+		ApplyChecks(c, rootsFor)
+		return nil
+	})
+}
+
+// hasOpenRequests says an idea that is out in the room and not cut still holds a verify request nothing has handled.
+func hasOpenRequests(c *Council) bool {
+	return slices.ContainsFunc(c.Proposals, func(p CouncilProposal) bool {
+		return Sent(p.Draft) && !p.Cut && slices.ContainsFunc(p.Runs, func(x CouncilRun) bool { return x.State == "" })
+	})
+}
+
+// verifyClaims runs the commands the experts asked for (RunVerifies) and says whether there were any. RunVerifies works on
+// a council nobody else writes, so it gets a copy of the ideas, and each result is merged back into the saved council as
+// its command ends, to show on the Map and the timeline while the next one runs. The step it reports for a command is the
+// timeline's row (a result replaces its opening row), and the card of the expert it belongs to shows the command while it
+// runs.
+func (r *Runner) verifyClaims(ctx context.Context, rn *run, id string) bool {
+	snap, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: commands not run: %v", id, err)
+		return false
+	}
+	if isBrainstorm(snap) || !hasOpenRequests(snap) {
+		return false
+	}
+	work := *snap
+	work.Proposals = slices.Clone(snap.Proposals)
+	for i := range work.Proposals {
+		work.Proposals[i].Runs = slices.Clone(work.Proposals[i].Runs)
+	}
+	onStep := func(expertId string, s CouncilStep) {
+		r.updateLogged(rn, id, func(c *Council) error {
+			upsertStep(c, expertId, s)
+			if s.Result == "" {
+				setActivity(c, expertId, CouncilActivity{Text: s.Target})
+			} else {
+				delete(c.Activity, expertId)
+				mergeRuns(c, &work)
+			}
+			return nil
+		})
+	}
+	RunVerifies(ctx, r.Trees, &work, onStep)
+	r.updateLogged(rn, id, func(c *Council) error {
+		mergeRuns(c, &work) // what ended before a Stop; the rest stays a request
+		return nil
+	})
+	return true
+}
+
+// mergeRuns copies the verify requests src has handled onto the same requests of dst, which is the council as saved.
+func mergeRuns(dst, src *Council) {
+	for _, sp := range src.Proposals {
+		dp := findProposal(dst, sp.Id)
+		if dp == nil {
+			continue
+		}
+		for j, sr := range sp.Runs {
+			if sr.State != "" && j < len(dp.Runs) && dp.Runs[j].Command == sr.Command && dp.Runs[j].State == "" {
+				dp.Runs[j] = sr
+			}
+		}
+	}
+}
+
+// settleClaims is what follows a round of ideas: check the cites and label the claims, run the commands the ideas asked
+// for, and label them again with the results in. A Stop leaves it half done.
+func (r *Runner) settleClaims(ctx context.Context, rn *run, id string) {
+	if ctx.Err() != nil {
+		return
+	}
+	r.checkClaims(ctx, rn, id)
+	if r.verifyClaims(ctx, rn, id) && ctx.Err() == nil {
+		r.checkClaims(ctx, rn, id)
+	}
+}
+
+// toolStep is the timeline row for a tool line an expert reported: the first word is the kind (Read is read, Grep and Glob
+// are search, any other keeps its own word: a live agent's roster says "reading seat.go", "running go test", or a bare
+// tool name), the rest is the target. A blank line is no step.
+func toolStep(text string, ts int64) (CouncilStep, bool) {
+	word, rest, _ := strings.Cut(strings.TrimSpace(text), " ")
+	if word == "" {
+		return CouncilStep{}, false
+	}
+	kind := word
+	switch word {
+	case "Read":
+		kind = StepRead
+	case "Grep", "Glob":
+		kind = StepSearch
+	}
+	return CouncilStep{Ts: ts, Kind: kind, Target: strings.TrimSpace(rest)}, true
+}
+
+// addStep puts a row at the end of an expert's timeline and drops the oldest past MaxTimelineSteps.
+func addStep(c *Council, expertId string, s CouncilStep) {
+	if c.Timeline == nil {
+		c.Timeline = map[string][]CouncilStep{}
+	}
+	rows := append(c.Timeline[expertId], s)
+	if over := len(rows) - MaxTimelineSteps; over > 0 {
+		rows = slices.Clone(rows[over:])
+	}
+	c.Timeline[expertId] = rows
+}
+
+// upsertStep is addStep for a step that comes twice, a command's opening and its result: the second replaces the row with
+// the same time, kind and target.
+func upsertStep(c *Council, expertId string, s CouncilStep) {
+	rows := c.Timeline[expertId]
+	for i := len(rows) - 1; i >= 0; i-- {
+		if rows[i].Ts == s.Ts && rows[i].Kind == s.Kind && rows[i].Target == s.Target {
+			rows[i] = s
+			return
+		}
+	}
+	addStep(c, expertId, s)
+}
+
+// recordPosts adds a row for each idea and reply expertId posted since c had ideas ideas and replies replies: apply
+// appends them, so the new ones are the tails.
+func recordPosts(c *Council, expertId string, ideas, replies int) {
+	if ideas <= len(c.Proposals) {
+		for _, p := range c.Proposals[ideas:] {
+			if p.Author == expertId {
+				addStep(c, expertId, CouncilStep{Ts: p.Ts, Kind: StepPropose, Target: p.Title})
+			}
+		}
+	}
+	if replies <= len(c.Replies) {
+		for _, x := range c.Replies[replies:] {
+			if x.Author == expertId {
+				addStep(c, expertId, CouncilStep{Ts: x.Ts, Kind: StepReply, Target: replyTarget(c, x)})
+			}
+		}
+	}
+}
+
+// replyTarget is what a reply was posted on: "P2 · the idea's title", or the whole council when it is on no idea.
+func replyTarget(c *Council, x CouncilReply) string {
+	if p := findProposal(c, x.ProposalId); p != nil {
+		return p.Id + " · " + p.Title
+	}
+	return "the whole council"
+}
+
 // ---- round 2 ----
 
 // replyPass is a pass of reply rounds, round 2 or, in a council with three rounds, round 3: it has every expert that
-// proposed review the others' proposals, at once and from text. An expert whose round 1 call failed sits it out.
+// proposed review the others' proposals, at once and from text. An expert whose round 1 call failed sits it out. The
+// person's messages the router has not taken up yet are routed first, so a seat reads the ones put to it.
 func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) error {
+	r.routePending(ctx, id)
+	if ctx.Err() != nil {
+		return nil
+	}
 	snap, err := Load(id)
 	if err != nil {
 		return err
@@ -1065,7 +1430,7 @@ func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) e
 	}
 	var asks []string
 	for _, pr := range snap.Replies {
-		if pr.Author == YouId && !pr.Answered {
+		if pr.Author == YouId && !pr.Answered && !awaitsRoute(pr) { // one still pending (it could not be saved) is no seat's yet
 			asks = append(asks, pr.Id)
 		}
 	}
@@ -1414,8 +1779,13 @@ func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Counc
 // that answer and asked to add to it rather than say it again: answered all at once, three seats each opened a steer of
 // the person's with the same concession. The Summary is not rerun. Each reply is marked answered when the pass ends,
 // whatever came of its calls: a call that failed is on the council's Failed list with its Retry, and an expert already
-// on that list sits the pass out until it is retried.
+// on that list sits the pass out until it is retried. A message the router has not taken up yet is routed first (a router
+// already in flight is waited for), and its To, the router's order, is who answers it: the first seat in it first.
 func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
+	r.routePending(ctx, id)
+	if ctx.Err() != nil {
+		return nil
+	}
 	snap, err := Load(id)
 	if err != nil {
 		return err
@@ -1423,7 +1793,7 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 	round := max(SynthesisRound(snap), snap.Round)
 	var open []string
 	for _, pr := range snap.Replies {
-		if pr.Author == YouId && !pr.Answered {
+		if pr.Author == YouId && !pr.Answered && !awaitsRoute(pr) { // one still pending (it could not be saved) is marked answered by no pass
 			open = append(open, pr.Id)
 		}
 	}
@@ -1447,7 +1817,8 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 }
 
 // firstAnswerers maps each open reply of the person that no seat has answered yet to the seat that answers it first: the
-// first on the panel it is addressed to, of those with no failed call.
+// first in the reply's To, in its order, that is on the panel and has no failed call. A routed reply's To is the router's
+// order, so its first pick answers first; every other reply's To is in panel order, as replyTargets and withJoined store it.
 func firstAnswerers(c *Council) map[string]string {
 	out := map[string]string{}
 	panel := panelOf(c)
@@ -1455,9 +1826,10 @@ func firstAnswerers(c *Council) map[string]string {
 		if pr.Author != YouId || pr.Answered || len(answersTo(c, pr)) > 0 {
 			continue
 		}
-		for _, e := range panel {
-			if _, bad := c.Failed[e.Id]; !bad && slices.Contains(pr.To, e.Id) {
-				out[pr.Id] = e.Id
+		for _, id := range pr.To {
+			_, bad := c.Failed[id]
+			if !bad && slices.ContainsFunc(panel, func(e CouncilExpert) bool { return e.Id == id }) {
+				out[pr.Id] = id
 				break
 			}
 		}
@@ -1645,9 +2017,20 @@ func mentioned(c *Council, text string) []string {
 	return out
 }
 
-// replyTargets are the experts the person's reply goes to: the ones it @-mentions; else, in a branch, the proposal's
-// author and every expert on the path to the parent; else, with no proposal and no parent, the whole panel.
+// atAll says text asks every seat on purpose: it holds @all or @everyone as a whole word, in any case. An @all beside a
+// seat's name still reaches every seat. A message that does skips the router.
+func atAll(text string) bool {
+	lower := strings.ToLower(text)
+	return mentions(lower, "@all") || mentions(lower, "@everyone")
+}
+
+// replyTargets are the experts the person's reply goes to: with @all or @everyone, the whole panel; else the ones it
+// @-mentions; else, in a branch, the proposal's author and every expert on the path to the parent; else, with no
+// proposal and no parent, the whole panel (appendPersonReply routes that last case when there is a choice to make).
 func replyTargets(c *Council, proposalId string, parent *CouncilReply, text string) []string {
+	if atAll(text) {
+		return idsOf(panelOf(c))
+	}
 	if ids := mentioned(c, text); len(ids) > 0 {
 		return ids
 	}
@@ -1734,7 +2117,14 @@ func seatBeforeCoordinator(c *Council, seats []CouncilExpert) {
 // the seats this reply just seated). A reply to a reply takes the proposal of its parent; it is an error to name a
 // proposal or a parent that is not there. A reply that attaches files or names one with an @ is stored with tools on,
 // whatever tools says: the seat that answers it has to be able to read them.
-func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool, attachments []string, joined []string, now int64) error {
+//
+// toolsAuto says Let them read files was on Auto and the message locked nothing on (no image, no @file): tools then holds
+// the composer's guess, and the router decides it (routeReply) for a message it takes up.
+//
+// A message with no proposal, no parent, no seat @-mentioned, no @all or @everyone and no chat seated by it goes to the
+// router when two or more seats can answer it (routeCandidates): it is stored with To empty and Routed pending, and
+// routeReply fills To in. With one seat that can answer, it goes to that seat, unrouted; with none, to the whole panel.
+func appendPersonReply(c *Council, proposalId, parentId, text string, tools, toolsAuto bool, attachments []string, joined []string, now int64) error {
 	var parent *CouncilReply
 	if parentId != "" {
 		if parent = findReply(c, parentId); parent == nil {
@@ -1756,9 +2146,21 @@ func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool
 	} else {
 		attachments = slices.Clone(attachments)
 	}
+	var routed *CouncilRouted
+	if proposalId == "" && parent == nil && len(joined) == 0 && !atAll(text) && len(mentioned(c, text)) == 0 {
+		switch cands := routeCandidates(c); len(cands) {
+		case 0: // nobody can answer: the whole panel, as it always was
+		case 1:
+			to = idsOf(cands) // nothing to choose
+		default:
+			to = nil // the router fills it in
+			routed = &CouncilRouted{Pending: true, AutoTools: toolsAuto && len(attachments) == 0 && !fileMentioned(text)}
+		}
+	}
 	c.Replies = append(c.Replies, CouncilReply{
 		Id: nextReplyId(c), ProposalId: proposalId, ParentId: parentId, Author: YouId, Text: text,
 		To: to, Tools: tools || len(attachments) > 0 || fileMentioned(text), Attachments: attachments, Round: c.Round, Ts: now,
+		Routed: routed,
 	})
 	return nil
 }
@@ -1773,24 +2175,240 @@ func followRound(c *Council) int {
 	return max(FirstFollowRound(c), last+1)
 }
 
-// Reply posts the person's reply on a proposal (proposalId), under another reply (parentId), or, with neither, to the
-// whole council. It goes to the experts in its branch unless the text @-mentions some. Posted before round 2, or while
-// the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at its
-// next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
+// ReplyIn is what the person's reply carries into ReplyWith. Tools is Let them read files; ToolsAuto says the composer's
+// switch was on Auto and no image or @file locked it on, so Tools holds only the composer's guess (the router decides it
+// for a message it takes up). A person's On or Off is ToolsAuto false. Seats are live chats the reply brings into the
+// council (nil for a plain reply); Attachments are the absolute paths of the files the person attached.
+type ReplyIn struct {
+	ProposalId, ParentId, Text string
+	Tools, ToolsAuto           bool
+	Seats                      []CouncilExpert
+	Attachments                []string
+}
+
+// Reply is ReplyWith for a reply whose Let them read files is the person's own choice, On or Off, never Auto: the router
+// never overrides it.
+func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert, attachments ...string) (*Council, error) {
+	return r.ReplyWith(id, ReplyIn{
+		ProposalId: proposalId, ParentId: parentId, Text: text, Tools: tools, ToolsAuto: false, Seats: seats, Attachments: attachments,
+	})
+}
+
+// ReplyWith posts the person's reply on a proposal (in.ProposalId), under another reply (in.ParentId), or, with neither,
+// to the whole council. It goes to the experts in its branch unless the text @-mentions some. Posted before round 2, or
+// while the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at
+// its next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
 // done, stopped or failed, it starts a follow-up round at once, with tools when the person turned Let them read files
-// on, and the council returns to the state it was in. seats are live chats the reply brings into the council (nil for a
-// plain reply): in the same save that posts it, the ones not seated yet take their places after the seats there and
+// on, and the council returns to the state it was in. in.Seats are live chats the reply brings into the council (nil for
+// a plain reply): in the same save that posts it, the ones not seated yet take their places after the seats there and
 // before the coordinator, and each is a target of the reply even when its text does not @ it. A council that stored no
 // draft mode keeps the one its seats gave before the chat joined (freezeDraftMode). A chat seated while round 1 runs sits
 // that round out, since the round read its panel when it began, and takes part from round 2; a reply that fails seats
-// nobody. attachments are the absolute paths of the files the person attached (the caller has checked them): the reply
+// nobody. in.Attachments are the absolute paths of the files the person attached (the caller has checked them): the reply
 // stores them, and one with any, or with a file named by an @ in its text, is stored and answered with tools on whatever
-// tools says, in a round or a follow-up.
-func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert, attachments ...string) (*Council, error) {
-	text = strings.TrimSpace(text)
+// in.Tools says, in a round or a follow-up.
+//
+// A message to the whole council (no proposal, no parent, no @-mention of a seat, no @all) that two or more seats could
+// answer is taken up by the router (routeReply): it is stored with To empty and Routed pending, and the router starts at
+// once on its own goroutine, whatever the council's state, so the pick shows within seconds. A pass that reads the
+// person's replies routes a reply still pending first (routePending), so no seat answers a message before it is routed.
+func (r *Runner) ReplyWith(id string, in ReplyIn) (*Council, error) {
+	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		return nil, errors.New("a reply needs some text")
 	}
+	var replyId string
+	saved, err := r.post(id, func(c *Council) error {
+		joined, err := joiningSeats(c, in.Seats)
+		if err != nil {
+			return err
+		}
+		if len(joined) > 0 {
+			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
+			seatBeforeCoordinator(c, joined)
+		}
+		if err := appendPersonReply(c, in.ProposalId, in.ParentId, text, in.Tools, in.ToolsAuto, in.Attachments, idsOf(joined), r.now()); err != nil {
+			return err
+		}
+		replyId = c.Replies[len(c.Replies)-1].Id
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pr := findReply(saved, replyId); pr != nil && awaitsRoute(*pr) {
+		inBackground(func(ctx context.Context) { r.routeReply(ctx, id, replyId) })
+	}
+	return saved, nil
+}
+
+// ---- routing the person's message ----
+
+// routeTimeout is how long a router call started outside a run (ReplyWith's, MarkStale's) may take before it counts as a
+// failed router.
+const routeTimeout = 2 * time.Minute
+
+// inBackground runs fn on a goroutine of its own, outside any run, under routeTimeout.
+func inBackground(fn func(ctx context.Context)) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), routeTimeout)
+		defer cancel()
+		fn(ctx)
+	}()
+}
+
+// awaitsRoute says pr is a message of the person's the router has not answered yet: its To is empty until it does.
+func awaitsRoute(pr CouncilReply) bool {
+	return pr.Author == YouId && pr.Routed != nil && pr.Routed.Pending
+}
+
+// routeReply routes the person's reply replyId of council id: one router call, whose pick it saves as the reply's To and
+// Routed, and reports. The Runner keeps one call in flight per reply, so a pass and the goroutine ReplyWith started
+// never make two: the later one waits for the first to save, then looks again, and routes the reply itself only when it
+// is still pending (the first was cut off or could not save). A reply that is gone or not pending is left as it is.
+//
+// When the router fails (the call errors, answers nothing usable, or names no seat that can still answer), the reply goes
+// to the first seat that can answer, in panel order, and Routed says it failed and why; Tools stays what the composer
+// sent. A call cut off by the run it belongs to being stopped is no failure: the reply stays pending for the next pass.
+// The router is no seat, so its call is booked on the council (Calls, Tokens) and on no seat's Stats.
+func (r *Runner) routeReply(ctx context.Context, id, replyId string) {
+	key := id + "/" + replyId
+	done := make(chan struct{})
+	for {
+		r.mu.Lock()
+		wait, flying := r.routing[key]
+		if !flying {
+			if r.routing == nil {
+				r.routing = map[string]chan struct{}{}
+			}
+			r.routing[key] = done
+		}
+		r.mu.Unlock()
+		if !flying {
+			break
+		}
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return
+		}
+	}
+	defer func() {
+		r.mu.Lock()
+		delete(r.routing, key)
+		r.mu.Unlock()
+		close(done)
+	}()
+
+	c, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: reply %s not routed: %v", id, replyId, err)
+		return
+	}
+	pr := findReply(c, replyId)
+	if pr == nil || !awaitsRoute(*pr) {
+		return
+	}
+	cands := routeCandidates(c)
+	if len(cands) < 2 { // seats failed since the message was sent: there is nothing left to choose between
+		r.saveRoute(id, replyId, func(c *Council, pr *CouncilReply) {
+			if cands := routeCandidates(c); len(cands) < 2 {
+				pr.Routed = nil
+				pr.To = idsOf(panelOf(c))
+				if len(cands) == 1 {
+					pr.To = idsOf(cands)
+				}
+			}
+		})
+		return
+	}
+	route, res, err := r.routeCall(ctx, c, *pr, cands)
+	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
+	called := r.Caller != nil // a runner with no caller made no call to book
+	r.saveRoute(id, replyId, func(c *Council, pr *CouncilReply) {
+		if called {
+			c.Calls++
+			c.Tokens += res.Tokens
+		}
+		settleRoute(c, pr, route, err)
+	})
+}
+
+// saveRoute applies change to reply replyId of council id when it is still pending, saves, and reports the save. A save
+// that fails is logged: the reply stays pending, and the next pass (or the next start) routes it again.
+func (r *Runner) saveRoute(id, replyId string, change func(c *Council, pr *CouncilReply)) {
+	saved, err := Update(id, func(c *Council) error {
+		pr := findReply(c, replyId)
+		if pr == nil || !awaitsRoute(*pr) {
+			return errSkip
+		}
+		change(c, pr)
+		return nil
+	})
+	switch {
+	case errors.Is(err, errSkip):
+	case err != nil:
+		log.Printf("[council] %s: router's pick for reply %s not saved: %v", id, replyId, err)
+	default:
+		r.changed(saved)
+	}
+}
+
+// settleRoute stores the router's pick on pr, or, when err is set or none of the seats it named can still answer, the first
+// seat that can: To is the pick, in the router's order, and Chose keeps it apart from To. Tools is the router's only when
+// the composer left it Auto (AutoTools). With no seat left to answer at all the reply goes to the whole panel, unrouted.
+func settleRoute(c *Council, pr *CouncilReply, route Route, err error) {
+	cands := routeCandidates(c)
+	var chose []string
+	if err == nil {
+		for _, id := range route.Seats {
+			if slices.ContainsFunc(cands, func(e CouncilExpert) bool { return e.Id == id }) {
+				chose = append(chose, id)
+			}
+		}
+		if len(chose) == 0 {
+			err = errors.New("the seats the router chose can no longer answer")
+		}
+	}
+	switch {
+	case err == nil:
+		pr.Routed.Chose, pr.Routed.Reason, pr.Routed.Failed = chose, route.Reason, false
+		if pr.Routed.AutoTools {
+			pr.Tools = route.Tools
+		}
+	case len(cands) == 0:
+		pr.Routed, pr.To = nil, idsOf(panelOf(c))
+		return
+	default:
+		pr.Routed.Chose, pr.Routed.Reason, pr.Routed.Failed = []string{cands[0].Id}, errText(err), true
+	}
+	pr.Routed.Pending = false
+	pr.To = slices.Clone(pr.Routed.Chose)
+}
+
+// routePending routes, one after another, every message of the person's in council id that the router has not answered
+// yet, each through routeReply. Every pass that reads the person's replies calls it first.
+func (r *Runner) routePending(ctx context.Context, id string) {
+	c, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: pending replies not routed: %v", id, err)
+		return
+	}
+	for _, pr := range c.Replies {
+		if awaitsRoute(pr) && ctx.Err() == nil {
+			r.routeReply(ctx, id, pr.Id)
+		}
+	}
+}
+
+// post saves change to council id as one save and has the council answer it. A council that is done, stopped or failed
+// with no run on starts a follow-up at once (a follow-up round, the council returning to the state it was in); any other
+// state saves the change alone, and the run that is on, or the next round, takes it up. It refuses a council that has not
+// started, and a runner with no caller. change runs inside the save, so an error from it saves nothing and starts
+// nothing. ReplyWith posts the person's message with it, and Ask <seat> too (AskToo) reopens one.
+func (r *Runner) post(id string, change func(c *Council) error) (*Council, error) {
 	r.mu.Lock()
 	cur, err := Load(id)
 	if err == nil && (cur.State == StateNotRun || cur.State == StateQueued) {
@@ -1803,17 +2421,6 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 		r.mu.Unlock()
 		return nil, err
 	}
-	add := func(c *Council) error {
-		joined, err := joiningSeats(c, seats)
-		if err != nil {
-			return err
-		}
-		if len(joined) > 0 {
-			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
-			seatBeforeCoordinator(c, joined)
-		}
-		return appendPersonReply(c, proposalId, parentId, text, tools, attachments, idsOf(joined), r.now())
-	}
 	var (
 		saved *Council
 		start func()
@@ -1824,11 +2431,11 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 			return Update(id, func(c *Council) error {
 				c.State, c.Round, c.Error = StateRunning, followRound(c), ""
 				r.beginRun(c)
-				return add(c)
+				return change(c)
 			})
 		}, r.followupWork(prev))
 	} else {
-		saved, err = Update(id, add)
+		saved, err = Update(id, change)
 	}
 	r.mu.Unlock()
 	if err != nil {
@@ -2229,6 +2836,16 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 		saved *Council
 		start func()
 	)
+	// an idea or a reply that takes a stance is labelled once it is out in the room, so a draft the person sends is
+	// checked now: the checks skipped it while it was held
+	rootsFor := r.checkRoots(context.Background(), cur)
+	settle := func(c *Council) error {
+		if err := settleDraft(c, itemId, action, text); err != nil {
+			return err
+		}
+		ApplyChecks(c, rootsFor)
+		return nil
+	}
 	// the last held draft of a council waiting on them starts what comes next; a draft that is not held fails in settleDraft
 	if from := cur.Round + 1; cur.State == StateAwaiting && r.active[id] == nil && HeldDrafts(cur) == 1 {
 		if r.Caller == nil {
@@ -2236,7 +2853,7 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 		} else {
 			saved, start, err = r.launchLocked(context.Background(), id, func() (*Council, error) {
 				return Update(id, func(c *Council) error {
-					if err := settleDraft(c, itemId, action, text); err != nil {
+					if err := settle(c); err != nil {
 						return err
 					}
 					c.State, c.Round, c.Error = StateRunning, from, ""
@@ -2246,7 +2863,7 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 			}, r.roundsWork(from))
 		}
 	} else {
-		saved, err = Update(id, func(c *Council) error { return settleDraft(c, itemId, action, text) })
+		saved, err = Update(id, settle)
 	}
 	r.mu.Unlock()
 	if err != nil {
@@ -2338,6 +2955,7 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState, mo
 			return loadFailed(err)
 		}
 		r.retrySeat(ctx, rn, id, snap, e, f, model)
+		r.settleClaims(ctx, rn, id) // what the seat said now is checked, and its commands run, as in the round it missed
 		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
 	}
 }
@@ -2472,6 +3090,7 @@ func (r *Runner) retryAllLocked(id string, models map[string]string) (*Council, 
 			wg.Go(func() { r.retrySeat(ctx, rn, id, snap, j.e, j.f, j.model) })
 		}
 		wg.Wait()
+		r.settleClaims(ctx, rn, id)
 		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
 	})
 }
@@ -2571,6 +3190,11 @@ func (r *Runner) Delete(id string) (*Council, error) {
 
 // MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. A council left
 // queued stays queued: StartNext starts it. Call it once at startup, before any council runs.
+//
+// It also routes, in the background, every message of the person's the router had not answered when wavesrv quit, in a
+// council in any state: in a done or stopped one no pass would come to do it, and its post would read "Router is choosing
+// a seat…" for good. That settles the pick and its line and no more: the reply stays open and unanswered, and the answers
+// pass of the next follow-up the council runs (the next message the person sends) answers it with the rest.
 func (r *Runner) MarkStale() {
 	list, err := List("")
 	if err != nil {
@@ -2600,6 +3224,11 @@ func (r *Runner) MarkStale() {
 		}
 		r.changed(saved)
 		err = nil
+	}
+	for _, c := range list {
+		if slices.ContainsFunc(c.Replies, awaitsRoute) {
+			inBackground(func(ctx context.Context) { r.routePending(ctx, c.Id) })
+		}
 	}
 }
 
@@ -2661,7 +3290,9 @@ const suggestShape = `{
 
 const maxSuggestedRoles = 2
 
-func suggestPrompt(project, feature, question string, files []string, roles []CouncilExpert, groups []CouncilGroup) string {
+// suggestPrompt is Setup's suggestion prompt. lang is the language of the person's question (councilLang): a Vietnamese one
+// asks for the suggested roles' names in Vietnamese too (LangLine).
+func suggestPrompt(project, feature, question string, files []string, roles []CouncilExpert, groups []CouncilGroup, lang string) string {
 	names := map[string]string{}
 	for _, role := range roles {
 		names[role.Id] = role.Name
@@ -2701,6 +3332,9 @@ func suggestPrompt(project, feature, question string, files []string, roles []Co
 		"the feature and the question are a problem or a goal with no answer yet (\"how do we…\", \"what should…\"), \"" +
 		ModeReview + "\" when they are a thing to judge (a feature, a spec, a plan or a draft that exists; \"review this\", " +
 		"\"what's wrong with…\"). A brainstorm fits a group made for ideas, a review one made for judging.\n\n")
+	if l := LangLine(lang); l != "" {
+		b.WriteString(l + "\n\n")
+	}
 	b.WriteString(jsonRule + "\n```json\n" + suggestShape + "\n```\n")
 	return b.String()
 }
@@ -2787,7 +3421,7 @@ func (r *Runner) Suggest(ctx context.Context, project, feature, question string,
 	asker := CouncilExpert{Id: "suggest", Name: "Coordinator", Model: ModelExpert}
 	res, err := r.Caller.Call(ctx, CallReq{
 		Expert: asker, Cwd: project, Tools: true,
-		Prompt: suggestPrompt(project, feature, question, files, roles, groups),
+		Prompt: suggestPrompt(project, feature, question, files, roles, groups, councilLang(question, feature)),
 	})
 	if err == nil {
 		err = emptyReply(res)

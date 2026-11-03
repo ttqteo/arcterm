@@ -163,7 +163,7 @@ export function GraphCard({
                             onClick={() => open(row.workingTree ? undefined : row.hash)}
                             title={rowTitle(row)}
                             style={{ height: GRAPH_CARD_ROW_H, paddingLeft: geom.gutter }}
-                            className="relative flex w-full cursor-pointer items-center gap-[8px] rounded-[7px] pr-[8px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className="relative flex w-full cursor-pointer items-center gap-[8px] overflow-hidden rounded-[7px] pr-[8px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                             {row.workingTree ? null : (
                                 <span style={{ width: HASH_W }} className="flex-none font-mono text-[11px] text-muted">
@@ -174,7 +174,7 @@ export function GraphCard({
                                 <span
                                     key={r.label}
                                     className={cn(
-                                        "max-w-[160px] flex-none truncate rounded-[5px] border px-[5px] text-[10.5px] font-semibold leading-[17px]",
+                                        "min-w-[48px] max-w-[160px] shrink truncate rounded-[5px] border px-[5px] text-[10.5px] font-semibold leading-[17px]",
                                         refChipClass(r.kind)
                                     )}
                                 >
@@ -188,7 +188,7 @@ export function GraphCard({
                             ) : null}
                             <span
                                 className={cn(
-                                    "min-w-0 flex-1 truncate text-[12.5px]",
+                                    "min-w-[72px] flex-1 truncate text-[12.5px]",
                                     row.workingTree ? "font-semibold text-warning" : "text-foreground"
                                 )}
                             >

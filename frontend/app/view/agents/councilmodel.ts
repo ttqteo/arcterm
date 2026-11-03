@@ -16,7 +16,7 @@
 
 import { stripMarks } from "./councilmarks";
 
-export type CouncilView = "discussion" | "summary" | "setup";
+export type CouncilView = "discussion" | "summary" | "setup" | "map";
 
 /** A stance in the Discussion: what an expert said of a proposal, or `proposed` for the proposal's own author. */
 export type StanceLabel = "accept" | "challenge" | "oppose" | "proposed";
@@ -454,6 +454,16 @@ function mentions(text: string, e: CouncilExpert): boolean {
     });
 }
 
+// `@all` or `@everyone` as a whole word after an @ that does not sit inside a word: the rule `mentions` reads a seat by
+const NAMES_ALL = /(^|[^\p{L}\p{N}_])@(?:all|everyone)(?![\p{L}\p{N}_])/iu;
+
+/** Pure: whether `text` asks every seat on purpose, with `@all` or `@everyone` (a whole word, any case; not `@allison`,
+ *  an address, or an `@all.md` that starts a file). Such a message skips the router and reaches the whole panel, as
+ *  `replyTargets` in pkg/council reads it. */
+export function mentionsAll(text: string): boolean {
+    return NAMES_ALL.test(withoutFileMentions(text));
+}
+
 /** The fewest characters of a chat's tab id that make a mention key: `@82faafca`. */
 export const MIN_CHAT_KEY = 8;
 
@@ -486,10 +496,25 @@ export function chatSeatTabs(c: Pick<Council, "experts">): string[] {
     return c.experts.flatMap((e) => (e.agent ? [e.agent] : []));
 }
 
-/** Pure: the experts a reply of the person's reaches (pkg/council's `To`, worked out the same way): the ones it
- *  @-mentions by name or id (a chat seat also by its mention key, `mentionsChat`), else the proposal's author and every
- *  expert on the path to the reply it answers; with no proposal (Ask the whole council), every non-coordinator expert.
- *  The coordinator never answers.
+// the seats a text names by an @ (and the chats joining with it), as `answerers` reads them: by name or id, a chat seat
+// also by its mention key
+function namedExperts(c: Council, text: string, joining: readonly SeatableAgent[]): CouncilExpert[] {
+    const seated = new Set(chatSeatTabs(c));
+    const joined = new Set(joining.map((a) => a.id));
+    const tabs = [...seated, ...joined];
+    return [
+        ...panel(c).filter(
+            (e) => mentions(text, e) || (isAgentSeat(e) && (joined.has(e.agent) || mentionsChat(text, e.agent, tabs)))
+        ),
+        ...joining.filter((a) => !seated.has(a.id)).map(agentSeat),
+    ];
+}
+
+/** Pure: the experts a reply of the person's reaches (pkg/council's `To`, worked out the same way): every expert for an
+ *  `@all` or `@everyone` (`mentionsAll`); else the ones it @-mentions by name or id (a chat seat also by its mention key,
+ *  `mentionsChat`), else the proposal's author and every expert on the path to the reply it answers; with no proposal
+ *  (Ask the whole council), every non-coordinator expert. The coordinator never answers. Whether the router narrows
+ *  that last case to one seat or two is `routedMessage`: this is who it is addressed to.
  *
  *  `joining` are the live chats the message adds to the council (the ones its @ picked): they count as named, after the
  *  seats, each as the seat wavesrv seats it as (`agentSeat`); a chat that already is a seat is the seat, once. */
@@ -501,15 +526,11 @@ export function answerers(
     joining: readonly SeatableAgent[] = []
 ): CouncilExpert[] {
     const pool = panel(c);
-    const seated = new Set(chatSeatTabs(c));
-    const joined = new Set(joining.map((a) => a.id));
-    const tabs = [...seated, ...joined];
-    const named = [
-        ...pool.filter(
-            (e) => mentions(text, e) || (isAgentSeat(e) && (joined.has(e.agent) || mentionsChat(text, e.agent, tabs)))
-        ),
-        ...joining.filter((a) => !seated.has(a.id)).map(agentSeat),
-    ];
+    if (mentionsAll(text)) {
+        const seated = new Set(chatSeatTabs(c));
+        return [...pool, ...joining.filter((a) => !seated.has(a.id)).map(agentSeat)];
+    }
+    const named = namedExperts(c, text, joining);
     if (named.length > 0) {
         return named;
     }
@@ -527,15 +548,42 @@ export function answerers(
     return pool.filter((e) => path.has(e.id));
 }
 
+/** Pure: whether the router takes up a message of the person's: wavesrv's rule (`appendPersonReply` in pkg/council) for
+ *  when it narrows a whole-council message to the seat or two best placed to answer. The message is on no idea and
+ *  under no reply, names no seat and no chat with an @, holds no `@all`, seats no chat (`joining`), and the council has
+ *  two seats or more with no failed call to choose from: with one there is nothing to choose, and the whole panel
+ *  answers as before. */
+export function routedMessage(
+    c: Council,
+    proposalId: string,
+    parentId: string,
+    text: string,
+    joining: readonly SeatableAgent[] = []
+): boolean {
+    if (proposalId !== "" || parentId !== "" || joining.length > 0 || mentionsAll(text)) {
+        return false;
+    }
+    if (namedExperts(c, text, []).length > 0) {
+        return false;
+    }
+    return panel(c).filter((e) => c.failed?.[e.id] == null).length >= 2;
+}
+
 /** Pure: the label under the person's own reply while it waits for an answer; empty once it is answered, and for
  *  anyone else's reply. A reply posted before the last seat round reaches the seats at the next one; one posted in the
  *  last round or while the summary is written is answered in the follow-up pass, after the summary. */
 // the person's follow-up while the seats answer it (councilseen.ts reads it as Sent, then Seen)
 export const ANSWERING = "Answering…";
 
+/** What the person's post says while the router has not picked its seats yet (`routed.pending`: its `to` is empty). */
+export const ROUTER_CHOOSING = "Router is choosing a seat…";
+
 export function replyLabel(c: Council, reply: CouncilReply): string {
     if (reply.author !== YOU || reply.answered) {
         return "";
+    }
+    if (reply.routed?.pending) {
+        return ROUTER_CHOOSING;
     }
     if (reply.round >= firstFollowRound(c)) {
         return c.state === "running" ? ANSWERING : "";
@@ -578,13 +626,40 @@ export function estimateTokens(n: number): string {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`≈ 5 calls · ~0.3M tokens`). */
+// a range's ends in one unit where they can be (`35k–235k`, not `35k–0.2M`): thousands up to a million, then estimateTokens
+function rangeTokens(n: number): string {
+    return n >= 1000 && n < 1_000_000 ? `${Math.round(n / 1000)}k` : estimateTokens(n);
+}
+
+/** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`≈ 5 calls · ~0.3M tokens`). An
+ *  estimate that holds a high end (`callsmax`, `tokensmax`: a message the router picks the seats for) draws each end that
+ *  differs from its low end as a range: `≈ 2–3 calls · ~35k–235k tokens`. */
 export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): string {
-    const parts = [`≈ ${plural(est.calls, "call", "calls")}`, `~${estimateTokens(est.tokens)} tokens`];
+    const callsMax = est.callsmax != null && est.callsmax !== est.calls ? est.callsmax : null;
+    const tokensMax = est.tokensmax != null && est.tokensmax !== est.tokens ? est.tokensmax : null;
+    const parts = [
+        callsMax == null
+            ? `≈ ${plural(est.calls, "call", "calls")}`
+            : `≈ ${est.calls}–${plural(callsMax, "call", "calls")}`,
+        tokensMax == null
+            ? `~${estimateTokens(est.tokens)} tokens`
+            : `~${rangeTokens(est.tokens)}–${rangeTokens(tokensMax)} tokens`,
+    ];
     if (minutes) {
         parts.push(`~${est.minutes} min`);
     }
     return parts.join(" · ");
+}
+
+/** The line under a composer whose message the router would take, outside a follow-up (nothing is priced there). */
+export const ROUTER_PICKS_WHO = "The router picks who answers";
+
+/** Pure: the cost label under a follow-up's composer for a message the router takes (`routedMessage`): `Router picks 1–2
+ *  seats`, then the estimate's range once it is in (`≈ 2–3 calls · ~35k–235k tokens`). A reply of no calls is wavesrv's
+ *  "nobody can answer": it draws no figure, as before the estimate came back. */
+export function routedLabel(est: CouncilEstimateRtnData | null): string {
+    const head = "Router picks 1–2 seats";
+    return est == null || est.calls <= 0 ? head : `${head} · ${estimateLabel(est, false)}`;
 }
 
 /** Pure: the cost label under a follow-up's composer: who answers (`experts` role experts and `chats` live chats, both
@@ -611,7 +686,8 @@ function clock(ms: number): string {
     return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
-function duration(ms: number): string {
+/** Pure: a span the way the expert stats read it: `42 s`, `2 min`, `2 min 5 s`. */
+export function duration(ms: number): string {
     const s = Math.round(Math.max(0, ms) / 1000);
     if (s < 60) {
         return `${s} s`;
@@ -898,16 +974,147 @@ export function summarizeHold(c: Council): string {
         : "There is no proposal to summarize";
 }
 
+// ---- the council's language and the check labels ----
+
+/** The two languages a council is held in (Go's `LangEn`, `LangVi`): the words of the Map, the check badges and the
+ *  timeline follow it. A council saved before the language was kept has none, which reads as English. */
+export type CouncilLang = "en" | "vi";
+
+/** Pure: a council's language; anything but `vi` reads as English. */
+export function councilLang(c: Pick<Council, "lang"> | null | undefined): CouncilLang {
+    return c?.lang === "vi" ? "vi" : "en";
+}
+
+/** The label Go gives a claim, from what it checked (Go's `LabelRan`…): `ran` a command ran and its result matched what
+ *  the expert expected, `disproved` it ran and the result contradicts it, `read` at least one cite resolves, `guess`
+ *  nothing checkable. */
+export type CheckLabel = "ran" | "disproved" | "read" | "guess";
+
+/** The four labels, in the order the evidence bar draws them. */
+export const CHECK_LABELS: readonly CheckLabel[] = ["ran", "disproved", "read", "guess"];
+
+// the badge words, one pair per label; the legend and the evidence chips read them too
+const CHECK_WORD: Record<CouncilLang, Record<CheckLabel, string>> = {
+    en: { ran: "Ran", disproved: "Disproved", read: "Read code", guess: "Guess" },
+    vi: { ran: "Đã chạy", disproved: "Bị bác", read: "Đã đọc code", guess: "Chỉ đoán" },
+};
+
+const WRONG_CITE_WORD: Record<CouncilLang, string> = { en: "Wrong cite", vi: "Trích sai" };
+
+/** Pure: the label on a proposal or a reply, `""` for none or a word the cockpit does not know. */
+export function checkLabelOf(x: { label?: string }): CheckLabel | "" {
+    return CHECK_LABELS.find((l) => l === x.label) ?? "";
+}
+
+/** Pure: a label's badge word in the council's language: `Ran`, `Disproved`, `Read code`, `Guess`. */
+export function checkWord(label: CheckLabel, lang: CouncilLang): string {
+    return CHECK_WORD[lang][label];
+}
+
+/** Pure: the word on a cite Go found wrong (`CouncilEvidence.cite` is `wrong`). */
+export function wrongCiteWord(lang: CouncilLang): string {
+    return WRONG_CITE_WORD[lang];
+}
+
+// ---- the matrix ----
+
+// the words the matrix rows carry, one table per language: the pills, the agreement line, the revised note, the outcomes
+// of an idea with no summary, the Builds on pill and a verify command's result
+interface MatrixWords {
+    pill: Record<StanceLabel | "none", string>;
+    agree: (n: number) => string;
+    doubt: (n: number) => string;
+    against: (n: number) => string;
+    noStances: string;
+    revised: (round: number) => string;
+    cut: string;
+    withdrawn: string;
+    builds: (n: number) => string;
+    passedAsExpected: string;
+    failedAsExpected: string;
+    passedUnexpectedly: string;
+    failedUnexpectedly: string;
+    notRun: (reason: string) => string;
+}
+
+const MATRIX_WORDS: Record<CouncilLang, MatrixWords> = {
+    en: {
+        pill: { proposed: "Proposed", accept: "Agrees", challenge: "Has doubts", oppose: "Against", none: "not said" },
+        agree: (n) => `${n} agree`,
+        doubt: (n) => `${n} ${n === 1 ? "doubt" : "doubts"}`,
+        against: (n) => `${n} against`,
+        noStances: "No stances yet",
+        revised: (round) => `revised in round ${round}`,
+        cut: "Cut at the pause",
+        withdrawn: "Withdrawn",
+        builds: (n) => `Builds on · ${n}`,
+        passedAsExpected: "passed, as expected",
+        failedAsExpected: "failed, as expected",
+        passedUnexpectedly: "passed, but a failure was expected",
+        failedUnexpectedly: "failed, but a pass was expected",
+        notRun: (reason) => (reason === "" ? "not run" : `not run: ${reason}`),
+    },
+    vi: {
+        pill: {
+            proposed: "Đưa ra ý",
+            accept: "Đồng ý",
+            challenge: "Còn nghi ngờ",
+            oppose: "Phản đối",
+            none: "chưa nói",
+        },
+        agree: (n) => `${n} đồng ý`,
+        doubt: (n) => `${n} nghi ngờ`,
+        against: (n) => `${n} phản đối`,
+        noStances: "Chưa ai nêu ý kiến",
+        revised: (round) => `đã sửa ở vòng ${round}`,
+        cut: "Bị cắt ở điểm dừng",
+        withdrawn: "Đã rút",
+        builds: (n) => `Phát triển thêm · ${n}`,
+        passedAsExpected: "đạt, đúng như dự đoán",
+        failedAsExpected: "thất bại, đúng như dự đoán",
+        passedUnexpectedly: "đạt, nhưng dự đoán là thất bại",
+        failedUnexpectedly: "thất bại, nhưng dự đoán là đạt",
+        notRun: (reason) => (reason === "" ? "không chạy" : `không chạy: ${reason}`),
+    },
+};
+
 export interface MatrixCell {
     expert: CouncilExpert;
     stance: StanceLabel | ""; // empty: the expert never took a stance on it
     reason: string;
+    word: string; // the pill's word: `Agrees`, `Has doubts`, `not said`…
+    revisedRound: number; // the round the idea's author revised it after this seat's challenge; 0 for none
+    note: string; // `revised in round 2`; empty for none
+}
+
+/** The check badge under an idea's title: the label Go gave the idea, and what backs it. */
+export interface CheckBadge {
+    label: CheckLabel;
+    word: string; // `Ran`, `Disproved`, `Read code`, `Guess`
+    command: string; // Ran or Disproved: the first command that tested the idea
+    result: string; // that command's result in words (`failed, as expected`)
+    cite: string; // Read code: the first cite that holds (`path:line`)
+}
+
+/** A Brainstorm idea's Builds on pill: the seats whose reply builds on it. */
+export interface BuildsPill {
+    count: number;
+    by: string[]; // the seats' ids, in panel order
+    word: string; // `Builds on · 2`
 }
 
 export interface MatrixRow {
     proposal: CouncilProposal;
     cells: MatrixCell[]; // one per expert of the panel, in its order
-    outcome: string; // `Direction 1`, `Merged into direction 3`, `Withdrawn`
+    outcome: string; // `Direction 1`, `Merged into direction 3`, `Withdrawn`; empty while the idea is in the running
+    withdrawn: boolean; // its author withdrew it
+    dimmed: boolean; // withdrawn, or cut by the person at the pause: the row is drawn dim
+    agrees: number; // the seats other than the author, by the stance each took last
+    doubts: number;
+    against: number;
+    consensus: string; // `2 agree · 1 doubt`
+    check: CheckBadge | null; // null where Go labelled nothing, and always in a Brainstorm
+    builds: BuildsPill | null; // a Brainstorm idea some seat builds on; null for any other
 }
 
 /** Pure: a message without its tables, diagrams and code blocks, and its list items as plain lines: a matrix cell has
@@ -938,44 +1145,156 @@ function firstSentence(text: string): string {
     return m != null ? m[0] : flat;
 }
 
-/** Pure: the Summary's matrix: every proposal against every expert of the panel, each cell the expert's last stance
- *  and its reason (the author's cell, `proposed`, carries the first sentence of the argument), then the outcome the
- *  summary gave the proposal. Rows follow the direction a proposal went into, those in none last. Empty before a
- *  summary. An idea that was held or dropped has no row, and a reply that was held or dropped is no cell's reason. */
+// a verify command's result in words: whether it passed or failed and whether that is what the expert expected; a command
+// that did not run says why. Only a pass or a fail tested the idea.
+function runResult(run: CouncilRun, w: MatrixWords): string {
+    if (run.state !== "pass" && run.state !== "fail") {
+        return w.notRun(run.reason ?? "");
+    }
+    const asExpected = run.matched === true;
+    if (run.state === "pass") {
+        return asExpected ? w.passedAsExpected : w.passedUnexpectedly;
+    }
+    return asExpected ? w.failedAsExpected : w.failedUnexpectedly;
+}
+
+// the badge under an idea's title; none where Go labelled nothing, and none in a Brainstorm, which asks for no evidence
+function checkBadge(c: Council, p: CouncilProposal, lang: CouncilLang, w: MatrixWords): CheckBadge | null {
+    const label = checkLabelOf(p);
+    if (label === "" || c.mode === "brainstorm") {
+        return null;
+    }
+    const badge: CheckBadge = { label, word: checkWord(label, lang), command: "", result: "", cite: "" };
+    if (label === "ran" || label === "disproved") {
+        // the first command that tested the idea and came out the way the label says; else the first that tested it
+        const runs = p.runs ?? [];
+        const tested = runs.filter((r) => r.state === "pass" || r.state === "fail");
+        const run = tested.find((r) => (r.matched === true) === (label === "ran")) ?? tested[0] ?? runs[0];
+        if (run != null) {
+            badge.command = run.command;
+            badge.result = runResult(run, w);
+        }
+    } else if (label === "read") {
+        badge.cite = (p.evidence ?? []).find((e) => e.cite === "ok")?.ref ?? "";
+    }
+    return badge;
+}
+
+// the Builds on pill of a Brainstorm idea: the seats, not its author, whose sent reply builds on it
+function buildsPill(c: Council, p: CouncilProposal, replies: CouncilReply[], w: MatrixWords): BuildsPill | null {
+    if (c.mode !== "brainstorm") {
+        return null;
+    }
+    const by = panel(c)
+        .filter(
+            (e) =>
+                e.id !== p.author &&
+                replies.some((r) => r.proposalid === p.id && r.builds === true && r.author === e.id)
+        )
+        .map((e) => e.id);
+    return by.length === 0 ? null : { count: by.length, by, word: w.builds(by.length) };
+}
+
+// per idea and seat, the round the idea's author revised it after that seat's challenge: a revised reply of the author's
+// answers (`parentid`) the challenge it was written for; the latest round wins
+function revisedRounds(c: Council, replies: CouncilReply[]): Map<string, number> {
+    const byId = new Map(replies.map((r) => [r.id, r]));
+    const authors = new Map((c.proposals ?? []).map((p) => [p.id, p.author]));
+    const out = new Map<string, number>();
+    for (const r of replies) {
+        if (!r.revised || !r.parentid || r.author === YOU || r.author !== authors.get(r.proposalid)) {
+            continue;
+        }
+        const asked = byId.get(r.parentid);
+        if (asked == null || asked.proposalid !== r.proposalid || asked.author === r.author || asked.author === YOU) {
+            continue;
+        }
+        const key = `${r.proposalid} ${asked.author}`;
+        out.set(key, Math.max(out.get(key) ?? 0, r.round));
+    }
+    return out;
+}
+
+/** Pure: the matrix behind the Summary and the Map: every sent proposal against every expert of the panel, each cell the
+ *  expert's last stance with its pill word and its reason (the author's cell, `proposed`, carries the first sentence of
+ *  the argument) and, where the author revised the idea after that seat's challenge, `revised in round N`; then the
+ *  outcome the summary gave the proposal (before a summary it comes from cut and withdrawn alone), the agreement counts
+ *  with their words, Go's check badge and, in a Brainstorm, the Builds on pill. Rows follow the direction a proposal
+ *  went into, those in none last, so before a summary they are in arrival order; the Map sorts them with `byAgreement`.
+ *  It works while the council runs. An idea that was held or dropped has no row, and a reply that was held or dropped
+ *  is no cell's reason. The words follow the council's language. */
 export function matrixRows(c: Council): MatrixRow[] {
     const summary = c.summary;
-    if (summary == null) {
-        return [];
-    }
+    const lang = councilLang(c);
+    const w = MATRIX_WORDS[lang];
     const stances = latestStances(c);
     const replies = byTime(sentReplies(c));
+    const revised = revisedRounds(c, replies);
     const rankOf = (id: string) => {
-        const ranks = summary.directions.filter((d) => d.from.includes(id)).map((d) => d.rank);
+        const ranks = (summary?.directions ?? []).filter((d) => d.from.includes(id)).map((d) => d.rank);
         return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
     };
     return sentProposals(c)
         .map((proposal, i) => ({ proposal, i, rank: rankOf(proposal.id) }))
         .sort((a, b) => a.rank - b.rank || a.i - b.i)
-        .map(({ proposal }) => ({
-            proposal,
-            cells: panel(c).map((expert): MatrixCell => {
+        .map(({ proposal }): MatrixRow => {
+            const cells = panel(c).map((expert): MatrixCell => {
                 const stance = stances[proposal.id]?.[expert.id];
+                // a withdrawn idea was not revised: its last revised reply is the withdrawal
+                const revisedRound = proposal.withdrawn ? 0 : (revised.get(`${proposal.id} ${expert.id}`) ?? 0);
+                const note = revisedRound > 0 ? w.revised(revisedRound) : "";
                 if (stance == null) {
-                    return { expert, stance: "", reason: "" };
+                    return { expert, stance: "", reason: "", word: w.pill.none, revisedRound, note };
                 }
+                const word = w.pill[stance];
                 if (stance === "proposed") {
                     // the marks go first: the first sentence could cut a mark in half
-                    return { expert, stance, reason: firstSentence(stripMarks(proseOf(proposal.argument))) };
+                    const reason = firstSentence(stripMarks(proseOf(proposal.argument)));
+                    return { expert, stance, reason, word, revisedRound, note };
                 }
                 const last = replies.filter(
                     (r) => r.proposalid === proposal.id && r.author === expert.id && r.stance === stance
                 );
-                return { expert, stance, reason: proseOf(last[last.length - 1]?.text ?? "") };
-            }),
-            outcome:
-                summary.outcomes[proposal.id] ??
-                (proposal.cut ? "Cut at the pause" : proposal.withdrawn ? "Withdrawn" : ""),
-        }));
+                return { expert, stance, reason: proseOf(last[last.length - 1]?.text ?? ""), word, revisedRound, note };
+            });
+            const others = cells.filter((x) => x.stance !== "" && x.stance !== "proposed");
+            const agrees = others.filter((x) => x.stance === "accept").length;
+            const doubts = others.filter((x) => x.stance === "challenge").length;
+            const against = others.filter((x) => x.stance === "oppose").length;
+            const said = [
+                agrees > 0 ? w.agree(agrees) : "",
+                doubts > 0 ? w.doubt(doubts) : "",
+                against > 0 ? w.against(against) : "",
+            ].filter((s) => s !== "");
+            return {
+                proposal,
+                cells,
+                outcome:
+                    summary?.outcomes?.[proposal.id] ?? (proposal.cut ? w.cut : proposal.withdrawn ? w.withdrawn : ""),
+                withdrawn: proposal.withdrawn === true,
+                dimmed: proposal.withdrawn === true || proposal.cut === true,
+                agrees,
+                doubts,
+                against,
+                consensus: said.length > 0 ? said.join(" · ") : w.noStances,
+                check: checkBadge(c, proposal, lang, w),
+                builds: buildsPill(c, proposal, replies, w),
+            };
+        });
+}
+
+/** Pure: the rows by agreement, the most agreed first: the seats that agree minus the ones against, then the fewer
+ *  doubts, then the order they came in (`matrixRows`'). The Map's order; the rows it is given are left as they were. */
+export function byAgreement(rows: MatrixRow[]): MatrixRow[] {
+    return rows
+        .map((row, i) => ({ row, i }))
+        .sort(
+            (a, b) =>
+                b.row.agrees - b.row.against - (a.row.agrees - a.row.against) ||
+                a.row.doubts - b.row.doubts ||
+                a.i - b.i
+        )
+        .map((x) => x.row);
 }
 
 // ---- Setup ----

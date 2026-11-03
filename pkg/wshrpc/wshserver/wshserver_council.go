@@ -21,6 +21,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -32,7 +33,8 @@ import (
 var councilRunner = newCouncilRunner(council.ConsultCaller{})
 
 func newCouncilRunner(caller council.Caller) *council.Runner {
-	return &council.Runner{Caller: caller, Agents: council.AgentCaller{Link: liveAgentLink{}}, OnChange: publishCouncilChanged}
+	// Trees: the verify commands run in a detached tree of the council's snapshot, which only pkg/orchestrate can make
+	return &council.Runner{Caller: caller, Agents: council.AgentCaller{Link: liveAgentLink{}}, Trees: orchestrate.CouncilTrees{}, OnChange: publishCouncilChanged}
 }
 
 // publishCouncilChanged tells the cockpit and `wsh council wait` that a council was saved.
@@ -216,7 +218,23 @@ func (ws *WshServer) CouncilReplyCommand(ctx context.Context, data wshrpc.Comman
 	if err != nil {
 		return err
 	}
-	_, err = councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools, seats, data.Attachments...)
+	_, err = councilReplyWith(councilRunner, data.Id, council.ReplyIn{
+		ProposalId: data.ProposalId, ParentId: data.ParentId, Text: data.Text, Tools: data.Tools, ToolsAuto: data.ToolsAuto,
+		Seats: seats, Attachments: data.Attachments,
+	})
+	return err
+}
+
+// councilReplyWith is the call CouncilReplyCommand makes on the runner. A test swaps it to read what the command hands
+// ReplyWith, ToolsAuto among it, which the runner stores nowhere a test could read it back.
+var councilReplyWith = func(r *council.Runner, id string, in council.ReplyIn) (*council.Council, error) {
+	return r.ReplyWith(id, in)
+}
+
+// CouncilAskTooCommand is Ask <seat> too: it reopens a routed whole-council reply for one more seat. The runner refuses
+// a reply that is not the person's, not routed, still pending, or a seat that is not on the panel or already in To.
+func (ws *WshServer) CouncilAskTooCommand(ctx context.Context, data wshrpc.CommandCouncilAskTooData) error {
+	_, err := councilRunner.AskToo(data.Id, data.ReplyId, data.ExpertId)
 	return err
 }
 
@@ -299,6 +317,14 @@ func (ws *WshServer) CouncilAutoGenerateCommand(ctx context.Context, data wshrpc
 func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.CommandCouncilEstimateData) (*wshrpc.CouncilEstimateRtnData, error) {
 	var est council.CouncilEstimate
 	switch {
+	case data.Id != "" && data.Routed:
+		// a whole-council message the router would take: one router call and one to two of the saved council's seats, as
+		// a range (CallsMax and TokensMax). The router picks among the council's own seats, so no tab is resolved.
+		c, err := council.Load(data.Id)
+		if err != nil {
+			return nil, err
+		}
+		est = council.EstimateRouted(c, data.Tools, data.ToolsAuto)
 	case data.Id != "" && (data.Followup > 0 || len(data.Agents) > 0):
 		// a follow-up: Followup counts the role experts that answer, Agents the chats, each priced at the context the
 		// roster reads for it. A chat that cannot be resolved fails the estimate; the cockpit then shows no figure.
@@ -320,7 +346,10 @@ func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.Com
 		}
 		est = council.Estimate(append(seats, data.Experts...), councilFileBytes(data.Project, data.Files), data.Rounds)
 	}
-	return &wshrpc.CouncilEstimateRtnData{Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes, AgentTokens: est.AgentTokens}, nil
+	return &wshrpc.CouncilEstimateRtnData{
+		Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes, AgentTokens: est.AgentTokens,
+		CallsMax: est.CallsMax, TokensMax: est.TokensMax,
+	}, nil
 }
 
 // councilSkipDirs are folders a council's file list never reads into: a folder in the list counts the files in it,

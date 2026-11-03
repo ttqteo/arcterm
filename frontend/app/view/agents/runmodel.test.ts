@@ -245,9 +245,13 @@ describe("runComplete", () => {
         expect(runComplete(info("done", { state: "held" }, "blocked"))).toBe(false);
     });
     it("is not complete when cancelled or still running", () => {
-        expect(runComplete(info("done", undefined, "cancelled"))).toBe(false);
         expect(runComplete(info("cancelled"))).toBe(false);
+        expect(runComplete(info("cancelled", undefined, "cancelled"))).toBe(false);
         expect(runComplete(info("done", undefined, "running"))).toBe(false);
+    });
+    // the engine cancels the dag a done run left unfinished (endedRunSettles); the run itself finished
+    it("is complete when the engine closed a done run's leftover dag", () => {
+        expect(runComplete(info("done", undefined, "cancelled"))).toBe(true);
     });
     // no dag means the lead did the goal itself without workers: the run's own status and land are the only truth
     it("follows the run's own status and land without a dag", () => {

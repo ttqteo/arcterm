@@ -199,6 +199,12 @@ func planReviewFailedWake(round int, findings string, last, autonomous bool) str
 	return fmt.Sprintf("wake: plan review failed in round %d: %s. Revise the plan (put spec changes to the human) and run `wsh jarvis dag submit` again.", round, flatLine(findings))
 }
 
+// specPlanReviewFailedWake is the last round's failure on an asking run whose plan answers to a spec: the lead
+// takes the findings that leave the spec's decisions standing, and only the rest go to the human.
+func specPlanReviewFailedWake(round int, findings string) string {
+	return fmt.Sprintf("wake: plan review failed in round %d, the last: %s. %s. When a finding does need the human, put it to them %s.", round, flatLine(findings), jarvis.SpecPastPlanReview, proceedPastPlanReview)
+}
+
 // planReviewLostWake is for a round whose required reviewer twice ended without a verdict and no reviewer failed:
 // there are no findings to act on, so the same plan can be submitted again.
 func planReviewLostWake(round int, reason string, last, autonomous bool) string {

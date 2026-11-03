@@ -14,7 +14,10 @@ import { base64ToString, cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
 import { FileText, Image as ImageIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
+import type { CouncilLang } from "./councilmodel";
 import {
+    claimChips,
     foldSources,
     groupSources,
     hunkLabel,
@@ -32,6 +35,11 @@ const NO_SOURCES = atom<CouncilSourcesView | null>(null);
 const CHIP =
     "inline-flex h-[24px] min-w-0 max-w-[260px] items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px] text-[12.5px]";
 
+// a chip's file name keeps its width (up to a cap, then it cuts itself) and the cited lines after it are what gives way:
+// a long list (`:41, 110, 423, 449, …`) ends in an ellipsis, and the title holds all of it
+const NAME = "max-w-[190px] flex-none truncate";
+const LINES = "min-w-0 truncate tabular-nums text-muted";
+
 // the panel reads a cited file whole; past this it says so instead
 const MAX_READ = 2 * 1024 * 1024;
 
@@ -47,28 +55,41 @@ export interface SourceOwner {
     title: string; // what the panel's header names it by
 }
 
-/** The references a message cites, one link per file, and a claim marked weak as its own amber chip. */
+/** A claim's evidence row: its check badge first (Ran, Disproved, Read code, Guess, with icon and word), then the references
+ *  it cites, one link per file, a cite Go found wrong as its own Wrong cite chip with Go's note, and a claim marked weak as
+ *  an amber chip. `evidence` is the items Go checked and `label` the label it gave the claim (claimChips). */
 export function EvidenceChips({
-    evidence = [],
-    weak = "",
+    evidence,
+    label = "",
+    lang = "en",
     source,
 }: {
-    evidence?: string[];
-    weak?: string;
+    evidence?: CouncilEvidence[];
+    label?: string;
+    lang?: CouncilLang;
     source?: SourceOwner;
 }) {
-    const view = useMemo(() => groupSources(evidence), [evidence]);
+    const chips = useMemo(() => claimChips(evidence, label, lang), [evidence, label, lang]);
+    const view = useMemo(() => groupSources(chips.refs), [chips.refs]);
     const shown = useAtomValue(source != null ? councilSourcesAtom(source.councilId) : NO_SOURCES);
-    if (view.groups.length === 0 && view.others.length === 0 && weak === "") {
+    const weak = chips.weak;
+    if (
+        view.groups.length === 0 &&
+        view.others.length === 0 &&
+        weak === "" &&
+        chips.wrong.length === 0 &&
+        chips.badge == null
+    ) {
         return null;
     }
     const picked = source != null && shown != null && shown.owner === source.owner ? shown.pick : -1;
     const fold = foldSources(view.groups);
     const open = (pick: number) =>
         source != null &&
-        openCouncilSources(source.councilId, { owner: source.owner, title: source.title, refs: evidence, pick });
+        openCouncilSources(source.councilId, { owner: source.owner, title: source.title, refs: chips.refs, pick });
     return (
         <div className="flex flex-wrap items-center gap-[6px]">
+            {chips.badge != null && <ClaimBadgeChip badge={chips.badge} />}
             {fold.shown.map((g, i) =>
                 source == null ? (
                     <SourceName key={g.path} group={g} />
@@ -125,6 +146,9 @@ export function EvidenceChips({
                     </span>
                 );
             })}
+            {chips.wrong.map((cite, i) => (
+                <WrongCiteChip key={`wrong-${i}`} cite={cite} />
+            ))}
             {weak !== "" && (
                 <span
                     data-council-evidence="weak"
@@ -159,10 +183,17 @@ function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boo
             )}
         >
             <FileText size={12} className="flex-none text-muted" aria-hidden />
-            <span className="min-w-0 truncate font-medium text-link underline-offset-2 group-hover:underline">
+            <span
+                data-council-source-name
+                className={cn(NAME, "font-medium text-link underline-offset-2 group-hover:underline")}
+            >
                 {group.name}
             </span>
-            {group.label !== "" && <span className="flex-none tabular-nums text-muted">{group.label}</span>}
+            {group.label !== "" && (
+                <span data-council-source-lines className={LINES}>
+                    {group.label}
+                </span>
+            )}
         </button>
     );
 }
@@ -171,8 +202,14 @@ function SourceName({ group }: { group: SourceGroup }) {
     return (
         <span data-council-evidence="ref" title={`${group.path}${group.label}`} className={CHIP}>
             <FileText size={12} className="flex-none text-muted" aria-hidden />
-            <span className="min-w-0 truncate font-medium text-secondary">{group.name}</span>
-            {group.label !== "" && <span className="flex-none tabular-nums text-muted">{group.label}</span>}
+            <span data-council-source-name className={cn(NAME, "font-medium text-secondary")}>
+                {group.name}
+            </span>
+            {group.label !== "" && (
+                <span data-council-source-lines className={LINES}>
+                    {group.label}
+                </span>
+            )}
         </span>
     );
 }

@@ -42,8 +42,29 @@ var (
 	ErrNotTranscript   = errors.New("only a Claude transcript (.jsonl) can be deleted")
 	ErrOutsideProjects = errors.New("that file is not a session in the Claude projects folder")
 	ErrNotFound        = errors.New("that session's transcript no longer exists")
-	ErrLive            = errors.New("that session is still running (an open tab has it, or it was written to in the last 2 minutes): stop it first")
+	// ErrLive is what both refusals of a running session match with errors.Is.
+	ErrLive = errors.New("that session may still be running")
+	// ErrOpenTab is the refusal of a session a tab still holds.
+	ErrOpenTab = fmt.Errorf("%w: a tab still has it open, close that tab first", ErrLive)
 )
+
+// RecentWriteError is the refusal of a session whose transcript was written within LiveWindow: it says how
+// long ago, and how long until a delete can go through. It matches ErrLive.
+type RecentWriteError struct {
+	Ago  time.Duration
+	Wait time.Duration
+}
+
+func (e *RecentWriteError) Error() string {
+	ago := "just now"
+	if s := e.Ago.Round(time.Second); s > 0 {
+		ago = s.String() + " ago"
+	}
+	return fmt.Sprintf("%s: it was written to %s (a closed agent writes its last lines as it exits), try again in %s",
+		ErrLive, ago, e.Wait.Round(time.Second))
+}
+
+func (e *RecentWriteError) Unwrap() error { return ErrLive }
 
 // Options is what one Delete needs, so the checks run against a temp dir in tests.
 type Options struct {
@@ -94,11 +115,13 @@ func Delete(o Options, transcriptPath string) (string, error) {
 	}
 	for _, live := range o.LiveTranscripts {
 		if samePath(live, transcriptPath) || samePath(live, transcript) {
-			return "", ErrLive
+			return "", ErrOpenTab
 		}
 	}
-	if o.Now.Sub(info.ModTime()) < LiveWindow {
-		return "", ErrLive
+	if ago := o.Now.Sub(info.ModTime()); ago < LiveWindow {
+		// round the wait up, so "try again in 1m26s" is never a second early
+		wait := (LiveWindow - ago + time.Second - 1).Truncate(time.Second)
+		return "", &RecentWriteError{Ago: ago, Wait: wait}
 	}
 
 	dir, name := filepath.Split(transcript)

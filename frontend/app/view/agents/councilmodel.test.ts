@@ -5,10 +5,14 @@ import {
     agentSeat,
     answerers,
     askedParts,
+    byAgreement,
     callSegments,
     canRemoveCouncil,
     canSummarize,
+    checkLabelOf,
+    checkWord,
     costLine,
+    councilLang,
     councilProjectKey,
     councilProjectName,
     countTokens,
@@ -32,6 +36,7 @@ import {
     isSent,
     latestStances,
     matrixRows,
+    mentionsAll,
     mentionsChat,
     nextThumb,
     outdatedChanges,
@@ -44,6 +49,8 @@ import {
     readableReplies,
     replyLabel,
     roundsOf,
+    routedLabel,
+    routedMessage,
     score,
     sentProposals,
     sentReplies,
@@ -54,6 +61,8 @@ import {
     thumbOf,
     treeMeta,
     withThumb,
+    wrongCiteWord,
+    type CheckLabel,
     type SeatableAgent,
 } from "./councilmodel";
 
@@ -402,6 +411,116 @@ describe("answerers", () => {
     it("is every non-coordinator expert with no proposal", () => {
         expect(ids(answerers(c, "", "", "anyone?"))).toEqual(["ux", "ram", "nu", "sk"]);
     });
+
+    it("is every expert for an @all or an @everyone, a whole word in any case, in a thread too", () => {
+        const all = ["ux", "ram", "nu", "sk"];
+        expect(ids(answerers(c, "", "", "@all what do you think"))).toEqual(all);
+        expect(ids(answerers(c, "", "", "@Everyone, weigh in"))).toEqual(all);
+        expect(ids(answerers(c, "P2", "r1", "why? @ALL"))).toEqual(all);
+        expect(ids(answerers(c, "P3", "", "@all"))).toEqual(all);
+    });
+
+    it("keeps @all beside a seat's name: every seat still answers", () => {
+        expect(ids(answerers(c, "", "", "@all and @RAM first"))).toEqual(["ux", "ram", "nu", "sk"]);
+    });
+
+    it("does not read @allison, an address or an @all file as @all", () => {
+        expect(ids(answerers(c, "P2", "r1", "@allison and mail a@all.com"))).toEqual(["ux", "sk"]);
+        expect(ids(answerers(c, "P2", "r1", "see @all.md and @allx and @allies"))).toEqual(["ux", "sk"]);
+        expect(ids(answerers(c, "P2", "r1", "@everyones"))).toEqual(["ux", "sk"]);
+    });
+
+    it("adds the chats a message seats to an @all, once each", () => {
+        const recap: SeatableAgent = {
+            id: "82faafca-4b1e",
+            name: "Recap",
+            project: "p",
+            harness: "claude",
+            context: 1,
+        };
+        const got = answerers(c, "", "", "@all and @82faafca", [recap]);
+        expect(ids(got)).toEqual(["ux", "ram", "nu", "sk", agentSeat(recap).id]);
+    });
+});
+
+describe("mentionsAll", () => {
+    it("reads @all and @everyone as whole words after an @ that sits in no word", () => {
+        expect(mentionsAll("@all")).toBe(true);
+        expect(mentionsAll("hey @Everyone: go")).toBe(true);
+        expect(mentionsAll("(@all)")).toBe(true);
+        expect(mentionsAll("@all. next")).toBe(true);
+        expect(mentionsAll("@allison")).toBe(false);
+        expect(mentionsAll("a@all.com")).toBe(false);
+        expect(mentionsAll("@all.md")).toBe(false);
+        expect(mentionsAll("all of you")).toBe(false);
+        expect(mentionsAll("")).toBe(false);
+    });
+});
+
+describe("routedMessage", () => {
+    const chat = (id: string): CouncilExpert => agentOf(id, `Chat ${id}`);
+    const ask = (c: Council, text = "what next?", proposalId = "", parentId = "") =>
+        routedMessage(c, proposalId, parentId, text, []);
+
+    it("is true for a plain message to the whole council of two seats or more", () => {
+        expect(ask(council())).toBe(true);
+        expect(ask(council(), "")).toBe(true);
+        expect(ask(council({ experts: experts.slice(0, 2).concat(experts[4]) }))).toBe(true);
+    });
+
+    it("is false in an idea's thread and under a reply", () => {
+        expect(ask(council(), "why?", "P2")).toBe(false);
+        expect(ask(council(), "why?", "", "r1")).toBe(false);
+        expect(ask(council(), "why?", "P2", "r1")).toBe(false);
+    });
+
+    it("is false when a seat is named, by name or id, or a chat by its key", () => {
+        expect(ask(council(), "@RAM why?")).toBe(false);
+        expect(ask(council(), "@nu why?")).toBe(false);
+        const withChat = council({
+            experts: [...experts.slice(0, 2), agentOf("82faafca-4b1e-4c57-9d0a-3c5e8f1a2b61", "Recap"), experts[4]],
+        });
+        expect(ask(withChat, "@82faafca why?")).toBe(false);
+        expect(ask(withChat, "what next?")).toBe(true);
+    });
+
+    it("is true when the @ names no seat: an address, an unknown name, a file", () => {
+        expect(ask(council(), "mail a@ram.com")).toBe(true);
+        expect(ask(council(), "@bob what next?")).toBe(true);
+        expect(ask(council(), "@ux/plan.md what next?")).toBe(true);
+    });
+
+    it("is false for @all and @everyone: the person asked everyone", () => {
+        expect(ask(council(), "@all what next?")).toBe(false);
+        expect(ask(council(), "@everyone what next?")).toBe(false);
+        expect(ask(council(), "@allison what next?")).toBe(true);
+    });
+
+    it("is false while a chat joins with the message", () => {
+        const recap: SeatableAgent = {
+            id: "82faafca-4b1e",
+            name: "Recap",
+            project: "p",
+            harness: "claude",
+            context: 1,
+        };
+        expect(routedMessage(council(), "", "", "what next?", [recap])).toBe(false);
+        expect(routedMessage(council(), "", "", "what next?", [])).toBe(true);
+    });
+
+    it("is false with fewer than two seats that have no failed call: one candidate has nothing to choose", () => {
+        const failed = (...ids: string[]) =>
+            Object.fromEntries(ids.map((id) => [id, { round: 1, error: "timed out" }])) as Council["failed"];
+        expect(ask(council({ failed: failed("ux") }))).toBe(true);
+        expect(ask(council({ failed: failed("ux", "ram") }))).toBe(true);
+        expect(ask(council({ failed: failed("ux", "ram", "nu") }))).toBe(false);
+        expect(ask(council({ failed: failed("ux", "ram", "nu", "sk") }))).toBe(false);
+        // the coordinator's failure is no seat's
+        expect(ask(council({ failed: failed("coordinator") }))).toBe(true);
+        // a panel of one seat has nothing to choose either
+        expect(ask(council({ experts: [experts[0], experts[4]] }))).toBe(false);
+        expect(ask(council({ experts: [chat("a")] }))).toBe(false);
+    });
 });
 
 // live chats: tab ids are UUIDs, whose 9th character is a `-`
@@ -661,6 +780,29 @@ describe("replyLabel", () => {
         expect(replyLabel(council(), reply("r2", "ram", { round: 2 }))).toBe("");
     });
 
+    it("says the router is choosing a seat while a routed reply is pending, whatever the council's state", () => {
+        const pending = { pending: true };
+        expect(replyLabel(council({ state: "done", round: 3 }), mine({ round: 4, routed: pending }))).toBe(
+            "Router is choosing a seat…"
+        );
+        expect(replyLabel(council({ state: "running", round: 3 }), mine({ round: 4, routed: pending }))).toBe(
+            "Router is choosing a seat…"
+        );
+        expect(replyLabel(council({ round: 1, state: "awaiting-you" }), mine({ round: 1, routed: pending }))).toBe(
+            "Router is choosing a seat…"
+        );
+    });
+
+    it("goes back to the usual labels once the router has chosen, and says nothing of a pick that was answered", () => {
+        const chose = { chose: ["ux"], reason: "ux owns it" };
+        expect(replyLabel(council({ state: "running", round: 3 }), mine({ round: 4, routed: chose }))).toBe(
+            "Answering…"
+        );
+        expect(replyLabel(council({ state: "done", round: 3 }), mine({ round: 4, routed: chose }))).toBe("");
+        expect(replyLabel(council(), mine({ round: 2, answered: true, routed: { pending: true } }))).toBe("");
+        expect(replyLabel(council(), reply("r2", "ram", { round: 2, routed: { pending: true } }))).toBe("");
+    });
+
     it("queues a reply for the seats' next round until the last one", () => {
         const three = council({ rounds: 3, round: 2 });
         expect(replyLabel(three, mine({ round: 2 }))).toBe("Queued for the next step");
@@ -741,6 +883,41 @@ describe("estimateLabel and followupLabel", () => {
             "2 experts and 1 chat answer, reading files · ≈ 3 calls · ~84k tokens"
         );
         expect(followupLabel(est, 0, true, 2)).toBe("2 chats answer, reading files · ≈ 3 calls · ~84k tokens");
+    });
+
+    it("draws a range when the estimate holds a high end: calls and tokens as ends, the time as one number", () => {
+        const range = { calls: 2, callsmax: 3, tokens: 35_000, tokensmax: 235_000, minutes: 2 };
+        expect(estimateLabel(range, false)).toBe("≈ 2–3 calls · ~35k–235k tokens");
+        expect(estimateLabel(range)).toBe("≈ 2–3 calls · ~35k–235k tokens · ~2 min");
+        expect(estimateLabel({ ...range, tokens: 15_000, tokensmax: 1_240_000 }, false)).toBe(
+            "≈ 2–3 calls · ~15k–1.2M tokens"
+        );
+        expect(estimateLabel({ ...range, tokens: 800, tokensmax: 50_000 }, false)).toBe(
+            "≈ 2–3 calls · ~800–50k tokens"
+        );
+    });
+
+    it("draws each end alone when its high end is unset or the same as its low end", () => {
+        const one = { calls: 2, tokens: 40_000, minutes: 1 };
+        expect(estimateLabel({ ...one, callsmax: 3 }, false)).toBe("≈ 2–3 calls · ~40k tokens");
+        expect(estimateLabel({ ...one, tokensmax: 90_000 }, false)).toBe("≈ 2 calls · ~40k–90k tokens");
+        expect(estimateLabel({ ...one, callsmax: 2, tokensmax: 40_000 }, false)).toBe("≈ 2 calls · ~40k tokens");
+        expect(estimateLabel(one, false)).toBe("≈ 2 calls · ~40k tokens");
+    });
+
+    it("words the router's hint: who picks, then the range once it is in", () => {
+        const range = { calls: 2, callsmax: 3, tokens: 35_000, tokensmax: 235_000, minutes: 2 };
+        expect(routedLabel(null)).toBe("Router picks 1–2 seats");
+        expect(routedLabel(range)).toBe("Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens");
+        expect(routedLabel({ calls: 2, tokens: 40_000, minutes: 1 })).toBe(
+            "Router picks 1–2 seats · ≈ 2 calls · ~40k tokens"
+        );
+    });
+
+    it("draws one value when the range's ends meet (one candidate), and no figure for an all-zero reply", () => {
+        const one = { calls: 2, callsmax: 2, tokens: 35_000, tokensmax: 35_000, minutes: 1 };
+        expect(routedLabel(one)).toBe("Router picks 1–2 seats · ≈ 2 calls · ~35k tokens");
+        expect(routedLabel({ calls: 0, tokens: 0, minutes: 0 })).toBe("Router picks 1–2 seats");
     });
 });
 
@@ -1571,8 +1748,384 @@ describe("matrixRows", () => {
         expect(matrixRows(gap).map((r) => r.outcome)).toEqual(["Cut at the pause", "Withdrawn", ""]);
     });
 
-    it("has no rows without a summary", () => {
-        expect(matrixRows(council())).toEqual([]);
+    it("has no rows for a council with no ideas", () => {
+        expect(matrixRows(council({ proposals: [] }))).toEqual([]);
+    });
+});
+
+describe("matrixRows, for the Map", () => {
+    // P1 (ux): ram agrees, nu has doubts, sk is against it. P2 (ram): ux and nu agree, sk has said nothing.
+    const stanced = (extra: Partial<Council> = {}) =>
+        council({
+            proposals: [prop("P1", "ux"), prop("P2", "ram")],
+            replies: [
+                reply("r1", "ram", { proposalid: "P1", stance: "accept", ts: 1 }),
+                reply("r2", "nu", { proposalid: "P1", stance: "challenge", ts: 2 }),
+                reply("r3", "sk", { proposalid: "P1", stance: "oppose", ts: 3 }),
+                reply("r4", "ux", { proposalid: "P2", stance: "accept", ts: 4 }),
+                reply("r5", "nu", { proposalid: "P2", stance: "accept", ts: 5 }),
+            ],
+            ...extra,
+        });
+
+    it("lists the ideas before there is a summary, in arrival order, the outcome from cut and withdrawn alone", () => {
+        const c = council({
+            proposals: [
+                prop("P1", "ux"),
+                prop("P2", "ram", { cut: true }),
+                prop("P3", "nu", { withdrawn: true }),
+                prop("P4", "sk"),
+            ],
+            replies: [],
+        });
+        expect(c.summary).toBeUndefined();
+        expect(matrixRows(c).map((r) => [r.proposal.id, r.outcome])).toEqual([
+            ["P1", ""],
+            ["P2", "Cut at the pause"],
+            ["P3", "Withdrawn"],
+            ["P4", ""],
+        ]);
+    });
+
+    it("fills each cell from the replies so far, with the pill's word", () => {
+        const [p1, p2] = matrixRows(stanced());
+        expect(p1.cells.map((x) => [x.expert.id, x.stance, x.word])).toEqual([
+            ["ux", "proposed", "Proposed"],
+            ["ram", "accept", "Agrees"],
+            ["nu", "challenge", "Has doubts"],
+            ["sk", "oppose", "Against"],
+        ]);
+        expect(p1.cells[1].reason).toBe("text r1");
+        expect(p2.cells[3]).toMatchObject({ stance: "", word: "not said", reason: "" });
+    });
+
+    it("counts who agrees, doubts and is against, the author left out, and says it in words", () => {
+        const [p1, p2] = matrixRows(stanced());
+        expect([p1.agrees, p1.doubts, p1.against, p1.consensus]).toEqual([1, 1, 1, "1 agree · 1 doubt · 1 against"]);
+        expect([p2.agrees, p2.doubts, p2.against, p2.consensus]).toEqual([2, 0, 0, "2 agree"]);
+        const doubted = matrixRows(
+            council({
+                proposals: [prop("P1", "ux"), prop("P2", "ux")],
+                replies: [
+                    reply("r1", "ram", { proposalid: "P1", stance: "challenge", ts: 1 }),
+                    reply("r2", "nu", { proposalid: "P1", stance: "challenge", ts: 2 }),
+                ],
+            })
+        );
+        expect(doubted[0].consensus).toBe("2 doubts");
+        expect([doubted[1].agrees, doubted[1].consensus]).toEqual([0, "No stances yet"]);
+    });
+
+    it("counts the stance a seat last took, not every reply", () => {
+        const c = council({
+            proposals: [prop("P1", "ux")],
+            replies: [
+                reply("r1", "ram", { proposalid: "P1", stance: "challenge", ts: 1 }),
+                reply("r2", "ram", { proposalid: "P1", stance: "accept", ts: 2 }),
+            ],
+        });
+        const [p1] = matrixRows(c);
+        expect([p1.agrees, p1.doubts]).toEqual([1, 0]);
+    });
+
+    it("words the pills, the counts and the outcome of a Vietnamese council in Vietnamese", () => {
+        const rows = matrixRows(
+            stanced({
+                lang: "vi",
+                proposals: [prop("P1", "ux"), prop("P2", "ram", { cut: true }), prop("P3", "nu", { withdrawn: true })],
+            })
+        );
+        expect(rows[0].cells.map((x) => x.word)).toEqual(["Đưa ra ý", "Đồng ý", "Còn nghi ngờ", "Phản đối"]);
+        expect(rows[0].consensus).toBe("1 đồng ý · 1 nghi ngờ · 1 phản đối");
+        expect(rows[1].cells[3].word).toBe("chưa nói");
+        expect([rows[1].outcome, rows[2].outcome]).toEqual(["Bị cắt ở điểm dừng", "Đã rút"]);
+    });
+
+    it("marks a withdrawn idea, and dims it as it dims one cut at the pause", () => {
+        const rows = matrixRows(
+            council({
+                proposals: [prop("P1", "ux"), prop("P2", "ram", { withdrawn: true }), prop("P3", "nu", { cut: true })],
+                replies: [],
+            })
+        );
+        expect(rows.map((r) => [r.withdrawn, r.dimmed])).toEqual([
+            [false, false],
+            [true, true],
+            [false, true],
+        ]);
+    });
+
+    describe("check badges", () => {
+        const checked = (extra: Partial<Council> = {}) =>
+            council({
+                proposals: [
+                    prop("P1", "ux", {
+                        label: "ran",
+                        runs: [
+                            {
+                                command: "go test ./pkg/x -run TestA",
+                                expect: "fail",
+                                state: "not-run",
+                                reason: "timed out after 3 min",
+                            },
+                            {
+                                command: "go test ./pkg/x -run TestB",
+                                expect: "fail",
+                                state: "fail",
+                                exit: 1,
+                                matched: true,
+                            },
+                        ],
+                    }),
+                    prop("P2", "ram", {
+                        label: "disproved",
+                        runs: [{ command: "npx vitest run a.test.ts", expect: "pass", state: "fail", exit: 1 }],
+                    }),
+                    prop("P3", "nu", {
+                        label: "read",
+                        evidence: [
+                            { ref: "a.go:1", cite: "wrong", citenote: "line 900 is past the end (412 lines)" },
+                            { ref: "b.go:2", cite: "ok" },
+                            { ref: "c.go:3", cite: "ok" },
+                        ],
+                    }),
+                    prop("P4", "sk", { label: "guess" }),
+                    prop("P5", "sk"),
+                ],
+                replies: [],
+                ...extra,
+            });
+
+        it("gives a Ran idea its first tested command and the result in words", () => {
+            expect(matrixRows(checked())[0].check).toEqual({
+                label: "ran",
+                word: "Ran",
+                command: "go test ./pkg/x -run TestB",
+                result: "failed, as expected",
+                cite: "",
+            });
+        });
+
+        it("gives a Disproved idea the command whose result contradicts what the expert expected", () => {
+            expect(matrixRows(checked())[1].check).toEqual({
+                label: "disproved",
+                word: "Disproved",
+                command: "npx vitest run a.test.ts",
+                result: "failed, but a pass was expected",
+                cite: "",
+            });
+        });
+
+        it("gives a Read code idea its first cite that holds, and a Guess neither", () => {
+            const rows = matrixRows(checked());
+            expect(rows[2].check).toEqual({
+                label: "read",
+                word: "Read code",
+                command: "",
+                result: "",
+                cite: "b.go:2",
+            });
+            expect(rows[3].check).toEqual({ label: "guess", word: "Guess", command: "", result: "", cite: "" });
+        });
+
+        it("gives an idea Go has not labelled no badge", () => {
+            expect(matrixRows(checked())[4].check).toBeNull();
+            expect(matrixRows(checked({ proposals: [prop("P1", "ux", { label: "bogus" })] }))[0].check).toBeNull();
+        });
+
+        it("words the badge and its result in Vietnamese for a Vietnamese council", () => {
+            const rows = matrixRows(checked({ lang: "vi" }));
+            expect(rows.map((r) => r.check?.word)).toEqual(["Đã chạy", "Bị bác", "Đã đọc code", "Chỉ đoán", undefined]);
+            expect(rows[0].check?.result).toBe("thất bại, đúng như dự đoán");
+            expect(rows[1].check?.result).toBe("thất bại, nhưng dự đoán là đạt");
+        });
+
+        it("words a run that passed, matched or not", () => {
+            const run = (state: string, expectState: string, matched: boolean): CouncilRun => ({
+                command: "cargo test x",
+                expect: expectState,
+                state,
+                matched,
+            });
+            const result = (r: CouncilRun) =>
+                matrixRows(council({ proposals: [prop("P1", "ux", { label: "ran", runs: [r] })], replies: [] }))[0]
+                    .check?.result;
+            expect(result(run("pass", "pass", true))).toBe("passed, as expected");
+            expect(result(run("pass", "fail", false))).toBe("passed, but a failure was expected");
+        });
+    });
+
+    describe("a Brainstorm", () => {
+        const brainstorm = (extra: Partial<Council> = {}) =>
+            council({
+                mode: "brainstorm",
+                proposals: [prop("P1", "ux", { label: "guess" }), prop("P2", "ram")],
+                replies: [
+                    reply("r1", "ram", {
+                        proposalid: "P1",
+                        stance: "accept",
+                        builds: true,
+                        text: "and a chime",
+                        ts: 1,
+                    }),
+                    reply("r2", "nu", { proposalid: "P1", stance: "accept", builds: true, text: "and a hint", ts: 2 }),
+                    reply("r3", "nu", { proposalid: "P1", stance: "accept", builds: true, text: "more", ts: 3 }),
+                    reply("r4", "you", { proposalid: "P1", builds: true, text: "me too", ts: 4 }),
+                    reply("r5", "sk", {
+                        proposalid: "P1",
+                        stance: "accept",
+                        builds: true,
+                        text: "held",
+                        draft: "held",
+                        ts: 5,
+                    }),
+                    reply("r6", "ux", { proposalid: "P2", stance: "accept", text: "", ts: 6 }),
+                ],
+                ...extra,
+            });
+
+        it("carries a Builds on pill and no check badge", () => {
+            const [p1, p2] = matrixRows(brainstorm());
+            expect(p1.check).toBeNull();
+            expect(p1.builds).toEqual({ count: 2, by: ["ram", "nu"], word: "Builds on · 2" });
+            expect(p2.builds).toBeNull();
+        });
+
+        it("words the pill in Vietnamese", () => {
+            expect(matrixRows(brainstorm({ lang: "vi" }))[0].builds?.word).toBe("Phát triển thêm · 2");
+        });
+
+        it("leaves the pill off a Review, which has no builds", () => {
+            expect(matrixRows(brainstorm({ mode: "review" })).map((r) => r.builds)).toEqual([null, null]);
+        });
+    });
+
+    describe("revised notes", () => {
+        const revised = (extra: Partial<Council> = {}, revision: Partial<CouncilReply> = {}) =>
+            council({
+                proposals: [prop("P1", "ux")],
+                replies: [
+                    reply("r1", "ram", { proposalid: "P1", stance: "challenge", round: 2, ts: 1 }),
+                    reply("r2", "nu", { proposalid: "P1", stance: "accept", round: 2, ts: 2 }),
+                    reply("r3", "ux", {
+                        proposalid: "P1",
+                        parentid: "r1",
+                        revised: true,
+                        text: "Revised the argument.",
+                        round: 2,
+                        ts: 3,
+                        ...revision,
+                    }),
+                ],
+                ...extra,
+            });
+        const notes = (c: Council) => matrixRows(c)[0].cells.map((x) => [x.expert.id, x.revisedRound, x.note]);
+
+        it("notes the cell of the seat whose challenge the author revised the idea after", () => {
+            expect(notes(revised())).toEqual([
+                ["ux", 0, ""],
+                ["ram", 2, "revised in round 2"],
+                ["nu", 0, ""],
+                ["sk", 0, ""],
+            ]);
+        });
+
+        it("keeps the note when that seat later agrees, and takes the latest round of two revisions", () => {
+            const c = revised();
+            c.replies.push(
+                reply("r4", "ram", { proposalid: "P1", stance: "accept", round: 3, ts: 4 }),
+                reply("r5", "ux", { proposalid: "P1", parentid: "r1", revised: true, text: "Again.", round: 3, ts: 5 })
+            );
+            const ram = matrixRows(c)[0].cells[1];
+            expect([ram.stance, ram.revisedRound, ram.note]).toEqual(["accept", 3, "revised in round 3"]);
+        });
+
+        it("words the note in Vietnamese", () => {
+            expect(matrixRows(revised({ lang: "vi" }))[0].cells[1].note).toBe("đã sửa ở vòng 2");
+        });
+
+        it("notes nothing for a revision that answers no challenge, one still held, or an idea withdrawn", () => {
+            expect(notes(revised({}, { parentid: "" })).map((n) => n[1])).toEqual([0, 0, 0, 0]);
+            expect(notes(revised({}, { draft: "held" })).map((n) => n[1])).toEqual([0, 0, 0, 0]);
+            expect(notes(revised({ proposals: [prop("P1", "ux", { withdrawn: true })] })).map((n) => n[1])).toEqual([
+                0, 0, 0, 0,
+            ]);
+        });
+
+        it("ignores a revised reply from someone who did not write the idea", () => {
+            expect(notes(revised({}, { author: "sk" })).map((n) => n[1])).toEqual([0, 0, 0, 0]);
+        });
+    });
+});
+
+describe("byAgreement", () => {
+    // every idea is ux's; ram and nu answer
+    const c = council({
+        proposals: [prop("P1", "ux"), prop("P2", "ux"), prop("P3", "ux"), prop("P4", "ux"), prop("P5", "ux")],
+        replies: [
+            reply("r1", "ram", { proposalid: "P1", stance: "accept", ts: 1 }),
+            reply("r2", "nu", { proposalid: "P1", stance: "challenge", ts: 2 }),
+            reply("r3", "ram", { proposalid: "P2", stance: "accept", ts: 3 }),
+            reply("r4", "nu", { proposalid: "P2", stance: "accept", ts: 4 }),
+            reply("r5", "ram", { proposalid: "P3", stance: "accept", ts: 5 }),
+            reply("r6", "ram", { proposalid: "P4", stance: "accept", ts: 6 }),
+            reply("r7", "nu", { proposalid: "P4", stance: "oppose", ts: 7 }),
+            reply("r8", "ram", { proposalid: "P5", stance: "accept", ts: 8 }),
+        ],
+    });
+
+    it("puts the most agreed first: agrees minus against, then fewer doubts, then the matrix's own order", () => {
+        const rows = matrixRows(c);
+        expect(byAgreement(rows).map((r) => r.proposal.id)).toEqual(["P2", "P3", "P5", "P1", "P4"]);
+    });
+
+    it("leaves the rows it was given as they were", () => {
+        const rows = matrixRows(c);
+        const before = rows.map((r) => r.proposal.id);
+        byAgreement(rows);
+        expect(rows.map((r) => r.proposal.id)).toEqual(before);
+        expect(before).toEqual(["P1", "P2", "P3", "P4", "P5"]);
+    });
+
+    it("keeps the order of a council where nothing has been said", () => {
+        const quiet = council({ proposals: [prop("P1", "ux"), prop("P2", "ram"), prop("P3", "nu")], replies: [] });
+        expect(byAgreement(matrixRows(quiet)).map((r) => r.proposal.id)).toEqual(["P1", "P2", "P3"]);
+    });
+});
+
+describe("the council's language and the check words", () => {
+    it("reads an absent or unknown language as English", () => {
+        expect(councilLang(council())).toBe("en");
+        expect(councilLang({ lang: "vi" })).toBe("vi");
+        expect(councilLang({ lang: "en" })).toBe("en");
+        expect(councilLang({ lang: "fr" })).toBe("en");
+        expect(councilLang(null)).toBe("en");
+    });
+
+    it("reads a label Go set, and nothing else", () => {
+        expect(checkLabelOf({ label: "ran" })).toBe("ran");
+        expect(checkLabelOf({ label: "disproved" })).toBe("disproved");
+        expect(checkLabelOf({ label: "read" })).toBe("read");
+        expect(checkLabelOf({ label: "guess" })).toBe("guess");
+        expect(checkLabelOf({ label: "" })).toBe("");
+        expect(checkLabelOf({})).toBe("");
+        expect(checkLabelOf({ label: "bogus" })).toBe("");
+    });
+
+    it("words each label and a wrong cite in both languages", () => {
+        expect(["ran", "disproved", "read", "guess"].map((l) => checkWord(l as CheckLabel, "en"))).toEqual([
+            "Ran",
+            "Disproved",
+            "Read code",
+            "Guess",
+        ]);
+        expect(["ran", "disproved", "read", "guess"].map((l) => checkWord(l as CheckLabel, "vi"))).toEqual([
+            "Đã chạy",
+            "Bị bác",
+            "Đã đọc code",
+            "Chỉ đoán",
+        ]);
+        expect([wrongCiteWord("en"), wrongCiteWord("vi")]).toEqual(["Wrong cite", "Trích sai"]);
     });
 });
 

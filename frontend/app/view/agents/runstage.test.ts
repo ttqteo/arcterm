@@ -112,6 +112,28 @@ describe("runStage", () => {
         expect(pips({ status: "cancelled", dag: dag("cancelled") })).toEqual(["skipped", "skipped", "skipped"]);
     });
 
+    // Land anyway after a failed final: the run is done and landed, and the engine closes its leftover blocked dag as
+    // cancelled (endedRunSettles, source run-ended). The run is not cancelled: it reads by its land.
+    it("reads a done run whose dag the engine closed after it ended by its land, not as cancelled", () => {
+        const forced = runStage({
+            status: "done",
+            land: { state: "landed" },
+            dag: dag("cancelled", { state: "failed" }),
+        });
+        expect(forced).toMatchObject({
+            key: "landed",
+            label: "Landed",
+            complete: true,
+            needsYou: false,
+            outcome: "failed",
+        });
+        expect(forced.tail.map((p) => p.state)).toEqual(["failed", "done", "done"]);
+        expect(runStage({ status: "done", dag: dag("cancelled", { state: "failed" }) })).toMatchObject({
+            key: "complete",
+            label: "Complete",
+        });
+    });
+
     it("gives a run with no dag the Land pip alone", () => {
         expect(runStage({ status: "executing" }).tail).toEqual([{ name: "Land", state: "pending" }]);
         expect(runStage({ status: "done", land: { state: "landed" } }).tail).toEqual([{ name: "Land", state: "done" }]);

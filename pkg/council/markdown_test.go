@@ -297,6 +297,65 @@ func TestMarkdownDiscussion(t *testing.T) {
 	}
 }
 
+func TestMarkdownLabels(t *testing.T) {
+	for label, word := range map[string]string{LabelRan: "Ran", LabelDisproved: "Disproved", LabelRead: "Read code", LabelGuess: "Guess", "": "", "other": ""} {
+		if got := labelWord(label); got != word {
+			t.Errorf("labelWord(%q) = %q, want %q", label, got, word)
+		}
+	}
+
+	c := documentCouncil()
+	c.Proposals[0].Label = LabelRan
+	c.Proposals[0].Runs = []CouncilRun{{Command: "go test ./pkg/services -run TestIdle", Expect: RunFail, State: RunFail, Exit: 1,
+		Matched: true, Tail: "--- FAIL: TestIdle\nFAIL"}}
+	c.Proposals[1].Label = LabelDisproved
+	c.Proposals[1].Runs = []CouncilRun{
+		{Command: "npx vitest run frontend/a.test.ts", Expect: RunPass, State: RunFail, Exit: 1, Tail: "AssertionError"},
+		{Command: "cargo test idle_sleep", Expect: RunPass, State: RunPass, Matched: true, Tail: "a ```fence``` in the output"},
+	}
+	c.Proposals[2].Label = LabelRead
+	c.Proposals[2].Evidence = []CouncilEvidence{{Ref: "a.go:1", Cite: CiteOK}, {Ref: "a.go:900", Cite: CiteWrong, CiteNote: "line 900 is past the end (412 lines)"}}
+	c.Proposals[2].Runs = []CouncilRun{
+		{Command: "cargo test idle_wake", Expect: RunFail, State: RunNotRun, Reason: "timed out after 3 min"},
+		{Command: "go test ./pkg/x -run TestNever", Expect: RunPass}, // nothing ever handled it
+	}
+	c.Proposals[3].Label = LabelGuess
+	c.Replies[0].Label = LabelRead // r1, RAM's accept with words
+	c.Replies[0].Evidence = []CouncilEvidence{{Ref: "b.go:7", Cite: CiteWrong, CiteNote: "quote not found near line 7"}}
+	c.Replies[1].Label = LabelGuess // r2, the Skeptic's doubt
+
+	doc := Document(c)
+	for _, w := range []string{
+		// a proposal: its evidence, its label word, then each run's result
+		"  Evidence: a.go:1; weak: \"about 3 s\" has no measurement\n  Check: Ran\n" +
+			"  Verify `go test ./pkg/services -run TestIdle`: failed (exit 1), as its author expected\n" +
+			"  ```text\n  --- FAIL: TestIdle\n  FAIL\n  ```\n",
+		"  Check: Disproved\n  Verify `npx vitest run frontend/a.test.ts`: failed (exit 1), but its author expected it to pass\n  ```text\n  AssertionError\n  ```\n",
+		// a run that matched, with output that holds a fence: the document's fence is longer
+		"  Verify `cargo test idle_sleep`: passed, as its author expected\n  ````text\n  a ```fence``` in the output\n  ````\n",
+		// a wrong cite is named beside the ref, and the claim is Read code anyway
+		"  Evidence: a.go:1; a.go:900 (wrong cite: line 900 is past the end (412 lines))\n  Check: Read code\n",
+		"  Verify `cargo test idle_wake`: not run (timed out after 3 min)\n",
+		"  Verify `go test ./pkg/x -run TestNever`: requested, never ran\n",
+		"  Check: Guess\n",
+		// a reply that takes a stance carries its label too
+		"- **RAM** replies · on P1 · Show the sleep state\n  Cheap to do.\n  And clear.\n  Evidence: b.go:7 (wrong cite: quote not found near line 7)\n  Check: Read code\n",
+		"  Costs a | pipe in a cell\n  Check: Guess\n",
+		// the matrix names the label beside the title
+		"| P1 · Show the sleep state (Ran) |",
+		"| P2 · Sleep after a minute \\| or two (Disproved) |",
+	} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("the document lacks %q\n%s", w, doc)
+		}
+	}
+
+	// a message nothing labels, and a run-less one, prints no Check line
+	plain := Document(documentCouncil())
+	mustNotContain(t, "an unlabelled document", plain, "Check:", "Verify `", "wrong cite")
+	mustContain(t, "an unlabelled document", plain, "| P1 · Show the sleep state |")
+}
+
 func TestDocumentRunFactsHarness(t *testing.T) {
 	c := documentCouncil()
 	if doc := Document(c); strings.Contains(doc, "Harness") {
