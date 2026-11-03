@@ -9,6 +9,7 @@ lists what each version changed for the user.
 | File | Role |
 | --- | --- |
 | `open-issues.md` | **The single "what's left" list** — actionable, blocked, held and declined items. Start here. |
+| `hand-checks.md` | Shipped changes never tried in the running app: one `- [ ]` line each, ticked and removed once tried. |
 | `deferred.md` | Append-only log of intentionally-deferred work and why. Append at the top, then mirror a one-line row into `open-issues.md`. |
 | `orchestrator-redesign-flaws.md` | Living flaws tracker for the orchestrator engine; resolved rows kept as one-line summaries. |
 | `keyboard-shortcuts.md` | Human-readable mirror of the keybinding registry (`frontend/app/store/keybindings/` is the source of truth). |

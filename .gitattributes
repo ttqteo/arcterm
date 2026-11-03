@@ -12,3 +12,4 @@ frontend/types/gotypes.d.ts         merge=union
 # CHANGELOG conflict. A line one side removed beside one the other added can come back: delete it again by hand.
 CHANGELOG.md                        merge=union
 docs/open-issues.md                 merge=union
+docs/hand-checks.md                 merge=union

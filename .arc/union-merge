@@ -2,4 +2,5 @@
 # whose uncommitted edits in the checkout it carries across its merge when they go on top of the run's version
 CHANGELOG.md
 docs/open-issues.md
+docs/hand-checks.md
 scripts/cdp/scenarios.mjs

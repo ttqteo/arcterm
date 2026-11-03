@@ -70,7 +70,7 @@ describe("uiCheckReminder", () => {
     });
 
     it("says nothing when the commit carries its hand-check line", () => {
-        expect(uiCheckReminder([...ui, "docs/open-issues.md"], false)).toBeNull();
+        expect(uiCheckReminder([...ui, "docs/hand-checks.md"], false)).toBeNull();
     });
 
     it("says nothing for a commit with no UI", () => {

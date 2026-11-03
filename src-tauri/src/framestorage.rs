@@ -89,7 +89,7 @@ pub fn keep_frame_storage(window: &tauri::WebviewWindow) {
 
 // A real WKPreferences or WKWebsiteDataStore cannot be made here: WebKit asserts it is on the main thread when it first
 // starts, and the test harness runs every test on a thread of its own. The settings taking effect is a hand check
-// (docs/open-issues.md, section 0).
+// (docs/hand-checks.md).
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use objc2::rc::Retained;

@@ -15,7 +15,7 @@ const UI_FILE = /^frontend\/.*\.(?:tsx|css|scss)$/;
 const TEST_FILE = /\.test\.tsx?$/;
 
 // the tracker a hand-check line goes into, which a commit carrying its own line touches
-export const HAND_CHECK_FILE = "docs/open-issues.md";
+export const HAND_CHECK_FILE = "docs/hand-checks.md";
 
 export function isCommit(command: string): boolean {
     return COMMIT.test(command);
@@ -41,7 +41,7 @@ export function uiCheckReminder(paths: readonly string[], checked: boolean): str
     return (
         `[arc ui check] This commit changed UI (${shown.join(", ")}) and this session has not tried a UI change in ` +
         "the running app since its last UI commit. Run its CDP scenario (`task verify:ui -- <name>`) or " +
-        "`node scripts/cdp-shot.mjs` on the dev app now if one is running; otherwise add a `- [ ]` line under " +
-        `"0 · Waiting on a hand check" in ${HAND_CHECK_FILE}, and say in your report what was not verified.`
+        "`node scripts/cdp-shot.mjs` on the dev app now if one is running; otherwise add a `- [ ]` line to " +
+        `${HAND_CHECK_FILE} (Waiting on a hand check), and say in your report what was not verified.`
     );
 }
