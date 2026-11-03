@@ -24,8 +24,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A council checks what its experts claim. Every idea, and every reply that takes a side, is labelled by arcterm, never by a model: **Ran** when a test the expert asked for ran and came out as they said, **Disproved** when it came out the other way, **Read code** when a `path:line` it cites holds up, **Guess** when it cites nothing that holds. A cite that does not hold shows as **Wrong cite** on its chip. An expert can ask for up to two tests (`go test`, `vitest` or `cargo test` on one package, file or test), which run in a throwaway copy of your project as it stands, never in your checkout, before the pause after round 1, and every expert reads the results in round 2. <!-- big -->
+- A council has a **Map** tab beside Report and Discussion: a card per expert with what it is doing now and a bar of how many of its claims were run, disproved, read or guessed, and a table of who agrees with which idea, with each idea's label and how it ended. Click an idea to see each expert's reason. A seat's timeline of what it read, searched, ran and said opens from its card or from Seats. <!-- big -->
+
 ### Changed
 
+- A council's experts have plain names, in the language of your question: Ease of use, Memory watcher, Bug hunter, Summarizer, Final judge and Other side, or "Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi" and so on for a Vietnamese question. The roles Setup suggests are named in that language too.
 - Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, a tree row's hover button and Councils keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other.
 - A council's Discussion is a list of its ideas, one row each with its author, a New badge and its count of agrees, doubts and objections; a Chat row on top holds your messages and the answers to them, and a click opens a row's thread beside it.
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.

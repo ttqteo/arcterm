@@ -383,6 +383,10 @@ func newHarness(t *testing.T) *harness {
 	useTempRoot(t)
 	useTempConfig(t)
 	h := &harness{t: t, f: newFake(), agents: newFake(), clock: 1_700_000_000_000}
+	// a test never runs git for Start's snapshot unless it asks (useSnapshot, or takeSnapshot = Snapshot)
+	prevSnapshot := takeSnapshot
+	takeSnapshot = func(context.Context, string) (string, error) { return "", nil }
+	t.Cleanup(func() { takeSnapshot = prevSnapshot })
 	h.r = &Runner{Caller: h.f, Agents: h.agents, Now: h.tick, OnChange: func(c *Council) {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -1062,7 +1066,7 @@ func TestRoundOneFailureGoesOnAndRetryRerunsIt(t *testing.T) {
 			t.Errorf("ram, who failed round 1, was called in round 2")
 		}
 	}
-	mustContain(t, "synthesis prompt", h.f.calls("r3")[0].Prompt, "RAM (its round 1 call failed)")
+	mustContain(t, "synthesis prompt", h.f.calls("r3")[0].Prompt, "Memory watcher (its round 1 call failed)") // Start names the RAM seat for its council
 
 	if _, err := h.r.Retry("c1", "ux"); err == nil || !strings.Contains(err.Error(), "no failed call") {
 		t.Errorf("Retry of an expert with no failure = %v, want an error saying so", err)
@@ -1105,7 +1109,7 @@ func TestRoundTwoFailureRetryRerunsRoundTwo(t *testing.T) {
 	if n := len(repliesBy(c, "skeptic")); n != 0 {
 		t.Fatalf("skeptic has %d replies, want none from its failed call", n)
 	}
-	mustContain(t, "synthesis prompt", h.f.calls("r3")[0].Prompt, "Skeptic (its round 2 call failed)")
+	mustContain(t, "synthesis prompt", h.f.calls("r3")[0].Prompt, "Bug hunter (its round 2 call failed)") // Start names the Skeptic seat for its council
 
 	h.f.setFail("skeptic/r2", nil)
 	if _, err := h.r.Retry("c1", "skeptic"); err != nil {
@@ -5040,5 +5044,898 @@ func TestDraftOnACouncilThatIsNotWaitingOnlySettles(t *testing.T) {
 	got, err = h.r.Draft("b", held[0], "send", "")
 	if err != nil || got.State != StateStopped || len(h.prompts()) != calls {
 		t.Errorf("settling a stopped council: %s, %v, %d new calls; want it settled and left stopped", got.State, err, len(h.prompts())-calls)
+	}
+}
+
+// ---- checked claims, verify requests and the timeline ----
+
+// useSnapshot replaces the snapshot Start takes with one that answers commit and err, and counts its calls.
+func useSnapshot(t *testing.T, commit string, err error) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	prev := takeSnapshot
+	takeSnapshot = func(context.Context, string) (string, error) {
+		n.Add(1)
+		return commit, err
+	}
+	t.Cleanup(func() { takeSnapshot = prev })
+	return &n
+}
+
+// checkProject is a project folder holding pkg/ux.go (4 lines) and pkg/ram.go (3 lines), for cites that resolve.
+func checkProject(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	vWriteFile(t, filepath.Join(dir, "pkg", "ux.go"), "package ux\n\nfunc Sleep() {}\nfunc Wake() {}\n")
+	vWriteFile(t, filepath.Join(dir, "pkg", "ram.go"), "package ram\n\nvar Cache = map[string]int{}\n")
+	return dir
+}
+
+// claimCouncil is testCouncil in a real project folder, with no files attached.
+func claimCouncil(id, project string) *Council {
+	c := testCouncil(id)
+	c.Project, c.Files = project, nil
+	return c
+}
+
+func cite(ref, quote string) map[string]string {
+	m := map[string]string{"ref": ref}
+	if quote != "" {
+		m["quote"] = quote
+	}
+	return m
+}
+
+func askRun(command, expect string) map[string]string {
+	return map[string]string{"command": command, "expect": expect, "why": "to see it"}
+}
+
+// claimJSON is a round 1 reply with one idea that cites evidence and asks Go to run verify.
+func claimJSON(title string, evidence []map[string]string, verify ...map[string]string) string {
+	if evidence == nil {
+		evidence = []map[string]string{}
+	}
+	p := map[string]any{"title": title, "argument": "Argument for " + title, "evidence": evidence}
+	if len(verify) > 0 {
+		p["verify"] = verify
+	}
+	return fence(mustJSON(map[string]any{"overview": "ok", "proposals": []any{p}}))
+}
+
+// r2Citing is a reply pass that takes the canned stance on every proposal it was shown and cites ev under each.
+func r2Citing(ev ...map[string]string) func(CallReq) string {
+	return func(req CallReq) string {
+		stances := stancesFor(req)
+		for _, s := range stances {
+			s["evidence"] = ev
+		}
+		return fence(mustJSON(map[string]any{"stances": stances, "revisions": []any{}, "answers": []any{}, "picks": []string{}}))
+	}
+}
+
+func TestRunnerChecksLabelAfterRound1AndTheReplyPass(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")}))
+	h.f.setText("ram/r1", claimJSON("Cache less", []map[string]string{cite("pkg/ram.go:900", "")}))
+	h.f.setText("newuser/r1", claimJSON("Say nothing", nil))
+	h.f.setText("skeptic/r1", claimJSON("Mixed", []map[string]string{cite("pkg/ux.go:4", "func Wake()"), cite("pkg/nope.go:1", "")}))
+	c := claimCouncil("c1", proj)
+	c.PauseAfterRound1 = true
+
+	paused := h.run(c)
+	if paused.State != StateAwaiting || paused.Round != 1 {
+		t.Fatalf("after round 1: %s at round %d, want awaiting-you at round 1", paused.State, paused.Round)
+	}
+	idea := func(c *Council, author string) CouncilProposal { return proposalOf(t, c, ideaBy(t, c, author)) }
+	if p := idea(paused, "ux"); p.Label != LabelRead || p.Evidence[0].Cite != CiteOK {
+		t.Errorf("ux's idea = label %q cite %q, want read and ok at the pause", p.Label, p.Evidence[0].Cite)
+	}
+	if p := idea(paused, "ram"); p.Label != LabelGuess || p.Evidence[0].Cite != CiteWrong || !strings.Contains(p.Evidence[0].CiteNote, "past the end") {
+		t.Errorf("ram's idea = label %q, evidence %+v, want guess and a cite past the end of the file", p.Label, p.Evidence[0])
+	}
+	if p := idea(paused, "newuser"); p.Label != LabelGuess || p.Evidence[0].Cite != "" {
+		t.Errorf("newuser's idea = label %q cite %q, want guess and nothing checked", p.Label, p.Evidence[0].Cite)
+	}
+	if p := idea(paused, "skeptic"); p.Label != LabelRead || p.Evidence[0].Cite != CiteOK || p.Evidence[1].Cite != CiteWrong || p.Evidence[1].CiteNote != "file not found" {
+		t.Errorf("skeptic's idea = label %q evidence %+v, want read, with the second cite still wrong", p.Label, p.Evidence)
+	}
+
+	h.f.setFn("ux/r2", r2Citing(cite("pkg/ux.go:3", "func Sleep()")))
+	h.f.setFn("ram/r2", r2Citing(cite("pkg/ram.go:50", "")))
+	if _, err := h.r.Continue("c1", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	done := h.wait("c1")
+	if done.State != StateDone {
+		t.Fatalf("council = %s %q, want done", done.State, done.Error)
+	}
+	stances := 0
+	for _, x := range done.Replies {
+		if (x.Stance != "") != (x.Label != "") {
+			t.Errorf("reply %s by %s has stance %q and label %q, want a label on a stance and on nothing else", x.Id, x.Author, x.Stance, x.Label)
+		}
+		if x.Stance == "" {
+			continue
+		}
+		stances++
+		switch x.Author {
+		case "ux":
+			if x.Label != LabelRead || x.Evidence[0].Cite != CiteOK {
+				t.Errorf("ux's reply %s = label %q evidence %+v, want read", x.Id, x.Label, x.Evidence)
+			}
+		case "ram":
+			if x.Label != LabelGuess || x.Evidence[0].Cite != CiteWrong {
+				t.Errorf("ram's reply %s = label %q evidence %+v, want guess with a wrong cite", x.Id, x.Label, x.Evidence)
+			}
+		default:
+			if x.Label != LabelGuess {
+				t.Errorf("%s's reply %s cites nothing: label %q, want guess", x.Author, x.Id, x.Label)
+			}
+		}
+	}
+	if stances != 12 {
+		t.Errorf("%d replies took a stance, want 12", stances)
+	}
+	if p := idea(done, "ux"); p.Label != LabelRead {
+		t.Errorf("ux's idea after the pass = %q, want it still read", p.Label)
+	}
+}
+
+func TestRunnerChecksCitesIntoAttachedFilesAndFolders(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	outside := t.TempDir()
+	notes := filepath.Join(outside, "notes.md")
+	vWriteFile(t, notes, "# Notes\nthe spec says wake on demand\n")
+	folder := t.TempDir()
+	vWriteFile(t, filepath.Join(folder, "design.txt"), "one\ntwo\n")
+	c := claimCouncil("c1", proj)
+	c.Files = []string{notes, folder, "pkg/ram.go"} // a file and a folder outside the project, and a project file as written in Setup
+	c.PauseAfterRound1 = true
+	h.f.setText("ux/r1", claimJSON("The attached file", []map[string]string{cite(notes+":2", "wake on demand")}))
+	h.f.setText("ram/r1", claimJSON("Its bare name", []map[string]string{cite("notes.md:2", "")}))
+	h.f.setText("newuser/r1", claimJSON("A file in the attached folder", []map[string]string{cite("design.txt:2", "two")}))
+	h.f.setText("skeptic/r1", claimJSON("A file nothing attached", []map[string]string{cite(filepath.Join(outside, "other.md")+":1", "")}))
+
+	paused := h.run(c)
+	got := func(author string) CouncilEvidence {
+		return proposalOf(t, paused, ideaBy(t, paused, author)).Evidence[0]
+	}
+	if e := got("ux"); e.Cite != CiteOK {
+		t.Errorf("a cite of an attached file by its absolute path = %+v, want ok", e)
+	}
+	if e := got("ram"); e.Cite != CiteWrong {
+		t.Errorf("a cite of an attached file by its bare name = %+v, want wrong: a file root matches only its own path", e)
+	}
+	if e := got("newuser"); e.Cite != CiteOK {
+		t.Errorf("a cite of a file in an attached folder = %+v, want ok", e)
+	}
+	if e := got("skeptic"); e.Cite != CiteWrong || !strings.Contains(e.CiteNote, "outside") {
+		t.Errorf("a cite of a file beside an attached file = %+v, want wrong and outside", e)
+	}
+}
+
+// seatLink is a seated agent that answers each turn at once with what reply makes of the prompt, and works in the folder
+// its tab maps to in cwds.
+type seatLink struct {
+	mu    sync.Mutex
+	cwds  map[string]string
+	reply func(tab, prompt string) string
+	text  map[string]string
+	ts    map[string]int64
+}
+
+func newSeatLink(cwds map[string]string, reply func(tab, prompt string) string) *seatLink {
+	return &seatLink{cwds: cwds, reply: reply, text: map[string]string{}, ts: map[string]int64{}}
+}
+
+func (l *seatLink) Seat(_ context.Context, tab string) (AgentSeatState, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return AgentSeatState{State: SeatIdle, Cwd: l.cwds[tab]}, nil
+}
+
+func (l *seatLink) Send(_ context.Context, tab, text string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.text[tab] = l.reply(tab, text)
+	l.ts[tab] += 100
+	return nil
+}
+
+func (l *seatLink) LastAnswer(_ context.Context, tab string) (string, int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text[tab], l.ts[tab], nil
+}
+
+func TestRunnerChecksAnAgentSeatsCitesAgainstItsCwd(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	seatDir := t.TempDir()
+	vWriteFile(t, filepath.Join(seatDir, "seat.go"), "package seat\n\nfunc Here() {}\n")
+	useSnapshot(t, "snap", nil)
+	trees := &fakeTrees{}
+	h.r.Trees = trees
+	link := newSeatLink(map[string]string{"tab-1": seatDir, "tab-2": ""}, func(tab, prompt string) string {
+		if kindOf(prompt) != "r1" {
+			return agreeOnly(CallReq{Prompt: prompt})
+		}
+		if tab == "tab-1" { // asks for a command too, which no agent seat gets
+			return claimJSON("From the seat", []map[string]string{cite("seat.go:3", "func Here()"), cite("pkg/ux.go:3", "func Sleep()")},
+				askRun("go test ./pkg/services -run TestSeat", RunPass))
+		}
+		return claimJSON("From the guest", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")})
+	})
+	h.r.Agents = AgentCaller{Link: link, BusyCap: time.Second, TurnCap: 5 * time.Second, Poll: time.Millisecond}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("seat.go:3", "")}))
+	c := claimCouncil("c1", proj)
+	c.ByAgent, c.PauseAfterRound1 = true, true
+	c.Experts = []CouncilExpert{
+		{Id: "witness", Name: "Witness", Agent: "tab-1", Harness: HarnessClaude},
+		{Id: "guest", Name: "Guest", Agent: "tab-2", Harness: HarnessClaude},
+		{Id: "ux", Name: "UX", Brief: "Can someone use it?", Model: "sonnet"},
+		{Id: "lead", Name: "Lead", Brief: "Merge and rank.", Model: "opus", Coordinator: true},
+	}
+
+	paused := h.run(c)
+	if paused.State != StateAwaiting {
+		t.Fatalf("council = %s %q, want awaiting-you after round 1", paused.State, paused.Error)
+	}
+	witness := proposalOf(t, paused, ideaBy(t, paused, "witness"))
+	if witness.Label != LabelRead || witness.Evidence[0].Cite != CiteOK || witness.Evidence[1].Cite != CiteOK {
+		t.Errorf("the seat's idea = label %q evidence %+v, want its own folder's file ok, and the project's file ok too", witness.Label, witness.Evidence)
+	}
+	if len(witness.Runs) != 0 {
+		t.Errorf("the seat's idea kept %+v: an agent seat sends no verify request", witness.Runs)
+	}
+	if guest := proposalOf(t, paused, ideaBy(t, paused, "guest")); guest.Label != LabelRead || guest.Evidence[0].Cite != CiteOK {
+		t.Errorf("a seat with no known folder = label %q evidence %+v, want its cite read against the project", guest.Label, guest.Evidence)
+	}
+	if ux := proposalOf(t, paused, ideaBy(t, paused, "ux")); ux.Label != LabelGuess || ux.Evidence[0].Cite != CiteWrong {
+		t.Errorf("a role expert citing the seat's file = label %q evidence %+v, want wrong: it reads the project, not the seat's folder", ux.Label, ux.Evidence)
+	}
+	if len(trees.events) != 0 {
+		t.Errorf("the tree was touched (%v) though only an agent seat asked for a command", trees.events)
+	}
+}
+
+func TestRunnerVerifyRunsBeforeThePauseAndReachesEverySeatsRound2(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap123", nil)
+	g := newVerifyRig(t)
+	trees := &fakeTrees{dir: "TREE"}
+	h.r.Trees = trees
+	g.run = func(_ context.Context, _ string, argv []string) (string, int, error) {
+		switch cmd := strings.Join(argv, " "); {
+		case strings.HasSuffix(cmd, "TestSleeps"):
+			return "ok  \tgithub.com/x/pkg/services\t0.01s\n", 0, nil
+		default:
+			return "--- FAIL: " + argv[len(argv)-1] + " (0.00s)\n    idle_test.go:9: nobody woke\nFAIL\nFAIL\tgithub.com/x/pkg/services\t0.01s\n", 1, nil
+		}
+	}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")}, askRun("go test ./pkg/services -run TestSleeps", RunPass)))
+	h.f.setText("ram/r1", claimJSON("Cache less", []map[string]string{cite("pkg/ram.go:3", "")}, askRun("go test ./pkg/services -run TestCache", RunPass)))
+	h.f.setText("skeptic/r1", claimJSON("It never wakes", []map[string]string{cite("pkg/ux.go:4", "func Wake()")}, askRun("go test ./pkg/services -run TestWakes", RunFail)))
+	h.f.setText("newuser/r1", claimJSON("A shell trick", []map[string]string{cite("pkg/ux.go:3", "")}, askRun("go test ./pkg/services -run TestA | tail", RunPass)))
+	c := claimCouncil("c1", proj)
+	c.PauseAfterRound1 = true
+
+	paused := h.run(c)
+	if paused.State != StateAwaiting || paused.Round != 1 {
+		t.Fatalf("after round 1: %s %q at round %d, want awaiting-you at round 1", paused.State, paused.Error, paused.Round)
+	}
+	if paused.Snapshot != "snap123" {
+		t.Errorf("snapshot = %q, want the one Start took", paused.Snapshot)
+	}
+	// every result is in front of the person at the pause, and the tree is gone by then
+	if !reflect.DeepEqual(trees.events, []string{"make", "remove"}) || !reflect.DeepEqual(trees.makes, []treeMake{{proj, "snap123", "council-c1"}}) {
+		t.Errorf("tree events %v, makes %+v, want one tree at the snapshot, made and removed", trees.events, trees.makes)
+	}
+	if n := len(h.f.calls("r2")); n != 0 {
+		t.Errorf("%d round 2 calls before the pause ended, want none", n)
+	}
+	cmds := g.commands()
+	slices.Sort(cmds)
+	if want := []string{"go test ./pkg/services -run TestCache", "go test ./pkg/services -run TestSleeps", "go test ./pkg/services -run TestWakes"}; !reflect.DeepEqual(cmds, want) {
+		t.Errorf("commands run = %q, want %q: the piped one never starts", cmds, want)
+	}
+	idea := func(author string) CouncilProposal { return proposalOf(t, paused, ideaBy(t, paused, author)) }
+	if p := idea("ux"); p.Label != LabelRan || p.Runs[0].State != RunPass || !p.Runs[0].Matched {
+		t.Errorf("ux's idea = label %q run %+v, want ran: it passed as expected", p.Label, p.Runs[0])
+	}
+	if p := idea("ram"); p.Label != LabelDisproved || p.Runs[0].State != RunFail || p.Runs[0].Matched || !strings.Contains(p.Runs[0].Tail, "nobody woke") {
+		t.Errorf("ram's idea = label %q run %+v, want disproved: it failed where a pass was expected", p.Label, p.Runs[0])
+	}
+	if p := idea("skeptic"); p.Label != LabelRan || p.Runs[0].State != RunFail || !p.Runs[0].Matched {
+		t.Errorf("skeptic's idea = label %q run %+v, want ran: it failed as expected", p.Label, p.Runs[0])
+	}
+	if p := idea("newuser"); p.Label != LabelRead || p.Runs[0].State != RunNotRun || !strings.HasPrefix(p.Runs[0].Reason, "not on the list") {
+		t.Errorf("newuser's idea = label %q run %+v, want read: its command was never run", p.Label, p.Runs[0])
+	}
+
+	// the person cuts ram's idea; round 2 argues over the others' results, in every seat's prompt
+	if _, err := h.r.Continue("c1", []string{ideaBy(t, paused, "ram")}, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	done := h.wait("c1")
+	if done.State != StateDone {
+		t.Fatalf("council = %s %q, want done", done.State, done.Error)
+	}
+	r2 := h.f.calls("r2")
+	if len(r2) != 4 {
+		t.Fatalf("%d round 2 calls, want 4", len(r2))
+	}
+	for _, req := range append(r2, h.f.calls("r3")...) {
+		mustContain(t, req.Expert.Id+"'s prompt", req.Prompt,
+			"`go test ./pkg/services -run TestSleeps`: passed, as its author expected",
+			"`go test ./pkg/services -run TestWakes`: failed (exit 1), as its author expected", "nobody woke",
+			"not run (not on the list")
+		mustNotContain(t, req.Expert.Id+"'s prompt", req.Prompt, "TestCache")
+	}
+	if p := proposalOf(t, done, ideaBy(t, done, "ram")); p.Runs[0].State != RunFail {
+		t.Errorf("the cut idea's run = %+v, want its result kept on the record", p.Runs[0])
+	}
+}
+
+func TestRunnerVerifyOneRoundCouncilReachesTheSynthesis(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap1", nil)
+	g := newVerifyRig(t)
+	h.r.Trees = &fakeTrees{dir: "TREE"}
+	g.run = func(context.Context, string, []string) (string, int, error) {
+		return "ok  \tgithub.com/x/pkg/services\t0.01s\n", 0, nil
+	}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "")}, askRun("go test ./pkg/services -run TestSleeps", RunPass)))
+	c := claimCouncil("c1", proj)
+	c.ByAgent, c.Rounds = true, 1
+	c.Experts = slices.Insert(c.Experts, 0, CouncilExpert{Id: "witness", Name: "Witness", Agent: "tab-1", Harness: HarnessClaude})
+
+	done := h.run(c)
+	if done.State != StateDone || done.Round != 2 {
+		t.Fatalf("council = %s %q at round %d, want done after the synthesis in round 2", done.State, done.Error, done.Round)
+	}
+	if n := len(h.f.calls("r2")) + len(h.agents.calls("r2")); n != 0 {
+		t.Errorf("%d reply-pass calls in a 1-round council, want none", n)
+	}
+	r3 := h.f.calls("r3")
+	if len(r3) != 1 {
+		t.Fatalf("%d synthesis calls, want 1", len(r3))
+	}
+	mustContain(t, "synthesis prompt", r3[0].Prompt, "`go test ./pkg/services -run TestSleeps`: passed, as its author expected")
+	if p := proposalOf(t, done, ideaBy(t, done, "ux")); p.Label != LabelRan {
+		t.Errorf("ux's idea = %q, want ran", p.Label)
+	}
+}
+
+func TestRunnerChecksNothingInABrainstorm(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	snaps := useSnapshot(t, "snap", nil)
+	g := newVerifyRig(t)
+	trees := &fakeTrees{}
+	h.r.Trees = trees
+	for _, id := range []string{"ux", "ram", "newuser", "skeptic"} {
+		// even a model that was not asked for them may send a verify list and quotes
+		h.f.setText(id+"/r1", claimJSON("Idea from "+id, []map[string]string{cite("pkg/ux.go:3", "func Sleep()"), cite("pkg/nope.go:1", "")},
+			askRun("go test ./pkg/services -run TestIdea", RunPass)))
+	}
+	c := claimCouncil("c1", proj)
+	c.Mode = ModeBrainstorm
+
+	done := h.run(c)
+	if done.State != StateDone {
+		t.Fatalf("council = %s %q, want done", done.State, done.Error)
+	}
+	if n := snaps.Load(); n != 0 || done.Snapshot != "" {
+		t.Errorf("snapshot taken %d times, kept %q: a Brainstorm has no tree to run anything in", n, done.Snapshot)
+	}
+	if len(trees.events) != 0 || len(g.commands()) != 0 {
+		t.Errorf("tree events %v, commands %q: a Brainstorm runs nothing", trees.events, g.commands())
+	}
+	for _, p := range done.Proposals {
+		if p.Label != "" || len(p.Runs) != 0 {
+			t.Errorf("idea %s = label %q runs %+v, want neither in a Brainstorm", p.Id, p.Label, p.Runs)
+		}
+		for _, e := range p.Evidence {
+			if e.Cite != "" || e.CiteNote != "" {
+				t.Errorf("idea %s evidence %+v was checked, want it left alone", p.Id, e)
+			}
+		}
+	}
+	for _, x := range done.Replies {
+		if x.Label != "" {
+			t.Errorf("reply %s has label %q in a Brainstorm", x.Id, x.Label)
+		}
+	}
+}
+
+func TestRunnerVerifyStopMidVerifyRemovesTheTree(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	g := newVerifyRig(t)
+	trees := &fakeTrees{dir: "TREE"}
+	h.r.Trees = trees
+	started := make(chan struct{})
+	var once sync.Once
+	g.run = func(ctx context.Context, _ string, _ []string) (string, int, error) {
+		once.Do(func() { close(started) })
+		<-ctx.Done()
+		return "", 0, ctx.Err()
+	}
+	const cmd = "go test ./pkg/services -run TestSleeps"
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "")}, askRun(cmd, RunPass)))
+	h.start(claimCouncil("c1", proj))
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the verify command never started")
+	}
+
+	// while it runs, ux's card shows the command and its timeline has the row without a result
+	mid := h.load("c1")
+	if act := mid.Activity["ux"]; act.Text != cmd {
+		t.Errorf("ux's activity while its command runs = %q, want the command", act.Text)
+	}
+	var open []CouncilStep
+	for _, s := range mid.Timeline["ux"] {
+		if s.Kind == StepRun {
+			open = append(open, s)
+		}
+	}
+	if len(open) != 1 || open[0].Target != cmd || open[0].Result != "" {
+		t.Errorf("run rows while it runs = %+v, want one for the command with no result yet", open)
+	}
+
+	stopped, err := h.r.Stop("c1")
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if stopped.State != StateStopped || len(stopped.Activity) != 0 {
+		t.Errorf("after Stop: %s with activity %v, want stopped and nothing showing", stopped.State, stopped.Activity)
+	}
+	trees.mu.Lock()
+	removed, ctxErrs := slices.Clone(trees.removed), slices.Clone(trees.removeCtxErr)
+	trees.mu.Unlock()
+	if !reflect.DeepEqual(removed, []string{"TREE"}) || len(ctxErrs) != 1 || ctxErrs[0] != nil {
+		t.Errorf("tree removed %v (ctx errors %v), want it removed once, by a context that Stop had not ended", removed, ctxErrs)
+	}
+	if p := proposalOf(t, stopped, ideaBy(t, stopped, "ux")); p.Runs[0].State != "" {
+		t.Errorf("the cut-off command = %+v, want it left as a request", p.Runs[0])
+	}
+}
+
+func TestRunnerVerifyActivityShowsTheCommandThatRuns(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	g := newVerifyRig(t)
+	h.r.Trees = &fakeTrees{dir: "TREE"}
+	inSecond, release := make(chan struct{}), make(chan struct{})
+	g.run = func(ctx context.Context, _ string, argv []string) (string, int, error) {
+		if strings.HasSuffix(argv[len(argv)-1], "TestSecond") {
+			close(inSecond)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return "", 0, ctx.Err()
+			}
+		}
+		return "ok  \tgithub.com/x/pkg/services\t0.01s\n", 0, nil
+	}
+	first, second := "go test ./pkg/services -run TestFirst", "go test ./pkg/services -run TestSecond"
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "")}, askRun(first, RunPass), askRun(second, RunPass)))
+	h.start(claimCouncil("c1", proj))
+	select {
+	case <-inSecond:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second command never started")
+	}
+	mid := h.load("c1")
+	if act := mid.Activity["ux"]; act.Text != second {
+		t.Errorf("activity while the second runs = %q, want %q", act.Text, second)
+	}
+	var runs []CouncilStep
+	for _, s := range mid.Timeline["ux"] {
+		if s.Kind == StepRun {
+			runs = append(runs, s)
+		}
+	}
+	if len(runs) != 2 || runs[0].Target != first || runs[0].Result != RunPass || runs[1].Target != second || runs[1].Result != "" {
+		t.Errorf("run rows = %+v, want the first with its result and the second open: a result replaces its row, never adds one", runs)
+	}
+	close(release)
+	done := h.wait("c1")
+	runs = nil
+	for _, s := range done.Timeline["ux"] {
+		if s.Kind == StepRun {
+			runs = append(runs, s)
+		}
+	}
+	if len(runs) != 2 || runs[1].Result != RunPass {
+		t.Errorf("run rows at the end = %+v, want two, both with their result", runs)
+	}
+	// between the two commands the card showed nothing: the first one's line was cleared when it ended
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	cleared := false
+	for _, ev := range h.seen {
+		n, passed := 0, false
+		for _, s := range ev.Timeline["ux"] {
+			if s.Kind == StepRun {
+				n++
+				passed = s.Result == RunPass
+			}
+		}
+		if _, showing := ev.Activity["ux"]; n == 1 && passed && !showing {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Errorf("no saved state shows the first command done with its line cleared")
+	}
+}
+
+func TestRunnerVerifyRunsAHeldIdeasRequestsOnceItIsSent(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap9", nil)
+	g := newVerifyRig(t)
+	trees := &fakeTrees{dir: "TREE"}
+	h.r.Trees = trees
+	g.run = func(context.Context, string, []string) (string, int, error) {
+		return "ok  \tgithub.com/x/pkg/services\t0.01s\n", 0, nil
+	}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")}, askRun("go test ./pkg/services -run TestSleeps", RunPass)))
+	h.f.setFn("ux/r2", agreeOnly)
+	h.agents.setFn("witness/r2", agreeOnly)
+	c := agentCouncil("a")
+	c.Project = proj
+
+	held := h.run(c)
+	if held.State != StateAwaiting {
+		t.Fatalf("council = %s %q, want awaiting-you with held ideas", held.State, held.Error)
+	}
+	ux := ideaBy(t, held, "ux")
+	if p := proposalOf(t, held, ux); p.Label != "" || p.Runs[0].State != "" || p.Evidence[0].Cite != "" {
+		t.Errorf("a held idea = label %q run %+v cite %q, want it neither labelled nor run before the person sends it", p.Label, p.Runs[0], p.Evidence[0].Cite)
+	}
+	if len(g.commands()) != 0 || len(trees.events) != 0 {
+		t.Errorf("commands %q, tree events %v while the idea was held, want none", g.commands(), trees.events)
+	}
+
+	sent, err := h.r.Draft("a", ux, "send", "")
+	if err != nil {
+		t.Fatalf("Draft: %v", err)
+	}
+	if p := proposalOf(t, sent, ux); p.Label != LabelRead || p.Evidence[0].Cite != CiteOK {
+		t.Errorf("the idea once sent = label %q cite %q, want read at once", p.Label, p.Evidence[0].Cite)
+	}
+
+	h.settle("a") // the last draft starts round 2, which runs what the sent idea asked for first
+	done := h.wait("a")
+	if done.State != StateDone {
+		t.Fatalf("council = %s %q, want done", done.State, done.Error)
+	}
+	if p := proposalOf(t, done, ux); p.Runs[0].State != RunPass || p.Label != LabelRan {
+		t.Errorf("the idea after round 2 started = label %q run %+v, want its command run and the idea ran", p.Label, p.Runs[0])
+	}
+	for _, req := range h.f.calls("r2") {
+		mustContain(t, req.Expert.Id+"'s round 2 prompt", req.Prompt, "`go test ./pkg/services -run TestSleeps`: passed, as its author expected")
+	}
+}
+
+func TestRunnerChecksAndRunsTheIdeaOfARetriedSeat(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	g := newVerifyRig(t)
+	h.r.Trees = &fakeTrees{dir: "TREE"}
+	g.run = func(context.Context, string, []string) (string, int, error) {
+		return "ok  \tgithub.com/x/pkg/services\t0.01s\n", 0, nil
+	}
+	h.f.setFail("ux/r1", errors.New("offline"))
+	c := claimCouncil("c1", proj)
+	c.PauseAfterRound1 = true
+	paused := h.run(c)
+	if _, failed := paused.Failed["ux"]; !failed {
+		t.Fatalf("failed = %v, want ux's round 1 call failed", paused.Failed)
+	}
+
+	h.f.setFail("ux/r1", nil)
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")}, askRun("go test ./pkg/services -run TestSleeps", RunPass)))
+	if _, err := h.r.Retry("c1", "ux"); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	got := h.wait("c1")
+	p := proposalOf(t, got, ideaBy(t, got, "ux"))
+	if p.Label != LabelRan || p.Runs[0].State != RunPass || p.Evidence[0].Cite != CiteOK {
+		t.Errorf("the retried idea = label %q run %+v cite %q, want checked, run and labelled", p.Label, p.Runs[0], p.Evidence[0].Cite)
+	}
+}
+
+func TestRunnerTimelineRecordsToolsIdeasRepliesAndRuns(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	g := newVerifyRig(t)
+	h.r.Trees = &fakeTrees{dir: "TREE"}
+	g.run = func(context.Context, string, []string) (string, int, error) {
+		return "ok  \tgithub.com/x/pkg/services\t0.01s\n", 0, nil
+	}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "")}, askRun("go test ./pkg/services -run TestSleeps", RunPass)))
+	h.f.setTools("ux/r1", "Read idle.go", `Grep "IdleSleep" in pkg/services`, "Glob **/*.go", "WebSearch hello", "  ")
+	done := h.run(claimCouncil("c1", proj))
+	if done.State != StateDone {
+		t.Fatalf("council = %s %q, want done", done.State, done.Error)
+	}
+
+	type row struct{ kind, target, result string }
+	var got []row
+	for _, s := range done.Timeline["ux"] {
+		if s.Ts == 0 {
+			t.Errorf("row %+v has no time", s)
+		}
+		got = append(got, row{s.Kind, s.Target, s.Result})
+	}
+	want := []row{
+		{StepRead, "idle.go", ""},
+		{StepSearch, `"IdleSleep" in pkg/services`, ""},
+		{StepSearch, "**/*.go", ""},
+		{"WebSearch", "hello", ""}, // a tool it does not know keeps its own first word
+		{StepPropose, "Sleep first", ""},
+		{StepRun, "go test ./pkg/services -run TestSleeps", RunPass}, // one row: the result replaced the opening row
+	}
+	if len(got) < len(want) || !reflect.DeepEqual(got[:len(want)], want) {
+		t.Fatalf("ux's timeline = %+v, want it to begin %+v (a blank tool line adds no row)", got, want)
+	}
+	replies := 0
+	for _, r := range got[len(want):] {
+		if r.kind != StepReply || !strings.HasPrefix(r.target, "P") {
+			t.Errorf("row %+v after the run, want a reply naming the idea it answers", r)
+		}
+		replies++
+	}
+	if replies != 3 {
+		t.Errorf("%d reply rows, want 3: one per idea ux reviewed", replies)
+	}
+	// the other experts have a row for their idea and for each reply, and none for tools they were not shown using
+	if rows := done.Timeline["ram"]; len(rows) != 4 || rows[0].Kind != StepPropose || rows[1].Kind != StepReply {
+		t.Errorf("ram's timeline = %+v, want its idea then its three replies", rows)
+	}
+	if rows := done.Timeline["lead"]; len(rows) != 0 {
+		t.Errorf("the coordinator's timeline = %+v, want none: its summary is not an idea or a reply", rows)
+	}
+}
+
+func TestRunnerTimelineCapsAtTwoHundredRows(t *testing.T) {
+	h := newHarness(t)
+	var tools []string
+	for i := range 250 {
+		tools = append(tools, fmt.Sprintf("Read f%d.go", i))
+	}
+	h.f.setTools("ux/r1", tools...)
+	done := h.run(testCouncil("c1"))
+	rows := done.Timeline["ux"]
+	if len(rows) != MaxTimelineSteps {
+		t.Fatalf("%d rows, want the cap of %d", len(rows), MaxTimelineSteps)
+	}
+	// 250 reads, the idea and 3 replies were recorded: the oldest 54 are gone
+	if rows[0].Kind != StepRead || rows[0].Target != "f54.go" {
+		t.Errorf("oldest row = %+v, want the 55th read: the oldest went first", rows[0])
+	}
+	if last := rows[len(rows)-1]; last.Kind != StepReply {
+		t.Errorf("newest row = %+v, want the last reply", last)
+	}
+	for i := 1; i < len(rows); i++ {
+		if rows[i].Ts < rows[i-1].Ts {
+			t.Errorf("row %d is older than the one before it: %d < %d", i, rows[i].Ts, rows[i-1].Ts)
+			break
+		}
+	}
+}
+
+func TestRunnerTimelineOfAnAgentSeatComesFromItsActivity(t *testing.T) {
+	h := newHarness(t)
+	h.agents.setTools("witness/r1", "reading seat.go", "Waiting for Witness to finish its task", "Task")
+	held := h.run(agentCouncil("a"))
+	type row struct{ kind, target string }
+	var got []row
+	for _, s := range held.Timeline["witness"] {
+		got = append(got, row{s.Kind, s.Target})
+	}
+	want := []row{
+		{"reading", "seat.go"}, // the roster's words: the kind is the first word, kept as it came
+		{"Waiting", "for Witness to finish its task"},
+		{"Task", ""}, // a bare tool name
+		{StepPropose, "Title from witness"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Witness's timeline = %+v, want %+v", got, want)
+	}
+}
+
+func TestStartLangNamesTheSeatsForTheQuestion(t *testing.T) {
+	experts := func() []CouncilExpert {
+		return []CouncilExpert{
+			{Id: "ux", Name: "UX", Brief: "b", Model: "sonnet"},
+			{Id: "skeptic", Name: "Skeptic", Brief: "b", Model: "sonnet"},
+			{Id: "mac-user", Name: "Mac user", Brief: "b", Model: "sonnet"},
+			{Id: "ram", Name: "Watch the heap", Brief: "b", Model: "sonnet"},
+			{Id: "coordinator", Name: "Coordinator", Brief: "b", Model: "opus", Coordinator: true},
+		}
+	}
+	cases := []struct {
+		what, feature, question, lang string
+		names                         []string
+	}{
+		{"a Vietnamese question", "Idle sleep", "Nên làm gì trước?", LangVi,
+			[]string{"Người lo trải nghiệm", "Người soi lỗi", "Mac user", "Watch the heap", "Người tổng hợp"}},
+		{"an English question", "Idle sleep", "Which first?", LangEn,
+			[]string{"Ease of use", "Bug hunter", "Mac user", "Watch the heap", "Summarizer"}},
+		{"no question, a Vietnamese feature", "Chế độ ngủ của dịch vụ", "  ", LangVi,
+			[]string{"Người lo trải nghiệm", "Người soi lỗi", "Mac user", "Watch the heap", "Người tổng hợp"}},
+		{"an English question about a Vietnamese feature", "Chế độ ngủ", "Which first?", LangEn,
+			[]string{"Ease of use", "Bug hunter", "Mac user", "Watch the heap", "Summarizer"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.what, func(t *testing.T) {
+			h := newHarness(t)
+			c := testCouncil("c1")
+			c.Feature, c.Question, c.Experts = tc.feature, tc.question, experts()
+			saved := h.start(c)
+			if saved.Lang != tc.lang {
+				t.Errorf("Start returned lang %q, want %q", saved.Lang, tc.lang)
+			}
+			var names []string
+			for _, e := range saved.Experts {
+				names = append(names, e.Name)
+			}
+			if !reflect.DeepEqual(names, tc.names) {
+				t.Errorf("seat names = %q, want %q", names, tc.names)
+			}
+			done := h.wait("c1")
+			if done.Lang != tc.lang || done.Experts[1].Name != tc.names[1] {
+				t.Errorf("saved council = lang %q, second seat %q, want %q and %q", done.Lang, done.Experts[1].Name, tc.lang, tc.names[1])
+			}
+			// the calls name each seat the way the council shows it
+			byId := map[string]string{}
+			for _, e := range done.Experts {
+				byId[e.Id] = e.Name
+			}
+			r1 := h.f.calls("r1")
+			if len(r1) == 0 {
+				t.Fatalf("no round 1 call was made")
+			}
+			for _, req := range r1 {
+				if req.Expert.Name != byId[req.Expert.Id] || !strings.Contains(req.Prompt, req.Expert.Name) {
+					t.Errorf("round 1 call for %s names the seat %q, want %q", req.Expert.Id, req.Expert.Name, byId[req.Expert.Id])
+				}
+			}
+		})
+	}
+}
+
+func TestStartLangNamesTheSeatsOfASavedCouncilWhenItStarts(t *testing.T) {
+	h := newHarness(t)
+	c := testCouncil("c1")
+	c.Question = "Nên làm gì trước?"
+	rec, err := h.r.Record(c)
+	if err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if rec.Lang != "" || rec.Experts[0].Name != "UX" {
+		t.Errorf("a recorded council = lang %q, first seat %q, want it as it was sent: nothing has started", rec.Lang, rec.Experts[0].Name)
+	}
+	started, err := h.r.StartSaved(context.Background(), "c1")
+	if err != nil {
+		t.Fatalf("StartSaved: %v", err)
+	}
+	if started.Lang != LangVi || started.Experts[0].Name != "Người lo trải nghiệm" || started.Experts[3].Name != "Người soi lỗi" {
+		t.Errorf("a started council = lang %q, seats %q and %q, want Vietnamese", started.Lang, started.Experts[0].Name, started.Experts[3].Name)
+	}
+	h.wait("c1")
+}
+
+func TestStartLangSuggestAsksForRoleNamesInTheQuestionsLanguage(t *testing.T) {
+	h := newHarness(t)
+	project := t.TempDir()
+	h.f.setText("suggest/suggest", fence(`{"files": [], "roles": []}`))
+	ask := func(question string) string {
+		t.Helper()
+		if _, err := h.r.Suggest(context.Background(), project, "Idle sleep", question, nil); err != nil {
+			t.Fatalf("Suggest: %v", err)
+		}
+		reqs := h.f.calls("suggest")
+		return reqs[len(reqs)-1].Prompt
+	}
+	mustContain(t, "a Vietnamese question's prompt", ask("Nên làm gì trước?"), LangLine(LangVi))
+	mustNotContain(t, "an English question's prompt", ask("Which first?"), LangLine(LangVi), "Người soi lỗi")
+	// with no question the feature decides
+	if _, err := h.r.Suggest(context.Background(), project, "Chế độ ngủ", "", nil); err != nil {
+		t.Fatalf("Suggest: %v", err)
+	}
+	reqs := h.f.calls("suggest")
+	mustContain(t, "a Vietnamese feature's prompt", reqs[len(reqs)-1].Prompt, LangLine(LangVi))
+}
+
+func TestStartSnapshotIsTakenOnceBesideRound1ForAReview(t *testing.T) {
+	h := newHarness(t)
+	var calls atomic.Int32
+	var seen atomic.Value
+	release := make(chan struct{})
+	takeSnapshot = func(ctx context.Context, project string) (string, error) {
+		calls.Add(1)
+		seen.Store(project)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+		return "abc123", nil
+	}
+	proj := checkProject(t)
+	h.start(claimCouncil("c1", proj))
+	// a snapshot that is slow to hash the tree does not hold round 1 back: all four experts are called while it is held
+	waitFor(t, "round 1's four calls", func() bool { return len(h.f.calls("r1")) == 4 })
+	if got := h.load("c1"); got.Snapshot != "" {
+		t.Errorf("snapshot %q kept before the snapshot ended", got.Snapshot)
+	}
+	close(release)
+	done := h.wait("c1")
+	if project, _ := seen.Load().(string); calls.Load() != 1 || project != proj || done.State != StateDone || done.Snapshot != "abc123" {
+		t.Errorf("snapshot taken %d times of %q, kept %q, council %s; want once, of the project, kept", calls.Load(), project, done.Snapshot, done.State)
+	}
+
+	// a failing snapshot is no reason to fail the council: it runs, and no command will
+	takeSnapshot = func(context.Context, string) (string, error) { return "", errors.New("git is not installed") }
+	done = h.run(claimCouncil("c2", proj))
+	if done.State != StateDone || done.Snapshot != "" {
+		t.Errorf("council = %s %q snapshot %q, want done with no snapshot", done.State, done.Error, done.Snapshot)
+	}
+}
+
+func TestStartSnapshotHoldsTheUncommittedWorkAndLeavesTheCheckoutAlone(t *testing.T) {
+	h := newHarness(t)
+	takeSnapshot = Snapshot
+	repo := snapshotRepo(t)
+	vWriteFile(t, repo+"/a.txt", "two\n")
+	vWriteFile(t, repo+"/b.txt", "new\n")
+	status := testGit(t, repo, "status", "--porcelain=v1", "-uall")
+	head := strings.TrimSpace(testGit(t, repo, "rev-parse", "HEAD"))
+
+	done := h.run(claimCouncil("c1", repo))
+	if done.State != StateDone || done.Snapshot == "" || done.Snapshot == head {
+		t.Fatalf("council = %s %q snapshot %q (HEAD %s), want done with a snapshot of its own", done.State, done.Error, done.Snapshot, head)
+	}
+	if got := testGit(t, repo, "show", done.Snapshot+":a.txt"); got != "two\n" {
+		t.Errorf("a.txt in the snapshot = %q, want the uncommitted edit", got)
+	}
+	if got := testGit(t, repo, "show", done.Snapshot+":b.txt"); got != "new\n" {
+		t.Errorf("b.txt in the snapshot = %q, want the untracked file", got)
+	}
+	// the checkout is as it was, bar the council's own document, which a finished council writes into its project
+	var after []string
+	for _, line := range strings.SplitAfter(testGit(t, repo, "status", "--porcelain=v1", "-uall"), "\n") {
+		if !strings.Contains(line, "docs/council/") {
+			after = append(after, line)
+		}
+	}
+	if got := strings.Join(after, ""); got != status {
+		t.Errorf("git status changed:\nbefore %q\nafter  %q", status, got)
+	}
+
+	// a project that is not a repo has none
+	plain := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(plain))
+	if got := h.run(claimCouncil("c2", plain)); got.State != StateDone || got.Snapshot != "" {
+		t.Errorf("a council in a plain folder = %s snapshot %q, want done with none", got.State, got.Snapshot)
 	}
 }
