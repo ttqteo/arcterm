@@ -31,6 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
 - A council's minutes count the time it ran, not the clock since it started, so a council chatted in the next day no longer reads hundreds of minutes.
 - A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
+- An app's page header on the Agent surface is tidier: Back, Forward, Reload and Home show only while the page does, and Restart moved into a ⋯ menu beside Stop (with Keep running and Pin), so its arrow no longer sits next to Reload's.
 
 ### Fixed
 

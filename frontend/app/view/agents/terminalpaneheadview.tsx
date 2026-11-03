@@ -4,8 +4,9 @@
 // The slim header over a terminal shown in the centre (AgentSurface renders it where an agent has AgentHeader): its icon
 // and name, the folder it runs in, its project, and three buttons: open it beside the agent in view before it (a split),
 // move it to the panel under the agent, close it. A pinned app's terminal
-// adds Page | Log, Back, Forward, Reload (Windows), Home and Open in the browser, then the state line of its service (a
-// dot and servicesmodel.ts's words), Restart, and Stop or Start in place of a close button: a service tab stays, and
+// adds Page | Log, the state line of its service (a dot and servicesmodel.ts's words), then one group of the page's
+// controls (Back, Forward, Reload on Windows and Home, only while the page shows; Open in the browser), a ⋯ menu (the
+// tree row's: Restart, Keep running, Pin…), and Stop or Start in place of a close button: a service tab stays, and
 // Stop frees its server. What it says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -19,6 +20,7 @@ import {
     ExternalLink,
     GitBranch,
     House,
+    MoreHorizontal,
     PanelBottom,
     Play,
     RotateCw,
@@ -34,8 +36,9 @@ import { appHistory, appStatesAtom, homeApp, openAppInBrowser, reloadAppPage, se
 import { agentGridAtom, canOpenInSplit, currentGrid, dropAgentOnGrid } from "./gridstore";
 import { projectsAtom } from "./projectsstore";
 import { moveToDock } from "./railstore";
-import { canRestart, canStart, canStop, serviceHeaderLine, serviceRowWords } from "./servicesmodel";
-import { restartService, serviceByTabAtom, startService, stopService } from "./servicesstore";
+import { showServiceMenu } from "./servicemenu";
+import { canStart, canStop, serviceHeaderLine, serviceRowWords } from "./servicesmodel";
+import { serviceByTabAtom, startService, stopService } from "./servicesstore";
 import { SwapTabs } from "./swapbar";
 import { recentTabsAtom } from "./tabswitcherstore";
 import { previousTab, terminalPaneHead } from "./terminalpanehead";
@@ -207,54 +210,56 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                 </button>
             ) : null}
             {app != null ? (
-                <>
-                    <button
-                        type="button"
-                        data-app-back
-                        aria-label="Back"
-                        title="Back"
-                        disabled={!onPage}
-                        onClick={() => void appHistory(terminal.id, -1)}
-                        className={BUTTON}
-                    >
-                        <ArrowLeft size={14} aria-hidden />
-                    </button>
-                    <button
-                        type="button"
-                        data-app-forward
-                        aria-label="Forward"
-                        title="Forward"
-                        disabled={!onPage}
-                        onClick={() => void appHistory(terminal.id, 1)}
-                        className={BUTTON}
-                    >
-                        <ArrowRight size={14} aria-hidden />
-                    </button>
-                    {isWindows() ? (
-                        // the host reloads the frame where it is (pagekeys.rs), which a Mac's webview cannot yet
-                        <button
-                            type="button"
-                            data-app-reload
-                            aria-label="Reload the page (Ctrl+R in it)"
-                            title="Reload the page (Ctrl+R in it)"
-                            disabled={!onPage}
-                            onClick={() => void reloadAppPage(terminal.id)}
-                            className={BUTTON}
-                        >
-                            <RotateCw size={14} aria-hidden />
-                        </button>
+                // the page's own controls, one tight group, shown only while the page is what shows: from the log
+                // they would move a page no one sees
+                <span data-app-nav className="flex items-center gap-[2px]">
+                    {onPage ? (
+                        <>
+                            <button
+                                type="button"
+                                data-app-back
+                                aria-label="Back"
+                                title="Back"
+                                onClick={() => void appHistory(terminal.id, -1)}
+                                className={BUTTON}
+                            >
+                                <ArrowLeft size={14} aria-hidden />
+                            </button>
+                            <button
+                                type="button"
+                                data-app-forward
+                                aria-label="Forward"
+                                title="Forward"
+                                onClick={() => void appHistory(terminal.id, 1)}
+                                className={BUTTON}
+                            >
+                                <ArrowRight size={14} aria-hidden />
+                            </button>
+                            {isWindows() ? (
+                                // the host reloads the frame where it is (pagekeys.rs), which a Mac's webview cannot yet
+                                <button
+                                    type="button"
+                                    data-app-reload
+                                    aria-label="Reload the page (Ctrl+R in it)"
+                                    title="Reload the page (Ctrl+R in it)"
+                                    onClick={() => void reloadAppPage(terminal.id)}
+                                    className={BUTTON}
+                                >
+                                    <RotateCw size={14} aria-hidden />
+                                </button>
+                            ) : null}
+                            <button
+                                type="button"
+                                data-app-home
+                                aria-label="Home: the app's start page, loaded afresh"
+                                title="Home: the app's start page, loaded afresh"
+                                onClick={() => homeApp(terminal.id)}
+                                className={BUTTON}
+                            >
+                                <House size={14} aria-hidden />
+                            </button>
+                        </>
                     ) : null}
-                    <button
-                        type="button"
-                        data-app-home
-                        aria-label="Home: the app's start page, loaded afresh"
-                        title="Home: the app's start page, loaded afresh"
-                        disabled={app.phase !== "open"}
-                        onClick={() => homeApp(terminal.id)}
-                        className={BUTTON}
-                    >
-                        <House size={14} aria-hidden />
-                    </button>
                     <button
                         type="button"
                         data-app-browser
@@ -265,22 +270,23 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                     >
                         <ExternalLink size={14} aria-hidden />
                     </button>
-                </>
+                </span>
             ) : null}
             {service != null ? (
                 <>
-                    {canRestart(service) ? (
-                        <button
-                            type="button"
-                            data-service-restart
-                            aria-label={`Restart ${head.name}`}
-                            title={`Restart ${head.name}`}
-                            onClick={() => void restartService(service.id)}
-                            className={BUTTON}
-                        >
-                            <RotateCw size={14} aria-hidden />
-                        </button>
-                    ) : null}
+                    {app != null ? <span aria-hidden className="h-[14px] w-px shrink-0 bg-border" /> : null}
+                    {/* Restart, Keep running, Pin and the rest: the tree row's own menu, so Restart's icon no longer
+                        sits beside Reload's */}
+                    <button
+                        type="button"
+                        data-service-more
+                        aria-label={`More for ${head.name}`}
+                        title={`Restart, keep running, pin… (${head.name})`}
+                        onClick={(e) => showServiceMenu(model, service, e)}
+                        className={BUTTON}
+                    >
+                        <MoreHorizontal size={14} aria-hidden />
+                    </button>
                     {canStop(service) ? (
                         // a word, not an icon: a square reads as the window's maximize
                         <button

@@ -48105,7 +48105,7 @@ const toolsApp = {
                 nav: ["back", "forward", "home"].filter((k) => !!head?.querySelector("[data-app-" + k + "]:not([disabled])")),
                 browser: !!head?.querySelector("[data-app-browser]"),
                 stop: head?.querySelector("[data-service-stop]")?.getAttribute("title") ?? null,
-                restart: !!head?.querySelector("[data-service-restart]"),
+                more: !!head?.querySelector("[data-service-more]"),
                 close: !!head?.querySelector("[data-terminal-close]"),
                 dock: !!head?.querySelector("[data-terminal-to-dock]"),
                 gridHidden: document.querySelector("[data-agent-grid]")?.classList.contains("hidden") ?? null,
@@ -48113,14 +48113,14 @@ const toolsApp = {
         })()`);
         await h.shot("cdp-shots/tools-app-3-page.png");
         rec(
-            "3. once the page answers it shows in the service's place, under Page | Log with Back, Forward, Home, Open in the browser, Restart and Stop (no close, no move to the panel)",
+            "3. once the page answers it shows in the service's place, under Page | Log with Back, Forward, Home, Open in the browser, the ⋯ menu and Stop (no close, no move to the panel)",
             framed &&
                 open.src === ctx.url &&
                 JSON.stringify(open.tabs) === JSON.stringify(["Page*", "Log"]) &&
                 JSON.stringify(open.nav) === JSON.stringify(["back", "forward", "home"]) &&
                 open.browser &&
                 open.stop === "Stop arc-app" &&
-                open.restart &&
+                open.more &&
                 !open.close &&
                 !open.dock &&
                 open.gridHidden === true,
@@ -48530,7 +48530,7 @@ const svcHeadExpr = (tabId) => `(() => {
     if (!head) return null;
     return {
         line: (head.querySelector("[data-service-line]")?.textContent ?? "").replace(/\\s+/g, " ").trim(),
-        restart: !!head.querySelector("[data-service-restart]"),
+        more: !!head.querySelector("[data-service-more]"),
         stop: !!head.querySelector("[data-service-stop]"),
         start: !!head.querySelector("[data-service-start]"),
         close: !!head.querySelector("[data-terminal-close]"),
@@ -48851,13 +48851,13 @@ const servicesTree = {
         const served = await fetch(okUrl).then((r) => r.text()).catch(() => "");
         await h.shot("cdp-shots/services-tree-3-page.png");
         rec(
-            "3. the page and its header: ok from the service's own port, Running on it, Restart and Stop, no close button",
+            "3. the page and its header: ok from the service's own port, Running on it, the ⋯ menu and Stop, no close button",
             centred &&
                 framed &&
                 frame?.replace(/\/$/, "") === okUrl.replace(/\/$/, "") &&
                 served.includes("<h1>ok</h1>") &&
                 head?.line.startsWith("Running on 127.0.0.1:") &&
-                head.restart &&
+                head.more &&
                 head.stop &&
                 !head.close,
             JSON.stringify({ centred, framed, frame, served, head })
@@ -48918,10 +48918,12 @@ const servicesTree = {
             JSON.stringify({ slept: slept.ok, movedOn, rowGone, fixedAfter })
         );
 
-        // Restart from the header: a newer start
+        // Restart from the header's ⋯ menu: a newer start
         const centredAgain = await svcClickRow(h, "svc-ok", ok.tabid);
         const startedBefore = (await status())["svc-ok"].startedms ?? 0;
-        await ttClick(h, `[data-terminal-pane-head="${ok.tabid}"] [data-service-restart]`);
+        await ttClick(h, `[data-terminal-pane-head="${ok.tabid}"] [data-service-more]`);
+        await polishWaitFor(h, `!!document.querySelector('[data-menu-item="Restart"]')`, 3000);
+        await ttClick(h, '[data-menu-item="Restart"]');
         const again = await svcWait(h, { "svc-ok": (s) => s.state === "running" && (s.startedms ?? 0) > startedBefore }, 30000);
         const againRow = (await h.ev(svcRowsExpr(SVC_TREE))).find((r) => r.id === "svc-ok");
         rec(
