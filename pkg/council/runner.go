@@ -301,6 +301,20 @@ func (r *Runner) stampNew(c *Council) {
 	c.Proposals, c.Replies, c.Summary = nil, nil, nil
 	c.Activity, c.Failed, c.Skips, c.Stats = nil, nil, nil, nil
 	c.Tokens, c.Calls, c.Started, c.Error = 0, 0, 0, ""
+	c.RanMs, c.RunStarted = 0, 0
+}
+
+// beginRun marks where a run (a council's rounds, or a follow-up: a reply, Continue, Summarize, Retry) begins; its
+// span goes into RanMs when it ends. Every persist given to launchLocked calls it, beginFresh for the rounds.
+func (r *Runner) beginRun(c *Council) { c.RunStarted = r.now() }
+
+// endRun adds the span of the run that ends to RanMs, so RanMs counts the time rounds ran and not the time the
+// council rested between them.
+func endRun(c *Council, now int64) {
+	if c.RunStarted > 0 {
+		c.RanMs += max(0, now-c.RunStarted)
+	}
+	c.RunStarted = 0
 }
 
 // beginFresh is where a council's run begins, whether Start, StartSaved or the queue starts it, so it is where the
@@ -309,6 +323,7 @@ func (r *Runner) stampNew(c *Council) {
 // seats the council has now, so a re-run of a saved council takes the mode its seats give at that start.
 func (r *Runner) beginFresh(c *Council) {
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
+	r.beginRun(c)
 	c.Harness = HarnessVersion
 	c.DraftMode = ""
 	freezeDraftMode(c)
@@ -631,13 +646,6 @@ func (r *Runner) launchLocked(parent context.Context, id string, persist func() 
 	}
 	r.active[id] = rn
 	c, err := persist()
-	if err == nil && c.Closed != 0 {
-		// a closed council that runs again (a retry, a reply, a summary) is back in the tree
-		c, err = Update(id, func(c *Council) error {
-			c.Closed = 0
-			return nil
-		})
-	}
 	if err != nil {
 		delete(r.active, id)
 		cancel()
@@ -698,6 +706,7 @@ func (r *Runner) finishLocked(ctx context.Context, id string, end ending) *Counc
 	stopped := ctx.Err() != nil
 	c, err := Update(id, func(c *Council) error {
 		c.Activity = nil
+		endRun(c, r.now())
 		switch {
 		case stopped:
 			c.State, c.Error = StateStopped, ""
@@ -1814,6 +1823,7 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 		saved, start, err = r.launchLocked(context.Background(), id, func() (*Council, error) {
 			return Update(id, func(c *Council) error {
 				c.State, c.Round, c.Error = StateRunning, followRound(c), ""
+				r.beginRun(c)
 				return add(c)
 			})
 		}, r.followupWork(prev))
@@ -1877,6 +1887,7 @@ func (r *Runner) Continue(id string, cut []string, question string) (*Council, e
 				})
 			}
 			c.State, c.Round, c.Error = StateRunning, from, ""
+			r.beginRun(c)
 			return nil
 		})
 	}, r.roundsWork(from))
@@ -2082,6 +2093,7 @@ func (r *Runner) summarizeLocked(id string, model string) (*Council, func(), err
 	return r.launchLocked(context.Background(), id, func() (*Council, error) {
 		return Update(id, func(c *Council) error {
 			c.State, c.Round, c.Error = StateRunning, SynthesisRound(c), ""
+			r.beginRun(c)
 			return nil
 		})
 	}, r.summarizeWork(prev, model))
@@ -2228,6 +2240,7 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 						return err
 					}
 					c.State, c.Round, c.Error = StateRunning, from, ""
+					r.beginRun(c)
 					return nil
 				})
 			}, r.roundsWork(from))
@@ -2310,6 +2323,7 @@ func (r *Runner) retryLocked(id, expertId, model string) (*Council, func(), erro
 	return r.launchLocked(context.Background(), id, func() (*Council, error) {
 		return Update(id, func(c *Council) error {
 			c.State, c.Error = StateRunning, ""
+			r.beginRun(c)
 			return nil
 		})
 	}, r.retryWork(e, f, prev, model))
@@ -2445,6 +2459,7 @@ func (r *Runner) retryAllLocked(id string, models map[string]string) (*Council, 
 	return r.launchLocked(context.Background(), id, func() (*Council, error) {
 		return Update(id, func(c *Council) error {
 			c.State, c.Error = StateRunning, ""
+			r.beginRun(c)
 			return nil
 		})
 	}, func(ctx context.Context, rn *run, id string) ending {
@@ -2476,6 +2491,7 @@ func (r *Runner) Stop(id string) (*Council, error) {
 			}
 			wasQueued = c.State == StateQueued
 			c.State, c.Error, c.Activity, c.QueuedAfter = StateStopped, "", nil, ""
+			c.RunStarted = 0 // no run is behind it (paused or queued): there is no span to add
 			return nil
 		})
 		r.mu.Unlock()
@@ -2517,21 +2533,16 @@ func (r *Runner) endedLocked(id, what string) (*Council, error) {
 	return c, nil
 }
 
-// SetClosed closes an ended council (the tree folds it under its project's Closed councils, and its file stays) or opens
-// a closed one again. Only an ended council is closed; opening one works in any state. It reports the save.
-func (r *Runner) SetClosed(id string, closed bool) (*Council, error) {
+// SetPinned pins a council (the tree keeps it at the top of its project) or unpins it, in any state, running ones too:
+// a run never touches Pinned. Pinning a pinned council keeps its first time, and the pin leaves Updated as it was
+// (UpdateMark), so it never moves an ended council's time in the tree. It reports the save.
+func (r *Runner) SetPinned(id string, pinned bool) (*Council, error) {
 	r.mu.Lock()
-	if closed {
-		if _, err := r.endedLocked(id, "closing"); err != nil {
-			r.mu.Unlock()
-			return nil, err
-		}
-	}
-	c, err := Update(id, func(c *Council) error {
-		if !closed {
-			c.Closed = 0
-		} else if c.Closed == 0 {
-			c.Closed = r.now()
+	c, err := UpdateMark(id, func(c *Council) error {
+		if !pinned {
+			c.Pinned = 0
+		} else if c.Pinned == 0 {
+			c.Pinned = r.now()
 		}
 		return nil
 	})
@@ -2578,6 +2589,7 @@ func (r *Runner) MarkStale() {
 					return errSkip
 				}
 				c.State, c.Activity = StateStopped, nil
+				c.RunStarted = 0 // the run's end was lost with wavesrv: its span is not known, so nothing is added
 				c.Error = fmt.Sprintf("arcterm closed during round %d", c.Round)
 				return nil
 			})

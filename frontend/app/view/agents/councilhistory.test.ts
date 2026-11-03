@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     councilHistoryCount,
+    councilHistoryPinAct,
     councilHistoryRows,
     folderName,
     groupCouncilHistory,
@@ -38,16 +39,16 @@ describe("folderName", () => {
 });
 
 describe("councilHistoryRows", () => {
-    it("lists every council, closed ones and those of no registered project too, newest message first", () => {
+    it("lists every council, pinned ones and those of no registered project too, newest message first", () => {
         const rows = councilHistoryRows(
             [
                 council("old", "/home/u/loom", { created: 100 }),
-                council("shut", "d:/code/waveterm/", { created: 300, closed: 9 }),
+                council("shut", "d:/code/waveterm/", { created: 300, pinned: 9 }),
                 council("loose", "/tmp/scratch", { created: 200 }),
             ],
             roots
         );
-        expect(rows.map((r) => [r.id, r.projectName, r.closed])).toEqual([
+        expect(rows.map((r) => [r.id, r.projectName, r.pinned])).toEqual([
             ["shut", "waveterm", true],
             ["loose", "scratch", false],
             ["old", "loom", false],
@@ -69,9 +70,9 @@ describe("councilHistoryRows", () => {
         expect(rows.map((r) => r.id)).toEqual(["talked", "a", "b"]);
     });
 
-    it("counts a closed council as closed only while it is ended: one that runs again is open", () => {
-        const rows = councilHistoryRows([council("again", "/home/u/loom", { state: "running", closed: 5 })], roots);
-        expect(rows[0].closed).toBe(false);
+    it("counts a pinned council as pinned in any state, a running one too", () => {
+        const rows = councilHistoryRows([council("again", "/home/u/loom", { state: "running", pinned: 5 })], roots);
+        expect(rows[0].pinned).toBe(true);
     });
 
     it("keeps the question, trimmed, for the search and the row's tooltip", () => {
@@ -130,14 +131,31 @@ describe("groupCouncilHistory", () => {
     });
 });
 
+describe("councilHistoryPinAct", () => {
+    it("offers Unpin on a pinned council and Pin on any other, a running or queued one too", () => {
+        const rows = councilHistoryRows(
+            [
+                council("p", "/home/u/loom", { pinned: 7 }),
+                council("run", "/home/u/loom", { state: "running" }),
+                council("q", "/home/u/loom", { state: "queued" }),
+            ],
+            roots
+        );
+        const act = new Map(rows.map((r) => [r.id, councilHistoryPinAct(r)]));
+        expect(act.get("p")).toEqual({ act: "unpin", label: "Unpin", pin: false });
+        expect(act.get("run")).toEqual({ act: "pin", label: "Pin", pin: true });
+        expect(act.get("q")).toEqual({ act: "pin", label: "Pin", pin: true });
+    });
+});
+
 describe("councilHistoryCount", () => {
-    it("names the closed ones only when there are some", () => {
+    it("names the pinned ones only when there are some", () => {
         const open = councilHistoryRows([council("a", "/home/u/loom")], roots);
         expect(councilHistoryCount(open)).toBe("1");
         const mixed = councilHistoryRows(
-            [council("a", "/home/u/loom"), council("b", "/home/u/loom", { closed: 3 })],
+            [council("a", "/home/u/loom"), council("b", "/home/u/loom", { pinned: 3 })],
             roots
         );
-        expect(councilHistoryCount(mixed)).toBe("2 · 1 closed");
+        expect(councilHistoryCount(mixed)).toBe("2 · 1 pinned");
     });
 });

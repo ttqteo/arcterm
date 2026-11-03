@@ -765,12 +765,6 @@ declare global {
         dryrun?: boolean;
     };
 
-    // wshrpc.CommandCouncilCloseData
-    type CommandCouncilCloseData = {
-        id: string;
-        closed: boolean;
-    };
-
     // wshrpc.CommandCouncilContinueData
     type CommandCouncilContinueData = {
         id: string;
@@ -806,6 +800,12 @@ declare global {
     // wshrpc.CommandCouncilListData
     type CommandCouncilListData = {
         project?: string;
+    };
+
+    // wshrpc.CommandCouncilPinData
+    type CommandCouncilPinData = {
+        id: string;
+        pinned: boolean;
     };
 
     // wshrpc.CommandCouncilRateData
@@ -2415,7 +2415,9 @@ declare global {
         docpath?: string;
         rating?: string;
         ratedat?: number;
-        closed?: number;
+        pinned?: number;
+        ranms?: number;
+        runstarted?: number;
         experts: CouncilExpert[];
         pauseafterround1?: boolean;
         rounds?: number;

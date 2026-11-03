@@ -556,7 +556,35 @@ describe("writtenLine", () => {
             ],
             summary: { text: "", directions: [], outcomes: {}, at },
         });
-        expect(writtenLine(c)).toBe("Written by the coordinator at 11:02 from 2 replies");
+        // the person's own reply after it leaves the summary current: it only says so, quietly
+        expect(writtenLine(c)).toBe("Written by the coordinator at 11:02 from 2 replies · 1 reply since");
+    });
+
+    it("counts the plain replies since, and leaves them to the banner once the summary is outdated", () => {
+        const at = new Date(2026, 9, 21, 11, 2).getTime();
+        const base = {
+            proposals: [prop("P2", "ux", { ts: at - 9000 })],
+            summary: { text: "", directions: [], outcomes: {}, at },
+        };
+        const quiet = council({
+            ...base,
+            replies: [
+                reply("r1", "P2", "ram", { stance: "accept", ts: at - 5000 }),
+                reply("r2", "P2", "you", { ts: at + 1 }),
+                reply("r3", "P2", "sk", { stance: "challenge", ts: at + 2 }),
+                reply("r4", "P2", "ram", { stance: "accept", text: "still", ts: at + 3 }),
+            ],
+        });
+        expect(writtenLine(quiet)).toBe("Written by the coordinator at 11:02 from 1 reply · 3 replies since");
+        const outdated = council({
+            ...base,
+            replies: [
+                reply("r1", "P2", "ram", { stance: "accept", ts: at - 5000 }),
+                reply("r2", "P2", "you", { ts: at + 1 }),
+                reply("r3", "P2", "ram", { stance: "oppose", ts: at + 2 }),
+            ],
+        });
+        expect(writtenLine(outdated)).toBe("Written by the coordinator at 11:02 from 1 reply");
     });
 
     it("is singular for one reply and empty before a summary", () => {
@@ -571,9 +599,18 @@ describe("writtenLine", () => {
 });
 
 describe("outdatedLabel", () => {
-    it("is singular for one reply", () => {
-        expect(outdatedLabel(1)).toBe("Outdated · 1 reply since");
-        expect(outdatedLabel(3)).toBe("Outdated · 3 replies since");
+    const none = { ideas: 0, revised: 0, stances: 0, replies: 0 };
+
+    it("names what changed, only the parts that did, singular for one", () => {
+        expect(outdatedLabel({ ...none, ideas: 1, stances: 2 })).toBe("Outdated · 1 new idea, 2 changed stances");
+        expect(outdatedLabel({ ...none, revised: 1 })).toBe("Outdated · 1 revised idea");
+        expect(outdatedLabel({ ideas: 3, revised: 2, stances: 1, replies: 4 })).toBe(
+            "Outdated · 3 new ideas, 2 revised ideas, 1 changed stance"
+        );
+    });
+
+    it("never counts the plain replies", () => {
+        expect(outdatedLabel({ ...none, stances: 1, replies: 5 })).toBe("Outdated · 1 changed stance");
     });
 });
 

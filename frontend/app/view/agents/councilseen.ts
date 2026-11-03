@@ -1,13 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure: what a council's channel or thread says under the person's newest post while it waits, as a messenger does:
+// Pure: what a council's thread panel says under the person's newest post while it waits, as a messenger does:
 // `Sent`, then `Seen` with the seats working on it once a second has passed, and only after that their typing bubbles,
 // so a send does not flip straight to "writing". Only a follow-up the seats are answering (councilmodel's ANSWERING) gets
 // the line; a post that waits on something else keeps saying what (`Queued for the next step`) under itself. Read by
 // councilchat.tsx's useSendState, which renders again when `nextMs` runs out.
 
-import type { ChannelItem, ThreadItem, TypingRow, Who } from "./councilchatmodel";
+import type { ThreadItem, TypingRow, Who } from "./councilchatmodel";
 import { ANSWERING } from "./councilmodel";
 
 // how long after a send `Seen` shows, and the typing bubbles after it
@@ -30,7 +30,7 @@ const IDLE: SendState = { status: null, holdTyping: false, nextMs: 0 };
 
 /** The line under the person's newest post in `items` at `now` (ms), and whether the typing rows wait. A post a seat has
  *  answered since says nothing: the answer shows it. */
-export function sendState(items: readonly (ChannelItem | ThreadItem)[], now: number): SendState {
+export function sendState(items: readonly ThreadItem[], now: number): SendState {
     let at = -1;
     for (let i = items.length - 1; i >= 0; i--) {
         const item = items[i];
@@ -61,6 +61,6 @@ export function sendState(items: readonly (ChannelItem | ThreadItem)[], now: num
 }
 
 /** The items to draw: the typing rows that are not a wait leave while `holdTyping`. */
-export function shownItems<T extends ChannelItem | ThreadItem>(items: readonly T[], holdTyping: boolean): T[] {
+export function shownItems<T extends ThreadItem>(items: readonly T[], holdTyping: boolean): T[] {
     return holdTyping ? items.filter((i) => i.kind !== "typing" || i.waiting) : [...items];
 }

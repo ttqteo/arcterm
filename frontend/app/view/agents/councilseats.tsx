@@ -4,8 +4,8 @@
 // The seats of a council in the Discussion's header row: one button, the seats' avatars stacked (a dot on each one at
 // work, waiting or failed; the others dimmed while one seat is the filter), at most six of them, three under 900px of
 // pane, then +N. A hover or a click opens the whole list under it: each seat a row with its name, its kind, what it is
-// doing and its count of messages. A click on a row shows that seat's messages alone in the chat, a click on it again
-// shows everyone; an agent's row holds a button for its terminal. A failed seat's Retry is its failure line's, in the chat
+// doing and its count of messages. A click on a row shows only the ideas that seat wrote or replied to, a click on it again
+// shows everyone; an agent's row holds a button for its terminal. A failed seat's Retry is its failure line's, over the list
 // (councilchat.tsx). The stack never scrolls or clips, so it no longer cuts a seat in half at a narrow pane.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -71,8 +71,8 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
     ]);
 
     const label = onlyChip
-        ? `Seats: showing ${onlyChip.name}'s messages alone. Open the list to pick another seat or everyone`
-        : `Seats: ${chips.length}. Open the list to show one seat's messages`;
+        ? `Seats: showing only the ideas ${onlyChip.name} wrote or replied to. Open the list to pick another seat or everyone`
+        : `Seats: ${chips.length}. Open the list to show one seat's ideas`;
 
     return (
         <>
@@ -146,7 +146,7 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
                             <div
                                 role="list"
                                 data-council-seat-list
-                                aria-label="Seats: a click shows one seat's messages"
+                                aria-label="Seats: a click shows the ideas one seat wrote or replied to"
                                 className="sc flex max-h-[360px] flex-col gap-px overflow-y-auto px-[5px] pb-[5px]"
                             >
                                 {chips.map((chip) => (
@@ -193,7 +193,7 @@ function SeatRow({
                 type="button"
                 data-council-filter={chip.id}
                 aria-pressed={on}
-                aria-label={`${chip.name}, ${count} messages. ${on ? "Show everyone" : "Show only their messages"}`}
+                aria-label={`${chip.name}, ${count} messages. ${on ? "Show everyone" : "Show only their ideas"}`}
                 disabled={count === 0}
                 onClick={onToggle}
                 className={cn(

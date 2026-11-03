@@ -53,7 +53,6 @@ import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, CouncilText, MarkedText, useKeptScroll } from "./councilchat";
 import { askChips } from "./councilchatmodel";
-import { CouncilCloseButton } from "./councilclose";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
@@ -61,12 +60,13 @@ import {
     draftFromCouncil,
     glanceFigures,
     matrixRows,
-    outdatedCount,
+    outdatedChanges,
     panel,
     summaryFacts,
     synthesisRound,
     type StanceLabel,
 } from "./councilmodel";
+import { CouncilPinButton } from "./councilpin";
 import { RetryWithButton } from "./councilretrymenu";
 import {
     councilChatDraftAtom,
@@ -1072,7 +1072,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const [error, setError] = useState<string | null>(null);
     const summary = c.summary;
     const directions = useMemo(() => directionRows(c), [c]);
-    const outdated = outdatedCount(c);
+    const changes = outdatedChanges(c);
+    const outdated = changes.ideas + changes.revised + changes.stances;
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
     const scroller = useRef<HTMLDivElement>(null);
@@ -1238,7 +1239,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
             ) : summary != null && outdated > 0 ? (
                 <Banner tone="asking">
                     <span data-council-banner="outdated" className="font-semibold">
-                        {outdatedLabel(outdated)}
+                        {outdatedLabel(changes)}
                     </span>
                     <button
                         type="button"
@@ -1357,7 +1358,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         <CouncilTabs c={c} view="summary" />
                         <span className="flex-1" />
                         <JumpLinks c={c} scroller={scroller} bar={tabBar} />
-                        <CouncilCloseButton c={c} className="self-center" />
+                        <CouncilPinButton c={c} className="self-center" />
                     </div>
                 </div>
                 {summary != null ? (

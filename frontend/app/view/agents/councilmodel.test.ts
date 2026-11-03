@@ -34,6 +34,7 @@ import {
     matrixRows,
     mentionsChat,
     nextThumb,
+    outdatedChanges,
     outdatedCount,
     panel,
     pickCount,
@@ -1014,10 +1015,14 @@ describe("held and dropped items count for nothing", () => {
         expect(costLine(withDrafts({ state: "running" }), 1_000 + 60_000)).toBe("1:00 · 3 replies · 0 tokens");
     });
 
-    it("counts only the replies sent after the summary as outdating it", () => {
+    it("counts only the replies sent after the summary, and no held or dropped stance as a change", () => {
+        // r1 and r2 are first stances and r6 is the person's: all quiet
         const c = withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 9 } });
-        expect(outdatedCount(c)).toBe(3);
-        expect(outdatedCount(withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 12 } }))).toBe(1);
+        expect(outdatedChanges(c)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3 });
+        expect(outdatedCount(c)).toBe(0);
+        // ram's dropped oppose after its accept and ux's held one change nothing
+        const later = withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 12 } });
+        expect(outdatedChanges(later)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 1 });
     });
 
     it("gives the matrix no row for a held or a dropped idea and no reason from a held or a dropped reply", () => {
@@ -1141,6 +1146,29 @@ describe("summaryFacts and costLine", () => {
         expect(costLine(notRun, started)).toBe("0 replies · 0 tokens");
         expect(summaryFacts(notRun, started)).toEqual({ state: "Not run", facts: "4 experts · 0 tokens" });
     });
+
+    it("counts the time the runs took when the council keeps it, not the clock since it started", () => {
+        // started yesterday, chatted in today: 11 minutes of runs, not 1112 of clock
+        const rested = council({
+            state: "done",
+            started,
+            updated: started + 1112 * MIN,
+            summary: { text: "", directions: [], outcomes: {}, at: started + 1100 * MIN },
+            ranms: 11 * MIN,
+            tokens: 0,
+        });
+        expect(summaryFacts(rested, started + 2000 * MIN).facts).toBe("4 experts · 11 min · 0 tokens");
+        expect(costLine(rested, started + 2000 * MIN)).toBe("11:00 · 0 replies · 0 tokens");
+    });
+
+    it("adds the run going now to the time the earlier runs took", () => {
+        const now = started + 1500 * MIN;
+        const going = council({ started, ranms: 11 * MIN, runstarted: now - 2 * MIN - 5_000, tokens: 0 });
+        expect(costLine(going, now)).toBe("13:05 · 0 replies · 0 tokens");
+        // a first run with nothing kept yet: only the run going now
+        const first = council({ started, runstarted: now - 30_000, tokens: 0 });
+        expect(costLine(first, now)).toBe("0:30 · 0 replies · 0 tokens");
+    });
 });
 
 describe("expertStat", () => {
@@ -1243,19 +1271,101 @@ describe("callSegments", () => {
     });
 });
 
-describe("outdatedCount and canSummarize", () => {
-    it("counts the replies after the summary", () => {
+describe("outdatedChanges, outdatedCount and canSummarize", () => {
+    const at = 100;
+    const summary = { text: "", directions: [], outcomes: {}, at };
+    const changes = (extra: Partial<Council>) => outdatedChanges(council({ summary, ...extra }));
+
+    it("is nothing before a summary", () => {
+        const c = council({ proposals: [prop("P2", "ux", { ts: 200 })], replies: [reply("r1", "ram", { ts: 300 })] });
+        expect(outdatedChanges(c)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 0 });
+        expect(outdatedCount(c)).toBe(0);
+    });
+
+    it("counts a sent idea posted after the summary, and folds the stances on it into the new idea", () => {
         const c = council({
-            summary: { text: "", directions: [], outcomes: {}, at: 100 },
+            summary,
+            proposals: [
+                prop("P2", "ux", { ts: 50 }),
+                prop("P3", "ram", { ts: 110 }),
+                prop("P4", "sk", { ts: 120, draft: "held" }),
+            ],
             replies: [
-                reply("r1", "ram", { ts: 90 }),
-                reply("r2", "ram", { ts: 100 }),
-                reply("r3", "you", { ts: 110 }),
-                reply("r4", "ux", { ts: 120 }),
+                reply("r1", "ux", { proposalid: "P3", stance: "accept", ts: 130 }),
+                reply("r2", "ux", { proposalid: "P3", stance: "oppose", ts: 140 }),
             ],
         });
-        expect(outdatedCount(c)).toBe(2);
-        expect(outdatedCount(council({ replies: [reply("r1", "ram")] }))).toBe(0);
+        expect(outdatedChanges(c)).toEqual({ ideas: 1, revised: 0, stances: 0, replies: 0 });
+        expect(outdatedCount(c)).toBe(1);
+    });
+
+    it("counts an idea its author revised after the summary, once however often", () => {
+        const c = changes({
+            proposals: [prop("P2", "ux", { ts: 50 })],
+            replies: [
+                reply("r1", "ux", { revised: true, ts: 90 }),
+                reply("r2", "ux", { revised: true, text: "v2", ts: 110 }),
+                reply("r3", "ux", { revised: true, text: "v3", ts: 120 }),
+            ],
+        });
+        expect(c).toEqual({ ideas: 0, revised: 1, stances: 0, replies: 0 });
+    });
+
+    it("counts a seat whose latest stance differs from its stance before the summary", () => {
+        const c = changes({
+            proposals: [prop("P2", "ux", { ts: 50 })],
+            replies: [
+                reply("r1", "ram", { stance: "accept", ts: 60 }),
+                reply("r2", "sk", { stance: "challenge", ts: 70 }),
+                reply("r3", "ram", { stance: "oppose", ts: 110 }),
+                // sk restates the same stance: a reply, no change
+                reply("r4", "sk", { stance: "challenge", ts: 120 }),
+            ],
+        });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 1, replies: 1 });
+    });
+
+    it("keeps a seat's first stance on an idea quiet, and one that comes back to where it was", () => {
+        const c = changes({
+            proposals: [prop("P2", "ux", { ts: 50 })],
+            replies: [
+                reply("r1", "ram", { stance: "accept", ts: 60 }),
+                reply("r2", "ram", { stance: "oppose", ts: 110 }),
+                reply("r3", "ram", { stance: "accept", ts: 120 }),
+                reply("r4", "nu", { stance: "challenge", ts: 130 }),
+            ],
+        });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3 });
+    });
+
+    it("keeps the person's replies quiet, leaves out reactions and drafts, and counts the rest as replies", () => {
+        const c = changes({
+            proposals: [prop("P2", "ux", { ts: 50 })],
+            replies: [
+                reply("r1", "ram", { stance: "accept", ts: 60 }),
+                reply("r2", "you", { ts: 110 }),
+                reply("r3", "you", { proposalid: "", ts: 115 }),
+                reply("r4", "nu", { stance: "accept", text: "", ts: 120 }),
+                reply("r5", "ram", { stance: "oppose", ts: 130, draft: "held" }),
+                reply("r6", "sk", { text: "an answer to you", ts: 140 }),
+            ],
+        });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3 });
+    });
+
+    it("sums the ideas, revisions and changed stances into outdatedCount", () => {
+        const c = council({
+            summary,
+            proposals: [prop("P2", "ux", { ts: 50 }), prop("P3", "ram", { ts: 110 }), prop("P4", "sk", { ts: 111 })],
+            replies: [
+                reply("r1", "ram", { stance: "accept", ts: 60 }),
+                reply("r2", "ram", { stance: "oppose", ts: 120 }),
+                reply("r3", "ux", { revised: true, ts: 130 }),
+                reply("r4", "you", { ts: 140 }),
+            ],
+        });
+        expect(outdatedChanges(c)).toEqual({ ideas: 2, revised: 1, stances: 1, replies: 1 });
+        expect(outdatedCount(c)).toBe(4);
     });
 
     // Runner.summarizeLocked: it refuses a council the runner is running, and accepts one at rest in any round

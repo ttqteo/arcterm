@@ -126,7 +126,34 @@ today's figure.
   badge) and `council-tree` (Pin from the Report, a pinned council on top, an old ended council off the
   tree); add an Outdated step that sends one plain reply and sees no banner.
 
+## Calls made while planning
+
+- Pin is the person's alone: a new run (Summarize again, Retry, a follow-up) no longer touches it, as it
+  cleared `closed`. `wsh council close` / `close --reopen` become `wsh council pin <id>` / `pin --off`, and
+  `docs/guide/council.md` says Pin where it said Close / Reopen. (Agent's call)
+- `outdatedCount(c)` keeps its name and now counts only what decision 5 calls a change (new ideas, revised
+  ideas, changed stances), so its other reader, the Discussion's status line (`councildiscussionmodel.ts:337`),
+  follows the new rule without an edit. (Agent's call)
+- Outdated wording: the banner reads `Outdated · 1 new idea, 2 changed stances` (only the non-zero
+  parts, revisions as `1 revised idea`); the quiet line appends ` · 3 replies since` to "Written by the
+  coordinator". (Agent's call)
+- The tree row's hover button, "Close council" today, becomes Pin / Unpin; a queued council keeps Remove from
+  queue. (Asked after plan review: the person chose Pin / Unpin.)
+- The board's "best first" header label and its "16 more ideas · Wild ideas kept aside" fold are dropped: the
+  header reads `24 ideas`, every idea is a row in the fixed order of decision 3, and the list scrolls. (Asked after
+  plan review: the person chose the spec over the board.)
+- The Seats chip's "show one seat alone" filter (`councilOnlyAtom`) filters the list: only the ideas that seat
+  wrote or replied to show, and the Chat row counts only that seat's lines. (Asked after plan review: the person
+  chose filtering the rows.)
+- The last-opened map needs no list to seed it: it stores `seededAt` (the first time it is read, persisted) beside
+  the per-council times, and a council never opened counts as opened at `seededAt`. Same behaviour as seeding
+  every listed council, with no call site to wire. (Agent's call)
+- The minutes figure runs live: the council also stores `runstarted` (ms, 0 when no run is going), set when a
+  run starts and cleared when it adds its span to `ranms`. While a run goes the figure is `ranms + now -
+  runstarted`. A run lost to a wavesrv restart clears `runstarted` and adds nothing. (Agent's call)
+- The folder watch debounces per file (about 300 ms), so a sync tool writing many files publishes one
+  `council:changed` per council, and a file the runner just wrote publishes at most once more. (Agent's call)
+
 ## Left to the builder
 
-- The exact wording of the Outdated banner and the quiet line.
-- Whether the folder watch debounces bursts (a sync tool writing many files at once).
+Nothing beyond the code-level choices of each task.

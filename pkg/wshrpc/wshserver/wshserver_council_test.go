@@ -663,6 +663,10 @@ func useCouncilRig(t *testing.T, fake *councilFake) *councilEvents {
 	councilRunner = newCouncilRunner(fake)
 	runner := councilRunner
 	t.Cleanup(func() { councilRunner = prevRunner })
+	// a folder watch would add its own events to the ones the tests count, and outlive the test's temp store
+	prevWatch := startCouncilWatch
+	startCouncilWatch = func() {}
+	t.Cleanup(func() { startCouncilWatch = prevWatch })
 
 	events := &councilEvents{}
 	prevClient := wps.Broker.GetClient()

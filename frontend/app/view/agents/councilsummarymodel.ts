@@ -11,10 +11,12 @@ import { failedWhile, listNames } from "./councildiscussionmodel";
 import {
     councilProjectKey,
     isReaction,
+    outdatedChanges,
     panel,
     sentProposals,
     sentReplies,
     STANCE_WORD,
+    type OutdatedChanges,
     type StanceLabel,
 } from "./councilmodel";
 
@@ -372,19 +374,31 @@ function clockTime(ms: number): string {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** Pure: `Written by the coordinator at 11:02 from 18 replies`: the replies the summary read, not the ones since. */
+/** Pure: `Written by the coordinator at 11:02 from 18 replies`: the replies the summary read. While the summary is
+ *  current, the plain replies sent since (outdatedChanges) follow quietly: `… from 18 replies · 3 replies since`; once
+ *  it is outdated the banner speaks instead. */
 export function writtenLine(c: Council): string {
     const at = c.summary?.at;
     if (at == null) {
         return "";
     }
     const read = (c.replies ?? []).filter((r) => r.ts <= at).length;
-    return `Written by the coordinator at ${clockTime(at)} from ${plural(read, "reply", "replies")}`;
+    const line = `Written by the coordinator at ${clockTime(at)} from ${plural(read, "reply", "replies")}`;
+    const o = outdatedChanges(c);
+    return o.ideas + o.revised + o.stances === 0 && o.replies > 0
+        ? `${line} · ${plural(o.replies, "reply", "replies")} since`
+        : line;
 }
 
-/** Pure: the banner over a summary the discussion has moved past. */
-export function outdatedLabel(n: number): string {
-    return `Outdated · ${n} ${n === 1 ? "reply" : "replies"} since`;
+/** Pure: the banner over a summary a change could have moved past: `Outdated · 1 new idea, 2 changed stances`, only the
+ *  parts that are not zero. The plain replies since are never in it. */
+export function outdatedLabel(o: OutdatedChanges): string {
+    const parts = [
+        o.ideas > 0 ? plural(o.ideas, "new idea", "new ideas") : "",
+        o.revised > 0 ? plural(o.revised, "revised idea", "revised ideas") : "",
+        o.stances > 0 ? plural(o.stances, "changed stance", "changed stances") : "",
+    ].filter((p) => p !== "");
+    return `Outdated · ${parts.join(", ")}`;
 }
 
 /** Pure: a saved doc's path as the Summary shows it: relative to the project when it is inside it. */

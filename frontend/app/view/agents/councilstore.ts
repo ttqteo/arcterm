@@ -238,11 +238,10 @@ export function stopCouncil(id: string): Promise<CouncilCall<void>> {
     return call("stop", () => RpcApi.CouncilStopCommand(TabRpcClient, { id }));
 }
 
-/** Closes an ended council (canRemoveCouncil), or opens a closed one again (`closed` false). Nothing is deleted: the
- *  tree stops listing it, Councils (councilhistory.ts) still does, and council:changed brings the saved council to every
- *  atom. */
-export function closeCouncil(id: string, closed = true): Promise<CouncilCall<void>> {
-    return call(closed ? "close" : "reopen", () => RpcApi.CouncilCloseCommand(TabRpcClient, { id, closed }));
+/** Pins a council (the tree keeps it at the top of its project) or unpins it (`pinned` false), in any state, running
+ *  ones too. council:changed brings the saved council to every atom. */
+export function setCouncilPinned(id: string, pinned: boolean): Promise<CouncilCall<void>> {
+    return call(pinned ? "pin" : "unpin", () => RpcApi.CouncilPinCommand(TabRpcClient, { id, pinned }));
 }
 
 /** Removes an ended council (canRemoveCouncil) for good: its file goes to ~/.arc/trash, the document it wrote into the project stays. wavesrv

@@ -522,8 +522,8 @@ func councilWaitFor(ctx context.Context, poll time.Duration, get func() (*counci
 // councilListLine is one council as a line: id, state, round, feature.
 func councilListLine(c *council.Council) string {
 	state := string(c.State)
-	if c.Closed != 0 {
-		state += " (closed)"
+	if c.Pinned != 0 {
+		state += " (pinned)"
 	}
 	return fmt.Sprintf("%s\t%s\tround %d\t%s", c.Id, state, c.Round, councilOneLine(c.Feature))
 }
@@ -894,23 +894,23 @@ var councilRmCmd = &cobra.Command{
 	},
 }
 
-var councilCloseCmd = &cobra.Command{
-	Use:   "close <id>",
-	Short: "close an ended council: the cockpit folds it under its project's Closed councils, its file stays",
-	Long: `Close an ended council (done, failed, stopped or not run): the Agent tree moves it into its project's Closed
-councils fold, and nothing is deleted. --reopen opens it again. A council that runs again (a retry, a reply) opens by
-itself. "wsh council rm" removes one for good (into ~/.arc/trash).`,
+var councilPinCmd = &cobra.Command{
+	Use:   "pin <id>",
+	Short: "pin a council: the cockpit keeps it at the top of its project in the Agent tree",
+	Long: `Pin a council, in any state, running ones too: the Agent tree keeps it at the top of its project folder until it
+is unpinned. --off unpins it. Only the person pins: a council that runs again (a retry, a reply) keeps its pin as it
+was. "wsh council rm" removes an ended one for good (into ~/.arc/trash).`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		reopen, _ := cmd.Flags().GetBool("reopen")
-		if err := wshclient.CouncilCloseCommand(RpcClient, wshrpc.CommandCouncilCloseData{Id: args[0], Closed: !reopen}, nil); err != nil {
+		off, _ := cmd.Flags().GetBool("off")
+		if err := wshclient.CouncilPinCommand(RpcClient, wshrpc.CommandCouncilPinData{Id: args[0], Pinned: !off}, nil); err != nil {
 			return err
 		}
-		if reopen {
-			fmt.Printf("council %s reopened\n", args[0])
+		if off {
+			fmt.Printf("council %s unpinned\n", args[0])
 		} else {
-			fmt.Printf("council %s closed\n", args[0])
+			fmt.Printf("council %s pinned\n", args[0])
 		}
 		return nil
 	},
@@ -1265,11 +1265,11 @@ func init() {
 	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: solo or council (repeatable; default both)")
 	councilBenchCmd.Flags().Int("runs", 1, "runs of each case × variant (the full first pass uses 2)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
-	councilCloseCmd.Flags().Bool("reopen", false, "open a closed council again")
+	councilPinCmd.Flags().Bool("off", false, "unpin the council")
 	councilRetryCmd.Flags().String("expert", "", "the seat to retry, by id or name (default: the failed summary, else the one failed seat)")
 	councilRetryCmd.Flags().StringArray("model", nil, "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own. With --all, <model> for every seat or <seat>=<model> (repeatable)")
 	councilRetryCmd.Flags().Bool("all", false, "retry every failed seat but the coordinator at once, in one run")
 	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
-	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilCloseCmd, councilRmCmd, councilBenchCmd)
+	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilPinCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)
 }

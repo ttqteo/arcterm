@@ -2362,51 +2362,91 @@ func TestDeleteRemovesAnEndedCouncilAndRefusesALiveOne(t *testing.T) {
 	}
 }
 
-func TestCloseKeepsAnEndedCouncilAndARunOpensIt(t *testing.T) {
+func TestSetPinnedOnAnEndedCouncil(t *testing.T) {
 	h := newHarness(t)
-	paused := testCouncil("paused")
-	paused.PauseAfterRound1 = true
-	h.run(paused)
-	if _, err := h.r.SetClosed("paused", true); err == nil {
-		t.Fatalf("closing a council waiting on the person worked")
-	}
-	if h.load("paused").Closed != 0 {
-		t.Fatalf("a refused close marked the council closed")
-	}
-
 	h.run(testCouncil("c1"))
-	c, err := h.r.SetClosed("c1", true)
-	if err != nil || c.Closed == 0 {
-		t.Fatalf("SetClosed(c1, true) = %+v, %v; want it closed", c, err)
+	c, err := h.r.SetPinned("c1", true)
+	if err != nil || c.Pinned == 0 {
+		t.Fatalf("SetPinned(c1, true) = %+v, %v; want it pinned", c, err)
 	}
-	at := h.load("c1").Closed
+	at := h.load("c1").Pinned
 	if at == 0 {
-		t.Fatalf("the close was not saved")
+		t.Fatalf("the pin was not saved")
 	}
-	if c, _ := h.r.SetClosed("c1", true); c.Closed != at {
-		t.Errorf("closing it again moved Closed from %d to %d", at, c.Closed)
+	if c, _ := h.r.SetPinned("c1", true); c.Pinned != at {
+		t.Errorf("pinning it again moved Pinned from %d to %d", at, c.Pinned)
 	}
-	if last := h.seen[len(h.seen)-1]; last.Id != "c1" || last.Closed == 0 {
-		t.Errorf("the close was not reported: last change %s closed %d", last.Id, last.Closed)
-	}
-
-	if c, err := h.r.SetClosed("c1", false); err != nil || c.Closed != 0 || h.load("c1").Closed != 0 {
-		t.Fatalf("reopening = %+v, %v; want it open", c, err)
+	if last := h.seen[len(h.seen)-1]; last.Id != "c1" || last.Pinned == 0 {
+		t.Errorf("the pin was not reported: last change %s pinned %d", last.Id, last.Pinned)
 	}
 
-	// closed again, then run again: the council opens by itself
-	if _, err := h.r.SetClosed("c1", true); err != nil {
-		t.Fatalf("SetClosed: %v", err)
-	}
+	// a new run (a summary) leaves the pin as it was
 	saved, err := h.r.Summarize("c1")
 	if err != nil {
 		t.Fatalf("Summarize: %v", err)
 	}
-	if saved.Closed != 0 {
-		t.Errorf("a closed council that runs again is still closed (%d)", saved.Closed)
+	if saved.Pinned != at {
+		t.Errorf("a pinned council that runs again has Pinned %d, want %d", saved.Pinned, at)
 	}
-	if done := h.wait("c1"); done.Closed != 0 || done.State != StateDone {
-		t.Errorf("after the run: %s, closed %d; want done and open", done.State, done.Closed)
+	if done := h.wait("c1"); done.Pinned != at || done.State != StateDone {
+		t.Errorf("after the run: %s, pinned %d; want done and pinned %d", done.State, done.Pinned, at)
+	}
+
+	if c, err := h.r.SetPinned("c1", false); err != nil || c.Pinned != 0 || h.load("c1").Pinned != 0 {
+		t.Fatalf("unpinning = %+v, %v; want it unpinned", c, err)
+	}
+	// unpinned, a new run leaves it unpinned
+	if _, err := h.r.Summarize("c1"); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if done := h.wait("c1"); done.Pinned != 0 {
+		t.Errorf("an unpinned council that ran again is pinned (%d)", done.Pinned)
+	}
+}
+
+// The pin is the person's mark, not a change to the discussion: it must not move Updated, which is the ended time
+// of a council with no summary (a failed, stopped or not-run one), or Pin and Unpin would keep it in the tree a day.
+func TestSetPinnedKeepsUpdated(t *testing.T) {
+	h := newHarness(t)
+	tickClock(t) // every stamping save sees a later time, so a restamp shows
+	h.save(fixtureCouncil("c1", StateStopped, 1))
+	before := h.load("c1")
+	if before.Summary != nil || before.Updated == 0 {
+		t.Fatalf("fixture: summary %v, updated %d; want no summary and a known Updated", before.Summary, before.Updated)
+	}
+	for _, pinned := range []bool{true, false} {
+		c, err := h.r.SetPinned("c1", pinned)
+		if err != nil {
+			t.Fatalf("SetPinned(c1, %v): %v", pinned, err)
+		}
+		saved := h.load("c1")
+		if c.Updated != before.Updated || saved.Updated != before.Updated {
+			t.Errorf("SetPinned(c1, %v) moved Updated from %d to %d (saved %d)", pinned, before.Updated, c.Updated, saved.Updated)
+		}
+		if (c.Pinned != 0) != pinned || (saved.Pinned != 0) != pinned {
+			t.Errorf("SetPinned(c1, %v): returned Pinned %d, saved %d", pinned, c.Pinned, saved.Pinned)
+		}
+	}
+}
+
+func TestSetPinnedOnARunningCouncil(t *testing.T) {
+	h := newHarness(t)
+	h.f.gate("ux/r1")
+	if _, err := h.r.Start(context.Background(), testCouncil("c1")); err != nil {
+		t.Fatal(err)
+	}
+	h.f.entered(t, "ux/r1")
+	c, err := h.r.SetPinned("c1", true)
+	if err != nil || c.Pinned == 0 {
+		t.Fatalf("SetPinned on a running council = %+v, %v; want it pinned", c, err)
+	}
+	at := c.Pinned
+	h.f.release("ux/r1")
+	if done := h.wait("c1"); done.Pinned != at {
+		t.Errorf("after the run: pinned %d, want %d (the run dropped the pin)", done.Pinned, at)
+	}
+	if c, err := h.r.SetPinned("c1", false); err != nil || c.Pinned != 0 {
+		t.Fatalf("unpinning the ended council = %+v, %v; want it unpinned", c, err)
 	}
 }
 
@@ -2457,6 +2497,76 @@ func TestMarkStaleStopsWhatWavesrvLeftRunning(t *testing.T) {
 	defer h.mu.Unlock()
 	if len(h.seen) != 2 {
 		t.Errorf("OnChange fired %d times, want once for each council marked", len(h.seen))
+	}
+}
+
+// ---- the time rounds ran ----
+
+// stillClock makes the runner's clock read a time the test sets, so a run's span is known.
+func stillClock(h *harness, at int64) *atomic.Int64 {
+	var clock atomic.Int64
+	clock.Store(at)
+	h.r.Now = clock.Load
+	return &clock
+}
+
+func TestRanMsAddsTheSpansOfTwoRuns(t *testing.T) {
+	h := newHarness(t)
+	clock := stillClock(h, 10_000)
+	h.f.gate("ux/r1")
+	h.start(testCouncil("c1"))
+	h.f.entered(t, "ux/r1")
+	if c := h.load("c1"); c.RunStarted != 10_000 || c.RanMs != 0 {
+		t.Fatalf("while round 1 runs: runstarted %d ranms %d, want 10000 and 0", c.RunStarted, c.RanMs)
+	}
+	clock.Store(15_000)
+	h.f.release("ux/r1")
+	if c := h.wait("c1"); c.State != StateDone || c.RanMs != 5_000 || c.RunStarted != 0 {
+		t.Fatalf("after the rounds: %s ranms %d runstarted %d, want done, 5000 and 0", c.State, c.RanMs, c.RunStarted)
+	}
+
+	// the clock moves while the council rests: that time is not counted
+	clock.Store(100_000)
+	h.f.gate("lead/r3")
+	if _, err := h.r.Summarize("c1"); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	h.f.entered(t, "lead/r3")
+	if c := h.load("c1"); c.RunStarted != 100_000 || c.RanMs != 5_000 {
+		t.Fatalf("while the summary runs: runstarted %d ranms %d, want 100000 and 5000", c.RunStarted, c.RanMs)
+	}
+	clock.Store(107_000)
+	h.f.release("lead/r3")
+	if c := h.wait("c1"); c.RanMs != 12_000 || c.RunStarted != 0 {
+		t.Fatalf("after the summary: ranms %d runstarted %d, want 12000 and 0", c.RanMs, c.RunStarted)
+	}
+}
+
+func TestRanMsCountsAStoppedRun(t *testing.T) {
+	h := newHarness(t)
+	clock := stillClock(h, 20_000)
+	h.f.gate("ux/r1")
+	h.start(testCouncil("c1"))
+	h.f.entered(t, "ux/r1")
+	clock.Store(23_000)
+	c, err := h.r.Stop("c1")
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if c.State != StateStopped || c.RanMs != 3_000 || c.RunStarted != 0 {
+		t.Fatalf("after Stop: %s ranms %d runstarted %d, want stopped, 3000 and 0", c.State, c.RanMs, c.RunStarted)
+	}
+}
+
+func TestRanMsAddsNothingForAStaleCouncil(t *testing.T) {
+	h := newHarness(t)
+	stillClock(h, 900_000)
+	c := fixtureCouncil("stale", StateRunning, 2)
+	c.RanMs, c.RunStarted = 4_000, 50_000
+	h.save(c)
+	h.r.MarkStale()
+	if got := h.load("stale"); got.State != StateStopped || got.RanMs != 4_000 || got.RunStarted != 0 {
+		t.Fatalf("after MarkStale: %s ranms %d runstarted %d, want stopped, 4000 and 0", got.State, got.RanMs, got.RunStarted)
 	}
 }
 

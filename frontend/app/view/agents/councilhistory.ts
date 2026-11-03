@@ -1,21 +1,21 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for Agent → Councils (agentcenter.ts' `councils` mode): every council of every project, open or closed, as
+// Pure model for Agent → Councils (agentcenter.ts' `councils` mode): every council of every project, pinned or not, as
 // a list grouped Today / Yesterday / Earlier by its newest message, the way the Canvas gallery groups its canvases, and
-// its search. The tree lists only the councils still open (councilRowsByProject leaves a closed one out); this is where a
-// closed one is found again. No React.
+// its search. The tree lists only some councils (councilRowsByProject); this is where every one is found again. No
+// React.
 
 import { councilRowVM, projectNamesByKey, type CouncilRowVM } from "./agentsidebarmodel";
-import { councilProjectKey, isClosedCouncil } from "./councilmodel";
+import { councilProjectKey, isPinnedCouncil } from "./councilmodel";
 
 export interface CouncilHistoryRow extends CouncilRowVM {
     /** the registered project's name, else the last folder of the path the council ran in */
     projectName: string;
     /** what it was asked, trimmed; empty when it was asked nothing beyond its feature */
     question: string;
-    /** the person closed it (isClosedCouncil): the tree no longer lists it */
-    closed: boolean;
+    /** the person pinned it (isPinnedCouncil): the tree keeps it at the top of its project */
+    pinned: boolean;
 }
 
 export type CouncilHistoryGroup = {
@@ -46,7 +46,7 @@ export function councilHistoryRows(
                 ...councilRowVM(c, byId, unread),
                 projectName: nameOf.get(councilProjectKey(c.project)) ?? folderName(c.project),
                 question: (c.question ?? "").trim(),
-                closed: isClosedCouncil(c),
+                pinned: isPinnedCouncil(c),
             })
         )
         .sort((a, b) => b.lastAt - a.lastAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -82,8 +82,18 @@ export function groupCouncilHistory(rows: readonly CouncilHistoryRow[], now: num
     return groups.filter((g) => g.rows.length > 0);
 }
 
-/** Pure: the header's count: every council, and how many of them are closed when any is. */
+/** Pure: what a row's hover button and menu item do: Unpin on a pinned council, Pin on any other whatever its state
+ *  (running and queued ones too, as the Report's Pin); `pin` is the value setCouncilPinned is called with. */
+export function councilHistoryPinAct(row: Pick<CouncilHistoryRow, "pinned">): {
+    act: "pin" | "unpin";
+    label: "Pin" | "Unpin";
+    pin: boolean;
+} {
+    return row.pinned ? { act: "unpin", label: "Unpin", pin: false } : { act: "pin", label: "Pin", pin: true };
+}
+
+/** Pure: the header's count: every council, and how many of them are pinned when any is. */
 export function councilHistoryCount(rows: readonly CouncilHistoryRow[]): string {
-    const closed = rows.filter((r) => r.closed).length;
-    return closed > 0 ? `${rows.length} · ${closed} closed` : `${rows.length}`;
+    const pinned = rows.filter((r) => r.pinned).length;
+    return pinned > 0 ? `${rows.length} · ${pinned} pinned` : `${rows.length}`;
 }

@@ -214,7 +214,8 @@ describe("the fixtures as records", () => {
         expect(c.summary.directions[2].from).toEqual(["P2", "P3"]);
         const proposalIds = c.proposals.map((p) => p.id);
         for (const d of c.summary.directions) for (const id of d.from) expect(proposalIds).toContain(id);
-        expect(outdatedCount(c)).toBe(1);
+        // the reply after the summary is the person's own: the summary stays current (spec decision 5)
+        expect(outdatedCount(c)).toBe(0);
         expect(replyLabel(c, c.replies.find((r) => r.author === "you"))).toBe("Answered after the summary");
         expect(callSegments(c)).toEqual(Array(9).fill("done"));
         const rows = matrixRows(c);

@@ -5,7 +5,12 @@
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
 // councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
-// and Close council (an ended one, step 11) have their stop and close commands replaced in the page.
+// and Pin / Unpin (the Report's tab bar, a tree row and a Councils row, step 11) have their stop and pin commands replaced
+// in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
+// councils placed three days back and marked opened: the pinned one drawn at its folder's top, the unpinned one off the
+// tree, and Unpin from the Report taking the pinned one off too. Step 11g
+// (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md) does the same for a pinned, stopped council with no summary,
+// whose ended time is its `updated`: Unpin from its tree row takes it off the tree.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -47,6 +52,7 @@ const METAS = ["Running", "Waiting on you", "Done", "Not run"];
 const ROWS_WAIT_MS = 10_000;
 const UI_WAIT_MS = 5_000;
 const NOTICE_SETTLE_MS = 600;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // the corner toasts whose text holds `text`, and the row's meta and unread dot, as the page shows them
@@ -143,6 +149,20 @@ async function mouseOn(h, selector, { button = "left", modifiers = 0 } = {}) {
         clickCount: 1,
         modifiers,
     });
+    return true;
+}
+
+// the pointer moved onto the middle of the first element `selector` matches, with no click; false when it is not on
+// screen
+async function hoverOn(h, selector) {
+    const box = await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        el?.scrollIntoView({ block: "nearest" });
+        const r = el?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (box == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
     return true;
 }
 
@@ -415,7 +435,7 @@ export const councilTree = {
         const queuedRow = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).find((r) => r.kind === "council" && r.id === queued);
         const removeOf = (id) =>
             `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="remove"]')`;
-        // a running or waiting council offers no Remove; an ended one offers Close council (step 11), not this
+        // a running or waiting council offers no Remove: it offers Pin (step 11b), not this
         const offered = await h.ev(
             `${removeOf(queued)}?.title === "Remove from queue" && !${removeOf(councilFixtureId("round2"))} && !${removeOf(councilFixtureId("awaiting"))}`
         );
@@ -441,48 +461,253 @@ export const councilTree = {
             JSON.stringify({ wording, queuedRow, offered, removed, stops })
         );
 
-        // 11. an ended council's × closes it, with no confirm and nothing deleted; once closed it leaves the tree, and
-        // Councils (the sidebar's button) lists it marked Closed; opened from there, its header offers Reopen
+        // 11a. Pin in the Report's tab bar: an unpinned council's button reads Pin and asks wavesrv to pin it; once the
+        // pin is saved it reads Pinned. Nothing in the Report offers Close or Reopen any more.
         const doneId = councilFixtureId("done");
-        const actOf = (id, act) =>
-            `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="${act}"]')`;
-        const doneClose = await h.ev(`${actOf(doneId, "close")}?.title ?? null`);
-        await stubRpc(h, ["CouncilCloseCommand", "CouncilDeleteCommand"]);
-        await h.ev(`${actOf(doneId, "close")}?.click()`);
-        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilCloseCommand").length >= 1`);
-        const closes = await rpcCalls(h, "CouncilCloseCommand");
-        const confirmed = await h.ev(`[...document.querySelectorAll("h2")].some((e) => e.textContent === "Remove council")`);
-        const deleted = (await rpcCalls(h, "CouncilDeleteCommand")).length;
+        await openCouncil(h, doneId, "summary");
+        const pinIn = `document.querySelector("[data-council-tabbar] [data-council-pin]")`;
+        const pinText = `(${pinIn}?.textContent ?? "").trim()`;
+        const unpinnedShown = await until(`${pinIn}?.dataset.councilPin === "pin" && ${pinText} === "Pin"`);
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${pinIn}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const pins = await rpcCalls(h, "CouncilPinCommand");
         await unstubRpc(h);
-        // what wavesrv saves for that close
-        writeCouncil(ctx, "done", { edit: (c) => (c.closed = Date.now()) });
+        // what wavesrv saves for that pin
+        writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
         await announceCouncil(h, ctx, doneId);
-        const historyRow = JSON.stringify(`[data-council-history-row="${doneId}"]`);
-        const gone = await until(`!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)})`);
-        const fold = await h.ev(`!!document.querySelector("[data-council-closed]")`);
-        await h.ev(`document.querySelector("[data-agent-councils-open]")?.click()`);
-        const listed = await until(`!!document.querySelector(${historyRow})?.hasAttribute("data-council-history-closed")`);
-        await h.shot("cdp-shots/council-history-closed.png");
-        await h.ev(`document.querySelector(${historyRow})?.click()`);
-        // it lands on its Report (it has a summary) or on the Discussion, whichever it was left on: both offer Reopen
-        const reopen = await until(`!!document.querySelector('[data-council-close="reopen"]')`);
-        const landed = await h.ev(`document.querySelector("[data-council-tabbar]") ? "report" : "discussion"`);
-        await h.shot("cdp-shots/council-history-reopen.png");
+        const pinnedShown = await until(`${pinIn}?.dataset.councilPin === "pinned" && ${pinText} === "Pinned"`);
+        const noClose = await h.ev(`!document.querySelector("[data-council-close]")`);
+        await h.shot("cdp-shots/council-report-pinned.png");
         // back to the terminal for the steps that follow
         await pressEscape(h);
         rec(
-            "11. an ended council's × closes it without asking or deleting; it leaves the tree, Councils lists it as Closed, and opened from there it offers Reopen",
-            doneClose === "Close council" &&
-                closes.length === 1 &&
-                closes[0].data?.id === doneId &&
-                closes[0].data?.closed === true &&
-                !confirmed &&
-                deleted === 0 &&
-                gone &&
-                !fold &&
-                listed &&
-                reopen,
-            JSON.stringify({ doneClose, closes, confirmed, deleted, gone, fold, listed, reopen, landed })
+            "11a. the Report's tab bar offers Pin, which asks wavesrv to pin the council, and reads Pinned once it is saved",
+            unpinnedShown &&
+                pins.length === 1 &&
+                pins[0].data?.id === doneId &&
+                pins[0].data?.pinned === true &&
+                pinnedShown &&
+                noClose,
+            JSON.stringify({ unpinnedShown, pins, pinnedShown, noClose })
+        );
+
+        // 11b. a tree row's hover button: Unpin on the pinned council (it stays in the tree), Pin on an unpinned one,
+        // running ones too, and Close council on none; Unpin asks wavesrv to unpin it
+        const actOf = (id, act) =>
+            `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="${act}"]')`;
+        const actShown = (id, act) => `(() => {
+            const el = ${actOf(id, act)};
+            return !!el && getComputedStyle(el.parentElement).opacity === "1";
+        })()`;
+        const stays = await until(present(`[data-council-row="${doneId}"]`));
+        await hoverOn(h, `[data-council-row="${doneId}"] [data-council-feature]`);
+        const unpinOffered = await until(actShown(doneId, "unpin"));
+        const unpinTitle = await h.ev(`${actOf(doneId, "unpin")}?.title ?? null`);
+        await h.shot("cdp-shots/council-tree-unpin.png");
+        const runningId = councilFixtureId("round2");
+        await hoverOn(h, `[data-council-row="${runningId}"] [data-council-feature]`);
+        const pinOffered = await until(actShown(runningId, "pin"));
+        const pinTitle = await h.ev(`${actOf(runningId, "pin")}?.title ?? null`);
+        await h.shot("cdp-shots/council-tree-pin.png");
+        const closeLeft = await h.ev(`!!document.querySelector('[data-council-act="close"]')`);
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${actOf(doneId, "unpin")}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const unpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // the fixture as it was, unpinned, for the steps that follow
+        writeCouncil(ctx, "done");
+        await announceCouncil(h, ctx, doneId);
+        await until(`!!${actOf(doneId, "pin")}`);
+        rec(
+            "11b. a council row's hover button reads Unpin on a pinned council and Pin on an unpinned one, a running one too, never Close council; Unpin asks wavesrv to unpin it",
+            stays &&
+                unpinOffered &&
+                unpinTitle === "Unpin" &&
+                pinOffered &&
+                pinTitle === "Pin" &&
+                !closeLeft &&
+                unpins.length === 1 &&
+                unpins[0].data?.id === doneId &&
+                unpins[0].data?.pinned === false,
+            JSON.stringify({ stays, unpinOffered, unpinTitle, pinOffered, pinTitle, closeLeft, unpins })
+        );
+
+        // 11c. Councils (the button at the sidebar's top) marks the pinned council's row with a pin, and the row's hover
+        // button reads Unpin there (Pin on an unpinned one) and asks wavesrv to unpin it; once saved, the mark goes
+        writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
+        await announceCouncil(h, ctx, doneId);
+        const historyRow = (id) => `[data-council-history-row="${id}"]`;
+        const historyAct = (id, act) =>
+            `document.querySelector(${JSON.stringify(`[data-council-history-item="${id}"] [data-council-history-act="${act}"]`)})`;
+        const historyActShown = (id, act) => `(() => {
+            const el = ${historyAct(id, act)};
+            return !!el && getComputedStyle(el.parentElement).opacity === "1";
+        })()`;
+        const markOn = (id) =>
+            `!!document.querySelector(${JSON.stringify(`${historyRow(id)}[data-council-history-pinned] [data-council-history-pin-mark]`)})`;
+        const listOpened = await h.ev(click("[data-agent-councils-open]"));
+        const listShown = await until(present(historyRow(doneId)));
+        const marked = await until(markOn(doneId));
+        const unmarkedOther = await h.ev(`!${markOn(runningId)}`);
+        await hoverOn(h, `${historyRow(runningId)}`);
+        const listPinOffered = await until(historyActShown(runningId, "pin"));
+        await hoverOn(h, `${historyRow(doneId)}`);
+        const listUnpinOffered = await until(historyActShown(doneId, "unpin"));
+        const listUnpinTitle = await h.ev(`${historyAct(doneId, "unpin")}?.title ?? null`);
+        await h.shot("cdp-shots/council-history-pinned.png");
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${historyAct(doneId, "unpin")}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const listUnpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // what wavesrv saves for that unpin: the fixture as it was
+        writeCouncil(ctx, "done");
+        await announceCouncil(h, ctx, doneId);
+        const unmarked = await until(`${present(historyRow(doneId))} && !${markOn(doneId)}`);
+        // back to the terminal for the steps that follow (the search box is not focused, so one Escape leaves Councils)
+        await pressEscape(h);
+        rec(
+            "11c. Councils marks a pinned council's row with a pin; the row's hover button reads Unpin there and Pin on an unpinned one, and Unpin asks wavesrv to unpin it, after which the mark goes",
+            listOpened &&
+                listShown &&
+                marked &&
+                unmarkedOther &&
+                listPinOffered &&
+                listUnpinOffered &&
+                listUnpinTitle === "Unpin" &&
+                listUnpins.length === 1 &&
+                listUnpins[0].data?.id === doneId &&
+                listUnpins[0].data?.pinned === false &&
+                unmarked,
+            JSON.stringify({
+                listOpened,
+                listShown,
+                marked,
+                unmarkedOther,
+                listPinOffered,
+                listUnpinOffered,
+                listUnpinTitle,
+                listUnpins,
+                unmarked,
+            })
+        );
+
+        // ---- the tree rule (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) ----
+        // Two copies of the done fixture placed three days back, both marked opened now in the last-opened map (so
+        // neither is unread): `old-pinned` is pinned, `old-read` is not. The tree keeps a council that is live, pinned,
+        // unread or ended less than a day ago, so only the pinned one is drawn, at the top of its folder.
+        const oldPinned = `${COUNCIL_ID_PREFIX}old-pinned`;
+        const oldRead = `${COUNCIL_ID_PREFIX}old-read`;
+        const threeDaysAgo = Date.now() - 3 * DAY_MS;
+        ctx.openedBefore = await h.ev(`window.__arcCouncil.opened()`);
+        await h.ev(`(() => {
+            const map = window.__arcCouncil.opened();
+            const now = Date.now();
+            window.__arcCouncil.setOpened({
+                seededAt: map.seededAt,
+                opened: { ...map.opened, ${JSON.stringify(oldPinned)}: now, ${JSON.stringify(oldRead)}: now },
+            });
+        })()`);
+        await seedCouncil(h, ctx, "done", { id: oldRead, now: threeDaysAgo });
+        await seedCouncil(h, ctx, "done", { id: oldPinned, now: threeDaysAgo, edit: (c) => (c.pinned = Date.now()) });
+
+        // 11d. the pinned council is drawn first in its folder, above the Councils label and the councils under it
+        const pinnedDrawn = await until(present(`[data-council-row="${oldPinned}"]`), ROWS_WAIT_MS);
+        const ruled = folderRows(await rows(), COUNCIL_PROJECT) ?? [];
+        rec(
+            "11d. a pinned council, ended three days ago, is drawn at the top of its folder, ahead of the Councils label and the other councils",
+            pinnedDrawn &&
+                ruled[0]?.kind === "council" &&
+                ruled[0].id === oldPinned &&
+                ruled[1]?.kind === "head" &&
+                ruled.filter((r) => r.kind === "council" && r.id === oldPinned).length === 1 &&
+                ruled.slice(2).some((r) => r.kind === "council"),
+            JSON.stringify(ruled.map((r) => (r.kind === "council" ? `c:${r.id}` : r.kind)))
+        );
+        await h.shot("cdp-shots/council-tree-pinned-top.png");
+
+        // 11e. the unpinned one, ended three days ago and opened since, is in no folder of the tree, though Councils
+        // lists it
+        const readGone = await h.ev(`!${present(`[data-council-row="${oldRead}"]`)}`);
+        await h.ev(click("[data-agent-councils-open]"));
+        const readListed = await until(present(historyRow(oldRead)));
+        await pressEscape(h);
+        rec(
+            "11e. an ended, unpinned council older than a day that was opened is not in the tree, and Councils still lists it",
+            readGone && readListed,
+            JSON.stringify({ readGone, readListed })
+        );
+
+        // 11f. Unpin from that pinned council's Report takes it off the tree at once
+        await openCouncil(h, oldPinned, "summary");
+        const reportPinned = await until(`${pinIn}?.dataset.councilPin === "pinned"`);
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${pinIn}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const reportUnpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // what wavesrv saves for that unpin
+        writeCouncil(ctx, "done", { id: oldPinned, now: threeDaysAgo });
+        await announceCouncil(h, ctx, oldPinned);
+        const unpinnedGone = await until(
+            `${pinIn}?.dataset.councilPin === "pin" && !${present(`[data-council-row="${oldPinned}"]`)}`
+        );
+        await h.shot("cdp-shots/council-tree-unpinned-gone.png");
+        await pressEscape(h);
+        rec(
+            "11f. Unpin in the Report of a council that ended more than a day ago asks wavesrv to unpin it, and once saved the council leaves the tree",
+            reportPinned &&
+                reportUnpins.length === 1 &&
+                reportUnpins[0].data?.id === oldPinned &&
+                reportUnpins[0].data?.pinned === false &&
+                unpinnedGone,
+            JSON.stringify({ reportPinned, reportUnpins, unpinnedGone })
+        );
+
+        // 11g. the same rule for a council with no summary (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md): its
+        // ended time is its `updated`, which a pin leaves as it was. A stopped copy of the done fixture, its summary
+        // dropped, placed three days back, pinned and marked opened now, is in the tree; Unpin from its tree row's hover
+        // button asks wavesrv to unpin it, and once saved (`updated` still three days back) it leaves the tree.
+        const oldStopped = `${COUNCIL_ID_PREFIX}old-stopped`;
+        const stoppedEdit = (pinned) => (c) => {
+            c.state = "stopped";
+            delete c.summary;
+            c.pinned = pinned;
+        };
+        await h.ev(`(() => {
+            const map = window.__arcCouncil.opened();
+            window.__arcCouncil.setOpened({
+                seededAt: map.seededAt,
+                opened: { ...map.opened, ${JSON.stringify(oldStopped)}: Date.now() },
+            });
+        })()`);
+        await seedCouncil(h, ctx, "done", { id: oldStopped, now: threeDaysAgo, edit: stoppedEdit(Date.now()) });
+        const stoppedDrawn = await until(present(`[data-council-row="${oldStopped}"]`), ROWS_WAIT_MS);
+        const stoppedRead = await h.ev(`!${unreadDot(oldStopped)}`);
+        await hoverOn(h, `[data-council-row="${oldStopped}"] [data-council-feature]`);
+        const stoppedUnpinOffered = await until(actShown(oldStopped, "unpin"));
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${actOf(oldStopped, "unpin")}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const stoppedUnpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // what wavesrv saves for that unpin: the pin gone, `updated` as it was
+        writeCouncil(ctx, "done", { id: oldStopped, now: threeDaysAgo, edit: stoppedEdit(0) });
+        await announceCouncil(h, ctx, oldStopped);
+        const stoppedGone = await until(`!${present(`[data-council-row="${oldStopped}"]`)}`);
+        await h.shot("cdp-shots/council-tree-unpinned-stopped-gone.png");
+        rec(
+            "11g. a pinned, stopped council with no summary, ended three days ago and opened, is in the tree; Unpin from its tree row asks wavesrv to unpin it, and once saved it leaves the tree",
+            stoppedDrawn &&
+                stoppedRead &&
+                stoppedUnpinOffered &&
+                stoppedUnpins.length === 1 &&
+                stoppedUnpins[0].data?.id === oldStopped &&
+                stoppedUnpins[0].data?.pinned === false &&
+                stoppedGone,
+            JSON.stringify({ stoppedDrawn, stoppedRead, stoppedUnpinOffered, stoppedUnpins, stoppedGone })
         );
 
         // ---- the room's agents (steps 12 on) ----
@@ -618,6 +843,13 @@ export const councilTree = {
     },
 
     async teardown(h, ctx) {
+        // the last-opened map as it was before steps 11d to 11g marked their councils opened; their council files go
+        // with the other fixtures' in teardownCouncilProject (ctx.written)
+        if (ctx.openedBefore) {
+            await h
+                .ev(`window.__arcCouncil?.setOpened(${JSON.stringify(ctx.openedBefore)})`)
+                .catch((e) => console.error(`council-tree teardown: restoring the opened map failed: ${e?.message ?? e}`));
+        }
         // the roster first: putting it back reloads the page, and the fixture agents leave the tree with it
         if (ctx.roster) {
             await restoreRoomRoster(ctx.roster).catch((e) =>
