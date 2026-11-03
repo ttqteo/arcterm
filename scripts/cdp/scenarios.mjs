@@ -45048,6 +45048,9 @@ const jobqueueAgentTag = {
 // terminal's PTY size never moved (the shell is hidden before the window shrinks). Windows only: WKWebView answers
 // no CDP.
 const FLOAT_MINI_PROJECT = "verify-float-mini";
+// the folded window's rest box: MINI_REST_SIZE in view/agents/floatwindow.ts, 320x336 since cf5e94b19 (the folded card holds the
+// auto fold off) grew it from 264 tall
+const MINI_REST = { w: 320, h: 336 };
 
 async function floatMiniWait(h, expr, ms = 8000) {
     return h.ev(`(async () => {
@@ -45089,10 +45092,13 @@ const floatMini = {
             return steps;
         }
         const term = ctx.terminals[0];
+        // verify.mjs pins the viewport at 1600x950, which holds window.innerWidth there however the native window folds:
+        // this scenario reads the real window, so it lifts the pin (the harness puts it back after teardown)
+        await h.cdp("Emulation.clearDeviceMetricsOverride", {});
         await h.goto("agent");
-        // a plain terminal's tree row is [data-agent-terminal-row]; [data-agent-row] is an agent's
-        const chosen = await floatMiniWait(h, `!!document.querySelector('[data-agent-terminal-row="${term.tabId}"]')`);
-        await h.ev(`document.querySelector('[data-agent-terminal-row="${term.tabId}"]')?.click()`);
+        // a plain terminal's tree row is [data-tree-terminal-row]; [data-agent-row] is an agent's
+        const chosen = await floatMiniWait(h, `!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
         await floatMiniWait(h, `!!document.querySelector("[data-agent-header-more]")`, 1500);
         // a plain terminal's pane head holds only its tabs, with no "…" menu: the Float binding (Shift+F, nav mode, so out of
         // the xterm) does what the menu's row does
@@ -45118,7 +45124,11 @@ const floatMini = {
             detail: JSON.stringify({ chosen, floated, before }),
         });
 
-        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
+        // the bar's own Fold button is a Mac's (data-float-minimize); elsewhere the window controls' − folds, labelled
+        // "Fold into <pet>" while window:minimize is Sprout
+        await h.ev(
+            `document.querySelector('[data-float-minimize], [data-float-bar] button[aria-label^="Fold into"]')?.click()`
+        );
         const folded = await floatMiniWait(h, `!!document.querySelector("[data-sprout-mini]")`);
         await h.ev("new Promise((r) => setTimeout(r, 800))");
         const rest = await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
@@ -45130,13 +45140,13 @@ const floatMini = {
             .filter(([, bg]) => bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")`);
         await h.shot("cdp-shots/float-mini-rest.png");
         steps.push({
-            step: "2. Minimize folds the window into Sprout's 320x264 box, see-through around it",
-            ok: folded && rest.w <= 320 && rest.h <= 264 && barGone && painted.length === 0,
+            step: `2. Minimize folds the window into Sprout's ${MINI_REST.w}x${MINI_REST.h} box, see-through around it`,
+            ok: folded && rest.w <= MINI_REST.w && rest.h <= MINI_REST.h && barGone && painted.length === 0,
             detail: JSON.stringify({ folded, rest, barGone, painted }),
         });
 
         await h.ev(MINI_OPEN_CHAT);
-        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 264`);
+        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > ${MINI_REST.h}`);
         await h.ev("new Promise((r) => setTimeout(r, 600))");
         await h.shot("cdp-shots/float-mini-chat.png");
         steps.push({
@@ -45825,9 +45835,6 @@ const floatLedgeTabs = {
 // from Sprout in all three; the terminal's PTY size never moves across a fold (the shell is hidden before the window
 // shrinks). docs/superpowers/specs/2026-10-10-jarvis-modes-design.md. Windows only: WKWebView answers no CDP.
 const JARVIS_MODES_PROJECT = "verify-jarvis-modes";
-// the folded window's rest box: MINI_REST_SIZE in floatwindow.ts, 320x336 since cf5e94b19 (the folded card holds the
-// auto fold off) grew it from 264 tall
-const JARVIS_MODES_REST = { w: 320, h: 336 };
 
 const jarvisModes = {
     name: "jarvis-modes",
@@ -45885,17 +45892,17 @@ const jarvisModes = {
         const barHidden = await h.ev(`!${shown("[data-app-bar]")}`);
         await h.shot("cdp-shots/jarvis-modes-folded-full.png");
         steps.push({
-            step: `2. the app bar's Sprout button folds Full into Sprout's ${JARVIS_MODES_REST.w}x${JARVIS_MODES_REST.h} box`,
-            ok: folded && barHidden && rest.w <= JARVIS_MODES_REST.w && rest.h <= JARVIS_MODES_REST.h,
+            step: `2. the app bar's Sprout button folds Full into Sprout's ${MINI_REST.w}x${MINI_REST.h} box`,
+            ok: folded && barHidden && rest.w <= MINI_REST.w && rest.h <= MINI_REST.h,
             detail: JSON.stringify({ folded, barHidden, rest }),
         });
 
         // 3. the chat opens from the folded Sprout's hover card, and one click on Sprout holds the card
         await h.ev(MINI_OPEN_CHAT);
-        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > ${JARVIS_MODES_REST.h}`);
+        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > ${MINI_REST.h}`);
         await h.shot("cdp-shots/jarvis-modes-folded-chat.png");
         await h.ev(MINI_CLOSE_CHAT);
-        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= ${JARVIS_MODES_REST.h}`);
+        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= ${MINI_REST.h}`);
         steps.push({ step: "3. the folded Sprout's hover card opens the chat", ok: foldedChat, detail: "" });
         await h.ev(MINI_SINGLE_CLICK);
         const clickCard = await wait(

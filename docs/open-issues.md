@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Float keeps its size on a Mac: float a terminal, leave Float, float again a few times, then fold into
+  Sprout from Float and restore → the Float window is the same size each time, and Full (not maximized) comes back at
+  the size it left. The float's frames now read the window's inner size (`floatstore.ts` `shadowedFrameOf`), taken on
+  macOS to equal its outer size for this borderless window; on Windows `float-mini` and `jarvis-modes` held the saved
+  rect at one size over five runs (2026-11-03), where it grew 16×9 px a float. An installed app's saved rect
+  (`arc.float.rect`) keeps the size it grew to until you resize the Float window. "fix(float): the float window keeps
+  its size; Sprout re-measures its ledge on Float".
 - [ ] (arcterm) Council report under a cover, in the real app (WebKit; the run checked only headless Chrome): open a
   Done council → a cover with the question, the answer and the glance box on the right, Report | Discussion tabs that
   stay at the top when you scroll, the ideas as cards with one open at a time and its detail under the row; click
@@ -61,14 +68,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `4 experts answer · ≈ 4 calls · ~80k tokens` on the right of one row under the box; scroll up, press Top → Back and
   Latest show side by side in the channel's bottom right, Back's label one word. Open a thread → in the narrow panel the
   cost line wraps under the switch rather than clipping. The commit that adds this line.
-- [ ] (arcterm) Pet stay pin in the folded Sprout window: float a terminal (Shift+F out of the terminal), Minimize into
-  Sprout, open the hover card's chat → the peek header shows the pin before Terminal; click it → the Stay menu (1 hour,
-  4 hours, until I turn it off, Roam again) opens fully inside the window and its rows take clicks; pick Stay 1 hour →
-  the menu closes and the pin is lit; open it and press Escape → the menu closes and the peek stays. A click outside
-  the menu falls through to the desktop and leaves it open there (its backdrop has no `data-mini-hit`): the known gap,
-  so close it with Escape or a pick. Not run by `float-mini` step 4:
-  the Final's dev window never resizes, so the scenario stops at Minimize. `petpeek.tsx`, "feat(pet): the pin and its
-  stay menu in the peek header".
+- [ ] (arcterm) Pet stay pin in the folded Sprout window, with a real mouse: float a terminal (Shift+F out of the
+  terminal), fold into Sprout, open the hover card's chat, click the pin → the Stay menu's rows take a real click (the
+  folded window's click-through is the OS's, which a CDP click never goes through); pick Stay 1 hour → the menu closes
+  and the pin is lit. A click outside the menu falls through to the desktop and leaves it open there (its backdrop has
+  no `data-mini-hit`): the known gap, so close it with Escape or a pick. `float-mini` step 4 covers the rest on Windows
+  (the pin before Terminal, the menu inside the window and a `data-mini-hit`, Escape keeps the peek; passed
+  2026-11-03). `petpeek.tsx`, "feat(pet): the pin and its stay menu in the peek header".
 - [ ] (arcterm) The council composer sits in the message column: open a council's Discussion on a wide window → the
   message box's left and right edges line up with the messages' 860px column (with and without a scrollbar), and
   sending a message (in the channel and in a thread) makes your bubble rise in from below; reopening the council or
@@ -1479,9 +1485,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
-| (arcterm) Sprout can rest half out of the Float ledge: in about 5 of 11 runs of `jarvis-modes` step 5 (Windows dev app, 2026-11-02) the sprite stood 26 px above its stand line, its top ~25 px over the ledge, for 6 s and more (sprite 645–693 against ledge 670–721); a synthetic `resize` put it right (671–719). A resting walker stops ticking (`petwalk.ts` `nextTick`, `delayMs` null), so only an input like `resize` re-measures the ledge (`petview.tsx` ~647): Float entry seems to measure it mid-resize and nothing measures again. Re-measure when the ledge box moves (a ResizeObserver, or once the window settles after Float entry). Breaks spec 2026-10-10-jarvis-modes "the ledge holds the whole sprite" | bug | S | `frontend/app/view/jarvis/petview.tsx`, `petwalk.ts`; `jarvis-modes` step 5 detail carries the geometry |
-| (arcterm) The float window may grow 16×9 px per float cycle: across repeated `jarvis-modes` runs on the dev app (2026-11-02) it went from 1088×667 to 1248×757. Other float scenarios ran on the same app meanwhile, so unconfirmed: float and unfloat a few times by hand and compare the saved rect | bug | S | `frontend/app/cockpit/floatstore.ts` / `floatwindow.ts` (the float rect save and restore) |
-| (arcterm) `float-mini` is stale on Windows: it asserts the folded box `h <= 264` (`MINI_REST_SIZE` is 320×336 since cf5e94b19), reads `window.innerHeight` under the pinned 1600×950 viewport (clear it with `Emulation.clearDeviceMetricsOverride` as `jarvis-modes` now does), and clicks only `[data-float-minimize]`, which renders on a Mac only (Windows folds from the bar's "Fold into <pet>"). Port it as `jarvis-modes` was; the Pet stay pin hand check above waits on it | bug | S | `scripts/cdp/scenarios.mjs` ~45080 |
 | (arcterm) Right-click on an Agent tree row opens the macOS page menu (Look Up, Translate, Search with Google, Copy…) instead of the row's own menu, on a Mac in the installed app (0.15.20, 2026-11-02 21:49): seen on the lead row of run f321b6cf ("Council report"), the menu quoting text selected in the `portfolio` service's page (:8386, "y Sổ Tích luỹ kỳ hạn 12 …"). The cockpit prevents the page menu everywhere outside inputs (`cockpit-root.tsx`), so the click reached a pinned app's cross-origin frame (`AppFrames`, `apppane.tsx`), not the row; nothing was logged. It comes and goes: minutes later the same row opened its own menu (Rename … Copy run id, Close agent). A new agent had started 5 s before the failing click (block 54e980b7, 21:49:54 in `waveapp.log`), a lead, not a cause. Not reproduced: a WKWebView harness on the same Mac sent the right-click to the row with the frame hidden over it (`visibility:hidden`, as an app out of sight is), with the frame shown under a row painted over it, and after a text selection in the frame then hiding it. Next: does it repeat, which way the page was opened (rail or tree row), and does stopping the service bring the row's menu back | bug | S | screenshot 2026-11-02 21:49:59; `frontend/app/view/agents/apppane.tsx` `AppFrame`, `frontend/app/cockpit/cockpit-root.tsx` contextmenu listener |
 | (arcterm) `pkg/council` `TestRepliesPostedAsARunEndsAreNeverLost` is flaky: it failed, then passed on a rerun, in the Verify after a merge of run 74b368ce (its t-10), which left that run's Final unverified. The failure text was not kept, and it did not come back on Windows 2026-11-03: 30 runs alone, 90 in six processes at once with `-cpu=1`, and the whole package three times side by side all passed. Next time it fails, keep the `--- FAIL` lines: they say whether it was `h.wait`'s 30 s timeout (a loaded Verify) or a reply left open | bug | S | run 74b368ce report; `pkg/council/runner_test.go` |
 | (arcterm) A dev app can fail to start on a build race: run ab534f5b's Final exited with code 201 on `go: github.com/wavetermdev/waveterm/cmd/wsh/cmd/claude-skim-mod/types: no matching versions for query "latest"`, a `go mod tidy` that ran while `sync:claudemod` was deleting and recopying `cmd/wsh/cmd/claude-skim-mod` (its `types/` holds no Go file); the run's change touches neither. The Final was left unverified | bug | S | run ab534f5b final report; `Taskfile.yml` `sync:claudemod` |

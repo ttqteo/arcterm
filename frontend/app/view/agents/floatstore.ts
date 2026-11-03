@@ -167,6 +167,16 @@ async function frameOf(win: Window): Promise<WinRect> {
     return { x: pos.x, y: pos.y, width: size.width, height: size.height };
 }
 
+// The frame as setPosition and setSize take it back while the shadow is on: the outer position and the inner size. On
+// Windows a borderless window with its shadow on has an outer frame 16x9 px bigger than its content (the invisible
+// resize borders), and setSize sets the content's size, so the float's frames read with outerSize grew the window by
+// that much on every float. The fold keeps frameOf: it sets its frames with the shadow off, where the two sizes are
+// one, and turning the shadow back on keeps the outer frame. On macOS the two sizes are the same for this window.
+async function shadowedFrameOf(win: Window): Promise<WinRect> {
+    const [pos, size] = await Promise.all([win.outerPosition(), win.innerSize()]);
+    return { x: pos.x, y: pos.y, width: size.width, height: size.height };
+}
+
 function screenOf(m: Monitor): Screen {
     const { position, size } = m.workArea;
     return { area: { x: position.x, y: position.y, width: size.width, height: size.height }, scale: m.scaleFactor };
@@ -235,7 +245,7 @@ async function floatTheWindow(model: AgentsViewModel): Promise<void> {
         await leaveNativeFullscreen(win);
         const maximized = await win.isMaximized();
         const restore: FloatRestore = {
-            rect: await frameOf(win),
+            rect: await shadowedFrameOf(win),
             maximized,
             terminalFullscreen: globalStore.get(terminalFullscreenAtom),
         };
@@ -302,7 +312,7 @@ export async function exitFloat(restoreFullscreen: boolean): Promise<void> {
 async function unfloatTheWindow(restoreFullscreen: boolean): Promise<void> {
     const win = getCurrentWindow();
     const restore = parseRestore(readJson(session, RESTORE_KEY));
-    writeJson(local, RECT_KEY, await frameOf(win).catch(() => null));
+    writeJson(local, RECT_KEY, await shadowedFrameOf(win).catch(() => null));
     globalStore.set(floatPinnedAtom, false);
     globalStore.set(floatModeAtom, false);
     if (restoreFullscreen && restore != null) {

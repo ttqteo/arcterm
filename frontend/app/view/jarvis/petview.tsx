@@ -126,7 +126,9 @@ const ATTENTION_ASK = "ask";
 
 // After a surface switch the new surface's ledge can arrive late (a surface mounts after the switch, and its
 // bar's height settles as its content loads), and a resting creature would not look again for up to half a minute. So a switch
-// measures on the next frame and again at each of these.
+// measures on the next frame and again at each of these. Entering or leaving Float, or the fold, counts as a switch: the
+// float bar mounts after the window has shrunk, so the window's last resize measured the Full layout, and a resting
+// Sprout stood above the ledge it was drawn on until something else moved it.
 const SWITCH_SETTLE_MS = [150, 500, 1500, 3000];
 
 function count(items: AttentionItem[], kind: string): number {
@@ -416,7 +418,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                     peekOpen={peekOpen}
                     unread={unread}
                     reduce={reduce}
-                    surface={surface}
+                    layout={`${surface}${floating ? " float" : ""}${folded ? " folded" : ""}`}
                     setAnchor={setAnchor}
                     onCorner={setCorner}
                     openPeek={openPeek}
@@ -451,7 +453,7 @@ function PetSprite({
     peekOpen,
     unread,
     reduce,
-    surface,
+    layout,
     setAnchor,
     onCorner,
     openPeek,
@@ -465,7 +467,8 @@ function PetSprite({
     peekOpen: boolean;
     unread: boolean;
     reduce: boolean;
-    surface: string;
+    // the surface, and Float or the fold: a change of either brings a new ledge
+    layout: string;
     setAnchor: (el: HTMLDivElement | null) => void;
     onCorner: (corner: PetCorner) => void;
     openPeek: () => void;
@@ -660,7 +663,7 @@ function PetSprite({
             cancelAnimationFrame(raf);
             timers.forEach(clearTimeout);
         };
-    }, [run, surface]);
+    }, [run, layout]);
 
     const force = useCallback(
         (o: PetForce | null) => {
