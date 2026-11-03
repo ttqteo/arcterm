@@ -1266,6 +1266,80 @@ func TestCouncilReplyValidatesAndAnswers(t *testing.T) {
 	}
 }
 
+// TestCouncilReplyCommandCarriesToolsAuto: the composer's Auto switch (toolsauto) reaches the runner's ReplyWith with
+// ToolsAuto set, Tools holding its guess; a reply sent without it reaches it with ToolsAuto off. The runner stores
+// ToolsAuto nowhere until the router reads it, so the test reads what the command hands ReplyWith through its seam.
+func TestCouncilReplyCommandCarriesToolsAuto(t *testing.T) {
+	var (
+		got []council.ReplyIn
+		ids []string
+	)
+	prev := councilReplyWith
+	councilReplyWith = func(r *council.Runner, id string, in council.ReplyIn) (*council.Council, error) {
+		ids = append(ids, id)
+		got = append(got, in)
+		return nil, nil
+	}
+	t.Cleanup(func() { councilReplyWith = prev })
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{
+		Id: "c1", ProposalId: "P1", ParentId: "r2", Text: "what about Mac?", Tools: true, ToolsAuto: true,
+	}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: "c2", Text: "and Linux?", Tools: true}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ReplyWith ran %d times, want 2", len(got))
+	}
+	if want := (council.ReplyIn{ProposalId: "P1", ParentId: "r2", Text: "what about Mac?", Tools: true, ToolsAuto: true}); ids[0] != "c1" || !reflect.DeepEqual(got[0], want) {
+		t.Errorf("auto reply reached ReplyWith(%q, %+v), want c1 and %+v", ids[0], got[0], want)
+	}
+	if want := (council.ReplyIn{Text: "and Linux?", Tools: true}); ids[1] != "c2" || !reflect.DeepEqual(got[1], want) {
+		t.Errorf("plain reply reached ReplyWith(%q, %+v), want c2 and %+v", ids[1], got[1], want)
+	}
+}
+
+// TestCouncilAskTooCommandReturnsRefusal: Ask <seat> too on a reply the router never took up (no Routed) is refused with
+// an error and changes nothing. A reply on a proposal is never routed, so the same input is refused whatever the router
+// does to a whole-council message.
+func TestCouncilAskTooCommandReturnsRefusal(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+	done := startDoneCouncil(t, ws)
+
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, ProposalId: "P1", Text: "why does it break?"}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	after := waitCouncil(t, done.Id)
+	mine := findCouncilReply(after, func(r council.CouncilReply) bool { return r.Author == council.YouId })
+	if mine == nil || mine.Routed != nil {
+		t.Fatalf("the person's reply = %+v, want one with no Routed", mine)
+	}
+	var experts []string
+	for _, e := range after.Experts {
+		if !e.Coordinator {
+			experts = append(experts, e.Id)
+		}
+	}
+	if len(experts) < 2 {
+		t.Fatalf("panel of %v is too small to ask a seat too", experts)
+	}
+
+	err := ws.CouncilAskTooCommand(ctx, wshrpc.CommandCouncilAskTooData{Id: done.Id, ReplyId: mine.Id, ExpertId: experts[1]})
+	if err == nil {
+		t.Fatal("Ask seat too on a reply the router never took up should be refused")
+	}
+	if got, _ := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id}); got == nil || len(got.Replies) != len(after.Replies) || got.State != council.StateDone {
+		t.Errorf("a refused Ask seat too changed the council: %+v", got)
+	}
+}
+
 // deliveryLog keeps what the delivery seam is handed, safe to read while a council's run writes it.
 type deliveryLog struct {
 	mu  sync.Mutex

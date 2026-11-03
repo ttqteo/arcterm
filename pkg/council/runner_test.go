@@ -1574,6 +1574,40 @@ func withChatSeats(c *Council, seats ...CouncilExpert) *Council {
 	return c
 }
 
+// TestRouteCandidates: the seats the router may pick are the panel's, in panel order, less the coordinator and any seat
+// whose call failed.
+func TestRouteCandidates(t *testing.T) {
+	const scoutTab = "82faafca-1111-4222-8333-444455556666"
+	cases := []struct {
+		name   string
+		failed map[string]CouncilFailure
+		chats  bool
+		want   []string
+	}{
+		{"every panel seat, never the coordinator", nil, false, []string{"ux", "ram", "newuser", "skeptic"}},
+		{"a seat with a failed call is left out", map[string]CouncilFailure{"ram": {Round: 1, Error: "boom"}}, false, []string{"ux", "newuser", "skeptic"}},
+		{"the coordinator's failure changes nothing", map[string]CouncilFailure{"lead": {Round: 3, Error: "boom"}}, false, []string{"ux", "ram", "newuser", "skeptic"}},
+		{"a chat sits after the role seats, in panel order", nil, true, []string{"ux", "ram", "newuser", "skeptic", "agent-" + scoutTab}},
+		{"a chat that failed is left out too", map[string]CouncilFailure{"agent-" + scoutTab: {Round: 2, Error: "gone"}}, true, []string{"ux", "ram", "newuser", "skeptic"}},
+		{"every seat failed", map[string]CouncilFailure{
+			"ux": {Error: "x"}, "ram": {Error: "x"}, "newuser": {Error: "x"}, "skeptic": {Error: "x"},
+		}, false, []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := testCouncil("rc")
+			if tc.chats {
+				withChatSeats(c, chatSeat(scoutTab, "Scout"))
+			}
+			c.Failed = tc.failed
+			got := idsOf(routeCandidates(c))
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("routeCandidates = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReplyRefusesWhatIsNotThere(t *testing.T) {
 	h := newHarness(t)
 	h.save(fixtureCouncil("c1", StateAwaiting, 2))

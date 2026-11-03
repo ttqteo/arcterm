@@ -216,7 +216,23 @@ func (ws *WshServer) CouncilReplyCommand(ctx context.Context, data wshrpc.Comman
 	if err != nil {
 		return err
 	}
-	_, err = councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools, seats, data.Attachments...)
+	_, err = councilReplyWith(councilRunner, data.Id, council.ReplyIn{
+		ProposalId: data.ProposalId, ParentId: data.ParentId, Text: data.Text, Tools: data.Tools, ToolsAuto: data.ToolsAuto,
+		Seats: seats, Attachments: data.Attachments,
+	})
+	return err
+}
+
+// councilReplyWith is the call CouncilReplyCommand makes on the runner. A test swaps it to read what the command hands
+// ReplyWith, ToolsAuto among it, which the runner stores nowhere a test could read it back.
+var councilReplyWith = func(r *council.Runner, id string, in council.ReplyIn) (*council.Council, error) {
+	return r.ReplyWith(id, in)
+}
+
+// CouncilAskTooCommand is Ask <seat> too: it reopens a routed whole-council reply for one more seat. The runner refuses
+// a reply that is not the person's, not routed, still pending, or a seat that is not on the panel or already in To.
+func (ws *WshServer) CouncilAskTooCommand(ctx context.Context, data wshrpc.CommandCouncilAskTooData) error {
+	_, err := councilRunner.AskToo(data.Id, data.ReplyId, data.ExpertId)
 	return err
 }
 

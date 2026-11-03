@@ -198,6 +198,18 @@ func panelOf(c *Council) []CouncilExpert {
 	return out
 }
 
+// routeCandidates are the seats the router may pick for a whole-council message: the panel's, in panel order, less any
+// seat whose call failed (it cannot answer), and so never the coordinator.
+func routeCandidates(c *Council) []CouncilExpert {
+	out := make([]CouncilExpert, 0, len(c.Experts))
+	for _, e := range panelOf(c) {
+		if _, failed := c.Failed[e.Id]; !failed {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func idsOf(experts []CouncilExpert) []string {
 	out := make([]string, 0, len(experts))
 	for _, e := range experts {
@@ -1734,7 +1746,10 @@ func seatBeforeCoordinator(c *Council, seats []CouncilExpert) {
 // the seats this reply just seated). A reply to a reply takes the proposal of its parent; it is an error to name a
 // proposal or a parent that is not there. A reply that attaches files or names one with an @ is stored with tools on,
 // whatever tools says: the seat that answers it has to be able to read them.
-func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool, attachments []string, joined []string, now int64) error {
+//
+// toolsAuto says Let them read files was on Auto and the message locked nothing on (no image, no @file): tools then holds
+// the composer's guess, and the router will decide it. Nothing reads it yet.
+func appendPersonReply(c *Council, proposalId, parentId, text string, tools, toolsAuto bool, attachments []string, joined []string, now int64) error {
 	var parent *CouncilReply
 	if parentId != "" {
 		if parent = findReply(c, parentId); parent == nil {
@@ -1773,24 +1788,62 @@ func followRound(c *Council) int {
 	return max(FirstFollowRound(c), last+1)
 }
 
-// Reply posts the person's reply on a proposal (proposalId), under another reply (parentId), or, with neither, to the
-// whole council. It goes to the experts in its branch unless the text @-mentions some. Posted before round 2, or while
-// the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at its
-// next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
+// ReplyIn is what the person's reply carries into ReplyWith. Tools is Let them read files; ToolsAuto says the composer's
+// switch was on Auto and no image or @file locked it on, so Tools holds only the composer's guess (the router decides it
+// for a message it takes up). A person's On or Off is ToolsAuto false. Seats are live chats the reply brings into the
+// council (nil for a plain reply); Attachments are the absolute paths of the files the person attached.
+type ReplyIn struct {
+	ProposalId, ParentId, Text string
+	Tools, ToolsAuto           bool
+	Seats                      []CouncilExpert
+	Attachments                []string
+}
+
+// Reply is ReplyWith for a reply whose Let them read files is the person's own choice, On or Off, never Auto: the router
+// never overrides it.
+func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert, attachments ...string) (*Council, error) {
+	return r.ReplyWith(id, ReplyIn{
+		ProposalId: proposalId, ParentId: parentId, Text: text, Tools: tools, ToolsAuto: false, Seats: seats, Attachments: attachments,
+	})
+}
+
+// ReplyWith posts the person's reply on a proposal (in.ProposalId), under another reply (in.ParentId), or, with neither,
+// to the whole council. It goes to the experts in its branch unless the text @-mentions some. Posted before round 2, or
+// while the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at
+// its next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
 // done, stopped or failed, it starts a follow-up round at once, with tools when the person turned Let them read files
-// on, and the council returns to the state it was in. seats are live chats the reply brings into the council (nil for a
-// plain reply): in the same save that posts it, the ones not seated yet take their places after the seats there and
+// on, and the council returns to the state it was in. in.Seats are live chats the reply brings into the council (nil for
+// a plain reply): in the same save that posts it, the ones not seated yet take their places after the seats there and
 // before the coordinator, and each is a target of the reply even when its text does not @ it. A council that stored no
 // draft mode keeps the one its seats gave before the chat joined (freezeDraftMode). A chat seated while round 1 runs sits
 // that round out, since the round read its panel when it began, and takes part from round 2; a reply that fails seats
-// nobody. attachments are the absolute paths of the files the person attached (the caller has checked them): the reply
+// nobody. in.Attachments are the absolute paths of the files the person attached (the caller has checked them): the reply
 // stores them, and one with any, or with a file named by an @ in its text, is stored and answered with tools on whatever
-// tools says, in a round or a follow-up.
-func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert, attachments ...string) (*Council, error) {
-	text = strings.TrimSpace(text)
+// in.Tools says, in a round or a follow-up.
+func (r *Runner) ReplyWith(id string, in ReplyIn) (*Council, error) {
+	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		return nil, errors.New("a reply needs some text")
 	}
+	return r.post(id, func(c *Council) error {
+		joined, err := joiningSeats(c, in.Seats)
+		if err != nil {
+			return err
+		}
+		if len(joined) > 0 {
+			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
+			seatBeforeCoordinator(c, joined)
+		}
+		return appendPersonReply(c, in.ProposalId, in.ParentId, text, in.Tools, in.ToolsAuto, in.Attachments, idsOf(joined), r.now())
+	})
+}
+
+// post saves change to council id as one save and has the council answer it. A council that is done, stopped or failed
+// with no run on starts a follow-up at once (a follow-up round, the council returning to the state it was in); any other
+// state saves the change alone, and the run that is on, or the next round, takes it up. It refuses a council that has not
+// started, and a runner with no caller. change runs inside the save, so an error from it saves nothing and starts
+// nothing. ReplyWith posts the person's message with it, and Ask <seat> too (AskToo) reopens one.
+func (r *Runner) post(id string, change func(c *Council) error) (*Council, error) {
 	r.mu.Lock()
 	cur, err := Load(id)
 	if err == nil && (cur.State == StateNotRun || cur.State == StateQueued) {
@@ -1803,17 +1856,6 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 		r.mu.Unlock()
 		return nil, err
 	}
-	add := func(c *Council) error {
-		joined, err := joiningSeats(c, seats)
-		if err != nil {
-			return err
-		}
-		if len(joined) > 0 {
-			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
-			seatBeforeCoordinator(c, joined)
-		}
-		return appendPersonReply(c, proposalId, parentId, text, tools, attachments, idsOf(joined), r.now())
-	}
 	var (
 		saved *Council
 		start func()
@@ -1824,11 +1866,11 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 			return Update(id, func(c *Council) error {
 				c.State, c.Round, c.Error = StateRunning, followRound(c), ""
 				r.beginRun(c)
-				return add(c)
+				return change(c)
 			})
 		}, r.followupWork(prev))
 	} else {
-		saved, err = Update(id, add)
+		saved, err = Update(id, change)
 	}
 	r.mu.Unlock()
 	if err != nil {

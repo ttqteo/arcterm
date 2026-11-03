@@ -187,6 +187,20 @@ type CouncilReply struct {
 	// Revision is the change to its own idea a held reply carries: it takes effect when the reply is sent, and a dropped
 	// reply cancels it. Nil on every reply that is sent or never held.
 	Revision *CouncilRevision `json:"revision,omitempty"`
+	// Routed is set on a whole-council message of the person's that the router takes up (no proposal, no parent, no
+	// seat @-mentioned, no @all): To then holds the seats it chose, or stays empty while Pending. Nil on every other reply.
+	Routed *CouncilRouted `json:"routed,omitempty"`
+}
+
+// CouncilRouted records that a reply's To came from the router, for the router line and the Ask <seat> too chips under
+// the answer. To stays the one source of who answers; Chose is what the router picked, kept apart from To so that Ask
+// <seat> too can add a seat to To without the line forgetting whom the router chose.
+type CouncilRouted struct {
+	Pending   bool     `json:"pending,omitempty"`   // the router has not answered yet: To is empty meanwhile
+	Chose     []string `json:"chose,omitempty"`     // the seats the router (or its fallback) picked, in its order
+	Reason    string   `json:"reason,omitempty"`    // the router's one sentence; on Failed, why it failed
+	Failed    bool     `json:"failed,omitempty"`    // the router failed: Chose is the fallback seat
+	AutoTools bool     `json:"autotools,omitempty"` // Let them read files was Auto (no image, no @file): the router sets Tools
 }
 
 // CouncilRevision is what a seat's revision of its own idea changes: a withdrawal, or a new title and argument (an
