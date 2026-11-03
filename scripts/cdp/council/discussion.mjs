@@ -2,21 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // council-discussion (docs/superpowers/plans/2026-10-21-council.md, Task 14; the plain words and the picks:
-// 2026-10-22-council-v1-ui.md, Task 3; Brainstorm and the queue: 2026-10-22-council-v1-room.md, Task 4; the channel with
-// threads and the live agents: 2026-10-29-council-live-agents.md, Task 8): the Discussion as a chat while the seats reply
-// (the channel with its seat chips, round dividers, ideas with reply chips, agree reactions, typing rows, a thread panel
-// and a composer, Summarize off while they do), on a council whose experts gave their picks, as a Brainstorm, queued (a
-// line that names the council it waits for), while they first propose (the experts' cards and the call bar), at the pause
-// (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an expert and on the
-// coordinator), not run (Start council), a done council as a channel (its Top, Latest and Back) with a
-// follow-up in a thread, its sources (a link per cited file, the Sources panel a click opens, Escape, back to a thread,
-// a file not in the project), and the `room`
-// fixtures: two live agents seated beside two experts (the seat chips with their context, a skipped turn, a failed seat's
-// Retry, drafts waiting for the person with Send to the others, Edit and Drop, a thread with its stance pills and its
-// held reply, j / k / Enter / Esc, the composer and its @, a click on an agent's chip or on Open its terminal), and the
-// images and @files of the message boxes (2026-11-02-council-attachments.md, Task 4: paste, drop, remove, the draft kept,
-// the three-group @ list, the locked Let them read files switch, the send's `attachments` and `tools`, and the sent
-// bubble's thumbnail and file chip). Each phase seeds its own fixture council and takes its own shot.
+// 2026-10-22-council-v1-ui.md, Task 3; Brainstorm and the queue: 2026-10-22-council-v1-room.md, Task 4; the live agents:
+// 2026-10-29-council-live-agents.md, Task 8; the list of ideas: 2026-11-03-council-ux.md, Task 7): the Discussion as a
+// list of ideas while the seats reply (the seat chips, a Chat row, a row per idea with its stance counts and reply count,
+// a thread panel with its stance pills, the seat writing in it and a reply box, a composer, Summarize off while they do),
+// the list of a done council (the Chat row's `N new`, New on the ideas since the last opening, a thread and the Chat opened
+// by a click, Pin then Pinned), the Seats chip narrowing the rows to one seat, a council whose experts gave their picks,
+// a Brainstorm, queued (a line that names the council it waits for), while they first propose (the experts' cards and the
+// call bar), at the pause (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an
+// expert and on the coordinator), not run (Start council), a done council with a follow-up in a thread, its sources (a
+// link per cited file in a thread, the Sources panel a click opens, back to the thread, a file not in the project), and
+// the `room` fixtures: two live agents seated beside two experts (the seat chips with their context, a failed seat's
+// Retry over the list, a Draft on a row whose reply waits for the person, held ideas with Send to the others, Edit and
+// Drop in their thread, a thread with its stance pills and its held reply, j / k / Enter / Esc over the rows, the
+// composer and its @, a click on an agent's chip), and the images and @files of the message boxes
+// (2026-11-02-council-attachments.md, Task 4: paste, drop, remove, the draft kept, the three-group @ list, the locked Let
+// them read files switch, the send's `attachments` and `tools`, and the sent message's thumbnail and file chip, in the
+// Chat). Each phase seeds its own fixture council and takes its own shot.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). Nothing here
 // spends a token or starts an agent: Summarize (on the stopped council), Continue, Retry, Start council, a draft's
@@ -82,6 +84,12 @@ const press = async (h, key, code, keyCode) => {
 const pressJ = (h) => press(h, "j", "KeyJ", 74);
 const pressK = (h) => press(h, "k", "KeyK", 75);
 const pressEnter = (h) => press(h, "Enter", "Enter", 13);
+// Enter with the character a real key sends: the row the cursor is on holds the focus, and a focused button owns Enter
+const pressEnterOnRow = async (h) => {
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await new Promise((r) => setTimeout(r, 200));
+};
 const pressEscape = (h) => press(h, "Escape", "Escape", 27);
 
 // waits until the element's text equals `want` (a string) or matches it (a RegExp), and answers the text it ended on
@@ -121,19 +129,71 @@ function readableCounts(name) {
     return out;
 }
 
-// ---- the chat's parts, as they are drawn: its hooks, never its words ----
+// each seat's latest stance on each sent idea of a fixture, counted as the list's rows count them: Agrees, Has doubts,
+// Is against it (the author's own replies, the person's and a held one take none)
+function stanceCounts(fx) {
+    const latest = {};
+    const author = Object.fromEntries((fx.proposals ?? []).map((p) => [p.id, p.author]));
+    for (const r of [...(fx.replies ?? [])].sort((a, b) => a.ts - b.ts)) {
+        if (r.draft || r.author === "you" || r.author === author[r.proposalid]) continue;
+        if (!["accept", "challenge", "oppose"].includes(r.stance)) continue;
+        (latest[r.proposalid] ??= {})[r.author] = r.stance;
+    }
+    const out = {};
+    for (const [id, by] of Object.entries(latest)) {
+        const s = Object.values(by);
+        out[id] = {
+            agrees: s.filter((x) => x === "accept").length,
+            doubts: s.filter((x) => x === "challenge").length,
+            against: s.filter((x) => x === "oppose").length,
+        };
+    }
+    return out;
+}
 
-const channelKinds = (h) =>
-    h.ev(`[...document.querySelectorAll("[data-council-channel] [data-council-item]")].map((e) => e.getAttribute("data-item-kind"))`);
+// ---- the list's parts, as they are drawn: its hooks, never its words ----
 
-const dividers = (h) =>
-    h.ev(`[...document.querySelectorAll("[data-council-divider]")].map((e) => (e.textContent ?? "")${NORM})`);
+const LIST = "[data-council-list]";
+const CHAT_ROW = `${LIST} [data-council-row="chat"]`;
+
+// the old channel's parts: none is drawn any more
+const oldParts = (h) =>
+    count(h, `${LIST} [data-council-item], [data-council-divider], [data-council-skip], ${LIST} [data-council-typing], [data-council-jump]`);
 
 const ideaIds = (h) =>
-    h.ev(`[...document.querySelectorAll("[data-council-idea]")].map((e) => e.getAttribute("data-council-idea"))`);
+    h.ev(`[...document.querySelectorAll(${sel(`${LIST} [data-council-idea]`)})].map((e) => e.getAttribute("data-council-idea"))`);
 
-const typingLines = (h) =>
-    h.ev(`[...document.querySelectorAll("[data-council-typing]")].map((e) => (e.textContent ?? "")${NORM})`);
+// one idea row as drawn: its number, title, New, Draft, the three stance counts and its replies
+const rowOf = (h, id) =>
+    h.ev(`(() => {
+        const r = document.querySelector(${sel(`${LIST} [data-council-idea="${id}"]`)});
+        if (!r) return null;
+        const n = (k) => Number(r.querySelector('[data-council-stance="' + k + '"]')?.getAttribute("data-count") ?? NaN);
+        return {
+            n: Number((r.firstElementChild?.textContent ?? "").trim()),
+            title: (r.querySelector("[data-council-row-title]")?.textContent ?? "")${NORM},
+            isNew: !!r.querySelector("[data-council-row-new]"),
+            draft: !!r.querySelector("[data-council-row-draft]"),
+            agrees: n("agrees"),
+            doubts: n("doubts"),
+            against: n("against"),
+            replies: Number(r.getAttribute("data-replies")),
+            repliesText: (r.querySelector("[data-council-row-replies]")?.textContent ?? "")${NORM},
+            height: Math.round(r.getBoundingClientRect().height),
+        };
+    })()`);
+
+const chatRowOf = (h) =>
+    h.ev(`(() => {
+        const r = document.querySelector(${sel(CHAT_ROW)});
+        return r && {
+            fresh: (r.querySelector("[data-council-chat-new]")?.textContent ?? "")${NORM},
+            latest: (r.querySelector("[data-council-chat-latest]")?.textContent ?? "")${NORM},
+            count: (r.querySelector("[data-council-chat-count]")?.textContent ?? "")${NORM},
+            draft: !!r.querySelector("[data-council-row-draft]"),
+            first: r === document.querySelector(${sel(`${LIST} [data-council-row]`)}),
+        };
+    })()`);
 
 // the replies of the open thread: id, the stance pill's word, whether it is the person's, its text
 const threadReplies = (h) =>
@@ -178,7 +238,7 @@ async function seatChips(h) {
     return chips;
 }
 
-const focusedIdea = (h) => h.ev(`document.querySelector('[data-council-idea][data-focused="true"]')?.getAttribute("data-council-idea") ?? null`);
+const focusedIdea = (h) => h.ev(`document.querySelector('[data-council-row][data-focused="true"]')?.getAttribute("data-council-row") ?? null`);
 
 const CHANNEL_COMPOSER = '[data-council-composer="channel"]';
 const THREAD_COMPOSER = '[data-council-composer="thread"]';
@@ -212,51 +272,46 @@ async function round2(h, ctx, rec) {
     const cost = await text(h, "[data-council-cost]");
     rec("round 2: the cost line reads `m:ss · N replies · X.XXM tokens`", /\d+:\d\d · \d+ replies · [\d.]+M tokens/.test(cost), cost);
 
-    const kinds = await channelKinds(h);
-    const goal = await text(h, '[data-item-kind="question"]');
-    const marks = await dividers(h);
-    rec(
-        "round 2: the channel opens with the question (`You asked`), then a divider for each round, `Round 1 · ideas` and `Round 2 · replies`",
-        kinds[0] === "question" &&
-            goal.includes("Which changes to pinned apps on the nav rail are worth making first?") &&
-            goal.includes("asked") &&
-            marks.join("|") === "Round 1 · ideas|Round 2 · replies",
-        { kinds: kinds.slice(0, 3), marks }
-    );
-
-    // every idea is a message with a reply chip, and the withdrawn P6 is one too; a reply on an idea is in its thread
-    // alone, so the channel draws none of them
+    // the list: the Chat row on top (every reply of this fixture is on an idea, so it has none), then every idea, the
+    // withdrawn P6 too, a 40px row each in the order they arrived, with its reply count and its stance counts; no bubble,
+    // round divider, typing row or skipped line, and no proposal id in the text
     const counts = readableCounts("round2");
+    const stances = stanceCounts(loadCouncilFixture("round2"));
+    const chatRow = await chatRowOf(h);
     const ideas = await ideaIds(h);
-    const chipsOf = await h.ev(`[...document.querySelectorAll("[data-council-thread-open]")].map((b) => [b.getAttribute("data-council-thread-open"), b.getAttribute("data-replies")])`);
-    // every reply of this fixture is on an idea
-    const replyPosts = await count(h, "[data-council-channel] [data-council-reply-post]");
+    const rows = {};
+    for (const p of ideas) rows[p] = await rowOf(h, p);
+    const heading = await text(h, `${LIST} [data-council-list-count]`);
+    const old = await oldParts(h);
     rec(
-        "round 2: six ideas in the channel with the seats taking turns, each with a reply chip counting the replies a person reads, and none of those replies in the channel",
-        // UX's first, New user's, RAM's, Skeptic's, then UX's second and Skeptic's second (takeTurns, councilchatmodel.ts)
-        ideas.join(",") === "P1,P4,P3,P5,P2,P6" &&
-            chipsOf.length === 6 &&
-            chipsOf.every(([p, n]) => Number(n) === (counts[p] ?? 0)) &&
-            replyPosts === 0,
-        { ideas, chipsOf, counts, replyPosts }
+        "round 2: the list opens with the Chat row (`No messages yet`), then `6 ideas` and a 40px row per idea in arrival order, each counting the replies a person reads and the seats' latest Agrees / Has doubts / Is against it, with no bubble, divider or typing row and no proposal id in the text",
+        chatRow?.first === true &&
+            chatRow.count === "No messages yet" &&
+            heading === "6 ideas" &&
+            ideas.join(",") === "P1,P2,P4,P3,P5,P6" &&
+            ideas.every(
+                (p, i) =>
+                    rows[p]?.n === i + 1 &&
+                    Math.abs(rows[p].height - 40) <= 1 &&
+                    rows[p].replies === (counts[p] ?? 0) &&
+                    rows[p].agrees === (stances[p]?.agrees ?? 0) &&
+                    rows[p].doubts === (stances[p]?.doubts ?? 0) &&
+                    rows[p].against === (stances[p]?.against ?? 0)
+            ) &&
+            old === 0 &&
+            !/\bP\d+\b/.test(await text(h, LIST)),
+        { chatRow, ideas, rows, counts, stances, heading, old }
     );
 
-    const typing = await typingLines(h);
-    rec(
-        "round 2: a typing row reads `Skeptic is writing…`, and no visible text holds a proposal id",
-        typing.includes("Skeptic is writing…") && !/\bP\d+\b/.test(await text(h, "[data-council-channel]")),
-        typing
-    );
-
-    // a click on the reply chip of P2 opens its thread: the idea on top, its replies with their stance pills
-    await click(h, '[data-council-thread-open="P2"]');
+    // a click on the row of P2 opens its thread: the idea on top, its replies with their stance pills
+    await click(h, `${LIST} [data-council-idea="P2"]`);
     const opened = await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-post="P2"]')`);
     const openAtom = await h.ev(`window.__arcCouncil.openProposal(${sel(id)})`);
     const highlighted = (await attr(h, '[data-council-idea="P2"]', "data-open")) === "true";
     const replies = await threadReplies(h);
     const labels = replies.map((r) => r.label);
     rec(
-        "round 2: the reply chip of P2 opens its thread with the idea highlighted in the channel, a `has doubts` and an `is against it` reply among its five, and Skeptic typing in it",
+        "round 2: a click on P2's row opens its thread with the row marked open, a `has doubts` and an `is against it` reply among its five, and Skeptic typing in it",
         opened &&
             openAtom === "P2" &&
             highlighted &&
@@ -390,7 +445,20 @@ async function header(h, ctx, rec) {
     }
 }
 
-// ---- the seat filter: a chip in the header, the line in the chat ----
+// ---- the seat filter: a chip in the header, the line and the rows in the list ----
+
+// the ideas of a fixture a seat wrote or replied to (a held reply too), in the order they arrived
+function ideasOfSeat(fx, seat) {
+    return [...(fx.proposals ?? [])]
+        .filter((p) => !p.draft || p.draft === "held")
+        .sort((a, b) => a.ts - b.ts)
+        .filter(
+            (p) =>
+                p.author === seat ||
+                (fx.replies ?? []).some((r) => r.proposalid === p.id && r.author === seat && r.draft !== "dropped")
+        )
+        .map((p) => p.id);
+}
 
 async function seatFilter(h, ctx, rec) {
     await openFixture(h, ctx, "round2", { id: `${councilFixtureId("round2")}-filter` });
@@ -411,14 +479,24 @@ async function seatFilter(h, ctx, rec) {
     rec("seat filter: a hover on the seats' stack opens the list of every seat, and the pointer leaving closes it", hovered && left, { box, hovered, left });
 
     const listed = await setSeats(h, true);
-    const chip = `${SEAT_LIST} [data-council-filter='ux']`;
+    const chip = `${SEAT_LIST} [data-council-filter='newuser']`;
     const before = await attr(h, chip, "aria-pressed");
     await click(h, chip);
-    const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
+    const shown = await until(h, `!!document.querySelector("[data-council-only='newuser']")`);
     const line = await text(h, "[data-council-only]");
     const pressed = await attr(h, chip, "aria-pressed");
     const stackOnly = await attr(h, SEATS, "data-only");
+    // the rows narrow to the ideas New user wrote or replied to, and the header counts them
+    const want = ideasOfSeat(loadCouncilFixture("round2"), "newuser");
+    const narrowed = await until(h, `[...document.querySelectorAll(${sel(`${LIST} [data-council-idea]`)})].length === ${want.length}`);
+    const onlyRows = await ideaIds(h);
+    const onlyHeading = await text(h, `${LIST} [data-council-list-count]`);
     await h.shot("cdp-shots/council-discussion-seats.png");
+    rec(
+        "seat filter: with New user picked the list shows only the ideas New user wrote or replied to, and the header counts them",
+        narrowed && want.length > 0 && want.length < 6 && onlyRows.join(",") === want.join(",") && onlyHeading === `${want.length} ideas`,
+        { want, onlyRows, onlyHeading }
+    );
     // the chip's count is the line's ideas and replies added
     const counted = Number(await h.ev(`/, (\\d+) messages/.exec(document.querySelector(${sel(chip)})?.getAttribute("aria-label") ?? "")?.[1] ?? NaN`));
     const nums = (/^Only .+: (\d+) ideas? and (\d+) repl(?:y|ies)$/.exec(line) ?? []).slice(1).map(Number);
@@ -428,7 +506,7 @@ async function seatFilter(h, ctx, rec) {
             before === "false" &&
             shown &&
             pressed === "true" &&
-            stackOnly === "ux" &&
+            stackOnly === "newuser" &&
             nums.length === 2 &&
             nums[0] + nums[1] === counted,
         { listed, before, shown, line, pressed, stackOnly, counted }
@@ -440,7 +518,7 @@ async function seatFilter(h, ctx, rec) {
     await setSeats(h, false);
     rec(
         "seat filter: Show everyone releases it, the line goes, the row is not pressed and the stack names no seat",
-        gone && after === "false" && stackAfter === null,
+        gone && after === "false" && stackAfter === null && (await ideaIds(h)).length === 6,
         { gone, after, stackAfter }
     );
 }
@@ -458,41 +536,39 @@ async function picks(h, ctx, rec) {
             accept.text = "";
         },
     });
-    await until(h, `!!document.querySelector("[data-council-picks]")`);
+    await until(h, `!!document.querySelector(${sel(`${LIST} [data-council-idea="P2"]`)})`);
 
-    const chips = await h.ev(`[...document.querySelectorAll("[data-council-picks]")].map((e) => ({
-        on: e.closest("[data-council-idea]")?.getAttribute("data-council-idea") ?? null,
-        text: (e.textContent ?? "")${NORM},
-        title: e.getAttribute("title"),
-    }))`);
-    const channel = await text(h, "[data-council-channel]");
+    // the picks are said in an idea's thread: P2's reads `Picked by 2`, P1's `Picked by 1`, P3's none
+    const picksIn = async (p) => {
+        await click(h, `${LIST} [data-council-idea="${p}"]`);
+        await until(h, `!!document.querySelector(${sel(`[data-council-thread="${p}"] [data-council-post="${p}"]`)})`);
+        return h.ev(`(() => {
+            const e = document.querySelector("[data-council-thread] [data-council-picks]");
+            return e && { text: (e.textContent ?? "")${NORM}, title: e.getAttribute("title") };
+        })()`);
+    };
+    const p1 = await picksIn("P1");
+    const p3 = await picksIn("P3");
+    const p2 = await picksIn("P2");
     rec(
-        "picks: P2 carries `Picked by 2` (title `Picked by 2 of 4 experts`) and P1 `Picked by 1`, the other four none, and no proposal id shows",
-        chips.length === 2 &&
-            chips.find((c) => c.on === "P2")?.text === "Picked by 2" &&
-            chips.find((c) => c.on === "P2")?.title === "Picked by 2 of 4 experts" &&
-            chips.find((c) => c.on === "P1")?.text === "Picked by 1" &&
-            !/\bP\d+\b/.test(channel),
-        chips
+        "picks: P2's thread carries `Picked by 2` (title `Picked by 2 of 4 experts`), P1's `Picked by 1` and P3's none, and no proposal id shows in the list",
+        p2?.text === "Picked by 2" &&
+            p2.title === "Picked by 2 of 4 experts" &&
+            p1?.text === "Picked by 1" &&
+            p3 === null &&
+            !/\bP\d+\b/.test(await text(h, LIST)),
+        { p1, p2, p3 }
     );
 
-    const reaction = await h.ev(`[...document.querySelectorAll("[data-council-reaction]")].map((e) => ({
-        text: (e.textContent ?? "")${NORM},
-        under: e.closest("[data-council-idea]")?.getAttribute("data-council-idea") ?? null,
-    }))`);
+    // P2's thread is open
+    const reaction = await h.ev(`[...document.querySelectorAll("[data-council-thread] [data-council-reaction]")].map((e) => (e.textContent ?? "")${NORM})`);
     const counts = readableCounts("round2");
-    const chipP2 = await attr(h, '[data-council-thread-open="P2"]', "data-replies");
-    await click(h, '[data-council-thread-open="P2"]');
-    await until(h, `!!document.querySelector('[data-council-thread="P2"]')`);
+    const rowP2 = await attr(h, `${LIST} [data-council-idea="P2"]`, "data-replies");
     const hidden = !(await exists(h, '[data-council-reply-post="r17"]'));
     rec(
-        "picks: New user's blank accept is a `New user agrees` reaction under P2's message, with no reply of its own in P2's thread and none in its count",
-        reaction.length === 1 &&
-            reaction[0].text === "New user agrees" &&
-            reaction[0].under === "P2" &&
-            hidden &&
-            Number(chipP2) === counts.P2 - 1,
-        { reaction, hidden, chipP2, expected: counts.P2 - 1 }
+        "picks: New user's blank accept is a `New user agrees` reaction under P2 in its thread, with no reply of its own there and none in its row's count",
+        reaction.length === 1 && reaction[0] === "New user agrees" && hidden && Number(rowP2) === counts.P2 - 1,
+        { reaction, hidden, rowP2, expected: counts.P2 - 1 }
     );
     await h.shot("cdp-shots/council-discussion-picks.png");
 }
@@ -732,7 +808,7 @@ async function failed(h, ctx, rec) {
     const skeptic = await text(h, '[data-council-failed="skeptic"]');
     const hasSkepticRetry = await exists(h, '[data-council-retry="skeptic"]');
     rec(
-        "failed: Skeptic's failure line in the channel reads `Skeptic failed while proposing`, shows its error and has Retry",
+        "failed: Skeptic's failure line over the list reads `Skeptic failed while proposing`, shows its error and has Retry",
         skeptic.includes("Skeptic failed while proposing") && skeptic.includes("claude -p timed out after 10 minutes") && hasSkepticRetry,
         skeptic
     );
@@ -824,84 +900,139 @@ async function notRun(h, ctx, rec) {
     );
 }
 
-// ---- a done council: a channel, and a follow-up in a thread ----
+// ---- a done council: the list, and a follow-up in a thread ----
 
 const FOLLOWUP_TEXT = "Does this hold on a Mac?";
 
-// the channel's Top, Latest and Back, on a channel held short so it scrolls: the reader on a message in the middle jumps
-// to the top, then to the latest, and Back puts that message where it was in the view (Top then Latest keeps the place
-// the first jump saved)
-async function jumps(h, rec) {
-    const ch = sel("[data-council-channel]");
-    const pill = (name) => `!!document.querySelector('[data-council-jump="${name}"]')`;
-    const scrollTop = () => h.ev(`document.querySelector(${ch})?.scrollTop ?? -1`);
-    // the item at the view's top (its place in the channel) and how far below the view's top it sits
-    const reading = () =>
-        h.ev(`(() => {
-            const el = document.querySelector(${ch});
-            const top = el.getBoundingClientRect().top;
-            const items = [...el.querySelectorAll("[data-council-item]")];
-            const at = items.findIndex((e) => e.getBoundingClientRect().bottom - top > 24);
-            return at < 0 ? null : { id: at, offset: Math.round(items[at].getBoundingClientRect().top - top) };
-        })()`);
-    await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = "none"; el.style.height = "260px"; })()`);
-    const mid = await h.ev(
-        `(() => { const el = document.querySelector(${ch}); el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) / 2); return el.scrollTop; })()`
-    );
-    const was = await reading();
-    const offered = await until(h, `${pill("top")} && ${pill("latest")} && !${pill("back")}`);
-    await click(h, '[data-council-jump="top"]');
-    const backAtTop = await until(h, `${pill("back")} && !${pill("top")}`);
-    const atTop = await scrollTop();
-    await h.shot("cdp-shots/council-discussion-jumps.png");
-    await click(h, '[data-council-jump="latest"]');
-    const backAtEnd = await until(h, `${pill("back")} && ${pill("top")} && !${pill("latest")}`);
-    const atEnd = await h.ev(`(() => { const el = document.querySelector(${ch}); return el.scrollHeight - el.scrollTop - el.clientHeight; })()`);
-    await click(h, '[data-council-jump="back"]');
-    const gone = await until(h, `!${pill("back")}`);
-    const now = await reading();
-    const backTo = await scrollTop();
-    const focused = await h.ev(`document.activeElement === document.querySelector(${ch})`);
-    rec(
-        "jumps: Top and Latest show off the ends, each jump offers Back, and Back puts the message read before Top then Latest where it was, the channel keeping focus",
-        mid > 260 &&
-            offered &&
-            backAtTop &&
-            atTop === 0 &&
-            backAtEnd &&
-            atEnd < 2 &&
-            gone &&
-            Math.abs(backTo - mid) <= 2 &&
-            was != null &&
-            now?.id === was.id &&
-            Math.abs(now.offset - was.offset) <= 2 &&
-            focused,
-        { mid, offered, backAtTop, atTop, backAtEnd, atEnd, gone, backTo, was, now, focused }
-    );
-    await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = ""; el.style.height = ""; })()`);
+const CHAT_ASK = "Is any of this risky on a Mac?";
+const CHAT_ANSWER = "Only the sleep timer: macOS throttles a hidden WKWebView sooner.";
+
+// the done council under its own id, with a question of the person's to everyone and two seats' answers to it (the
+// Chat), and the person's last opening of it set between the fourth and the fifth idea, the question and the answers:
+// the Chat reads `2 new` and the two ideas that came after are New. Then a click on an idea's row and on the Chat row
+// opens each, and the header's Pin reads Pinned once it is saved.
+async function doneList(h, ctx, rec) {
+    const fx = loadCouncilFixture("done");
+    let seenAt = 0;
+    const id = `${councilFixtureId("done")}-list`;
+    await seedCouncil(h, ctx, "done", {
+        id,
+        edit: (c) => {
+            const byTime = [...c.proposals].sort((a, b) => a.ts - b.ts);
+            seenAt = byTime[3].ts + 1000;
+            delete c.pinned;
+            c.replies.push(
+                { id: "c1", proposalid: "", author: "you", text: CHAT_ASK, round: 4, ts: seenAt - 500, to: ["ux", "ram", "newuser", "skeptic"] },
+                { id: "c2", proposalid: "", parentid: "c1", author: "ux", text: "Not for the rail icon itself.", round: 4, ts: seenAt + 2000 },
+                { id: "c3", proposalid: "", parentid: "c1", author: "ram", text: CHAT_ANSWER, round: 4, ts: seenAt + 3000 }
+            );
+        },
+    });
+    // the opened map is set before the council opens: a council the person left marks itself opened as it goes
+    const before = await h.ev(`window.__arcCouncil.opened()`);
+    const seeded = { seededAt: before?.seededAt ?? 0, opened: { ...(before?.opened ?? {}), [id]: seenAt } };
+    await h.ev(`window.__arcCouncil.setOpened(${JSON.stringify(seeded)})`);
+    try {
+        await openCouncil(h, id, "discussion");
+        await until(h, `!!document.querySelector(${sel(`${rootOf(id)} ${CHAT_ROW}`)})`);
+        await settledText(h, "[data-council-chip]", "Done");
+
+        const chat = await chatRowOf(h);
+        rec(
+            "list: the Chat row is the list's first row and reads `2 new`, the newest message (`RAM: …`) and `3 messages`",
+            chat?.first === true && chat.fresh === "2 new" && chat.latest === `RAM: ${CHAT_ANSWER}` && chat.count === "3 messages",
+            chat
+        );
+
+        // after the summary the rows follow the Report's order (P5, P1, then P2 and P3, then P4), the idea no direction
+        // cites (P6) last; each keeps its number from the order the ideas came in
+        const stances = stanceCounts(fx);
+        const counts = readableCounts("done");
+        const ideas = await ideaIds(h);
+        const rows = {};
+        for (const p of ideas) rows[p] = await rowOf(h, p);
+        const arrival = [...fx.proposals].sort((a, b) => a.ts - b.ts).map((p) => p.id);
+        const fresh = ideas.filter((p) => rows[p]?.isNew);
+        rec(
+            "list: six idea rows in the Report's order, each with its arrival number, its title, its replies and the seats' latest Agrees / Has doubts / Is against it, New on the two ideas that came since the last opening",
+            ideas.join(",") === "P5,P1,P2,P3,P4,P6" &&
+                ideas.every(
+                    (p) =>
+                        rows[p]?.n === arrival.indexOf(p) + 1 &&
+                        rows[p].title === fx.proposals.find((x) => x.id === p).title &&
+                        rows[p].replies === (counts[p] ?? 0) &&
+                        rows[p].agrees === (stances[p]?.agrees ?? 0) &&
+                        rows[p].doubts === (stances[p]?.doubts ?? 0) &&
+                        rows[p].against === (stances[p]?.against ?? 0)
+                ) &&
+                fresh.join(",") === "P5,P6" &&
+                (await oldParts(h)) === 0,
+            { ideas, rows, fresh, stances, counts }
+        );
+        await h.shot("cdp-shots/council-discussion-list.png");
+
+        // a click on an idea's row opens its thread, named by its number and author
+        await click(h, `${LIST} [data-council-idea="P2"]`);
+        const opened = await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-post="P2"]')`);
+        const heading = await text(h, "[data-council-thread-heading]");
+        const replies = await threadReplies(h);
+        rec(
+            "list: a click on P2's row opens its thread (`Idea 2 · by UX`), the row marked open, with its replies and their stance pills",
+            opened &&
+                heading === `Idea ${arrival.indexOf("P2") + 1} · by UX` &&
+                (await attr(h, `${LIST} [data-council-idea="P2"]`, "data-open")) === "true" &&
+                replies.length === counts.P2 &&
+                replies.some((r) => r.label === "has doubts"),
+            { heading, replies: replies.map((r) => r.label) }
+        );
+        await h.shot("cdp-shots/council-discussion-list-thread.png");
+
+        // a click on the Chat row opens the Chat in the same panel: the question on top, then the three messages
+        await click(h, CHAT_ROW);
+        const chatOpen = await until(h, `!!document.querySelector('[data-council-thread="chat"]')`);
+        const posts = await threadReplies(h);
+        rec(
+            "list: a click on the Chat row opens the Chat: the person's question, then their message and the two answers, with no reply box of its own",
+            chatOpen &&
+                (await text(h, "[data-council-thread-heading]")) === "Chat" &&
+                (await exists(h, '[data-council-thread="chat"] [data-council-question]')) &&
+                posts.map((p) => p.id).join(",") === "c1,c2,c3" &&
+                posts[0].mine &&
+                !(await exists(h, THREAD_COMPOSER)),
+            posts.map((p) => p.id)
+        );
+        await click(h, "[data-council-thread-close]");
+        await until(h, `!document.querySelector("[data-council-thread]")`);
+
+        // the header's Pin, for real: it reads Pinned once wavesrv saved it
+        const pin = `${rootOf(id)} header [data-council-pin]`;
+        const was = await text(h, pin);
+        await click(h, pin);
+        const pinned = await until(h, `document.querySelector(${sel(pin)})?.getAttribute("data-council-pin") === "pinned"`);
+        const now = await text(h, pin);
+        rec("list: the header's Pin reads `Pin`, and `Pinned` after a click", was === "Pin" && pinned && now === "Pinned", { was, now });
+        await h.shot("cdp-shots/council-discussion-pinned.png");
+    } finally {
+        // the map as it was, so the tree's unread councils read as before
+        if (before != null) await h.ev(`window.__arcCouncil.setOpened(${JSON.stringify(before)})`);
+    }
 }
 
 async function done(h, ctx, rec) {
     const id = await openFixture(h, ctx, "done");
     await settledText(h, "[data-council-chip]", "Done");
-    const kinds = await channelKinds(h);
-    const typing = await count(h, '[data-council-channel] [data-item-kind="typing"]');
-    const drafts = await count(h, "[data-council-draft]");
-    // every reply of this fixture is on an idea, in its thread: round 2 has nothing in the channel, so no divider
-    const marks = await dividers(h);
+    const drafts = await count(h, `${LIST} [data-council-row-draft]`);
     rec(
-        "done: the council shows as a channel (the question, the round 1 divider, six ideas with reply chips, round 2's replies in their threads), no pause, no draft and no typing row, with a message box",
-        kinds[0] === "question" &&
+        "done: the council shows as the list (the Chat row, six idea rows), no pause, no draft, no bubble or typing row, with a message box",
+        (await exists(h, CHAT_ROW)) &&
             (await ideaIds(h)).length === 6 &&
-            marks.join("|") === "Round 1 · ideas" &&
-            typing === 0 &&
+            (await oldParts(h)) === 0 &&
             drafts === 0 &&
             !(await exists(h, "[data-council-pause]")) &&
             (await exists(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`)),
-        { kinds: kinds.slice(0, 3), marks, typing, drafts }
+        { drafts }
     );
     await h.shot("cdp-shots/council-discussion-done.png");
-    await jumps(h, rec);
 
     // the report's questions to ask next are the channel's last line, under the newest message, none of them over the
     // box; a click puts one in the box, @ seat and all
@@ -918,7 +1049,7 @@ async function done(h, ctx, rec) {
     const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
     const hidden = !(await exists(h, "[data-council-asks]"));
     rec(
-        "done: Ask next offers the report's three questions as the channel's last line, not over the box, and a click fills the box with the @ seat",
+        "done: Ask next offers the report's three questions as the list's last line, not over the box, and a click fills the box with the @ seat",
         asks === 3 && last && overBox === 0 && filled.startsWith("@RAM How much RAM") && hidden,
         { asks, last, overBox, filled, hidden }
     );
@@ -1009,10 +1140,16 @@ const sourceLinks = (h, scope) =>
 async function sources(h, ctx, rec) {
     writeCitedFiles(ctx);
     await openFixture(h, ctx, "done");
-    const P2 = '[data-council-idea="P2"] [data-council-source]';
-    const links = await sourceLinks(h, '[data-council-idea="P2"]');
+    // an idea's evidence is in its thread: the row opens it
+    const openThread = async (p) => {
+        await click(h, `${LIST} [data-council-idea="${p}"]`);
+        return until(h, `!!document.querySelector(${sel(`[data-council-thread="${p}"] [data-council-post="${p}"] [data-council-source]`)})`);
+    };
+    await openThread("P2");
+    const P2 = '[data-council-post="P2"] [data-council-source]';
+    const links = await sourceLinks(h, '[data-council-post="P2"]');
     rec(
-        "sources: an idea's evidence is one link per file, named by the file and its line, its path in the title",
+        "sources: an idea's evidence, in its thread, is one link per file, named by the file and its line, its path in the title",
         links.length === 1 &&
             links[0].path === "pkg/services/model.go" &&
             links[0].text === "model.go:38" &&
@@ -1026,44 +1163,31 @@ async function sources(h, ctx, rec) {
         `[...document.querySelectorAll("[data-council-sources-hunk]")].map((e) => e.getAttribute("data-council-sources-hunk"))`
     );
     const cited = await h.ev(`[...document.querySelectorAll("[data-council-sources] [data-cited]")].map((e) => (e.textContent ?? "")${NORM})`);
-    const picked = await attr(h, P2, "data-picked");
+    const label = await attr(h, "[data-council-sources-close]", "aria-label");
     rec(
-        "sources: a click opens Sources on the file, line 38 lit with a line each side, and marks the link it shows",
+        "sources: a click opens Sources on the file in the thread's place, line 38 lit with a line each side",
         read &&
             hunks.length === 1 &&
             hunks[0] === "37" &&
             cited.length === 1 &&
             cited[0].startsWith("38") &&
             cited[0].endsWith("line 38") &&
-            picked === "true" &&
+            label === "Back to the thread (Esc)" &&
             !(await exists(h, "[data-council-thread]")),
-        { hunks, cited, picked }
+        { hunks, cited, label }
     );
     await h.shot("cdp-shots/council-discussion-sources.png");
 
-    await focusOn(h, P2);
+    await focusOn(h, "[data-council-sources-close]");
     await pressEscape(h);
-    // the panel slides out before it leaves the page
-    rec("sources: Escape closes Sources opened from the channel", await until(h, `!document.querySelector("[data-council-sources]")`));
-
-    // from a thread, and back to it
-    await click(h, '[data-council-thread-open="P2"]');
-    await until(h, `!!document.querySelector("[data-council-thread] [data-council-source]")`);
-    await click(h, "[data-council-thread] [data-council-source]");
-    await until(h, `!!document.querySelector("[data-council-sources]")`);
-    const label = await attr(h, "[data-council-sources-close]", "aria-label");
-    const threadGone = !(await exists(h, "[data-council-thread]"));
-    await click(h, "[data-council-sources-close]");
-    const back = await until(h, `!!document.querySelector("[data-council-thread]") && !document.querySelector("[data-council-sources]")`);
-    rec(
-        "sources: opened from a thread they take its place, and closing goes back to the thread",
-        threadGone && label === "Back to the thread (Esc)" && back,
-        { label, threadGone, back }
-    );
+    const back = await until(h, `!!document.querySelector('[data-council-thread="P2"]') && !document.querySelector("[data-council-sources]")`);
+    rec("sources: Escape closes Sources and goes back to the thread they were opened from", back, back);
     await click(h, "[data-council-thread-close]");
+    await until(h, `!document.querySelector("[data-council-thread]")`);
 
     // a file that is not in the project
-    await click(h, '[data-council-idea="P5"] [data-council-source]');
+    await openThread("P5");
+    await click(h, '[data-council-post="P5"] [data-council-source]');
     const missing = await until(h, `!!document.querySelector("[data-council-sources-error]")`);
     rec("sources: a cited file that is not in the project says so in place of its lines", missing);
     await click(h, "[data-council-sources-close]");
@@ -1089,93 +1213,63 @@ async function room(h, ctx, rec) {
     const chip = await settledText(h, "[data-council-chip]", "Round 2 of 2 · 1 draft waits for you");
     rec("room: the chip reads `Round 2 of 2 · 1 draft waits for you`", chip === "Round 2 of 2 · 1 draft waits for you", chip);
 
-    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    await until(h, `!!document.querySelector(${sel(LIST)})`);
     const chips = await seatChips(h);
     const byId = Object.fromEntries(chips.map((c) => [c.id, c]));
     rec(
-        "room: five seat filters; the agents read `agent · 625k` and `agent · 210k` on hover, an expert `expert · sonnet`, Witness waits for its own task, Security's failure line has Retry, and an agent's terminal opens beside its filter",
+        "room: five seat filters; the agents read `agent · 625k` and `agent · 210k` on hover, an expert `expert · sonnet`, Witness waits for its own task, Security's failure line over the list has Retry, and an agent's terminal opens beside its filter",
         chips.length === 5 &&
             byId.witness?.title.includes("agent · 625k") &&
             byId.uxaudit?.title.includes("agent · 210k") &&
             byId.security?.title.includes("expert · sonnet") &&
             byId.witness.doing === "Waiting for Witness synthesis to finish its task" &&
             byId.witness.dot === "waiting" &&
-            (await exists(h, '[data-council-channel] [data-council-retry="security"]')) &&
+            (await exists(h, '[data-council-failed="security"] [data-council-retry="security"]')) &&
             byId.witness.open === "fx-room-witness" &&
             byId.uxaudit.open === "fx-room-uxaudit" &&
             byId.security.open === null,
         chips.map((c) => `${c.id}: ${c.text}`).join(" ; ")
     );
 
-    const marks = await dividers(h);
+    // the rows: four ideas as they came (the dropped P5 is gone), P1 with Skeptic's agreement as an Agrees and no reply,
+    // P2 with its one reply, P4 with a Draft for Skeptic's held reply; the Chat row holds the person's post to everyone
     const ideas = await ideaIds(h);
+    const p1 = await rowOf(h, "P1");
+    const p2 = await rowOf(h, "P2");
+    const p4 = await rowOf(h, "P4");
+    const chatRow = await chatRowOf(h);
     rec(
-        "room: dividers `Round 1 · ideas` and `Round 2 · replies`, four ideas with the seats taking turns (the dropped P5 is gone), and the person's post to everyone as a `steers` message",
-        marks.join("|") === "Round 1 · ideas|Round 2 · replies" &&
-            // Security's first, Skeptic's, UX audit's, then Security's second (takeTurns, councilchatmodel.ts)
-            ideas.join(",") === "P1,P3,P4,P2" &&
-            (await attr(h, '[data-council-channel] [data-council-reply-post="r1"]', "data-item-label")) === "steers",
-        { marks, ideas }
+        "room: four idea rows as they came (the dropped P5 is gone): P1 `no replies` with one Agrees, P2 `1 reply`, P4 a Draft for its held reply; the Chat row reads `1 message` with the person's post, and no skipped line or typing row is drawn",
+        ideas.join(",") === "P1,P2,P3,P4" &&
+            p1?.repliesText === "no replies" &&
+            p1.agrees === 1 &&
+            p2?.repliesText === "1 reply" &&
+            !p2.draft &&
+            p4?.draft === true &&
+            chatRow?.count === "1 message" &&
+            chatRow.latest.startsWith("You: ") &&
+            !chatRow.draft &&
+            (await oldParts(h)) === 0,
+        { ideas, p1, p2, p4, chatRow }
     );
 
-    // the reply chips: P2's one reply (Skeptic builds on it), P1 only a reaction, P4's reply and its held draft
-    const p2 = await h.ev(`(() => {
-        const b = document.querySelector('[data-council-thread-open="P2"]');
-        return b && { replies: b.getAttribute("data-replies"), repliers: [...b.querySelectorAll("[data-council-replier]")].map((a) => a.getAttribute("data-council-replier")), text: (b.textContent ?? "")${NORM} };
-    })()`);
-    const p1 = await h.ev(`(() => {
-        const b = document.querySelector('[data-council-thread-open="P1"]');
-        return b && { replies: b.getAttribute("data-replies"), text: (b.textContent ?? "")${NORM} };
-    })()`);
-    const p4 = await text(h, '[data-council-thread-open="P4"]');
-    const agrees = await h.ev(`[...document.querySelectorAll('[data-council-idea="P1"] [data-council-reaction]')].map((e) => (e.textContent ?? "")${NORM})`);
-    // councilChannel draws every reply, a held one as a draft card, so Skeptic's held reply on P4 is in the channel too,
-    // marked as waiting and quoting the idea it is on
-    const p4Title = loadCouncilFixture("room").proposals.find((p) => p.id === "P4").title;
-    const p4Draft = await h.ev(`(() => {
-        const d = document.querySelector('[data-council-channel] [data-council-draft="r4"]');
-        return d && { of: d.getAttribute("data-draft-of"), text: (d.textContent ?? "")${NORM} };
-    })()`);
+    const failure = await text(h, '[data-council-failed="security"]');
     rec(
-        "room: P2's chip reads `1 reply` with Skeptic's avatar and its last time, P1's `No replies yet` with a `Skeptic agrees` reaction, P4's names its waiting draft, which sits in the channel as a draft reply quoting P4",
-        p2?.replies === "1" &&
-            p2.text.includes("1 reply") &&
-            /Last reply \d+:\d\d/.test(p2.text) &&
-            JSON.stringify(p2.repliers) === '["skeptic"]' &&
-            p1?.replies === "0" &&
-            p1.text.includes("No replies yet") &&
-            agrees.join("|") === "Skeptic agrees" &&
-            p4.includes("1 draft waits for you") &&
-            p4Draft?.of === "reply" &&
-            p4Draft.text.includes("Waiting for you") &&
-            p4Draft.text.includes(p4Title),
-        { p2, p1, p4, agrees, p4Draft }
-    );
-
-    const skip = await text(h, '[data-council-skip="witness"]');
-    const skipButton = await text(h, "[data-council-open-terminal]");
-    const typing = await typingLines(h);
-    const failure = await text(h, '[data-council-channel] [data-council-failed="security"]');
-    rec(
-        "room: the skipped turn reads `Witness synthesis skipped round 1: still working on its own task after 10 min.` with Open its terminal, the typing rows name UX audit and Witness's wait, and Security's failure line has its error",
-        skip.includes("Witness synthesis skipped round 1: still working on its own task after 10 min.") &&
-            skipButton === "Open its terminal" &&
-            typing.includes("UX audit is writing…") &&
-            typing.includes("Waiting for Witness synthesis to finish its task") &&
-            failure.includes("Security failed while replying") &&
-            failure.includes("the reply was not valid JSON"),
-        { skip, skipButton, typing, failure }
+        "room: Security's failure is one line over the list with its error",
+        failure.includes("Security failed while replying") && failure.includes("the reply was not valid JSON"),
+        failure
     );
     await h.shot("cdp-shots/council-discussion-room.png");
 
     // a failed seat's Retry, on its failure line, is off while the council runs (a retry then is refused: one job at a
     // time), and its title says why; a click does nothing. A Retry that works is the `failed` phase's.
+    const retry = '[data-council-failed="security"] [data-council-retry="security"]';
     const retryOff = await h.ev(`(() => {
-        const line = document.querySelector('[data-council-channel] [data-council-retry="security"]');
+        const line = document.querySelector(${sel(retry)});
         return { line: line && { disabled: line.disabled, title: line.getAttribute("title") } };
     })()`);
     await stubRpc(h, ["CouncilRetryCommand"]);
-    await click(h, '[data-council-channel] [data-council-retry="security"]');
+    await click(h, retry);
     // nothing is awaited: a disabled button runs no handler, so a call that came would already be recorded
     const retries = await rpcCalls(h, "CouncilRetryCommand");
     rec(
@@ -1188,14 +1282,14 @@ async function room(h, ctx, rec) {
     await unstubRpc(h);
 
     // a thread opens with its replies, stance pills and the held reply draft
-    await click(h, '[data-council-thread-open="P4"]');
+    await click(h, `${LIST} [data-council-idea="P4"]`);
     await until(h, `!!document.querySelector('[data-council-thread="P4"] [data-council-post="P4"]')`);
     const draft = await text(h, '[data-council-thread] [data-council-draft="r4"]');
     const replies = await threadReplies(h);
     const mine = replies.find((r) => r.id === "r5");
     const hint = await text(h, `${THREAD_COMPOSER} [data-council-composer-hint]`);
     rec(
-        "room: P4's thread holds the person's @ to Witness, Skeptic's held `has doubts` challenge as a draft with its three buttons, the idea highlighted in the channel, and a reply box naming UX audit",
+        "room: P4's thread holds the person's @ to Witness, Skeptic's held `has doubts` challenge as a draft with its three buttons, the row marked open, and a reply box naming UX audit",
         replies.length === 1 &&
             mine?.mine === true &&
             mine.text.includes("For Witness synthesis") &&
@@ -1204,11 +1298,11 @@ async function room(h, ctx, rec) {
             (await text(h, '[data-council-thread] [data-council-draft="r4"] [data-council-draft-send]')) === "Send to the others" &&
             (await text(h, '[data-council-thread] [data-council-draft="r4"] [data-council-draft-edit]')) === "Edit" &&
             (await text(h, '[data-council-thread] [data-council-draft="r4"] [data-council-draft-drop]')) === "Drop" &&
-            (await attr(h, '[data-council-idea="P4"]', "data-open")) === "true" &&
+            (await attr(h, `${LIST} [data-council-idea="P4"]`, "data-open")) === "true" &&
             hint === "Answered by: UX audit",
         { replies, draft, hint }
     );
-    await click(h, '[data-council-thread-open="P2"]');
+    await click(h, `${LIST} [data-council-idea="P2"]`);
     await until(h, `!!document.querySelector('[data-council-thread="P2"]')`);
     const builds = (await threadReplies(h)).find((r) => r.id === "r3");
     rec(
@@ -1218,55 +1312,67 @@ async function room(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-room-thread.png");
 
+    // the Chat: the person's post to everyone as a message that steers, and Witness's wait for its own task
+    await click(h, CHAT_ROW);
+    await until(h, `!!document.querySelector('[data-council-thread="chat"]')`);
+    const steers = (await threadReplies(h)).find((r) => r.id === "r1");
+    const waits = await text(h, '[data-council-thread="chat"] [data-council-typing-row="witness"] [data-council-typing]');
+    rec(
+        "room: the Chat holds the person's post to everyone as a `steers` message, and Witness's wait for its own task",
+        steers?.label === "steers" && steers.mine && waits === "Waiting for Witness synthesis to finish its task",
+        { steers, waits }
+    );
+
     // Escape closes the thread from inside it, and the council stays open
     await focusOn(h, "[data-council-thread]");
     await pressEscape(h);
     const closed = await until(h, `!document.querySelector("[data-council-thread]")`);
     rec(
-        "room: Esc, with focus in the thread, closes it (the open idea is null) and the council stays on screen",
-        closed && (await h.ev(`window.__arcCouncil.openProposal(${sel(id)})`)) === null && (await exists(h, "[data-council-channel]")),
+        "room: Esc, with focus in the thread, closes it (the open thread is null) and the council stays on screen",
+        closed && (await h.ev(`window.__arcCouncil.openProposal(${sel(id)})`)) === null && (await exists(h, LIST)),
         closed
     );
 }
 
-// j and k over the ideas, Enter into a thread; they are the chat's only while focus is inside the channel or thread
+// j and k over the rows, Enter into a thread; they are the list's only while focus is inside the list or the thread
 async function roomKeys(h, ctx, rec) {
     await withRoster(h, ctx);
-    // under its own id, so the chat mounts afresh with no cursor
+    // under its own id, so the list mounts afresh with no cursor
     await openFixture(h, ctx, "room", { id: `${councilFixtureId("room")}-keys` });
-    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    await until(h, `!!document.querySelector(${sel(LIST)})`);
 
-    // focus outside the channel: j moves nothing
+    // focus outside the list: j moves nothing
     await h.ev(`document.activeElement?.blur()`);
     await pressJ(h);
     const idle = await focusedIdea(h);
 
-    await focusOn(h, "[data-council-channel]");
+    await focusOn(h, LIST);
     const seen = [];
-    for (const press of [pressJ, pressJ, pressK, pressJ, pressJ, pressJ, pressJ]) {
+    for (const press of [pressJ, pressJ, pressK, pressJ, pressJ, pressJ, pressJ, pressJ]) {
         await press(h);
         seen.push(await focusedIdea(h));
     }
     rec(
-        "keys: j moves nothing with focus outside the channel; in it j / k move over the ideas in the channel's order (P1, P3, P1, P3, P4, P2) and stop at the last",
-        idle === null && seen.join(",") === "P1,P3,P1,P3,P4,P2,P2",
+        "keys: j moves nothing with focus outside the list; in it j / k move over the rows in the list's order (the Chat, P1, the Chat, P1, P2, P3, P4) and stop at the last",
+        idle === null && seen.join(",") === "chat,P1,chat,P1,P2,P3,P4,P4",
         { idle, seen }
     );
 
-    // the cursor is on P2, the last idea of the channel's order (P1, P3, P4, P2)
-    await pressEnter(h);
-    const opened = await until(h, `!!document.querySelector('[data-council-thread="P2"]')`);
+    // the cursor is on P4, the last row, which holds the focus
+    const onRow = await h.ev(`document.activeElement?.getAttribute("data-council-row") ?? null`);
+    await pressEnterOnRow(h);
+    const opened = await until(h, `!!document.querySelector('[data-council-thread="P4"]')`);
     rec(
-        "keys: Enter opens the thread of the idea under the cursor (P2)",
-        opened && (await attr(h, '[data-council-idea="P2"]', "data-open")) === "true",
-        opened
+        "keys: the cursor's row holds the focus, and Enter opens its thread (P4)",
+        onRow === "P4" && opened && (await attr(h, `${LIST} [data-council-idea="P4"]`, "data-open")) === "true",
+        { onRow, opened }
     );
     await pressEscape(h);
     const closed = await until(h, `!document.querySelector("[data-council-thread]")`);
     await pressK(h);
     rec(
-        "keys: Esc closes it, and k moves the cursor again (to P4, the idea before P2)",
-        closed && (await focusedIdea(h)) === "P4",
+        "keys: Esc closes it, and k moves the cursor again (to P3, the row before P4)",
+        closed && (await focusedIdea(h)) === "P3",
         { closed, focused: await focusedIdea(h) }
     );
 }
@@ -1313,7 +1419,7 @@ async function roomComposer(h, ctx, rec) {
     );
 }
 
-// a click on an agent's chip and on Open its terminal each land on that agent's terminal
+// a click on the terminal button of an agent's row in the seat list lands on that agent's terminal
 async function roomTerminals(h, ctx, rec) {
     await withRoster(h, ctx);
     const terminalOf = (tab) =>
@@ -1328,25 +1434,37 @@ async function roomTerminals(h, ctx, rec) {
     await click(h, '[data-council-chip-open="fx-room-witness"]');
     const viaChip = await terminalOf("fx-room-witness");
     rec("room: a click on the terminal button of Witness synthesis's row in the seat list lands on its terminal", viaChip, viaChip);
-
-    await openFixture(h, ctx, "room");
-    await until(h, `!!document.querySelector('[data-council-open-terminal="fx-room-witness"]')`);
-    await click(h, '[data-council-open-terminal="fx-room-witness"]');
-    const viaSkip = await terminalOf("fx-room-witness");
-    rec("room: Open its terminal on Witness synthesis's skipped line lands on its terminal", viaSkip, viaSkip);
 }
 
-// two held ideas: the chat shows, with no pause and no Continue, and Send to the others, Edit and Drop each call the draft command
+// two held ideas: the list shows, with no pause and no Continue, a Draft on each held idea's row, and Send to the others,
+// Edit and Drop in its thread each call the draft command
 const EDITED = "Bind to 127.0.0.1 and ::1 only, and say so in the pin dialog.";
+
+// a held idea's draft in the thread its row opens: what it says, its buttons and its tint
+const openDraft = async (h, p) => {
+    await click(h, `${LIST} [data-council-idea="${p}"]`);
+    await until(h, `!!document.querySelector(${sel(`[data-council-thread="${p}"] [data-council-draft="${p}"]`)})`);
+    return h.ev(`(() => {
+        const d = document.querySelector(${sel(`[data-council-thread="${p}"] [data-council-draft="${p}"]`)});
+        return d && {
+            of: d.getAttribute("data-draft-of"),
+            label: d.getAttribute("aria-label"),
+            text: (d.textContent ?? "")${NORM},
+            buttons: ["send", "edit", "drop"].map((k) => (d.querySelector("[data-council-draft-" + k + "]")?.textContent ?? "")${NORM}),
+            tint: getComputedStyle(d).backgroundColor,
+            kind: document.querySelector("[data-council-thread]")?.getAttribute("data-thread-kind") ?? null,
+        };
+    })()`);
+};
 
 async function roomAwaiting(h, ctx, rec) {
     await withRoster(h, ctx);
     const id = await openFixture(h, ctx, "room-awaiting");
 
     const chip = await settledText(h, "[data-council-chip]", "Round 1 of 2 · 2 drafts wait for you");
-    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    await until(h, `!!document.querySelector(${sel(LIST)})`);
     rec(
-        "room waiting on drafts: the chat is shown with no pause panel and no Continue, and the chip reads `Round 1 of 2 · 2 drafts wait for you`",
+        "room waiting on drafts: the list is shown with no pause panel and no Continue, and the chip reads `Round 1 of 2 · 2 drafts wait for you`",
         chip === "Round 1 of 2 · 2 drafts wait for you" &&
             (await attr(h, "[data-council-discussion]", "data-council-state")) === "awaiting-you" &&
             !(await exists(h, "[data-council-pause]")) &&
@@ -1354,29 +1472,31 @@ async function roomAwaiting(h, ctx, rec) {
         chip
     );
 
-    const drafts = await h.ev(`[...document.querySelectorAll("[data-council-channel] [data-council-draft]")].map((d) => ({
-        id: d.getAttribute("data-council-draft"),
-        of: d.getAttribute("data-draft-of"),
-        label: d.getAttribute("aria-label"),
-        text: (d.textContent ?? "")${NORM},
-        buttons: ["send", "edit", "drop"].map((k) => (d.querySelector("[data-council-draft-" + k + "]")?.textContent ?? "")${NORM}),
-        tint: getComputedStyle(d).backgroundColor,
-    }))`);
+    const rows = {};
+    for (const p of ["P1", "P2", "P3"]) rows[p] = await rowOf(h, p);
     rec(
-        "room waiting on drafts: the two held ideas (P2, P3) are amber drafts marked `Waiting for you`, each with Send to the others, Edit and Drop, and the sent P1 is a plain message",
-        drafts.map((d) => d.id).join(",") === "P2,P3" &&
-            drafts.every(
-                (d) =>
-                    d.of === "idea" &&
-                    d.label === "Draft waiting for you" &&
-                    d.text.includes("Waiting for you") &&
-                    d.buttons.join("|") === "Send to the others|Edit|Drop" &&
-                    d.tint !== "rgba(0, 0, 0, 0)"
-            ) &&
-            (await ideaIds(h)).join(",") === "P1",
-        drafts.map((d) => `${d.id}: ${d.buttons.join("/")} ${d.tint}`).join(" ; ")
+        "room waiting on drafts: the sent P1 and the two held ideas are rows, an amber Draft on the held P2 and P3 alone",
+        (await ideaIds(h)).join(",") === "P1,P2,P3" && !rows.P1?.draft && rows.P2?.draft === true && rows.P3?.draft === true,
+        rows
     );
     await h.shot("cdp-shots/council-discussion-room-awaiting.png");
+
+    const p2 = await openDraft(h, "P2");
+    const p3 = await openDraft(h, "P3");
+    rec(
+        "room waiting on drafts: a held idea's row opens its draft in the thread panel, amber, marked `Waiting for you`, with Send to the others, Edit and Drop",
+        [p2, p3].every(
+            (d) =>
+                d?.kind === "held" &&
+                d.of === "idea" &&
+                d.label === "Draft waiting for you" &&
+                d.text.includes("Waiting for you") &&
+                d.buttons.join("|") === "Send to the others|Edit|Drop" &&
+                d.tint !== "rgba(0, 0, 0, 0)"
+        ) && !(await exists(h, THREAD_COMPOSER)),
+        { p2, p3 }
+    );
+    await h.shot("cdp-shots/council-discussion-room-draft.png");
 
     // a sent idea is something to summarize: the held drafts around it do not switch Summarize off
     const withSent = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === false`);
@@ -1384,9 +1504,11 @@ async function roomAwaiting(h, ctx, rec) {
 
     await stubRpc(h, ["CouncilDraftCommand"]);
     const calls = () => rpcCalls(h, "CouncilDraftCommand");
+    await openDraft(h, "P2");
     await click(h, '[data-council-draft="P2"] [data-council-draft-send]');
     await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilDraftCommand").length >= 1`);
 
+    await openDraft(h, "P3");
     await click(h, '[data-council-draft="P3"] [data-council-draft-edit]');
     await until(h, `!!document.querySelector('[data-council-draft="P3"] [data-council-draft-input]')`);
     const prefilled = await h.ev(`document.querySelector('[data-council-draft="P3"] [data-council-draft-input]')?.value ?? null`);
@@ -1394,6 +1516,7 @@ async function roomAwaiting(h, ctx, rec) {
     await click(h, '[data-council-draft="P3"] [data-council-draft-save]');
     await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilDraftCommand").length >= 2`);
 
+    await openDraft(h, "P2");
     await click(h, '[data-council-draft="P2"] [data-council-draft-drop]');
     await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilDraftCommand").length >= 3`);
     const got = await calls();
@@ -2196,7 +2319,10 @@ async function attachSent(h, ctx, rec) {
             }
         },
     });
-    const post = '[data-council-reply-post="r1"]';
+    // the person's message to everyone is in the Chat, which its row opens
+    await until(h, `!!document.querySelector(${sel(CHAT_ROW)})`);
+    await click(h, CHAT_ROW);
+    const post = '[data-council-thread="chat"] [data-council-reply-post="r1"]';
     await until(h, `!!document.querySelector(${sel(post)})`);
     const loaded = await until(h, `(document.querySelector(${sel(`${post} [data-prompt-images] img`)})?.naturalWidth ?? 0) > 0`);
     const bubble = await h.ev(`(() => {
@@ -2215,7 +2341,7 @@ async function attachSent(h, ctx, rec) {
     })()`);
     const pngName = files.path.split(/[\\/]/).pop();
     rec(
-        "attach-sent-bubble: the person's message shows its image as a thumbnail under the text (no attachment path in the text), and its @docs/recap-notes.md as a file chip in the line in place of `@path`",
+        "attach-sent-bubble: the person's message, in the Chat, shows its image as a thumbnail under the text (no attachment path in the text), and its @docs/recap-notes.md as a file chip in the line in place of `@path`",
         loaded &&
             bubble.thumbs === 1 &&
             bubble.thumbH > 0 &&
@@ -2238,7 +2364,7 @@ async function attachSent(h, ctx, rec) {
     const heightOf = () => h.ev(`Math.round(document.querySelector(${sel(thumb)})?.getBoundingClientRect().height ?? 0)`);
     await click(h, thumb);
     await until(h, `document.querySelector(${sel(thumb)})?.classList.contains("cursor-zoom-out")`);
-    const open = await heightOf(); // the PNG's 200 and the thumbnail's border
+    const open = await heightOf(); // the PNG's 200 and the border, or less where the panel is narrower than the PNG
     await h.shot("cdp-shots/council-discussion-attach-bubble-open.png");
     await click(h, thumb);
     await until(h, `!document.querySelector(${sel(thumb)})?.classList.contains("cursor-zoom-out")`);
@@ -2248,8 +2374,8 @@ async function attachSent(h, ctx, rec) {
     const read = await until(h, `document.querySelector("[data-council-sources-body]")?.getAttribute("data-state") === "ok"`);
     const lines = await text(h, "[data-council-sources-body]");
     rec(
-        "attach-bubble-open: a click on the thumbnail opens it full size (200 px and its 1 px border) and another shrinks it back; a click on the file chip opens docs/recap-notes.md in Sources, its lines drawn",
-        open >= 200 && open <= 204 && open > bubble.thumbH && shut === bubble.thumbH && read && lines.includes(`${ATTACH_FILE} line 1`),
+        "attach-bubble-open: a click on the thumbnail opens it larger, up to its own size (200 px and its 1 px border) as the Chat panel fits it, and another shrinks it back; a click on the file chip opens docs/recap-notes.md in Sources, its lines drawn",
+        open > bubble.thumbH && open <= 204 && shut === bubble.thumbH && read && lines.includes(`${ATTACH_FILE} line 1`),
         { open, shut, read, lines: lines.slice(0, 80) }
     );
     await click(h, "[data-council-sources-close]");
@@ -2259,6 +2385,7 @@ async function attachSent(h, ctx, rec) {
 
 const PHASES = [
     ["round 2", round2],
+    ["list", doneList],
     ["header", header],
     ["seat filter", seatFilter],
     ["picks", picks],

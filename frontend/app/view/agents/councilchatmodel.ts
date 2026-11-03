@@ -1,18 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council's discussion as a group chat with threads (councilchat.tsx): what the channel, its thread panel, the seat
-// chips and the step chip draw, derived from a `Council`. The channel holds the person's question, a divider for each
-// round, every idea as a message (its evidence, the seats that agreed with it, the seats that picked it, a reply chip),
-// the person's posts to the whole council and the answers to them, the drafts held for the person, the lines where an
-// agent skipped a turn, a failure line with Retry, and a typing row for each seat at work; the seats take turns in it
-// (`takeTurns`). The replies on an idea are in its thread alone, a held reply draft among them (it also waits in the
-// channel, where the person acts on it). An item that was dropped is left out
-// everywhere, and one the person edited before sending says so. Pure, no React, no Wave runtime imports, so every
-// rule here has a test (councilchatmodel.test.ts).
-//
-// The rounds come from councilmodel.ts (`roundsOf`, `synthesisRound`), so a council saved before rounds existed (no
-// `rounds`, no drafts, no agents) reads as today's two rounds and a summary.
+// The council's discussion (councilchat.tsx): what its thread panel, the failure lines over the list, the seat chips
+// and the step chip draw, derived from a `Council`; the list of ideas itself is councillistmodel.ts. A thread is an
+// idea's (the idea on top, its evidence, the seats that agreed with it and picked it, then its replies, a held reply
+// draft among them, and a typing row for each seat replying on it), a held idea's (its draft, to Send, Edit or Drop),
+// or the Chat's (the person's question, their posts to the whole council and the answers to them, the drafts tied to
+// no idea). An item that was dropped is left out everywhere, and one the person edited before sending says so. Pure,
+// no React, no Wave runtime imports, so every rule here has a test (councilchatmodel.test.ts).
 
 import {
     avatarTone,
@@ -26,6 +21,7 @@ import {
     seatInitials,
     shortName,
 } from "./councildiscussionmodel";
+import { CHAT_THREAD } from "./councillistmodel";
 import {
     MIN_CHAT_KEY,
     answerers,
@@ -44,7 +40,6 @@ import {
     pickCount,
     readableReplies,
     replyLabel,
-    roundsOf,
     sentProposals,
     sentReplies,
     thumbOf,
@@ -399,8 +394,9 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
     };
 }
 
-// ---- the channel's other lines ----
+// ---- the other lines ----
 
+/** The person's question, on top of the Chat's thread. */
 export interface QuestionPost extends Who {
     kind: "question";
     id: "question";
@@ -411,25 +407,21 @@ export interface QuestionPost extends Who {
     when: string;
 }
 
-/** The line where a round starts. */
-export interface DividerLine {
-    kind: "divider";
-    id: string;
-    round: number;
-    text: string; // `Round 1 · ideas`, `Round 2 · replies`
-}
-
-/** The line where an agent seat skipped its turn (it was busy, or gave no answer in time). `tab` is the agent's, for
- *  Open its terminal. */
-export interface SkipLine extends Who {
-    kind: "skip";
-    id: string;
-    tab: string;
-    round: number;
-    reason: string;
-    text: string; // `Witness synthesis skipped round 2: still working on its own task after 10 min.`
-    at: string;
-    when: string;
+/** Pure: the person's question as a post; null when the council has none. */
+export function questionPost(c: Council): QuestionPost | null {
+    const asked = askedParts(c.question);
+    if (asked.question === "") {
+        return null;
+    }
+    return {
+        kind: "question",
+        id: "question",
+        ...whoIs(c, YOU),
+        label: "asked",
+        text: asked.question,
+        limits: asked.limits,
+        ...postedAt(c, c.started ?? 0),
+    };
 }
 
 /** A seat whose call failed and has not been retried: its line carries Retry (for `author`). */
@@ -451,15 +443,26 @@ export interface TypingRow extends Who {
     proposalid: string;
 }
 
-export type ChannelItem =
-    | QuestionPost
-    | DividerLine
-    | IdeaPost
-    | DraftPost
-    | ReplyPost
-    | SkipLine
-    | FailureLine
-    | TypingRow;
+/** Pure: a line for each seat whose call failed and has not been retried, the coordinator left out (its failure is the
+ *  Summary failed panel), in the council's order; with `only`, that seat's alone. */
+export function failureLines(c: Council, only?: string): FailureLine[] {
+    return c.experts.flatMap((e): FailureLine[] => {
+        const failure = c.failed?.[e.id];
+        if (failure == null || e.coordinator || (only != null && e.id !== only)) {
+            return [];
+        }
+        return [
+            {
+                kind: "failure",
+                id: `failed:${e.id}`,
+                ...whoIs(c, e.id),
+                round: failure.round,
+                error: failure.error,
+                text: `${e.name} ${failedWhile(c, failure.round)}`,
+            },
+        ];
+    });
+}
 
 function typingRow(c: Council, e: CouncilExpert, act: CouncilActivity): TypingRow {
     const waiting = WAITING_FOR_AGENT.test(act.text);
@@ -475,276 +478,63 @@ function typingRow(c: Council, e: CouncilExpert, act: CouncilActivity): TypingRo
     };
 }
 
-// where an item sits among the others: by time, a divider before the items of its round, then as it arrived; a seat's
-// idea or reply also has its place in the seats' turns
-interface Entry {
-    ts: number;
-    rank: number;
-    index: number;
-    item: ChannelItem;
-    turn?: Turn;
-}
-
-// what a seat's message is to the turn order: an idea (round 1), or a reply in a round on the idea it is on
-type Turn = { round: number; author: string; on: string };
-
-const FIRST = Number.MIN_SAFE_INTEGER; // round 1 starts before anything is posted
-const NOT_YET = Number.MAX_SAFE_INTEGER; // a round with nothing posted yet is the newest thing
-
-// the time a round after the first began: the first thing posted or skipped in it, else it is the newest thing
-function roundStart(c: Council, round: number): number | null {
-    const times = [
-        ...(c.replies ?? []).filter((r) => r.round === round).map((r) => r.ts),
-        ...(c.skips ?? []).filter((s) => s.round === round).map((s) => s.ts),
-    ];
-    if (times.length > 0) {
-        return Math.min(...times);
-    }
-    return c.round >= round ? NOT_YET : null;
-}
-
-function dividers(c: Council): { ts: number; line: DividerLine }[] {
-    const out: { ts: number; line: DividerLine }[] = [];
-    for (let round = 1; round <= roundsOf(c); round++) {
-        const ts = round === 1 ? (c.round >= 1 || (c.proposals ?? []).length > 0 ? FIRST : null) : roundStart(c, round);
-        if (ts == null) {
-            break;
-        }
-        out.push({
-            ts,
-            line: {
-                kind: "divider",
-                id: `round:${round}`,
-                round,
-                text: round === 1 ? "Round 1 · ideas" : `Round ${round} · replies`,
-            },
-        });
-    }
-    return out;
-}
+// ---- a thread ----
 
 // `c` with only what was sent: what the shared helpers (`reactions`, `expertDoing`) count
 function sentView(c: Council): Council {
     return { ...c, proposals: sentProposals(c), replies: sentReplies(c) };
 }
 
-// a round whose messages are all in: every round before the one at work, and every round once nothing runs
-function settled(c: Council, round: number): boolean {
-    return c.state !== "running" || round < c.round;
-}
-
-/** Pure: the seats' messages of each settled round in the order a group chat has them. A seat sends all its ideas or
- *  replies of a round in one call, so by time a round reads as one seat's block after another. Here the ideas take
- *  turns (each seat's first, then each one's second…, the seats in the order they first posted), and the replies follow
- *  the ideas they are on, in the ideas' order, the seats as they came. A round still at work keeps the order its
- *  messages came in, so nothing moves above what the person is reading while it runs. Only the seats' messages swap
- *  places among themselves: the person's posts, drafts, skips and dividers stay where time put them. */
-function takeTurns(c: Council, entries: Entry[]): Entry[] {
-    const ideas = entries.filter((e) => e.turn != null && e.turn.on === "");
-    const seats: string[] = [];
-    const bySeat = new Map<string, Entry[]>();
-    for (const e of ideas) {
-        if (!bySeat.has(e.turn.author)) {
-            seats.push(e.turn.author);
-            bySeat.set(e.turn.author, []);
-        }
-        bySeat.get(e.turn.author).push(e);
-    }
-    const ideaPlace = new Map<string, number>();
-    for (let k = 0; ideaPlace.size < ideas.length; k++) {
-        for (const seat of seats) {
-            const e = bySeat.get(seat)[k];
-            if (e != null) {
-                ideaPlace.set(e.item.id, ideaPlace.size);
-            }
-        }
-    }
-    const placeOf = (e: Entry) =>
-        e.turn.on === "" ? ideaPlace.get(e.item.id) : (ideaPlace.get(e.turn.on) ?? Number.MAX_SAFE_INTEGER);
-    const out = entries.slice();
-    const rounds = new Set(entries.filter((e) => e.turn != null).map((e) => e.turn.round));
-    for (const round of rounds) {
-        if (!settled(c, round)) {
-            continue;
-        }
-        const slots = out.flatMap((e, i) => (e.turn?.round === round ? [i] : []));
-        const moved = slots
-            .map((i, order) => ({ e: out[i], order }))
-            .sort((a, b) => placeOf(a.e) - placeOf(b.e) || a.order - b.order)
-            .map((x) => x.e);
-        slots.forEach((slot, i) => (out[slot] = moved[i]));
-    }
-    return out;
-}
-
-// a run of replies on one idea names it once, on the first: the channel reads as a group chat's quoted reply
-function quoteOnce(items: ChannelItem[]): ChannelItem[] {
-    let on = "";
-    return items.map((item) => {
-        if (item.kind !== "reply" || item.proposalid === "") {
-            on = "";
-            return item;
-        }
-        const repeat = item.proposalid === on;
-        on = item.proposalid;
-        return repeat ? { ...item, on: "" } : item;
-    });
-}
-
-/** Pure: the channel of a council: the person's question, a divider for each round with something in the channel,
- *  every idea (sent, or held as a draft), the held reply drafts, the lines where an agent skipped a turn, and the
- *  person's posts to the whole council with the answers to them; then a failure line for each seat whose call failed,
- *  and last a typing row for each seat at work. A sent reply on an idea is not here: it is in that idea's thread
- *  (`councilThread`), which the idea's reply chip counts and opens, as a group chat keeps a thread out of the channel.
- *  It is in time order, but for the seats taking turns in each settled round (`takeTurns`). A dropped item is left out.
- *
- *  With `only`, an expert's id, it is that seat's messages alone (the Summary's "show their messages"): the question,
- *  its ideas, and every reply it wrote, its replies on ideas too (each names its idea, `on`, the first of a run on one
- *  idea only), with its own lines; a round with nothing of its own leaves its divider out. An agreement with nothing to
- *  add is no message. */
-export function councilChannel(c: Council, only?: string): ChannelItem[] {
-    const view = sentView(c);
-    const entries: Entry[] = [];
-    const push = (ts: number, rank: number, item: ChannelItem, turn?: Turn) =>
-        entries.push({ ts, rank, index: entries.length, item, turn });
-    const theirs = (author: string) => only == null || author === only;
-
-    for (const p of sentProposals(c)) {
-        if (theirs(p.author)) {
-            push(p.ts, 1, ideaPost(c, view, p), { round: 1, author: p.author, on: "" });
-        }
-    }
-    for (const d of heldDrafts(c)) {
-        if (theirs(d.kind === "idea" ? d.proposal.author : d.reply.author)) {
-            push(d.ts, 1, draftPost(c, d));
-        }
-    }
-    for (const r of readableReplies(c)) {
-        // a reply on an idea lives in its thread, which the idea's reply chip opens; one seat's view keeps them all
-        if (only == null && r.proposalid !== "") {
-            continue;
-        }
-        if (theirs(r.author)) {
-            // a seat's reply on an idea takes its turn; the person's posts, and the answers to a post, stay in time
-            const turn =
-                r.author !== YOU && r.proposalid !== ""
-                    ? { round: r.round, author: r.author, on: r.proposalid }
-                    : undefined;
-            push(r.ts, 1, replyPost(c, r), turn);
-        }
-    }
-    for (const s of c.skips ?? []) {
-        if (!theirs(s.expert)) {
-            continue;
-        }
-        const seat = c.experts.find((e) => e.id === s.expert);
-        push(s.ts, 1, {
-            kind: "skip",
-            id: `skip:${s.expert}:${s.round}:${s.ts}`,
-            ...whoIs(c, s.expert),
-            tab: seat?.agent ?? "",
-            round: s.round,
-            reason: s.reason,
-            text: `${authorName(c, s.expert)} skipped round ${s.round}: ${s.reason}.`,
-            ...postedAt(c, s.ts),
-        });
-    }
-    for (const { ts, line } of dividers(c)) {
-        push(ts, 0, line);
-    }
-
-    const items = quoteOnce(
-        takeTurns(
-            c,
-            entries.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.rank - b.rank || a.index - b.index))
-        ).map((e) => e.item)
-    );
-
-    const asked = askedParts(c.question);
-    if (asked.question !== "") {
-        items.unshift({
-            kind: "question",
-            id: "question",
-            ...whoIs(c, YOU),
-            label: "asked",
-            text: asked.question,
-            limits: asked.limits,
-            ...postedAt(c, c.started ?? 0),
-        });
-    }
-
-    for (const e of c.experts) {
-        const failure = c.failed?.[e.id];
-        if (failure != null && theirs(e.id)) {
-            items.push({
-                kind: "failure",
-                id: `failed:${e.id}`,
-                ...whoIs(c, e.id),
-                round: failure.round,
-                error: failure.error,
-                text: `${e.name} ${failedWhile(c, failure.round)}`,
-            });
-        }
-    }
-    for (const e of c.experts) {
-        const act = c.activity?.[e.id];
-        if (isLit(c, e.id) && act != null && theirs(e.id)) {
-            items.push(typingRow(c, e, act));
-        }
-    }
-    // a round with nothing in the channel (its replies are all in threads) leaves its divider out
-    return items.filter(
-        (item, i) => item.kind !== "divider" || (i + 1 < items.length && items[i + 1].kind !== "divider")
-    );
-}
-
-// ---- a thread ----
-
 export type ThreadItem = ReplyPost | DraftPost | TypingRow;
 
-/** One idea's thread: the idea on top, then its replies in the order they were posted (a held reply among them as a
- *  draft), then a typing row for each seat replying on it. */
-export interface ChatThread {
-    idea: IdeaPost;
-    items: ThreadItem[];
-}
+/** What the thread panel shows: an idea's thread (the idea on top, then its replies in the order they were posted, a
+ *  held reply among them as a draft, then a typing row for each seat replying on it); a held idea's (its draft alone,
+ *  to Send, Edit or Drop: it has no replies yet); or the Chat's (`CHAT_THREAD`: the person's question, then the
+ *  replies tied to no idea, their held drafts among them, then a typing row for each seat at work on none). */
+export type ChatThread =
+    | { kind: "idea"; id: string; idea: IdeaPost; items: ThreadItem[] }
+    | { kind: "held"; id: string; draft: DraftPost; items: ThreadItem[] }
+    | { kind: "chat"; id: typeof CHAT_THREAD; question: QuestionPost | null; items: ThreadItem[] };
 
-/** Pure: the thread of an idea; null for an id that is not a sent idea of the council (a held draft has none yet, a
- *  dropped idea none at all). */
-export function councilThread(c: Council, proposalId: string): ChatThread | null {
-    const p = sentProposals(c).find((x) => x.id === proposalId);
-    if (p == null) {
-        return null;
-    }
+// the replies and held reply drafts on an idea (`proposalId`, "" for none), by time, then the seats at work on it
+function threadItems(c: Council, proposalId: string): ThreadItem[] {
     const dated: { ts: number; item: ThreadItem }[] = [];
     for (const r of readableReplies(c)) {
-        if (r.proposalid === p.id) {
+        if (r.proposalid === proposalId) {
             dated.push({ ts: r.ts, item: replyPost(c, r) });
         }
     }
     for (const d of heldDrafts(c)) {
-        if (d.kind === "reply" && d.reply.proposalid === p.id) {
+        if (d.kind === "reply" && d.reply.proposalid === proposalId) {
             dated.push({ ts: d.ts, item: draftPost(c, d) });
         }
     }
     const items = dated.sort((a, b) => a.ts - b.ts).map((x) => x.item);
     for (const e of c.experts) {
         const act = c.activity?.[e.id];
-        if (isLit(c, e.id) && act?.proposalid === p.id) {
+        if (isLit(c, e.id) && act != null && (act.proposalid ?? "") === proposalId) {
             items.push(typingRow(c, e, act));
         }
     }
-    return { idea: ideaPost(c, sentView(c), p), items };
+    return items;
 }
 
-/** Pure: the ideas j and k move over, in the order the channel draws them (`items`, the whole channel or one seat's):
- *  the sent ones (a held draft has no thread to open). */
-export function ideaOrder(items: readonly ChannelItem[]): string[] {
-    return items.filter((i): i is IdeaPost => i.kind === "idea").map((i) => i.id);
+/** Pure: the thread `id` opens: `CHAT_THREAD`'s, a sent idea's or a held idea's; null for an id the council has no
+ *  such thing for (the id of another council, a dropped idea). */
+export function councilThread(c: Council, id: string): ChatThread | null {
+    if (id === CHAT_THREAD) {
+        return { kind: "chat", id: CHAT_THREAD, question: questionPost(c), items: threadItems(c, "") };
+    }
+    const p = sentProposals(c).find((x) => x.id === id);
+    if (p != null) {
+        return { kind: "idea", id, idea: ideaPost(c, sentView(c), p), items: threadItems(c, p.id) };
+    }
+    const held = heldDrafts(c).find((d) => d.kind === "idea" && d.id === id);
+    return held == null ? null : { kind: "held", id, draft: draftPost(c, held), items: [] };
 }
 
-/** Pure: the idea j (`1`) or k (`-1`) moves to from `from`: the first (or, going up, the last) when none is focused or
- *  the focused one is gone, and it stops at either end. Null when the channel has no idea. */
+/** Pure: the row j (`1`) or k (`-1`) moves to from `from`: the first (or, going up, the last) when none is focused or
+ *  the focused one is gone, and it stops at either end. Null when the list has no row. */
 export function moveIdea(order: readonly string[], from: string | null, dir: 1 | -1): string | null {
     if (order.length === 0) {
         return null;

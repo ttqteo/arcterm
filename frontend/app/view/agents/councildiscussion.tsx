@@ -3,9 +3,10 @@
 //
 // The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html, M1-discussion-tab.dc.html): a header in one 52px
 // row (the Report / Discussion tabs, the mode, the feature, the step chip, the seats' stack once the chat shows, its
-// list the filters, the cost line, Summarize while there is a summary to make, Stop council, or Close once it ended),
-// and a body that depends on where the council is. Once the seats have proposed it is the chat (councilchat.tsx): a Slack-style channel with threads, for a
-// council that runs its replies or its summary, one that is over, and one that waits on the drafts of its seats; while
+// list the filters, the cost line, Summarize while there is a summary to make, Stop council, and Pin), and a body that
+// depends on where the council is. Once the seats have proposed it is the list of ideas (councilchat.tsx): a Chat row and
+// a row per idea, each opening its thread on the right, for a council that runs its replies or its summary, one that is
+// over, and one that waits on the drafts of its seats; while
 // the experts first read and propose it is each expert's card with what it is reading and the ideas as they arrive; at
 // the pause it is the ticks and the question for the argument; a council the token gate did not run offers Start
 // council, and one that waits for the running council says so. The words are plain ones: no proposal id or stance word
@@ -179,7 +180,6 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
                     acts={acts}
                     chats={chats}
                     notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
-                    onOpenTerminal={(tab) => model.openTerminal(tab)}
                     onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}
                 />
             )}
@@ -305,7 +305,7 @@ function Header({
     const costRest = costParts.slice(1).join(" · ");
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            {/* one 52px row that never wraps: the tabs, the seats' stack, the cost and Close (an X, Reopen an arrow) keep
+            {/* one 52px row that never wraps: the tabs, the seats' stack, the cost and Pin (Pinned once it is) keep
                 their width and the title truncates before anything leaves the row. Under 1000px of pane the mode chip goes,
                 under 900px Summarize keeps its icon alone and the stack three avatars. The Report tab is where a summary opens. */}
             <div className="flex h-[52px] min-w-0 items-stretch gap-3 px-6 @max-[900px]:gap-2 @max-[900px]:px-4">
