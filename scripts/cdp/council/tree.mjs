@@ -5,7 +5,8 @@
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
 // councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
-// and Pin / Unpin (the Report's tab bar and a tree row, step 11) have their stop and pin commands replaced in the page.
+// and Pin / Unpin (the Report's tab bar, a tree row and a Councils row, step 11) have their stop and pin commands replaced
+// in the page.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -526,6 +527,66 @@ export const councilTree = {
                 unpins[0].data?.id === doneId &&
                 unpins[0].data?.pinned === false,
             JSON.stringify({ stays, unpinOffered, unpinTitle, pinOffered, pinTitle, closeLeft, unpins })
+        );
+
+        // 11c. Councils (the button at the sidebar's top) marks the pinned council's row with a pin, and the row's hover
+        // button reads Unpin there (Pin on an unpinned one) and asks wavesrv to unpin it; once saved, the mark goes
+        writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
+        await announceCouncil(h, ctx, doneId);
+        const historyRow = (id) => `[data-council-history-row="${id}"]`;
+        const historyAct = (id, act) =>
+            `document.querySelector(${JSON.stringify(`[data-council-history-item="${id}"] [data-council-history-act="${act}"]`)})`;
+        const historyActShown = (id, act) => `(() => {
+            const el = ${historyAct(id, act)};
+            return !!el && getComputedStyle(el.parentElement).opacity === "1";
+        })()`;
+        const markOn = (id) =>
+            `!!document.querySelector(${JSON.stringify(`${historyRow(id)}[data-council-history-pinned] [data-council-history-pin-mark]`)})`;
+        const listOpened = await h.ev(click("[data-agent-councils-open]"));
+        const listShown = await until(present(historyRow(doneId)));
+        const marked = await until(markOn(doneId));
+        const unmarkedOther = await h.ev(`!${markOn(runningId)}`);
+        await hoverOn(h, `${historyRow(runningId)}`);
+        const listPinOffered = await until(historyActShown(runningId, "pin"));
+        await hoverOn(h, `${historyRow(doneId)}`);
+        const listUnpinOffered = await until(historyActShown(doneId, "unpin"));
+        const listUnpinTitle = await h.ev(`${historyAct(doneId, "unpin")}?.title ?? null`);
+        await h.shot("cdp-shots/council-history-pinned.png");
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${historyAct(doneId, "unpin")}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const listUnpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // what wavesrv saves for that unpin: the fixture as it was
+        writeCouncil(ctx, "done");
+        await announceCouncil(h, ctx, doneId);
+        const unmarked = await until(`${present(historyRow(doneId))} && !${markOn(doneId)}`);
+        // back to the terminal for the steps that follow (the search box is not focused, so one Escape leaves Councils)
+        await pressEscape(h);
+        rec(
+            "11c. Councils marks a pinned council's row with a pin; the row's hover button reads Unpin there and Pin on an unpinned one, and Unpin asks wavesrv to unpin it, after which the mark goes",
+            listOpened &&
+                listShown &&
+                marked &&
+                unmarkedOther &&
+                listPinOffered &&
+                listUnpinOffered &&
+                listUnpinTitle === "Unpin" &&
+                listUnpins.length === 1 &&
+                listUnpins[0].data?.id === doneId &&
+                listUnpins[0].data?.pinned === false &&
+                unmarked,
+            JSON.stringify({
+                listOpened,
+                listShown,
+                marked,
+                unmarkedOther,
+                listPinOffered,
+                listUnpinOffered,
+                listUnpinTitle,
+                listUnpins,
+                unmarked,
+            })
         );
 
         // ---- the room's agents (steps 12 on) ----

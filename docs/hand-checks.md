@@ -380,12 +380,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with
   Open and Show in Explorer; Open starts PowerPoint on it, Show in Explorer
   selects it. A `.exe` path offers neither. `src-tauri/src/commands.rs` `open_path`, `filetab.tsx`, commit
-- [ ] (arcterm) Close council, not delete: in the Agent tree hover a Failed or Done council row and click its ×: no
-  confirm, the row leaves the tree (no fold), and `wsh council list` shows it `(closed)`. Councils at the sidebar's top
-  (`Ctrl+G` `o`) lists it with a Closed tag; open it and its header's Reopen puts it back in the tree. Close it again
-  and press Retry on it (or `wsh council retry`): it comes back by itself. Right-click → Remove council… asks, then its
-  file is in `~/.arc/trash/<ms>-council-<id>/`. A Running or Waiting on you row has no ×. `pkg/council/runner.go`
-  `SetClosed`, `councilhistoryview.tsx`, commit
+- [ ] (arcterm) Pin a council, not close it: in the Agent tree hover a Done council row and click its Pin: it moves to
+  the top of its project, and the Report's tab bar reads Pinned. Councils at the sidebar's top (`Ctrl+G` `o`) shows a pin
+  mark on its row; hover the row there and click Unpin (or right-click → Unpin): the mark goes, and a council that
+  ended over a day ago leaves the tree at once. Pin a Running one: it works. Press Retry on a pinned one (or
+  `wsh council retry`): it stays pinned. `wsh council pin <id>` / `pin --off` do the same. Right-click → Remove
+  council… asks, then its file is in `~/.arc/trash/<ms>-council-<id>/`. `pkg/council/runner.go` `SetPinned`,
+  `councilhistoryview.tsx`, commit
 - [ ] (arcterm) A slow wake clears its sleep marks: after installing a build with this fix, the `arcterm` tab whose
   block `027015dd` runs while its meta still holds `agent:sleeping` (a 2026-10-22 20:26 wake whose 10s write clock had
   run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and

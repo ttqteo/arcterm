@@ -134,10 +134,17 @@ Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi
   tất cả chạy lại cùng lúc.
 - Panel **Summary failed** có nút đóng; nó chỉ hiện lại khi bản tổng kết lỗi lần nữa.
 
-## Đóng, mở lại, xóa
+## Ghim, xóa
 
-- **×** trên hàng của một council đã kết thúc sẽ **đóng** nó: council gấp vào mục **Closed councils** của project, và
-  **Reopen** mở lại. Retry hay một câu trả lời mới cũng tự mở lại nó.
+- **Pin** ở đầu Discussion và trên thanh tab của báo cáo **ghim** council, ở bất kỳ trạng thái nào, kể cả đang chạy: nút
+  đổi thành **Pinned**, và council nằm trên cùng trong project của nó ở cây Agent. Bấm **Pinned** để bỏ ghim. Hover một
+  hàng council trong cây (hay chuột phải) cũng có **Pin**, hay **Unpin** trên council đã ghim. Chỉ bạn ghim và bỏ ghim:
+  Retry, Summarize again hay một câu trả lời mới không đụng tới.
+- Cây chỉ giữ những council đang chạy, đang chờ bạn hay đang xếp hàng; council đã ghim; council kết thúc chưa tới một
+  ngày; và council đã kết thúc mà bạn chưa mở. Một council đã kết thúc, không ghim, quá một ngày thì tự rời cây; bỏ ghim
+  một council như thế là nó rời cây ngay.
+- **Councils** ở đầu sidebar liệt kê mọi council: hàng được ghim có dấu ghim, và mỗi hàng có **Pin** / **Unpin** khi
+  hover hay chuột phải. Đây là chỗ tìm lại một council đã rời cây.
 - **Remove council…** trong menu chuột phải xóa hẳn: file của council vào `~/.arc/trash`, còn tài liệu nó đã viết vẫn
   giữ nguyên. Council đang chạy hay đang chờ bạn phải dừng trước.
 - Chuột phải → **Copy id** lấy id để dùng với `wsh council show|wait|stop|rm`.
@@ -162,6 +169,6 @@ Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi
 | `wsh council show <id>` / `wait <id>` | In Summary và Matrix dạng markdown; `wait` chờ council dừng rồi mới in |
 | `wsh council retry <id>` | Chạy lại một lượt lỗi; `--expert <seat>`, `--model <model>`, `--all` cho mọi ghế lỗi |
 | `wsh council stop <id>` | Dừng council đang chạy hay đang xếp hàng |
-| `wsh council close <id>` / `close --reopen` | Đóng / mở lại một council đã kết thúc |
+| `wsh council pin <id>` / `pin --off` | Ghim / bỏ ghim một council, ở bất kỳ trạng thái nào |
 | `wsh council rm <id>` | Xóa hẳn một council đã kết thúc |
 | `wsh council bench` | Chạy bộ benchmark của council (hỏi Token burn trước); `bench results`, `bench stop` |

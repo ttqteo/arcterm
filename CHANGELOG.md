@@ -26,10 +26,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, a tree row's hover button and Councils keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other.
+- A council's Discussion is a list of its ideas, one row each with its author, a New badge and its count of agrees, doubts and objections; a Chat row on top holds your messages and the answers to them, and a click opens a row's thread beside it.
+- A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
+- A council's minutes count the time it ran, not the clock since it started, so a council chatted in the next day no longer reads hundreds of minutes.
 - A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
 
 ### Fixed
 
+- A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.
 
 ## 0.15.21 — 2026-11-03

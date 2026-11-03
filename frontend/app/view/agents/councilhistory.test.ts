@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     councilHistoryCount,
+    councilHistoryPinAct,
     councilHistoryRows,
     folderName,
     groupCouncilHistory,
@@ -127,6 +128,23 @@ describe("groupCouncilHistory", () => {
             roots
         );
         expect(groupCouncilHistory(rows, now).map((g) => g.key)).toEqual(["yesterday"]);
+    });
+});
+
+describe("councilHistoryPinAct", () => {
+    it("offers Unpin on a pinned council and Pin on any other, a running or queued one too", () => {
+        const rows = councilHistoryRows(
+            [
+                council("p", "/home/u/loom", { pinned: 7 }),
+                council("run", "/home/u/loom", { state: "running" }),
+                council("q", "/home/u/loom", { state: "queued" }),
+            ],
+            roots
+        );
+        const act = new Map(rows.map((r) => [r.id, councilHistoryPinAct(r)]));
+        expect(act.get("p")).toEqual({ act: "unpin", label: "Unpin", pin: false });
+        expect(act.get("run")).toEqual({ act: "pin", label: "Pin", pin: true });
+        expect(act.get("q")).toEqual({ act: "pin", label: "Pin", pin: true });
     });
 });
 

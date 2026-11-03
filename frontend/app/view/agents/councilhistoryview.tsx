@@ -1,29 +1,32 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Agent → Councils (agentcenter.ts' `councils` mode): every council of every project, the ones the person closed too,
-// as a list grouped Today / Yesterday / Earlier, the way the Canvas gallery shows its canvases. The tree lists only the
-// councils still open, so this is where a closed one is found again; a row opens the council (showCouncil), whose
-// header's Reopen puts it back in the tree. Thin: the rows, the search and the groups come from councilhistory.ts.
+// Agent → Councils (agentcenter.ts' `councils` mode): every council of every project, as a list grouped Today /
+// Yesterday / Earlier, the way the Canvas gallery shows its canvases. The tree keeps only some councils (live, pinned,
+// unread or recent ones), so this is where an older one is found again: a row opens the council (showCouncil), a pin
+// marks a pinned one, and each row's hover button and menu Pin it (Unpin a pinned one), which keeps it at the top of its
+// project in the tree. Thin: the rows, the search, the groups and the pin action come from councilhistory.ts.
 
 import { SkeletonLine } from "@/app/element/skeleton";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
-import { cn } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { Search, Users } from "lucide-react";
-import { useMemo, type KeyboardEvent } from "react";
+import { Hash, Pin, PinOff, Search, Users } from "lucide-react";
+import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort } from "./agentsviewmodel";
 import { COUNCIL_TONE, CouncilSeatPair } from "./agenttree";
 import {
     councilHistoryCount,
+    councilHistoryPinAct,
     councilHistoryRows,
     groupCouncilHistory,
     searchCouncilHistory,
     type CouncilHistoryRow,
 } from "./councilhistory";
-import { councilUnreadAtom, useCouncils } from "./councilstore";
+import { councilUnreadAtom, setCouncilPinned, useCouncils } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 
 // the search survives the centre leaving Councils (a row opens a council, which unmounts this view)
@@ -106,8 +109,8 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
                     <Users size={28} strokeWidth={1.6} className="text-ink-faint" aria-hidden />
                     <span className="text-[13.5px] font-semibold text-primary">No councils yet</span>
                     <span className="max-w-[380px] text-[12.5px] leading-[1.5] text-muted">
-                        Start one from New → Council, or ask an agent for one. Every council shows up here, closed ones
-                        too, and stays until you remove it.
+                        Start one from New → Council, or ask an agent for one. Every council shows up here, the ones the
+                        tree no longer keeps too, and stays until you remove it.
                     </span>
                 </div>
             ) : groups.length === 0 ? (
@@ -151,47 +154,88 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
     );
 }
 
-// One council: its seats' picture, its feature, then its project, its state in a word in its tone, and Pinned when the
-// person pinned it; the time since its newest message at the right. A click opens it.
+// One council: its seats' picture, its feature, then its project and its state in a word in its tone; at the right a
+// pin when the person pinned it, and the time since its newest message. A click opens it. Hover shows Pin (Unpin on a
+// pinned one), and the menu offers Copy id and the same Pin / Unpin, as the tree's council row does; the button cannot
+// hold the hover button, so the row sits in a wrapper beside it.
 function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: number }) {
     const tone = COUNCIL_TONE[row.tone];
+    const pin = councilHistoryPinAct(row);
+    const PinIcon = row.pinned ? PinOff : Pin;
+    const act = () => fireAndForget(() => setCouncilPinned(row.id, pin.pin));
+    const onContextMenu = (e: MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            {
+                label: "Copy id",
+                sublabel: row.id,
+                icon: <Hash size={15} />,
+                click: () => void navigator.clipboard.writeText(row.id),
+            },
+            { type: "separator" } as const,
+            { label: pin.label, icon: <PinIcon size={15} />, click: act },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
     return (
-        <button
-            type="button"
-            data-council-history-row={row.id}
-            data-council-history-pinned={row.pinned ? "" : undefined}
-            title={row.question !== "" ? `${row.feature}\n${row.question}` : row.feature}
-            onClick={() => showCouncil(row.id)}
-            className="group/council flex w-full cursor-pointer items-center gap-[12px] rounded-[8px] px-[10px] py-[8px] text-left transition-colors duration-[140ms] hover:bg-surface-hover"
+        <div
+            data-council-history-item={row.id}
+            onContextMenu={onContextMenu}
+            className="group group/council flex items-center rounded-[8px] transition-colors duration-[140ms] hover:bg-surface-hover"
         >
-            <CouncilSeatPair seats={row.seats} dot={row.dot} selected={false} onPage />
-            <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-[6px]">
-                    <span className="min-w-0 truncate text-[13px] leading-[17px] text-primary">{row.feature}</span>
-                    {row.unread ? (
-                        <span
-                            role="img"
-                            aria-label="Not opened since it ended"
-                            className="h-[6px] w-[6px] flex-none rounded-full bg-primary"
-                        />
-                    ) : null}
+            <button
+                type="button"
+                data-council-history-row={row.id}
+                data-council-history-pinned={row.pinned ? "" : undefined}
+                title={row.question !== "" ? `${row.feature}\n${row.question}` : row.feature}
+                onClick={() => showCouncil(row.id)}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-[12px] rounded-[8px] py-[8px] pl-[10px] text-left"
+            >
+                <CouncilSeatPair seats={row.seats} dot={row.dot} selected={false} onPage />
+                <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-[6px]">
+                        <span className="min-w-0 truncate text-[13px] leading-[17px] text-primary">{row.feature}</span>
+                        {row.unread ? (
+                            <span
+                                role="img"
+                                aria-label="Not opened since it ended"
+                                className="h-[6px] w-[6px] flex-none rounded-full bg-primary"
+                            />
+                        ) : null}
+                    </div>
+                    <div className="mt-[2px] flex min-w-0 items-center text-[11.5px] leading-[15px]">
+                        <span className="flex-none text-secondary">{row.projectName}</span>
+                        <span className="min-w-0 truncate">
+                            <span className="text-muted">&nbsp;·&nbsp;</span>
+                            <span className={tone.text}>{row.meta}</span>
+                        </span>
+                    </div>
                 </div>
-                <div className="mt-[2px] flex min-w-0 items-center text-[11.5px] leading-[15px]">
-                    <span className="flex-none text-secondary">{row.projectName}</span>
-                    <span className="min-w-0 truncate">
-                        <span className="text-muted">&nbsp;·&nbsp;</span>
-                        <span className={tone.text}>{row.meta}</span>
-                    </span>
-                </div>
-            </div>
-            {row.pinned ? (
-                <span className="flex-none rounded-full bg-pill px-[8px] py-[2px] text-[10.5px] text-muted">
-                    Pinned
+                {row.pinned ? (
+                    <Pin
+                        data-council-history-pin-mark
+                        role="img"
+                        aria-label="Pinned"
+                        size={12}
+                        strokeWidth={2}
+                        className="flex-none text-muted"
+                    />
+                ) : null}
+                <span className="w-[44px] flex-none text-right text-[11.5px] tabular-nums text-muted">
+                    {formatAgeShort(now - row.lastAt)}
                 </span>
-            ) : null}
-            <span className="w-[44px] flex-none text-right text-[11.5px] tabular-nums text-muted">
-                {formatAgeShort(now - row.lastAt)}
+            </button>
+            <span className="flex flex-none items-center pl-[6px] pr-[8px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                <button
+                    type="button"
+                    data-council-history-act={pin.act}
+                    title={pin.label}
+                    aria-label={`${pin.label} ${row.feature}`}
+                    onClick={act}
+                    className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[4px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <PinIcon size={13} aria-hidden />
+                </button>
             </span>
-        </button>
+        </div>
     );
 }

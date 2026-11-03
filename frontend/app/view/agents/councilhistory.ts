@@ -82,6 +82,16 @@ export function groupCouncilHistory(rows: readonly CouncilHistoryRow[], now: num
     return groups.filter((g) => g.rows.length > 0);
 }
 
+/** Pure: what a row's hover button and menu item do: Unpin on a pinned council, Pin on any other whatever its state
+ *  (running and queued ones too, as the Report's Pin); `pin` is the value setCouncilPinned is called with. */
+export function councilHistoryPinAct(row: Pick<CouncilHistoryRow, "pinned">): {
+    act: "pin" | "unpin";
+    label: "Pin" | "Unpin";
+    pin: boolean;
+} {
+    return row.pinned ? { act: "unpin", label: "Unpin", pin: false } : { act: "pin", label: "Pin", pin: true };
+}
+
 /** Pure: the header's count: every council, and how many of them are pinned when any is. */
 export function councilHistoryCount(rows: readonly CouncilHistoryRow[]): string {
     const pinned = rows.filter((r) => r.pinned).length;
