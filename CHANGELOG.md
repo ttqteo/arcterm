@@ -36,6 +36,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Deleting a session you just closed now says it was written to seconds ago and how long to wait, instead of "still running … stop it first"; a session a tab still holds says so on its own.
 - A council question that names an `.astro`, `.vue` or `.svelte` file turns on Let them read files by itself, like any other source file.
 - A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.

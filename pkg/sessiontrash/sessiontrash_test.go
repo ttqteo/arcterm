@@ -216,8 +216,8 @@ func TestDeleteRefusesASessionAnOpenTabHas(t *testing.T) {
 	if os.PathSeparator != '\\' {
 		live = f.transcript
 	}
-	if _, err := Delete(f.opts("/some/other.jsonl", live), f.transcript); !errors.Is(err, ErrLive) {
-		t.Fatalf("err = %v, want ErrLive", err)
+	if _, err := Delete(f.opts("/some/other.jsonl", live), f.transcript); !errors.Is(err, ErrOpenTab) || !errors.Is(err, ErrLive) {
+		t.Fatalf("err = %v, want ErrOpenTab", err)
 	}
 	if !exists(f.transcript) || exists(f.trash) {
 		t.Fatal("a live session was moved")
@@ -244,14 +244,31 @@ func TestDeleteRefusesASessionWrittenInTheLastTwoMinutes(t *testing.T) {
 		}
 		_, err := Delete(f.opts(), f.transcript)
 		if c.live {
-			if !errors.Is(err, ErrLive) || !exists(f.transcript) {
-				t.Errorf("written %v ago: err = %v, want ErrLive and the file left alone", c.age, err)
+			var rw *RecentWriteError
+			if !errors.Is(err, ErrLive) || !errors.As(err, &rw) || !exists(f.transcript) {
+				t.Errorf("written %v ago: err = %v, want a RecentWriteError and the file left alone", c.age, err)
+				continue
+			}
+			if rw.Wait <= 0 || rw.Wait < LiveWindow-c.age || rw.Wait%time.Second != 0 {
+				t.Errorf("written %v ago: wait = %v, want the rest of the window rounded up to a second", c.age, rw.Wait)
 			}
 			continue
 		}
 		if err != nil || exists(f.transcript) {
 			t.Errorf("written %v ago: err = %v, want it moved", c.age, err)
 		}
+	}
+}
+
+func TestRecentWriteErrorSaysHowLongToWait(t *testing.T) {
+	msg := (&RecentWriteError{Ago: 34 * time.Second, Wait: 86 * time.Second}).Error()
+	for _, want := range []string{"34s ago", "try again in 1m26s"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q lacks %q", msg, want)
+		}
+	}
+	if msg := (&RecentWriteError{Ago: -5 * time.Second, Wait: 125 * time.Second}).Error(); !strings.Contains(msg, "just now") {
+		t.Errorf("a clock ahead of the file system: message %q, want \"just now\"", msg)
 	}
 }
 
