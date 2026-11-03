@@ -1081,7 +1081,13 @@ async function done(h, ctx, rec) {
         !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "true",
         `${plain}  →  ${reading}`
     );
-    rec("follow-up: the outdated summary reads `Summarize again`", summarize === "Summarize again", summarize);
+    // the one reply after the summary is the person's own, which leaves it current (spec decision 5): the header draws
+    // no Summarize
+    rec(
+        "follow-up: a summary only the person replied after is current, so the header has no Summarize",
+        summarize === "",
+        summarize
+    );
 
     await stubRpc(h, ["CouncilReplyCommand"]);
     await h.shot("cdp-shots/council-discussion-followup.png");

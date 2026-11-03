@@ -252,7 +252,7 @@ export const councilSummary = {
                 /^4 experts · \d+ min · [\d.]+M tokens$/.test(cover.facts ?? "") &&
                 !cover.inBar &&
                 !cover.showDiscussion &&
-                /^Written by the coordinator at \d\d:\d\d from 18 replies$/.test(cover.written ?? "") &&
+                /^Written by the coordinator at \d\d:\d\d from 18 replies · 1 reply since$/.test(cover.written ?? "") &&
                 cover.experts.length === want.length &&
                 want.every((w, i) => cover.experts[i] === w) &&
                 cover.ux === "2 ideas, 2 in the summary · 4 replies" &&
@@ -324,31 +324,36 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, matrix, chevrons }) };
         });
 
-        await step("a seat in the glance opens the Discussion on its messages alone (its filter on), each thread reply naming its idea, and Everyone brings the rest back", async () => {
+        await step("a seat in the glance opens the Discussion's list on the ideas it wrote or replied to (its filter on), a row opens that idea's thread with the seat's reply in it, and Everyone brings the rest back", async () => {
             await click(h, `${SUMMARY} [data-council-glance] [data-council-expert='ux']`);
             const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
             const only = await h.ev(`({
-                ideas: [...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => e.dataset.councilIdea),
-                on: [...document.querySelectorAll("[data-council-channel] [data-council-reply-on]")].map((e) => e.dataset.councilReplyOn),
+                // UX wrote P1 and P2 and replied to the other four, so every idea keeps its row, in the Report's order
+                ideas: [...document.querySelectorAll("[data-council-list] [data-council-idea]")].map((e) => e.dataset.councilIdea),
                 bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
                 // the button: the Agent tree's council row and Setup's seat list carry data-council-seats too
                 pressed: document.querySelector("button[data-council-seats]")?.getAttribute("data-only") ?? null,
             })`);
             await h.shot("cdp-shots/council-discussion-only.png");
-            await click(h, "[data-council-channel] [data-council-reply-on='P3']");
-            const thread = await until(h, `!!document.querySelector("[data-council-thread]")`);
+            await click(h, "[data-council-list] [data-council-thread-open='P3']");
+            // P3 is RAM's idea; UX's reply on it (r7) is in its thread, not in the list
+            const thread = await until(
+                h,
+                `!!document.querySelector("[data-council-thread='P3'] [data-council-post='P3']") && !!document.querySelector("[data-council-thread='P3'] [data-council-reply-post='r7']")`
+            );
+            const inList = await exists(h, "[data-council-list] [data-council-reply-post]");
             await click(h, "[data-council-action='show-everyone']");
-            const all = await until(h, `!document.querySelector("[data-council-only]") && document.querySelectorAll("[data-council-channel] [data-council-idea]").length === 6`);
+            const all = await until(h, `!document.querySelector("[data-council-only]") && document.querySelectorAll("[data-council-list] [data-council-idea]").length === 6`);
             await openSummary(h, ctx);
             const ok =
                 shown &&
-                only.ideas.join("|") === "P1|P2" &&
-                [...only.on].sort().join("|") === "P3|P4|P5|P6" &&
+                only.ideas.join("|") === "P5|P1|P2|P3|P4|P6" &&
                 only.bar === "Only UX: 2 ideas and 4 replies" &&
                 only.pressed === "ux" &&
                 thread &&
+                !inList &&
                 all;
-            return { ok, detail: JSON.stringify({ shown, only, thread, all }) };
+            return { ok, detail: JSON.stringify({ shown, only, thread, inList, all }) };
         });
 
         await step("the Discussion tab opens the Discussion", async () => {
@@ -578,14 +583,61 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ label, foldedRows, before, rows: rows.map((r) => [r.id, r.first?.slice(0, 40), r.outcome]) }) };
         });
 
-        await step("the banner reads Outdated · 1 reply since, and Summarize again (stubbed) records one summarize call", async () => {
+        // the fixture's one reply after the summary is the person's own (r19): that leaves the summary current
+        await step("a plain reply after the summary shows no Outdated banner, only `· 1 reply since` on the Written by line", async () => {
+            const facts = await h.ev(`({
+                banner: !!document.querySelector("[data-council-banner='outdated']"),
+                again: !!document.querySelector("[data-council-action='summarize-again']"),
+                written: document.querySelector(${q(`${SUMMARY} [data-council-written]`)})?.innerText?.replace(/\\s+/g, " ").trim() ?? null,
+            })`);
+            const ok = !facts.banner && !facts.again && / · 1 reply since$/.test(facts.written ?? "");
+            return { ok, detail: JSON.stringify(facts) };
+        });
+
+        // a new idea and a changed stance posted after the summary: RAM's P7, and RAM turning from Agrees to Is against
+        // it on P1 (r1, before the summary)
+        await step("a new idea and a changed stance after the summary show the banner Outdated · 1 new idea, 1 changed stance, and Summarize again (stubbed) records one summarize call", async () => {
+            const outdated = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-outdated",
+                edit: (c) => {
+                    const at = c.summary.at;
+                    c.proposals.push({
+                        id: "P7",
+                        author: "ram",
+                        title: "Keep the pins in the workspace file",
+                        argument: "A workspace already saves its layout; the pins are layout.",
+                        ts: at + 60_000,
+                    });
+                    c.replies.push({
+                        id: "r20",
+                        proposalid: "P1",
+                        author: "ram",
+                        stance: "oppose",
+                        text: "On a second look a settings write per pin is too many writes.",
+                        round: 4,
+                        ts: at + 90_000,
+                    });
+                },
+            });
             await stubRpc(h, ["CouncilSummarizeCommand"]);
+            await openSummary(h, ctx, outdated);
+            const shown = await until(h, `!!document.querySelector("[data-council-banner='outdated']")`);
             const banner = await textOf(h, "[data-council-banner='outdated']");
+            const written = await textOf(h, `${SUMMARY} [data-council-written]`);
+            await h.shot("cdp-shots/council-summary-outdated.png");
             const clicked = await click(h, "[data-council-action='summarize-again']");
             await callSeen(h, "CouncilSummarizeCommand", () => true);
             const calls = await rpcCalls(h, "CouncilSummarizeCommand");
-            const ok = banner === "Outdated · 1 reply since" && clicked && calls.length === 1 && calls[0].data?.id === ctx.councilId;
-            return { ok, detail: JSON.stringify({ banner, clicked, calls }) };
+            await openSummary(h, ctx);
+            const ok =
+                shown &&
+                banner === "Outdated · 1 new idea, 1 changed stance" &&
+                // the banner speaks for the summary now: the Written by line says nothing about the replies since
+                /from 18 replies$/.test(written ?? "") &&
+                clicked &&
+                calls.length === 1 &&
+                calls[0].data?.id === outdated;
+            return { ok, detail: JSON.stringify({ banner, written, clicked, calls }) };
         });
 
         await step("Save as doc (in the ⋯ menu) writes the doc into the project and shows its path", async () => {
@@ -834,16 +886,16 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ ratedFacts, stoppedFacts, benchRating }) };
         });
 
-        await step("Ask the experts again on direction 1 opens the Discussion's chat with that proposal's thread open", async () => {
+        await step("Ask the experts again on direction 1 opens the Discussion with that idea's thread open", async () => {
             await openDirection(h, 1);
             const before = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
             await click(h, `${DETAIL(1)} [data-council-action='ask-again']`);
             const shown = await until(h, `!!document.querySelector("[data-council-discussion]")`);
             const open = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
-            // the chat opens that idea's thread: its panel carries the idea on top, and the channel marks it open
+            // the Discussion opens that idea's thread: its panel carries the idea on top, and the list marks its row open
             const post = await until(
                 h,
-                `!!document.querySelector("[data-council-discussion] [data-council-thread] [data-council-post='P5']") && document.querySelector("[data-council-idea='P5']")?.getAttribute("data-open") === "true"`
+                `!!document.querySelector("[data-council-discussion] [data-council-thread='P5'] [data-council-post='P5']") && document.querySelector("[data-council-list] [data-council-idea='P5']")?.getAttribute("data-open") === "true"`
             );
             await openSummary(h, ctx);
             return { ok: shown && open === "P5" && post, detail: JSON.stringify({ shown, before, open, post }) };

@@ -625,7 +625,15 @@ function endMs(c: Council, nowMs: number): number {
     return c.state === "running" ? nowMs : c.summary?.at || c.updated;
 }
 
+// the time the council ran: the runs' total (`ranms`) plus the run going now (`runstarted`), so a council started
+// yesterday and chatted in today counts only its runs. A council that keeps neither (an older file) is timed from
+// `started` to where its clock stops.
 function elapsedMs(c: Council, nowMs: number): number {
+    const ran = c.ranms ?? 0;
+    const since = c.runstarted ?? 0;
+    if (ran > 0 || since > 0) {
+        return ran + (since > 0 ? Math.max(0, nowMs - since) : 0);
+    }
     return c.started ? Math.max(0, endMs(c, nowMs) - c.started) : 0;
 }
 
@@ -788,11 +796,68 @@ export function callSegments(c: Council): SegmentState[] {
 
 // ---- the summary ----
 
-/** Pure: the replies sent after the summary, which make it `Outdated · N replies since`. A draft the person has not
- *  sent and a dropped one are not in it: the summary is not out of date for a reply no seat has seen. */
-export function outdatedCount(c: Council): number {
+/** What came after a council's summary: the sent ideas posted since (`ideas`), the ideas their authors revised since
+ *  (`revised`), the seats whose latest stance on an idea differs from their stance on it before the summary
+ *  (`stances`), and every other reply sent since, the person's included and reactions left out (`replies`). */
+export interface OutdatedChanges {
+    ideas: number;
+    revised: number;
+    stances: number;
+    replies: number;
+}
+
+/** Pure: what changed after the summary (`summary.at`), by plain comparison. Only a new idea, a revision or a changed
+ *  stance could change the answer; a seat's first stance on an idea is no change, and the stances and replies on an
+ *  idea posted after the summary fold into that new idea. A held or a dropped idea or reply reached no seat and counts
+ *  for nothing. All zero before a summary. */
+export function outdatedChanges(c: Council): OutdatedChanges {
+    const out: OutdatedChanges = { ideas: 0, revised: 0, stances: 0, replies: 0 };
     const at = c.summary?.at;
-    return at == null ? 0 : sentReplies(c).filter((r) => r.ts > at).length;
+    if (at == null) {
+        return out;
+    }
+    const fresh = new Set(
+        sentProposals(c)
+            .filter((p) => p.ts > at)
+            .map((p) => p.id)
+    );
+    out.ideas = fresh.size;
+    const before = latestStances({ ...c, replies: (c.replies ?? []).filter((r) => r.ts <= at) });
+    const after = latestStances(c);
+    // `${seat} ${idea}` of each changed stance
+    const changed = new Set<string>();
+    for (const [idea, of] of Object.entries(after)) {
+        if (fresh.has(idea)) {
+            continue;
+        }
+        for (const [seat, stance] of Object.entries(of)) {
+            const was = before[idea]?.[seat];
+            if (was != null && was !== stance) {
+                changed.add(`${seat} ${idea}`);
+            }
+        }
+    }
+    out.stances = changed.size;
+    const revised = new Set<string>();
+    for (const r of sentReplies(c)) {
+        if (r.ts <= at || fresh.has(r.proposalid)) {
+            continue;
+        }
+        if (r.revised && r.author !== YOU) {
+            revised.add(r.proposalid);
+        } else if (!(isStance(r.stance) && changed.has(`${r.author} ${r.proposalid}`)) && !isReaction(r)) {
+            out.replies++;
+        }
+    }
+    out.revised = revised.size;
+    return out;
+}
+
+/** Pure: how many changes make the summary `Outdated` (outdatedChanges' ideas, revisions and changed stances); the
+ *  plain replies since do not. */
+export function outdatedCount(c: Council): number {
+    const o = outdatedChanges(c);
+    return o.ideas + o.revised + o.stances;
 }
 
 /** Pure: whether Summarize is on: exactly when Runner.summarizeLocked takes it. It refuses a council the runner is

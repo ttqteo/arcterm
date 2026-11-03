@@ -384,19 +384,27 @@ describe("summarizeAction", () => {
         expect(summarizeAction(council())).toEqual({ label: "Summarize", call: true });
     });
 
-    it("asks for a new one when replies came after it, or its rerun failed", () => {
-        expect(summarizeAction(council({ summary, replies: [reply("r1", "you", { ts: 200 })] }))).toEqual({
-            label: "Summarize again",
-            call: true,
+    it("asks for a new one when a change came after it (councilmodel's outdatedCount), or its rerun failed", () => {
+        const changed = council({
+            summary,
+            replies: [
+                reply("r1", "ram", { stance: "accept", ts: 50 }),
+                reply("r2", "ram", { stance: "oppose", ts: 200 }),
+            ],
         });
+        expect(summarizeAction(changed)).toEqual({ label: "Summarize again", call: true });
         expect(summarizeAction(council({ summary, failed: { coordinator: { round: 3, error: "x" } } }))).toEqual({
             label: "Summarize again",
             call: true,
         });
     });
 
-    it("only opens a current one", () => {
+    it("only opens a current one, the person's own reply after it included", () => {
         expect(summarizeAction(council({ summary, replies: [reply("r1", "ram", { ts: 50 })] }))).toEqual({
+            label: "Open summary",
+            call: false,
+        });
+        expect(summarizeAction(council({ summary, replies: [reply("r1", "you", { ts: 200 })] }))).toEqual({
             label: "Open summary",
             call: false,
         });

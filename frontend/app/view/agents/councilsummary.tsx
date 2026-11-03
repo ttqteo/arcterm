@@ -60,7 +60,7 @@ import {
     draftFromCouncil,
     glanceFigures,
     matrixRows,
-    outdatedCount,
+    outdatedChanges,
     panel,
     summaryFacts,
     synthesisRound,
@@ -1072,7 +1072,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const [error, setError] = useState<string | null>(null);
     const summary = c.summary;
     const directions = useMemo(() => directionRows(c), [c]);
-    const outdated = outdatedCount(c);
+    const changes = outdatedChanges(c);
+    const outdated = changes.ideas + changes.revised + changes.stances;
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
     const scroller = useRef<HTMLDivElement>(null);
@@ -1238,7 +1239,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
             ) : summary != null && outdated > 0 ? (
                 <Banner tone="asking">
                     <span data-council-banner="outdated" className="font-semibold">
-                        {outdatedLabel(outdated)}
+                        {outdatedLabel(changes)}
                     </span>
                     <button
                         type="button"
