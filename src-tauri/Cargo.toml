@@ -1,6 +1,6 @@
 [package]
 name = "wave-tauri"
-version = "0.15.21"
+version = "1.0.0"
 edition = "2021"
 
 [build-dependencies]

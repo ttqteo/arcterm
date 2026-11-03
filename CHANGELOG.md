@@ -22,11 +22,16 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.0.0 — 2026-11-03
 
 ### Added
 
-- **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette -->
+- **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette --> <!-- big -->
+
+## 0.15.21 — 2026-11-03
+
+### Added
+
 - A failed final stage can be run again in the same round, for a failure outside the code (a service that was down, a tool that was not installed) once you have fixed it: **Rerun final stage** on the run sheet and in the Final verification pane, in the palette, or `wsh runs rerun-final <run>`. It spends no fix round, the lead is told to drop its fix plan, and a run held only by that failed stage lands by itself once the rerun passes.
 - The Monitors and background shells an agent left running show in the Agent tree, one row under their agent with what the task reported and, for a Monitor with a timeout, how long is left. Click a row to peek at it: a Monitor has an Events tab that lists what it reported and an Output tab for its output file once it has one, a background shell has only the Output tab, which follows the file while it runs, Esc or a click outside closes the peek, and on Windows Stop ends a running task with two clicks. A task that ends or is stopped leaves the tree. <!-- big -->
 - A message to the whole council now goes to the one seat (or two) best placed to answer it, not to every seat: your message names whom the router chose (hover it for why), Ask <seat> too has another seat weigh in, and `@all` asks everyone. Let them read files is Auto, On or Off, and in Auto the router decides for a message it takes.
@@ -101,11 +106,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Starting a run in a project that is one folder of a large repo no longer fails and cancels itself while its tree checks out: the run's trees check out only that folder, and a tree that still takes long finishes in the background while the run waits for it.
 - A council message that a seat failed to answer, because of a usage limit or a failed call, now says so under it (`New user could not answer: …`), where it used to read as answered with no reply.
 - New agent (⌘N or Ctrl+N, the app bar's New, the palette) opened from a project's Overview starts on that project, where it started on the project of the agent last in focus.
-
-## 0.15.21 — 2026-11-03
-
-### Fixed
-
 - The Transcript tab's Compactions button no longer leaves the compaction marker hidden behind the pinned prompt on a long conversation.
 - A run's timeline reads "Started from the queue", "Land in line" and "Resolving conflicts with the base" again, where it showed the raw event names.
 - A council message that cites a screenshot shows it as one chip with an image icon, cut short with the full name on hover, where a long name spilled out of its chip.
