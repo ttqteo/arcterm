@@ -369,10 +369,11 @@ const ghostButton =
 // reaches them without each message taking them
 const SeatLinks = createContext<{ chats: readonly SeatableAgent[]; open: (tab: string) => void } | null>(null);
 
-// where a click on a seat's name or avatar goes (seatLink), with the call that goes there; null when it goes nowhere
-function useSeatLink(who: Who): { title: string; open: () => void } | null {
+// where a click on a seat's name, avatar or chip goes (seatLink), with the call that goes there; null when it goes
+// nowhere (`who` null: every seat, `@all`)
+function useSeatLink(who: Who | null): { title: string; open: () => void } | null {
     const links = useContext(SeatLinks);
-    const link = links == null ? null : seatLink(who, links.chats);
+    const link = links == null || who == null ? null : seatLink(who, links.chats);
     return link == null ? null : { title: link.title, open: () => links!.open(link.tab) };
 }
 
@@ -769,18 +770,34 @@ function FileMentionChip({ councilId, owner, path }: { councilId: string; owner:
 // reaches at the top of its bubble
 const SEAT_CHIP = "inline-flex max-w-full items-center rounded-full px-[7px] font-semibold";
 
+// a live chat seat's chip opens its terminal, as its name and avatar on a message do
 function SeatChip({ who, text, className }: { who: Who | null; text: string; className?: string }) {
+    const link = useSeatLink(who);
+    const look = cn(
+        SEAT_CHIP,
+        who == null ? "bg-pill text-secondary" : cn(TONE_FILL[who.tone], TONE_TEXT[who.tone]),
+        className
+    );
+    if (link == null) {
+        return (
+            <span data-council-seat-chip={who?.author ?? "all"} className={look}>
+                {text}
+            </span>
+        );
+    }
     return (
-        <span
+        <button
+            type="button"
             data-council-seat-chip={who?.author ?? "all"}
+            title={link.title}
+            onClick={link.open}
             className={cn(
-                SEAT_CHIP,
-                who == null ? "bg-pill text-secondary" : cn(TONE_FILL[who.tone], TONE_TEXT[who.tone]),
-                className
+                look,
+                "cursor-pointer border-0 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
             )}
         >
             {text}
-        </span>
+        </button>
     );
 }
 
@@ -831,6 +848,9 @@ function ReachRow({ to }: { to: ReachChips }) {
     );
 }
 
+// how long the post an answer's quote jumps to keeps its ring
+const FLASH_MS = 2000;
+
 // at the top of a seat's bubble: the person's post it answers, when it is not right under it; a click scrolls to that
 // post, which sits in the same list (a seat's own view leaves the person's posts out: the quote is then only a quote)
 function QuoteRow({ quote }: { quote: AnswerQuote }) {
@@ -856,9 +876,18 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
         while (list != null && list.querySelector(at) == null) {
             list = list.parentElement;
         }
+        const post = list?.querySelector<HTMLElement>(at);
+        if (post == null) {
+            return;
+        }
         // a glide up the channel, so the eye follows it back to the question; a jump with reduced motion
         const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        list?.querySelector(at)?.scrollIntoView?.({ block: "center", behavior: smooth ? "smooth" : "auto" });
+        post.scrollIntoView?.({ block: "center", behavior: smooth ? "smooth" : "auto" });
+        // and the question's bubble rings for a moment where it lands (FLASH_MS), so it is found at a glance; a second
+        // press before it fades starts the moment again
+        window.clearTimeout(Number(post.dataset.flashTimer));
+        post.dataset.flash = "true";
+        post.dataset.flashTimer = String(window.setTimeout(() => delete post.dataset.flash, FLASH_MS));
     };
     return (
         <button
@@ -986,6 +1015,8 @@ function ReplyMessage({
                     data-council-bubble
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px]",
+                        // the ring a quote's press lays on the post it jumps to (QuoteRow), fading out after FLASH_MS
+                        "transition-[box-shadow] duration-300 motion-reduce:transition-none group-data-[flash=true]/reply:ring-2 group-data-[flash=true]/reply:ring-accent",
                         item.mine ? "rounded-[14px_14px_4px_14px]" : "rounded-[4px_14px_14px_14px]",
                         item.to != null || item.quote != null ? "pb-[10px] pt-[8px]" : "py-[10px]",
                         TONE_BUBBLE[item.tone]
@@ -1522,6 +1553,9 @@ function DraftImages({ councilId, boxKey, images }: { councilId: string; boxKey:
     );
 }
 
+// the council message box at its tallest: five lines of 21px (14px at leading 1.5) inside its 4.5px padding
+const COMPOSER_MAX_H = 5 * 21 + 9;
+
 function Composer({
     c,
     scope,
@@ -1743,7 +1777,18 @@ function Composer({
             addCouncilImages(c.id, proposalId, dropped, "drop");
         }
     };
-    const rows = Math.min(5, Math.max(1, text.split("\n").length));
+    // the box grows with what it holds, a line that wraps as much as one after Enter (counting Enter alone kept a long
+    // line at one row, its first line cut off above), up to COMPOSER_MAX_H; past it, it scrolls
+    useLayoutEffect(() => {
+        const el = box.current;
+        if (el == null) {
+            return;
+        }
+        el.style.height = "auto";
+        const want = el.scrollHeight + el.offsetHeight - el.clientHeight;
+        el.style.height = `${Math.min(want, COMPOSER_MAX_H)}px`;
+        el.style.overflowY = want > COMPOSER_MAX_H ? "auto" : "hidden";
+    }, [text]);
     // the rows count across All seats (one, first), the seats, the files and the chats, as pickerRows lists them
     const allRows = picker?.all ? 1 : 0;
     const seatsEnd = allRows + (picker?.seats.length ?? 0);
@@ -1946,7 +1991,7 @@ function Composer({
                     <textarea
                         ref={box}
                         data-council-composer-input
-                        rows={rows}
+                        rows={1}
                         value={text}
                         aria-labelledby={labelledBy}
                         placeholder={placeholder}
@@ -1961,8 +2006,7 @@ function Composer({
                         className={cn(
                             // a line (21px) padded to the send button's 30px, so one line sits level with it and
                             // not at the foot of the row; more lines grow above the button, which stays at the foot
-                            "box-border min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
-                            rows < 5 ? "overflow-hidden" : "overflow-y-auto"
+                            "box-border min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted"
                         )}
                     />
                     {/* a round send button, as a messenger has: the icon alone, its name for a screen reader and the tooltip */}

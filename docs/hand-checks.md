@@ -1601,7 +1601,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   behind the router mark, and hovering the row shows `Router chose …: <reason>` cut with "…" at a word; the `@RAM` one
   has no row and `@RAM` is RAM's chip in its text; no "For …" line under any, and no "Router chose" line above any
   answer. An answer that is not right under its question opens on `↳ You · <question>`; click it → the channel glides
-  up to that question (a jump with reduced motion). `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits
+  up to that question (a jump with reduced motion) and its bubble rings in the accent for about 2 s. In a council
+  with a chat seat, the `@<key>` chip in your message opens that chat's terminal, as its name does. Type one long line in the
+  council's message box: it grows a line each time the text wraps, up to five, then scrolls; no line is cut off. `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits
   bf8c79a0c and 2e2e65fdf; the `council-routing` scenario (its new `quote-stacked` step) has not run: no dev app was up.
 - [ ] (arcterm) **Open asleep from History and Conversations.** Right-click an ended Claude or pi session in a project
   Overview's History, then one in the Agent tree's Conversations: Open asleep sits under Resume; pick it → the session is

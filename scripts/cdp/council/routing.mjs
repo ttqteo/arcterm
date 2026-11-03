@@ -834,7 +834,18 @@ async function quoteStacked(h, ctx, rec) {
             return !!r && !!box && r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
         })()`
     );
-    rec("quote-stacked: pressing UX's quote brings the routed post into view in the channel", seen, { seen });
+    const ring = await h.ev(`(() => {
+        const p = document.querySelector(${sel(POST("r7"))});
+        const b = p?.querySelector("[data-council-bubble]");
+        return { flash: p?.dataset.flash ?? null, shadow: b ? getComputedStyle(b).boxShadow : null };
+    })()`);
+    rec(
+        "quote-stacked: pressing UX's quote brings the routed post into view in the channel and rings its bubble (`data-flash`, a box-shadow) for a moment",
+        seen && ring?.flash === "true" && ring.shadow != null && ring.shadow !== "none",
+        { seen, ring }
+    );
+    const faded = await until(h, `document.querySelector(${sel(POST("r7"))})?.dataset.flash == null`, 4000);
+    rec("quote-stacked: the ring is gone about two seconds later", faded, { faded });
 }
 
 // one chip per seat that was not asked, under the last answer

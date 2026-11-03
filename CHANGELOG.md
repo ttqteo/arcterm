@@ -28,6 +28,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
 
+### Changed
+
+- In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
+
+### Fixed
+
+- A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.
+
 ## 1.0.0 — 2026-11-03
 
 ### Added
