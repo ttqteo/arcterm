@@ -13,6 +13,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
   (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
 
+- [ ] (arcterm) A run in a monorepo folder starts and checks out only that folder: start an orchestrator run in the
+  portal project (`D:\Workspace\SIEM\apps\portal`) → it starts without "creating landing tree" and is not cancelled;
+  its tree under `%LOCALAPPDATA%\arc-wt\<run>` holds `apps\portal` and the repo's root files, not `src\` or
+  `apps\website`, and `git -C <tree> sparse-checkout list` prints `apps/portal`. A tree slower than 45 s replies first
+  and the run shows its lead once the tree is done (`waveapp.log`: "still checking out … finishes in the background").
+  Unit tests only; needs the new wavesrv (`worktree.go` `addWorktree`, `wshserver_runs.go` `CreateRunCommand`).
+
 - [ ] (arcterm) A council's status chip keeps its word beside a long title: open a council with a long question on
   Discussion and on Map in a narrow pane → the title ends in an ellipsis first and the chip still reads "Stopped" (or
   its step) in full; it truncates only once the title is down to its 72px floor. Not tried in the app

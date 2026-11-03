@@ -60,6 +60,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A run you landed with Land anyway after its final check failed reads Landed in the Agent tree and the Brief, not Cancelled.
 - A council with a long question keeps its status chip readable in the Discussion and Map headers: the title shortens first, where the chip used to be cut to its first letter.
 - In a project's Overview, a run's diamond in History is no longer cut off on its left, and a Branches row with long branch names shortens them instead of spilling over the History column.
+- Starting a run in a project that is one folder of a large repo no longer fails and cancels itself while its tree checks out: the run's trees check out only that folder, and a tree that still takes long finishes in the background while the run waits for it.
 
 ## 0.15.21 — 2026-11-03
 
