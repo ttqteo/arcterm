@@ -40,6 +40,7 @@ const DOC_FONT_SIZE = 14;
 const OPTIONS: MonacoTypes.editor.IEditorOptions = {
     fontSize: 12,
     fontFamily: "var(--font-mono)",
+    fontLigatures: true,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     lineNumbersMinChars: 3,

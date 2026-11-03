@@ -44,6 +44,8 @@ export function paneOptions(split: boolean, ignoreWs: boolean, wrap: boolean): M
         minimap: { enabled: false },
         fontSize: 12.5,
         fontFamily: "var(--font-mono)",
+        // monaco defaults this off, which hides the joined glyphs JetBrains Mono and Fira Code draw (Hack has none)
+        fontLigatures: true,
         smoothScrolling: true,
         scrollbar: { useShadows: false, verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
     };

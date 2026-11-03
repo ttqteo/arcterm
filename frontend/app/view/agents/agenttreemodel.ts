@@ -13,6 +13,13 @@ import { isAgentSeat, type SeatableAgent } from "./councilmodel";
 import { seatableAgents } from "./councilsetupmodel";
 import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalstage";
 import {
+    backgroundTaskKind,
+    backgroundTaskSubline,
+    monitorExpiresAt,
+    monitorTimeLeft,
+    type BackgroundTaskKind,
+} from "./monitortasks";
+import {
     BRAINSTORM_JUDGE_ROLE,
     BUILDER_CHECK_ROLE,
     endedWorkerId,
@@ -23,6 +30,7 @@ import {
     type Lineage,
     type RunInfo,
 } from "./runlineage";
+import { runningBackgroundTasks, type BackgroundTask } from "./transcriptprojection";
 
 export const UNGROUPED_PROJECT = "ungrouped";
 
@@ -706,4 +714,41 @@ export function foldCollapsedProjects(rows: AgentTreeRow[], collapsed: ReadonlyS
         }
     }
     return out;
+}
+
+/** One background task under its agent in the tree: the words of its row and what a click on it does. */
+export interface BackgroundTaskRow {
+    key: string; // the task's tool-use id, which is unique per agent
+    task: BackgroundTask;
+    kind: BackgroundTaskKind;
+    label: string;
+    sub: string; // its second line: "running · 5m", or a Monitor's events and how long it has watched
+    left: string | null; // a running Monitor with a timeout: "18m left"
+    expiresAt: number | null; // the same Monitor's expiry, for the tooltip
+    peekId: string | null; // the task id monitorPeekAtom names when the row is clicked; null: the row is no click target
+}
+
+/** Pure: the rows an agent shows for the shell commands and Monitors it left running in the background, in the order
+ *  it started them. A task that ended or was stopped leaves the tree, and an agent that is not live (asleep, or with
+ *  no terminal block) lists none: its transcript still reads them as running but their process is gone with its own.
+ *  A row is a click target when the peek can name it (a task id) and has something to show (a Monitor's Events, or a
+ *  shell's output file). */
+export function backgroundTaskRows(
+    tasks: BackgroundTask[] | undefined,
+    live: boolean,
+    now: number
+): BackgroundTaskRow[] {
+    if (!live) {
+        return [];
+    }
+    return runningBackgroundTasks(tasks).map((task) => ({
+        key: task.toolUseId,
+        task,
+        kind: backgroundTaskKind(task),
+        label: task.label,
+        sub: backgroundTaskSubline(task, now),
+        left: monitorTimeLeft(task, now),
+        expiresAt: monitorExpiresAt(task),
+        peekId: task.taskId != null && (task.monitor === true || task.outputFile != null) ? task.taskId : null,
+    }));
 }

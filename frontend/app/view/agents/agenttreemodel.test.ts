@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     agentsInCouncil,
+    backgroundTaskRows,
     buildAgentTree,
     discussTogetherSeats,
     extendRow,
@@ -21,6 +22,7 @@ import {
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { seatableAgents } from "./councilsetupmodel";
 import { endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
+import type { BackgroundTask } from "./transcriptprojection";
 
 function vm(id: string, state: AgentVM["state"], path?: string): AgentVM {
     return { id, name: id, task: "", state, transcriptPath: path };
@@ -1341,5 +1343,115 @@ describe("agentsInCouncil", () => {
     it("is empty for a list not loaded yet", () => {
         expect(agentsInCouncil(null).size).toBe(0);
         expect(agentsInCouncil(undefined).size).toBe(0);
+    });
+});
+
+describe("backgroundTaskRows", () => {
+    const NOW = 1_800_000_000_000;
+    const MIN = 60_000;
+    const task = (over: Partial<BackgroundTask> & Pick<BackgroundTask, "toolUseId">): BackgroundTask => ({
+        label: over.toolUseId,
+        status: "running",
+        ...over,
+    });
+    const monitor = (toolUseId: string, over: Partial<BackgroundTask> = {}): BackgroundTask =>
+        task({ toolUseId, monitor: true, taskId: `id-${toolUseId}`, events: [], ...over });
+    const shell = (toolUseId: string, over: Partial<BackgroundTask> = {}): BackgroundTask =>
+        task({ toolUseId, taskId: `id-${toolUseId}`, outputFile: `/tmp/${toolUseId}.output`, ...over });
+
+    it("is empty for an agent with no tasks, or whose list is not loaded", () => {
+        expect(backgroundTaskRows(undefined, true, NOW)).toEqual([]);
+        expect(backgroundTaskRows([], true, NOW)).toEqual([]);
+    });
+
+    it("lists only the running tasks: an ended or stopped one leaves the tree", () => {
+        const rows = backgroundTaskRows(
+            [
+                shell("done", { status: "completed" }),
+                monitor("watch"),
+                shell("broke", { status: "failed" }),
+                monitor("expired", { status: "stopped" }),
+                shell("build"),
+            ],
+            true,
+            NOW
+        );
+        expect(rows.map((r) => r.key)).toEqual(["watch", "build"]);
+    });
+
+    it("keeps the order the agent started them in, monitors and shells mixed", () => {
+        const rows = backgroundTaskRows([shell("a"), monitor("b"), shell("c"), monitor("d")], true, NOW);
+        expect(rows.map((r) => r.key)).toEqual(["a", "b", "c", "d"]);
+        expect(rows.map((r) => r.kind)).toEqual(["shell", "monitor", "shell", "monitor"]);
+    });
+
+    it("lists none for an agent that is not live: its transcript still says running, its process is gone", () => {
+        expect(backgroundTaskRows([monitor("m"), shell("s")], false, NOW)).toEqual([]);
+    });
+
+    it("labels a row with the task's label and its second line from the task's own words", () => {
+        const [m, s] = backgroundTaskRows(
+            [
+                monitor("m", { label: "watch the build log", startMs: NOW - 2 * MIN }),
+                shell("s", { label: "npm run dev", startMs: NOW - 5 * MIN }),
+            ],
+            true,
+            NOW
+        );
+        expect(m.label).toBe("watch the build log");
+        expect(m.sub).toBe("no events yet · 2m");
+        expect(s.label).toBe("npm run dev");
+        expect(s.sub).toBe("running · 5m");
+    });
+
+    it("says what a Monitor reported in its second line", () => {
+        const [m] = backgroundTaskRows(
+            [monitor("m", { startMs: NOW - 10 * MIN, events: [{ ts: NOW - 3 * MIN, lines: ["ready"] }] })],
+            true,
+            NOW
+        );
+        expect(m.sub).toBe("1 event · 3m ago");
+    });
+
+    it("gives a Monitor with a timeout the time it has left and when it expires, a shell and a persistent one neither", () => {
+        const rows = backgroundTaskRows(
+            [
+                monitor("timed", { startMs: NOW - 12 * MIN, timeoutMs: 30 * MIN }),
+                monitor("forever", { startMs: NOW - 12 * MIN, persistent: true }),
+                shell("build", { startMs: NOW - 12 * MIN }),
+            ],
+            true,
+            NOW
+        );
+        expect(rows[0].left).toBe("18m left");
+        expect(rows[0].expiresAt).toBe(NOW + 18 * MIN);
+        expect(rows[1].left).toBeNull();
+        expect(rows[1].expiresAt).toBeNull();
+        expect(rows[2].left).toBeNull();
+        expect(rows[2].expiresAt).toBeNull();
+    });
+
+    it("makes a row a click target only when the peek can name it and has something to show", () => {
+        const rows = backgroundTaskRows(
+            [
+                monitor("m"),
+                // a Monitor has an Events tab and needs no output file
+                monitor("m-bare", { outputFile: undefined }),
+                shell("s"),
+                // no output file: nothing to show
+                shell("s-quiet", { outputFile: undefined }),
+                // no task id (its start result is not in the transcript tail): monitorPeekAtom cannot name it
+                monitor("m-anon", { taskId: undefined }),
+                shell("s-anon", { taskId: undefined }),
+            ],
+            true,
+            NOW
+        );
+        expect(rows.map((r) => r.peekId)).toEqual(["id-m", "id-m-bare", "id-s", null, null, null]);
+    });
+
+    it("hands the row its task unchanged, so the peek can open on it", () => {
+        const t = monitor("m");
+        expect(backgroundTaskRows([t], true, NOW)[0].task).toBe(t);
     });
 });

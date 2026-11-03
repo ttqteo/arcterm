@@ -25,6 +25,19 @@ does not, say what you saw and it becomes a bug row under Actionable.
   as before. With a seat whose call fails (a 5-hour limit), the line under your message reads `<seat> could not
   answer: <error>`. Go tests and vitest only (`pkg/council/router.go`, `settleRoute`, `councilmodel.ts` `replyLabel`).
 
+- [ ] (arcterm) Kael sync: a real Claude Code Monitor in the Agent tree: in a live Claude session ask for a Monitor
+  (a command that prints a line every few seconds, with a timeout) → a row appears under that agent with its label and
+  an "N m left" chip; click it → the peek's Events tab gains an event each time the command prints, and the footer
+  keeps counting. Click Stop (Windows, two clicks) → the Monitor's process ends, the row leaves the tree and the peek
+  closes. Only fixture transcripts drive the `monitor-tasks` scenario, so no live Monitor was seen, a running
+  Monitor's Output tab (it names no output file yet) was not either, and the Stop RPC's kill of a real process was
+  not run (`monitortasks.ts`, `backgroundtaskpeek.tsx`, `agenttree.tsx`).
+
+- [ ] (arcterm) Kael sync: ligatures in a font that has them: with the code font set to JetBrains Mono or Fira Code,
+  open a file in Code, Diff or an agent's File tab with `->`, `!=`, `=>` and `>=` in it → each draws as one joined
+  glyph; with Hack picked they stay plain pairs (Hack has none). The `code-diff` scenario reads the option and the
+  computed `font-feature-settings`, not the glyphs (`diffoptions.ts`).
+
 - [ ] (arcterm) A run in a monorepo folder starts and checks out only that folder: start an orchestrator run in the
   portal project (`D:\Workspace\SIEM\apps\portal`) → it starts without "creating landing tree" and is not cancelled;
   its tree under `%LOCALAPPDATA%\arc-wt\<run>` holds `apps\portal` and the repo's root files, not `src\` or

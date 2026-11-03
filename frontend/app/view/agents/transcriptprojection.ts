@@ -457,6 +457,12 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
 
 export type BackgroundTaskStatus = "running" | "completed" | "failed" | "stopped";
 
+/** One thing a Monitor reported: its notification's <event> body. */
+export interface MonitorEvent {
+    ts?: number; // when it was delivered: its record's timestamp
+    lines: string[]; // its text, a line each
+}
+
 export interface BackgroundTask {
     toolUseId: string;
     taskId?: string;
@@ -467,6 +473,21 @@ export interface BackgroundTask {
     monitor?: true; // a Monitor, which only watches, not a shell command
     startMs?: number; // when the agent ran the command: its tool_use record's timestamp
     endMs?: number; // when it ended: the first notification that gave it an end status
+    // a Monitor only
+    timeoutMs?: number; // how long it runs before it expires, from its start result
+    persistent?: boolean; // it never expires, from its start result
+    events?: MonitorEvent[]; // what it has reported so far, oldest first; empty until it reports
+}
+
+/** Pure: when a Monitor expires, or null for a shell task, a persistent Monitor, or one whose start or timeout is not
+ *  known. */
+export function monitorExpiresAt(
+    t: Pick<BackgroundTask, "monitor" | "persistent" | "startMs" | "timeoutMs">
+): number | null {
+    if (!t.monitor || t.persistent || t.startMs == null || t.timeoutMs == null) {
+        return null;
+    }
+    return t.startMs + t.timeoutMs;
 }
 
 /** Pure: the tasks of an agent still running, which ending its process would end too. */
@@ -517,16 +538,34 @@ function notificationTexts(rec: any): string[] {
     return out;
 }
 
+// a Monitor's event: a notification for a task id with an <event> body and no status. Its expiry notice is one too,
+// but it ends the Monitor and reports nothing from it.
+function monitorEventOf(text: string): { id: string; body: string } | undefined {
+    if (text.includes("<status>") || MONITOR_EXPIRED.test(text)) {
+        return undefined;
+    }
+    const id = /<task-id>([^<]+)<\/task-id>/.exec(text)?.[1]?.trim();
+    const body = /<event>([^]*?)<\/event>/.exec(text)?.[1]?.trim();
+    return id && body !== undefined ? { id, body } : undefined;
+}
+
 /** Pure: the shell (Bash/PowerShell) commands a Claude transcript ran in the background — started with
  *  run_in_background, or a foreground command auto-backgrounded at its timeout (its result carries a
  *  backgroundTaskId) — and the Monitors it armed (a task once its result names the task id), each with the
  *  status its <task-notification> (joined by tool-use-id), a Monitor's expiry notice or a later TaskStop/KillShell
  *  gave it. Unresolved tasks stay "running"; the caller decides what that means for a session that is no longer
- *  live. First-seen order. Background subagents are left to extractSubagentSpawns. */
-export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
+ *  live. First-seen order. Background subagents are left to extractSubagentSpawns.
+ *
+ *  A Monitor also carries its timeout and what it reported: its events are its status-less notifications, each
+ *  written as an enqueue and then as a user record or a queued_command attachment, so a copy counts only when no
+ *  enqueue of the same body is waiting for it. A Monitor past its timeout writes no record, so with `now` a
+ *  running one that is past its expiry reads stopped at the expiry; without it the clock is not consulted. */
+export function extractBackgroundTasks(lines: string[], opts: { now?: number } = {}): BackgroundTask[] {
     const calls = new Map<string, { label: string; command?: string; ts: number; monitor: boolean }>();
     const tasks = new Map<string, BackgroundTask>();
     const byTaskId = new Map<string, BackgroundTask>();
+    // per Monitor task id, the enqueued event bodies whose copy is still to come
+    const pendingEvents = new Map<string, string[]>();
     const startTask = (toolUseId: string): BackgroundTask | undefined => {
         const existing = tasks.get(toolUseId);
         const call = calls.get(toolUseId);
@@ -542,9 +581,26 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         }
         if (call.monitor) {
             t.monitor = true;
+            t.events = [];
         }
         tasks.set(toolUseId, t);
         return t;
+    };
+    const addMonitorEvent = (task: BackgroundTask | undefined, body: string, rec: any, ts: number): void => {
+        if (!task?.monitor || !task.taskId) {
+            return;
+        }
+        const pending = pendingEvents.get(task.taskId) ?? [];
+        if (rec?.type === "queue-operation") {
+            pendingEvents.set(task.taskId, [...pending, body]);
+        } else {
+            const copyOf = pending.indexOf(body);
+            if (copyOf >= 0) {
+                pending.splice(copyOf, 1);
+                return;
+            }
+        }
+        task.events!.push({ ...(Number.isNaN(ts) ? {} : { ts }), lines: body.split(/\r?\n/) });
     };
     for (const line of lines) {
         let rec: any;
@@ -591,6 +647,10 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                         const t = startTask(block.tool_use_id)!;
                         t.taskId = taskId;
                         byTaskId.set(taskId, t);
+                        if (call.monitor && typeof rec?.toolUseResult?.timeoutMs === "number") {
+                            t.timeoutMs = rec.toolUseResult.timeoutMs;
+                            t.persistent = rec.toolUseResult.persistent === true;
+                        }
                         const outputFile = BG_OUTPUT_TEXT.exec(toolResultText(block.content))?.[1]?.trim();
                         if (outputFile) {
                             t.outputFile = outputFile;
@@ -604,6 +664,11 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         }
         if (line.includes("<task-notification>")) {
             for (const text of notificationTexts(rec)) {
+                const event = monitorEventOf(text);
+                if (event) {
+                    addMonitorEvent(byTaskId.get(event.id), event.body, rec, ts);
+                    continue;
+                }
                 const toolUseId = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(text)?.[1]?.trim();
                 const status =
                     NOTIFIED_STATUS[/<status>([^<]+)<\/status>/.exec(text)?.[1]?.trim() ?? ""] ??
@@ -625,6 +690,15 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                         t.outputFile = outputFile;
                     }
                 }
+            }
+        }
+    }
+    if (opts.now != null) {
+        for (const t of tasks.values()) {
+            const expires = t.status === "running" ? monitorExpiresAt(t) : null;
+            if (expires != null && opts.now >= expires) {
+                t.status = "stopped";
+                t.endMs = expires;
             }
         }
     }
