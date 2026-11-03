@@ -27,6 +27,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
   steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
   (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
+- [ ] (arcterm, Mac) A zoomed-in app shows no scrollbars on a sleeping agent's message box: with the zoom at 1.1
+  (⌘+ once from 1), put an agent to sleep and open it → the box under its conversation shows its placeholder on one
+  line with no sideways or up-down scrollbar; type two or three lines with Shift+Enter → it grows with no scrollbar.
+  Checked only in a standalone WKWebView harness with the built CSS (zoom 0.9 to 1.5, 9 widths and contents, no
+  scrollbar after the fix; at 1.1 and 1.2 the old code reproduced the screenshot); WebKit-only, so headless Chrome
+  cannot show it. Commit 7915e5d9b (`tailwindsetup.css` `textarea`, `agentcomposer.tsx`).
+
 - [ ] (arcterm) New agent opened from a project's Overview starts on that project: focus an agent in project B, click
   project A's folder in the Agent tree (its Overview fills the centre), press ⌘N (and the app bar's New) → the dialog's
   Project column has A picked, not B. Back on B's terminal, ⌘N picks B again. Commit 70a182909.
