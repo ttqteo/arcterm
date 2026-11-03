@@ -56,13 +56,14 @@ export function sendState(items: readonly (ChannelItem | ThreadItem)[], now: num
     if (age < SEEN_AFTER_MS || working.length === 0) {
         return { status: { postId: post.id, word: "Sent", seen: [] }, holdTyping, nextMs };
     }
-    const seen = working.map(({ author, name, initials, tone, tag, tab }) => ({
+    const seen = working.map(({ author, name, initials, tone, tag, tab, transcript }) => ({
         author,
         name,
         initials,
         tone,
         tag,
         tab,
+        transcript,
     }));
     return { status: { postId: post.id, word: "Seen", seen }, holdTyping, nextMs };
 }

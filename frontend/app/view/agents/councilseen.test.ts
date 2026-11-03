@@ -18,6 +18,7 @@ const typing = (author: string, waiting = false): TypingRow => ({
     tone: "conn-1",
     tag: "expert",
     tab: "",
+    transcript: "",
     text: waiting ? `Waiting for ${author} to finish its task` : `${author.toUpperCase()} is writing…`,
     waiting,
     on: "",

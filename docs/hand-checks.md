@@ -1611,6 +1611,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   Retry → the seat answers from that tab, and its name now carries the new tab's key. Resume the session from
   Conversations instead → the same Retry reaches it. `pkg/council/agentcaller.go` (`Rebind`), `runner.go` (`rebind`),
   `wshserver_councilagents.go` (`Holder`), `councilchatmodel.ts` (`seatLink`); Go and unit tests only, no dev app was up.
+- [ ] (arcterm) **A chat seat's Seats button is the agent mark.** Open a council with a chat seat, then its Seats list:
+  the seat's row ends on the Bot icon (not a terminal), its tooltip `Go to <name>`; click → the Agent surface on that
+  chat. `councilseats.tsx`, commit 74981bd46; no dev app was up.
 - [ ] (arcterm) **Open asleep from History and Conversations.** Right-click an ended Claude or pi session in a project
   Overview's History, then one in the Agent tree's Conversations: Open asleep sits under Resume; pick it → the session is
   on the roster asleep (moon in its row), its transcript shows with a box to wake it, and no process starts until you
