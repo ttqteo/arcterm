@@ -25,6 +25,7 @@ import {
     ratingRow,
     reopenView,
     savedLine,
+    summarizerName,
     writtenLine,
 } from "./councilsummarymodel";
 
@@ -876,5 +877,32 @@ describe("reopenView", () => {
 
     it("opens a summary written since on the report even for a council left on its Map", () => {
         expect(reopenView(done, { view: "map", summaryAt: 0 })).toBe("summary");
+    });
+});
+
+describe("summarizerName", () => {
+    const withSummarizer = (name: string): CouncilExpert[] => [
+        ...experts.filter((e) => !e.coordinator),
+        { id: "coordinator", name, brief: "", model: "opus", coordinator: true },
+    ];
+
+    it("is the summarizing seat's own name: the stock one, a renamed one, the Vietnamese one", () => {
+        expect(summarizerName(council({ experts: withSummarizer("Summarizer") }))).toBe("Summarizer");
+        expect(summarizerName(council({ experts: withSummarizer("Chair of the table") }))).toBe("Chair of the table");
+        expect(summarizerName(council({ experts: withSummarizer("Người tổng hợp") }))).toBe("Người tổng hợp");
+    });
+
+    it("reads the seat with coordinator: true, not the one with the id coordinator", () => {
+        const seats: CouncilExpert[] = [
+            { id: "coordinator", name: "Not it", brief: "", model: "sonnet" },
+            { id: "areachair", name: "Area chair", brief: "", model: "opus", coordinator: true },
+        ];
+        expect(summarizerName(council({ experts: seats }))).toBe("Area chair");
+    });
+
+    it("falls back to Summarizer with no summarizing seat, or one with a blank name", () => {
+        expect(summarizerName(council({ experts: experts.filter((e) => !e.coordinator) }))).toBe("Summarizer");
+        expect(summarizerName(council({ experts: [] }))).toBe("Summarizer");
+        expect(summarizerName(council({ experts: withSummarizer("  ") }))).toBe("Summarizer");
     });
 });

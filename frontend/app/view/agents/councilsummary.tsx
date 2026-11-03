@@ -101,6 +101,7 @@ import {
     projectNameOf,
     ratingRow,
     savedLine,
+    summarizerName,
     writtenLine,
     type CouncilRating,
     type DirectionRow,
@@ -336,7 +337,7 @@ function DirectionCard({
     );
 }
 
-// the open card's detail under the grid: why the coordinator picked it, each expert's position, and what to do with it
+// the open card's detail under the grid: why the summarizer picked it, each expert's position, and what to do with it
 function DirectionDetail({
     c,
     row,
@@ -363,7 +364,7 @@ function DirectionDetail({
             </span>
             {d.reasoning !== "" ? (
                 <p data-council-reasoning className="m-0 text-[13.5px] leading-[1.55] text-secondary">
-                    <span className="font-semibold">Coordinator: </span>
+                    <span className="font-semibold">{summarizerName(c)}: </span>
                     {d.reasoning}
                 </p>
             ) : null}

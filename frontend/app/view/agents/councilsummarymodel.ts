@@ -507,6 +507,16 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
     return build(lines);
 }
 
+// ---- the seat that writes the summary ----
+
+/** Pure: the name of the seat that writes the summary (the expert with `coordinator: true`), by its own `name`, so a
+ *  renamed seat and a Vietnamese council's "Người tổng hợp" carry through. "Summarizer" when the council has no such
+ *  seat, or its name is blank. */
+export function summarizerName(c: Council): string {
+    const name = c.experts.find((e) => e.coordinator)?.name.trim() ?? "";
+    return name !== "" ? name : "Summarizer";
+}
+
 // ---- the column beside the report ----
 
 /** What one seat did, as the column beside the report lists it: `7 ideas, 3 in the summary · 12 replies`. `filter` is
