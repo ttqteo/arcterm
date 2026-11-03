@@ -6393,12 +6393,15 @@ const diffReviewMarks = {
         const pin = () =>
             h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
         // a source with uncommitted changes opens on the Commit tab, whose rows tick files for a commit; the review
-        // marks are on the Log tab's file list, under its Uncommitted changes row
+        // marks are on the Log tab's file list, under its Uncommitted changes row. The surface picks the Commit tab only
+        // once the tree's list has loaded (panelTabToApply), so a Log click before that is overridden: wait for Commit
         const WT_ROW = '[data-history-row="worktree"] button';
+        const LOG_ON = `${q('[data-panel-tab="log"]')}?.getAttribute("aria-selected") === "true"`;
         const pick = async () => {
             if (!(await pickFilesSource(h, ctx.name))) return false;
-            await until(`!!${q('[data-panel-tab="log"]')}`, 8000);
+            await until(`${q('[data-panel-tab="commit"]')}?.getAttribute("aria-selected") === "true"`, 15000);
             await showLogTab(h);
+            if (!(await until(LOG_ON, 5000))) return false;
             if (!(await until(`!!${q(WT_ROW)}`, 15000))) return false;
             await click(WT_ROW);
             return until(`!!${q(rowSel("src/retry/backoff.go"))}`, 15000);
