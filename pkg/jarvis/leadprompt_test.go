@@ -146,6 +146,20 @@ func TestOrchestrationRulesLeadAsksWorkerQuestionItself(t *testing.T) {
 }
 
 // the rules name the run's effort, so open issues land on it instead of on a new effort each run
+// a plan that answers to a spec lets the lead decide the last plan review round's findings the spec settles; with
+// no spec the rule is not there
+func TestOrchestrationRulesSpecDecidesTheLastPlanReview(t *testing.T) {
+	if r := OrchestrationRules("run-1", "C:/p/spec.md", "C:/p/plan.md", "", false); !strings.Contains(r, SpecPastPlanReview) {
+		t.Fatalf("a run with a spec carries the rule:\n%s", r)
+	}
+	if r := OrchestrationRules("run-1", "", "C:/p/plan.md", "", false); strings.Contains(r, SpecPastPlanReview) {
+		t.Fatalf("no spec leaves the rule out:\n%s", r)
+	}
+	if strings.Index(SpecPastPlanReview, "dag amend") > strings.Index(SpecPastPlanReview, "dag planreview accept") {
+		t.Fatal("amend comes before accept, which spawns the first tasks")
+	}
+}
+
 func TestOrchestrationRulesNameTheRunsEffort(t *testing.T) {
 	if r := OrchestrationRules("run-1", "", "", "eff-1", false); !strings.Contains(r, " Effort: effort:eff-1.") {
 		t.Fatalf("rules should name the run's effort:\n%s", r)
