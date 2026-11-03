@@ -404,6 +404,20 @@ func TestNextParallelismWaitWhenEverySlotIsBusy(t *testing.T) {
 	}
 }
 
+// a reviewing task holds no slot, so what holds its dependent is the dependency, not parallelism
+func TestNextDependencyWaitWhileTheOnlySlotsTaskIsReviewed(t *testing.T) {
+	g := digestGroup(t, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "a"},
+		{ID: "t-1", Label: "b", Deps: []string{"t-0"}},
+	})
+	g.Parallelism = 1
+	setTaskStates(g, map[string]string{"t-0": TaskState_Reviewing})
+	d := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow))
+	if d.Next.Kind != "dependency-wait" || !sameStrings(d.Next.BlockingTaskIds, []string{"t-0"}) {
+		t.Fatalf("a task under review blocks by dependency, got %+v", d.Next)
+	}
+}
+
 func TestNextDependencyWaitBlocking(t *testing.T) {
 	g := digestGroup(t, false, []waveobj.TaskNode{
 		{ID: "t-0", Label: "a"},

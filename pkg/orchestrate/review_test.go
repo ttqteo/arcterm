@@ -887,7 +887,14 @@ func TestReviewPassWithNoDescendantPostsForLaterTasksToTheLead(t *testing.T) {
 // --for alone names tasks off the plan's edges; they get the worker's section through the same delivery
 func TestReviewForAloneForwardsForLaterTasksToANonDescendant(t *testing.T) {
 	ctx, dag, worker := seedReviewDag(t)
-	addTask(t, ctx, dag, waveobj.TaskNode{ID: "t-1", Label: "b", State: TaskState_Pending})
+	// t-1 waits on t-2, at work in another lane, so it has not started when the review passes: the note joins its prompt
+	other := jarvis.NewRun("other goal", "ws-1", t.TempDir(), nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	other.DagORef = dag.OID
+	if err := wstore.AppendRun(ctx, dag.ChannelId, other); err != nil {
+		t.Fatal(err)
+	}
+	addTask(t, ctx, dag, waveobj.TaskNode{ID: "t-2", Label: "c", State: TaskState_Running, RunID: other.ID})
+	addTask(t, ctx, dag, waveobj.TaskNode{ID: "t-1", Label: "b", State: TaskState_Pending, Deps: []string{"t-2"}})
 	setWorkerReport(t, ctx, dag.ChannelId, worker.ID, structuredReport("Added fmtDate.", "None", "None", forLaterText, "None"))
 	stubReviewTree(t, worker.EndCommit)
 	captureSpawns(t)

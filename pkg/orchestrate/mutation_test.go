@@ -148,6 +148,72 @@ func TestRetryKeepsFailedOwnershipWhenWorkerStopFails(t *testing.T) {
 	}
 }
 
+// The retry cancelled the worker's run before its stop failed: the next tick must fail the task for the lead, not
+// read the cancelled run as the dag cancelled while its siblings keep running.
+func TestFailedRetryFailsTheTaskNotTheDag(t *testing.T) {
+	ctx, dag, _, _ := seedRunningDag(t)
+	oldStop := stopRunWorkers
+	stopRunWorkers = func(context.Context, *waveobj.Run) error { return errors.New("stop failed") }
+	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "retry", waveobj.RoutePin{}); err == nil {
+		t.Fatal("retry with a failing stop succeeded")
+	}
+	if err := Schedule(ctx, dag.OID); err != nil {
+		t.Fatal(err)
+	}
+	got := mustLoadDag(t, ctx, dag.OID)
+	if got.Status == DagStatus_Cancelled {
+		t.Fatal("a failed retry cancelled the dag")
+	}
+	if task := got.Tasks[0]; task.State != TaskState_Failed || task.LastFailureKind != FailureKindWorkerStopped {
+		t.Fatalf("task = %s (%s), want failed (%s)", task.State, task.LastFailureKind, FailureKindWorkerStopped)
+	}
+	if got.Failures != 0 {
+		t.Fatalf("failures = %d: a stopped worker is no failed attempt", got.Failures)
+	}
+}
+
+// a stopped worker was not judged, and the dag it belonged to goes on: its siblings keep running, and the dag is
+// blocked on the one failed task rather than cancelled
+func TestCancelledRunOfALiveDagFailsOnlyItsTask(t *testing.T) {
+	g, err := NewTaskGroup("run-1", "ch-1", "g", 2, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "a"},
+		{ID: "t-1", Label: "b"},
+	}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Tasks[0].State, g.Tasks[0].RunID = TaskState_Running, "r-0"
+	g.Tasks[1].State, g.Tasks[1].RunID = TaskState_Running, "r-1"
+	DeriveTaskStates(&g, map[string]*waveobj.Run{
+		"r-0": {ID: "r-0", Status: jarvis.RunStatus_Cancelled},
+		"r-1": {ID: "r-1", Status: jarvis.RunStatus_Executing},
+	})
+	RecomputeDagStatus(&g)
+	if g.Tasks[0].State != TaskState_Failed || g.Tasks[0].LastFailureKind != FailureKindWorkerStopped {
+		t.Fatalf("t-0 = %s (%s), want failed (%s)", g.Tasks[0].State, g.Tasks[0].LastFailureKind, FailureKindWorkerStopped)
+	}
+	if g.Tasks[1].State != TaskState_Running {
+		t.Fatalf("t-1 = %s: a sibling keeps running", g.Tasks[1].State)
+	}
+	if g.Status == DagStatus_Cancelled {
+		t.Fatal("one cancelled run cancelled the whole dag: only Cancel does that")
+	}
+}
+
+// a task Cancel moved is already cancelled, and a cancelled run does not turn it into a failure
+func TestCancelGroupLeavesItsTasksCancelled(t *testing.T) {
+	g := groupWith(TaskState_Running, TaskState_Pending)
+	g.Tasks[0].RunID = "r-0"
+	CancelGroup(g)
+	DeriveTaskStates(g, map[string]*waveobj.Run{"r-0": {ID: "r-0", Status: jarvis.RunStatus_Cancelled}})
+	RecomputeDagStatus(g)
+	if g.Tasks[0].State != TaskState_Cancelled || g.Status != DagStatus_Cancelled {
+		t.Fatalf("a cancelled dag keeps its cancelled task: task %s, dag %s", g.Tasks[0].State, g.Status)
+	}
+}
+
 func TestSkipRejectsRunningTaskWithoutClearingOwnership(t *testing.T) {
 	ctx, dag, _, child := seedRunningDag(t)
 	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "skip", waveobj.RoutePin{}); err == nil {

@@ -12,6 +12,11 @@ const (
 	// FailureKindStopped is a task the human stopped from the Consumers panel or `dag stop`: its worker was
 	// stopped and nothing retries it until the human retries, escalates or skips it.
 	FailureKindStopped = "stopped-by-human"
+	// FailureKindWorkerStopped is a worker whose run was cancelled while its dag went on: a skip, retry, escalate or
+	// stop that cancelled the run and then could not finish, or the engine's own retry of a stalled task, or one
+	// run cancelled by hand. The worker was stopped, not judged: the lead is woken to decide, and the stop counts
+	// nothing toward the circuit-break. Unlike FailureKindStopped no human asked for it to wait.
+	FailureKindWorkerStopped = "worker-stopped"
 )
 
 // Dispatch failure kinds. These never come from classifyFailure — the task died before it had a

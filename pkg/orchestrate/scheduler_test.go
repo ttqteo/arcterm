@@ -179,11 +179,36 @@ func TestCancelGroup(t *testing.T) {
 		t.Fatalf("cancel: running=%s stalled=%s status=%s", g.Tasks[1].State, g.Tasks[2].State, g.Status)
 	}
 }
-func TestNextToSpawnReviewingHoldsSlot(t *testing.T) {
+
+// a reviewing task has no worker: another lane may start in its slot while the reviewer judges the commit
+func TestNextToSpawnReviewingFreesItsSlot(t *testing.T) {
 	g := groupWith(TaskState_Done, TaskState_Reviewing)
 	g.Parallelism = 1
-	if got := NextToSpawn(g); len(got) != 0 {
-		t.Fatalf("a reviewing task holds its slot, got %v", got)
+	if got := NextToSpawn(g); !reflect.DeepEqual(got, []string{"t-2"}) {
+		t.Fatalf("a reviewing task frees its slot for another lane, got %v", got)
+	}
+}
+
+// the commit under review is in the lane's tree, so no task of that lane starts beside the reviewer
+func TestNextToSpawnReviewingHoldsItsLane(t *testing.T) {
+	g, err := NewTaskGroup("run-1", "ch-1", "g", 2, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "a"},
+		{ID: "t-1", Label: "b", Deps: []string{"t-0"}},
+	}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Tasks[1].State = TaskState_Reviewing
+	if got := NextToSpawn(&g); len(got) != 0 {
+		t.Fatalf("a retried task of a lane under review waits for the review, got %v", got)
+	}
+}
+
+// a live worker still holds its slot, stalled or not
+func TestSlotsInUseCountsLiveWorkersOnly(t *testing.T) {
+	g := groupWith(TaskState_Running, TaskState_Stalled, TaskState_Reviewing, TaskState_Done)
+	if got := slotsInUse(g); got != 2 {
+		t.Fatalf("running and stalled hold a slot, reviewing does not: got %d", got)
 	}
 }
 
