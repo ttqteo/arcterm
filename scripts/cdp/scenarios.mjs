@@ -54756,6 +54756,7 @@ const traySettingsRow = {
 // and memory-fixtures.mjs writes their state files into the dev store with real hashes, naming memory
 // folders under the same temp root. Apply and undo then touch only those folders. It never clicks Check now
 // (or Check again), which would run a model check. Copy and layout are the memory-hygiene mockup's boards.
+// Apply all's progress is shot mid-run by holding the second apply's frame on the page's websocket until the shot is taken.
 const MEMORY_FIXTURE_NAMES = Object.values(MEMORY_PROJECTS);
 
 async function setupMemoryArrange(h) {
@@ -54797,10 +54798,8 @@ async function setupMemoryAssert(h, ctx) {
             throw new Error(`nothing to click at ${sel}`);
         }
     };
-    const toolbarStatus = () =>
-        h.ev(
-            `(document.getElementById("setup-tab-memory")?.closest("[data-surface-toolbar]")?.lastElementChild?.textContent ?? "").trim()`
-        );
+    // the header's status, right of the tabs
+    const toolbarStatus = () => h.ev(`(document.querySelector("[data-memory-status]")?.textContent ?? "").trim()`);
     // the check line sits under the project name, beside Check now
     const checkLine = () =>
         h.ev(
@@ -54830,13 +54829,34 @@ async function setupMemoryAssert(h, ctx) {
         );
     };
     // teardown removes each apply's backup by its id
-    const recordApplyId = async (changeId) => {
+    const recordApplyId = async (changeId, project = MEMORY_PROJECTS.own) => {
         const listed = await h.rpc("listmemoryhygiene", null);
-        const id = listed.projects
-            .find((p) => p.project === MEMORY_PROJECTS.own)
-            ?.changes.find((c) => c.id === changeId)?.applyid;
+        const id = listed.projects.find((p) => p.project === project)?.changes.find((c) => c.id === changeId)?.applyid;
         if (id) ctx.applyIds.push(id);
         return id;
+    };
+    // the tab's keys run off a window capture listener, which a keydown dispatched on the document reaches
+    const press = (key) =>
+        h.ev(
+            `document.dispatchEvent(new KeyboardEvent("keydown", { key: ${q(key)}, code: ${q(`Key${key.toUpperCase()}`)}, bubbles: true }))`
+        );
+    const selectedChange = () =>
+        h.ev(
+            `document.querySelector('[data-memory-change][aria-selected="true"]')?.getAttribute("data-memory-change") ?? null`
+        );
+    const waitSelected = (id) =>
+        polishWaitFor(h, `document.querySelector(${q(changeSel(id))})?.getAttribute("aria-selected") === "true"`, 5000);
+    const waitRowStatus = (id, status) =>
+        polishWaitFor(
+            h,
+            `(document.querySelector(${q(changeSel(id))})?.lastElementChild?.textContent ?? "").trim() === ${q(status)}`,
+            10000
+        );
+    // an apply or a keep moves the selection on, so the decided change's closed state is read by going back to its row
+    const reselectWhen = async (id, status) => {
+        const decided = await waitRowStatus(id, status);
+        await selectChange(id);
+        return decided;
     };
     const bytes = (path) => (existsSync(path) ? readFileSync(path) : null);
     const same = (a, b) => a != null && b != null && Buffer.compare(a, b) === 0;
@@ -54945,13 +54965,15 @@ async function setupMemoryAssert(h, ctx) {
     });
 
     await run(
-        "4. Applied with Undo: the trim writes the trimmed bytes, reads Applied, and Undo restores the original",
+        "4. Applied with Undo: the trim writes the trimmed bytes, reads Applied and moves on to the next change, and Undo restores the original",
         async () => {
             const original = bytes(fx.paths.trim);
             const trimmed = Buffer.from(original.toString("utf8").replace(fx.trim.old, fx.trim.new), "utf8");
             await selectProject(MEMORY_PROJECTS.own);
             await selectChange(own.trim.id);
             await click("[data-memory-apply]");
+            const advanced = await waitSelected(own.delete.id);
+            await reselectWhen(own.trim.id, "Applied");
             const appliedShown = await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000);
             await recordApplyId(own.trim.id);
             const applied = {
@@ -54967,6 +54989,7 @@ async function setupMemoryAssert(h, ctx) {
             const row = await rowStatus(own.trim.id);
             return {
                 ok:
+                    advanced &&
                     appliedShown &&
                     applied.file &&
                     /Applied at \d/.test(applied.detail) &&
@@ -54976,6 +54999,7 @@ async function setupMemoryAssert(h, ctx) {
                     restored &&
                     row === "To review",
                 detail: JSON.stringify({
+                    advanced,
                     ...applied,
                     detail: applied.detail.slice(-160),
                     reopened,
@@ -55019,6 +55043,7 @@ async function setupMemoryAssert(h, ctx) {
     await run("6. Keep / Review again: a kept change reads Kept as is, and Review again opens it again", async () => {
         await selectChange(own.merge.id);
         await click("[data-memory-keep]");
+        await reselectWhen(own.merge.id, "Kept");
         const kept = await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000);
         const got = {
             detail: await text("[data-memory-detail]"),
@@ -55078,6 +55103,7 @@ async function setupMemoryAssert(h, ctx) {
             await selectProject(MEMORY_PROJECTS.own);
             await selectChange(own.addToIndex.id);
             await click("[data-memory-apply]");
+            await reselectWhen(own.addToIndex.id, "Applied");
             if (!(await polishWaitFor(h, `!!document.querySelector("[data-memory-undo]")`, 10000))) {
                 return { ok: false, detail: `the add-to-index did not apply: ${await text("[data-memory-error]")}` };
             }
@@ -55107,7 +55133,280 @@ async function setupMemoryAssert(h, ctx) {
         }
     );
 
-    await run("9. Every project checked: with no change left open the toolbar says so", async () => {
+    await run(
+        "9. Keys: j and k move the selection, a applies and lands on the next change to review, x keeps and u undoes",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.own);
+            // kind chips are tinted by what the change does: a removal, a bringing in, an edit in place
+            const tone = (id) =>
+                h.ev(
+                    `document.querySelector(${q(changeSel(id))})?.querySelector("[data-memory-kind]")?.getAttribute("data-memory-kind") ?? null`
+                );
+            const tones = {
+                delete: await tone(own.delete.id),
+                addToIndex: await tone(own.addToIndex.id),
+                trim: await tone(own.trim.id),
+            };
+            const submitFile = join(fx.paths.own, "ec-time-submit.md");
+            await selectChange(own.trim.id);
+            await press("j");
+            const down = await waitSelected(own.delete.id);
+            // the changed-on-disk change has its Apply disabled, so a does nothing there. step 8's error alert is
+            // still up (it clears on the next action), so a new error is one that differs from it
+            const errorBefore = await text("[data-memory-error]");
+            await press("a");
+            await polishNap(500);
+            const held = {
+                selected: await selectedChange(),
+                row: await rowStatus(own.delete.id),
+                errorChanged: (await text("[data-memory-error]")) !== errorBefore,
+            };
+            await press("j");
+            const down2 = await waitSelected(own.merge.id);
+            await h.shot("cdp-shots/setup-memory-keys-moved.png");
+            await press("a");
+            const landed = await waitSelected(own.moveToDoc.id);
+            const applied = await waitRowStatus(own.merge.id, "Applied");
+            await recordApplyId(own.merge.id);
+            const goneFile = !existsSync(submitFile);
+            await h.shot("cdp-shots/setup-memory-keys-applied.png");
+            await press("k");
+            const up = await waitSelected(own.merge.id);
+            await press("u");
+            const undone = await waitRowStatus(own.merge.id, "To review");
+            const restoredFile = existsSync(submitFile);
+            await press("j");
+            const onDoc = await waitSelected(own.moveToDoc.id);
+            await press("x");
+            const wrapped = await waitSelected(own.trim.id);
+            const kept = await waitRowStatus(own.moveToDoc.id, "Kept");
+            await selectChange(own.moveToDoc.id);
+            await press("u");
+            const reopened = await waitRowStatus(own.moveToDoc.id, "To review");
+            const got = {
+                tones,
+                down,
+                held,
+                down2,
+                landed,
+                applied,
+                goneFile,
+                up,
+                undone,
+                restoredFile,
+                onDoc,
+                wrapped,
+                kept,
+                reopened,
+                error: await text("[data-memory-error]"),
+            };
+            return {
+                ok:
+                    tones.delete === "remove" &&
+                    tones.addToIndex === "add" &&
+                    tones.trim === "edit" &&
+                    down &&
+                    held.selected === own.delete.id &&
+                    held.row === "Changed on disk" &&
+                    held.errorChanged === false &&
+                    down2 &&
+                    landed &&
+                    applied &&
+                    goneFile &&
+                    up &&
+                    undone &&
+                    restoredFile &&
+                    onDoc &&
+                    wrapped &&
+                    kept &&
+                    reopened &&
+                    got.error === "",
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run(
+        "10. Apply all: a split group's open changes apply on a second click, one at a time with progress, and open the switch-over",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.splitA);
+            const ids = [split.moveBuild.id, split.moveDeploy.id, split.copyLint.id];
+            const allSel = `[data-memory-apply-all="shared"]`;
+            const offered = await text(allSel);
+            await click(allSel);
+            const armed = await text(allSel);
+            await h.shot("cdp-shots/setup-memory-apply-all.png");
+            // hold every apply after the first on the wire, so the run can be shot between its first and its last
+            await h.ev(`(() => {
+                const send = WebSocket.prototype.send;
+                const held = [];
+                let seen = 0;
+                window.__memHold = {
+                    held,
+                    release() {
+                        WebSocket.prototype.send = send;
+                        for (const [ws, data] of held.splice(0)) send.call(ws, data);
+                    },
+                };
+                WebSocket.prototype.send = function (data) {
+                    if (typeof data === "string" && data.includes('"decidememorychange"') && ++seen > 1) {
+                        held.push([this, data]);
+                        return;
+                    }
+                    return send.call(this, data);
+                };
+                return true;
+            })()`);
+            let running = {};
+            let midRun = false;
+            try {
+                await click(allSel);
+                midRun = await polishWaitFor(
+                    h,
+                    `(document.querySelector("[data-memory-bulk]")?.textContent ?? "").trim() === "Applying 2 of 3…"`,
+                    10000
+                );
+                running = {
+                    status: await text("[data-memory-bulk]"),
+                    first: await rowStatus(ids[0]),
+                    second: await rowStatus(ids[1]),
+                    held: await h.ev(`window.__memHold.held.length`),
+                    allButton: await h.ev(`!!document.querySelector(${q(allSel)})`),
+                };
+                await h.shot("cdp-shots/setup-memory-apply-all-running.png");
+            } finally {
+                await h.ev(`window.__memHold?.release()`);
+            }
+            const allApplied = await polishWaitFor(
+                h,
+                `${JSON.stringify(ids.map(changeSel))}.every((s) => (document.querySelector(s)?.lastElementChild?.textContent ?? "").trim() === "Applied")`,
+                20000
+            );
+            for (const id of ids) await recordApplyId(id, MEMORY_PROJECTS.splitA);
+            const got = {
+                offered,
+                armed,
+                midRun,
+                running,
+                allApplied,
+                gone: await h.ev(`!document.querySelector(${q(allSel)})`),
+                bulkGone: await h.ev(`!document.querySelector("[data-memory-bulk]")`),
+                // the run began on move-here's first change; once it was decided the selection went on to the next one to review
+                selected: await selectedChange(),
+                error: await text("[data-memory-error]"),
+            };
+            await selectChange(split.settings.id);
+            got.switchOpen = (await disabled("[data-memory-apply]")) === false;
+            await h.shot("cdp-shots/setup-memory-applied-all.png");
+            return {
+                ok:
+                    offered === "Apply all 3" &&
+                    armed === "Apply 3 changes" &&
+                    midRun &&
+                    running.status === "Applying 2 of 3…" &&
+                    running.first === "Applied" &&
+                    running.second === "To review" &&
+                    running.held === 1 &&
+                    running.allButton === false &&
+                    allApplied &&
+                    got.gone &&
+                    got.bulkGone &&
+                    got.selected === split.ownDelete.id &&
+                    got.switchOpen &&
+                    got.error === "",
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run("11. Long path: a path too long for its box gives up its folder and keeps the file name", async () => {
+        // split-a is still selected, and its switch-over's diff header is a long absolute path in the narrow detail rail
+        await selectChange(split.settings.id);
+        const got = await h.ev(`(() => {
+            const outer = document.querySelector('[data-memory-detail] [title$="settings.local.json"]');
+            if (!outer) return null;
+            const [folder, name] = outer.children;
+            return {
+                folder: folder.textContent,
+                name: name.textContent,
+                folderCut: folder.scrollWidth > folder.clientWidth,
+                ellipsis: getComputedStyle(folder).textOverflow,
+                nameWhole: name.scrollWidth <= name.clientWidth + 1 && name.getBoundingClientRect().right <= outer.getBoundingClientRect().right + 1,
+            };
+        })()`);
+        await h.shot("cdp-shots/setup-memory-long-path.png");
+        return {
+            ok:
+                got != null &&
+                got.name === "settings.local.json" &&
+                /[\\/]$/.test(got.folder) &&
+                got.folderCut &&
+                got.ellipsis === "ellipsis" &&
+                got.nameWhole,
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run(
+        "12. Rail: projects to review lead, and a checked project with an empty index is drawn on one line",
+        async () => {
+            // verify-mem-new was never checked; state it as checked, with an empty MEMORY.md. The backend lists it from this state alone.
+            const name = MEMORY_PROJECTS.fresh;
+            const checkedAt = Date.now() - 60 * 60 * 1000;
+            writeMemoryStates(ctx.dataDir, {
+                [name]: {
+                    ...fx.states[MEMORY_PROJECTS.checking],
+                    project: name,
+                    path: fx.projects.find((x) => x.name === name).path,
+                    checking: false,
+                    checkedat: checkedAt,
+                    nextcheckat: checkedAt + 7 * 24 * 60 * 60 * 1000,
+                    index: { exists: true, lines: 0, bytes: 0 },
+                },
+            });
+            await polishReload(h);
+            await h.goto("setup");
+            await click("#setup-tab-memory");
+            await polishWaitFor(h, `!!document.querySelector(${q(projectSel(name))})`, 10000);
+            await selectProject(name);
+            const got = await h.ev(`(() => {
+                const rows = [...document.querySelectorAll("[data-memory-project]")];
+                const at = (n) => rows.findIndex((b) => b.getAttribute("data-memory-project") === n);
+                // a row's status is its last line; no project with nothing to review may sit above one with some
+                const toReview = rows.map((b) => /to review$/.test((b.lastElementChild?.textContent ?? "").trim()));
+                const fresh = rows[at(${q(name)})];
+                const own = rows[at(${q(MEMORY_PROJECTS.own)})];
+                return {
+                    ordered: toReview.indexOf(false) < 0 || !toReview.slice(toReview.indexOf(false)).includes(true),
+                    ownAbove: at(${q(MEMORY_PROJECTS.own)}) >= 0 && at(${q(MEMORY_PROJECTS.own)}) < at(${q(name)}),
+                    oneLine: fresh?.hasAttribute("data-memory-empty") === true,
+                    freshText: (fresh?.textContent ?? "").trim(),
+                    freshHeight: Math.round(fresh?.getBoundingClientRect().height ?? 0),
+                    ownHeight: Math.round(own?.getBoundingClientRect().height ?? 0),
+                    ownOneLine: own?.hasAttribute("data-memory-empty") === true,
+                };
+            })()`);
+            // an empty index reads 0 KB, not 0.0
+            const size = await h.ev(
+                `[...document.querySelectorAll("[data-memory-card] .font-mono")].map((e) => e.textContent.trim())`
+            );
+            await h.shot("cdp-shots/setup-memory-rail.png");
+            return {
+                ok:
+                    got.ordered &&
+                    got.ownAbove &&
+                    got.oneLine &&
+                    got.freshText === `${name}No memory yet` &&
+                    got.freshHeight > 0 &&
+                    got.freshHeight * 2 < got.ownHeight &&
+                    got.ownOneLine === false &&
+                    size.includes("0 of 25 KB"),
+                detail: JSON.stringify({ ...got, size }),
+            };
+        }
+    );
+
+    await run("13. Every project checked: with no change left open the toolbar says so", async () => {
         writeMemoryStates(ctx.dataDir, settleMemoryStates(fx.states));
         await polishReload(h);
         await h.goto("setup");
@@ -55130,7 +55429,7 @@ async function setupMemoryAssert(h, ctx) {
         return { ok: toolbar === "Every project checked", detail: `toolbar="${toolbar}"` };
     });
 
-    await run("10. Landing: memhygiene:<project> opens Setup → Memory with the project selected", async () => {
+    await run("14. Landing: memhygiene:<project> opens Setup → Memory with the project selected", async () => {
         await h.goto("cockpit");
         await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
         await h.ev(`window.__openAddress(${q(`memhygiene:${MEMORY_PROJECTS.splitA}`)})`);

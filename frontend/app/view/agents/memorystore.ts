@@ -11,6 +11,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
+import { isPending, nextPending, resolveSelection, type MemorySelection } from "./memorymodel";
 
 // list and check read state files and return at once; decide copies backups and writes files, so it
 // gets more room before a stalled backend is reported
@@ -25,6 +26,15 @@ export const memorySelectedProjectAtom = atom<string | null>(null) as PrimitiveA
 export const memorySelectedChangeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 export const memoryErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 export const memoryBusyAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// an Apply all in flight: its group and how far it got
+export const memoryBulkAtom = atom<BulkProgress | null>(null) as PrimitiveAtom<BulkProgress | null>;
+
+export interface BulkProgress {
+    project: string;
+    group: string;
+    done: number;
+    total: number;
+}
 
 function errText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
@@ -87,26 +97,76 @@ export function checkMemory(project: string): Promise<void> {
     });
 }
 
+// the shown project and change, as the tab draws them
+export function memorySelection(): MemorySelection {
+    return resolveSelection(
+        globalStore.get(memoryProjectsAtom),
+        globalStore.get(memorySelectedProjectAtom),
+        globalStore.get(memorySelectedChangeAtom)
+    );
+}
+
+async function decideOne(project: string, changeId: string, verdict: MemVerdict): Promise<MemHygieneProject> {
+    let updated: MemHygieneProject;
+    try {
+        updated = await RpcApi.DecideMemoryChangeCommand(
+            TabRpcClient,
+            { project, changeid: changeId, verdict },
+            { timeout: DECIDE_TIMEOUT_MS }
+        );
+    } catch (e) {
+        throw new Error(`Could not ${verdict} the change in ${project}: ${errText(e)}`);
+    }
+    const projects = globalStore.get(memoryProjectsAtom);
+    if (updated != null && projects != null) {
+        // a list started before the decision would land older state over it
+        loadSeq++;
+        globalStore.set(
+            memoryProjectsAtom,
+            projects.map((p) => (p.project === updated.project ? updated : p))
+        );
+    }
+    return updated;
+}
+
+// once the shown change is decided, show the next one still to review. a change found changed on disk stays,
+// since its alert is what to read next.
+function advanceFrom(updated: MemHygieneProject | null, changeId: string): void {
+    const shown = updated?.changes.find((c) => c.id === changeId);
+    if (updated == null || shown == null || isPending(shown) || memorySelection().change?.id !== changeId) {
+        return;
+    }
+    const next = nextPending(updated, changeId);
+    if (next != null) {
+        globalStore.set(memorySelectedChangeAtom, next);
+    }
+}
+
 export function decideMemory(project: string, changeId: string, verdict: MemVerdict): Promise<void> {
     return busy(async () => {
-        let updated: MemHygieneProject;
-        try {
-            updated = await RpcApi.DecideMemoryChangeCommand(
-                TabRpcClient,
-                { project, changeid: changeId, verdict },
-                { timeout: DECIDE_TIMEOUT_MS }
-            );
-        } catch (e) {
-            throw new Error(`Could not ${verdict} the change in ${project}: ${errText(e)}`);
+        const updated = await decideOne(project, changeId, verdict);
+        if (verdict === "apply" || verdict === "keep") {
+            advanceFrom(updated, changeId);
         }
-        const projects = globalStore.get(memoryProjectsAtom);
-        if (updated != null && projects != null) {
-            // a list started before the decision would land older state over it
-            loadSeq++;
-            globalStore.set(
-                memoryProjectsAtom,
-                projects.map((p) => (p.project === updated.project ? updated : p))
-            );
+    });
+}
+
+// one apply at a time: each rewrites the same MEMORY.md. a failure stops the run where it is; a change found
+// changed on disk is marked so and the run goes on.
+export function applyMemoryGroup(project: string, group: string, ids: string[]): Promise<void> {
+    const shownBefore = memorySelection().change?.id ?? null;
+    return busy(async () => {
+        let updated: MemHygieneProject | null = null;
+        try {
+            for (const [i, id] of ids.entries()) {
+                globalStore.set(memoryBulkAtom, { project, group, done: i, total: ids.length });
+                updated = await decideOne(project, id, "apply");
+            }
+        } finally {
+            globalStore.set(memoryBulkAtom, null);
+            if (shownBefore != null) {
+                advanceFrom(updated, shownBefore);
+            }
         }
     });
 }

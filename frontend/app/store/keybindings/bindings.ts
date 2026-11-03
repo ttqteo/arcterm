@@ -74,6 +74,14 @@ import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
+import { canApply, isPending, stepChange } from "@/app/view/agents/memorymodel";
+import {
+    decideMemory,
+    memoryBusyAtom,
+    memorySelection,
+    selectMemoryChange,
+    type MemVerdict,
+} from "@/app/view/agents/memorystore";
 import { canRequest } from "@/app/view/agents/proseanchor";
 import {
     dockedTerminalAtom,
@@ -140,6 +148,7 @@ import {
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { isMacOS } from "@/util/platformutil";
+import { fireAndForget } from "@/util/util";
 import type { MutableRefObject } from "react";
 import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
@@ -2652,6 +2661,54 @@ export function buildCodeBindings(): Binding[] {
                 host.focus();
             },
         },
+    ];
+}
+
+// The Setup surface's Memory tab keys, registered by the tab while it is mounted, so the surface check is
+// enough to keep them off every other tab. A verdict key does what its button does, and nothing while the
+// button is disabled.
+export function buildMemoryBindings(): Binding[] {
+    const on = (ctx: KeyContext) => ctx.surface === "setup" && navigateStrict(ctx);
+    const bind = (id: string, keys: string, label: string, run: () => void | boolean): Binding => ({
+        id: `memory:${id}`,
+        keys,
+        group: "Setup · Memory",
+        label,
+        when: on,
+        paletteHidden: true,
+        run,
+    });
+    const move = (delta: number) => () => {
+        const { project, change } = memorySelection();
+        const next = project == null ? null : stepChange(project, change?.id ?? null, delta);
+        if (next == null) {
+            return false;
+        }
+        selectMemoryChange(next);
+    };
+    const decide = (verdict: MemVerdict, allowed: (p: MemHygieneProject, c: MemChange) => boolean) => () => {
+        const { project, change } = memorySelection();
+        if (project == null || change == null || globalStore.get(memoryBusyAtom) || !allowed(project, change)) {
+            return false;
+        }
+        fireAndForget(() => decideMemory(project.project, change.id, verdict));
+    };
+    return [
+        bind("next", "j", "Next change", move(1)),
+        bind("prev", "k", "Previous change", move(-1)),
+        bind("next-arrow", "ArrowDown", "Next change", move(1)),
+        bind("prev-arrow", "ArrowUp", "Previous change", move(-1)),
+        bind("apply", "a", "Apply the change", decide("apply", canApply)),
+        bind(
+            "keep",
+            "x",
+            "Keep as is",
+            decide("keep", (_p, c) => isPending(c))
+        ),
+        bind("undo", "u", "Undo an applied change, or review a kept one again", () => {
+            const c = memorySelection().change;
+            return decide(c?.status === "applied" ? "undo" : "reopen", (_p, ch) => !isPending(ch))();
+        }),
     ];
 }
 
