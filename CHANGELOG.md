@@ -28,6 +28,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The Transcript tab's Compactions button no longer leaves the compaction marker hidden behind the pinned prompt on a long conversation.
 - A run's timeline reads "Started from the queue", "Land in line" and "Resolving conflicts with the base" again, where it showed the raw event names.
+- A council message that cites a screenshot shows it as one chip with an image icon, cut short with the full name on hover, where a long name spilled out of its chip.
 - An `.svg` opened in Code (or the File tab) draws, where it showed "Cannot show this image".
 
 ## 0.15.20 — 2026-11-02

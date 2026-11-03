@@ -12,7 +12,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { base64ToString, cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
-import { FileText, X } from "lucide-react";
+import { FileText, Image as ImageIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
     foldSources,
@@ -109,11 +109,22 @@ export function EvidenceChips({
                         {fold.more}
                     </button>
                 ))}
-            {view.others.map((ref, i) => (
-                <span key={`other-${i}`} data-council-evidence="other" className={cn(CHIP, "text-secondary")}>
-                    {ref}
-                </span>
-            ))}
+            {view.others.map((ref, i) => {
+                // a screenshot ref or another non-file citation: one line, cut short like a file chip, whole on hover
+                const shot = ref.startsWith("screenshot:");
+                const Icon = shot ? ImageIcon : FileText;
+                return (
+                    <span
+                        key={`other-${i}`}
+                        data-council-evidence="other"
+                        title={ref}
+                        className={cn(CHIP, "text-secondary")}
+                    >
+                        <Icon size={12} className="flex-none text-muted" aria-hidden />
+                        <span className="min-w-0 truncate">{shot ? ref.slice("screenshot:".length) : ref}</span>
+                    </span>
+                );
+            })}
             {weak !== "" && (
                 <span
                     data-council-evidence="weak"
