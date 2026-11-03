@@ -7,6 +7,7 @@ import {
     canApply,
     changeGroups,
     checkLine,
+    checkResult,
     closedText,
     fileLabel,
     indexCards,
@@ -130,6 +131,29 @@ describe("limits", () => {
     it("mirrors Claude Code's load limits", () => {
         expect(LIMIT_LINES).toBe(200);
         expect(LIMIT_BYTES).toBe(25000);
+    });
+});
+
+describe("checkResult", () => {
+    it("counts the changes still to review, leaving out decided ones", () => {
+        const p = project({
+            changes: [change("1"), change("2", { status: "conflict" }), change("3", { status: "applied" })],
+        });
+        expect(checkResult(p)).toEqual({ text: "Checked · 2 to review", tone: "warn" });
+    });
+
+    it("says so when the check left nothing to review", () => {
+        expect(checkResult(project({ changes: [change("1", { status: "kept" })] }))).toEqual({
+            text: "Checked · nothing to review",
+            tone: "ok",
+        });
+    });
+
+    it("reports a failure even over changes kept from the last good check", () => {
+        expect(checkResult(project({ lasterror: "model run timed out", changes: [change("1")] }))).toEqual({
+            text: "Check failed",
+            tone: "warn",
+        });
     });
 });
 

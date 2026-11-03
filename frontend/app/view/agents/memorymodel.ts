@@ -99,6 +99,18 @@ function hasPending(p: MemHygieneProject): boolean {
     return p.changes.some(isPending);
 }
 
+// the note beside Check now once a check the user started has ended. a check with nothing new to judge
+// ends in well under a second, so without it the click reads as dead. a failure's reason is on the check line.
+export function checkResult(p: MemHygieneProject): StatusText {
+    if (p.lasterror) {
+        return { text: "Check failed", tone: "warn" };
+    }
+    const n = p.changes.filter(isPending).length;
+    return n > 0
+        ? { text: `Checked · ${n} to review`, tone: "warn" }
+        : { text: "Checked · nothing to review", tone: "ok" };
+}
+
 export function projectsToReview(projects: MemHygieneProject[]): number {
     return projects.filter(hasPending).length;
 }

@@ -11,12 +11,21 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
-import { isPending, nextPending, resolveSelection, type MemorySelection } from "./memorymodel";
+import {
+    checkResult,
+    isPending,
+    nextPending,
+    resolveSelection,
+    type MemorySelection,
+    type StatusText,
+} from "./memorymodel";
 
 // list and check read state files and return at once; decide copies backups and writes files, so it
 // gets more room before a stalled backend is reported
 const READ_TIMEOUT_MS = 5000;
 const DECIDE_TIMEOUT_MS = 15000;
+// long enough to read; it goes stale once the user starts deciding the changes it counts
+const RESULT_SHOW_MS = 5000;
 
 export type MemVerdict = "apply" | "keep" | "undo" | "reopen";
 
@@ -28,12 +37,18 @@ export const memoryErrorAtom = atom<string | null>(null) as PrimitiveAtom<string
 export const memoryBusyAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 // an Apply all in flight: its group and how far it got
 export const memoryBulkAtom = atom<BulkProgress | null>(null) as PrimitiveAtom<BulkProgress | null>;
+// what the last check this tab started found, shown beside Check now for a few seconds
+export const memoryCheckResultAtom = atom<CheckResult | null>(null) as PrimitiveAtom<CheckResult | null>;
 
 export interface BulkProgress {
     project: string;
     group: string;
     done: number;
     total: number;
+}
+
+export interface CheckResult extends StatusText {
+    project: string;
 }
 
 function errText(e: unknown): string {
@@ -43,12 +58,29 @@ function errText(e: unknown): string {
 // an update event can start a list while an earlier one is still in flight; only the latest may land
 let loadSeq = 0;
 
+// projects whose check this tab started and has not yet seen end
+const started = new Set<string>();
+let resultTimer: ReturnType<typeof setTimeout> | undefined;
+
+function noteEnded(projects: MemHygieneProject[]): void {
+    for (const p of projects) {
+        if (!started.has(p.project) || p.checking) {
+            continue;
+        }
+        started.delete(p.project);
+        clearTimeout(resultTimer);
+        globalStore.set(memoryCheckResultAtom, { project: p.project, ...checkResult(p) });
+        resultTimer = setTimeout(() => globalStore.set(memoryCheckResultAtom, null), RESULT_SHOW_MS);
+    }
+}
+
 export async function loadMemory(): Promise<void> {
     const seq = ++loadSeq;
     try {
         const rtn = await RpcApi.ListMemoryHygieneCommand(TabRpcClient, { timeout: READ_TIMEOUT_MS });
         if (seq === loadSeq) {
             globalStore.set(memoryProjectsAtom, rtn.projects ?? []);
+            noteEnded(rtn.projects ?? []);
         }
     } catch (e) {
         globalStore.set(memoryErrorAtom, `Could not read memory checks: ${errText(e)}`);
@@ -85,14 +117,17 @@ async function busy(fn: () => Promise<void>): Promise<void> {
 }
 
 // the check runs in the background and returns at once; re-list so "Checking…" shows without waiting
-// on the update event
+// on the update event. the first list after a successful start that reads it not checking is its end:
+// loadSeq keeps a list begun before the start from landing.
 export function checkMemory(project: string): Promise<void> {
     return busy(async () => {
+        globalStore.set(memoryCheckResultAtom, null);
         try {
             await RpcApi.CheckMemoryHygieneCommand(TabRpcClient, { project }, { timeout: READ_TIMEOUT_MS });
         } catch (e) {
             throw new Error(`Could not start the check of ${project}: ${errText(e)}`);
         }
+        started.add(project);
         await loadMemory();
     });
 }

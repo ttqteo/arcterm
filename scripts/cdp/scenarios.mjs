@@ -54754,8 +54754,9 @@ const traySettingsRow = {
 // --- setup memory: the Memory tab over fixture states in temp folders -----------------------------
 // Arranged for real, with no test hook: createproject registers the fixture projects on temp git repos,
 // and memory-fixtures.mjs writes their state files into the dev store with real hashes, naming memory
-// folders under the same temp root. Apply and undo then touch only those folders. It never clicks Check now
-// (or Check again), which would run a model check. Copy and layout are the memory-hygiene mockup's boards.
+// folders under the same temp root. Apply and undo then touch only those folders. It clicks Check now only on
+// the never-checked project, which has no memory folder, so its check ends at once with no model call (never on
+// a project with memories, and never Check again). Copy and layout are the memory-hygiene mockup's boards.
 // Apply all's progress is shot mid-run by holding the second apply's frame on the page's websocket until the shot is taken.
 const MEMORY_FIXTURE_NAMES = Object.values(MEMORY_PROJECTS);
 
@@ -54844,6 +54845,44 @@ async function setupMemoryAssert(h, ctx) {
         h.ev(
             `document.querySelector('[data-memory-change][aria-selected="true"]')?.getAttribute("data-memory-change") ?? null`
         );
+    // every Element.animate call from here on, named by what it animates. motion runs an opacity fade as one of
+    // these, so its duration and ease say which token it is, and a fade that never starts leaves no call
+    const motionStart = () =>
+        h.ev(`(() => {
+            if (!window.__memMotion) {
+                const calls = [];
+                const animate = Element.prototype.animate;
+                Element.prototype.animate = function (keyframes, options) {
+                    const lastChild = this.parentElement?.lastElementChild === this;
+                    const where = this.hasAttribute("data-memory-pane") ? "pane"
+                        : this.hasAttribute("data-memory-detail") ? "detail"
+                        : this.hasAttribute("data-memory-check-result") ? "note"
+                        : lastChild && this.parentElement?.hasAttribute("data-memory-change") ? "status"
+                        : "other";
+                    calls.push({ where, opacity: keyframes?.opacity ?? null, duration: options?.duration ?? null, easing: options?.easing ?? null });
+                    return animate.call(this, keyframes, options);
+                };
+                window.__memMotion = calls;
+            }
+            window.__memMotion.length = 0;
+            return true;
+        })()`);
+    const motionCalls = () => h.ev(`window.__memMotion.slice()`);
+    // motiontokens.ts: viewFade runs MOTION.durMacro, microFade MOTION.durMicro, both on easeFluid
+    const VIEW_FADE_MS = 360;
+    const MICRO_FADE_MS = 140;
+    const FLUID_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+    const fades = (calls, where, ms, from = 0, to = 1) =>
+        calls.filter(
+            (c) =>
+                c.where === where &&
+                c.duration === ms &&
+                c.easing === FLUID_EASE &&
+                c.opacity?.[0] === from &&
+                c.opacity?.[1] === to
+        ).length;
+    const checkedAtOf = async (project) =>
+        (await h.rpc("listmemoryhygiene", null)).projects.find((p) => p.project === project)?.checkedat ?? 0;
     const waitSelected = (id) =>
         polishWaitFor(h, `document.querySelector(${q(changeSel(id))})?.getAttribute("aria-selected") === "true"`, 5000);
     const waitRowStatus = (id, status) =>
@@ -55079,11 +55118,14 @@ async function setupMemoryAssert(h, ctx) {
                 line: await checkLine(),
                 rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
                 checkNow: await disabled("[data-memory-check]"),
+                checkLabel: await text("[data-memory-check]"),
             };
             await h.shot(`cdp-shots/setup-memory-${key}.png`);
         }
         return {
             ok:
+                got.fresh.checkLabel === "Check now" &&
+                got.checking.checkLabel === "Checking…" &&
                 got.fresh.rail === "Not checked yet" &&
                 got.fresh.line === "Not checked yet" &&
                 got.failed.rail === "Last check failed" &&
@@ -55445,6 +55487,141 @@ async function setupMemoryAssert(h, ctx) {
         };
         await h.shot("cdp-shots/setup-memory-landing.png");
         return { ok: got.surface === SURFACE_LABEL.setup && got.tab === "true" && landed, detail: JSON.stringify(got) };
+    });
+
+    // the never-checked project has no memory folder, so its check ends at once with no model call
+    await run(
+        "15. Check now: a check that ends at once says what it found beside the button, fading in and out with microFade",
+        async () => {
+            await h.goto("setup");
+            await click("#setup-tab-memory");
+            await selectProject(MEMORY_PROJECTS.fresh);
+            const before = await checkedAtOf(MEMORY_PROJECTS.fresh);
+            await motionStart();
+            await click("[data-memory-check]");
+            const shown = await polishWaitFor(h, `!!document.querySelector("[data-memory-check-result]")`, 10000);
+            const got = {
+                result: await text("[data-memory-check-result]"),
+                line: await checkLine(),
+                label: await text("[data-memory-check]"),
+                error: await text("[data-memory-error]"),
+                ran: (await checkedAtOf(MEMORY_PROJECTS.fresh)) > before,
+            };
+            await polishNap(300);
+            await h.shot("cdp-shots/setup-memory-check-result.png");
+            // the note stays a few seconds, then fades out as it leaves
+            const gone = await polishWaitFor(h, `!document.querySelector("[data-memory-check-result]")`, 9000);
+            const calls = await motionCalls();
+            const note = {
+                in: fades(calls, "note", MICRO_FADE_MS, 0, 1),
+                out: fades(calls, "note", MICRO_FADE_MS, 1, 0),
+            };
+            return {
+                ok:
+                    shown &&
+                    got.result === "Checked · nothing to review" &&
+                    got.line.startsWith("Checked ") &&
+                    got.label === "Check now" &&
+                    got.error === "" &&
+                    got.ran &&
+                    gone &&
+                    note.in === 1 &&
+                    note.out === 1,
+                detail: JSON.stringify({ ...got, gone, note, calls: calls.filter((c) => c.where === "note") }),
+            };
+        }
+    );
+
+    await run(
+        "16. Motion: a project switch fades the pane in with viewFade, a change switch its detail, a status fades with microFade and the meters ease their width",
+        async () => {
+            await motionStart();
+            await selectProject(MEMORY_PROJECTS.own);
+            await polishNap(700);
+            const onProject = await motionCalls();
+            const rows = await h.ev(`document.querySelectorAll("[data-memory-change]").length`);
+            const next = (await selectedChange()) === own.trim.id ? own.merge.id : own.trim.id;
+            await motionStart();
+            await selectChange(next);
+            await polishNap(700);
+            const onChange = await motionCalls();
+            const meters = await h.ev(
+                `[...document.querySelectorAll("[data-memory-meter]")].map((m) => {
+                    const s = getComputedStyle(m);
+                    return [s.transitionProperty, s.transitionDuration, s.transitionTimingFunction];
+                })`
+            );
+            await h.shot("cdp-shots/setup-memory-motion.png");
+            const got = {
+                rows,
+                project: {
+                    pane: fades(onProject, "pane", VIEW_FADE_MS),
+                    detail: fades(onProject, "detail", VIEW_FADE_MS),
+                    status: fades(onProject, "status", MICRO_FADE_MS),
+                },
+                // picking another change in the same project moves the detail only
+                change: {
+                    pane: onChange.filter((c) => c.where === "pane").length,
+                    detail: fades(onChange, "detail", VIEW_FADE_MS),
+                    status: onChange.filter((c) => c.where === "status").length,
+                },
+                meters: { count: meters.length, first: meters[0] },
+            };
+            return {
+                ok:
+                    rows > 0 &&
+                    got.project.pane === 1 &&
+                    got.project.detail === 1 &&
+                    got.project.status === rows &&
+                    got.change.pane === 0 &&
+                    got.change.detail === 1 &&
+                    got.change.status === 0 &&
+                    meters.length >= 2 &&
+                    meters.every(([prop, dur, ease]) => prop === "width" && dur === "0.36s" && ease === FLUID_EASE),
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run("17. Reduced motion: with the preference on nothing fades and the meters snap", async () => {
+        try {
+            await h.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+            // the hook reads the preference when a component mounts, so the page starts over under it
+            await polishReload(h);
+            await h.goto("setup");
+            await click("#setup-tab-memory");
+            await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+            const emulated = await h.ev(`matchMedia("(prefers-reduced-motion: reduce)").matches`);
+            await motionStart();
+            await selectProject(MEMORY_PROJECTS.own);
+            await selectChange((await selectedChange()) === own.trim.id ? own.merge.id : own.trim.id);
+            await selectProject(MEMORY_PROJECTS.fresh);
+            await click("[data-memory-check]");
+            const shown = await polishWaitFor(h, `!!document.querySelector("[data-memory-check-result]")`, 10000);
+            const note = await text("[data-memory-check-result]");
+            await h.shot("cdp-shots/setup-memory-reduced-motion.png");
+            const gone = await polishWaitFor(h, `!document.querySelector("[data-memory-check-result]")`, 9000);
+            await selectProject(MEMORY_PROJECTS.own);
+            const meters = await h.ev(
+                `[...document.querySelectorAll("[data-memory-meter]")].map((m) => getComputedStyle(m).transitionDuration)`
+            );
+            // the tab's own elements only: other parts of the page animate for their own reasons
+            const calls = (await motionCalls()).filter((c) => c.where !== "other");
+            return {
+                ok:
+                    emulated &&
+                    shown &&
+                    note === "Checked · nothing to review" &&
+                    gone &&
+                    calls.length === 0 &&
+                    meters.length >= 2 &&
+                    meters.every((d) => d === "0s"),
+                detail: JSON.stringify({ emulated, shown, note, gone, calls, meters }),
+            };
+        } finally {
+            await h.cdp("Emulation.setEmulatedMedia", { features: [] }).catch(() => {});
+            await polishReload(h).catch(() => {});
+        }
     });
     return steps;
 }

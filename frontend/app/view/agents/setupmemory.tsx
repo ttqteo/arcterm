@@ -6,13 +6,16 @@
 // derivation is in memorymodel.ts, the atoms and RPCs in memorystore.ts.
 
 import { KeyCap } from "@/app/element/keycap";
+import { widthTween } from "@/app/element/meter";
+import { microFade, viewFade } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildMemoryBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { TriangleAlert } from "lucide-react";
+import { RefreshCw, TriangleAlert } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import {
     applyAllIds,
@@ -45,6 +48,7 @@ import {
     loadMemory,
     memoryBulkAtom,
     memoryBusyAtom,
+    memoryCheckResultAtom,
     memoryErrorAtom,
     memoryProjectsAtom,
     memorySelectedChangeAtom,
@@ -89,10 +93,31 @@ function Dot({ tone, className }: { tone: Tone; className?: string }) {
     return <span className={cn("h-1.5 w-1.5 flex-none rounded-full", TONE_DOT[tone], className)} />;
 }
 
+// the props of a motion element that fades in on mount (and out on exit, when it leaves under AnimatePresence).
+// MotionConfig's reduced-motion pass drops transform and layout animation but keeps opacity, so a fade is
+// dropped here: under reduced motion the element just appears.
+interface FadeProps {
+    variants?: Variants;
+    initial?: string;
+    animate?: string;
+    exit?: string;
+}
+
+function useFade(): (variants: Variants, leaves?: boolean) => FadeProps {
+    const reduce = useReducedMotion();
+    return (variants, leaves = false) =>
+        reduce ? {} : { variants, initial: "initial", animate: "animate", ...(leaves ? { exit: "exit" } : {}) };
+}
+
 function Meter({ pct }: { pct: number }) {
+    const reduce = useReducedMotion();
     return (
         <span className="block h-1 overflow-hidden rounded-full bg-edge-mid">
-            <span className="block h-1 bg-success" style={{ width: `${pct}%` }} />
+            <span
+                data-memory-meter
+                className="block h-1 bg-success"
+                style={{ width: `${pct}%`, transition: widthTween(reduce) }}
+            />
         </span>
     );
 }
@@ -275,6 +300,7 @@ function ApplyAll({ p, group }: { p: MemHygieneProject; group: ChangeGroup }) {
 }
 
 function ChangeTable({ p, selected }: { p: MemHygieneProject; selected: string | null }) {
+    const fade = useFade();
     const groups = changeGroups(p);
     // j and k, and the move to the next change after a verdict, can land on a row scrolled out of view
     useEffect(() => {
@@ -359,7 +385,9 @@ function ChangeTable({ p, selected }: { p: MemHygieneProject; selected: string |
                                     <span role="cell" className="font-mono text-[11px] text-ink-mid">
                                         {c.effect}
                                     </span>
-                                    <span
+                                    <motion.span
+                                        key={status.text}
+                                        {...fade(microFade)}
                                         role="cell"
                                         className={cn(
                                             "flex items-center gap-1.5 text-[11.5px]",
@@ -368,7 +396,7 @@ function ChangeTable({ p, selected }: { p: MemHygieneProject; selected: string |
                                     >
                                         <Dot tone={status.tone} />
                                         {status.text}
-                                    </span>
+                                    </motion.span>
                                 </div>
                             );
                         })}
@@ -379,27 +407,69 @@ function ChangeTable({ p, selected }: { p: MemHygieneProject; selected: string |
     );
 }
 
-function ProjectPane({ p, selected }: { p: MemHygieneProject; selected: string | null }) {
+// Check now and Check again: the spin and label carry a running check, which the disabled state alone did
+// not. a check with nothing new ends before a list can read it running; the result note covers that one.
+function CheckButton({
+    p,
+    label,
+    className,
+    marked,
+}: {
+    p: MemHygieneProject;
+    label: string;
+    className?: string;
+    marked?: boolean;
+}) {
+    // busy also covers a decision in flight, which disables the button but is not a check
     const busy = useAtomValue(memoryBusyAtom);
+    return (
+        <button
+            type="button"
+            data-memory-check={marked || undefined}
+            disabled={busy || p.checking}
+            onClick={() => fireAndForget(() => checkMemory(p.project))}
+            className={cn(BTN_SECONDARY, "inline-flex items-center gap-1.5", className)}
+        >
+            <RefreshCw size={13} className={cn(p.checking && "animate-spin motion-reduce:animate-none")} />
+            {p.checking ? "Checking…" : label}
+        </button>
+    );
+}
+
+function ProjectPane({ p, selected }: { p: MemHygieneProject; selected: string | null }) {
+    const fade = useFade();
+    const result = useAtomValue(memoryCheckResultAtom);
     const cards = indexCards(p);
     const split = splitText(p);
     return (
-        <main className="flex min-w-0 flex-1 flex-col gap-3.5 px-5 pb-[18px] pt-4">
+        // keyed by project: switching it fades the whole pane in rather than cutting to the next one's
+        <motion.main
+            key={p.project}
+            data-memory-pane
+            {...fade(viewFade)}
+            className="flex min-w-0 flex-1 flex-col gap-3.5 px-5 pb-[18px] pt-4"
+        >
             <div className="flex items-center gap-3.5">
                 <div className="flex min-w-0 flex-col gap-[3px]">
                     <div className="text-[15px] font-semibold text-primary">{p.project}</div>
                     <div className="text-[12px] text-muted">{checkLine(p, Date.now())}</div>
                 </div>
                 <span className="flex-1" />
-                <button
-                    type="button"
-                    data-memory-check
-                    disabled={busy || p.checking}
-                    onClick={() => fireAndForget(() => checkMemory(p.project))}
-                    className={BTN_SECONDARY}
-                >
-                    Check now
-                </button>
+                <AnimatePresence>
+                    {result?.project === p.project ? (
+                        <motion.span
+                            key="result"
+                            {...fade(microFade, true)}
+                            role="status"
+                            data-memory-check-result
+                            className={cn("flex items-center gap-1.5 text-[12px]", TONE_TEXT[result.tone])}
+                        >
+                            <Dot tone={result.tone} />
+                            {result.text}
+                        </motion.span>
+                    ) : null}
+                </AnimatePresence>
+                <CheckButton p={p} label="Check now" marked />
             </div>
             {split ? <p className="m-0 text-[12.5px] leading-[1.5] text-secondary">{split}</p> : null}
             <section
@@ -411,14 +481,13 @@ function ProjectPane({ p, selected }: { p: MemHygieneProject; selected: string |
                 ))}
             </section>
             <ChangeTable p={p} selected={selected} />
-        </main>
+        </motion.main>
     );
 }
 
 // ---- detail rail ----
 
 function ConflictAlert({ p, change }: { p: MemHygieneProject; change: MemChange }) {
-    const busy = useAtomValue(memoryBusyAtom);
     const what = change.conflictfile ? baseName(change.conflictfile) : "A file this change touches";
     return (
         <div
@@ -434,14 +503,7 @@ function ConflictAlert({ p, change }: { p: MemHygieneProject; change: MemChange 
                 </span>
             </span>
             <span>
-                <button
-                    type="button"
-                    disabled={busy || p.checking}
-                    onClick={() => fireAndForget(() => checkMemory(p.project))}
-                    className={cn(BTN_SECONDARY, "h-[30px] text-[12.5px]")}
-                >
-                    Check again
-                </button>
+                <CheckButton p={p} label="Check again" className="h-[30px] text-[12.5px]" />
             </span>
         </div>
     );
@@ -543,11 +605,15 @@ function Verdict({ p, change }: { p: MemHygieneProject; change: MemChange }) {
 }
 
 function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }) {
+    const fade = useFade();
     // up by the title with the conflict alert, not above the buttons: the avatar's bottom-right corner
     // sits over the rail's foot
     const gate = switchGate(p, change);
     return (
-        <aside
+        // keyed by change: picking another fades its detail in
+        <motion.aside
+            key={change.id}
+            {...fade(viewFade)}
             aria-label="Change detail"
             data-memory-detail
             className={cn(
@@ -593,7 +659,7 @@ function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }
             ) : null}
             <span className="flex-1" />
             <Verdict p={p} change={change} />
-        </aside>
+        </motion.aside>
     );
 }
 
