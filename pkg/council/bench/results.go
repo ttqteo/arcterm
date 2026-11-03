@@ -194,8 +194,8 @@ type CouncilBenchRow struct {
 	RecallPerM float64 `json:"recallperm"` // key lines matched per million tokens
 }
 
-// Summarize groups the runs by harness version and variant, the newest harness first (within it solo, then council),
-// so one version's score is never read as another's.
+// Summarize groups the runs by harness version and variant, the newest harness first (within it solo, council, then
+// team), so one version's score is never read as another's.
 func Summarize(results []CouncilBenchResult) []CouncilBenchRow {
 	type groupKey struct{ harness, variant string }
 	index := map[groupKey]int{}
@@ -314,13 +314,13 @@ func splitHarness(h string) (date string, n int) {
 	return date, n
 }
 
-// compareVariant orders the known variants as they run (solo, council), then any other by name.
+// compareVariant orders the known variants solo, council, team (variantOrder), then any other by name.
 func compareVariant(a, b string) int {
 	rank := func(v string) int {
-		if i := slices.Index(AllVariants(), v); i >= 0 {
+		if i := slices.Index(variantOrder, v); i >= 0 {
 			return i
 		}
-		return len(AllVariants())
+		return len(variantOrder)
 	}
 	if c := cmp.Compare(rank(a), rank(b)); c != 0 {
 		return c

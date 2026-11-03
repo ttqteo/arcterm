@@ -468,17 +468,10 @@ func (ws *WshServer) CouncilThumbCommand(ctx context.Context, data wshrpc.Comman
 
 // ---- the benchmark ----
 
-// councilBenchWiring is what bench.Run is given beside the data dir and the options: the real calls. A test replaces
-// them with fakes, so no council runs and no claude is called.
-type councilBenchWiring struct {
-	start  bench.StartFunc
-	wait   bench.WaitFunc
-	judge  bench.JudgeFunc
-	remind bench.RemindFunc
-}
-
-var councilBenchWire = func() councilBenchWiring {
-	return councilBenchWiring{start: benchStartCouncil, wait: benchWaitCouncil, judge: bench.Judge, remind: benchRemind}
+// councilBenchWire is what bench.Run is given beside the data dir and the options: the real calls. A test replaces it
+// with fakes, so no council runs and no claude is called.
+var councilBenchWire = func() bench.Funcs {
+	return bench.Funcs{Start: benchStartCouncil, Wait: benchWaitCouncil, Judge: bench.Judge, Remind: benchRemind, Team: bench.RunTeam}
 }
 
 // benchStartCouncil starts the council a plan item built. The bench leaves the panel empty, so it is filled from the
@@ -541,20 +534,22 @@ func (b *councilBenchRun) inflightId() string {
 	return b.inflight
 }
 
-// tracking wraps the start and wait of a bench so Stop knows which council is in flight.
-func (b *councilBenchRun) tracking(w councilBenchWiring) (bench.StartFunc, bench.WaitFunc) {
-	start := func(ctx context.Context, c *council.Council) (*council.Council, error) {
-		started, err := w.start(ctx, c)
+// tracking wraps the Start and Wait of a bench so Stop knows which council is in flight. A team cell has no council to
+// track: Stop ends it by cancelling the run's context, which RunTeam ends its lead on.
+func (b *councilBenchRun) tracking(f bench.Funcs) bench.Funcs {
+	start, wait := f.Start, f.Wait
+	f.Start = func(ctx context.Context, c *council.Council) (*council.Council, error) {
+		started, err := start(ctx, c)
 		if err == nil && started != nil {
 			b.setInflight(started.Id)
 		}
 		return started, err
 	}
-	wait := func(ctx context.Context, id string) (*council.Council, error) {
+	f.Wait = func(ctx context.Context, id string) (*council.Council, error) {
 		defer b.setInflight("")
-		return w.wait(ctx, id)
+		return wait(ctx, id)
 	}
-	return start, wait
+	return f
 }
 
 // planCouncilBench is a bench's plan over the cases in dataDir. A case named with --case that LoadCases left out comes
@@ -601,8 +596,7 @@ func (ws *WshServer) CouncilBenchCommand(ctx context.Context, data wshrpc.Comman
 	runCtx, cancel := context.WithCancel(context.Background())
 	run := &councilBenchRun{cancel: cancel, done: make(chan struct{})}
 	councilBenchCur = run
-	wire := councilBenchWire()
-	start, wait := run.tracking(wire)
+	funcs := run.tracking(councilBenchWire())
 	go func() {
 		defer close(run.done)
 		defer func() {
@@ -612,11 +606,12 @@ func (ws *WshServer) CouncilBenchCommand(ctx context.Context, data wshrpc.Comman
 		}()
 		defer func() { panichandler.PanicHandler("council bench", recover()) }()
 		defer cancel()
-		if err := bench.Run(runCtx, dataDir, opts, start, wait, wire.judge, wire.remind); err != nil {
+		if err := bench.Run(runCtx, dataDir, opts, funcs); err != nil {
 			log.Printf("[council-bench] the bench ended early: %v", err)
 			return
 		}
-		log.Printf("[council-bench] the bench finished: %d councils", len(plan.Items))
+		// the token cap can end a bench before its last item: Run logged that when it did
+		log.Printf("[council-bench] the bench ended: %d items planned", len(plan.Items))
 	}()
 	return plan, nil
 }
