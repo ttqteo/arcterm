@@ -138,9 +138,9 @@ func TestABatchOfOneFailsWithoutBisecting(t *testing.T) {
 	if _, err := os.Stat(worktreeDir(f.projectPath(t), f.ownerID+"-bisect")); !os.IsNotExist(err) {
 		t.Fatalf("no bisect tree is made, stat err %v", err)
 	}
-	want := "Verify failed after merging task t-0 (exit 1)."
-	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], want) {
-		t.Fatalf("today's wake, got %q", lead.sends)
+	want := "wake: Verify failed after merging task t-0 (exit 1): --- FAIL: TestBroken (t-0.txt). wsh jarvis dag status t-0"
+	if len(lead.sends) != 1 || lead.sends[0] != want {
+		t.Fatalf("want %q, got %q", want, lead.sends)
 	}
 }
 
@@ -157,8 +157,9 @@ func TestBisectBlamesTheLastLaneWhenOnlyItBreaks(t *testing.T) {
 	if got := states(f.dag(t)); !reflect.DeepEqual(got, want) {
 		t.Fatalf("states = %v, want %v", got, want)
 	}
-	if n := len(calls.list()); n != 3 {
-		t.Fatalf("one batch run and two bisect steps, got %d", n)
+	// every prefix passed, so the whole batch runs once more in the clean tree, where t-2 breaks it again
+	if n := len(calls.list()); n != 4 {
+		t.Fatalf("one batch run, two bisect steps and the whole batch in the clean tree, got %d", n)
 	}
 }
 
@@ -257,5 +258,115 @@ func TestCancellingTheDagStopsTheBisect(t *testing.T) {
 		if task.State == TaskState_VerifyFailed {
 			t.Fatalf("a cancelled bisect blames no lane, %s is verify-failed", task.ID)
 		}
+	}
+}
+
+// a failure no prefix reproduces is run once more as the whole batch in the clean tree: one that passes there is not
+// any lane's, so every lane lands and the failure goes to the final stage as a flaky item
+func TestABatchFailureACleanTreeDoesNotReproduceLandsEveryLane(t *testing.T) {
+	lead := newFakeLead(t)
+	f := threeLaneBatch(t, "")
+	landing := ""
+	calls := stubPlanCommandOutput(t, func(_ context.Context, dir, _ string) (string, error) {
+		if landing == "" {
+			landing = dir
+		}
+		if dir == landing {
+			return "--- FAIL: TestLocal", &planCommandError{exitCode: 1, output: "--- FAIL: TestLocal"}
+		}
+		return "ok", nil
+	})
+	await := awaitVerify(t)
+
+	AutoMergeReady(f.ctx, f.dagID)
+	await()
+
+	g := f.dag(t)
+	want := []string{TaskState_Done, TaskState_Done, TaskState_Done}
+	if got := states(g); !reflect.DeepEqual(got, want) {
+		t.Fatalf("states = %v, want %v, wake %q", got, want, lead.sends)
+	}
+	if n := len(calls.list()); n != 4 {
+		t.Fatalf("the batch run, two bisect steps and the whole batch in the clean tree, got %d", n)
+	}
+	items := flakyItemsIn(g.Tasks[2].VerifyOutput)
+	if len(items) != 1 || !strings.Contains(items[0], "exit 1 in the landing tree") || !strings.Contains(items[0], "t-0, t-1, t-2") {
+		t.Fatalf("the landing tree's failure is a flaky item for the final stage, got %q", items)
+	}
+	if len(lead.sends) != 0 {
+		t.Fatalf("nothing failed, so no wake, got %q", lead.sends)
+	}
+}
+
+// a Verify that did not finish judged no lane: bisecting it would spend a timeout per step on the same load
+func TestATimedOutBatchVerifyIsNotBisected(t *testing.T) {
+	lead := newFakeLead(t)
+	f := threeLaneBatch(t, "")
+	calls := stubPlanCommand(t, func(context.Context, string, string) error {
+		return &planCommandError{exitCode: -1, timeout: VerifyTimeout}
+	})
+	await := awaitVerify(t)
+
+	AutoMergeReady(f.ctx, f.dagID)
+	await()
+
+	want := []string{TaskState_VerifyFailed, TaskState_Verifying, TaskState_Verifying}
+	if got := states(f.dag(t)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("states = %v, want %v", got, want)
+	}
+	if n := len(calls.list()); n != 1 {
+		t.Fatalf("no bisect step runs, got %d runs", n)
+	}
+	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "timed out after") || !strings.Contains(lead.sends[0], "not bisected") {
+		t.Fatalf("the wake says the Verify did not finish and was not bisected, got %q", lead.sends)
+	}
+}
+
+// a batch Verify something outside killed judged no lane either
+func TestAKilledBatchVerifyIsNotBisected(t *testing.T) {
+	lead := newFakeLead(t)
+	f := threeLaneBatch(t, "")
+	calls := stubPlanCommand(t, func(context.Context, string, string) error {
+		return &planCommandError{exitCode: -1, killed: "signal: killed"}
+	})
+	await := awaitVerify(t)
+
+	AutoMergeReady(f.ctx, f.dagID)
+	await()
+
+	if n := len(calls.list()); n != 1 {
+		t.Fatalf("no bisect step runs, got %d runs", n)
+	}
+	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "killed from outside") || !strings.Contains(lead.sends[0], "not bisected") {
+		t.Fatalf("the wake says the Verify was killed and was not bisected, got %q", lead.sends)
+	}
+}
+
+// a bisect step that did not finish judged nothing: the bisect stops and lands only the prefixes that passed
+func TestABisectStepThatTimesOutStopsTheBisect(t *testing.T) {
+	lead := newFakeLead(t)
+	f := threeLaneBatch(t, "")
+	n := 0
+	calls := stubPlanCommand(t, func(context.Context, string, string) error {
+		n++
+		if n == 1 {
+			return &planCommandError{exitCode: 1, output: "--- FAIL: TestX"}
+		}
+		return &planCommandError{exitCode: -1, timeout: VerifyTimeout}
+	})
+	await := awaitVerify(t)
+
+	AutoMergeReady(f.ctx, f.dagID)
+	await()
+
+	want := []string{TaskState_VerifyFailed, TaskState_Verifying, TaskState_Verifying}
+	if got := states(f.dag(t)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("states = %v, want %v", got, want)
+	}
+	if got := len(calls.list()); got != 2 {
+		t.Fatalf("the batch run and the step that timed out, got %d", got)
+	}
+	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "bisect stopped") {
+		t.Fatalf("the wake says why the bisect stopped, got %q", lead.sends)
 	}
 }

@@ -84,6 +84,13 @@ func killedFromOutside(code int, state string) string {
 	return ""
 }
 
+// planCommandUnfinished reports whether err is a plan command cut off by its timeout or from outside: its output
+// judged nothing about the code.
+func planCommandUnfinished(err error) bool {
+	var pe *planCommandError
+	return errors.As(err, &pe) && (pe.timeout > 0 || pe.killed != "")
+}
+
 // planCommandKilled reports whether err is a plan command something outside ended.
 func planCommandKilled(err error) bool {
 	var pe *planCommandError

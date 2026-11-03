@@ -881,6 +881,11 @@ export function finalStageEndable(group: TaskGroup | null): boolean {
     return group != null && group.status !== "cancelled" && RUNNING_FINAL_STATES.has(group.final?.state ?? "");
 }
 
+// a failed final stage can run again, in the same round, once the human fixed what failed outside the code
+export function finalStageRerunnable(group: TaskGroup | null): boolean {
+    return group != null && group.status !== "cancelled" && group.final?.state === "failed";
+}
+
 // the dock's Open lead: a live orchestrator's lead, whose terminal the Agent surface shows
 export function sheetLead(run: Run, agents: AgentVM[]): AgentVM | undefined {
     return run.mode === "orchestrator" && !isTerminal(run.status) ? leadWorker(run, agents) : undefined;

@@ -163,6 +163,17 @@ export function endFinalStage(
     );
 }
 
+// rerunFinalStage runs a run's failed final stage again in the same round, for a failure outside the code that the
+// human fixed; the engine tells the lead to drop its fix plan.
+export function rerunFinalStage(channelId: string, runId: string): Promise<void> {
+    return RpcApi.DagActionCommand(TabRpcClient, {
+        channelid: channelId,
+        runid: runId,
+        taskid: "",
+        action: "final-rerun",
+    });
+}
+
 // Cancel a run, confirming first when it has live workers (goal: never silently stop running agents).
 // liveCount 0 (e.g. the worker already exited — the "blocked · worker exited" card) cancels directly.
 // Copy reassures that completed work is kept: the backend stops the processes but keeps worker tabs,

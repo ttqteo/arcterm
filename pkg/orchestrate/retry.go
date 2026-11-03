@@ -12,6 +12,11 @@ const (
 	// FailureKindStopped is a task the human stopped from the Consumers panel or `dag stop`: its worker was
 	// stopped and nothing retries it until the human retries, escalates or skips it.
 	FailureKindStopped = "stopped-by-human"
+	// FailureKindWorkerStopped is a worker whose run was cancelled while its dag went on: a skip, retry, escalate or
+	// stop that cancelled the run and then could not finish, or the engine's own retry of a stalled task, or one
+	// run cancelled by hand. The worker was stopped, not judged: the lead is woken to decide, and the stop counts
+	// nothing toward the circuit-break. Unlike FailureKindStopped no human asked for it to wait.
+	FailureKindWorkerStopped = "worker-stopped"
 )
 
 // Dispatch failure kinds. These never come from classifyFailure — the task died before it had a
@@ -57,8 +62,8 @@ func classifyFailure(summary string, exitCode int) string {
 // backoff. A fault that outlasts them is not transient: the task fails and the lead is woken.
 const MaxAutoDispatchRetries = 3
 
-// retryDecision reports whether the engine retries a failure of kind itself, given the consecutive failures of
-// that kind the task already has.
+// retryDecision reports whether the engine retries a failure of kind itself, given the failures in a row the task
+// already has, of any kind: counted per kind, a task alternating two kinds the engine retries was retried forever.
 func retryDecision(kind string, attempts int) bool {
 	switch kind {
 	case FailureKindToolError:

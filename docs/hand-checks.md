@@ -6,6 +6,27 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Rerun final stage from the Final verification pane: on a run whose final stage failed, focus its Final
+  verification row → the pane header shows Rerun final stage; click it → the stage restarts in the same round and the
+  button goes. The `final-rerun` scenario's step 4 passed in run aebf7808's first final stage and failed in its second
+  when the scenario's reseed lost a race with the engine's tick; the sheet (steps 1–3) and palette (step 5) passed both
+  times (`finalstageviews.tsx`, run aebf7808 Task 1).
+- [ ] (arcterm) Close a quick run's agent tab → the run goes blocked with the tab-closed reason, and Resume opens it in a
+  new tab (run aebf7808 Task 4).
+- [ ] (arcterm) Hold a lane tree's folder (a shell cd'd into it), then `wsh jarvis dag retry <task>` → the task runs at
+  `<dir>.1`; let go of the folder and run retry-cleanup → `<dir>` is deleted (run aebf7808 Task 4).
+- [ ] (arcterm) Fix a failed merge Verify in the run's tree, leave it uncommitted, run
+  `wsh jarvis dag merge <task> --continue` → refused, naming the file (run aebf7808 Task 5).
+- [ ] (arcterm) `wsh jarvis dag retry <task>` and `wsh jarvis dag escalate <task> --model opus` on a task in
+  blocked-merge → each is refused naming `dag merge <task> --continue`, and the task and its worker tab stay as they
+  were (run aebf7808 Task 6).
+
+- [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
+  that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
+  Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
+  unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
+  steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
+  (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
 - [ ] (arcterm) A council's Discussion is the chat again, with a quiet Ideas rail beside it: open a council that has
   ideas → the channel of messages fills the pane and the rail on its right lists each idea (number · author, title, a
   muted line of replies and stances); a row scrolls the channel to that idea. An idea's replies button opens its thread

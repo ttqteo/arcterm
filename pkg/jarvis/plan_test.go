@@ -213,6 +213,19 @@ func TestPlanFormatFilesLineListsWhatTheChangeBreaks(t *testing.T) {
 	}
 }
 
+// run bd67b1fe: a Check that found docker down exited 3 and the stage failed; the plan format now says the final
+// stage reads Check's and Verify's exit 3 as "could not verify", and that a merge point does not
+func TestPlanFormatSaysCheckAndVerifyMayExit3InTheFinalStage(t *testing.T) {
+	for _, want := range []string{
+		"In the final stage Check and Verify may exit 3 the same way",
+		"at a merge point exit 3 still fails",
+	} {
+		if !strings.Contains(PlanFormat, want) {
+			t.Fatalf("the format must say %q:\n%s", want, PlanFormat)
+		}
+	}
+}
+
 func node(id string, deps ...string) waveobj.TaskNode {
 	return waveobj.TaskNode{ID: id, Label: id, Deps: deps}
 }

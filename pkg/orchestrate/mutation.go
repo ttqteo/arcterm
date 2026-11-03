@@ -261,6 +261,10 @@ func prepareActionLocked(ctx context.Context, dagID, taskID, action string, targ
 		if reviewState(task.State) {
 			return nil, nil
 		}
+		// before the worker's run is cancelled: a refused retry leaves the task and its run as they were
+		if !retryable(task.State) {
+			return nil, retryRefusal(task)
+		}
 	case "escalate":
 		owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
 		if err != nil {
@@ -298,11 +302,42 @@ func cancelTaskRun(ctx context.Context, g *waveobj.TaskGroup, task *waveobj.Task
 	return run, nil
 }
 
+// retryRefusal is the error of a retry from a state it would lose work from, saying what to do there instead.
+func retryRefusal(task *waveobj.TaskNode) error {
+	id := task.ID
+	var instead string
+	switch task.State {
+	case TaskState_Done:
+		if task.Gate && !task.Released {
+			instead = fmt.Sprintf("a gate waits for you: `wsh jarvis dag approve %s` releases it, `wsh jarvis dag sendback %s` runs it again", id, id)
+		} else {
+			instead = "its worker finished, and its commit has merged or waits to merge, which a new attempt would not replace; tell a task that has not run yet what is wrong with `wsh jarvis dag amend <task> \"<note>\"`"
+		}
+	case TaskState_BlockedMerge:
+		instead = fmt.Sprintf("its merge conflicted, and the conflicted squash waits in the project tree; resolve it there, `git add` it without committing, then `wsh jarvis dag merge %s --continue`", id)
+	case TaskState_Verifying:
+		instead = "its commit has merged and the plan's Verify is running; wait for it to finish"
+	case TaskState_VerifyFailed:
+		instead = fmt.Sprintf("its commit has merged and Verify failed on it; fix that in the project tree, commit, then `wsh jarvis dag merge %s --continue`", id)
+	case TaskState_Skipped:
+		instead = "it was skipped, and a skipped task stays skipped"
+	case TaskState_Pending, TaskState_Ready:
+		instead = "it has not started: the engine dispatches it when a slot is free"
+	default:
+		instead = "only a running, stalled, failed or review-failed task can start over"
+	}
+	return fmt.Errorf("task %q cannot be retried from state %q: %s", id, task.State, instead)
+}
+
 func escalationTarget(task *waveobj.TaskNode, owner *waveobj.Run, group *waveobj.TaskGroup, target waveobj.RoutePin) (waveobj.RoutePin, error) {
 	if task == nil {
 		return waveobj.RoutePin{}, fmt.Errorf("task is required")
 	}
-	if task.State != TaskState_Failed && task.State != TaskState_Stalled && task.State != TaskState_BlockedMerge && task.State != TaskState_ReviewFailed {
+	// not blocked-merge: its worker finished, and a fresh one would leave the conflicted squash holding later merges
+	if task.State == TaskState_BlockedMerge {
+		return waveobj.RoutePin{}, fmt.Errorf("task %q cannot be escalated from state %q: its worker finished, and a fresh one would leave the conflicted squash in the project tree; resolve the conflict there, then `wsh jarvis dag merge %s --continue`", task.ID, task.State, task.ID)
+	}
+	if task.State != TaskState_Failed && task.State != TaskState_Stalled && task.State != TaskState_ReviewFailed {
 		return waveobj.RoutePin{}, fmt.Errorf("task %q cannot be escalated from state %q", task.ID, task.State)
 	}
 	if task.Escalations >= 1 {
@@ -385,6 +420,8 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 		if err := RetryTask(g, taskID); err != nil {
 			return err
 		}
+		// the human's retry is the answer to the failures so far, as an escalation is: the engine's own retries start over
+		taskByID(g, taskID).Attempts = 0
 	case "escalate":
 		task := taskByID(g, taskID)
 		if task == nil {
@@ -408,8 +445,8 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 		if task == nil {
 			return fmt.Errorf("no task %q", taskID)
 		}
-		// Failed, not Cancelled: a cancelled task cancels its whole dag (RecomputeDagStatus). The run is
-		// dropped so DeriveTaskStates cannot map its cancellation back onto the task.
+		// Failed, not Cancelled: only CancelGroup moves a task to cancelled, for the whole dag. The run is dropped
+		// so DeriveTaskStates cannot map its cancellation back onto the task as a worker-stopped failure.
 		task.State = TaskState_Failed
 		task.LastFailureKind = FailureKindStopped
 		task.RunID = ""
@@ -438,13 +475,14 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 
 func MarkBlockedMerge(ctx context.Context, dagID, childRunID string) error {
 	return withDagMutation(dagID, func() error {
-		return markBlockedMergeLocked(ctx, dagID, childRunID)
+		return markBlockedMergeLocked(ctx, dagID, childRunID, nil)
 	})
 }
 
 // markBlockedMergeLocked is the body of MarkBlockedMerge for callers already holding the dag
-// mutation lock (the merge path takes it before running git, so it cannot re-enter).
-func markBlockedMergeLocked(ctx context.Context, dagID, childRunID string) error {
+// mutation lock (the merge path takes it before running git, so it cannot re-enter). files are the conflicted
+// paths the lead's wake names, nil when the caller could not read them.
+func markBlockedMergeLocked(ctx context.Context, dagID, childRunID string, files []string) error {
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
 		return fmt.Errorf("loading dag: %w", err)
@@ -474,7 +512,7 @@ func markBlockedMergeLocked(ctx context.Context, dagID, childRunID string) error
 		return err
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, g.OID))
-	PostWake(ctx, g.ChannelId, g.RunID, mergeConflictWake(taskID))
+	PostWake(ctx, g.ChannelId, g.RunID, mergeConflictWake(taskID, files))
 	return nil
 }
 

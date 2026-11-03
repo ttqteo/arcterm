@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -588,6 +589,45 @@ func TestLandUntrackedEarlierVersionOfWhatTheBranchAdds(t *testing.T) {
 	})
 }
 
+// a project in a subfolder of its repo: git names what the run adds from the repo root, not the project (runs
+// 8cd593bb and d8a2a706 held on an identical copy)
+func TestLandUntrackedCopyInASubfolderProject(t *testing.T) {
+	subfolderLand := func(t *testing.T, copy string) (*mergeFixture, string) {
+		t.Helper()
+		f, tree := landFixture(t)
+		commitOnBranch(t, tree, "sub/spec.md", "spec\n")
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
+		sub := filepath.Join(f.project, "sub")
+		writeFile(t, filepath.Join(sub, "spec.md"), copy)
+		if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
+			r.ProjectPath = sub
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return f, sub
+	}
+	t.Run("an identical copy is cleared and the land merges", func(t *testing.T) {
+		f, _ := subfolderLand(t, "spec\n")
+
+		if land := f.landRun(t, false); land.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", land)
+		}
+		if got := gitCmd(t, f.project, "ls-files", "sub/spec.md"); got != "sub/spec.md" {
+			t.Fatalf("sub/spec.md is not tracked after the land: %q", got)
+		}
+	})
+	t.Run("a differing copy holds the land", func(t *testing.T) {
+		f, sub := subfolderLand(t, "the human's spec\n")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+
+		f.assertHeld(t, f.landRun(t, false), head, untrackedDiffersReason("sub/spec.md"))
+		if got := readFile(t, filepath.Join(sub, "spec.md")); got != "the human's spec\n" {
+			t.Fatalf("spec.md = %q, want the human's file intact", got)
+		}
+	})
+}
+
 func TestLandForceLandsAFailedOutcome(t *testing.T) {
 	f, _ := landFixture(t)
 	f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 2, Detail: "Check failed"})
@@ -1019,12 +1059,12 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 			t.Fatalf("land = %+v, want a dirty hold", land)
 		}
 
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "staged changes")
 
 		gitCmd(t, f.project, "commit", "-m", "another session's work")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed || got.Commit != gitCmd(t, f.project, "rev-parse", "HEAD") {
 			t.Fatalf("land = %+v, want landed on the checkout's new head", got)
@@ -1040,7 +1080,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		gitCmd(t, f.project, "checkout", "--", "base.txt")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
@@ -1059,14 +1099,14 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 			t.Fatalf("land = %+v, want a dirty hold", land)
 		}
 
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "a cherry-pick is in progress")
 
 		if err := os.Remove(pick); err != nil {
 			t.Fatal(err)
 		}
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
@@ -1082,10 +1122,50 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		gitCmd(t, f.project, "commit", "-m", "staged")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed past the failed final stage", got)
+		}
+	})
+	// a final stage that failed outside the code holds the land; the human reruns it, and a pass lifts the hold
+	t.Run("a failed final stage's hold lands once a rerun passed", func(t *testing.T) {
+		f, _ := landFixture(t)
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 1, Detail: "docker is not running"})
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		f.assertHeld(t, f.landRun(t, false), head, finalFailedHold)
+
+		// nothing reran it yet: the hold stays
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, finalFailedHold)
+
+		// the rerun is still running: nothing lands yet
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Checking, Round: 1})
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, finalFailedHold)
+
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1})
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.driveLandLineUntil(t, f.ownerID)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed after the rerun passed", got)
+		}
+	})
+	t.Run("a failed final stage that ended unverified on a rerun lands too", func(t *testing.T) {
+		f, _ := landFixture(t)
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 1, Detail: "docker is not running"})
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		f.assertHeld(t, f.landRun(t, false), head, finalFailedHold)
+
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Unverified, Round: 1, Unverified: []string{"Check `x` could not verify: docker is not running"}})
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.driveLandLineUntil(t, f.ownerID)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", got)
 		}
 	})
 	t.Run("a hold that is not a dirty checkout waits for the human", func(t *testing.T) {
@@ -1097,8 +1177,90 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		gitCmd(t, f.project, "checkout", "main")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "checkout is on x, not main")
 	})
+}
+
+// Another run's merge Verify holds the checkout's claim for up to its timeout, and another land for as long as its
+// merge: both let go by themselves, so a land that finds the claim taken waits in line for it, not for a human. The
+// claim is taken here while the land re-checks the run, after the land's first look at the claim.
+func TestALandWhoseClaimIsTakenDuringItsRecheckWaitsInLineAndLands(t *testing.T) {
+	f, tree := landFixture(t)
+	// the final stage never saw this commit, so the land checks the run again before it claims the checkout
+	commitOnBranch(t, tree, "wrapup.txt", "wrap-up\n")
+	f.setLandCommands(t, "", "true")
+	var other *landing
+	var taken atomic.Bool
+	stubPlanCommand(t, func(context.Context, string, string) error {
+		if taken.CompareAndSwap(false, true) {
+			var err error
+			other, err = claimProject(f.projectPath(t), "other-dag", "t-9")
+			return err
+		}
+		return nil
+	})
+
+	land := f.landRun(t, false)
+	if other == nil {
+		t.Fatal("setup: the recheck never ran")
+	}
+	if land.State != LandState_Queued || land.QueuedTs == 0 {
+		t.Fatalf("land = %+v, want queued behind the claim", land)
+	}
+	if n := countEvents(t, f.ctx, f.channel, f.ownerID, waveobj.RunEventKindLandHeld); n != 0 {
+		t.Fatalf("%d land-held events, want none: a busy checkout only makes it wait", n)
+	}
+
+	driveLandLine(f.ctx)
+	waitStages(t)
+	if got := f.landOf(t, f.ownerID); got.State != LandState_Queued {
+		t.Fatalf("land = %+v while the claim is held, want it still queued", got)
+	}
+
+	releaseProject(f.projectPath(t), other)
+	f.driveLandLineUntil(t, f.ownerID)
+	if got := f.landOf(t, f.ownerID); got.State != LandState_Landed {
+		t.Fatalf("land = %+v, want landed once the claim was free", got)
+	}
+}
+
+// The land removes the landing tree with `worktree remove --force`, so changes the lead left uncommitted there
+// would be deleted with it, after a final stage that may have passed on them.
+func TestLandHoldsUncommittedChangesInTheLandingTree(t *testing.T) {
+	f, tree := landFixture(t)
+	writeFile(t, filepath.Join(tree, "feature.txt"), "the lead's uncommitted fix\n")
+	head := gitCmd(t, f.project, "rev-parse", "main")
+
+	land := f.landRun(t, false)
+	f.assertHeld(t, land, head, "uncommitted changes to feature.txt")
+	if got := readFile(t, filepath.Join(tree, "feature.txt")); got != "the lead's uncommitted fix\n" {
+		t.Fatalf("feature.txt = %q, want the change kept", got)
+	}
+	if land.Dirty {
+		t.Fatalf("land = %+v: the changes are this run's, not another session's, so the engine does not retry it", land)
+	}
+}
+
+// A merge someone left open in the landing tree leaves changes that are the merge's, not the run's: its own reason
+// stands.
+func TestLandNamesAMergeLeftOpenInTheLandingTree(t *testing.T) {
+	f, tree := landFixture(t)
+	commitOnBranch(t, tree, "base.txt", "the run's edit\n")
+	writeFile(t, filepath.Join(f.project, "base.txt"), "main's edit\n")
+	gitCmd(t, f.project, "commit", "-a", "-m", "main edits base")
+	// a conflicting merge of main stopped half-way in the landing tree
+	if out, err := exec.Command("git", "-C", tree, "merge", "--no-commit", "--no-ff", "main").CombinedOutput(); err == nil {
+		t.Fatalf("setup: the merge did not conflict: %s", out)
+	}
+	head := gitCmd(t, f.project, "rev-parse", "main")
+
+	land := f.landRun(t, false)
+	if land.State != LandState_Held || !strings.Contains(land.Reason, "stopped mid-merge") {
+		t.Fatalf("land = %+v, want held on the open merge, not on uncommitted changes", land)
+	}
+	if got := gitCmd(t, f.project, "rev-parse", "main"); got != head {
+		t.Fatalf("main moved from %s to %s", head, got)
+	}
 }

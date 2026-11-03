@@ -3,6 +3,7 @@ package orchestrate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -159,7 +160,7 @@ func TestHandleChildOutcomeNoOpsForStaleWorkerOwnership(t *testing.T) {
 	}
 }
 
-func TestHandleChildOutcomeResetsAttemptCountWhenKindChanges(t *testing.T) {
+func TestHandleChildOutcomeCountsAgainAfterAHumanRetry(t *testing.T) {
 	h := newChildOutcomeHarness(t, 1)
 	if err := HandleChildOutcome(h.ctx, h.workers[0], jarvis.OutcomeData{Status: "failed", Summary: "request timed out", ExitCode: 1}); err != nil {
 		t.Fatal(err)
@@ -175,7 +176,46 @@ func TestHandleChildOutcomeResetsAttemptCountWhenKindChanges(t *testing.T) {
 	}
 	got := h.loadDag(t)
 	if got.Tasks[0].Attempts != 1 || got.Tasks[0].LastFailureKind != FailureKindToolError {
-		t.Fatalf("changed kind did not reset count: %+v", got.Tasks[0])
+		t.Fatalf("the human's retry did not start the count over: %+v", got.Tasks[0])
+	}
+}
+
+// Each kind the engine retries has its own bound, but a different kind used to start the count over, so a worker
+// that alternated a tool-call error with a failed spawn was retried forever and never reached the lead.
+func TestAlternatingFailureKindsStillExhaustTheAutoRetries(t *testing.T) {
+	h := newChildOutcomeHarness(t, 1)
+	failNextSpawn := true
+	harnessSpawn := spawnWorker
+	spawnWorker = func(ctx context.Context, c runroute.Capability, ws, name, cwd, prompt string, o jarvis.RunWorkerOptions) (string, error) {
+		if failNextSpawn {
+			failNextSpawn = false
+			return "", errors.New("worker tab did not come up")
+		}
+		return harnessSpawn(ctx, c, ws, name, cwd, prompt, o)
+	}
+	restoreAfterStages(t, func() { spawnWorker = harnessSpawn })
+	toolError := jarvis.OutcomeData{Status: "failed", Summary: "tool call errored", ExitCode: 2}
+
+	// a tool-call error is retried, and that retry's spawn fails and is retried too
+	if err := HandleChildOutcome(h.ctx, h.workers[0], toolError); err != nil {
+		t.Fatal(err)
+	}
+	if task := h.loadDag(t).Tasks[0]; task.State != TaskState_Pending || task.LastFailureKind != FailureKindSpawn {
+		t.Fatalf("after the failed spawn: task = %s (%s), want pending after a spawn failure", task.State, task.LastFailureKind)
+	}
+	if err := Schedule(h.ctx, h.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.workers) != 2 {
+		t.Fatalf("spawned %d workers, want 2", len(h.workers))
+	}
+
+	// the next tool-call error is the third failure in a row: the lead decides
+	if err := HandleChildOutcome(h.ctx, h.workers[1], toolError); err != nil {
+		t.Fatal(err)
+	}
+	if task := h.loadDag(t).Tasks[0]; task.State != TaskState_Failed || task.Attempts != 3 {
+		t.Fatalf("task = %s with %d attempts, want failed after 3 failures in a row", task.State, task.Attempts)
 	}
 }
 
@@ -345,6 +385,45 @@ func TestLeadExitLeavesOtherRunsAlone(t *testing.T) {
 			}
 			if got.Status != before || len(*rows) != 0 {
 				t.Fatalf("status %q -> %q, rows %+v: a %s run is not the lead-exit case", before, got.Status, *rows, name)
+			}
+		})
+	}
+}
+
+// a closed tab deletes its block before the process exits, so the exit finds no run: the close itself fails it
+func TestLeadTabCloseBeforeSubmitFailsTheRunWithAReason(t *testing.T) {
+	ctx, channelId, run, rows := newLeadExitRun(t, nil)
+	HandleWorkerTabClose(ctx, "lead-tab")
+	got, err := wstore.GetRun(ctx, channelId, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != jarvis.RunStatus_Blocked || got.Phases[0].State != jarvis.PhaseState_Failed {
+		t.Fatalf("run status=%q phase=%q, want blocked and failed", got.Status, got.Phases[0].State)
+	}
+	if len(*rows) != 1 || (*rows)[0]["eventkind"] != waveobj.RunEventKindLeadExited || (*rows)[0]["reason"] != leadTabClosedNote {
+		t.Fatalf("want one lead-exited row with the tab-closed reason, got %+v", *rows)
+	}
+}
+
+func TestLeadTabCloseLeavesOtherRunsAlone(t *testing.T) {
+	for name, mutate := range map[string]func(*waveobj.Run){
+		"submitted": func(r *waveobj.Run) { r.DagORef = "dag-1" },
+		"finished": func(r *waveobj.Run) {
+			next, _ := jarvis.CompletePhase(*r, 0, nil, 2)
+			*r = next
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, channelId, run, rows := newLeadExitRun(t, mutate)
+			before := run.Status
+			HandleWorkerTabClose(ctx, "lead-tab")
+			got, err := wstore.GetRun(ctx, channelId, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != before || len(*rows) != 0 {
+				t.Fatalf("status %q -> %q, rows %+v: closing a %s run's tab must not fail it", before, got.Status, *rows, name)
 			}
 		})
 	}

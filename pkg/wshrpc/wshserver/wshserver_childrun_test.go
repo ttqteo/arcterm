@@ -289,8 +289,9 @@ func TestCancelDagChildDoesNotCancelOwnerOrSpawnReplacement(t *testing.T) {
 	if gotOwner.Status == jarvis.RunStatus_Cancelled {
 		t.Fatal("child cancellation invoked owner-wide cancellation")
 	}
-	if gotDag.Tasks[0].State != orchestrate.TaskState_Cancelled || gotDag.Status != orchestrate.DagStatus_Cancelled {
-		t.Fatalf("dag was not derived from child cancellation: status=%q task=%q", gotDag.Status, gotDag.Tasks[0].State)
+	// only a dag cancel cancels the dag: one child cancelled by hand fails its task for the lead, and its siblings go on
+	if task := gotDag.Tasks[0]; task.State != orchestrate.TaskState_Failed || task.LastFailureKind != orchestrate.FailureKindWorkerStopped || gotDag.Status == orchestrate.DagStatus_Cancelled {
+		t.Fatalf("child cancellation: dag status=%q task=%q (%s), want the task failed as stopped and the dag live", gotDag.Status, task.State, task.LastFailureKind)
 	}
 	if spawnCalls != 0 {
 		t.Fatalf("child cancellation spawned %d replacement workers", spawnCalls)

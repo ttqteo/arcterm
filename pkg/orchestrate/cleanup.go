@@ -31,12 +31,13 @@ const MaxCleanupAttempts = 5
 // the caller goes through CleanupTaskWorktree, never this var directly).
 var RemoveTaskWorktree = RemoveRunWorktree
 
-// PendingCleanupTasks returns merged tasks carrying cleanup debt, in DAG order.
+// PendingCleanupTasks returns the tasks carrying cleanup debt, in DAG order: a merged or cancelled task's tree, or
+// the directories an unmerged task's tree removals left behind (CleanupTaskWorktree).
 func PendingCleanupTasks(g *waveobj.TaskGroup) []*waveobj.TaskNode {
 	var out []*waveobj.TaskNode
 	for i := range g.Tasks {
 		t := &g.Tasks[i]
-		if (t.Merged || g.Status == DagStatus_Cancelled) && (t.CleanupPending || t.CleanupError != "") {
+		if t.CleanupPending || t.CleanupError != "" {
 			out = append(out, t)
 		}
 	}
@@ -64,14 +65,12 @@ func HasCleanupDebt(g *waveobj.TaskGroup) bool {
 // disturbed: a cleanup failure cannot turn an already-landed merge back into a failed task. The
 // removal half is the same RemoveRunWorktree used elsewhere; the helper only guarantees the state
 // bookkeeping around it (pending always clears; success clears error; failure records a bounded
-// error).
+// error). An unmerged task's tree is still its lane's, so in a live dag only the directories its
+// removals left behind (laneLeftovers) go, and only what holds those is reaped.
 func CleanupTaskWorktree(ctx context.Context, g *waveobj.TaskGroup, taskID string) error {
 	task := taskByID(g, taskID)
 	if task == nil {
 		return fmt.Errorf("no task %q", taskID)
-	}
-	if !task.Merged && g.Status != DagStatus_Cancelled {
-		return fmt.Errorf("task %s is not merged", taskID)
 	}
 	projectPath, err := cleanupProjectPath(ctx, g)
 	if err != nil {
@@ -81,8 +80,15 @@ func CleanupTaskWorktree(ctx context.Context, g *waveobj.TaskGroup, taskID strin
 		return err
 	}
 	key := LaneWorktreeKey(g, taskID)
-	reapLaneWorkers(ctx, g, taskID, worktreeDir(projectPath, key))
-	err = RemoveTaskWorktree(ctx, projectPath, key)
+	left := laneLeftovers(ctx, projectPath, key)
+	if task.Merged || g.Status == DagStatus_Cancelled {
+		reapLaneWorkers(ctx, g, taskID, append(left, laneTree(ctx, projectPath, key)))
+		err = RemoveTaskWorktree(ctx, projectPath, key)
+	} else {
+		reapTreeHolders(ctx, g, left, map[string]bool{})
+	}
+	// after the tree's own removal, which can leave its directory behind too
+	err = errors.Join(err, removeLeftovers(ctx, projectPath, key))
 	task.CleanupPending = false
 	if err != nil {
 		task.CleanupError = boundedCleanupError(err)
@@ -94,22 +100,12 @@ func CleanupTaskWorktree(ctx context.Context, g *waveobj.TaskGroup, taskID strin
 	return nil
 }
 
-// reapLaneWorkers stops every run still holding the tree about to be removed. A harness sits at its prompt after
+// reapLaneWorkers stops every run still holding the trees about to be removed. A harness sits at its prompt after
 // reporting done instead of exiting, and on Windows a live process holding the tree as its cwd is what makes
-// git's removal leave the directory behind. The lane's own tasks are reaped by id; everything else this dag ran
-// in the tree - reviewers, whose ReviewRunID is cleared once their verdict applies, and replacements - is found
-// by path. Best effort: the removal below is what decides whether cleanup succeeded.
-func reapLaneWorkers(ctx context.Context, g *waveobj.TaskGroup, taskID, tree string) {
+// git's removal leave the directory behind. The lane's own tasks are reaped by id; everything else is found by
+// path (reapTreeHolders). Best effort: the removal below is what decides whether cleanup succeeded.
+func reapLaneWorkers(ctx context.Context, g *waveobj.TaskGroup, taskID string, trees []string) {
 	reaped := map[string]bool{}
-	stop := func(run *waveobj.Run) {
-		if run == nil || reaped[run.ID] {
-			return
-		}
-		reaped[run.ID] = true
-		if err := stopRunWorkers(ctx, run); err != nil {
-			log.Printf("dag %s run %s: stopping worker in %s: %v", g.OID, run.ID, tree, err)
-		}
-	}
 	for _, id := range laneOf(g, taskID) {
 		task := taskByID(g, id)
 		if task == nil || task.RunID == "" {
@@ -120,18 +116,77 @@ func reapLaneWorkers(ctx context.Context, g *waveobj.TaskGroup, taskID, tree str
 			log.Printf("dag %s task %s: loading child run to stop its worker: %v", g.OID, id, err)
 			continue
 		}
-		stop(child)
+		stopReapedRun(ctx, g, child, reaped)
 	}
-	runs, err := wstore.GetChannelRuns(ctx, g.ChannelId)
-	if err != nil {
-		log.Printf("dag %s: listing runs to reap %s: %v", g.OID, tree, err)
+	reapTreeHolders(ctx, g, trees, reaped)
+}
+
+// stopWorkerTab stops an engine session by its tab. A var so tests need no live block.
+var stopWorkerTab = jarvis.StopRunWorker
+
+// blockMetaRunID is the block meta key jarvis stamps an engine-launched session's run id under (RunWorkerOptions).
+const blockMetaRunID = "agent:runid"
+
+// reapTreeHolders stops the engine sessions working in one of trees, skipping the runs in reaped. This dag's runs
+// are found by path - reviewers, whose ReviewRunID is cleared once their verdict applies, and replacements - and
+// every engine-launched block by its cwd, the source `wsh agents list` reads: a session can outlive its run's
+// record and still hold the tree.
+func reapTreeHolders(ctx context.Context, g *waveobj.TaskGroup, trees []string, reaped map[string]bool) {
+	if len(trees) == 0 {
 		return
 	}
-	for _, run := range runs {
-		if run.DagORef == g.OID && run.ProjectPath != "" && filepath.Clean(run.ProjectPath) == filepath.Clean(tree) {
-			stop(run)
+	if runs, err := wstore.GetChannelRuns(ctx, g.ChannelId); err != nil {
+		log.Printf("dag %s: listing runs to reap %v: %v", g.OID, trees, err)
+	} else {
+		for _, run := range runs {
+			if run.DagORef == g.OID && insideAny(run.ProjectPath, trees) {
+				stopReapedRun(ctx, g, run, reaped)
+			}
 		}
 	}
+	blocks, err := wstore.DBGetAllObjsByType[*waveobj.Block](ctx, waveobj.OType_Block)
+	if err != nil {
+		log.Printf("dag %s: listing sessions to reap %v: %v", g.OID, trees, err)
+		return
+	}
+	for _, b := range blocks {
+		runID := b.Meta.GetString(blockMetaRunID, "")
+		tab := waveobj.ParseORefNoErr(b.ParentORef)
+		if runID == "" || reaped[runID] || tab == nil || tab.OType != waveobj.OType_Tab {
+			continue
+		}
+		if !insideAny(b.Meta.GetString(waveobj.MetaKey_CmdCwd, ""), trees) && !insideAny(LatestAgentStatus(b.OID, tab.OID).Cwd, trees) {
+			continue
+		}
+		reaped[runID] = true
+		if err := stopWorkerTab(ctx, tab.String()); err != nil {
+			log.Printf("dag %s: stopping session %s of run %s in %v: %v", g.OID, tab, runID, trees, err)
+		}
+	}
+}
+
+func stopReapedRun(ctx context.Context, g *waveobj.TaskGroup, run *waveobj.Run, reaped map[string]bool) {
+	if run == nil || reaped[run.ID] {
+		return
+	}
+	reaped[run.ID] = true
+	if err := stopRunWorkers(ctx, run); err != nil {
+		log.Printf("dag %s run %s: stopping worker in %s: %v", g.OID, run.ID, run.ProjectPath, err)
+	}
+}
+
+// insideAny reports whether path is one of dirs or under one.
+func insideAny(path string, dirs []string) bool {
+	if path == "" {
+		return false
+	}
+	for _, dir := range dirs {
+		rel, err := filepath.Rel(dir, path)
+		if err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanupProjectPath resolves the repo a task's worktree belongs to. The owning run is the authority
@@ -175,6 +230,7 @@ func removeTaskTree(ctx context.Context, dagID, taskID string, wait bool) error 
 		task.CleanupAttempts++
 		return errors.Join(err, withDagMutation(dagID, func() error { return persistTaskCleanupLocked(ctx, dagID, task) }))
 	}
+	wasCancelled := g.Status == DagStatus_Cancelled
 	tree := worktreeDir(project, LaneWorktreeKey(g, taskID))
 	if wait {
 		treeRemovals.Lock(tree)
@@ -190,6 +246,10 @@ func removeTaskTree(ctx context.Context, dagID, taskID string, wait bool) error 
 		return fmt.Errorf("no task %q", taskID)
 	}
 	if !task.CleanupPending && task.CleanupError == "" {
+		return nil
+	}
+	// a pass that read the dag before a cancel would remove a tree whose work the cancel has yet to dump
+	if !wait && !wasCancelled && g.Status == DagStatus_Cancelled {
 		return nil
 	}
 	cleanupErr := CleanupTaskWorktree(ctx, g, taskID)
@@ -240,8 +300,9 @@ func RetryCleanupDebt(ctx context.Context, dagID string) {
 	retryCleanupDebt(ctx, g)
 }
 
-// retryCleanupDebt retries the debt g records. A snapshot taken before a cancel lists only merged tasks, so it
-// never reaches a tree whose uncommitted work the cancel has yet to dump.
+// retryCleanupDebt retries the debt g records. A snapshot taken before a cancel never removes a tree whose
+// uncommitted work the cancel has yet to dump: an unmerged task's debt is its left-behind directories, and
+// removeTaskTree leaves a tree the dag was cancelled under since to the cancel.
 func retryCleanupDebt(ctx context.Context, g *waveobj.TaskGroup) {
 	if !HasCleanupDebt(g) {
 		return
@@ -283,6 +344,23 @@ func RetryCleanup(ctx context.Context, dagID, taskID string) error {
 		return fmt.Errorf("task %s's worktree still could not be removed: %w", taskID, err)
 	}
 	return nil
+}
+
+// recordLeftBehind records a directory a removal of the task's tree left behind as the task's cleanup debt, which
+// the watchdog and retry-cleanup reap and delete (CleanupTaskWorktree). The caller must not hold the dag lock.
+func recordLeftBehind(ctx context.Context, dagID, taskID string, cause error) error {
+	return withDagMutation(dagID, func() error {
+		g, err := wstore.GetDag(ctx, dagID)
+		if err != nil {
+			return fmt.Errorf("loading dag: %w", err)
+		}
+		task := taskByID(g, taskID)
+		if task == nil {
+			return fmt.Errorf("no task %q", taskID)
+		}
+		task.CleanupError, task.CleanupAttempts = boundedCleanupError(cause), 0
+		return persistTaskCleanupLocked(ctx, dagID, task)
+	})
 }
 
 func boundedCleanupError(err error) string {

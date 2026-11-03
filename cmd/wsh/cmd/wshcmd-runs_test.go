@@ -761,6 +761,17 @@ func TestRunsEndFinalSendsTheDagAction(t *testing.T) {
 	}
 }
 
+func TestRunsRerunFinalSendsTheFinalRerunAction(t *testing.T) {
+	req := fakeRunsRpc(t, func() error { return runsRerunFinal("ch-1", "r-1") }, nil)
+	var data wshrpc.CommandDagActionData
+	b, _ := json.Marshal(req.Data)
+	json.Unmarshal(b, &data)
+	want := wshrpc.CommandDagActionData{ChannelId: "ch-1", RunId: "r-1", Action: "final-rerun"}
+	if req.Command != "dagaction" || !reflect.DeepEqual(data, want) {
+		t.Fatalf("request = %s %+v, want dagaction %+v", req.Command, data, want)
+	}
+}
+
 func TestRunsEndFinalAction(t *testing.T) {
 	for word, want := range map[string]string{"unverified": "final-end-unverified", "failed": "final-end-failed"} {
 		if got, err := runsEndFinalAction(word); err != nil || got != want {

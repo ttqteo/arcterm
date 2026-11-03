@@ -3156,6 +3156,7 @@ declare global {
         commit?: string;
         outdir?: string;
         detail?: string;
+        killed?: boolean;
         unverified?: string[];
         verifierrunid?: string;
         respawns?: number;

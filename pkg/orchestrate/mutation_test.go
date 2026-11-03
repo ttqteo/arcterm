@@ -148,6 +148,138 @@ func TestRetryKeepsFailedOwnershipWhenWorkerStopFails(t *testing.T) {
 	}
 }
 
+// The retry cancelled the worker's run before its stop failed: the next tick must fail the task for the lead, not
+// read the cancelled run as the dag cancelled while its siblings keep running.
+func TestFailedRetryFailsTheTaskNotTheDag(t *testing.T) {
+	ctx, dag, _, _ := seedRunningDag(t)
+	oldStop := stopRunWorkers
+	stopRunWorkers = func(context.Context, *waveobj.Run) error { return errors.New("stop failed") }
+	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "retry", waveobj.RoutePin{}); err == nil {
+		t.Fatal("retry with a failing stop succeeded")
+	}
+	if err := Schedule(ctx, dag.OID); err != nil {
+		t.Fatal(err)
+	}
+	got := mustLoadDag(t, ctx, dag.OID)
+	if got.Status == DagStatus_Cancelled {
+		t.Fatal("a failed retry cancelled the dag")
+	}
+	if task := got.Tasks[0]; task.State != TaskState_Failed || task.LastFailureKind != FailureKindWorkerStopped {
+		t.Fatalf("task = %s (%s), want failed (%s)", task.State, task.LastFailureKind, FailureKindWorkerStopped)
+	}
+	if got.Failures != 0 {
+		t.Fatalf("failures = %d: a stopped worker is no failed attempt", got.Failures)
+	}
+}
+
+// A retry re-runs the task from pending, so from a state that already landed or holds a merge it would lose work:
+// a merged task's new commit never merges, a blocked merge leaves its conflicted squash in the checkout, and a
+// failed Verify lets later merges land on the failing commit. Each refusal names what to do instead.
+func TestRetryRefusesStatesItWouldLoseWorkFrom(t *testing.T) {
+	cases := []struct {
+		state string
+		gate  bool
+		hint  string
+	}{
+		{TaskState_Done, false, "dag amend"},
+		{TaskState_Done, true, "dag approve t-0"},
+		{TaskState_BlockedMerge, false, "dag merge t-0 --continue"},
+		{TaskState_Verifying, false, "wait for it"},
+		{TaskState_VerifyFailed, false, "dag merge t-0 --continue"},
+		{TaskState_Skipped, false, "stays skipped"},
+		{TaskState_Pending, false, "has not started"},
+	}
+	for _, tc := range cases {
+		name := tc.state
+		if tc.gate {
+			name += "-gate"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, dag, child := seedFailedDag(t)
+			if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+				g.Tasks[0].State = tc.state
+				g.Tasks[0].Gate = tc.gate
+				g.Tasks[0].Merged = tc.state != TaskState_BlockedMerge && tc.state != TaskState_Pending && tc.state != TaskState_Skipped
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "retry", waveobj.RoutePin{})
+			if err == nil || !strings.Contains(err.Error(), "cannot be retried") || !strings.Contains(err.Error(), tc.hint) {
+				t.Fatalf("retry from %s: err = %v, want a refusal that says %q", name, err, tc.hint)
+			}
+			if got := mustLoadDag(t, ctx, dag.OID).Tasks[0]; got.State != tc.state || got.RunID != child.ID {
+				t.Fatalf("refused retry moved the task: state %s run %s", got.State, got.RunID)
+			}
+			if run, err := wstore.GetRun(ctx, dag.ChannelId, child.ID); err != nil || run.Status == jarvis.RunStatus_Cancelled {
+				t.Fatalf("refused retry cancelled the task's run: %v", err)
+			}
+		})
+	}
+}
+
+// the states a retry starts over from are still accepted: a live worker (running or stalled), a failure, and a failed
+// review
+func TestRetryAcceptsTheStatesItStartsOverFrom(t *testing.T) {
+	for _, state := range []string{TaskState_Running, TaskState_Stalled, TaskState_Failed, TaskState_ReviewFailed} {
+		t.Run(state, func(t *testing.T) {
+			ctx, dag, _ := seedFailedDag(t)
+			allowEscalationSchedule(t)
+			if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+				g.Tasks[0].State = state
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "retry", waveobj.RoutePin{}); err != nil {
+				t.Fatalf("retry from %s: %v", state, err)
+			}
+		})
+	}
+}
+
+// a stopped worker was not judged, and the dag it belonged to goes on: its siblings keep running, and the dag is
+// blocked on the one failed task rather than cancelled
+func TestCancelledRunOfALiveDagFailsOnlyItsTask(t *testing.T) {
+	g, err := NewTaskGroup("run-1", "ch-1", "g", 2, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "a"},
+		{ID: "t-1", Label: "b"},
+	}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Tasks[0].State, g.Tasks[0].RunID = TaskState_Running, "r-0"
+	g.Tasks[1].State, g.Tasks[1].RunID = TaskState_Running, "r-1"
+	DeriveTaskStates(&g, map[string]*waveobj.Run{
+		"r-0": {ID: "r-0", Status: jarvis.RunStatus_Cancelled},
+		"r-1": {ID: "r-1", Status: jarvis.RunStatus_Executing},
+	})
+	RecomputeDagStatus(&g)
+	if g.Tasks[0].State != TaskState_Failed || g.Tasks[0].LastFailureKind != FailureKindWorkerStopped {
+		t.Fatalf("t-0 = %s (%s), want failed (%s)", g.Tasks[0].State, g.Tasks[0].LastFailureKind, FailureKindWorkerStopped)
+	}
+	if g.Tasks[1].State != TaskState_Running {
+		t.Fatalf("t-1 = %s: a sibling keeps running", g.Tasks[1].State)
+	}
+	if g.Status == DagStatus_Cancelled {
+		t.Fatal("one cancelled run cancelled the whole dag: only Cancel does that")
+	}
+}
+
+// a task Cancel moved is already cancelled, and a cancelled run does not turn it into a failure
+func TestCancelGroupLeavesItsTasksCancelled(t *testing.T) {
+	g := groupWith(TaskState_Running, TaskState_Pending)
+	g.Tasks[0].RunID = "r-0"
+	CancelGroup(g)
+	DeriveTaskStates(g, map[string]*waveobj.Run{"r-0": {ID: "r-0", Status: jarvis.RunStatus_Cancelled}})
+	RecomputeDagStatus(g)
+	if g.Tasks[0].State != TaskState_Cancelled || g.Status != DagStatus_Cancelled {
+		t.Fatalf("a cancelled dag keeps its cancelled task: task %s, dag %s", g.Tasks[0].State, g.Status)
+	}
+}
+
 func TestSkipRejectsRunningTaskWithoutClearingOwnership(t *testing.T) {
 	ctx, dag, _, child := seedRunningDag(t)
 	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "skip", waveobj.RoutePin{}); err == nil {
@@ -353,6 +485,20 @@ func TestEscalateRejectsSecondHopWithoutCancellingRun(t *testing.T) {
 func TestEscalateRejectsUnsupportedRouteWithoutCancellingRun(t *testing.T) {
 	ctx, dag, child, worker := seedEscalationDag(t, "claude", TaskState_Failed, 0)
 	assertEscalationRejectedWithoutCancelling(t, ctx, dag, child, worker, waveobj.RoutePin{Runtime: "claude", Model: "gpt-5.4"})
+}
+
+// a blocked merge's worker finished: a fresh worker would leave the conflicted squash in the checkout, holding
+// later merges, and lose the lane's commit. The conflict is resolved and continued, not escalated.
+func TestEscalateRejectsBlockedMergeWithoutCancellingRun(t *testing.T) {
+	ctx, dag, child, worker := seedEscalationDag(t, "claude", TaskState_BlockedMerge, 0)
+	err := ApplyAction(ctx, dag.OID, "t-0", "escalate", waveobj.RoutePin{Model: "opus"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be escalated") || !strings.Contains(err.Error(), "dag merge t-0 --continue") {
+		t.Fatalf("escalate from blocked-merge: err = %v, want a refusal that names `dag merge t-0 --continue`", err)
+	}
+	assertEscalationRejectedWithoutCancelling(t, ctx, dag, child, worker, waveobj.RoutePin{Model: "opus"})
+	if got := mustLoadDag(t, ctx, dag.OID).Tasks[0]; got.State != TaskState_BlockedMerge || got.RunID != child.ID || got.Escalations != 0 {
+		t.Fatalf("rejected escalation moved the task: %+v", got)
+	}
 }
 
 func TestEscalateRejectsPendingTask(t *testing.T) {

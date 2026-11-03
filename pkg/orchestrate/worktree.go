@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -140,13 +141,13 @@ func FinalWorktreeKey(ownerRunID string) string {
 	return ownerRunID + "-" + finalTreeKey
 }
 
-// CreateRunWorktree links a worktree at worktreeDir(projectPath, runID) on branch wave/<runID>, checked out at
+// CreateRunWorktree links a worktree at claimLaneTreeDir(projectPath, runID) on branch wave/<runID>, checked out at
 // baseCommit (empty = current branch head).
 func CreateRunWorktree(ctx context.Context, projectPath, runID, baseCommit string) (string, error) {
 	if !IsGitRepo(projectPath) {
 		return "", ErrNotGitRepo
 	}
-	wt, err := claimWorktreeDir(projectPath, runID)
+	wt, err := claimLaneTreeDir(projectPath, runID)
 	if err != nil {
 		return "", fmt.Errorf("creating worktree: %w", err)
 	}
@@ -158,7 +159,7 @@ func CreateRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 
 // RemoveRunWorktree removes the linked worktree and its branch.
 func RemoveRunWorktree(ctx context.Context, projectPath, runID string) error {
-	wt := worktreeDir(projectPath, runID)
+	wt := laneTree(ctx, projectPath, runID)
 	var err error
 	// a tree already gone still leaves its branch: a skipped task's rewind removes the lane's tree
 	if _, serr := os.Stat(wt); serr == nil {
@@ -208,11 +209,13 @@ func removeWorktreeDir(ctx context.Context, projectPath, wt string) error {
 // cleans a finished run's leftover tree without touching the commits on wave/<runId>. RemoveRunWorktree, by
 // contrast, deletes the branch too.
 // It holds the tree's removal lock with TryLock, so it never removes a tree the engine is removing: ErrTreeBusy then.
+// The lock is the key's, wherever its tree moved: a tree at a fresh path (<dir>.1) shares <dir>'s.
 func RemoveWorktreeKeepBranch(ctx context.Context, projectPath, wt string) error {
-	if !treeRemovals.TryLock(wt) {
+	lock := strings.TrimSuffix(wt, treeDirAlt.FindString(wt))
+	if !treeRemovals.TryLock(lock) {
 		return ErrTreeBusy
 	}
-	defer treeRemovals.Unlock(wt)
+	defer treeRemovals.Unlock(lock)
 	return removeWorktreeDir(ctx, projectPath, wt)
 }
 
@@ -221,6 +224,101 @@ func RemoveWorktreeKeepBranch(ctx context.Context, projectPath, wt string) error
 func RunOfWorktree(path string) (runID string, ok bool) {
 	id, _, ok := runOfWorktree(path)
 	return id, ok
+}
+
+// leftBehind reports whether a failed removal of wt got through git: the tree is unregistered, which frees its
+// branch, and only the directory, held by a process, is left. On Windows a directory a process holds as its cwd can
+// be neither deleted nor renamed, so the branch is checked out at a fresh path and the directory becomes cleanup
+// debt (laneLeftovers).
+func leftBehind(ctx context.Context, projectPath, wt string) bool {
+	_, err := os.Stat(wt)
+	return err == nil && !isWorktreeRegistered(ctx, projectPath, wt)
+}
+
+// laneTree is where wave/<key>'s tree is: the directory git has the branch checked out in, else worktreeDir, where
+// a new one is created. A tree whose directory was left behind moves to a fresh path, so every step that reaches an
+// existing tree resolves it here; git's registry is the one record of where it went.
+func laneTree(ctx context.Context, projectPath, key string) string {
+	out, err := gitLocked(ctx, projectPath, "worktree", "list", "--porcelain")
+	if err == nil {
+		branch := "branch refs/heads/wave/" + key
+		var wt string
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimRight(line, "\r")
+			if p, ok := strings.CutPrefix(line, "worktree "); ok {
+				wt = p
+			} else if line == branch && wt != "" {
+				return filepath.Clean(wt)
+			}
+		}
+	}
+	return worktreeDir(projectPath, key)
+}
+
+// treeDirAlt matches the number a tree's fresh path adds to its directory's name: <dir>.1, <dir>.2.
+var treeDirAlt = regexp.MustCompile(`\.[0-9]+$`)
+
+// claimLaneTreeDir is claimWorktreeDir for a tree whose directory may have been left behind: the first of <dir>,
+// <dir>.1, <dir>.2 ... not on disk.
+func claimLaneTreeDir(projectPath, key string) (string, error) {
+	dir, err := claimWorktreeDir(projectPath, key)
+	if err != nil {
+		return "", err
+	}
+	wt := dir
+	for n := 1; ; n++ {
+		_, err := os.Lstat(wt)
+		if errors.Is(err, fs.ErrNotExist) {
+			return wt, nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("checking worktree dir %s: %w", wt, err)
+		}
+		wt = dir + "." + strconv.Itoa(n)
+	}
+}
+
+// laneLeftovers lists the directories removals of key's tree left behind: <dir> and its fresh paths that are on
+// disk and that git does not list as a tree.
+func laneLeftovers(ctx context.Context, projectPath, key string) []string {
+	dir := worktreeDir(projectPath, key)
+	entries, err := os.ReadDir(filepath.Dir(dir))
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("listing leftover trees of wave/%s: %v", key, err)
+		}
+		return nil
+	}
+	base := filepath.Base(dir)
+	var out []string
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Name(), base)
+		if !e.IsDir() || !ok || (rest != "" && treeDirAlt.FindString(rest) != rest) {
+			continue
+		}
+		path := filepath.Join(filepath.Dir(dir), e.Name())
+		if !isWorktreeRegistered(ctx, projectPath, path) {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// removeLeftovers deletes the directories removals of key's tree left behind. git no longer lists any of them, so
+// nothing in one is kept.
+func removeLeftovers(ctx context.Context, projectPath, key string) error {
+	var errs []error
+	for _, dir := range laneLeftovers(ctx, projectPath, key) {
+		// before the delete: os.RemoveAll would follow a junction into its target
+		if err := unlinkReparsePoints(dir); err != nil {
+			errs = append(errs, fmt.Errorf("removing left-behind worktree dir: %w", err))
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, fmt.Errorf("removing left-behind worktree dir %s: %w", dir, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func isWorktreeRegistered(ctx context.Context, projectPath, wt string) bool {
@@ -261,16 +359,21 @@ func unlinkReparsePoints(wt string) error {
 // is continued, never discarded: its commits are the finished tasks earlier in the lane, or an earlier
 // attempt's work, which the next task builds on and the lane's merge lands. A clean tree on the branch is
 // reused; a dirty one has its uncommitted state dumped to a recovery patch, and a dirty or missing one is
-// checked out again from the branch. With no branch, the tree is created at baseCommit.
+// checked out again from the branch. With no branch, the tree is created at baseCommit. A stale tree whose directory
+// a process holds is left behind (leftBehind) and the tree checked out at a fresh path; the caller records the
+// directory as cleanup debt.
 func EnsureRunWorktree(ctx context.Context, projectPath, runID, baseCommit string) (string, string, bool, error) {
-	wt := worktreeDir(projectPath, runID)
+	wt := laneTree(ctx, projectPath, runID)
 	_, statErr := os.Stat(wt)
 	head, headErr := WorktreeHeadCommit(ctx, projectPath, runID)
 	if headErr != nil {
 		if statErr == nil {
 			DumpRecoveryPatch(ctx, projectPath, runID, baseCommit) // best effort; rebuild proceeds either way
 			if err := RemoveRunWorktree(ctx, projectPath, runID); err != nil {
-				return "", "", false, fmt.Errorf("recreating stale worktree: %w", err)
+				if !leftBehind(ctx, projectPath, wt) {
+					return "", "", false, fmt.Errorf("recreating stale worktree: %w", err)
+				}
+				log.Printf("worktree %s left behind, checking wave/%s out at a fresh path: %v", wt, runID, err)
 			}
 		}
 		// a removed legacy tree comes back under the short root, so the path is the one the claim returns
@@ -293,14 +396,17 @@ func EnsureRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 			DumpRecoveryPatch(ctx, projectPath, runID, baseCommit) // best effort; rebuild proceeds either way
 		}
 		if err := removeWorktreeDir(ctx, projectPath, wt); err != nil {
-			return "", "", false, fmt.Errorf("recreating worktree: %w", err)
+			if !leftBehind(ctx, projectPath, wt) {
+				return "", "", false, fmt.Errorf("recreating worktree: %w", err)
+			}
+			log.Printf("worktree %s left behind, checking wave/%s out at a fresh path: %v", wt, runID, err)
 		}
 	}
 	// a registration whose directory is already gone makes the add refuse
 	if _, err := gitLocked(ctx, projectPath, "worktree", "prune"); err != nil {
 		return "", "", false, fmt.Errorf("pruning worktrees: %w", err)
 	}
-	wt, err := claimWorktreeDir(projectPath, runID)
+	wt, err := claimLaneTreeDir(projectPath, runID)
 	if err != nil {
 		return "", "", false, fmt.Errorf("checking out worktree from wave/%s: %w", runID, err)
 	}
@@ -317,6 +423,30 @@ func checkLandingTree(ctx context.Context, owner *waveobj.Run) error {
 		return nil
 	}
 	return fmt.Errorf("landing tree %s is not a checkout of wave/%s: restore it with `git worktree prune && git worktree add %s wave/%s` from the project", owner.LandPath, owner.ID, owner.LandPath, owner.ID)
+}
+
+// landingTreeChanges lists the tracked files with uncommitted changes in a run's own landing tree, or with unstaged
+// only those changed and not added. Nothing merges them, and the land removes the tree with them. Empty for a run
+// landing in the checkout, whose uncommitted changes are the human's and other sessions', and for a tree that is gone.
+func landingTreeChanges(ctx context.Context, run *waveobj.Run, unstaged bool) ([]string, error) {
+	if run.LandPath == "" || !worktreeOnBranch(ctx, run.LandPath, run.ID) {
+		return nil, nil
+	}
+	args := []string{"diff", "--name-only", "HEAD"}
+	if unstaged {
+		args = args[:2]
+	}
+	out, err := git(ctx, run.LandPath, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing uncommitted changes in the landing tree %s: %w", run.LandPath, err)
+	}
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
 }
 
 // landingHead is the commit a run's next lane is cut from. A run landing on its own branch reads the branch,
@@ -352,7 +482,7 @@ func dumpRecoveryPatch(ctx context.Context, projectPath, runID, landHead, name s
 	if err != nil {
 		return err
 	}
-	wt := worktreeDir(projectPath, runID)
+	wt := laneTree(ctx, projectPath, runID)
 	// a leftover directory git no longer knows as the branch's tree is not one: git run there stages the project checkout
 	if worktreeOnBranch(ctx, wt, runID) {
 		// dump paths are discard/rebuild paths, so staging here is safe — and it pulls untracked

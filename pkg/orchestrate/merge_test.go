@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -187,9 +188,9 @@ func TestMergeConflictBlocked(t *testing.T) {
 	}
 }
 
-// the lead's rules say to commit a resolved conflict before `dag merge --continue`, so the commit the
-// continue finds at HEAD holds the branch's work even though its message is the lead's own
-func TestMergeContinueAfterTheResolverCommittedReturnsTheirCommit(t *testing.T) {
+// conflictedSquash leaves dir mid-squash of wave/run-1, conflicting in base.txt.
+func conflictedSquash(t *testing.T) string {
+	t.Helper()
 	dir := newGitRepo(t)
 	base := gitCmd(t, dir, "rev-parse", "HEAD")
 	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
@@ -202,18 +203,95 @@ func TestMergeContinueAfterTheResolverCommittedReturnsTheirCommit(t *testing.T) 
 	if _, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "do the thing"}, nil); !errors.Is(err, ErrMergeConflict) {
 		t.Fatalf("want ErrMergeConflict, got %v", err)
 	}
-	os.WriteFile(filepath.Join(dir, "base.txt"), []byte("parent change\nchild change\n"), 0o644)
-	gitCmd(t, dir, "add", ".")
-	gitCmd(t, dir, "commit", "-m", "resolve the base.txt conflict")
-	resolved := gitCmd(t, dir, "rev-parse", "HEAD")
+	return dir
+}
 
-	sha, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "do the thing"}, nil)
+// The conflict wake names the files a stopped squash left unmerged, read from the index.
+func TestConflictedFilesNamesWhatTheSquashLeftUnmerged(t *testing.T) {
+	dir := conflictedSquash(t)
+	files, err := conflictedFiles(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sha != resolved {
-		t.Fatalf("want the resolver's commit %s, got %q", resolved, sha)
+	if !slices.Equal(files, []string{"base.txt"}) {
+		t.Fatalf("conflicted files = %q, want [base.txt]", files)
 	}
+	clean := newGitRepo(t)
+	if files, err := conflictedFiles(context.Background(), clean); err != nil || len(files) != 0 {
+		t.Fatalf("a tree with no stopped merge has no conflicted files, got %q, %v", files, err)
+	}
+}
+
+// the lead resolves the files the squash left unmerged first, so the wake names them, from the landing tree's index
+func TestMergeConflictWakeNamesTheConflictedFiles(t *testing.T) {
+	lead := newFakeLead(t)
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	tree := f.land(t)
+	f.finish(t, "t-0")
+	f.laneCommit(t, "t-0", "base.txt")
+	// the landing branch moved base.txt after the lane was cut from it
+	if err := os.WriteFile(filepath.Join(tree, "base.txt"), []byte("landing change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, tree, "add", ".")
+	gitCmd(t, tree, "commit", "-m", "landing change")
+
+	if err := MergeTask(f.ctx, f.channel, f.ownerID, "t-0"); !errors.Is(err, ErrMergeConflict) {
+		t.Fatalf("want ErrMergeConflict, got %v", err)
+	}
+	want := "wake: merge conflict landing lane ending at task t-0 in base.txt. wsh jarvis dag status t-0"
+	if len(lead.sends) != 1 || lead.sends[0] != want {
+		t.Fatalf("want %q, got %q", want, lead.sends)
+	}
+}
+
+// A continue with nothing staged must not credit the lane with whatever is at HEAD: a squash the resolver threw
+// away would mark the task merged on the previous lane's commit, and one they committed themselves lands without
+// the run and task trailers that later merges and the run's evidence find it by.
+func TestMergeContinueRefusesWhatTheLaneDidNotLand(t *testing.T) {
+	t.Run("squash abandoned", func(t *testing.T) {
+		dir := conflictedSquash(t)
+		head := gitCmd(t, dir, "rev-parse", "HEAD")
+		gitCmd(t, dir, "reset", "-q", "--hard")
+		if sha, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "do the thing"}, nil); err == nil {
+			t.Fatalf("continue credited %q to a squash that was thrown away", sha)
+		}
+		if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != head {
+			t.Fatalf("a refused continue moved HEAD to %s", got)
+		}
+	})
+	t.Run("resolver committed", func(t *testing.T) {
+		dir := conflictedSquash(t)
+		os.WriteFile(filepath.Join(dir, "base.txt"), []byte("parent change\nchild change\n"), 0o644)
+		gitCmd(t, dir, "add", ".")
+		gitCmd(t, dir, "commit", "-m", "resolve the base.txt conflict")
+		_, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "do the thing"}, nil)
+		if err == nil || !strings.Contains(err.Error(), "git reset --soft HEAD~1") {
+			t.Fatalf("continue over the resolver's own commit: err = %v, want a refusal naming the undo", err)
+		}
+		// the way out the refusal names lands the squash with its trailers
+		gitCmd(t, dir, "reset", "-q", "--soft", "HEAD~1")
+		if _, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "do the thing", TaskIDs: []string{"t-1"}}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if msg := gitCmd(t, dir, "log", "-1", "--format=%B"); !strings.Contains(msg, "Arc-Run: run-1") || !strings.Contains(msg, "Arc-Task: t-1") {
+			t.Fatalf("squash message lacks its trailers: %q", msg)
+		}
+	})
+	// a continue run again after the first one committed the squash and failed afterwards: HEAD is this lane's
+	t.Run("squash already committed by an earlier attempt", func(t *testing.T) {
+		dir := conflictedSquash(t)
+		os.WriteFile(filepath.Join(dir, "base.txt"), []byte("parent change\nchild change\n"), 0o644)
+		gitCmd(t, dir, "add", ".")
+		landed, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "do the thing"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sha, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "do the thing"}, nil)
+		if err != nil || sha != landed {
+			t.Fatalf("second continue = %q, %v, want the squash the first one landed, %s", sha, err, landed)
+		}
+	})
 }
 
 // a lane that landed nothing must not be credited with whatever commit is the project's tip: acceptance 2's

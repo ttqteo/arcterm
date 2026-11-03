@@ -362,6 +362,198 @@ func TestDagSubmitCommitsTheSpecAndPlanOnTheRunsBranch(t *testing.T) {
 	}
 }
 
+// newSpecPlanRun is a branch-landed channel on a fresh repository with a spec (relative path specRel, text
+// "# spec") and a plan naming it, both untracked in the project checkout the way a human leaves them.
+func newSpecPlanRun(t *testing.T, specRel string) (ch *waveobj.Channel, projectDir, spec, plan string, execGit func(args ...string) string) {
+	t.Helper()
+	ctx := context.Background()
+	projectDir, execGit = newLandingRepo(t)
+	stubRunServer(t, "pi", nil)
+	ch, err := wstore.CreateChannel(ctx, "landing-spec", projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedProfileMeta(t, ctx, ch.OID, &waveobj.ProfileOverride{Landing: strPtr(jarvis.Landing_Branch)})
+	spec = filepath.Join(projectDir, filepath.FromSlash(specRel))
+	plan = filepath.Join(projectDir, "docs", "superpowers", "plans", "coupons.md")
+	for path, text := range map[string]string{
+		spec: "# spec\n",
+		plan: "# Coupons\n\n**Spec:** `" + specRel + "`\n\n### Task 1: input\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return ch, projectDir, spec, plan, execGit
+}
+
+// the plan's spec is untracked in the checkout. Left there it is a second copy the lead's tree never sees, and
+// the land later finds a draft in the checkout that matches nothing the run's branch held. A plan start moves it
+// into the landing tree, so the checkout keeps none and the branch holds the version the run implements.
+func TestCreateRunMovesThePlansSpecIntoTheLandingTree(t *testing.T) {
+	ctx := context.Background()
+	const specRel = "docs/superpowers/specs/coupons.md"
+	ch, _, spec, plan, execGit := newSpecPlanRun(t, specRel)
+
+	rtn, err := startPlanRun(ctx, ch, plan)
+	if err != nil {
+		t.Fatalf("CreateRunCommand: %v", err)
+	}
+	run, err := wstore.GetRun(ctx, ch.OID, rtn.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(spec); !os.IsNotExist(err) {
+		t.Fatalf("the checkout still holds the spec: %v", err)
+	}
+	inTree := filepath.Join(run.LandPath, filepath.FromSlash(specRel))
+	if got, err := os.ReadFile(inTree); err != nil || string(got) != "# spec\n" {
+		t.Fatalf("the landing tree's spec = %q, %v", got, err)
+	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.SpecPath != specRel {
+		t.Fatalf("the dag's specpath = %q, want %q", g.SpecPath, specRel)
+	}
+	if got := execGit("show", "wave/"+run.ID+":"+specRel); got != "# spec" {
+		t.Fatalf("the branch holds spec %q", got)
+	}
+	if status := execGit("status", "--porcelain", "--", filepath.ToSlash(filepath.Join("docs", "superpowers", "specs"))); status != "" {
+		t.Fatalf("the checkout has a spec left to hold the land: %q", status)
+	}
+}
+
+// a spec the checkout tracks is not the run's to move: the landing tree already holds it
+func TestCreateRunLeavesATrackedSpecInTheCheckout(t *testing.T) {
+	ctx := context.Background()
+	const specRel = "docs/superpowers/specs/coupons.md"
+	ch, _, spec, plan, execGit := newSpecPlanRun(t, specRel)
+	execGit("add", "--", specRel)
+	execGit("commit", "-m", "spec")
+
+	rtn, err := startPlanRun(ctx, ch, plan)
+	if err != nil {
+		t.Fatalf("CreateRunCommand: %v", err)
+	}
+	if _, err := os.Stat(spec); err != nil {
+		t.Fatalf("a tracked spec was moved out of the checkout: %v", err)
+	}
+	run, err := wstore.GetRun(ctx, ch.OID, rtn.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, err := wstore.GetDag(ctx, run.DagORef); err != nil || g.SpecPath != specRel {
+		t.Fatalf("the dag's specpath = %+v, %v; want %q", g, err, specRel)
+	}
+}
+
+// the human's draft must outlive a plan the engine refuses: the run's tree goes, and the spec goes back
+func TestCreateRunReturnsTheSpecWhenThePlanIsRefused(t *testing.T) {
+	ctx := context.Background()
+	ch, projectDir, spec, plan, execGit := newSpecPlanRun(t, "docs/superpowers/specs/coupons.md")
+	oldValidate := validateHarness
+	validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
+		if runs, _ := wstore.GetChannelRuns(ctx, ch.OID); len(runs) > 0 {
+			return harness.Spec{}, fmt.Errorf("harness %q cannot run workers here", runtime)
+		}
+		s, _ := harness.Lookup(runtime)
+		return s, nil
+	}
+	t.Cleanup(func() { validateHarness = oldValidate })
+
+	if _, err := startPlanRun(ctx, ch, plan); err == nil || !strings.Contains(err.Error(), "submitting plan") {
+		t.Fatalf("the refused plan must be reported, got %v", err)
+	}
+	assertRunTornDown(t, ch, projectDir, execGit)
+	if got, err := os.ReadFile(spec); err != nil || string(got) != "# spec\n" {
+		t.Fatalf("the spec is not back in the checkout: %q, %v", got, err)
+	}
+}
+
+// a failed Setup keeps the run for its lead, whose resubmit resolves the plan's Spec line in the checkout
+func TestCreateRunReturnsTheSpecWhenSetupFailsForTheLead(t *testing.T) {
+	ctx := context.Background()
+	ch, _, spec, plan, _ := newSpecPlanRun(t, "docs/superpowers/specs/coupons.md")
+	body, err := os.ReadFile(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan, append([]byte("**Setup:** `exit 3`\n\n"), body...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stubLeadSpawn(t, nil)
+
+	if _, err := startPlanRun(ctx, ch, plan); err != nil {
+		t.Fatalf("a failed Setup goes to the lead: %v", err)
+	}
+	if _, err := os.Stat(spec); err != nil {
+		t.Fatalf("the spec is not where the lead's resubmit finds it: %v", err)
+	}
+}
+
+// an ignored spec can never be committed with the plan, so it is refused with the fix named, not at the snapshot
+func TestIgnoredSpecIsRefusedBeforePlanning(t *testing.T) {
+	ctx := context.Background()
+	const specRel = ".superpowers/brainstorm/auth/spec.md"
+	ignore := func(t *testing.T, projectDir string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(projectDir, ".gitignore"), []byte(".superpowers\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("plan start", func(t *testing.T) {
+		ch, projectDir, spec, plan, execGit := newSpecPlanRun(t, specRel)
+		ignore(t, projectDir)
+		_, err := startPlanRun(ctx, ch, plan)
+		if err == nil || !strings.Contains(err.Error(), "ignored by git") || !strings.Contains(err.Error(), "docs/superpowers/specs/") {
+			t.Fatalf("an ignored spec at plan start: %v", err)
+		}
+		assertRunTornDown(t, ch, projectDir, execGit)
+		if _, err := os.Stat(spec); err != nil {
+			t.Fatalf("the refused spec moved: %v", err)
+		}
+	})
+	t.Run("dag submit --spec", func(t *testing.T) {
+		ch, projectDir, spec, plan, _ := newSpecPlanRun(t, specRel)
+		ignore(t, projectDir)
+		run := jarvis.NewRun("g", "ws", projectDir, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+		run.Status = jarvis.RunStatus_Planning
+		tree, err := orchestrate.CreateRunWorktree(ctx, projectDir, run.ID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		run.LandPath = tree
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatal(err)
+		}
+		_, err = (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: run.ID, PlanPath: plan, SpecPath: spec})
+		if err == nil || !strings.Contains(err.Error(), "ignored by git") || !strings.Contains(err.Error(), "docs/superpowers/specs/") {
+			t.Fatalf("an ignored spec at dag submit: %v", err)
+		}
+		if got, err := wstore.GetRun(ctx, ch.OID, run.ID); err != nil || got.DagORef != "" {
+			t.Fatalf("a refused submit left a dag behind: %+v, %v", got, err)
+		}
+	})
+	// a run landing in the checkout commits nothing, so an ignored spec is read in place as before
+	t.Run("a run landing in the checkout", func(t *testing.T) {
+		ch, projectDir, spec, plan, _ := newSpecPlanRun(t, specRel)
+		ignore(t, projectDir)
+		run := jarvis.NewRun("g", "ws", projectDir, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+		run.Status = jarvis.RunStatus_Planning
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: run.ID, PlanPath: plan, SpecPath: spec}); err != nil {
+			t.Fatalf("an ignored spec on a checkout-landed run is not refused: %v", err)
+		}
+	})
+}
+
 // a fix round's plan is committed on the run's branch like the run's own, but only once the round is accepted:
 // the landing tree may be running the final stage
 func TestDagSubmitRoundCommitsTheFixPlanOnTheRunsBranch(t *testing.T) {

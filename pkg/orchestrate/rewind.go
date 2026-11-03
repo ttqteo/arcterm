@@ -53,8 +53,9 @@ func attemptBase(ctx context.Context, g *waveobj.TaskGroup, taskID, wt, head str
 // .waveterm/recovery/<owner>-<task>-skipped.patch first. The tree is removed, never reset or cleaned: its
 // node_modules, src-tauri/target and dist/bin can be junctions into the main checkout, which a reset or clean follows.
 // removeWorktreeDir unlinks those first, and the branch moves from the project checkout. The lane's next dispatch
-// checks the tree out again, and runs Setup in it. The caller must not hold the dag lock: dumping and removing the
-// tree take tens of seconds on Windows.
+// checks the tree out again, and runs Setup in it. A directory a process holds after git has let go of the tree is
+// left behind as the task's cleanup debt. The caller must not hold the dag lock: dumping and removing the tree take
+// tens of seconds on Windows.
 func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string) error {
 	base, err := taskStartBase(ctx, g, taskID)
 	if err != nil || base == "" {
@@ -76,17 +77,23 @@ func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string
 	if !isAncestor(ctx, project, base, head) {
 		return fmt.Errorf("%s no longer holds %s, where task %s started: not moving it back", branch, base, taskID)
 	}
-	wt := worktreeDir(project, key)
 	// the caller holds no dag lock, so a cancel or a merge's cleanup can be removing this tree
-	treeRemovals.Lock(wt)
-	defer treeRemovals.Unlock(wt)
+	lock := worktreeDir(project, key)
+	treeRemovals.Lock(lock)
+	defer treeRemovals.Unlock(lock)
 	patchName := TaskWorktreeKey(g.RunID, taskID) + "-skipped"
 	if err := dumpRecoveryPatch(ctx, project, key, base, patchName); err != nil {
 		return fmt.Errorf("saving task %s's work before dropping it from %s: %w", taskID, branch, err)
 	}
+	var left error
+	wt := laneTree(ctx, project, key)
 	if _, err := os.Stat(wt); err == nil {
 		if err := removeWorktreeDir(ctx, project, wt); err != nil {
-			return fmt.Errorf("dropping task %s's work from %s: %w", taskID, branch, err)
+			// git has let go of the branch, so the rewind goes on and the directory is cleanup debt
+			if !leftBehind(ctx, project, wt) {
+				return fmt.Errorf("dropping task %s's work from %s: %w", taskID, branch, err)
+			}
+			left = err
 		}
 	}
 	// a registration whose directory is gone still holds the branch
@@ -97,5 +104,8 @@ func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string
 		return fmt.Errorf("dropping task %s's work from %s: %w", taskID, branch, err)
 	}
 	log.Printf("dag %s: skipped task %s's commits dropped from %s (%s..%s), saved to recovery/%s.patch", g.OID, taskID, branch, base, head, patchName)
+	if left != nil {
+		return recordLeftBehind(ctx, g.OID, taskID, left)
+	}
 	return nil
 }

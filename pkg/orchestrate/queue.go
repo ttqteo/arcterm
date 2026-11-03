@@ -29,8 +29,16 @@ const TakenOverNote = "taken over from the lead"
 const ForwardedByHuman = "human"
 
 // runFinishedWake is the first line of every run-finished wake. A run with no lead is not given one for it
-// (onlyRunFinished), so the outcome goes on the lines after it and this line stays fixed.
+// (nothingToLaunchFor), so the outcome goes on the lines after it and this line stays fixed.
 const runFinishedWake = "wake: run finished. wsh jarvis dag status"
+
+// finalRerunWakeHead opens the wake that tells a lead the human reran the failed final stage. It asks a lead only to
+// drop a fix plan, so a run with no lead is not given one for it (nothingToLaunchFor).
+const finalRerunWakeHead = "wake: the human reran the final stage"
+
+func finalRerunWake(round int) string {
+	return fmt.Sprintf("%s of round %d; its failure was outside the code. Drop any fix plan for it; the stage's outcome wakes you.", finalRerunWakeHead, round)
+}
 
 // RunFinishedWake states the final stage's outcome, and every reason it could not verify something in full:
 // the lead's report has to carry them.
@@ -59,7 +67,7 @@ func RunFinishedWake(f *waveobj.FinalStage) string {
 // roundLeftLine and noRoundLeftLine end a passed or unverified run-finished wake: the engine counts the rounds,
 // so the lead only judges which open issues are round work.
 const (
-	roundLeftLine   = "One round is left for the open issues inside the run's goal that a worker can fix: `wsh jarvis dag submit --round --plan <fix plan>`."
+	roundLeftLine   = "One round is left for the open issues that are round work: `wsh jarvis dag submit --round --plan <fix plan>`."
 	noRoundLeftLine = "No round is left: every open issue is an effort chunk."
 )
 
@@ -81,6 +89,13 @@ func landBlockerLines(ctx context.Context, run *waveobj.Run) string {
 			lines = append(lines, fmt.Sprintf("The land will hold: %s. That is the human's to clear, not yours: leave the checkout as it is and say it in your report.", hold.Reason))
 		}
 	}
+	changed, err := landingTreeChanges(ctx, run, false)
+	if err != nil {
+		log.Printf("run %s: %v", run.ID, err)
+	}
+	if len(changed) > 0 {
+		lines = append(lines, fmt.Sprintf("The land will hold: this tree has uncommitted changes to %s, and the land removes the tree. They are this run's: commit them, or drop them, before you complete.", strings.Join(changed, ", ")))
+	}
 	files, err := LandConflicts(ctx, run)
 	if err != nil {
 		log.Printf("run %s: %v", run.ID, err)
@@ -94,6 +109,10 @@ func landBlockerLines(ctx context.Context, run *waveobj.Run) string {
 	return "\n" + strings.Join(lines, "\n")
 }
 
+// fixEveryFailure keeps a lead from reading the run-finished exemptions into a failed final: a step that
+// already failed on the base holds the land as much as one the run broke (run 72262859 held on four).
+const fixEveryFailure = "Fix every failing step, one already on the base or outside the goal included, since any of them holds the land."
+
 // finalFailedWake carries the final stage's failure whole: the lead writes its fix plan from it. After the
 // last round the call is the human's, and the lead must say the land will hold: the land runs after complete
 // closes the lead's tab, so nobody else can warn the human first (run dc7d6de0 completed held and unannounced).
@@ -103,44 +122,82 @@ func finalFailedWake(round int, runID, detail string, last, autonomous bool) str
 	case last && autonomous:
 		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d, the last. The run is autonomous and nobody is at the cockpit, so the call is yours: complete with the plain `wsh jarvis complete --report <file>`, never `--force-land`. A failed final stage holds the land, so the branch stays unmerged until `wsh runs land %s --force`, the human's call once the run is done; say in your report that the land is held and why:\n%s", round, runID, detail)
 	case autonomous:
-		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`; if the fix is a product call, make the call you would recommend and record it and why in your report:\n%s", round, detail)
+		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`. %s If the fix is a product call, make the call you would recommend and record it and why in your report:\n%s", round, fixEveryFailure, detail)
 	case last:
 		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d, the last. Put it to the human, and say that completing will not merge the branch: a failed final stage holds the land, and only `wsh runs land %s --force`, the human's call once the run is done, lands it:\n%s", round, runID, detail)
 	}
-	return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`, or put it to the human if the fix is a product call:\n%s", round, detail)
+	return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`. %s Put it to the human if the fix is a product call:\n%s", round, fixEveryFailure, detail)
 }
 
-// taskFailedWake names the failure kind so the lead can pick retry, escalate, skip or forward before
-// reading the digest. A child run that reported itself blocked carries no kind.
-func taskFailedWake(taskID, kind string) string {
+// finalKilledWake hands the lead a final stage whose step something outside killed: it judged nothing, so a fix plan
+// would chase a defect nobody found. A rerun spends no round, and whoever killed it decides when to run it again.
+func finalKilledWake(round int, runID, detail string, autonomous bool) string {
+	if autonomous {
+		return fmt.Sprintf("wake: a step of the final stage was killed from outside in round %d, before it judged anything. Write no fix plan. The run is autonomous and nobody is at the cockpit: complete with the plain `wsh jarvis complete --report <file>`; the land stays held until the human reruns the stage with `wsh runs rerun-final %s`, so say that in your report:\n%s", round, runID, detail)
+	}
+	return fmt.Sprintf("wake: a step of the final stage was killed from outside in round %d, before it judged anything. Write no fix plan: put it to the human, who reruns the stage with `wsh runs rerun-final %s` once whatever killed it is gone; a rerun spends no round, and the land holds until a run of the stage passes:\n%s", round, runID, detail)
+}
+
+// taskStatusCmd prints one task's status: a task wake names it, so the lead reads that task and not the whole dag.
+func taskStatusCmd(taskID string) string {
+	return "wsh jarvis dag status " + taskID
+}
+
+// wakeFact is the first line of what a wake carries, within MaxFailureDetailLen: the one fact the lead acts on
+// first, before it reads the task's status. "" when there is none.
+func wakeFact(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return truncateText(line, MaxFailureDetailLen)
+		}
+	}
+	return ""
+}
+
+// withFact appends a wake's fact after a colon, or nothing when there is none.
+func withFact(head, fact string) string {
+	if fact = wakeFact(fact); fact != "" {
+		return head + ": " + strings.TrimRight(fact, ". ")
+	}
+	return head
+}
+
+// taskFailedWake names the failure kind and the first line of what failed, so the lead can pick retry, escalate,
+// skip or forward before reading the task's status. A child run that reported itself blocked carries no kind. A
+// worker-stopped task was never retried and never judged, so its wake leaves the call to the lead.
+func taskFailedWake(taskID, kind, detail string) string {
 	if kind == "" {
 		kind = FailureKindUnknown
 	}
-	return fmt.Sprintf("wake: task %s failed (%s), retry spent. wsh jarvis dag status", taskID, kind)
+	head := withFact(fmt.Sprintf("wake: task %s failed (%s)", taskID, kind), detail)
+	if kind == FailureKindWorkerStopped {
+		return fmt.Sprintf("%s. Its worker was stopped and not judged, and nothing retried it: retry, escalate, skip or forward it as you judge. %s", head, taskStatusCmd(taskID))
+	}
+	return fmt.Sprintf("%s, retry spent. %s", head, taskStatusCmd(taskID))
 }
 
 // taskHungWake says how long the worker has been silent, so the lead can weigh a slow task against a
 // stuck one before reading the digest.
 func taskHungWake(taskID string, silentMin int64) string {
-	return fmt.Sprintf("wake: task %s hung: silent %dm, process alive, no ask pending. wsh jarvis dag status", taskID, silentMin)
+	return fmt.Sprintf("wake: task %s hung: silent %dm, process alive, no ask pending. %s", taskID, silentMin, taskStatusCmd(taskID))
 }
 
 // taskTurnEndedWake is for a worker idle at its prompt with its run still open: its complete may not have
 // landed (an EC-TIME), or it stopped on a question asked in prose. Only its last message says which.
 func taskTurnEndedWake(taskID string) string {
-	return fmt.Sprintf("wake: task %s's worker ended its turn without completing and is idle; its complete may not have landed or it stopped on a question. wsh jarvis dag status", taskID)
+	return fmt.Sprintf("wake: task %s's worker ended its turn without completing and is idle; its complete may not have landed or it stopped on a question. %s", taskID, taskStatusCmd(taskID))
 }
 
 // taskTurnFailedWake is for a worker idle after its provider refused its last turn. A lapsed subscription or a model
 // the account cannot run refuses a retry on the same route too, so the lead needs the provider's own words.
 func taskTurnFailedWake(taskID, failure string) string {
-	return fmt.Sprintf("wake: task %s's worker is idle after its last turn failed: %s. wsh jarvis dag status", taskID, strings.TrimRight(failure, ". "))
+	return fmt.Sprintf("wake: task %s's worker is idle after its last turn failed: %s. %s", taskID, strings.TrimRight(failure, ". "), taskStatusCmd(taskID))
 }
 
 // taskWorkerGoneWake is for a worker whose process is gone while its task still runs: the exit hook that would
 // have failed or retried it never fired (a reboot, a lost exit event).
 func taskWorkerGoneWake(taskID string) string {
-	return fmt.Sprintf("wake: task %s's worker exited without reporting complete. wsh jarvis dag status", taskID)
+	return fmt.Sprintf("wake: task %s's worker exited without reporting complete. %s", taskID, taskStatusCmd(taskID))
 }
 
 // taskNeverStartedWake names the retry, because nothing is lost: a worker with no process has written nothing.
@@ -151,11 +208,16 @@ func taskNeverStartedWake(taskID string, silentMin int64) string {
 // taskSuspectWake hands the lead a worker that is busy but not getting anywhere; the engine does not act on it,
 // because only the lead can tell a stuck worker from a hard task.
 func taskSuspectWake(taskID, reason string) string {
-	return fmt.Sprintf("wake: task %s may be stuck: %s. Tell it (`wsh jarvis dag tell %s \"…\"`), retry, escalate, or let it run. wsh jarvis dag status", taskID, reason, taskID)
+	return fmt.Sprintf("wake: task %s may be stuck: %s. Tell it (`wsh jarvis dag tell %s \"…\"`), retry, escalate, or let it run. %s", taskID, reason, taskID, taskStatusCmd(taskID))
 }
 
-func mergeConflictWake(taskID string) string {
-	return fmt.Sprintf("wake: merge conflict landing lane ending at task %s. git status", taskID)
+// mergeConflictWake names the conflicted files, which the lead resolves first; git status lists them when the
+// merge path could not read them.
+func mergeConflictWake(taskID string, files []string) string {
+	if len(files) == 0 {
+		return fmt.Sprintf("wake: merge conflict landing lane ending at task %s. git status, then %s", taskID, taskStatusCmd(taskID))
+	}
+	return fmt.Sprintf("wake: merge conflict landing lane ending at task %s in %s. %s", taskID, strings.Join(files, ", "), taskStatusCmd(taskID))
 }
 
 // mergeFailedWake carries git's own refusal, because the fix is almost never in the lane: the squash was
@@ -165,13 +227,13 @@ func mergeFailedWake(taskID, errText string) string {
 	// not merge.go's firstLine: that one substitutes "merge" for empty input, which would read here as
 	// git having refused for a reason called "merge"
 	line, _, _ := strings.Cut(strings.TrimSpace(errText), "\n")
-	return fmt.Sprintf("wake: git refused the merge landing lane ending at task %s (%s). wsh jarvis dag status", taskID, line)
+	return fmt.Sprintf("wake: git refused the merge landing lane ending at task %s (%s). %s", taskID, line, taskStatusCmd(taskID))
 }
 
-// verifyFailedWake names the exit code or the timeout, so the lead knows whether to read a failing test or
-// look for a hang before it reads the digest.
-func verifyFailedWake(taskID, reason string) string {
-	return fmt.Sprintf("wake: Verify failed after merging task %s (%s). wsh jarvis dag status", taskID, reason)
+// verifyFailedWake names the exit code or the timeout and the first line of output that names a failure, so the
+// lead knows which test to read, or that it should look for a hang, before it reads the task's status.
+func verifyFailedWake(taskID, reason, failure string) string {
+	return fmt.Sprintf("%s. %s", withFact(fmt.Sprintf("wake: Verify failed after merging task %s (%s)", taskID, reason), failure), taskStatusCmd(taskID))
 }
 
 // engineStuckWake hands the lead a wait the engine cannot end. The lead cannot end it either: only a restart
@@ -180,14 +242,20 @@ func engineStuckWake(what string) string {
 	return fmt.Sprintf("wake: the engine is stuck: %s. It will not recover by itself: put it to the human, who can restart arcterm (the dag resumes from where it is); the server log holds a goroutine dump. wsh jarvis dag status", what)
 }
 
-// reviewFailedWake hands a task's failed review to the lead; the findings are in its status.
-func reviewFailedWake(taskID string) string {
-	return fmt.Sprintf("wake: review failed for task %s. wsh jarvis dag status", taskID)
+// reviewFailedWake hands a task's failed review to the lead with the first line of the note, its first finding or
+// why the review itself failed; the whole note is in the task's status.
+func reviewFailedWake(taskID, note string) string {
+	return fmt.Sprintf("%s. %s", withFact("wake: review failed for task "+taskID, note), taskStatusCmd(taskID))
 }
 
-// planReviewFailedWake carries the round's merged findings whole: the lead revises the plan from them. After
-// the last round the call is the human's, or on an autonomous run the lead's.
+// planReviewFindingsCmd prints a failed plan review's findings whole.
+const planReviewFindingsCmd = "wsh jarvis dag planreview findings"
+
+// planReviewFailedWake carries the round's merged findings, the lead revises the plan from them, up to
+// reportSectionMaxLen: five reviewers at their note cap would fill the lead's composer, so past it the wake names
+// planReviewFindingsCmd. After the last round the call is the human's, or on an autonomous run the lead's.
 func planReviewFailedWake(round int, findings string, last, autonomous bool) string {
+	findings = capText(findings, reportSectionMaxLen, planReviewFindingsCmd)
 	switch {
 	case last && autonomous:
 		return fmt.Sprintf("wake: plan review failed in round %d, the last: %s. %s.", round, flatLine(findings), autonomousPastPlanReview)
@@ -202,6 +270,7 @@ func planReviewFailedWake(round int, findings string, last, autonomous bool) str
 // specPlanReviewFailedWake is the last round's failure on an asking run whose plan answers to a spec: the lead
 // takes the findings that leave the spec's decisions standing, and only the rest go to the human.
 func specPlanReviewFailedWake(round int, findings string) string {
+	findings = capText(findings, reportSectionMaxLen, planReviewFindingsCmd)
 	return fmt.Sprintf("wake: plan review failed in round %d, the last: %s. %s. When a finding does need the human, put it to them %s.", round, flatLine(findings), jarvis.SpecPastPlanReview, proceedPastPlanReview)
 }
 
@@ -220,17 +289,17 @@ func planReviewLostWake(round int, reason string, last, autonomous bool) string 
 // downstreamWake carries what a passed task's reviewer said later tasks must know. A wake is typed as one
 // line, so the note is flattened.
 func downstreamWake(taskID, note string) string {
-	return fmt.Sprintf("wake: task %s passed review with a note for later tasks: %s. wsh jarvis dag status", taskID, flatLine(note))
+	return fmt.Sprintf("wake: task %s passed review with a note for later tasks: %s. %s", taskID, flatLine(note), taskStatusCmd(taskID))
 }
 
 // downstreamMissedWake hands the lead a note the engine could not deliver to the tasks its reviewer named, with why.
 func downstreamMissedWake(taskID, note string, missed []string) string {
-	return fmt.Sprintf("wake: task %s passed review with a note for later tasks (not delivered to %s): %s. wsh jarvis dag status", taskID, strings.Join(missed, "; "), flatLine(note))
+	return fmt.Sprintf("wake: task %s passed review with a note for later tasks (not delivered to %s): %s. %s", taskID, strings.Join(missed, "; "), flatLine(note), taskStatusCmd(taskID))
 }
 
 // forLaterMissedWake hands the lead a passed worker's section for later tasks that the engine could not deliver, with why.
 func forLaterMissedWake(taskID, heading, section string, missed []string) string {
-	return fmt.Sprintf("wake: task %s passed review; its worker's %s (not delivered to %s): %s. wsh jarvis dag status", taskID, heading, strings.Join(missed, "; "), flatLine(section))
+	return fmt.Sprintf("wake: task %s passed review; its worker's %s (not delivered to %s): %s. %s", taskID, heading, strings.Join(missed, "; "), flatLine(section), taskStatusCmd(taskID))
 }
 
 // flatLine joins a note onto one line, since a wake or quiet line is typed as one.

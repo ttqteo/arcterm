@@ -8,7 +8,6 @@ package orchestrate
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"sync/atomic"
 
@@ -19,16 +18,16 @@ import (
 
 // shellCommand runs a plan command through Git Bash, so a plan's POSIX Verify and Setup lines mean here what
 // they mean under sh elsewhere: cmd.exe rejects the inline VAR=value prefix and $(...) that leads write.
-// MSYS_NO_PATHCONV stops bash from rewriting a /-leading argument into a Windows path.
+// Bash keeps its stock path conversion, the one the agents' own Git Bash has: shell shims on PATH (corepack's
+// pnpm, every npm global bin) hand node a /c/... path built from $0 and fail without it. A command that needs a
+// /-leading argument kept raw prefixes MSYS_NO_PATHCONV=1 itself.
 func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 	fullConfig := wconfig.GetWatcher().GetFullConfig()
 	bash := shellutil.FindGitBash(&fullConfig, false)
 	if bash == "" {
 		return nil, errors.New("plan commands run in Git Bash on Windows, and none was found: install Git for Windows or set term:gitbashpath")
 	}
-	c := exec.CommandContext(ctx, bash, "-c", command)
-	c.Env = append(os.Environ(), "MSYS_NO_PATHCONV=1")
-	return c, nil
+	return exec.CommandContext(ctx, bash, "-c", command), nil
 }
 
 // runShellCmd starts c in a job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, so that when

@@ -21995,21 +21995,28 @@ const FST_NODE = `${FST_MODAL}?.querySelector('[data-dag-node="final"]')`;
 const FST_DAG_PEEK = `${FST_MODAL}?.querySelector("[data-dag-final-peek]")`;
 const FST_SHEET = `document.querySelector("[data-run-sheet]")`;
 const FST_FOLD = `[...(${FST_TREE}?.querySelectorAll("div.cursor-pointer") ?? [])].find((d) => /^\\d+ (done|reviews?)/.test(d.textContent.trim()))`;
+// a lead's name is a span in the row the tree tags data-agent-row (ParentRow, agenttree.tsx), so the leaf is found in
+// any element and the row is its closest tagged ancestor
 const FST_LEAD_ROW = `(() => {
-    const name = [...(${FST_TREE}?.querySelectorAll("div") ?? [])].find(
-        (d) => d.children.length === 0 && d.textContent.trim() === ${JSON.stringify(FST_LEAD)}
+    const name = [...(${FST_TREE}?.querySelectorAll("*") ?? [])].find(
+        (el) => el.children.length === 0 && el.textContent.trim() === ${JSON.stringify(FST_LEAD)}
     );
-    return name ? name.closest(".cursor-pointer") : null;
+    return name ? name.closest("[data-agent-row]") : null;
 })()`;
-// the Agent surface: the tree's row and slot, the stage's pane, and in the details rail the lead's block or the
-// stage's own section
+// the Agent surface: the tree's row, the lead's strip tail, the stage's pane, and in the details rail the lead's
+// block or the stage's own section
 const FST_AGENT = `(() => {
     ${FST_LIB}
     const tree = ${FST_TREE};
     const rail = ${FST_RAIL};
     const pane = ${FST_PANE};
     const stage = rail?.querySelector("[data-final-rail]");
-    const slot = tree?.querySelector("[data-final-slot]");
+    // the lead's run strip ends in a tail of pips, one per stage (TaskStripBar, agenttree.tsx; runStage in
+    // runstage.ts): the Final check pip's data-pip is the stage's slot, and the strip's aria-label says all three
+    const tail = ${FST_LEAD_ROW}?.querySelector("[data-run-strip-tail]");
+    const slot = [...(tail?.querySelectorAll("span[data-pip]") ?? [])].find((p) =>
+        (p.getAttribute("title") ?? "").startsWith("Final check:")
+    );
     const status = [...(rail?.querySelectorAll("span.font-semibold") ?? [])].find((s) => flat(s) === "Verifying");
     const fold = ${FST_FOLD};
     return {
@@ -22019,8 +22026,8 @@ const FST_AGENT = `(() => {
             sub: flat(r.querySelector("[data-final-sub]")),
             selected: r.classList.contains("bg-accentbg"),
         })),
-        slot: slot?.getAttribute("data-final-slot") ?? null,
-        strip: slot?.parentElement?.getAttribute("aria-label") ?? null,
+        slot: slot?.getAttribute("data-pip") ?? null,
+        strip: tail?.parentElement?.getAttribute("aria-label") ?? null,
         fold: fold ? flat(fold) : null,
         pane: pane
             ? {
@@ -22273,10 +22280,18 @@ async function fstBoot(h, ctx, withVerifier) {
     return fstFocusLead(h);
 }
 
+// Focused once the lead's row is the selected one (the tree's bg-surface-selected) and the rail draws its Run section.
+// The Run section has no section header, so the rail renders it without a data-rail-section wrapper (only a headed
+// section gets one, HeadedSection in collapsiblerail.tsx): what marks it is its own label, an h3 reading "Run"
+// (RunSection, runrailsections.tsx). A verifier's session has that section too, hence the selected row.
 async function fstFocusLead(h) {
     if (!(await polishWaitFor(h, `!!${FST_LEAD_ROW}`, 15_000))) return false;
     await finalShotsClick(h, FST_LEAD_ROW);
-    return polishWaitFor(h, `[...(${FST_RAIL}?.querySelectorAll("h3") ?? [])].some((el) => el.textContent.trim() === "Run")`, 15_000);
+    return polishWaitFor(
+        h,
+        `${FST_LEAD_ROW}?.classList.contains("bg-surface-selected") === true && [...(${FST_RAIL}?.querySelectorAll("h3") ?? [])].some((el) => el.textContent.trim() === "Run")`,
+        15_000
+    );
 }
 
 // Part A's seed: every task done and merged with no child run to derive a state from, a Final command so no
@@ -22405,13 +22420,16 @@ const finalStageScenario = {
         );
 
         // --- Part B: the States rows, on a dag the engine leaves alone ---
+        // The strip's Final check pip (runStage, runstage.ts) follows the dag as well as the stage: this dag still has a
+        // task at work, so it is never finalizing and the pip reads pending whatever the seeded stage says, except a
+        // failed stage, which it shows (B5). Part A, whose dag the engine takes through the stage, reads active and held.
         let a = await fstAgent(h, (s) => s.rows.length === 0 && s.railSteps === 0);
         let d = await fstDag(h, ctx, (s) => s.node.meta === "waits on every task");
         rec(
-            "B1. tasks still running: no tree row and no slot; the last node reads waits on every task over five waiting segments",
+            "B1. tasks still running: no tree row and the Final check pip pending; the last node reads waits on every task over five waiting segments",
             () =>
                 a.rows.length === 0 &&
-                a.slot == null &&
+                a.slot === "pending" &&
                 d.cards[d.cards.length - 1] === "final" &&
                 d.node.meta === "waits on every task" &&
                 d.node.under === "on the merged result" &&
@@ -22433,7 +22451,7 @@ const finalStageScenario = {
                 a.rows[0].title === "Final verification" &&
                 /^Tree · \d+s · step 1 of 5$/.test(a.rows[0].sub) &&
                 a.rows[0].tone === "run" &&
-                a.slot === "run" &&
+                a.slot === "pending" &&
                 fstSame(fstStates(a.pane.steps), ["running", ...fstRepeat("waiting", 4)]) &&
                 a.pane.output == null &&
                 a.pane.end &&
@@ -22503,7 +22521,7 @@ const finalStageScenario = {
             () =>
                 a.rows[0].sub === "failed at Final · round 1" &&
                 a.rows[0].tone === "fail" &&
-                a.slot === "fail" &&
+                a.slot === "failed" &&
                 fstSame(fstStates(a.pane.steps), [...fstRepeat("passed", 3), "failed", "notrun"]) &&
                 a.pane.text.includes(fstFlat(FST_DETAIL)) &&
                 a.pane.text.includes("The lead has this failure") &&
@@ -22656,7 +22674,7 @@ const finalStageScenario = {
                 a.rows.length === 1 &&
                 a.rows[0].sub === "unverified · 1 reason" &&
                 a.rows[0].tone === "warn" &&
-                a.slot === "warn" &&
+                a.slot === "pending" &&
                 fstSame(fstStates(a.stage.steps), [...fstRepeat("passed", 4), "unverified"]) &&
                 d.node.meta === "round 2 · unverified" &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 4), "unverified"]) &&
@@ -22687,7 +22705,7 @@ const finalStageScenario = {
                 a.rows.length === 1 &&
                 a.rows[0].sub === `passed · ${FST_TOTAL}` &&
                 a.rows[0].tone === "pass" &&
-                a.slot === "pass" &&
+                a.slot === "pending" &&
                 fstSame(a.stage.steps.map((s) => s.text), FST_STEP_TEXT) &&
                 d.node.meta === `round 2 · passed · ${FST_TOTAL}` &&
                 fstSame(d.node.strip, fstRepeat("passed", 5)) &&
@@ -22738,14 +22756,14 @@ const finalStageScenario = {
             ms: 20_000,
         });
         rec(
-            "A1. the tree has one Final verification row naming the running step, and the run's strip has its final slot",
+            "A1. the tree has one Final verification row naming the running step, and the run's strip shows its Final check pip active",
             () =>
                 a.rows.length === 1 &&
                 a.rows[0].title === "Final verification" &&
                 /^Verify · \S.* · step 2 of 4$/.test(a.rows[0].sub) &&
                 a.rows[0].tone === "run" &&
-                a.slot === "run" &&
-                /final verification/i.test(a.strip),
+                a.slot === "active" &&
+                /; Final check active, Wrap-up pending, Land pending$/.test(a.strip),
             { rows: a?.rows, slot: a?.slot, strip: a?.strip }
         );
         rec(
@@ -22899,7 +22917,10 @@ const finalStageScenario = {
         await polishWaitFor(h, `${unverifiedBtn}?.disabled === false`, 3000);
         await shot("a7-end-form");
         await finalShotsClick(h, unverifiedBtn);
-        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].tone === "warn" && s.pane.steps[1].state === "stopped", { ms: 20_000 });
+        // the pip follows the dag the stage's end completes, which reaches the page with the stage's own state or just after
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].tone === "warn" && s.pane.steps[1].state === "stopped" && s.slot === "held", {
+            ms: 20_000,
+        });
         await shot("a7-ended-pane");
         d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · unverified");
         rec(
@@ -22910,7 +22931,7 @@ const finalStageScenario = {
                 a.rows.length === 1 &&
                 a.rows[0].sub === "unverified · 1 reason" &&
                 a.rows[0].tone === "warn" &&
-                a.slot === "warn" &&
+                a.slot === "held" &&
                 fstSame(fstStates(a.pane.steps), ["passed", "stopped", "notrun", "notrun"]) &&
                 a.pane.text.includes(`ended by the human: ${FST_REASON}`) &&
                 !a.pane.end &&
@@ -22951,6 +22972,158 @@ const finalStageScenario = {
         rmSync(ctx.out, { recursive: true, force: true });
         // a worker that was just stopped holds its lane's tree for a moment, and a tree left behind fails the scenario
         rmSync(ctx.cwd, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
+    },
+};
+
+// --- final-rerun: a failed final stage runs again, from the run sheet, the Final verification pane and the palette ---
+// The dag is seeded with a failed round 1 while t-1 is still at work, so the engine leaves the stage alone
+// (docs/reference/cdp-run-fixtures.md, "A run with a final stage"). A rerun resets it to round 1 not started, which
+// the same busy dag then keeps, so the stage is reseeded as failed for each surface in turn.
+
+const FR_LABEL = "Rerun final stage";
+const FR_SHEET_BTN = `document.querySelector("[data-run-sheet] [data-final-rerun]")`;
+const FR_PANE_BTN = `document.querySelector("[data-final-pane] [data-final-rerun]")`;
+const FR_FAILED = {
+    state: "failed",
+    round: 1,
+    detail: "Check `docker info` failed (exit 1):\ndocker is not running",
+};
+const frPrint = (dag) =>
+    JSON.stringify([dag?.final?.state ?? null, dag?.final?.round ?? null, (dag?.final?.detail ?? "").length]);
+const frSeedFailed = (h, ctx) => seedDag(h, ctx, (dag) => ({ ...dag, final: FR_FAILED }), frPrint);
+const frStored = async (h, ctx) => (await waveService(h, "object", "GetObject", [`dag:${ctx.dagId}`]))?.final ?? null;
+// the stage after a rerun: round 1 again, not started, with nothing left of the failure
+const frReran = (f) => f?.state === "" && f?.round === 1 && (f?.detail ?? "") === "";
+
+// polls the stored stage until a rerun shows, and returns the last read either way
+async function frWaitReran(h, ctx, ms = 15_000) {
+    let f = null;
+    for (let waited = 0; waited <= ms; waited += 250) {
+        f = await frStored(h, ctx);
+        if (frReran(f)) break;
+        await polishNap(250);
+    }
+    return f;
+}
+
+const finalRerunScenario = {
+    name: "final-rerun",
+    surface: "jarvis",
+    async arrange(h) {
+        const stamp = `finalrerun${Date.now() % 100000}`;
+        const ctx = { stamp, cwd: mkdtempSync(join(tmpdir(), "verify-final-rerun-")) };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            fstGitInit(ctx.cwd);
+            await arrangeFixtureRun(h, ctx, stamp, FST_LEAD);
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: `verify ${stamp}`,
+                parallelism: 1,
+                tasks: RUN_SHEET_POLISH_TASKS,
+            });
+            // a seed written while t-1 is still being dispatched would be overwritten by that tick
+            await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            if (!ctx.dagId) throw new Error("the run has no dag");
+            // the roster and the Brief's channel list are read once, at boot: this reloads onto both, with the lead alone
+            ctx.leadFocused = await fstBoot(h, ctx, false);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (name) => h.shot(`cdp-shots/final-rerun-${name}.png`);
+        rec(
+            "0. a git project's run with a dispatched t-1 and a dag, and the lead focused on the Agent surface",
+            ctx.arrangeError == null && ctx.dispatched === true && ctx.leadFocused === true,
+            ctx.arrangeError ??
+                JSON.stringify({ runId: ctx.runId, dagId: ctx.dagId, dispatched: ctx.dispatched, leadFocused: ctx.leadFocused })
+        );
+        if (ctx.arrangeError != null) return steps;
+
+        // --- the run sheet's dock
+        await frSeedFailed(h, ctx);
+        await h.goto("jarvis");
+        await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
+        const opened = await h.ev(`window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)})`);
+        const offered = await polishWaitFor(h, `${FR_SHEET_BTN} != null`, 15_000);
+        const sheetLabel = await h.ev(`${FR_SHEET_BTN}?.textContent.trim() ?? null`);
+        await shot("1-sheet-offered");
+        rec(
+            "1. the run sheet offers Rerun final stage on a dag seeded with a failed final stage",
+            offered === true && sheetLabel === FR_LABEL,
+            JSON.stringify({ opened, label: sheetLabel })
+        );
+
+        await h.ev(`${FR_SHEET_BTN}?.click()`);
+        const sheetGone = await polishWaitFor(h, `${FR_SHEET_BTN} == null`, 15_000);
+        const sheetStage = await frWaitReran(h, ctx);
+        await shot("2-sheet-rerun");
+        rec(
+            "2. clicking it reruns the stage: round 1 not started, and the button is gone",
+            sheetGone === true && frReran(sheetStage),
+            JSON.stringify({ gone: sheetGone, final: sheetStage })
+        );
+
+        const sheetError = await h.ev(`document.querySelector("[data-run-sheet-dock] .text-error")?.textContent ?? null`);
+        await shot("3-sheet-no-error");
+        rec("3. the engine refused nothing: no error beside the dock", sheetError == null, JSON.stringify({ error: sheetError }));
+
+        // --- the Final verification pane on the Agent surface
+        await frSeedFailed(h, ctx);
+        // the tick the sheet's rerun scheduled (RerunFinalStage's caller) can still be running here and write its
+        // copy of the dag, with the stage reset, over this seed after seedDag read it back: seed again until the row shows
+        let a = await fstAgent(h, (s) => s.rows.length === 1 && s.rows[0].tone === "fail", {
+            nudge: () => frSeedFailed(h, ctx),
+        });
+        await finalShotsClick(h, FST_ROW);
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0]?.selected && s.pane != null);
+        const paneOffered = await polishWaitFor(h, `${FR_PANE_BTN} != null`, 15_000);
+        const paneLabel = await h.ev(`${FR_PANE_BTN}?.textContent.trim() ?? null`);
+        await shot("4-pane-offered");
+        await finalShotsClick(h, FR_PANE_BTN);
+        const paneGone = await polishWaitFor(h, `${FR_PANE_BTN} == null`, 15_000);
+        const paneStage = await frWaitReran(h, ctx);
+        const paneError = await h.ev(`document.querySelector("[data-final-pane] .text-error")?.textContent ?? null`);
+        await shot("4-pane-rerun");
+        rec(
+            "4. reseeded as failed, the Final verification pane shows Rerun final stage, and clicking it reruns the stage",
+            a?.rows[0]?.tone === "fail" &&
+                paneOffered === true &&
+                paneLabel === FR_LABEL &&
+                paneGone === true &&
+                frReran(paneStage) &&
+                paneError == null,
+            JSON.stringify({ row: a?.rows, paneLabel, paneGone, final: paneStage, error: paneError })
+        );
+
+        // --- the palette's run actions
+        await frSeedFailed(h, ctx);
+        const toggle = await openRunToggle(h, ctx, FR_LABEL);
+        const steer = toggle.state?.groups.find((g) => g.label === "Steer");
+        await shot("5-palette-listed");
+        const listed =
+            toggle.opened &&
+            (steer?.rows ?? []).some((r) => r.startsWith(FR_LABEL)) &&
+            (toggle.state?.selected ?? "").startsWith(FR_LABEL);
+        await h.ev(paletteKey("Enter"));
+        const paletteStage = await frWaitReran(h, ctx);
+        await shot("5-palette-rerun");
+        rec(
+            "5. reseeded as failed, the palette lists Rerun final stage among the run's actions, and running it reruns the stage",
+            listed === true && frReran(paletteStage),
+            JSON.stringify({ opened: toggle.opened, steer, selected: toggle.state?.selected, final: paletteStage })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await teardownFixtureRun(h, ctx, "final-rerun");
     },
 };
 
@@ -59708,6 +59881,7 @@ export const SCENARIOS = [
     recordBandDetachRestore,
     agentRailFileLink,
     finalShotsScenario,
+    finalRerunScenario,
     finalStageScenario,
     briefInitiativesPolish,
     briefPeeksPolish,

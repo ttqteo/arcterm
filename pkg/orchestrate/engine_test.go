@@ -1571,7 +1571,7 @@ func TestDispatchThatKeepsFailingFailsAfterItsRetries(t *testing.T) {
 	if n := f.countKind(waveobj.RunEventKindTaskRetried); n != MaxAutoDispatchRetries {
 		t.Fatalf("want %d task-retried events, got %d", MaxAutoDispatchRetries, n)
 	}
-	want := "wake: task t-0 failed (spawn-failed), retry spent. wsh jarvis dag status"
+	want := "wake: task t-0 failed (spawn-failed): creating worker tab: workspace ws-1 not found: context deadline exceeded, retry spent. wsh jarvis dag status t-0"
 	if len(f.sends) != 1 || f.sends[0] != want || f.countKind(waveobj.RunEventKindTaskFailed) != 1 {
 		t.Fatalf("want one failure and one wake %q, got sends=%q rows=%+v", want, f.sends, f.rows)
 	}

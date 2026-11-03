@@ -125,7 +125,7 @@ func TestWatchdogTickDetectsStallInAwaitingReviewDag(t *testing.T) {
 // Terminal dags are done being watched: re-scheduling them forever is pure noise.
 func TestWatchdogTickSkipsTerminalDags(t *testing.T) {
 	ctx, dagID, _ := silentSiblingDag(t, "watchdog-cancelled", func(g *waveobj.TaskGroup) {
-		g.Tasks[0].State = TaskState_Cancelled
+		CancelGroup(g)
 	})
 
 	watchdogTick(ctx)

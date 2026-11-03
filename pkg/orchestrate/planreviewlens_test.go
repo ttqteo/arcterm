@@ -537,3 +537,11 @@ func TestPlanReviewChecksDependsReasons(t *testing.T) {
 		t.Fatalf("the second pass checks each Depends reason:\n%s", p)
 	}
 }
+
+// plans made false claims about callers and tests, and workers stopped to ask the lead (workflow scan p7)
+func TestPlanReviewChecksThePlansClaimsAboutExistingCode(t *testing.T) {
+	g := &waveobj.TaskGroup{RunID: "run-1", SpecPath: "s.md", PlanPath: "p.md"}
+	if p := planReviewPrompt(g, "tree"); !strings.Contains(p, "grep the callers of what a task changes or removes") {
+		t.Fatalf("the reviewer must check the plan's claims about existing code against the tree:\n%s", p)
+	}
+}

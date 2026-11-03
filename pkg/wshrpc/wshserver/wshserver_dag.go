@@ -113,6 +113,21 @@ func loadDagPlan(data *wshrpc.CommandDagSubmitData) (jarvis.Plan, error) {
 	return plan, nil
 }
 
+// checkSpecCommittable refuses a spec git ignores. A branch-landed run commits its spec with its plan, and git add
+// refuses an ignored path, so a spec under .superpowers/ would fail only at the snapshot, after the lead had planned
+// the whole run. A spec git cannot place is let through: the snapshot names that failure itself.
+func checkSpecCommittable(ctx context.Context, spec string) error {
+	ignored, err := orchestrate.SpecIgnored(ctx, spec)
+	if err != nil {
+		log.Printf("spec %s: %v", spec, err)
+		return nil
+	}
+	if ignored {
+		return fmt.Errorf("spec %q is ignored by git, so the run cannot commit it with its plan: move it to a tracked folder such as docs/superpowers/specs/ and try again", spec)
+	}
+	return nil
+}
+
 // resolvePlanSpec finds the file a plan's Spec line names: an absolute path as written, else the path
 // joined to the plan's directory and then each parent, nearest first, so a repo-relative path resolves
 // from a plan anywhere in the repo.
@@ -264,6 +279,12 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 	}
 	if data.Round {
 		return submitFixRound(ctx, run, data, plan)
+	}
+	// refused before Setup runs and before the lead plans on: git add would refuse the spec at the snapshot below
+	if run.LandPath != "" && data.SpecPath != "" {
+		if err := checkSpecCommittable(ctx, data.SpecPath); err != nil {
+			return nil, err
+		}
 	}
 	// a plan written without a Setup line still gets prepared trees: the project's checked-in default fills it,
 	// read from the landing tree, which is at the commit the run builds from
@@ -646,6 +667,13 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 			return err
 		}
 		// the tick announces the dag done, or hands a failed stage to the lead
+		scheduleDag(run.DagORef)
+		return nil
+	case "final-rerun":
+		if err := orchestrate.RerunFinalStage(ctx, run.DagORef); err != nil {
+			return err
+		}
+		// the tick starts the stage's commands, which outlast the caller's RPC budget
 		scheduleDag(run.DagORef)
 		return nil
 	case "amend":

@@ -146,20 +146,21 @@ func landRunLocked(ctx context.Context, channelID, runID string, force, haveTurn
 	return land, nil
 }
 
-// retryDirtyLands queues again each run held only by another session's or the human's work in its checkout
+// retryHeldLands queues again each run held only by another session's or the human's work in its checkout
 // (RunLand.Dirty: uncommitted changes, or a merge, rebase or cherry-pick stopped in the middle), once the land's own
-// checkout check passes; the land driver lands it in its turn. The engine waits for that work to be committed,
+// checkout check passes, and each run held by its failed final stage once a rerun of the stage passed
+// (finalHoldLifted); the land driver lands it in its turn. The engine waits for that work to be committed,
 // stashed, finished or aborted instead of asking anyone to retry.
 // The watchdog calls it every tick. A dismissed hold is the human's to retry, and a run whose land is already under
 // way is skipped.
-func retryDirtyLands(ctx context.Context) {
+func retryHeldLands(ctx context.Context) {
 	runs, err := wstore.GetRunsByLandState(ctx, LandState_Held)
 	if err != nil {
 		log.Printf("listing held lands: %v", err)
 		return
 	}
 	for _, run := range runs {
-		if !run.Land.Dirty || run.Land.Dismissed || !landLocks.TryLock(run.ID) {
+		if run.Land.Dismissed || !(run.Land.Dirty || finalHoldLifted(ctx, run)) || !landLocks.TryLock(run.ID) {
 			continue
 		}
 		goStage("land retry "+run.ID, func() {
@@ -170,13 +171,13 @@ func retryDirtyLands(ctx context.Context) {
 	}
 }
 
-// requeueCleanedLand puts a dirty-held run's land in line once its checkout check passes, and says whether it did.
-// It releases the land lock retryDirtyLands took, and reads the run again under it: a human's land may have ended
-// since the listing.
+// requeueCleanedLand puts a held run's land in line once the hold is gone and its checkout check passes, and says
+// whether it did. It releases the land lock retryHeldLands took, and reads the run again under it: a human's land may
+// have ended since the listing.
 func requeueCleanedLand(ctx context.Context, listed *waveobj.Run) bool {
 	defer landLocks.Unlock(listed.ID)
 	run, err := wstore.GetRun(ctx, listed.ChannelOID, listed.ID)
-	if err != nil || run.Land == nil || run.Land.State != LandState_Held || !run.Land.Dirty || run.Land.Dismissed {
+	if err != nil || run.Land == nil || run.Land.State != LandState_Held || run.Land.Dismissed || !(run.Land.Dirty || finalHoldLifted(ctx, run)) {
 		return false
 	}
 	if mergedCommit(ctx, run) == "" && landPrecheck(ctx, run) != nil {
@@ -187,6 +188,16 @@ func requeueCleanedLand(ctx context.Context, listed *waveobj.Run) bool {
 		return false
 	}
 	return true
+}
+
+// finalHoldLifted says whether a run held by its failed final stage now has a final stage that lets it land: the
+// human reran the stage and it passed, or ended unverified.
+func finalHoldLifted(ctx context.Context, run *waveobj.Run) bool {
+	if run.Land == nil || run.Land.Reason != finalFailedHold || run.DagORef == "" {
+		return false
+	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	return err == nil && finalHold(g) == ""
 }
 
 func saveLand(ctx context.Context, channelID, runID string, land *waveobj.RunLand) error {
@@ -221,6 +232,9 @@ func landPrecheck(ctx context.Context, run *waveobj.Run) *waveobj.RunLand {
 // Check and Verify, so a held reason the human can fix at once is not minutes away, and again under the checkout
 // claim, since the checkout can change while they run.
 func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force bool) *waveobj.RunLand {
+	if reason := landingTreeHold(ctx, run); reason != "" {
+		return heldLand(reason)
+	}
 	if commit := mergedCommit(ctx, run); commit != "" {
 		removeLandedTree(ctx, run.ProjectPath, run.ID)
 		return &waveobj.RunLand{State: LandState_Landed, Commit: commit}
@@ -296,6 +310,23 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	return land
 }
 
+// landingTreeHold is why the land may not remove the run's landing tree, which every land ends by doing: changes
+// nothing committed there would go with it. "" when there are none.
+func landingTreeHold(ctx context.Context, run *waveobj.Run) string {
+	changed, err := landingTreeChanges(ctx, run, false)
+	if err != nil {
+		return err.Error()
+	}
+	if len(changed) == 0 {
+		return ""
+	}
+	// the changes of a merge someone left open are that merge's, not the run's
+	if open := midMergeHold(ctx, run); open != "" {
+		return open
+	}
+	return fmt.Sprintf("the landing tree %s has uncommitted changes to %s, which removing the tree would delete: commit them on wave/%s or drop them, then `wsh runs land %s`", run.LandPath, strings.Join(changed, ", "), run.ID, run.ID)
+}
+
 // removeLandedTree drops a landed run's tree and branch; the evidence keeps the branch's tip, so neither is needed.
 func removeLandedTree(ctx context.Context, project, runID string) {
 	if err := RemoveRunWorktree(ctx, project, runID); err != nil {
@@ -362,6 +393,9 @@ func runDagID(run *waveobj.Run, g *waveobj.TaskGroup) string {
 	return run.ID
 }
 
+// finalFailedHold is the land's reason while a failed final stage holds it.
+const finalFailedHold = "the final stage failed"
+
 // finalHold is why the final stage keeps a run from landing: only passed and unverified land. A run with no dag
 // had no final stage, and the lead's own work lands.
 func finalHold(g *waveobj.TaskGroup) string {
@@ -371,7 +405,7 @@ func finalHold(g *waveobj.TaskGroup) string {
 	case g.Final == nil || !finalTerminal(g.Final.State):
 		return "the final stage has not finished"
 	case g.Final.State == FinalState_Failed:
-		return "the final stage failed"
+		return finalFailedHold
 	}
 	return ""
 }
@@ -380,7 +414,7 @@ func finalHold(g *waveobj.TaskGroup) string {
 // git operation, has staged changes the merge commit would sweep in, has unstaged edits the merge would overwrite,
 // or has an untracked file where the branch adds a different one. dirty is set when only another session's or the
 // human's work in the checkout stands in the way: uncommitted changes, or a merge, rebase or cherry-pick it stopped
-// in the middle of. Nothing of the engine's touches it: the land retries by itself once it is gone (retryDirtyLands). The exception is an edit to a file .arc/union-merge lists
+// in the middle of. Nothing of the engine's touches it: the land retries by itself once it is gone (retryHeldLands). The exception is an edit to a file .arc/union-merge lists
 // that goes on top of the run's version: the land carries it across the merge (carriedEdit).
 func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty bool) {
 	project, branch := run.ProjectPath, "wave/"+run.ID
@@ -696,11 +730,16 @@ func untrackedDiffersReason(path string) string {
 // untrackedCopies lists, as full paths, the untracked files in the checkout that are versions of ones the branch
 // adds, or names the first that is not instead. It changes nothing.
 func untrackedCopies(ctx context.Context, project, branch string) (copies []string, differs string, err error) {
-	base, err := git(ctx, project, "merge-base", "HEAD", branch)
+	// git names what the branch adds from the repo root, which a project in a subfolder of its repo is not
+	top, err := git(ctx, project, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, "", fmt.Errorf("finding the checkout's repo root: %w", err)
+	}
+	base, err := git(ctx, top, "merge-base", "HEAD", branch)
 	if err != nil {
 		return nil, "", fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
-	added, err := git(ctx, project, "diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", base, branch)
+	added, err := git(ctx, top, "diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", base, branch)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing what the run adds: %w", err)
 	}
@@ -708,24 +747,24 @@ func untrackedCopies(ctx context.Context, project, branch string) (copies []stri
 		if p == "" {
 			continue
 		}
-		full := filepath.Join(project, filepath.FromSlash(p))
+		full := filepath.Join(top, filepath.FromSlash(p))
 		if info, err := os.Stat(full); err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if _, err := git(ctx, project, "ls-files", "--error-unmatch", "--", p); err == nil {
+		if _, err := git(ctx, top, "ls-files", "--error-unmatch", "--", p); err == nil {
 			continue // tracked: git merges it or refuses on its own
 		}
 		// hash-object applies the checkout's filters, so a CRLF copy of an LF file still reads as the same
-		theirs, err := git(ctx, project, "rev-parse", branch+":"+p)
+		theirs, err := git(ctx, top, "rev-parse", branch+":"+p)
 		if err != nil {
 			return nil, "", fmt.Errorf("reading %s on the run's branch: %w", p, err)
 		}
-		mine, err := git(ctx, project, "hash-object", "--", p)
+		mine, err := git(ctx, top, "hash-object", "--", p)
 		if err != nil {
 			return nil, "", fmt.Errorf("reading the untracked %s: %w", p, err)
 		}
 		if mine != theirs {
-			held, err := runHeld(ctx, project, base, branch, p, mine)
+			held, err := runHeld(ctx, top, base, branch, p, mine)
 			if err != nil {
 				return nil, "", err
 			}
@@ -741,13 +780,13 @@ func untrackedCopies(ctx context.Context, project, branch string) (copies []stri
 // runHeld reports whether blob is a version of p the run's branch has held since base: in its history, or at a
 // tip its reflog records, which keeps the docs snapshot a resubmit after a failed plan review amended away (run
 // dca34385 revised the spec it adopted, and its land held on the untracked original).
-func runHeld(ctx context.Context, project, base, branch, p, blob string) (bool, error) {
+func runHeld(ctx context.Context, top, base, branch, p, blob string) (bool, error) {
 	raw := []string{"log", "--raw", "-m", "--no-abbrev", "--no-renames", "--format="}
 	for _, args := range [][]string{
 		slices.Concat(raw, []string{base + ".." + branch, "--", p}),
 		slices.Concat(raw, []string{"--walk-reflogs", branch, "--", p}),
 	} {
-		out, err := git(ctx, project, args...)
+		out, err := git(ctx, top, args...)
 		if err != nil {
 			return false, fmt.Errorf("listing the versions of %s the run's branch held: %w", p, err)
 		}
@@ -794,14 +833,30 @@ func LandConflicts(ctx context.Context, run *waveobj.Run) ([]string, error) {
 	return slices.Compact(files), nil
 }
 
+// conflictedFiles lists the paths a stopped merge left unmerged in tree. The diff filter reads the index, so it does
+// not depend on the language git prints its messages in.
+func conflictedFiles(ctx context.Context, tree string) ([]string, error) {
+	out, err := git(ctx, tree, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
 // objectID is a git object id, sha1 or sha256.
 var objectID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 // mergeRefusal says why git would not make the merge. A conflict is aborted, so the checkout is left with no
 // merge state; a refusal to overwrite uncommitted edits never started one, and the edits are untouched.
 func mergeRefusal(ctx context.Context, project, base string, merr error) string {
-	if conflicted, err := git(ctx, project, "diff", "--name-only", "--diff-filter=U"); err == nil && conflicted != "" {
-		files := strings.Join(strings.Fields(conflicted), ", ")
+	if conflicted, err := conflictedFiles(ctx, project); err == nil && len(conflicted) > 0 {
+		files := strings.Join(conflicted, ", ")
 		if _, err := git(ctx, project, "merge", "--abort"); err != nil {
 			return fmt.Sprintf("the merge conflicts with %s in %s, and aborting it failed: %v", base, files, err)
 		}

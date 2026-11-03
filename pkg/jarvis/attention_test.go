@@ -415,6 +415,24 @@ func TestBlockedFinalStageSaysWhatFailed(t *testing.T) {
 	}
 }
 
+// a step something outside killed judged nothing: the card asks for a rerun, which spends no round, not a fix round
+func TestBlockedKilledFinalStageAsksForARerun(t *testing.T) {
+	items := BuildAttention(AttentionInput{Dags: []*waveobj.TaskGroup{{
+		ID: "d1", RunID: "r1", ChannelId: "c1", Status: "blocked", UpdatedTs: 5,
+		Tasks: []waveobj.TaskNode{{ID: "t-1", State: "done"}},
+		Final: &waveobj.FinalStage{State: "failed", Round: 1, Killed: true, Detail: "Final `node scripts/cdp/final-verify.mjs` failed (killed from outside (exit 0xc000013a)):\nscenario 2 of 5"},
+	}}})
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want the one blocked dag", items)
+	}
+	if want := "A step of the final stage was killed before it finished: Final `node scripts/cdp/final-verify.mjs` failed (killed from outside (exit 0xc000013a))"; items[0].Text != want {
+		t.Fatalf("text = %q, want %q", items[0].Text, want)
+	}
+	if !strings.Contains(items[0].Why, "wsh runs rerun-final r1") || strings.Contains(items[0].Why, "--round") {
+		t.Fatalf("why = %q, want the rerun named and no fix round", items[0].Why)
+	}
+}
+
 func TestDagItemsLeaveWithTheirFinishedRun(t *testing.T) {
 	dags := []*waveobj.TaskGroup{
 		{ID: "d1", RunID: "r1", ChannelId: "c1", Status: "blocked", UpdatedTs: 5,

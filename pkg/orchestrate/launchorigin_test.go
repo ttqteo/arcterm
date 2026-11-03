@@ -36,6 +36,10 @@ func TestLaunchOriginReadsTheWorktreeBack(t *testing.T) {
 		{"the run's own tree", tree(originRun), LaunchOrigin{RunID: originRun}},
 		{"a folder inside a task's tree", filepath.Join(tree(TaskWorktreeKey(originRun, "t-2")), "frontend"), LaunchOrigin{RunID: originRun, TaskID: "t-2"}},
 		{"forward slashes", "D:/projects/arcterm/.waveterm/worktrees/" + originRun + "-t-1", LaunchOrigin{RunID: originRun, TaskID: "t-1"}},
+		// a directory a process held was left behind and the lane's branch checked out at <dir>.N
+		{"a task's tree at a fresh path", tree(TaskWorktreeKey(originRun, "t-8")) + ".1", LaunchOrigin{RunID: originRun, TaskID: "t-8"}},
+		{"a folder inside a fresh path", filepath.Join(tree(TaskWorktreeKey(originRun, "t-2"))+".12", "frontend"), LaunchOrigin{RunID: originRun, TaskID: "t-2"}},
+		{"a legacy tree at a fresh path", "D:/projects/arcterm/.waveterm/worktrees/" + originRun + "-t-1.2", LaunchOrigin{RunID: originRun, TaskID: "t-1"}},
 	}
 	for _, c := range cases {
 		got, ok := LaunchOriginOf(c.cwd, "Your instructions are in the file C:\\prompts\\x.md")

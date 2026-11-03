@@ -363,6 +363,37 @@ func landRunOnBranch(ctx context.Context, channelId string, run *waveobj.Run) er
 	})
 }
 
+// specInLandTree moves an untracked spec into the run's landing tree (orchestrate.MoveSpecIntoTree) and returns
+// the path the run should name. A failed move leaves the spec in the checkout, where the land deals with it.
+func specInLandTree(ctx context.Context, run *waveobj.Run, spec string) string {
+	if run.LandPath == "" || spec == "" {
+		return spec
+	}
+	moved, err := orchestrate.MoveSpecIntoTree(ctx, run.LandPath, spec)
+	if err != nil {
+		log.Printf("run %s: moving the spec %s into its landing tree: %v", run.ID, spec, err)
+	}
+	return moved
+}
+
+// planSpecInLandTree is the spec a plan start's **Spec:** line names, moved into the run's landing tree before the
+// plan is submitted: the lead revises the run's copy, and a draft left behind in the checkout is a second one the
+// land later finds there and holds on. "" when the plan names no spec file, which the submit then reads as before.
+func planSpecInLandTree(ctx context.Context, run *waveobj.Run, planPath string) (original, moved string) {
+	if run.LandPath == "" {
+		return "", ""
+	}
+	plan, err := readPlanFile(planPath)
+	if err != nil || plan.Spec == "" {
+		return "", ""
+	}
+	spec, ok := resolvePlanSpec(planPath, plan.Spec)
+	if !ok {
+		return "", ""
+	}
+	return spec, specInLandTree(ctx, run, spec)
+}
+
 // readCreatedRun reads a just-created run back for the reply. A var so a test can fail the read.
 var readCreatedRun = wstore.GetRun
 
@@ -629,7 +660,16 @@ func (ws *WshServer) startCreatedRun(ctx context.Context, data wshrpc.CommandCre
 	switch {
 	case data.PlanPath != "":
 		// the engine starts on the plan now; the lead comes at the first judgment event (spec §1, G5)
-		if _, err := ws.DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: data.ChannelId, RunId: run.ID, PlanPath: data.PlanPath}); err != nil {
+		// the plan's spec goes into the landing tree first, so the checkout keeps no second copy of it
+		spec, inTree := planSpecInLandTree(ctx, &run, data.PlanPath)
+		if _, err := ws.DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: data.ChannelId, RunId: run.ID, PlanPath: data.PlanPath, SpecPath: inTree}); err != nil {
+			// no dag was made, so the spec goes back where the plan's Spec line finds it: the lead's resubmit after a
+			// failed Setup resolves it there, and a refused plan takes its tree, and the human's draft, away
+			if inTree != spec {
+				if merr := orchestrate.MoveFile(inTree, spec); merr != nil {
+					log.Printf("CreateRun: returning run %s's spec to %s: %v", run.ID, spec, merr)
+				}
+			}
 			if handSetupToLead(ctx, data.ChannelId, run, data.PlanPath, err) {
 				break
 			}

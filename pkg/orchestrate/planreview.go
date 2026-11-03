@@ -98,10 +98,14 @@ var planReviewChecklist = []string{
 	"every requirement in the spec has a task;",
 	"no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;",
 	"types, functions and flags have the same names in every task that mentions them;",
+	// false plan claims about callers and tests reached workers, who stopped to ask the lead (workflow scan p7, 2026-11-03)
+	"each claim the plan makes about existing code (what a function calls, who calls it, what a test asserts) holds in the tree: grep the callers of what a task changes or removes; a claim that does not hold is a finding;",
 	"no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;",
 	planReviewDependsReasonItem,
 	"each task states its acceptance criteria and names the tests that prove them;",
 	"the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;",
+	// run 2678342f's check command vetted ./pkg/brainstormcheck/..., which its Task 3 created: 7 of 10 workers hit it on the base
+	"no Setup, Check or Verify command, and no task step, names a path a task of this plan creates (a package pattern, a test file) unless that task is among the step's Depends: a task's tree holds only what its Depends landed, so the command fails there and every worker works around it. Final runs on the merged result, so it may name them;",
 	// SIEM's leads wrapped every vitest call in a fresh worktree plus pnpm install: 109 s a call against vitest's 11 s (run 313fb392)
 	"no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;",
 	planReviewManifestItem,

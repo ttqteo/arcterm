@@ -257,7 +257,7 @@ func dagBlockedReason(g *waveobj.TaskGroup, owner *waveobj.Run) (text, why strin
 				fmt.Sprintf("%s Clear what git refused over, then retry with `wsh jarvis dag merge %s --continue`.", done, t.ID)
 		}
 		return fmt.Sprintf("Merge of %s is blocked by a conflict and needs resolving.", name(t)),
-			fmt.Sprintf("%s Resolve the conflict in %s, commit, then run `wsh jarvis dag merge %s --continue`.", done, fixTree(owner), t.ID)
+			fmt.Sprintf("%s Resolve the conflict in %s, `git add` it without committing, then run `wsh jarvis dag merge %s --continue`, which commits the squash.", done, fixTree(owner), t.ID)
 	}
 	for _, t := range g.Tasks {
 		if t.State == "verify-failed" {
@@ -266,6 +266,10 @@ func dagBlockedReason(g *waveobj.TaskGroup, owner *waveobj.Run) (text, why strin
 		}
 	}
 	// mirrors orchestrate.FinalState_Failed; the lead gets the whole detail in its wake
+	if g.Final != nil && g.Final.State == "failed" && g.Final.Killed {
+		return "A step of the final stage was killed before it finished: " + strings.TrimSuffix(firstLine(g.Final.Detail), ":"),
+			fmt.Sprintf("%s It judged nothing, so no fix round follows: rerun the stage with `wsh runs rerun-final %s` once whatever killed it is gone.", done, g.RunID)
+	}
 	if g.Final != nil && g.Final.State == "failed" {
 		return "The final stage failed on the merged result: " + strings.TrimSuffix(firstLine(g.Final.Detail), ":"),
 			done + " The lead fixes it in a fix round (`wsh jarvis dag submit --round`); after the last round the call is yours."

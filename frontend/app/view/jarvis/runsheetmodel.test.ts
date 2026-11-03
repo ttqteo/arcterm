@@ -14,6 +14,7 @@ import {
     doneBody,
     doneBodyHasDiff,
     finalStageEndable,
+    finalStageRerunnable,
     landDock,
     launcherReading,
     orderedTasks,
@@ -839,6 +840,22 @@ describe("finalStageEndable", () => {
     });
     it("is false on a cancelled dag, whatever the stage last recorded", () => {
         expect(finalStageEndable(group("cancelled", "final"))).toBe(false);
+    });
+});
+
+describe("finalStageRerunnable", () => {
+    const group = (status: string, state?: string) =>
+        ({ status, final: state == null ? undefined : { state, round: 1 } }) as unknown as TaskGroup;
+    it("is true only for a failed stage", () => {
+        expect(finalStageRerunnable(group("blocked", "failed"))).toBe(true);
+        for (const state of ["", "checking", "final", "verifying", "passed", "unverified"]) {
+            expect(finalStageRerunnable(group("finalizing", state))).toBe(false);
+        }
+        expect(finalStageRerunnable(group("running"))).toBe(false);
+        expect(finalStageRerunnable(null)).toBe(false);
+    });
+    it("is false on a cancelled dag, whatever the stage last recorded", () => {
+        expect(finalStageRerunnable(group("cancelled", "failed"))).toBe(false);
     });
 });
 

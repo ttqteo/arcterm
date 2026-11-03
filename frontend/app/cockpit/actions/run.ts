@@ -16,6 +16,7 @@ import {
     cancellingRunIdsAtom,
     confirmCancelRun,
     endFinalStage,
+    rerunFinalStage,
     resumeRun,
     stopRunWorker,
     type FinalEndOutcome,
@@ -35,7 +36,13 @@ import { openRunDag } from "@/app/view/agents/runrailsections";
 import { runSteerLead } from "@/app/view/jarvis/briefcomposertarget";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { runAutonomous, settingsChangePayload, sheetFace } from "@/app/view/jarvis/runsettings";
-import { approvalsWord, doneBodyHasDiff, finalStageEndable, sheetLead } from "@/app/view/jarvis/runsheetmodel";
+import {
+    approvalsWord,
+    doneBodyHasDiff,
+    finalStageEndable,
+    finalStageRerunnable,
+    sheetLead,
+} from "@/app/view/jarvis/runsheetmodel";
 import { allRunsAtom, type ProjectRun } from "../palette-data";
 import type { ThingAction, ThingKindDef } from "./types";
 
@@ -227,6 +234,13 @@ const RUN_ACTIONS: ThingAction<RunThing>[] = [
             options: (t) => t.survivors.map((w) => ({ value: w.id, label: w.name })),
         },
         run: (t, _deps, value) => stopRunWorker(t.channelId, t.run.id, `tab:${value}`),
+    },
+    {
+        id: "run:rerun-final",
+        label: "Rerun final stage",
+        group: "steer",
+        applies: (t) => finalStageRerunnable(t.info?.dag ?? null),
+        run: (t) => rerunFinalStage(t.channelId, t.run.id),
     },
     {
         id: "run:cancel",

@@ -374,7 +374,7 @@ func buildNext(g *waveobj.TaskGroup, askByTask map[string]wshrpc.DagAskItem) wsh
 	// 4. parallelism wait: every slot is busy, so the engine's next move waits on one of them. With a slot
 	// free, what holds pending work is its dependencies, which step 5 would name, so say that here.
 	if busy := busyTaskIDs(g); len(busy) > 0 {
-		if len(busy) < g.Parallelism {
+		if slotsInUse(g) < g.Parallelism {
 			if depWait, blocking := dependencyWait(g); len(depWait) > 0 {
 				return wshrpc.DagNextStep{Kind: "dependency-wait", TaskIds: depWait, BlockingTaskIds: blocking}
 			}

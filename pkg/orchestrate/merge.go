@@ -87,8 +87,9 @@ func MergeContinue(ctx context.Context, projectPath, runID string, lane MergeLan
 
 // finishMerge stages fold after the squash, where the automatic path's clean-index check is already behind
 // it, then commits. A path git refuses to stage, because it is ignored or outside the repository, is logged
-// and left out: the docs are not worth failing a merge over. resolved is a continue after a conflict, whose
-// resolver may already have committed the result under a message of their own.
+// and left out: the docs are not worth failing a merge over. resolved is a continue after a conflict: with
+// nothing staged it lands nothing, since HEAD is then the lane's squash from an earlier attempt or not the lane's
+// at all (the squash was thrown away, or its resolver committed it without the trailers merges are found by).
 func finishMerge(ctx context.Context, projectPath, runID string, lane MergeLane, fold []string, resolved bool) (string, error) {
 	for _, path := range fold {
 		staged, err := foldIntoTree(ctx, projectPath, path)
@@ -100,13 +101,14 @@ func finishMerge(ctx context.Context, projectPath, runID string, lane MergeLane,
 		}
 	}
 	if _, err := git(ctx, projectPath, "commit", "-m", mergeMessage(ctx, projectPath, runID, lane)); err != nil {
-		// "nothing to commit": the resolver's own commit, a retry whose squash commit already landed on the
-		// prior attempt, or a branch whose commits change nothing
+		// "nothing to commit": a retry whose squash commit already landed on the prior attempt, a branch whose
+		// commits change nothing, or a resolved squash that is no longer staged
 		if strings.Contains(err.Error(), "nothing to commit") || strings.Contains(err.Error(), "no changes added") || strings.Contains(err.Error(), "nothing added") {
-			if resolved {
-				return git(ctx, projectPath, "rev-parse", "HEAD")
+			sha, lerr := landedHead(ctx, projectPath, runID)
+			if resolved && lerr == nil && sha == "" {
+				return "", fmt.Errorf("nothing to commit in %s: the resolved merge is not staged. Resolve the conflicts and `git add` them without committing; if you committed the resolution yourself, undo that commit with `git reset --soft HEAD~1`; then run --continue again", projectPath)
 			}
-			return landedHead(ctx, projectPath, runID)
+			return sha, lerr
 		}
 		return "", fmt.Errorf("merge commit: %w", err)
 	}

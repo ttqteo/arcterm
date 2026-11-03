@@ -65,10 +65,12 @@ func depSatisfied(g *waveobj.TaskGroup, taskID, depID string) bool {
 }
 
 // NextToSpawn returns ready tasks the engine should spawn now: ready minus busy,
-// capped so busy+new <= Parallelism, the task with the longest chain of dependents first (ties by id):
+// capped so live workers+new <= Parallelism, the task with the longest chain of dependents first (ties by id):
 // a slot spent on a leaf while a chain waits delays the whole run (8e755abf lost ~14 min that way).
 // stalled workers still hold their slot — the
 // stall flag does not stop the child process, so counting only Running would overshoot Parallelism.
+// A task under review holds none (slotsInUse): it has no worker, only a short-lived reviewer. It still holds its
+// lane, and the cross-run cap on live workers (claimWorkers) still counts its reviewer.
 // The circuit-break is enforced here rather than only derived into the status: "blocked" that still
 // dispatches spends the whole DAG on the fault the human was supposed to be asked about. Already-
 // running workers are untouched — this stops new work, it does not kill work in flight. A human dag
@@ -79,18 +81,12 @@ func NextToSpawn(g *waveobj.TaskGroup) []string {
 	if g.Failures >= MaxConsecutiveFailures || planReviewHolds(g) {
 		return nil
 	}
-	busy := 0
-	for i := range g.Tasks {
-		if taskInFlight(g.Tasks[i].State) {
-			busy++
-		}
-	}
-	room := g.Parallelism - busy
+	room := g.Parallelism - slotsInUse(g)
 	if room <= 0 {
 		return nil
 	}
 	// one worker per lane: its tasks share a tree, and an earlier task that was retried must not start
-	// beside a later one still running in it
+	// beside a later one still running in it, nor beside its reviewer
 	lanes := map[string]bool{}
 	for i := range g.Tasks {
 		if taskInFlight(g.Tasks[i].State) {
@@ -213,6 +209,14 @@ func RetryTask(g *waveobj.TaskGroup, taskID string) error {
 		}
 	}
 	return fmt.Errorf("no task %q", taskID)
+}
+
+// retryable is the states a retry may start a task over from: none has landed anything or holds a merge. A retry
+// from done, blocked-merge, verifying or verify-failed would lose work the lane already merged or is merging, and one
+// from pending, ready or skipped has nothing to start over. A reviewing task is not in the list: prepareActionLocked
+// leaves it to applyActionLocked, which refuses it by name.
+func retryable(state string) bool {
+	return taskActive(state) || state == TaskState_Failed || state == TaskState_ReviewFailed
 }
 
 func skippable(state string) bool {

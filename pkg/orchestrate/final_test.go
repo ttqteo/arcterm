@@ -189,6 +189,51 @@ func TestFinalExit3IsUnverifiedWithItsLastLine(t *testing.T) {
 	}
 }
 
+// run bd67b1fe: a Check that found docker down exited 3, the stage failed, and the lead was handed a fix round no
+// code change could pass
+func TestFinalCheckOrVerifyExit3IsUnverifiedAndTheStageGoesOn(t *testing.T) {
+	cases := []struct{ name, verify, check, want string }{
+		{"check", passVerify, "echo probing; echo 'docker is not running'; exit 3", "Check `echo probing; echo 'docker is not running'; exit 3` could not verify: docker is not running"},
+		{"verify", "echo 'docker is not running'; exit 3", "", "Verify `echo 'docker is not running'; exit 3` could not verify: docker is not running"},
+		{"verify with no reason", "exit 3", "", "Verify `exit 3` could not verify: it gave no reason"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := filepath.ToSlash(t.TempDir())
+			f := finalFixture(t, c.verify, c.check, "echo final > "+out+"/final")
+
+			g := runFinal(t, f)
+
+			if g.Final.State != FinalState_Unverified || g.Status != DagStatus_Done || g.Final.Detail != "" {
+				t.Fatalf("exit 3 is unverified and the dag is done, got %s / %s / %q", g.Final.State, g.Status, g.Final.Detail)
+			}
+			if !slices.Contains(g.Final.Unverified, c.want) {
+				t.Fatalf("want the reason %q, got %q", c.want, g.Final.Unverified)
+			}
+			if _, err := os.Stat(filepath.Join(out, "final")); err != nil {
+				t.Fatalf("the stage goes on to the Final command: %v", err)
+			}
+		})
+	}
+}
+
+// exit 3 is the Check saying it could not verify, so it reads as that whether or not the base's Check failed too
+func TestFinalCheckExit3IsUnverifiedWhenTheBaseCheckFailedToo(t *testing.T) {
+	f := finalFixture(t, passVerify, "echo 'error TS2345: new'; exit 3", "")
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.BaseCheck = &waveobj.BaseCheck{State: BaseCheckState_Failed, Commit: "abc", Detail: "exit 1: error TS2307"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	g := runFinal(t, f)
+
+	if g.Final.State != FinalState_Unverified || !slices.ContainsFunc(g.Final.Unverified, func(s string) bool { return strings.Contains(s, "could not verify: error TS2345: new") }) {
+		t.Fatalf("a Check that exits 3 is unverified whatever the base did, got %s %q", g.Final.State, g.Final.Unverified)
+	}
+}
+
 func TestFinalOtherExitFails(t *testing.T) {
 	f := finalFixture(t, passVerify, "", "echo 'FAIL board-layout'; exit 2")
 
@@ -275,6 +320,30 @@ func TestRunFinishedWakeNamesTheConflictsTheLandWouldHoldOn(t *testing.T) {
 				t.Fatalf("want %q, got %q", c.want, lead.sends)
 			}
 		})
+	}
+}
+
+// the land removes the landing tree, so changes the lead left uncommitted there would go with it: unlike the
+// checkout's, they are the lead's to commit or drop before it completes
+func TestRunFinishedWakeTellsTheLeadToCommitWhatIsUncommittedInItsTree(t *testing.T) {
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "", "")
+	tree := f.land(t)
+	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
+		r.BaseBranch = "main"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	commitOnBranch(t, tree, "base.txt", "branch\n")
+	writeFile(t, filepath.Join(tree, "base.txt"), "the lead's uncommitted edit\n")
+
+	runFinal(t, f)
+
+	want := runFinishedWake + "\nThe final stage passed on the merged result.\n" + roundLeftLine +
+		"\nThe land will hold: this tree has uncommitted changes to base.txt, and the land removes the tree. They are this run's: commit them, or drop them, before you complete."
+	if len(lead.sends) != 1 || lead.sends[0] != want {
+		t.Fatalf("want %q, got %q", want, lead.sends)
 	}
 }
 
@@ -612,9 +681,13 @@ func TestFinalFailedWakeAutonomous(t *testing.T) {
 	if !strings.Contains(w, "--round") || strings.Contains(strings.ToLower(w), "put it to the human") || !strings.HasSuffix(w, detail) {
 		t.Fatalf("an autonomous earlier round writes a fix plan and decides product calls itself, got %q", w)
 	}
+	// run 72262859's lead read the run-finished exemptions into a failed final, fixed nothing, and the land held
+	if !strings.Contains(w, "one already on the base") {
+		t.Fatalf("an autonomous earlier round must fix a failure already on the base too, got %q", w)
+	}
 
 	// off, the texts are what they were before the setting existed
-	if got, want := finalFailedWake(1, "run-1", detail, false, false), "wake: the final stage failed on the merged result in round 1. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`, or put it to the human if the fix is a product call:\n"+detail; got != want {
+	if got, want := finalFailedWake(1, "run-1", detail, false, false), "wake: the final stage failed on the merged result in round 1. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`. "+fixEveryFailure+" Put it to the human if the fix is a product call:\n"+detail; got != want {
 		t.Fatalf("off, round 1:\n got %q\nwant %q", got, want)
 	}
 	if got, want := finalFailedWake(2, "run-1", detail, true, false), "wake: the final stage failed on the merged result in round 2, the last. Put it to the human, and say that completing will not merge the branch: a failed final stage holds the land, and only `wsh runs land run-1 --force`, the human's call once the run is done, lands it:\n"+detail; got != want {
@@ -757,8 +830,126 @@ func TestRunFinishedWakeSaysWhetherARoundIsLeft(t *testing.T) {
 		if !strings.HasSuffix(w, "\n"+c.want) {
 			t.Fatalf("%s: the wake should end with %q, got %q", c.name, c.want, w)
 		}
-		if !onlyRunFinished([]string{w}) {
+		if !nothingToLaunchFor([]string{w}) {
 			t.Fatalf("%s: a lead-free run must still close by itself on %q", c.name, w)
 		}
+	}
+}
+
+// the lead's wake names the round-work test by area, so what a worker can fix in a file the run changed goes to the
+// next round instead of a follow-up initiative (runs d20dc06e, dec24c70, d276b206)
+func TestRunFinishedWakeNamesRoundWorkNotTheRunsGoal(t *testing.T) {
+	if strings.Contains(roundLeftLine, "inside the run's goal") || !strings.Contains(roundLeftLine, "round work") {
+		t.Fatalf("a round is left for round work, which the lead's rules define, got %q", roundLeftLine)
+	}
+	if !strings.Contains(roundLeftLine, "`wsh jarvis dag submit --round --plan <fix plan>`") {
+		t.Fatalf("the line still names the command, got %q", roundLeftLine)
+	}
+}
+
+// A step killed from outside judged nothing: the stage holds the land, and the lead asks for a rerun instead of
+// writing a fix plan for a defect nobody found. Windows reports the kill as 0xC000013A, which read as an exit code
+// was a failing Final.
+func TestAKilledFinalStepAsksForARerunNotAFixRound(t *testing.T) {
+	killed := &planCommandError{exitCode: 0xC000013A, killed: "exit 0xc000013a"}
+	cases := []struct {
+		name, verify, check, finalCmd, killedCmd, label string
+	}{
+		{"final", passVerify, "", "node scripts/cdp/final-verify.mjs", "node scripts/cdp/final-verify.mjs", "Final"},
+		{"check", passVerify, "tsc --noEmit", "", "tsc --noEmit", "Check"},
+		{"verify", "go test ./...", "", "", "go test ./...", "Verify"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lead := newFakeLead(t)
+			f := finalFixture(t, c.verify, c.check, c.finalCmd)
+			stubPlanCommandOutput(t, func(_ context.Context, _, command string) (string, error) {
+				if command == c.killedCmd {
+					return "scenario 2 of 5", killed
+				}
+				return "", nil
+			})
+
+			g := runFinal(t, f)
+
+			if g.Final.State != FinalState_Failed || !g.Final.Killed || !strings.HasPrefix(g.Final.Detail, c.label+" `"+c.killedCmd+"` failed") || !strings.Contains(g.Final.Detail, "(killed from outside (exit 0xc000013a))") {
+				t.Fatalf("a killed %s holds the stage as killed, got %s killed=%v %q", c.label, g.Final.State, g.Final.Killed, g.Final.Detail)
+			}
+			if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "wsh runs rerun-final "+f.ownerID) || strings.Contains(lead.sends[0], "--round") {
+				t.Fatalf("the lead is asked for a rerun, not a fix round, got %q", lead.sends)
+			}
+		})
+	}
+}
+
+// a hang can be the code's, so a timeout still fails the stage as an ordinary failure: the lead gets the fix round
+func TestATimedOutFinalCheckStillFailsAsAFailureNotAKill(t *testing.T) {
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "tsc --noEmit", "")
+	stubPlanCommandOutput(t, func(_ context.Context, _, command string) (string, error) {
+		if command == "tsc --noEmit" {
+			return "still running", &planCommandError{exitCode: -1, timeout: VerifyTimeout}
+		}
+		return "", nil
+	})
+
+	g := runFinal(t, f)
+
+	if g.Final.State != FinalState_Failed || g.Final.Killed || !strings.Contains(g.Final.Detail, "timed out") {
+		t.Fatalf("a timed-out Check fails the stage and is not a kill, got %s killed=%v %q", g.Final.State, g.Final.Killed, g.Final.Detail)
+	}
+	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "wsh jarvis dag submit --round") || strings.Contains(lead.sends[0], "rerun-final") {
+		t.Fatalf("a timeout hands the lead a fix round, got %q", lead.sends)
+	}
+}
+
+// a kill is no verdict on the code even when the base's Check failed too: the shared-base excuse would pass it as
+// unverified and let the run land having judged nothing
+func TestAKilledFinalCheckIsNotExcusedByAFailingBase(t *testing.T) {
+	f := finalFixture(t, passVerify, "tsc --noEmit", "")
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.BaseCheck = &waveobj.BaseCheck{State: BaseCheckState_Failed, Commit: "abc", Detail: "exit 1: error TS2307"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stubPlanCommandOutput(t, func(_ context.Context, _, command string) (string, error) {
+		if command == "tsc --noEmit" {
+			return "", &planCommandError{exitCode: 0xC000013A, killed: "exit 0xc000013a"}
+		}
+		return "", nil
+	})
+
+	g := runFinal(t, f)
+
+	if g.Final.State != FinalState_Failed || !g.Final.Killed {
+		t.Fatalf("a killed Check holds the stage whatever the base did, got %s killed=%v %q", g.Final.State, g.Final.Killed, g.Final.Unverified)
+	}
+}
+
+// the killed mark belongs to one run of the stage: a rerun starts clean, so a later real failure is not read as a kill
+func TestAFinalFailureAfterAKilledRunIsNotMarkedKilled(t *testing.T) {
+	f := finalFixture(t, passVerify, "", "")
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.Final = &waveobj.FinalStage{State: FinalState_Failed, Round: 1, Killed: true, Detail: "Verify `x` failed (killed from outside (exit 0xc000013a))"}
+		RecomputeDagStatus(cur)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.Verify = "echo '--- FAIL: TestX'; exit 1"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	g := runFinal(t, f)
+
+	if g.Final.State != FinalState_Failed || g.Final.Killed || g.Final.Round != 1 {
+		t.Fatalf("an ordinary failure on the rerun is not killed, got %s killed=%v round %d", g.Final.State, g.Final.Killed, g.Final.Round)
 	}
 }

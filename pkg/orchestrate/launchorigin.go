@@ -75,7 +75,7 @@ func runOfWorktree(path string) (runID, rest string, ok bool) {
 		if parts[i] != ".waveterm" || parts[i+1] != "worktrees" {
 			continue
 		}
-		key := parts[i+2]
+		key := dropFreshPathNumber(parts[i+2])
 		if len(key) < uuidLen || uuid.Validate(key[:uuidLen]) != nil {
 			return "", "", false
 		}
@@ -85,6 +85,12 @@ func runOfWorktree(path string) (runID, rest string, ok bool) {
 		return key[:uuidLen], strings.TrimPrefix(rest, "-"), true
 	}
 	return "", "", false
+}
+
+// dropFreshPathNumber strips the number a tree's fresh path adds to its folder's name (claimLaneTreeDir): a task
+// running in <dir>.1 still ran in <dir>'s lane.
+func dropFreshPathNumber(folder string) string {
+	return strings.TrimSuffix(folder, treeDirAlt.FindString(folder))
 }
 
 // runOfShortTree reads back a tree under the short root: <root>/<first 8 of the run id><suffix>, named back to its run
@@ -98,7 +104,7 @@ func runOfShortTree(path string) (runID, rest string, ok bool) {
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
 		return "", "", false
 	}
-	tree := strings.Split(filepath.ToSlash(rel), "/")[0]
+	tree := dropFreshPathNumber(strings.Split(filepath.ToSlash(rel), "/")[0])
 	if runID, suffix, ok := splitRunKey(tree); ok {
 		return runID, strings.TrimPrefix(suffix, "-"), true
 	}

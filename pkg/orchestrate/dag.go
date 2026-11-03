@@ -43,11 +43,23 @@ func taskActive(state string) bool {
 	return state == TaskState_Running || state == TaskState_Stalled
 }
 
-// taskInFlight reports a task that still holds its parallelism slot and its lane: a live worker, or a finished
-// worker's commit under review. taskActive is about the worker process alone, which a reviewing task no
-// longer has.
+// taskInFlight reports a task that still holds its lane and a share of the live-worker cap: a live worker, or a
+// finished worker's commit under review, whose reviewer is a process too. Its parallelism slot is slotsInUse's, which
+// a reviewing task does not hold: the review is short and works on no tree another lane writes. taskActive is about
+// the worker process alone, which a reviewing task no longer has.
 func taskInFlight(state string) bool {
 	return taskActive(state) || state == TaskState_Reviewing
+}
+
+// slotsInUse counts the tasks holding one of the run's parallelism slots: those with a live worker.
+func slotsInUse(g *waveobj.TaskGroup) int {
+	n := 0
+	for i := range g.Tasks {
+		if taskActive(g.Tasks[i].State) {
+			n++
+		}
+	}
+	return n
 }
 
 // reviewState reports a state the review loop owns. The worker's done run would derive done and erase it.
@@ -332,7 +344,7 @@ func SameDagProposal(a, b *waveobj.TaskGroup) bool {
 }
 
 // RecomputeDagStatus derives g.Status from task states. Single source of truth.
-// Order matters: cancelled (terminal override) -> plan-review -> finalizing/done -> blocked -> awaiting-review -> running.
+// Order matters: cancelled (terminal override, which only CancelGroup sets) -> plan-review -> finalizing/done -> blocked -> awaiting-review -> running.
 func RecomputeDagStatus(g *waveobj.TaskGroup) {
 	if g.Status == DagStatus_Cancelled {
 		return
@@ -341,15 +353,12 @@ func RecomputeDagStatus(g *waveobj.TaskGroup) {
 		g.Status = DagStatus_PlanReview
 		return
 	}
-	cancelled := false
 	allTerminal := true
 	blocked := false
 	gateDone := false
 	for i := range g.Tasks {
 		t := &g.Tasks[i]
 		switch t.State {
-		case TaskState_Cancelled:
-			cancelled = true
 		case TaskState_Failed, TaskState_BlockedMerge, TaskState_VerifyFailed, TaskState_ReviewFailed:
 			blocked = true
 		case TaskState_Done:
@@ -370,8 +379,6 @@ func RecomputeDagStatus(g *waveobj.TaskGroup) {
 		}
 	}
 	switch {
-	case cancelled:
-		g.Status = DagStatus_Cancelled
 	case allTerminal:
 		g.Status = landedStatus(g)
 	case blocked || g.Failures >= MaxConsecutiveFailures:
@@ -477,7 +484,12 @@ func DeriveTaskStates(g *waveobj.TaskGroup, runs map[string]*waveobj.Run) {
 			}
 			t.State = TaskState_Done
 		case jarvis.RunStatus_Cancelled:
-			t.State = TaskState_Cancelled
+			// Cancel moves the dag and its tasks itself, so a cancelled run on a live dag is one worker stopped by an
+			// action that could not finish: the task fails for the lead to judge, and its siblings go on
+			if taskActive(t.State) {
+				t.State = TaskState_Failed
+				t.LastFailureKind = FailureKindWorkerStopped
+			}
 		case jarvis.RunStatus_Blocked:
 			t.State = TaskState_Failed
 		}
