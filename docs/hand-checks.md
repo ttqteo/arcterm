@@ -27,6 +27,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
   steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
   (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
+- [ ] (arcterm) New agent opened from a project's Overview starts on that project: focus an agent in project B, click
+  project A's folder in the Agent tree (its Overview fills the centre), press ⌘N (and the app bar's New) → the dialog's
+  Project column has A picked, not B. Back on B's terminal, ⌘N picks B again. Commit 70a182909.
 - [ ] (arcterm) A council's Discussion is the chat again, with a quiet Ideas rail beside it: open a council that has
   ideas → the channel of messages fills the pane and the rail on its right lists each idea (number · author, title, a
   muted line of replies and stances); a row scrolls the channel to that idea. An idea's replies button opens its thread
@@ -1486,8 +1489,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 **2026-10-12 (path links from another folder)**
 
 - [ ] (arcterm) **A path an agent names from a subfolder is a link.** In an agent that worked on
-  `obsidian/seminar_cycle2/huong_C/plan_cycle2_C_rulegen_20261011.md` from the mit-thesis root and wrote it back as
-  `huong_C/plan_cycle2_C_rulegen_20261011.md`: hovering the path underlines it, Ctrl+click opens the file in the
+  `docs/plans/cycle2/plan_rulegen.md` from the notes root and wrote it back as
+  `cycle2/plan_rulegen.md`: hovering the path underlines it, Ctrl+click opens the file in the
   agent's File tab. A path two touched files both end in stays plain. (`pathlinks.ts` `matchKnownPath`,
   `pathlinkroute.ts`, `termpathlinks.ts`)
 
