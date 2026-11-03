@@ -3300,7 +3300,7 @@ func TestSuggest(t *testing.T) {
 		t.Errorf("request = tools %v cwd %q model %q, want read-only tools in the project on sonnet", req.Tools, req.Cwd, req.Expert.Model)
 	}
 	mustContain(t, "suggest prompt", req.Prompt, "Idle sleep", "Which first?", project, "pkg/a.go",
-		"ui-feature: Review a UI feature (UX, RAM, New user, Skeptic)", "paper: Paper review", suggestShape)
+		"ui-feature: Review a UI feature (Ease of use, Memory watcher, New user, Bug hunter)", "paper: Paper review", suggestShape)
 
 	// a group that does not exist comes back empty
 	h.f.setText("suggest/suggest", fence(`{"files": [], "roles": [], "group": "nope"}`))
@@ -3334,7 +3334,7 @@ func TestSuggestLeavesOutAgentGroups(t *testing.T) {
 	}
 	prompt := h.f.calls("suggest")[0].Prompt
 	mustContain(t, "suggest prompt", prompt, "ui-feature: Review a UI feature", "product-ideas: Product ideas")
-	mustNotContain(t, "suggest prompt", prompt, "agents:", "agents-ideas:", "Chats with a")
+	mustNotContain(t, "suggest prompt", prompt, "agents:", "agents-ideas:", "Chats with")
 }
 
 func TestSuggestMode(t *testing.T) {
