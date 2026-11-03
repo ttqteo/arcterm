@@ -1133,10 +1133,11 @@ func councilBenchHarness(h string) string {
 }
 
 // councilBenchTable is the results as two tables, as wavesrv grouped them (the newest harness version first, so an old
-// score is never read as the new one's): the bench runs per harness and variant, then the ratings of the real councils
-// per harness and mode.
+// score is never read as the new one's): the bench runs per harness and variant, then the go / no-go verdict on the
+// council against the agent team when wavesrv gave one (it says what is still missing before there are runs), then the
+// ratings of the real councils per harness and mode.
 func councilBenchTable(res *wshrpc.CouncilBenchResultsRtnData) string {
-	if len(res.Runs) == 0 && len(res.Ratings) == 0 {
+	if len(res.Runs) == 0 && len(res.Ratings) == 0 && res.Verdict == nil {
 		return "no bench results yet; `wsh council bench` runs the benchmark\n"
 	}
 	var b strings.Builder
@@ -1152,6 +1153,12 @@ func councilBenchTable(res *wshrpc.CouncilBenchResultsRtnData) string {
 				r.Recall, r.Keys, r.Kept, r.Wrong, council.FormatTokens(r.Tokens), perM)
 		}
 		w.Flush()
+	}
+	if v := res.Verdict; v != nil {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "verdict: %s: %s\n", v.Outcome, v.Reason)
 	}
 	if len(res.Ratings) > 0 {
 		if b.Len() > 0 {
@@ -1171,14 +1178,18 @@ var councilBenchCmd = &cobra.Command{
 	Use:   "bench",
 	Short: "run the council benchmark (asks the Token burn gate first), or read its results",
 	Args:  cobra.NoArgs,
-	Long: `Run the council's benchmark: the cases Phase 0 left under the data dir (council-bench/cases.json), each as a solo
-agent and as a council, --runs times each, one council at a time. A judge scores every report against its case's key,
-and each run is appended to council-bench.jsonl. Nothing it runs is listed in the app or writes a document into the case's
-project. The command prices the plan first, asks the Token burn gate once with the total (about 0.55M tokens a solo run
-and 1.4M a council run), and starts the bench in wavesrv only when the person allows it; a refusal prints "Not run: <reason>"
-and starts nothing. It returns at once; "wsh council bench results" prints the table when runs have ended, grouped by
-harness version so an old score is never read as the new one's, and "wsh council bench stop" ends a bench early. A full
-bench (no --case) ends by adding a re-measure chunk, due in a month, to the Council benchmark initiative.`,
+	Long: `Run the council's benchmark: the cases under the data dir (council-bench/cases.json) that are not retired, each as a
+council and as a Claude Code agent team with the council's roles, --runs times each, one run at a time. A bare bench is
+council and team twice on each case. A retired case runs only when --case names it, and --variant solo adds one agent
+working alone. A judge scores every report against its case's key, and each run is appended to council-bench.jsonl.
+Nothing it runs is listed in the app or writes a document into the case's project. The command prices the plan first at
+Phase 0b's measured means (about 8.8M tokens a council run, 4.5M a team run and 2.3M a solo run), asks the Token burn gate
+once with the total, and starts the bench in wavesrv only when the person allows it; a refusal prints "Not run: <reason>"
+and starts nothing. The bench starts no new run once the tokens spent so far, judge calls included, reach the 50M token
+cap: a run already going finishes, and --case reruns what was cut. It returns at once; "wsh council bench results" prints
+the table when runs have ended, grouped by harness version so an old score is never read as the new one's, with the
+go / no-go verdict on the team under it, and "wsh council bench stop" ends a bench early. A full bench (no --case) that
+runs to its end adds a re-measure chunk, due in a month, to the Council benchmark initiative.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cases, _ := cmd.Flags().GetStringArray("case")
@@ -1261,9 +1272,9 @@ func init() {
 	councilListCmd.Flags().Bool("json", false, "JSON output")
 	councilShowCmd.Flags().Bool("json", false, "JSON output (the whole council)")
 	councilWaitCmd.Flags().Duration("timeout", councilDefaultTimeout, "give up waiting after this long (0 waits without limit)")
-	councilBenchCmd.Flags().StringArray("case", nil, "run only this case (repeatable; default every case)")
-	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: solo or council (repeatable; default both)")
-	councilBenchCmd.Flags().Int("runs", 1, "runs of each case × variant (the full first pass uses 2)")
+	councilBenchCmd.Flags().StringArray("case", nil, "run only this case, a retired one included (repeatable; default every case not retired)")
+	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: council, team or solo (repeatable; default council and team)")
+	councilBenchCmd.Flags().Int("runs", 2, "runs of each case × variant (the team verdict needs 2 scored runs of each)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
 	councilPinCmd.Flags().Bool("off", false, "unpin the council")
 	councilRetryCmd.Flags().String("expert", "", "the seat to retry, by id or name (default: the failed summary, else the one failed seat)")

@@ -641,9 +641,12 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 }
 
 // CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
-// bench runs, and per harness version and mode for the ratings.
+// bench runs, and per harness version and mode for the ratings. With cases tagged bench.TeamPassTag (retired or not) it
+// adds the go / no-go verdict on the council against the agent team; with none, or cases that cannot be read, there is
+// no verdict (the second is logged: the table is still the results).
 func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
-	runs, ratings, err := bench.LoadResults(wavebase.GetWaveDataDir())
+	dataDir := wavebase.GetWaveDataDir()
+	runs, ratings, err := bench.LoadResults(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -653,6 +656,21 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	}
 	if rtn.Ratings == nil {
 		rtn.Ratings = []bench.CouncilBenchRatingRow{}
+	}
+	cases, _, err := bench.LoadCases(dataDir)
+	if err != nil {
+		log.Printf("[council-bench] no verdict: %v", err)
+		return rtn, nil
+	}
+	var ids []string
+	for _, c := range cases {
+		if c.Tag == bench.TeamPassTag {
+			ids = append(ids, c.Id)
+		}
+	}
+	if len(ids) > 0 {
+		verdict := bench.Decide(runs, ids)
+		rtn.Verdict = &verdict
 	}
 	return rtn, nil
 }

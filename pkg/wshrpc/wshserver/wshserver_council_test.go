@@ -9,11 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -2364,6 +2367,123 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	}
 	if want := []bench.CouncilBenchRatingRow{{Harness: "2026-10-23.1", Mode: council.ModeReview, Useful: 1}}; !reflect.DeepEqual(got.Ratings, want) {
 		t.Errorf("ratings = %+v, want %+v", got.Ratings, want)
+	}
+	if got.Verdict != nil {
+		t.Errorf("verdict = %+v, want none: no case in this results file is built for the team pass", got.Verdict)
+	}
+}
+
+// markBenchCases sets fields on the cases of cases.json with these ids, as the builder script does when it tags a case
+// for a pass or retires it.
+func markBenchCases(t *testing.T, dataDir string, fields map[string]any, ids ...string) {
+	t.Helper()
+	path := bench.CasesPath(dataDir)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []map[string]any
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		if slices.Contains(ids, c["id"].(string)) {
+			maps.Copy(c, fields)
+		}
+	}
+	if data, err = json.Marshal(cases); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// benchTwoRuns appends a cell's two scored runs of the current harness, each with these recall and token figures.
+func benchTwoRuns(t *testing.T, dataDir, caseId, variant string, recall int, tokens int64) {
+	t.Helper()
+	for run := 1; run <= 2; run++ {
+		err := bench.AppendResult(dataDir, bench.CouncilBenchResult{
+			Date: fmt.Sprintf("2026-11-04T1%d:00:00Z", run), Harness: council.HarnessVersion, Case: caseId, Variant: variant, Run: run,
+			State: "done", Recall: recall, Keys: 2, Tokens: tokens,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestCouncilBenchResultsSetsTheVerdictForTaggedCases(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	writeBenchCases(t, dataDir, false, "alpha", "beta", "other", "older")
+	// beta is retired and still part of the pass; "older" is tagged for another pass and "other" for none
+	markBenchCases(t, dataDir, map[string]any{"tag": bench.TeamPassTag}, "alpha")
+	markBenchCases(t, dataDir, map[string]any{"tag": bench.TeamPassTag, "retired": true}, "beta")
+	markBenchCases(t, dataDir, map[string]any{"tag": "an-older-pass"}, "older")
+	// the team keeps both keys of each case at 0.4× the council's tokens
+	for _, id := range []string{"alpha", "beta"} {
+		benchTwoRuns(t, dataDir, id, bench.VariantCouncil, 2, 1_000_000)
+		benchTwoRuns(t, dataDir, id, bench.VariantTeam, 2, 400_000)
+	}
+	// the untagged cases have no runs: reading them would make the verdict "incomplete"
+	ws := &WshServer{}
+
+	got, err := ws.CouncilBenchResultsCommand(context.Background())
+	if err != nil {
+		t.Fatalf("CouncilBenchResultsCommand: %v", err)
+	}
+	want := bench.CouncilBenchDecision{
+		Outcome: bench.DecisionGo, CouncilRecall: 4, TeamRecall: 4, Keys: 4, CouncilTokens: 2_000_000, TeamTokens: 800_000,
+	}
+	if got.Verdict == nil {
+		t.Fatal("verdict is missing, want one for the two cases tagged with the team pass")
+	}
+	want.Reason = got.Verdict.Reason
+	if *got.Verdict != want || want.Reason == "" {
+		t.Errorf("verdict = %+v, want %+v with a reason", *got.Verdict, want)
+	}
+	if len(got.Runs) != 2 {
+		t.Errorf("rows = %+v, want the council and team rows beside the verdict", got.Runs)
+	}
+
+	// a tagged case with no rows yet is a verdict too, naming what is missing
+	markBenchCases(t, dataDir, map[string]any{"tag": bench.TeamPassTag}, "other")
+	got, err = ws.CouncilBenchResultsCommand(context.Background())
+	if err != nil || got.Verdict == nil || got.Verdict.Outcome != bench.DecisionNotDecided || !strings.Contains(got.Verdict.Reason, "other council has 0 of 2") {
+		t.Errorf("with a third tagged case that has no runs: verdict = %+v, %v, want not decided naming other", got.Verdict, err)
+	}
+}
+
+func TestCouncilBenchResultsLeavesTheVerdictOut(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	// cases that carry no tag of the pass
+	writeBenchCases(t, dataDir, false, "alpha")
+	benchTwoRuns(t, dataDir, "alpha", bench.VariantCouncil, 1, 1_000_000)
+	got, err := ws.CouncilBenchResultsCommand(ctx)
+	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
+		t.Errorf("an untagged case: results = %+v, %v, want the row and no verdict", got, err)
+	}
+
+	// cases.json that cannot be read: the table still comes back, the verdict is left out and the reason is logged
+	if err := os.WriteFile(bench.CasesPath(dataDir), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logged strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	got, err = ws.CouncilBenchResultsCommand(ctx)
+	log.SetOutput(prev)
+	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
+		t.Errorf("unreadable cases.json: results = %+v, %v, want the row, no verdict and no error", got, err)
+	}
+	if !strings.Contains(logged.String(), "[council-bench]") || !strings.Contains(logged.String(), "not a JSON list of cases") {
+		t.Errorf("log = %q, want the cases error logged", logged.String())
 	}
 }
 

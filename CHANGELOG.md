@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- `wsh council bench` now runs the council against a Claude Code agent team on two new cases, stops at a 50M token cap, and `wsh council bench results` says whether the team is a go.
 - A council's experts have plain names, in the language of your question: Ease of use, Memory watcher, Bug hunter, Summarizer, Final judge and Other side, or "Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi" and so on for a Vietnamese question. The roles Setup suggests are named in that language too.
 - A council expert's timeline: what it read, searched, ran (a verify command in mono, with whether it passed) and proposed, newest at the bottom. It opens in the Seats popover from a seat's Timeline button, a click on an expert's card in the Map, or a click on an expert's card while the experts first read.
 
