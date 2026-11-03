@@ -1728,6 +1728,24 @@ export class RpcApiType {
         return client.wshRpcCall("waveinfo", null, opts);
     }
 
+    // command "workflowscan" [call]
+    WorkflowScanCommand(client: WshClient, data: CommandWorkflowScanData, opts?: RpcOpts): Promise<WorkflowScan> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "workflowscan", data, opts);
+        return client.wshRpcCall("workflowscan", data, opts);
+    }
+
+    // command "workflowscanresult" [call]
+    WorkflowScanResultCommand(client: WshClient, data: CommandWorkflowScanResultData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "workflowscanresult", data, opts);
+        return client.wshRpcCall("workflowscanresult", data, opts);
+    }
+
+    // command "workflowscanstart" [call]
+    WorkflowScanStartCommand(client: WshClient, data: CommandWorkflowScanStartData, opts?: RpcOpts): Promise<CommandWorkflowScanStartRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "workflowscanstart", data, opts);
+        return client.wshRpcCall("workflowscanstart", data, opts);
+    }
+
     // command "workspacelist" [call]
     WorkspaceListCommand(client: WshClient, opts?: RpcOpts): Promise<WorkspaceInfoData[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "workspacelist", null, opts);

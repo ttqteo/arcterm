@@ -418,6 +418,12 @@ func (ws *WshServer) cancelUnstartedRun(ctx context.Context, channelId string, r
 }
 
 func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCreateRunData) (*wshrpc.CommandCreateRunRtnData, error) {
+	return ws.createRun(ctx, data, nil)
+}
+
+// createRun is CreateRunCommand with the run's WorkflowScan, which is on the run from its first write: its
+// agent calls back as a scan before anything written after the spawn could land.
+func (ws *WshServer) createRun(ctx context.Context, data wshrpc.CommandCreateRunData, scan *waveobj.WorkflowScan) (*wshrpc.CommandCreateRunRtnData, error) {
 	// a plan start is refused before anything persists: a plan that will not parse, or a shape that cannot
 	// run one, must not leave a run behind
 	if data.PlanPath != "" {
@@ -560,6 +566,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	run.OriginNotify = data.OriginTabId != "" // the session that started it hears how it ended (notifyOrigins)
 	run.OriginTranscript = tabTranscriptPath(ctx, data.OriginTabId)
 	run.EffortRef = effortRef
+	run.WorkflowScan = scan
 	if err := wstore.AppendRun(ctx, data.ChannelId, run); err != nil {
 		return nil, fmt.Errorf("appending run: %w", err)
 	}

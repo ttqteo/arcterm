@@ -62,6 +62,16 @@ func runHarness(harness string) bool {
 	return harness == usageHarness_Claude || harness == usageHarness_Pi
 }
 
+// consultRoleOf is the usage role of a one-shot session the run started outside its own agent.
+func consultRoleOf(run *waveobj.Run, session string) (string, bool) {
+	for _, c := range run.ConsultSessions {
+		if c.SessionId == session {
+			return c.Role, true
+		}
+	}
+	return "", false
+}
+
 // linkUsageSession fills s's run fields from the run launched under it. dags and owners cache the store
 // reads across one call, a nil entry included.
 func linkUsageSession(ctx context.Context, s *wshrpc.UsageSessionMeta, run *waveobj.Run, dags map[string]*waveobj.TaskGroup, owners map[string]*waveobj.Run) error {
@@ -77,12 +87,16 @@ func linkUsageSession(ctx context.Context, s *wshrpc.UsageSessionMeta, run *wave
 			dags[run.DagORef] = dag
 		}
 	}
+	consultRole, consulted := consultRoleOf(run, s.Session)
 	link, placed := runLinkOf(run, dag)
+	if consulted {
+		// a consult session is the run's own work whatever the run is, never a task of its dag
+		placed = false
+	} else if !placed && run.DagORef != "" {
+		// a child whose dag is gone: nothing says which run it worked for
+		return nil
+	}
 	if !placed {
-		if run.DagORef != "" {
-			// a child whose dag is gone: nothing says which run it worked for
-			return nil
-		}
 		// a quick run is its own work item
 		link = sessionRunLink{RunId: run.OID, ChannelId: run.ChannelOID}
 	}
@@ -105,6 +119,9 @@ func linkUsageSession(ctx context.Context, s *wshrpc.UsageSessionMeta, run *wave
 	s.RunMode = owner.Mode
 	goal, _, _ := strings.Cut(strings.TrimSpace(owner.Goal), "\n")
 	s.RunGoal = strings.TrimSpace(goal)
+	if consulted {
+		s.Role = consultRole
+	}
 	if placed {
 		s.Role = jarvis.UsageRole(run)
 		if s.Role == jarvis.UsageRole_Lead && link.Role != sessionRole_Lead {

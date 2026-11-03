@@ -58,7 +58,16 @@ import type { OpenTarget } from "./address";
 import { effortDetailAtom } from "./effortstore";
 import { briefOpenInitiativeAtom, briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, recordDetailAtom } from "./jarvissubjectstore";
-import { isPeekable, openAddress, openOrPeek, openOrPeekAddress, openTarget, peekAddress, peekTarget } from "./openref";
+import {
+    isPeekable,
+    isPeekableAddress,
+    openAddress,
+    openOrPeek,
+    openOrPeekAddress,
+    openTarget,
+    peekAddress,
+    peekTarget,
+} from "./openref";
 import { peekItemAtom, type PeekItem } from "./peekstore";
 import { pendingDecisionAnchorAtom, petPeekOpenAtom } from "./petstore";
 import { taskListAtom, tasksErrorAtom } from "./tasksstore";
@@ -497,6 +506,75 @@ describe("council landings", () => {
         expect(await peekTarget(model, target)).toEqual({ ok: true });
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(globalStore.get(peekItemAtom)).toBeNull();
+    });
+});
+
+describe("workflow scan landings", () => {
+    // a model whose roster holds one agent, working for the given run
+    function modelWithAgentOf(runId: string): AgentsViewModel {
+        const agent = {
+            id: "t-scan",
+            name: "t-scan",
+            task: "",
+            state: "working",
+            blockId: "block-t-scan",
+            runId,
+        } as AgentVM;
+        return { ...makeModel(), agentsAtom: atom([agent]) } as unknown as AgentsViewModel;
+    }
+
+    it("lands on the scan run's live agent, without loading the run", async () => {
+        const model = modelWithAgentOf("r-scan");
+        expect(await openAddress(model, "workflowscan:r-scan")).toEqual({ ok: true });
+        expect(globalStore.get(model.focusIdAtom)).toBe("t-scan");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(briefSheetOpenAtom)).toBe(false);
+        expect(loadAndPin).not.toHaveBeenCalled();
+    });
+
+    it("lands on the run's own sheet when the run has no live agent", async () => {
+        const model = makeModel(["t1"]);
+        objects.set("run:r-scan", { oid: "r-scan", channeloid: "c1" });
+        objects.set("channel:c1", { oid: "c1" });
+        expect(await openTarget(model, { kind: "workflowscan", runId: "r-scan" })).toEqual({ ok: true });
+        expect(globalStore.get(activeSubjectAtom)).toEqual({ kind: "channel", id: "c1" });
+        expect(globalStore.get(activeRunIdAtom)["c1"]).toBe("r-scan");
+        expect(globalStore.get(briefSheetOpenAtom)).toBe(true);
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+        expect(globalStore.get(model.focusIdAtom)).toBeUndefined();
+    });
+
+    it("does not take another run's agent for the scan's", async () => {
+        const model = modelWithAgentOf("r-other");
+        objects.set("run:r-scan", { oid: "r-scan", channeloid: "c1" });
+        objects.set("channel:c1", { oid: "c1" });
+        expect(await openTarget(model, { kind: "workflowscan", runId: "r-scan" })).toEqual({ ok: true });
+        expect(globalStore.get(model.focusIdAtom)).toBeUndefined();
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+        expect(globalStore.get(activeRunIdAtom)["c1"]).toBe("r-scan");
+    });
+
+    it("reports a run that is gone, when it has no agent either", async () => {
+        const model = makeModel();
+        expect(await openAddress(model, "workflowscan:r-gone")).toEqual({
+            ok: false,
+            reason: "unavailable",
+            message: "That run no longer exists",
+        });
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+    });
+
+    it("is not peekable: a peek lands", async () => {
+        const model = modelWithAgentOf("r-scan");
+        const target: OpenTarget = { kind: "workflowscan", runId: "r-scan" };
+        expect(isPeekable(target)).toBe(false);
+        expect(await peekTarget(model, target)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
+    });
+
+    it("is not peekable from an address either", () => {
+        expect(isPeekableAddress("workflowscan:r-scan")).toBe(false);
     });
 });
 

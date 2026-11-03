@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -141,6 +142,25 @@ func TestUsageSessionsQuickRun(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestUsageSessionsConsultSession(t *testing.T) {
+	consult := uuid.NewString()
+	run := seedUsageRun(t, "", waveobj.Run{
+		Mode: "quick", Goal: "scan\nthe records", ProjectPath: usageTestRepo, SessionId: uuid.NewString(),
+		ConsultSessions: []waveobj.ConsultSession{{SessionId: consult, Role: jarvis.UsageRole_WorkflowScan}},
+	})
+	got := usageSessionsOf(t, claudeSessionMeta(consult), claudeSessionMeta(run.SessionId))
+	want := wshrpc.UsageSessionMeta{
+		Harness: "claude", Session: consult, Title: "a title", Project: usageTestRepo,
+		RunId: run.ID, ChannelId: run.ChannelOID, RunGoal: "scan", RunMode: "quick", Role: jarvis.UsageRole_WorkflowScan,
+	}
+	if got[0] != want {
+		t.Fatalf("consult session: got %+v, want %+v", got[0], want)
+	}
+	if got[1].RunId != run.ID || got[1].RunMode != "quick" || got[1].Role != "" {
+		t.Fatalf("the run's own session keeps its link and no role, got %+v", got[1])
 	}
 }
 

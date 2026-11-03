@@ -3452,28 +3452,28 @@ const UI_TITLES = [
     ["Tune the Usage surface and its Insights card", "arcterm"],
     ["Overnight crawl of the exam archive", "nnew-site"],
     ["Fix flaky CDP scenarios on the agent rail", "arcterm"],
-    ["Draft the related-work section", "mit-thesis"],
+    ["Draft the related-work section", "notes"],
     ["Migrate the docs site to the new layout", "vnstock-js"],
     ["Chase the cold-resume spike on Mondays", "arcterm"],
     ["Land the DAG observability tasks", "engine run"],
     ["Port the screener to the streaming API", "vnstock-js"],
-    ["Review the seminar slides", "mit-thesis"],
+    ["Review the seminar slides", "notes"],
     ["Wire the quota hold into Analyze", "arcterm"],
     ["Explain the orchestrator merge queue", "arcterm"],
     ["Add retry to the market-data client", "vnstock-js"],
-    ["Proofread chapter 3", "mit-thesis"],
+    ["Proofread chapter 3", "notes"],
     ["Split the settings surface by provider", "arcterm"],
     ["Backfill the portfolio journal entries", "nnew-site"],
     ["Clean up the run worktrees", "engine run"],
     ["Check the NSIS bundle contents", "arcterm"],
     ["Rename the harness catalog fields", "arcterm"],
-    ["Summarise the reviewer comments", "mit-thesis"],
+    ["Summarise the reviewer comments", "notes"],
     ["Fix the date picker on small screens", "nnew-site"],
     ["Trace a slow websocket reconnect", "arcterm"],
     ["Tidy the changelog", "arcterm"],
     ["Rebuild the symbol index", "vnstock-js"],
     ["Answer a question about Tailwind tokens", "arcterm"],
-    ["Sketch the figure for the threat model", "mit-thesis"],
+    ["Sketch the figure for the threat model", "notes"],
     ["Bump the Rust toolchain", "arcterm"],
     ["Quick regex for the log parser", "nnew-site"],
     ["Rename a variable", "arcterm"],
@@ -17228,7 +17228,7 @@ The baseline is the file at the start of the session. Later rounds diff against 
 
 \subsection{Cost}
 
-The sentence diff is quadratic in the sentences of a section. That stays small because a section holds a few dozen sentences at most. We measured it on every section of the thesis.
+The sentence diff is quadratic in the sentences of a section. That stays small because a section holds a few dozen sentences at most. We measured it on every section of the notes.
 
 The word diff runs only on sentences that changed. It uses the same alignment as the sentence diff.
 
@@ -17282,7 +17282,7 @@ const DRM_TEX_R2 = DRM_TEX_R1.replace(
 
 const DRM_MD_INTRO = `## 1. Bối cảnh
 
-Ghi chú này theo dõi các bước của luận văn. Mỗi bước có đầu ra rõ ràng.
+Ghi chú này theo dõi các bước của dự án. Mỗi bước có đầu ra rõ ràng.
 
 Các số liệu lấy từ bộ dữ liệu 110 ca. Mỗi ca có một bản vá và một mô tả.
 
@@ -39055,7 +39055,7 @@ const consumersPopover = {
 
 // --- consumers-close-picked: ticking agents in the Consumers panel and closing them together, most often the sleeping
 // ones, all of them or one project's. The roster is a fixture (a working agent, an idle one, a run worker, two asleep in
-// arcterm and one in thesis); getconsumers answers the
+// arcterm and one in notes); getconsumers answers the
 // Consumers mock's reading, and WorkspaceService.CloseTab is swapped in the page for one that records its calls, so
 // nothing real closes. Teardown puts the service, the mock, the roster fixture and the page back.
 const CP_CLOSE_KEY = "__arcClosePickedMock";
@@ -39066,7 +39066,7 @@ const CP_FIXTURE = [
     { id: "fx-cp-worker", name: "arcterm", project: "arcterm", task: "", state: "working", agent: "claude", model: "sonnet", blockId: "fx-blk-cp-worker", runId: "fx-cp-child" },
     { id: "fx-cp-z1", name: "Theme Spider-Man", project: "arcterm", task: "", state: "idle", agent: "claude", model: "opus", blockId: "fx-blk-cp-z1", sleeping: CP_SLEEPING },
     { id: "fx-cp-z2", name: "Commit và build", project: "arcterm", task: "", state: "idle", agent: "claude", model: "opus", blockId: "fx-blk-cp-z2", sleeping: CP_SLEEPING },
-    { id: "fx-cp-z3", name: "Xem lại luận văn", project: "thesis", task: "", state: "idle", agent: "claude", model: "opus", blockId: "fx-blk-cp-z3", sleeping: CP_SLEEPING },
+    { id: "fx-cp-z3", name: "Xem lại dự án", project: "notes", task: "", state: "idle", agent: "claude", model: "opus", blockId: "fx-blk-cp-z3", sleeping: CP_SLEEPING },
 ];
 const CP_READING = {
     ...CONSUMERS_READING,
@@ -39157,7 +39157,7 @@ const consumersClosePicked = {
             moons: document.querySelectorAll("[data-consumer-moon]").length,
             sleepTick: ${cpShown(CP_SLEEP_TICK)},
             projects: [...document.querySelectorAll("[data-consumers-sleeping-project]")].map((p) => p.dataset.consumersSleepingProject),
-            projectTicks: ${cpShown(cpProjectTick("arcterm"))} && ${cpShown(cpProjectTick("thesis"))},
+            projectTicks: ${cpShown(cpProjectTick("arcterm"))} && ${cpShown(cpProjectTick("notes"))},
             bar: !!${CP_BAR},
         })`);
         await h.shot("cdp-shots/consumers-close-picked-rest.png");
@@ -39166,7 +39166,7 @@ const consumersClosePicked = {
             chipReady && rows &&
                 JSON.stringify(rest.ticks) === JSON.stringify(["fx-cp-work", "fx-cp-idle", "fx-cp-z2", "fx-cp-z1", "fx-cp-z3"]) &&
                 rest.shown === 0 && rest.moons === 3 && rest.sleepTick &&
-                JSON.stringify(rest.projects) === JSON.stringify(["arcterm", "thesis"]) && rest.projectTicks && !rest.bar,
+                JSON.stringify(rest.projects) === JSON.stringify(["arcterm", "notes"]) && rest.projectTicks && !rest.bar,
             JSON.stringify({ chipReady, rows, ...rest })
         );
 
@@ -39176,21 +39176,21 @@ const consumersClosePicked = {
         const hover = await h.ev(`({ idle: ${cpShown(cpTick("fx-cp-idle"))}, work: ${cpShown(cpTick("fx-cp-work"))} })`);
         rec("2. hovering a row shows its tick and only its", hover.idle && !hover.work, JSON.stringify({ at, ...hover }));
 
-        await h.ev(`${cpProjectTick("thesis")}?.click()`);
+        await h.ev(`${cpProjectTick("notes")}?.click()`);
         const oneProject = await polishWaitFor(h, `${CP_BAR}?.textContent.includes("Close 1 agent")`, 2000);
-        const thesis = await h.ev(`({
+        const notes = await h.ev(`({
             z1: ${cpTick("fx-cp-z1")}?.getAttribute("aria-checked"),
             z3: ${cpTick("fx-cp-z3")}?.getAttribute("aria-checked"),
-            project: ${cpProjectTick("thesis")}?.getAttribute("aria-checked"),
+            project: ${cpProjectTick("notes")}?.getAttribute("aria-checked"),
             head: ${CP_SLEEP_TICK}?.getAttribute("aria-checked"),
         })`);
         await h.shot("cdp-shots/consumers-close-picked-project.png");
-        await h.ev(`${cpProjectTick("thesis")}?.click()`);
+        await h.ev(`${cpProjectTick("notes")}?.click()`);
         const cleared = await polishWaitFor(h, `!${CP_BAR}`, 2000);
         rec(
             "2b. a project's tick picks only its sleeping agents, Sleeping's tick reads part picked, and a second press clears them",
-            oneProject && thesis.z3 === "true" && thesis.z1 !== "true" && thesis.project === "true" && thesis.head === "mixed" && cleared,
-            JSON.stringify({ oneProject, cleared, ...thesis })
+            oneProject && notes.z3 === "true" && notes.z1 !== "true" && notes.project === "true" && notes.head === "mixed" && cleared,
+            JSON.stringify({ oneProject, cleared, ...notes })
         );
 
         await h.ev(`${CP_SLEEP_TICK}?.click()`);
@@ -59788,6 +59788,127 @@ const railTranslate = {
     },
 };
 
+// --- workflow-scan-entry: the ways into a workflow scan (docs/superpowers/specs/2026-10-26-workflow-scan-design.md)
+// The palette's Scan workflow Start row, and the address workflowscan:<runid> that the row's start opens. Step 1 never
+// fires the row: that starts a real Opus agent, so the start helper (palette-scan.ts) is unit-tested. A registered
+// project, not a bare channel: only a registered one is the palette's home project.
+const WFE_PROJECT = "verify-workflow-scan-entry";
+const WFE_SCAN_ECHO = "Starts a scan and opens its agent";
+const WFE_GOAL = "verify workflow-scan-entry: do nothing";
+
+// moves the palette's selection down until it sits on a row the predicate takes
+async function wfeSelect(h, ok) {
+    let state = await h.ev(PALETTE_STATE);
+    for (let i = 0; i < 30 && state != null && !ok(state.selected ?? ""); i++) {
+        await h.ev(paletteKey("ArrowDown"));
+        await polishNap(100);
+        state = await h.ev(PALETTE_STATE);
+    }
+    return state;
+}
+
+const workflowScanEntry = {
+    name: "workflow-scan-entry",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-workflow-scan-entry-")) };
+        try {
+            await h.rpc("createproject", { name: WFE_PROJECT, path: ctx.cwd });
+            ctx.project = WFE_PROJECT;
+            await waitForProjectInConfig(h, WFE_PROJECT);
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            ctx.channelId = channels.find((c) => norm(c.projectpath) === norm(ctx.cwd))?.oid;
+            if (!ctx.channelId) throw new Error("createproject made no channel at the project's path");
+            const wslist = await h.rpc("workspacelist", null);
+            // held in planning by deferstart: a record with no agent, so the address lands on its sheet
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: WFE_GOAL,
+                runtime: "claude",
+                model: "opus",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.landPath = created.run.landpath;
+            ctx.status = created.run.status;
+            // the channel and project lists are boot-primed
+            await polishReload(h);
+            // the fixture project is the active one, so it is the palette's home project
+            ctx.openedChannel = await h.ev(openAddressExpr(`channel:${ctx.channelId}`));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const shot = (name) => h.shot(`cdp-shots/workflow-scan-entry-${name}.png`);
+        if (ctx.arrangeError != null) {
+            rec("0. a registered project with one deferred quick run was made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+
+        // 1. the Start row, typed for and selected but never run
+        const opened = await openPalette(h);
+        await h.ev(setInputExpr(PALETTE_INPUT, "scan"));
+        await paletteStateWhen(h, (s) => s.groups.some((g) => g.label === "Start" && g.rows.some((r) => r.startsWith("Scan workflow"))), 5000);
+        const typed = await wfeSelect(h, (sel) => sel.startsWith("Scan workflow") && sel.includes(`#${WFE_PROJECT}`));
+        const startGroup = typed?.groups.find((g) => g.label === "Start");
+        await shot("start-row");
+        rec(
+            "1. typing scan shows the Scan workflow Start row in the home project, verb Start and its echo",
+            opened &&
+                (startGroup?.rows ?? []).some((r) => r.startsWith("Scan workflow") && r.includes(`#${WFE_PROJECT}`)) &&
+                (typed?.selected ?? "").includes("Start") &&
+                (typed?.text ?? "").includes(WFE_SCAN_ECHO),
+            JSON.stringify({ opened, selected: typed?.selected, groups: typed?.groups })
+        );
+        await h.ev(PEEKS_ESC);
+        await polishWaitFor(h, `!${PALETTE_INPUT}`, 2000);
+
+        // 2. a run seeded as a scan waiting on its agent, opened by its address: with no live agent, its own sheet
+        const stored = await fstWriteRun(h, ctx.runId, (run) => ({
+            ...run,
+            status: ctx.status,
+            workflowscan: {
+                state: "picking",
+                stage: "",
+                project: WFE_PROJECT,
+                windowdays: 14,
+                fromts: Date.now() - 14 * 24 * 3600 * 1000,
+                tots: Date.now(),
+                runs: 6,
+                projects: 1,
+                candidates: 2,
+                kept: 1,
+                dropped: 0,
+            },
+        }));
+        await h.goto("jarvis");
+        const landed = await h.ev(openAddressExpr(`workflowscan:${ctx.runId}`));
+        const sheetShown = await polishWaitFor(h, `${flatOf(RUN_SHEET)}.includes(${JSON.stringify(WFE_GOAL)})`, 10000);
+        await shot("run-sheet");
+        rec(
+            "2. workflowscan:<runid> on a scan run with no live agent opens that run's sheet",
+            stored?.workflowscan?.state === "picking" && landed?.ok === true && sheetShown,
+            JSON.stringify({ seeded: stored?.workflowscan?.state, landed, sheetShown, sheet: await h.ev(flatOf(RUN_SHEET)) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await teardownFixtureRun(h, ctx, "workflow-scan-entry", {
+            what: "delete the project",
+            fn: () => (ctx.project ? h.rpc("deleteproject", { name: ctx.project }) : null),
+        });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -60016,6 +60137,7 @@ export const SCENARIOS = [
     projectOverview,
     projectOverviewHistory,
     railTranslate,
+    workflowScanEntry,
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];

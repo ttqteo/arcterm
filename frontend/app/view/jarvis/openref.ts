@@ -59,6 +59,7 @@ type CanvasTarget = Extract<OpenTarget, { kind: "canvas" }>;
 type BrainstormTarget = Extract<OpenTarget, { kind: "brainstorm" }>;
 type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
 type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
+type WorkflowScanTarget = Extract<OpenTarget, { kind: "workflowscan" }>;
 type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
 type Caller = AddressHint["caller"];
 
@@ -99,6 +100,8 @@ function targetName(target: OpenTarget): string {
             return `note ${target.noteId}`;
         case "memhygiene":
             return `memory of ${target.project}`;
+        case "workflowscan":
+            return `workflow scan ${target.runId}`;
         case "council":
             return `council ${target.councilId}`;
     }
@@ -162,6 +165,7 @@ export function isPeekable(target: OpenTarget): boolean {
         target.kind !== "canvas" &&
         target.kind !== "brainstorm" &&
         target.kind !== "memhygiene" &&
+        target.kind !== "workflowscan" &&
         target.kind !== "council"
     );
 }
@@ -183,6 +187,7 @@ export async function peekTarget(
         target.kind === "canvas" ||
         target.kind === "brainstorm" ||
         target.kind === "memhygiene" ||
+        target.kind === "workflowscan" ||
         target.kind === "council"
     ) {
         return openTarget(model, target, report);
@@ -294,6 +299,14 @@ async function land(
             );
         case "memhygiene":
             return select(await loadMemHygiene(target, current), () => selectMemHygiene(model, target.project));
+        case "workflowscan": {
+            // the scan's agent is where it asks which fixes to apply; once it has closed, the run's sheet is what is left
+            const agent = scanAgent(model, target);
+            if (agent != null) {
+                return select(loaded(), () => selectAgent(model, agent.id));
+            }
+            return select(await loadRun(target.runId, current), (s) => selectSheet(model, s, current));
+        }
         case "council":
             return selectCouncil(model, target);
     }
@@ -309,7 +322,10 @@ async function select<T>(load: Loaded<T>, write: (facts: T) => OpenResult | Prom
 
 async function peek(
     model: AgentsViewModel,
-    target: Exclude<OpenTarget, CanvasTarget | BrainstormTarget | MemHygieneTarget | CouncilTarget>,
+    target: Exclude<
+        OpenTarget,
+        CanvasTarget | BrainstormTarget | MemHygieneTarget | WorkflowScanTarget | CouncilTarget
+    >,
     current: () => boolean
 ): Promise<OpenResult> {
     const resolved = target.kind === "channel" ? await channelRun(target, current) : loaded<PeekTarget>(target);
@@ -418,6 +434,13 @@ function loadAgent(model: AgentsViewModel, tabId: string): Loaded {
 function selectAgent(model: AgentsViewModel, tabId: string): OpenResult {
     jumpToAgent(model, tabId);
     return OK;
+}
+
+// The run's own agent: the roster entry a run spawned carries its id (AgentVM.runId). Nothing here loads the run,
+// so a scan whose agent is up opens without waiting on the store.
+function scanAgent(model: AgentsViewModel, target: WorkflowScanTarget) {
+    const roster = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
+    return roster.find((a) => a.runId === target.runId);
 }
 
 // A reveal names its caller: the canvas is that agent's, in its cwd. The agent reveals on every revision, so its

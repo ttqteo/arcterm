@@ -86,14 +86,15 @@ export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     ];
 }
 
-export type StartId = "run" | "agent" | "initiative" | "council";
+export type StartId = "run" | "agent" | "initiative" | "council" | "scan";
 
 export interface StartDef {
     id: StartId;
     title: string;
     meta?: string;
+    verb?: string; // what Enter does; absent, "Open"
     echo: string;
-    binding: string; // the registry binding this row stands in for
+    binding?: string; // the registry binding this row stands in for; a row that stands in for none has none
 }
 
 // The Start group: opening a creation window is a row on every surface, not a surface-local key. Each row
@@ -117,7 +118,25 @@ export const START_DEFS: StartDef[] = [
     { id: "council", title: "New council…", echo: "Opens a new council", binding: "new-council" },
 ];
 
-export const START_BINDINGS = new Set(START_DEFS.map((d) => d.binding));
+export const START_BINDINGS = new Set(START_DEFS.flatMap((d) => d.binding ?? []));
+
+// A scan reads one project's runs, so with no home project there is nothing to start it in. The row stands in for
+// no binding: it is started from here only.
+export function startDefs(homeProject: string | null): StartDef[] {
+    if (!homeProject) {
+        return START_DEFS;
+    }
+    return [
+        ...START_DEFS,
+        {
+            id: "scan",
+            title: "Scan workflow",
+            meta: `#${homeProject}`,
+            verb: "Start",
+            echo: "Starts a scan and opens its agent",
+        },
+    ];
+}
 
 // the registry group holding a surface's own bindings
 const SURFACE_GROUP: Partial<Record<SurfaceKey, string>> = {
