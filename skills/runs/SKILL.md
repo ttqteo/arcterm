@@ -26,6 +26,9 @@ description: Use when you need to start an arcterm run (quick, or orchestrator f
 - `wsh runs route` prints the lead, workers and reviewer routes a new run here would use, and where each
   comes from. `wsh runs route [--global] --worker-runtime <h> --worker-model <m>` (or `--reviewer-picks`,
   `--same-as-lead`) saves the workers default for this project, or for every project.
+- `wsh workflow scan --start [--window <days>]` starts a workflow scan: a quick Opus run that reads every project's
+  recent run records (14 days by default), has Sonnet name the problems that recur, drafts a small fix for each and
+  asks the user which to apply. One scan runs at a time; its agent runs `wsh workflow scan` and `wsh workflow result`.
 
 Message a live agent (claude or pi) with `wsh agents`:
 

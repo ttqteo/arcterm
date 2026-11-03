@@ -66,7 +66,8 @@ func runLinkOf(run *waveobj.Run, dag *waveobj.TaskGroup) (sessionRunLink, bool) 
 	return sessionRunLink{}, false
 }
 
-// runsBySession maps each requested id to the run launched under it, as its current session or an earlier lead session.
+// runsBySession maps each requested id to the run launched under it, as its current session, an earlier lead
+// session or a consult session.
 func runsBySession(ctx context.Context, ids []string) (map[string]*waveobj.Run, error) {
 	runs, err := wstore.GetRunsBySessionIds(ctx, ids)
 	if err != nil {
@@ -84,6 +85,11 @@ func runsBySession(ctx context.Context, ids []string) (map[string]*waveobj.Run, 
 		for _, id := range r.LeadSessionIds {
 			if want[id] {
 				out[id] = r
+			}
+		}
+		for _, c := range r.ConsultSessions {
+			if want[c.SessionId] {
+				out[c.SessionId] = r
 			}
 		}
 	}
