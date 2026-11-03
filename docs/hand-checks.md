@@ -12,6 +12,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   (`council-discussion`, `council-summary`, 2026-11-03); a real send and answer was not tried (`councilChannel`,
   `frontend/app/view/agents/councilchatmodel.ts`).
 
+- [ ] (arcterm) Tidier app page header: open a running app (service) on the Agent surface → the header reads
+  Page | Log, the state line, then ← → ⟳ ⌂ ↗ in one tight group, a thin divider, ⋯ and Stop; switch to Log → only ↗,
+  ⋯ and Stop stay; click ⋯ → the tree row's menu (Stop, Restart, Stop and hide, Keep running, Pin…), and Restart there
+  restarts it. Not run: the dev app was down; the CDP scenarios `tools-app` / `services-tree` were updated for
+  `data-service-more` but not run (`frontend/app/view/agents/terminalpaneheadview.tsx`).
+
 - [ ] (arcterm) Zoom is kept: press Ctrl+= twice, quit arcterm and open it again, then install a new build over it →
   the app opens at 120% both times; Ctrl+0 → 100%, and it stays 100% after the next restart. The factor is saved in
   localStorage `cockpit.zoom` (`frontend/tauri/chrome.ts` `restoreZoom`, run from `installChromeListeners` at boot).

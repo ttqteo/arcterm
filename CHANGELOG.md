@@ -27,6 +27,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
+- An app's page header on the Agent surface is tidier: Back, Forward, Reload and Home show only while the page does, and Restart moved into a ⋯ menu beside Stop (with Keep running and Pin), so its arrow no longer sits next to Reload's.
 
 ### Fixed
 
