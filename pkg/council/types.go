@@ -62,6 +62,10 @@ type CouncilExpert struct {
 	Agent       string `json:"agent,omitempty"`   // a live agent seat: the seated agent's tab id; empty for a role expert
 	Harness     string `json:"harness,omitempty"` // an agent seat's harness, claude or pi
 	Context     int64  `json:"context,omitempty"` // an agent seat's context tokens when it was seated, for the estimate
+	// Transcript is an agent seat's session, its transcript's path: when the seat's tab closes and the session is opened
+	// again in another tab (Resume, Open asleep), the seat follows it there (Runner.call, SeatRebinder). Empty on a role
+	// expert, and on a seat from before it was kept until its next turn reads it.
+	Transcript string `json:"transcript,omitempty"`
 	// NameVi is a stock role's Vietnamese name, so Setup can show it for a Vietnamese question. Empty on a user role and
 	// on an agent seat, which keep the one name they have.
 	NameVi string `json:"namevi,omitempty"`

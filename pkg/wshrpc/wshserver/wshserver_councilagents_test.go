@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -223,12 +224,12 @@ func TestCouncilAgentSeatsResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []council.CouncilExpert{
-		{Id: "agent-" + agentsTabC, Name: "scout", Agent: agentsTabC, Harness: "pi"},
-		{Id: "agent-" + agentsTabA, Name: "review lead", Agent: agentsTabA, Harness: "claude", Context: 95_010},
-		{Id: "agent-" + agentsTabB, Name: "design", Agent: agentsTabB, Harness: "claude", Context: 40_010},
+		{Id: "agent-" + agentsTabC, Name: "scout", Agent: agentsTabC, Harness: "pi", Transcript: scout.Status.TranscriptPath},
+		{Id: "agent-" + agentsTabA, Name: "review lead", Agent: agentsTabA, Harness: "claude", Context: 95_010, Transcript: lead.Status.TranscriptPath},
+		{Id: "agent-" + agentsTabB, Name: "design", Agent: agentsTabB, Harness: "claude", Context: 40_010, Transcript: design.Status.TranscriptPath},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("seats = %+v, want %+v: in the order named, a tab named twice once, with the name, harness and context of each", got, want)
+		t.Errorf("seats = %+v, want %+v: in the order named, a tab named twice once, with the name, harness, context and session of each", got, want)
 	}
 	if loads != 1 {
 		t.Errorf("roster reads = %d, want one for all the names", loads)
@@ -394,6 +395,36 @@ func TestLiveAgentLinkLastAnswer(t *testing.T) {
 	// no transcript path says nothing yet: no answer, and no failure
 	if text, ts, err = (liveAgentLink{}).LastAnswer(context.Background(), agentsTabB); err != nil || text != "" || ts != 0 {
 		t.Errorf("LastAnswer with no transcript = %q, %d, %v, want none", text, ts, err)
+	}
+}
+
+// Transcript is the session a live seat's tab runs; Holder finds the tab that runs a session (its path cleaned), among
+// the tabs a council can seat, for a seat whose own tab closed
+func TestLiveAgentLinkTranscriptAndHolder(t *testing.T) {
+	reopened := agentFacts(agentsTabA, "notes", agentsBlockA, "claude", baseds.AgentState_Idle)
+	reopened.Status.TranscriptPath = writeTranscript(t, "notes", claudeTurn)
+	codex := agentFacts(agentsTabC, "codex", agentsBlockC, "codex", baseds.AgentState_Idle)
+	codex.Status.TranscriptPath = writeTranscript(t, "codex", claudeTurn)
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{reopened, codex}})
+	ctx := context.Background()
+
+	if got, err := (liveAgentLink{}).Transcript(ctx, agentsTabA); err != nil || got != reopened.Status.TranscriptPath {
+		t.Errorf("Transcript = %q, %v, want the tab's session %q", got, err, reopened.Status.TranscriptPath)
+	}
+	if got, err := (liveAgentLink{}).Transcript(ctx, agentsTabB); err != nil || got != "" {
+		t.Errorf("Transcript of a gone tab = %q, %v, want none and no failure", got, err)
+	}
+	dir, base := filepath.Split(reopened.Status.TranscriptPath)
+	uncleaned := filepath.Join(dir, "sub") + string(filepath.Separator) + ".." + string(filepath.Separator) + base
+	for _, tpath := range []string{reopened.Status.TranscriptPath, uncleaned} {
+		if got, err := (liveAgentLink{}).Holder(ctx, tpath); err != nil || got != agentsTabA {
+			t.Errorf("Holder(%q) = %q, %v, want the tab that runs it", tpath, got, err)
+		}
+	}
+	for _, tpath := range []string{codex.Status.TranscriptPath, "/no/such/session.jsonl", ""} {
+		if got, err := (liveAgentLink{}).Holder(ctx, tpath); err != nil || got != "" {
+			t.Errorf("Holder(%q) = %q, %v, want no tab: a codex tab cannot sit, an unknown session has none", tpath, got, err)
+		}
 	}
 }
 

@@ -276,11 +276,21 @@ export async function reopenClosedAgent(model: AgentsViewModel): Promise<void> {
         pushToast({ title: "No closed agent to reopen", message: "", level: "info" });
         return;
     }
+    await reopenSession(model, entry.transcriptPath, entry.name);
+}
+
+// Open the session whose transcript is transcriptPath again in a tab of its own: asleep when its harness can sleep, so it
+// costs nothing until a Wake or a message; a harness that cannot (codex) resumes awake; a tab that already holds it is
+// gone to (resumeOf). The resume command comes from the sessions archive, rescanned first so a conversation that just
+// ended is on it. `name` words the toast when it cannot (empty: the session's own title). Mod+Shift+T and a closed
+// council chat seat (its name, avatar or chip) both open a session this way.
+export async function reopenSession(model: AgentsViewModel, transcriptPath: string, name = ""): Promise<void> {
     await loadSessionsArchive();
-    const session = archivedSession(globalStore.get(sessionsArchiveAtom), entry.transcriptPath);
+    const session = archivedSession(globalStore.get(sessionsArchiveAtom), transcriptPath);
+    const what = name || session?.task?.trim() || "the session";
     if (!session?.resumecommand) {
         pushToast({
-            title: `Couldn't reopen ${entry.name}`,
+            title: `Couldn't reopen ${what}`,
             message: "Its conversation is no longer in Conversation History.",
             level: "error",
         });
@@ -290,7 +300,7 @@ export async function reopenClosedAgent(model: AgentsViewModel): Promise<void> {
         await launchAgent(model, reopenLaunchOpts(session, SLEEPABLE_AGENTS.has(session.runtime)));
     } catch (e) {
         pushToast({
-            title: `Couldn't reopen ${entry.name}`,
+            title: `Couldn't reopen ${what}`,
             message: e instanceof Error ? e.message : String(e),
             level: "error",
         });

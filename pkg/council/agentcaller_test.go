@@ -30,6 +30,11 @@ type fakeLink struct {
 	sendErr  error
 	onSeat   func(f *fakeLink, n int)
 	onSend   func(f *fakeLink)
+	// transcript is the session the seat's tab runs (Transcript); holder the tab Holder finds for a session, asked the
+	// session it was asked for
+	transcript string
+	holder     string
+	asked      string
 }
 
 func (f *fakeLink) Seat(context.Context, string) (AgentSeatState, error) {
@@ -60,6 +65,19 @@ func (f *fakeLink) LastAnswer(context.Context, string) (string, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.answer, f.answerTs, nil
+}
+
+func (f *fakeLink) Transcript(context.Context, string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.transcript, nil
+}
+
+func (f *fakeLink) Holder(_ context.Context, transcript string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = transcript
+	return f.holder, nil
 }
 
 // answers is what the agent does with a sent turn: it works on it for the next `busy` Seat calls, then rests with text
@@ -374,5 +392,56 @@ func TestAgentCallerCapWords(t *testing.T) {
 	busy, turn, poll := AgentCaller{}.caps()
 	if busy != 10*time.Minute || turn != 20*time.Minute || poll <= 0 {
 		t.Errorf("default caps = %v, %v, %v, want 10 min busy, 20 min turn and a positive poll", busy, turn, poll)
+	}
+}
+
+func TestAgentCallerRebind(t *testing.T) {
+	seat := CouncilExpert{Id: "agent-old", Name: "notes", Agent: "tab-old", Harness: HarnessClaude}
+	withSession := seat
+	withSession.Transcript = "/s/session.jsonl"
+	tests := []struct {
+		name      string
+		link      *fakeLink
+		seat      CouncilExpert
+		wantAgent string
+		wantTrans string
+		wantAsked string
+	}{
+		{name: "a live seat from before keeps its session", link: &fakeLink{state: SeatIdle, transcript: "/s/session.jsonl"},
+			seat: seat, wantAgent: "tab-old", wantTrans: "/s/session.jsonl"},
+		{name: "a live seat with its session stays", link: &fakeLink{state: SeatSleeping, transcript: "/other.jsonl"},
+			seat: withSession, wantAgent: "tab-old", wantTrans: "/s/session.jsonl"},
+		{name: "a gone seat follows its session to the tab that holds it", link: &fakeLink{state: SeatGone, holder: "tab-new"},
+			seat: withSession, wantAgent: "tab-new", wantTrans: "/s/session.jsonl", wantAsked: "/s/session.jsonl"},
+		{name: "a gone seat whose session no tab holds stays", link: &fakeLink{state: SeatGone},
+			seat: withSession, wantAgent: "tab-old", wantTrans: "/s/session.jsonl", wantAsked: "/s/session.jsonl"},
+		{name: "a gone seat with no session stays, and asks no one", link: &fakeLink{state: SeatGone, holder: "tab-new"},
+			seat: seat, wantAgent: "tab-old"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := AgentCaller{Link: tt.link}.Rebind(context.Background(), tt.seat)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Agent != tt.wantAgent || got.Transcript != tt.wantTrans || tt.link.asked != tt.wantAsked {
+				t.Errorf("Rebind = agent %q transcript %q (asked %q), want %q %q (asked %q)",
+					got.Agent, got.Transcript, tt.link.asked, tt.wantAgent, tt.wantTrans, tt.wantAsked)
+			}
+		})
+	}
+}
+
+func TestAgentCallerGoneSaysHowToBringASeatBack(t *testing.T) {
+	ctx := context.Background()
+	req := CallReq{Expert: CouncilExpert{Id: "agent-old", Name: "notes", Agent: "tab-old", Transcript: "/s.jsonl"}, Prompt: "hi"}
+	_, err := AgentCaller{Link: &fakeLink{state: SeatGone}, Poll: time.Millisecond}.Call(ctx, req)
+	if err == nil || !strings.Contains(err.Error(), "Click its name to open its session again, then Retry") {
+		t.Errorf("a gone seat with its session = %v, want the way back", err)
+	}
+	req.Expert.Transcript = ""
+	_, err = AgentCaller{Link: &fakeLink{state: SeatGone}, Poll: time.Millisecond}.Call(ctx, req)
+	if err == nil || strings.Contains(err.Error(), "Retry") || !strings.Contains(err.Error(), "its tab closed or its session ended") {
+		t.Errorf("a gone seat with no session = %v, want the plain gone error", err)
 	}
 }

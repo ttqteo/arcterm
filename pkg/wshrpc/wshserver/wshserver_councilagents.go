@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -94,8 +95,11 @@ func councilAgentSeats(ctx context.Context, tabs []string) ([]council.CouncilExp
 		if slices.ContainsFunc(seats, func(s council.CouncilExpert) bool { return s.Agent == row.TabId }) {
 			continue
 		}
+		// the seat keeps its session, so it can follow it to another tab when its own closes (council.SeatRebinder)
+		tpath, _ := agentTranscriptPath(ctx, row)
 		seats = append(seats, council.CouncilExpert{
 			Id: "agent-" + row.TabId, Name: row.Name, Agent: row.TabId, Harness: row.Harness, Context: seatContext(ctx, row),
+			Transcript: tpath,
 		})
 	}
 	return seats, nil
@@ -210,6 +214,41 @@ func (l liveAgentLink) Send(ctx context.Context, tabId, text string) error {
 		return fmt.Errorf("the message is empty")
 	}
 	return deliverToAgent(ctx, rows, row, agentmsg.Envelope(councilSender, councilSender, text), nil)
+}
+
+// Transcript is the transcript path of the session the agent in tab tabId runs; "" for a tab that is gone.
+func (l liveAgentLink) Transcript(ctx context.Context, tabId string) (string, error) {
+	_, row, err := l.find(ctx, tabId)
+	if errors.Is(err, errNoSeat) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return agentTranscriptPath(ctx, row)
+}
+
+// Holder is the tab of the seatable live agent whose session's transcript is transcript (the same file, its path
+// cleaned), awake or asleep: an agent opened asleep carries its transcript on its block before it ever runs. "" when no
+// tab holds it.
+func (l liveAgentLink) Holder(ctx context.Context, transcript string) (string, error) {
+	want := filepath.Clean(transcript)
+	if transcript == "" {
+		return "", nil
+	}
+	facts, err := loadAgentRosterFacts(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, row := range buildAgentRoster(facts) {
+		if !seatHarnesses[row.Harness] {
+			continue
+		}
+		if tpath, err := agentTranscriptPath(ctx, &row); err == nil && tpath != "" && filepath.Clean(tpath) == want {
+			return row.TabId, nil
+		}
+	}
+	return "", nil
 }
 
 // LastAnswer is the agent's last answer and its time, as wsh agents read gives them; "", 0 while it has none.

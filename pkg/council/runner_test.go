@@ -6045,6 +6045,9 @@ type seatLink struct {
 	reply func(tab, prompt string) string
 	text  map[string]string
 	ts    map[string]int64
+	// gone are the tabs that closed; sessions the session each live tab runs (Transcript, Holder)
+	gone     map[string]bool
+	sessions map[string]string
 }
 
 func newSeatLink(cwds map[string]string, reply func(tab, prompt string) string) *seatLink {
@@ -6054,7 +6057,27 @@ func newSeatLink(cwds map[string]string, reply func(tab, prompt string) string) 
 func (l *seatLink) Seat(_ context.Context, tab string) (AgentSeatState, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.gone[tab] {
+		return AgentSeatState{State: SeatGone}, nil
+	}
 	return AgentSeatState{State: SeatIdle, Cwd: l.cwds[tab]}, nil
+}
+
+func (l *seatLink) Transcript(_ context.Context, tab string) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sessions[tab], nil
+}
+
+func (l *seatLink) Holder(_ context.Context, transcript string) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for tab, s := range l.sessions {
+		if s == transcript && !l.gone[tab] {
+			return tab, nil
+		}
+	}
+	return "", nil
 }
 
 func (l *seatLink) Send(_ context.Context, tab, text string) error {
@@ -6119,6 +6142,59 @@ func TestRunnerChecksAnAgentSeatsCitesAgainstItsCwd(t *testing.T) {
 	}
 	if len(trees.events) != 0 {
 		t.Errorf("the tree was touched (%v) though only an agent seat asked for a command", trees.events)
+	}
+}
+
+// a chat seat whose tab closed, its session opened again in another tab, takes its turn there, and the council keeps the
+// new tab; a live seat from before seats kept their session gains it
+func TestRunnerAgentSeatFollowsItsSessionToANewTab(t *testing.T) {
+	h := newHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	h.r.Trees = &fakeTrees{}
+	link := newSeatLink(map[string]string{}, func(tab, prompt string) string {
+		if kindOf(prompt) != "r1" {
+			return agreeOnly(CallReq{Prompt: prompt})
+		}
+		return claimJSON("From "+tab, []map[string]string{cite("pkg/ux.go:3", "func Sleep()")})
+	})
+	link.gone = map[string]bool{"tab-old": true}
+	link.sessions = map[string]string{"tab-new": "/s/notes.jsonl", "tab-2": "/s/guest.jsonl"}
+	h.r.Agents = AgentCaller{Link: link, BusyCap: time.Second, TurnCap: 5 * time.Second, Poll: time.Millisecond}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "")}))
+	c := claimCouncil("c1", proj)
+	c.ByAgent, c.PauseAfterRound1 = true, true
+	c.Experts = []CouncilExpert{
+		{Id: "agent-old", Name: "notes", Agent: "tab-old", Harness: HarnessClaude, Transcript: "/s/notes.jsonl"},
+		{Id: "guest", Name: "Guest", Agent: "tab-2", Harness: HarnessClaude},
+		{Id: "ux", Name: "UX", Brief: "Can someone use it?", Model: "sonnet"},
+		{Id: "lead", Name: "Lead", Brief: "Merge and rank.", Model: "opus", Coordinator: true},
+	}
+
+	paused := h.run(c)
+	if paused.State != StateAwaiting {
+		t.Fatalf("council = %s %q, want awaiting-you after round 1", paused.State, paused.Error)
+	}
+	if f, failed := paused.Failed["agent-old"]; failed {
+		t.Fatalf("the moved seat failed: %+v, want it answered from its new tab", f)
+	}
+	if p := proposalOf(t, paused, ideaBy(t, paused, "agent-old")); p.Title != "From tab-new" {
+		t.Errorf("the moved seat's idea = %q, want the one its new tab gave", p.Title)
+	}
+	var moved, guest CouncilExpert
+	for _, e := range paused.Experts {
+		switch e.Id {
+		case "agent-old":
+			moved = e
+		case "guest":
+			guest = e
+		}
+	}
+	if moved.Agent != "tab-new" || moved.Transcript != "/s/notes.jsonl" {
+		t.Errorf("the moved seat = tab %q session %q, want tab-new and its session", moved.Agent, moved.Transcript)
+	}
+	if guest.Agent != "tab-2" || guest.Transcript != "/s/guest.jsonl" {
+		t.Errorf("the live seat from before = tab %q session %q, want tab-2 with its session read off it", guest.Agent, guest.Transcript)
 	}
 }
 

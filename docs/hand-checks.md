@@ -1605,6 +1605,12 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   with a chat seat, the `@<key>` chip in your message opens that chat's terminal, as its name does. Type one long line in the
   council's message box: it grows a line each time the text wraps, up to five, then scrolls; no line is cut off. `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits
   bf8c79a0c and 2e2e65fdf; the `council-routing` scenario (its new `quote-stacked` step) has not run: no dev app was up.
+- [ ] (arcterm) **A closed chat seat comes back.** Seat a live chat in a council and let it answer once; close its tab
+  and send it a message: its failure line reads `… is gone: its tab closed. Click its name to open its session again,
+  then Retry`. Click its name (or avatar, or its @ chip in your message) → its session opens asleep in a new tab; press
+  Retry → the seat answers from that tab, and its name now carries the new tab's key. Resume the session from
+  Conversations instead → the same Retry reaches it. `pkg/council/agentcaller.go` (`Rebind`), `runner.go` (`rebind`),
+  `wshserver_councilagents.go` (`Holder`), `councilchatmodel.ts` (`seatLink`); Go and unit tests only, no dev app was up.
 - [ ] (arcterm) **Open asleep from History and Conversations.** Right-click an ended Claude or pi session in a project
   Overview's History, then one in the Agent tree's Conversations: Open asleep sits under Resume; pick it → the session is
   on the roster asleep (moon in its row), its transcript shows with a box to wake it, and no process starts until you

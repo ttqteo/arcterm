@@ -332,6 +332,7 @@ export function seatableAgents(
             harness: vm.agent ?? "",
             context: usage?.contextmax ? Math.round(((usage.contextpct ?? 0) / 100) * usage.contextmax) : 0,
             task: vm.task,
+            ...(vm.transcriptPath ? { transcript: vm.transcriptPath } : {}),
         });
     }
     return seatable;

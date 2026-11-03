@@ -75,6 +75,7 @@ export interface Who {
     tone: Tone;
     tag: "agent" | "expert" | "";
     tab: string; // a chat seat's tab id, which a click on its name or avatar opens (`seatLink`); empty for anyone else
+    transcript: string; // a chat seat's session (its transcript), which finds it again once its tab closed; else empty
 }
 
 function whoIs(c: Council, id: string): Who {
@@ -86,24 +87,35 @@ function whoIs(c: Council, id: string): Who {
         tone: avatarTone(c, id),
         tag: seat == null ? "" : isAgentSeat(seat) ? "agent" : "expert",
         tab: seat?.agent ?? "",
+        transcript: seat?.transcript ?? "",
     };
 }
 
-/** Pure: where a click on a seat's name or avatar goes: a chat seat whose chat is still live (in `chats`, the cockpit's
- *  live chats, seated ones included) opens its terminal, and the hover names the chat's session by its title, which the
- *  seat's short name leaves out. Null for a role expert, the person, and a chat whose tab is gone. */
+/** Pure: where a click on a seat's name, avatar or chip goes: a chat seat whose chat is still live (in `chats`, the
+ *  cockpit's live chats, seated ones included) opens its terminal, and the hover names the chat's session by its title,
+ *  which the seat's short name leaves out; one whose tab closed but whose session is open in another tab (Resume, Open
+ *  asleep) opens that tab; one whose session is open nowhere opens it again (`reopen`, its transcript), so Retry finds
+ *  it there. Null for a role expert, the person, and a closed chat whose session the council never kept. */
 export function seatLink(
-    who: Pick<Who, "tab" | "name">,
-    chats: readonly Pick<SeatableAgent, "id" | "task">[]
-): { tab: string; title: string } | null {
-    const chat = who.tab === "" ? undefined : chats.find((a) => a.id === who.tab);
-    if (chat == null) {
+    who: Pick<Who, "tab" | "name" | "transcript">,
+    chats: readonly Pick<SeatableAgent, "id" | "task" | "transcript">[]
+): { tab: string; title: string; reopen: string } | null {
+    if (who.tab === "") {
         return null;
+    }
+    const chat =
+        chats.find((a) => a.id === who.tab) ??
+        (who.transcript === "" ? undefined : chats.find((a) => a.transcript === who.transcript));
+    if (chat == null) {
+        return who.transcript === ""
+            ? null
+            : { tab: "", title: `${who.name}'s tab closed · click to open its session again`, reopen: who.transcript };
     }
     const task = (chat.task ?? "").trim();
     return {
-        tab: who.tab,
+        tab: chat.id,
         title: task === "" ? `Open the terminal of ${who.name}` : `${task} · click to open its terminal`,
+        reopen: "",
     };
 }
 

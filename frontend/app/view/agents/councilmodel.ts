@@ -1444,6 +1444,7 @@ export interface SeatableAgent {
     harness: string; // claude or pi
     context: number; // tokens in its context now, which the estimate prices a turn at
     task?: string; // its session's title, which a seat's name leaves out (`seatLink` shows it on hover)
+    transcript?: string; // its session's transcript, by which a seat finds it again in another tab (`seatLink`)
 }
 
 /** Pure: the seat for a live agent: the id is its own (it cannot meet a role expert's), `agent` names its tab, and it
@@ -1457,6 +1458,8 @@ export function agentSeat(a: SeatableAgent): CouncilExpert {
         agent: a.id,
         harness: a.harness,
         context: a.context,
+        // its session, so the seat follows it to another tab when its own closes (council.SeatRebinder)
+        ...(a.transcript ? { transcript: a.transcript } : {}),
     };
 }
 

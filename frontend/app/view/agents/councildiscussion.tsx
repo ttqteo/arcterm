@@ -16,6 +16,7 @@
 // data-council-* attribute for the CDP scenario `council-discussion`. The rules are in councildiscussionmodel.ts,
 // councilchatmodel.ts and councilmodel.ts; the store's actions answer `{ ok, error }`, and a refusal shows in place.
 
+import { reopenSession } from "@/app/cockpit/cockpit-actions";
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
@@ -182,6 +183,7 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
                     chats={chats}
                     notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
                     onOpenTerminal={(tab) => model.openTerminal(tab)}
+                    onReopenSession={(transcript) => fireAndForget(() => reopenSession(model, transcript))}
                     onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}
                 />
             )}

@@ -367,14 +367,21 @@ const ghostButton =
 
 // the live chats a seat's name or avatar can open (CouncilChat's `chats` and `onOpenTerminal`), so a message's byline
 // reaches them without each message taking them
-const SeatLinks = createContext<{ chats: readonly SeatableAgent[]; open: (tab: string) => void } | null>(null);
+const SeatLinks = createContext<{
+    chats: readonly SeatableAgent[];
+    open: (tab: string) => void;
+    reopen: (transcript: string) => void;
+} | null>(null);
 
 // where a click on a seat's name, avatar or chip goes (seatLink), with the call that goes there; null when it goes
 // nowhere (`who` null: every seat, `@all`)
 function useSeatLink(who: Who | null): { title: string; open: () => void } | null {
     const links = useContext(SeatLinks);
     const link = links == null || who == null ? null : seatLink(who, links.chats);
-    return link == null ? null : { title: link.title, open: () => links!.open(link.tab) };
+    if (link == null) {
+        return null;
+    }
+    return { title: link.title, open: () => (link.reopen !== "" ? links!.reopen(link.reopen) : links!.open(link.tab)) };
 }
 
 // the line over a message: who wrote it, then what the caller adds (a label, the time); a live chat seat's name opens
@@ -2847,15 +2854,16 @@ function Channel({
 }
 
 /** The council's discussion as a channel with threads. `notes` is what the discussion draws above the channel (the failed
- *  summary and its Retry); `onOpenTerminal` takes an agent's tab id; `chats` are the live claude and pi chats the
- *  composers' `@` can add to the council (the cockpit's roster by the one seat rule, seated ones included: the picker
- *  lists the ones no seat holds). */
+ *  summary and its Retry); `onOpenTerminal` takes an agent's tab id, `onReopenSession` a closed chat seat's transcript
+ *  (its session opened again, asleep); `chats` are the live claude and pi chats the composers' `@` can add to the council
+ *  (the cockpit's roster by the one seat rule, seated ones included: the picker lists the ones no seat holds). */
 export function CouncilChat({
     c,
     acts,
     chats,
     notes,
     onOpenTerminal,
+    onReopenSession,
     onOpenFile,
 }: {
     c: Council;
@@ -2863,12 +2871,16 @@ export function CouncilChat({
     chats: readonly SeatableAgent[];
     notes?: ReactNode;
     onOpenTerminal: (tab: string) => void;
+    onReopenSession: (transcript: string) => void;
     onOpenFile?: (path: string, line?: number) => void;
 }) {
     const [openId, setOpenId] = useAtom(councilOpenProposalAtom(c.id));
     const [sources, setSources] = useAtom(councilSourcesAtom(c.id));
     const [focusedId, setFocusedId] = useState<string | null>(null);
-    const seatLinks = useMemo(() => ({ chats, open: onOpenTerminal }), [chats, onOpenTerminal]);
+    const seatLinks = useMemo(
+        () => ({ chats, open: onOpenTerminal, reopen: onReopenSession }),
+        [chats, onOpenTerminal, onReopenSession]
+    );
     const channel = useRef<HTMLDivElement>(null);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;

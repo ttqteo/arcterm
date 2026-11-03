@@ -2614,6 +2614,7 @@ declare global {
         agent?: string;
         harness?: string;
         context?: number;
+        transcript?: string;
         namevi?: string;
     };
 

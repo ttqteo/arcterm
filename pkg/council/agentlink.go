@@ -37,6 +37,17 @@ type AgentLink interface {
 	Send(ctx context.Context, tabId, text string) error
 	// LastAnswer is the agent's last answer and when it was given, in ms.
 	LastAnswer(ctx context.Context, tabId string) (text string, ts int64, err error)
+	// Transcript is the path of the session's transcript the agent in tab tabId runs, "" when it is gone or unknown.
+	Transcript(ctx context.Context, tabId string) (string, error)
+	// Holder is the tab of the live agent whose session's transcript is transcript, "" when no tab holds it.
+	Holder(ctx context.Context, transcript string) (string, error)
+}
+
+// SeatRebinder is a Caller of live agents that finds a seat's session again: Rebind is e with its Transcript filled in
+// while its tab is live, and with its Agent moved to the tab that holds its session now when its own closed (the
+// session opened again by Resume or Open asleep). e unchanged when there is nothing to do.
+type SeatRebinder interface {
+	Rebind(ctx context.Context, e CouncilExpert) (CouncilExpert, error)
 }
 
 // SeatSkipped is what AgentCaller.Call returns for a turn that did not happen: the agent stayed busy or gave no answer

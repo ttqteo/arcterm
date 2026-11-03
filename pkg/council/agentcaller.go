@@ -28,6 +28,7 @@ type AgentCaller struct {
 }
 
 var _ Caller = AgentCaller{}
+var _ SeatRebinder = AgentCaller{}
 
 // Call sends req.Prompt as the seat's next turn and returns the answer the agent gave to it. The agent has its own tools
 // and its own working directory, so req.Tools and req.Cwd do not apply.
@@ -48,7 +49,7 @@ func (a AgentCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	if err := a.Link.Send(ctx, tab, req.Prompt); err != nil {
 		return CallRes{}, fmt.Errorf("sending the turn to %s: %w", name, err)
 	}
-	text, end, err := a.waitAnswer(ctx, tab, name, noted, req.OnTool)
+	text, end, err := a.waitAnswer(ctx, tab, name, req.Expert.Transcript != "", noted, req.OnTool)
 	if err != nil {
 		return CallRes{}, err
 	}
@@ -60,6 +61,38 @@ func (a AgentCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	// council saw at Setup when the seat reports none)
 	tokens := cmp.Or(grown, cmp.Or(start.Context, req.Expert.Context)/10)
 	return CallRes{Text: text, Tokens: tokens}, nil
+}
+
+// Rebind is e with its session (Transcript) read off its tab while that is live, so a seat from before Transcript was
+// kept gains it; and, when its tab is gone, with its Agent moved to the tab that holds that session now. A gone seat
+// with no transcript, or whose session no tab holds, stays as it is, and its call fails as gone.
+func (a AgentCaller) Rebind(ctx context.Context, e CouncilExpert) (CouncilExpert, error) {
+	if a.Link == nil || e.Agent == "" {
+		return e, nil
+	}
+	st, err := a.Link.Seat(ctx, e.Agent)
+	if err != nil {
+		return e, err
+	}
+	if st.State != SeatGone {
+		if e.Transcript == "" {
+			tpath, err := a.Link.Transcript(ctx, e.Agent)
+			if err != nil {
+				return e, err
+			}
+			e.Transcript = tpath
+		}
+		return e, nil
+	}
+	if e.Transcript == "" {
+		return e, nil
+	}
+	tab, err := a.Link.Holder(ctx, e.Transcript)
+	if err != nil || tab == "" {
+		return e, err
+	}
+	e.Agent = tab
+	return e, nil
 }
 
 func (a AgentCaller) caps() (busy, turn, poll time.Duration) {
@@ -81,7 +114,7 @@ func (a AgentCaller) waitRest(ctx context.Context, req CallReq, name string) (Ag
 		case SeatIdle, SeatSleeping:
 			return st, nil
 		case SeatGone:
-			return st, goneErr(name)
+			return st, goneErr(name, req.Expert.Transcript != "")
 		}
 		if !time.Now().Before(deadline) {
 			if st.State == SeatAsking {
@@ -104,7 +137,7 @@ func (a AgentCaller) waitRest(ctx context.Context, req CallReq, name string) (Ag
 // and an idle one whose last answer is the old one has not answered. TurnCap is for the whole wait. Each new tool line
 // the seat shows while it works on the turn goes to onTool, which is what the seat's timeline records: the waiting for the
 // seat to rest (waitRest) reports none, since a seat that is busy there is on its own task, not the council's.
-func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, noted int64, onTool func(string)) (string, AgentSeatState, error) {
+func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, reopenable bool, noted int64, onTool func(string)) (string, AgentSeatState, error) {
 	_, turnCap, poll := a.caps()
 	deadline := time.Now().Add(turnCap)
 	lastTool := ""
@@ -114,7 +147,7 @@ func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, noted int
 			return "", st, fmt.Errorf("reading %s's state: %w", name, err)
 		}
 		if st.State == SeatGone {
-			return "", st, goneErr(name)
+			return "", st, goneErr(name, reopenable)
 		}
 		// the gap between two tool calls shows none, and the line the last poll showed is the same call
 		if st.Activity != "" && st.Activity != lastTool {
@@ -141,7 +174,12 @@ func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, noted int
 	}
 }
 
-func goneErr(name string) error {
+// goneErr is a seat whose tab is gone; one whose session the council knows (reopenable) says how to bring it back: a
+// click on its name opens that session again, and Retry finds it in its new tab (Rebind)
+func goneErr(name string, reopenable bool) error {
+	if reopenable {
+		return fmt.Errorf("%s is gone: its tab closed. Click its name to open its session again, then Retry", name)
+	}
 	return fmt.Errorf("%s is gone: its tab closed or its session ended", name)
 }
 

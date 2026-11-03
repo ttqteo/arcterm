@@ -194,6 +194,7 @@ describe("questionPost", () => {
             tone: "you",
             tag: "",
             tab: "",
+            transcript: "",
             label: "asked",
             text: "Which changes to the rail are worth making first?",
             limits: [],
@@ -872,11 +873,39 @@ describe("seatChips", () => {
         expect(seatLink(idea, [{ id: "t-u", task: "Audit the rail's spacing" }])).toEqual({
             tab: "t-u",
             title: "Audit the rail's spacing · click to open its terminal",
+            reopen: "",
         });
-        expect(seatLink(idea, [{ id: "t-u" }])).toEqual({ tab: "t-u", title: "Open the terminal of UX audit · t-u" });
-        // a chat whose tab is gone, and a role expert, open nothing
+        expect(seatLink(idea, [{ id: "t-u" }])).toEqual({
+            tab: "t-u",
+            title: "Open the terminal of UX audit · t-u",
+            reopen: "",
+        });
+        // a chat whose tab is gone and whose session the council never kept, and a role expert, open nothing
         expect(seatLink(idea, [])).toBeNull();
         expect(seatLink(byId(items, "P1") as Who, [{ id: "t-u" }])).toBeNull();
+    });
+
+    it("follows a closed chat seat's session to the tab that holds it now, or opens it again", () => {
+        const seat = { tab: "t-old", name: "notes · t-old", transcript: "/s/notes.jsonl" };
+        // its session reopened in another tab (Resume, Open asleep): that tab opens
+        expect(seatLink(seat, [{ id: "t-new", task: "Ideas", transcript: "/s/notes.jsonl" }])).toEqual({
+            tab: "t-new",
+            title: "Ideas · click to open its terminal",
+            reopen: "",
+        });
+        // open nowhere: a click opens its session again, so Retry finds it there
+        expect(seatLink(seat, [{ id: "t-other", transcript: "/s/other.jsonl" }])).toEqual({
+            tab: "",
+            title: "notes · t-old's tab closed · click to open its session again",
+            reopen: "/s/notes.jsonl",
+        });
+        // its own tab, still live, wins over another holding the same session
+        expect(
+            seatLink(seat, [
+                { id: "t-new", transcript: "/s/notes.jsonl" },
+                { id: "t-old", transcript: "/s/notes.jsonl" },
+            ])?.tab
+        ).toBe("t-old");
     });
 
     it("gives an agent its tab for a click on its chip, and a role expert none", () => {

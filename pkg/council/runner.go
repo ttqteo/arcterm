@@ -919,6 +919,7 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 	if err != nil {
 		return CallRes{}, err
 	}
+	e = r.rebind(ctx, rn, id, caller, e)
 	rn.begin(e.Id, callClock{start: r.now(), base: snap.Stats[e.Id].Ms})
 	res, err := r.callOnce(ctx, rn, id, caller, e, snap, prompt, tools, dirs, first)
 	if err == nil || ctx.Err() != nil || !IsSafeguardFlag(err) || IsAgent(e) || strings.EqualFold(e.Model, SafeguardFallback) {
@@ -939,6 +940,32 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 	}
 	again.fellBack = SafeguardFallback
 	return again, nil
+}
+
+// rebind is agent seat e as its caller finds it now (SeatRebinder): its session kept, or moved to the tab that holds its
+// session after its own closed; a change is saved on the council, so the seat's name, chips and next turns follow it.
+// A role seat, a caller that cannot tell, or a failed read leaves e as it is: the call then reports what it finds.
+func (r *Runner) rebind(ctx context.Context, rn *run, id string, caller Caller, e CouncilExpert) CouncilExpert {
+	rb, ok := caller.(SeatRebinder)
+	if !ok || !IsAgent(e) {
+		return e
+	}
+	now, err := rb.Rebind(ctx, e)
+	if err != nil || (now.Agent == e.Agent && now.Transcript == e.Transcript) {
+		return e
+	}
+	if now.Agent != e.Agent {
+		log.Printf("[council] %s: %s's tab %s is gone; its session is in tab %s now", id, e.Id, e.Agent, now.Agent)
+	}
+	r.updateLogged(rn, id, func(c *Council) error {
+		for i := range c.Experts {
+			if c.Experts[i].Id == e.Id {
+				c.Experts[i].Agent, c.Experts[i].Transcript = now.Agent, now.Transcript
+			}
+		}
+		return nil
+	})
+	return now
 }
 
 // callOnce is one call of e through caller: it shows first as e's activity and keeps it current from the tool events. dirs
