@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { imageStatus, localFileUrl } from "./localimage";
+import { imageStatus, localFileUrl, typedBlob } from "./localimage";
 
 describe("localFileUrl", () => {
     it("encodes a Windows path with mixed separators, drive colon and spaces into the query", () => {
@@ -42,6 +42,21 @@ describe("imageStatus", () => {
         expect(imageStatus(404)).toBe("missing");
         expect(imageStatus(500)).toBe("error");
         expect(imageStatus(403)).toBe("error");
+    });
+});
+
+describe("typedBlob", () => {
+    it("gives an untyped blob the response's content type, without its parameters", () => {
+        const b = typedBlob(new Blob(["<svg/>"]), "image/svg+xml; charset=utf-8");
+        expect(b.type).toBe("image/svg+xml");
+        expect(b.size).toBe(6);
+    });
+    it("keeps a blob that already has a type, and one with no content type to give", () => {
+        const typed = new Blob(["x"], { type: "image/png" });
+        expect(typedBlob(typed, "image/svg+xml")).toBe(typed);
+        const bare = new Blob(["x"]);
+        expect(typedBlob(bare, null)).toBe(bare);
+        expect(typedBlob(bare, "")).toBe(bare);
     });
 });
 

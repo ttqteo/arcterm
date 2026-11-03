@@ -28,6 +28,13 @@ export function imageStatus(httpStatus: number): Exclude<LocalImageStatus, "load
     return httpStatus >= 200 && httpStatus < 300 ? "ok" : "error";
 }
 
+// The Tauri http plugin's response hands back a blob with no type, whatever Content-Type wavesrv sent. An <img> sniffs
+// a PNG or JPEG from its bytes but draws an SVG only from a blob typed image/svg+xml, so the type is put back.
+export function typedBlob(b: Blob, contentType: string | null): Blob {
+    const type = (contentType ?? "").split(";")[0].trim();
+    return b.type !== "" || type === "" ? b : new Blob([b], { type });
+}
+
 // a file wavesrv serves, as a blob: URL for an <img>, null while its bytes come. The packaged app's CSP lets an <img>
 // load 'self', data: and blob: only (the dev app applies none), so one pointed at wavesrv draws nothing there
 export function useBlobSrc(url: string | null): { src: string | null; failed: boolean } {
@@ -39,7 +46,11 @@ export function useBlobSrc(url: string | null): { src: string | null; failed: bo
         let live = true;
         let made: string | null = null;
         fetch(url)
-            .then((resp) => (resp.ok ? resp.blob() : Promise.reject(new Error(`HTTP ${resp.status}`))))
+            .then((resp) =>
+                resp.ok
+                    ? resp.blob().then((b) => typedBlob(b, resp.headers.get("content-type")))
+                    : Promise.reject(new Error(`HTTP ${resp.status}`))
+            )
             .then((b) => {
                 made = URL.createObjectURL(b);
                 if (live) {

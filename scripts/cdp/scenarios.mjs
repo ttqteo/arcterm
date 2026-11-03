@@ -12202,8 +12202,9 @@ const codeMarkdown = {
 // A temp git repo holding a small paper (main.tex), the PDF built beside it (main.pdf) and a loose paper.pdf, opened
 // through the openfile event `wsh view` publishes. Covers the .tex Preview (title, authors, a \cite key, KaTeX math),
 // double-click to Source at the sentence's line, LaTeX highlighting, the Wrap toggle and Alt+Z, the .tex PDF mode with
-// its age line, and a .pdf opening in the viewer rather than "Binary file". The PDFs are one page each; the steps check
-// the frame, the screenshots show the page.
+// its age line, a .pdf opening in the viewer rather than "Binary file", and a figure .svg drawn at its own size (the
+// Tauri fetch hands back an untyped blob, which an <img> sniffs for a PNG but never for an SVG). The PDFs are one page
+// each; the steps check the frame, the screenshots show the page.
 const CODE_TEX_PAPER = String.raw`\documentclass{article}
 \title{Measuring What the Model Adds}
 \author{Ada Lovelace \and Alan Turing}
@@ -12246,6 +12247,10 @@ const codeTexPdf = {
         writeFileSync(join(cwd, "main.tex"), CODE_TEX_PAPER);
         writeFileSync(join(cwd, "main.pdf"), codeTexPdf1("main.pdf, built beside main.tex"));
         writeFileSync(join(cwd, "paper.pdf"), codeTexPdf1("paper.pdf"));
+        writeFileSync(
+            join(cwd, "box.svg"),
+            `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><rect width="120" height="60" fill="#3a7"/></svg>`
+        );
         return { cwd };
     },
     async assert(h, ctx) {
@@ -12357,6 +12362,23 @@ const codeTexPdf = {
         const binary = await h.ev(`(document.body.textContent || '').includes('Binary file')`);
         rec("6. a .pdf opens in the viewer, not as a binary file", pdfFile && !binary, `frame=${pdfFile} binary=${binary}`);
         await h.shot("cdp-shots/code-tex-pdf-file.png");
+
+        await open(join(ctx.cwd, "box.svg"));
+        const svgDrawn = await wait(`(document.querySelector('[data-code-image] img')?.naturalWidth ?? 0) > 0`, 8000);
+        const svg = await h.ev(`(() => {
+            const img = document.querySelector('[data-code-image] img');
+            return {
+                w: img?.naturalWidth ?? null,
+                h: img?.naturalHeight ?? null,
+                cannot: (document.body.textContent || '').includes('Cannot show this image'),
+            };
+        })()`);
+        rec(
+            "7. an .svg draws in the image view at its own size, not \"Cannot show this image\"",
+            svgDrawn && svg.w === 120 && svg.h === 60 && !svg.cannot,
+            JSON.stringify(svg)
+        );
+        await h.shot("cdp-shots/code-tex-svg.png");
         return steps;
     },
     async teardown(h, ctx) {
