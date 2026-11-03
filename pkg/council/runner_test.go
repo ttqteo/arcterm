@@ -62,8 +62,12 @@ func newFake() *fakeCaller {
 var roundLineRe = regexp.MustCompile(`This is round (\d+) of (\d+)`)
 
 // kindOf is what a prompt asks for: r1 (the ideas), r2 (a reply pass), r3 (the synthesis, the last round whatever its
-// number), ans (the person's replies), suggest or autogen.
+// number), ans (the person's replies), suggest, autogen or route (the router's pick of the seat for a whole-council
+// message; its call is keyed "router/route").
 func kindOf(prompt string) string {
+	if strings.HasPrefix(prompt, "You route one message the person sent") {
+		return "route"
+	}
 	if m := roundLineRe.FindStringSubmatch(prompt); m != nil {
 		switch n, _ := strconv.Atoi(m[1]); {
 		case n == 1:
@@ -84,7 +88,7 @@ func kindOf(prompt string) string {
 	return "?"
 }
 
-var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7}
+var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3}
 
 func (f *fakeCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	kind := kindOf(req.Prompt)
@@ -329,8 +333,24 @@ func canned(req CallReq, kind string) string {
 		return cannedSynthesis("The panel prefers showing the state.")
 	case "ans":
 		return answersJSON(req)
+	case "route":
+		return routeJSON(firstSeatIn(req.Prompt))
 	}
 	return "no canned reply for " + kind
+}
+
+var routerSeatLineRe = regexp.MustCompile(`(?m)^- (\S+) — `)
+
+// firstSeatIn is the first seat the router prompt lists, the one a fake router picks unless the test says otherwise.
+func firstSeatIn(prompt string) string {
+	return idsIn(routerSeatLineRe, sectionText(prompt, "## The seats you can choose"))[0]
+}
+
+// routeJSON is the router's reply naming seats, reading no files.
+func routeJSON(seats ...string) string { return routeToolsJSON(false, seats...) }
+
+func routeToolsJSON(tools bool, seats ...string) string {
+	return mustJSON(map[string]any{"seats": seats, "tools": tools, "reason": "It is about " + strings.Join(seats, " and ") + "."})
 }
 
 // ---- the harness ----
@@ -394,7 +414,8 @@ func newHarness(t *testing.T) *harness {
 
 func (h *harness) tick() int64 { return atomic.AddInt64(&h.clock, 1000) }
 
-// drain stops every run still going, so none writes to a store the test has already removed.
+// drain stops every run still going, and waits for the router calls still in flight (ReplyWith and MarkStale start them
+// on goroutines of their own), so none writes to a store the test has already removed.
 func (h *harness) drain() {
 	h.r.mu.Lock()
 	var runs []*run
@@ -408,6 +429,21 @@ func (h *harness) drain() {
 		case <-rn.done:
 		case <-time.After(10 * time.Second):
 		}
+	}
+	h.idle()
+}
+
+// idle waits until no router call is in flight. A test that gated the router (h.f.gate("router/route")) releases it first.
+func (h *harness) idle() {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		h.r.mu.Lock()
+		n := len(h.r.routing)
+		h.r.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -463,6 +499,26 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// waitRouted waits for the router's pick on the person's reply replyId of council id to be saved (Routed no longer
+// pending), and returns the reply as saved.
+func (h *harness) waitRouted(id, replyId string) CouncilReply {
+	h.t.Helper()
+	var got CouncilReply
+	waitFor(h.t, "the router's pick on "+replyId, func() bool {
+		c, err := Load(id)
+		if err != nil {
+			return false
+		}
+		pr := findReply(c, replyId)
+		if pr == nil {
+			return false
+		}
+		got = *pr
+		return pr.Routed != nil && !pr.Routed.Pending
+	})
+	return got
 }
 
 func proposalOf(t *testing.T, c *Council, id string) CouncilProposal {
@@ -810,7 +866,7 @@ func TestReplyDuringRound1WaitsForRound2(t *testing.T) {
 	h.f.gate("ux/r1")
 	h.start(testCouncil("c1"))
 	h.f.entered(t, "ux/r1")
-	rep, err := h.r.Reply("c1", "", "", "Does it work on a Mac?", false, nil)
+	rep, err := h.r.Reply("c1", "", "", "@all Does it work on a Mac?", false, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
@@ -833,7 +889,7 @@ func TestRepliesPostedAsARunEndsAreNeverLost(t *testing.T) {
 	h.start(testCouncil("c1"))
 	const n = 40
 	for i := range n {
-		if _, err := h.r.Reply("c1", "", "", fmt.Sprintf("Question %d?", i), false, nil); err != nil {
+		if _, err := h.r.Reply("c1", "", "", fmt.Sprintf("@all Question %d?", i), false, nil); err != nil {
 			t.Fatalf("Reply %d: %v", i, err)
 		}
 		time.Sleep(time.Millisecond)
@@ -1476,7 +1532,13 @@ func TestReplyTargets(t *testing.T) {
 		{"deeper in the branch", "P1", "r2", "why?", []string{"ux", "skeptic"}, "P1"},
 		{"on the other proposal", "P2", "", "why?", []string{"ram"}, "P2"},
 		{"the proposal comes from the parent", "", "r1", "why?", []string{"ux", "skeptic"}, "P1"},
-		{"the whole council", "", "", "what about Mac?", []string{"ux", "ram", "newuser", "skeptic"}, ""},
+		{"the whole council, by @all", "", "", "@all what about Mac?", []string{"ux", "ram", "newuser", "skeptic"}, ""},
+		{"the whole council, by @everyone in any case", "", "", "what about Mac, @Everyone?", []string{"ux", "ram", "newuser", "skeptic"}, ""},
+		{"@all beside a seat's name", "", "", "@all, and @RAM first", []string{"ux", "ram", "newuser", "skeptic"}, ""},
+		{"@all in a branch", "P1", "", "@all why?", []string{"ux", "ram", "newuser", "skeptic"}, "P1"},
+		{"an address is no @all", "P1", "", "mail me at x@all.com", []string{"ux"}, "P1"},
+		{"a longer word is no @all", "P1", "", "@allies are good", []string{"ux"}, "P1"},
+		{"a file is no @all", "P1", "", "see @all.md", []string{"ux"}, "P1"},
 		{"one expert by name", "P1", "r1", "@RAM what do you think?", []string{"ram"}, "P1"},
 		{"one expert by id", "", "", "@newuser what do you think?", []string{"newuser"}, ""},
 		{"a name with a space", "", "", "@New user, please", []string{"newuser"}, ""},
@@ -1608,6 +1670,676 @@ func TestRouteCandidates(t *testing.T) {
 	}
 }
 
+// ---- routing a whole-council message ----
+
+const wholeAsk = "What stays in memory when it sleeps?"
+
+// routerCall is the one router call the fake caller saw.
+func routerCall(t *testing.T, f *fakeCaller) CallReq {
+	t.Helper()
+	calls := f.calls("route")
+	if len(calls) != 1 {
+		t.Fatalf("%d router calls, want exactly 1", len(calls))
+	}
+	return calls[0]
+}
+
+// answerIds are the seats the answers pass called, in the order it called them.
+func answerIds(f *fakeCaller) []string {
+	var out []string
+	for _, req := range f.calls("ans") {
+		out = append(out, req.Expert.Id)
+	}
+	return out
+}
+
+// leavePending saves council id with one more message of the person's that the router never answered (wavesrv quit while
+// it worked): To empty, Routed pending. It returns the reply's id; mod may change the council before it is saved.
+func (h *harness) leavePending(id string, mod ...func(c *Council)) string {
+	h.t.Helper()
+	c := h.load(id)
+	replyId := nextReplyId(c)
+	c.Replies = append(c.Replies, CouncilReply{
+		Id: replyId, Author: YouId, Text: wholeAsk, Round: followRound(c), Ts: h.tick(), Routed: &CouncilRouted{Pending: true},
+	})
+	for _, m := range mod {
+		m(c)
+	}
+	h.save(c)
+	return replyId
+}
+
+// A whole-council message of the person's goes to the router, which picks the seat that answers it: only that seat is
+// called, the council books the router's call and tokens, and the pick is stored beside To.
+func TestReplyRoutedOneSeat(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	h.f.setText("router/route", routeJSON("ram"))
+
+	rep, err := h.r.Reply("c1", "", "", wholeAsk, false, nil)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if posted := replyOf(t, rep, "r13"); len(posted.To) != 0 || posted.Routed == nil || !posted.Routed.Pending {
+		t.Fatalf("the reply as posted = %+v, want To empty and the router pending", posted)
+	}
+	c := h.wait("c1")
+
+	req := routerCall(t, h.f)
+	if req.Tools || req.Expert.Id != "router" || req.Expert.Model != "sonnet" {
+		t.Errorf("router call = tools %v, %s on %s, want no tools, the router on sonnet", req.Tools, req.Expert.Id, req.Expert.Model)
+	}
+	mustContain(t, "the router's prompt", req.Prompt, wholeAsk)
+	if got := answerIds(h.f); !slices.Equal(got, []string{"ram"}) {
+		t.Errorf("answer calls to %v, want ram alone", got)
+	}
+	reply := replyOf(t, c, "r13")
+	if want := (&CouncilRouted{Chose: []string{"ram"}, Reason: "It is about ram."}); !reflect.DeepEqual(reply.Routed, want) ||
+		!slices.Equal(reply.To, []string{"ram"}) || !reply.Answered {
+		t.Errorf("the reply = %+v routed %+v, want To ram, answered, and %+v", reply, reply.Routed, want)
+	}
+	if !answeredBy(c, "r13", "ram") || answeredBy(c, "r13", "ux") {
+		t.Errorf("ram answered %v, ux answered %v, want ram only", answeredBy(c, "r13", "ram"), answeredBy(c, "r13", "ux"))
+	}
+	// the router is no seat: its call and tokens are the council's, and no seat's Stats nor a card of its own
+	if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+3+5 {
+		t.Errorf("calls %d tokens %d, want %d and %d: the router's call and the one answer", c.Calls, c.Tokens, done.Calls+2, done.Tokens+8)
+	}
+	if _, ok := c.Stats["router"]; ok {
+		t.Errorf("Stats has a router entry %+v, want none: it is no seat", c.Stats["router"])
+	}
+	for _, id := range panelIds() {
+		want := done.Stats[id].Calls
+		if id == "ram" {
+			want++
+		}
+		if got := c.Stats[id].Calls; got != want {
+			t.Errorf("stats[%s].Calls = %d, want %d", id, got, want)
+		}
+	}
+	if c.State != StateDone || c.Round != 3 {
+		t.Errorf("after the follow-up: %s round %d, want done as it was", c.State, c.Round)
+	}
+}
+
+// Two seats, in the router's order (not panel order): the first answers alone, and the second is shown its answer.
+func TestReplyRoutedTwoSeats(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	h.f.setText("router/route", routeJSON("skeptic", "ux"))
+
+	if _, err := h.r.Reply("c1", "", "", wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+
+	ans := h.f.calls("ans")
+	if len(ans) != 2 || ans[0].Expert.Id != "skeptic" || ans[1].Expert.Id != "ux" {
+		t.Fatalf("answer calls to %v, want the skeptic first and then ux, and no third seat", answerIds(h.f))
+	}
+	mustNotContain(t, "the first seat's prompt", ans[0].Prompt, othersAnsweredRule)
+	mustContain(t, "the second seat's prompt", ans[1].Prompt, "- Skeptic: Answer from skeptic", othersAnsweredRule)
+	reply := replyOf(t, c, "r13")
+	if !slices.Equal(reply.To, []string{"skeptic", "ux"}) || !slices.Equal(reply.Routed.Chose, []string{"skeptic", "ux"}) || !reply.Answered {
+		t.Errorf("the reply = To %v routed %+v, want the router's two seats in its order, answered", reply.To, reply.Routed)
+	}
+	if !answeredBy(c, "r13", "skeptic") || !answeredBy(c, "r13", "ux") || answeredBy(c, "r13", "ram") {
+		t.Errorf("answers under r13 are not the skeptic's and ux's alone")
+	}
+}
+
+// A message that @-mentions a seat, one in a thread, one that seats a chat and Continue's question go where they always
+// went, with no router call.
+func TestReplyMentionSkipsRouter(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	rep, err := h.r.Reply("c1", "", "", "@RAM and @UX, "+wholeAsk, false, nil)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if posted := replyOf(t, rep, "r13"); posted.Routed != nil || !slices.Equal(posted.To, []string{"ux", "ram"}) {
+		t.Errorf("the reply = To %v routed %+v, want the two seats it names, unrouted", posted.To, posted.Routed)
+	}
+	h.wait("c1")
+	if n := len(h.f.calls("route")); n != 0 {
+		t.Errorf("%d router calls, want none for a message that names its seats", n)
+	}
+	if got := answerIds(h.f); !slices.Equal(got, []string{"ux", "ram"}) {
+		t.Errorf("answer calls to %v, want ux first and then ram", got)
+	}
+}
+
+func TestReplyInThreadSkipsRouter(t *testing.T) {
+	h := newHarness(t)
+	author := proposalOf(t, h.run(testCouncil("c1")), "P1").Author
+	rep, err := h.r.Reply("c1", "P1", "", wholeAsk, false, nil)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if posted := replyOf(t, rep, "r13"); posted.Routed != nil || !slices.Equal(posted.To, []string{author}) {
+		t.Errorf("the reply = To %v routed %+v, want the proposal's author %s, unrouted", posted.To, posted.Routed, author)
+	}
+	h.wait("c1")
+	if n := len(h.f.calls("route")); n != 0 {
+		t.Errorf("%d router calls, want none for a reply in a thread", n)
+	}
+	if got := answerIds(h.f); !slices.Equal(got, []string{author}) {
+		t.Errorf("answer calls to %v, want %s alone", got, author)
+	}
+}
+
+func TestReplyJoiningChatSkipsRouter(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	scout := chatSeat("tab-9", "Scout")
+	rep, err := h.r.Reply("c1", "", "", wholeAsk, false, []CouncilExpert{scout})
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	posted := replyOf(t, rep, "r13")
+	if want := append(panelIds(), "agent-tab-9"); posted.Routed != nil || !slices.Equal(posted.To, want) {
+		t.Errorf("the reply = To %v routed %+v, want the whole panel and the chat it seated, unrouted", posted.To, posted.Routed)
+	}
+	h.wait("c1")
+	if n := len(h.f.calls("route")); n != 0 {
+		t.Errorf("%d router calls, want none for a message that seats a chat", n)
+	}
+}
+
+func TestContinueQuestionNotRouted(t *testing.T) {
+	h := newHarness(t)
+	c := testCouncil("c1")
+	c.PauseAfterRound1 = true
+	h.run(c)
+	if _, err := h.r.Continue("c1", nil, "What about Mac?"); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	got := h.wait("c1")
+	ask := repliesBy(got, YouId)[0]
+	if ask.Routed != nil || !slices.Equal(ask.To, panelIds()) || !ask.Answered {
+		t.Errorf("the question = To %v routed %+v answered %v, want every seat, unrouted, answered in round 2", ask.To, ask.Routed, ask.Answered)
+	}
+	if n := len(h.f.calls("route")); n != 0 {
+		t.Errorf("%d router calls, want none for Continue's own question", n)
+	}
+}
+
+// @all (or @everyone, in any case) asks every seat on purpose: no router, the first seat answers, and the rest answer
+// after it, shown its answer.
+func TestAtAllReachesEverySeat(t *testing.T) {
+	for _, text := range []string{"@all " + wholeAsk, wholeAsk + " @EVERYONE", "@everyone, and @RAM first: " + wholeAsk} {
+		t.Run(text, func(t *testing.T) {
+			h := newHarness(t)
+			h.run(testCouncil("c1"))
+			rep, err := h.r.Reply("c1", "", "", text, false, nil)
+			if err != nil {
+				t.Fatalf("Reply: %v", err)
+			}
+			if posted := replyOf(t, rep, "r13"); posted.Routed != nil || !slices.Equal(posted.To, panelIds()) {
+				t.Fatalf("the reply = To %v routed %+v, want every seat, unrouted", posted.To, posted.Routed)
+			}
+			h.wait("c1")
+			if n := len(h.f.calls("route")); n != 0 {
+				t.Errorf("%d router calls, want none for a message to everyone", n)
+			}
+			ans := h.f.calls("ans")
+			if len(ans) != 4 || ans[0].Expert.Id != "ux" {
+				t.Fatalf("answer calls to %v, want all four with ux first", answerIds(h.f))
+			}
+			mustNotContain(t, "the first seat's prompt", ans[0].Prompt, othersAnsweredRule)
+			for _, req := range ans[1:] {
+				mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, "- UX: Answer from ux", othersAnsweredRule)
+			}
+		})
+	}
+}
+
+// A router that errors, answers nothing usable or names no seat on the panel falls back to the first seat that can
+// answer, in panel order, which answers alone: no second pass. The line says the router failed and why.
+func TestReplyRouterFailsFallsBack(t *testing.T) {
+	cases := []struct {
+		name       string
+		set        func(f *fakeCaller)
+		reason     string
+		routerToks int64 // the failed call's tokens the council still books
+	}{
+		{"the call errors", func(f *fakeCaller) { f.setFail("router/route", errors.New("claude is not signed in")) }, "claude is not signed in", 0},
+		{"it names an unknown seat", func(f *fakeCaller) { f.setText("router/route", routeJSON("ghost")) }, "no seat", 3},
+		{"it answers with no JSON", func(f *fakeCaller) { f.setText("router/route", "I would ask UX.") }, "router", 3},
+		{"it answers with nothing", func(f *fakeCaller) { f.setText("router/route", "  ") }, "empty reply", 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			done := h.run(testCouncil("c1"))
+			tc.set(h.f)
+			if _, err := h.r.Reply("c1", "", "", wholeAsk, false, nil); err != nil {
+				t.Fatalf("Reply: %v", err)
+			}
+			c := h.wait("c1")
+			reply := replyOf(t, c, "r13")
+			if reply.Routed == nil || !reply.Routed.Failed || reply.Routed.Pending || !slices.Equal(reply.Routed.Chose, []string{"ux"}) ||
+				!strings.Contains(reply.Routed.Reason, tc.reason) || !slices.Equal(reply.To, []string{"ux"}) || !reply.Answered {
+				t.Errorf("the reply = To %v routed %+v, want the first seat, failed, with a reason holding %q, answered", reply.To, reply.Routed, tc.reason)
+			}
+			if got := answerIds(h.f); !slices.Equal(got, []string{"ux"}) {
+				t.Errorf("answer calls to %v, want the first seat alone and no second pass", got)
+			}
+			if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+tc.routerToks+5 {
+				t.Errorf("calls %d tokens %d, want %d and %d: the failed router call is booked too", c.Calls, c.Tokens, done.Calls+2, done.Tokens+tc.routerToks+5)
+			}
+		})
+	}
+
+	t.Run("a seat that failed is passed over", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("ux/r1", errors.New("boom"))
+		h.run(testCouncil("c1"))
+		h.f.setFail("router/route", errors.New("down"))
+		if _, err := h.r.Reply("c1", "", "", wholeAsk, false, nil); err != nil {
+			t.Fatalf("Reply: %v", err)
+		}
+		h.wait("c1")
+		if got := answerIds(h.f); !slices.Equal(got, []string{"ram"}) {
+			t.Errorf("answer calls to %v, want ram: the first seat whose call did not fail", got)
+		}
+	})
+}
+
+// Let them read files, Auto: the router decides it for a message it routes. The person's On or Off, an attachment and an
+// @file are never overridden, and a failed router leaves the composer's guess.
+func TestReplyRouterTools(t *testing.T) {
+	const file = "Check @pkg/services/idle.go: " + wholeAsk
+	cases := []struct {
+		name       string
+		in         ReplyIn
+		routerSays bool
+		routerFail bool
+		wantTools  bool
+		wantAuto   bool
+	}{
+		{"Auto, the router says read", ReplyIn{Text: wholeAsk, ToolsAuto: true}, true, false, true, true},
+		{"Auto, the router says do not, over the composer's guess", ReplyIn{Text: wholeAsk, ToolsAuto: true, Tools: true}, false, false, false, true},
+		{"On stays on when the router says no", ReplyIn{Text: wholeAsk, Tools: true}, false, false, true, false},
+		{"Off stays off when the router says yes", ReplyIn{Text: wholeAsk}, true, false, false, false},
+		{"an attachment keeps it on", ReplyIn{Text: wholeAsk, ToolsAuto: true, Attachments: []string{attached("2026-11-03-a1", "one.png")}}, false, false, true, false},
+		{"an @file keeps it on", ReplyIn{Text: file, ToolsAuto: true}, false, false, true, false},
+		{"a failed router keeps the composer's guess: on", ReplyIn{Text: wholeAsk, ToolsAuto: true, Tools: true}, false, true, true, true},
+		{"a failed router keeps the composer's guess: off", ReplyIn{Text: wholeAsk, ToolsAuto: true}, true, true, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.run(testCouncil("c1"))
+			if tc.routerFail {
+				h.f.setFail("router/route", errors.New("down"))
+			} else {
+				h.f.setText("router/route", routeToolsJSON(tc.routerSays, "ux"))
+			}
+			if _, err := h.r.ReplyWith("c1", tc.in); err != nil {
+				t.Fatalf("ReplyWith: %v", err)
+			}
+			c := h.wait("c1")
+			reply := replyOf(t, c, "r13")
+			if reply.Tools != tc.wantTools || reply.Routed == nil || reply.Routed.AutoTools != tc.wantAuto {
+				t.Errorf("the reply = Tools %v routed %+v, want Tools %v and AutoTools %v", reply.Tools, reply.Routed, tc.wantTools, tc.wantAuto)
+			}
+			ans := h.f.calls("ans")
+			if len(ans) != 1 || ans[0].Tools != tc.wantTools || (ans[0].OnTool != nil) != tc.wantTools {
+				t.Fatalf("answer calls = %d, the seat's with tools %v, want one with tools %v", len(ans), len(ans) > 0 && ans[0].Tools, tc.wantTools)
+			}
+		})
+	}
+}
+
+// A message at the pause after round 1 is routed at once, though no run is on, and round 2 takes it up only for the seat
+// the router chose.
+func TestReplyRoutedBeforeRound2(t *testing.T) {
+	h := newHarness(t)
+	c := testCouncil("c1")
+	c.PauseAfterRound1 = true
+	h.run(c)
+	h.f.setText("router/route", routeJSON("ram"))
+
+	rep, err := h.r.Reply("c1", "", "", wholeAsk, false, nil)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if rep.State != StateAwaiting {
+		t.Fatalf("a reply at the pause left the council %s, want awaiting-you", rep.State)
+	}
+	got := h.waitRouted("c1", "r1")
+	if !slices.Equal(got.To, []string{"ram"}) || !slices.Equal(got.Routed.Chose, []string{"ram"}) || got.Answered {
+		t.Fatalf("the reply = To %v routed %+v answered %v, want ram chosen with no run on, still open", got.To, got.Routed, got.Answered)
+	}
+	if n := len(h.f.calls("r2")) + len(h.f.calls("ans")); n != 0 {
+		t.Fatalf("%d seat calls before Continue, want none", n)
+	}
+
+	if _, err := h.r.Continue("c1", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	done := h.wait("c1")
+	for _, req := range h.f.calls("r2") {
+		if has := strings.Contains(req.Prompt, wholeAsk); has != (req.Expert.Id == "ram") {
+			t.Errorf("%s's round 2 prompt has the message: %v, want it only for ram", req.Expert.Id, has)
+		}
+	}
+	if n := len(h.f.calls("route")); n != 1 {
+		t.Errorf("%d router calls, want the one made at the pause", n)
+	}
+	if n := len(h.f.calls("ans")); n != 0 || !replyOf(t, done, "r1").Answered || !answeredBy(done, "r1", "ram") || answeredBy(done, "r1", "ux") {
+		t.Errorf("%d answers-pass calls, answered %v, want round 2 to have answered it, for ram alone", n, replyOf(t, done, "r1").Answered)
+	}
+}
+
+// A pass that finds a reply still pending while the router is in flight waits for that call rather than make another.
+func TestRoutePendingOnce(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	h.f.gate("router/route")
+	h.f.setText("router/route", routeJSON("ram"))
+
+	rep, err := h.r.Reply("c1", "", "", wholeAsk, false, nil)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if rep.State != StateRunning {
+		t.Fatalf("Reply returned %s, want a running follow-up whose pass meets the router in flight", rep.State)
+	}
+	h.f.entered(t, "router/route")
+	time.Sleep(100 * time.Millisecond) // the follow-up's pass has reached the reply that is still pending
+	if n, a := len(h.f.calls("route")), len(h.f.calls("ans")); n != 1 || a != 0 {
+		t.Fatalf("%d router calls and %d answer calls while the router works, want 1 and 0: the pass waits for it", n, a)
+	}
+	h.f.release("router/route")
+	c := h.wait("c1")
+	if n := len(h.f.calls("route")); n != 1 {
+		t.Errorf("%d router calls, want 1 and not one from the pass too", n)
+	}
+	if got := answerIds(h.f); !slices.Equal(got, []string{"ram"}) || !replyOf(t, c, "r13").Answered {
+		t.Errorf("answer calls to %v, answered %v, want ram alone, and the reply answered", got, replyOf(t, c, "r13").Answered)
+	}
+}
+
+// However many callers ask for one reply to be routed at once, the router is called once.
+func TestRouteReplyOneCallPerReply(t *testing.T) {
+	h := newHarness(t)
+	h.save(fixtureCouncil("c1", StateAwaiting, 2))
+	id := h.leavePending("c1")
+	h.f.gate("router/route")
+	h.f.setText("router/route", routeJSON("ram"))
+
+	var wg sync.WaitGroup
+	for range 6 {
+		wg.Go(func() { h.r.routeReply(context.Background(), "c1", id) })
+	}
+	h.f.entered(t, "router/route")
+	time.Sleep(50 * time.Millisecond)
+	h.f.release("router/route")
+	wg.Wait()
+
+	if n := len(h.f.calls("route")); n != 1 {
+		t.Fatalf("%d router calls, want 1", n)
+	}
+	got := h.load("c1")
+	if reply := replyOf(t, got, id); reply.Routed.Pending || !slices.Equal(reply.To, []string{"ram"}) || got.Calls != 1 {
+		t.Errorf("the reply = %+v routed %+v, council calls %d, want it routed to ram and one call booked", reply, reply.Routed, got.Calls)
+	}
+}
+
+// A call cut off because its run was stopped is no failed router: the reply stays pending, and the next caller routes it.
+func TestRouteReplyCancelledStaysPending(t *testing.T) {
+	h := newHarness(t)
+	h.save(fixtureCouncil("c1", StateAwaiting, 2))
+	id := h.leavePending("c1")
+	h.f.gate("router/route")
+	h.f.setText("router/route", routeJSON("ram"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		h.r.routeReply(ctx, "c1", id)
+	}()
+	h.f.entered(t, "router/route")
+	cancel()
+	<-stopped
+	got := h.load("c1")
+	if reply := replyOf(t, got, id); !reply.Routed.Pending || len(reply.To) != 0 || got.Calls != 0 {
+		t.Fatalf("after the cancel: %+v routed %+v, council calls %d, want it still pending, with nothing booked", reply, reply.Routed, got.Calls)
+	}
+
+	h.f.release("router/route")
+	h.r.routeReply(context.Background(), "c1", id)
+	if reply := replyOf(t, h.load("c1"), id); reply.Routed.Pending || reply.Routed.Failed || !slices.Equal(reply.To, []string{"ram"}) {
+		t.Errorf("after the next call: %+v routed %+v, want it routed to ram", reply, reply.Routed)
+	}
+}
+
+// A runner with no caller makes no call: the reply is the fallback's, not left pending, and nothing is booked.
+func TestRouteReplyNoCaller(t *testing.T) {
+	h := newHarness(t)
+	h.save(fixtureCouncil("c1", StateAwaiting, 2))
+	id := h.leavePending("c1")
+	(&Runner{}).routeReply(context.Background(), "c1", id)
+	got := h.load("c1")
+	reply := replyOf(t, got, id)
+	if reply.Routed.Pending || !reply.Routed.Failed || !slices.Equal(reply.To, []string{"ux"}) || !strings.Contains(reply.Routed.Reason, "no caller") || got.Calls != 0 {
+		t.Errorf("the reply = To %v routed %+v, council calls %d, want the first seat, failed for want of a caller, nothing booked", reply.To, reply.Routed, got.Calls)
+	}
+}
+
+// Seats that failed since the message was sent can leave nothing to choose between: one is the answerer, none sends it
+// to the whole panel as before, and the router is not called.
+func TestRouteReplySeatsFailedMeanwhile(t *testing.T) {
+	failed := func(ids ...string) func(c *Council) {
+		return func(c *Council) {
+			c.Failed = map[string]CouncilFailure{}
+			for _, id := range ids {
+				c.Failed[id] = CouncilFailure{Round: 2, Error: "boom"}
+			}
+		}
+	}
+	for name, tc := range map[string]struct {
+		failed []string
+		to     []string
+		called bool
+	}{
+		"one seat left":  {[]string{"ux", "ram", "newuser"}, []string{"skeptic"}, false},
+		"no seat left":   {[]string{"ux", "ram", "newuser", "skeptic"}, panelIds(), false},
+		"two seats left": {[]string{"ux", "ram"}, []string{"newuser"}, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.save(fixtureCouncil("c1", StateAwaiting, 2))
+			id := h.leavePending("c1", failed(tc.failed...))
+			h.f.setText("router/route", routeJSON("newuser"))
+			h.r.routeReply(context.Background(), "c1", id)
+			reply := replyOf(t, h.load("c1"), id)
+			if !slices.Equal(reply.To, tc.to) {
+				t.Errorf("the reply goes to %v, want %v", reply.To, tc.to)
+			}
+			if n := len(h.f.calls("route")); (n == 1) != tc.called || (reply.Routed != nil) != tc.called {
+				t.Errorf("%d router calls, routed %+v, want a call and the pick kept: %v", n, reply.Routed, tc.called)
+			}
+			if reply.Routed != nil && reply.Routed.Pending {
+				t.Errorf("the reply is still pending: %+v", reply.Routed)
+			}
+		})
+	}
+}
+
+// With one seat that can answer (a panel of one, or every other seat failed) there is nothing to choose: the message
+// goes to it, unrouted. With none it goes to the whole panel.
+func TestReplyOneCandidateNotRouted(t *testing.T) {
+	t.Run("a panel of one", func(t *testing.T) {
+		h := newHarness(t)
+		c := fixtureCouncil("c1", StateAwaiting, 2)
+		c.Experts = []CouncilExpert{c.Experts[0], c.Experts[len(c.Experts)-1]}
+		h.save(c)
+		got, err := h.r.Reply("c1", "", "", wholeAsk, false, nil)
+		if err != nil {
+			t.Fatalf("Reply: %v", err)
+		}
+		if posted := got.Replies[len(got.Replies)-1]; posted.Routed != nil || !slices.Equal(posted.To, []string{"ux"}) {
+			t.Errorf("the reply = To %v routed %+v, want ux, unrouted", posted.To, posted.Routed)
+		}
+		if n := len(h.f.all()); n != 0 {
+			t.Errorf("%d calls, want none", n)
+		}
+	})
+	t.Run("every other seat failed", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("ux/r1", errors.New("boom"))
+		h.f.setFail("ram/r1", errors.New("boom"))
+		h.f.setFail("newuser/r1", errors.New("boom"))
+		h.run(testCouncil("c1"))
+		rep, err := h.r.Reply("c1", "", "", wholeAsk, false, nil)
+		if err != nil {
+			t.Fatalf("Reply: %v", err)
+		}
+		if posted := rep.Replies[len(rep.Replies)-1]; posted.Routed != nil || !slices.Equal(posted.To, []string{"skeptic"}) {
+			t.Errorf("the reply = To %v routed %+v, want the one seat left, unrouted", posted.To, posted.Routed)
+		}
+		h.wait("c1")
+		if n := len(h.f.calls("route")); n != 0 {
+			t.Errorf("%d router calls, want none", n)
+		}
+		if got := answerIds(h.f); !slices.Equal(got, []string{"skeptic"}) {
+			t.Errorf("answer calls to %v, want the skeptic alone", got)
+		}
+	})
+	t.Run("no seat can answer", func(t *testing.T) {
+		h := newHarness(t)
+		c := fixtureCouncil("c1", StateAwaiting, 2)
+		c.Failed = map[string]CouncilFailure{"ux": {Round: 1}, "ram": {Round: 1}, "newuser": {Round: 1}, "skeptic": {Round: 1}}
+		h.save(c)
+		got, err := h.r.Reply("c1", "", "", wholeAsk, false, nil)
+		if err != nil {
+			t.Fatalf("Reply: %v", err)
+		}
+		if posted := got.Replies[len(got.Replies)-1]; posted.Routed != nil || !slices.Equal(posted.To, panelIds()) {
+			t.Errorf("the reply = To %v routed %+v, want the whole panel, unrouted", posted.To, posted.Routed)
+		}
+	})
+}
+
+// Replies posted while a run ends, each routed: none is lost, none is left pending, and each is routed exactly once.
+func TestRoutedRepliesPostedAsARunEndsAreNeverLost(t *testing.T) {
+	h := newHarness(t)
+	h.start(testCouncil("c1"))
+	const n = 20
+	for i := range n {
+		if _, err := h.r.Reply("c1", "", "", fmt.Sprintf("Question %d?", i), false, nil); err != nil {
+			t.Fatalf("Reply %d: %v", i, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	h.wait("c1")
+	h.idle()
+	c := h.load("c1")
+	asks := repliesBy(c, YouId)
+	if len(asks) != n {
+		t.Fatalf("%d replies stored, want %d", len(asks), n)
+	}
+	for _, ask := range asks {
+		if ask.Routed == nil || ask.Routed.Pending || !slices.Equal(ask.To, []string{"ux"}) {
+			t.Errorf("%s (%q) = To %v routed %+v, want routed to ux and not pending", ask.Id, ask.Text, ask.To, ask.Routed)
+		}
+		if !ask.Answered || !answeredBy(c, ask.Id, "ux") || answeredBy(c, ask.Id, "ram") {
+			t.Errorf("%s (%q) answered %v, by ux %v, want it answered by ux alone", ask.Id, ask.Text, ask.Answered, answeredBy(c, ask.Id, "ux"))
+		}
+	}
+	if got := len(h.f.calls("route")); got != n {
+		t.Errorf("%d router calls for %d replies, want one each", got, n)
+	}
+}
+
+// The answers pass routes a reply that was left pending (wavesrv quit while the router worked) before it answers, so the
+// follow-up that a later message starts picks it up with the rest.
+func TestAnswersPassRoutesAPendingReplyFirst(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	old := h.leavePending("c1")
+	h.f.setText("router/route", routeJSON("ram"))
+
+	if _, err := h.r.Reply("c1", "", "", "@all And in the long run?", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+
+	if n := len(h.f.calls("route")); n != 1 {
+		t.Errorf("%d router calls, want the one for the old reply and none for @all", n)
+	}
+	reply := replyOf(t, c, old)
+	if reply.Routed.Pending || !slices.Equal(reply.To, []string{"ram"}) || !reply.Answered {
+		t.Errorf("the old reply = To %v routed %+v answered %v, want it routed to ram and answered", reply.To, reply.Routed, reply.Answered)
+	}
+	if !answeredBy(c, old, "ram") || answeredBy(c, old, "ux") {
+		t.Errorf("the old reply was answered by ram %v and ux %v, want ram alone", answeredBy(c, old, "ram"), answeredBy(c, old, "ux"))
+	}
+	for _, id := range panelIds() {
+		if !answeredBy(c, "r14", id) {
+			t.Errorf("%s never answered the @all message", id)
+		}
+	}
+}
+
+// MarkStale (wavesrv's startup) routes every reply still pending, in a council in any state, and only that: the reply stays
+// open and unanswered.
+func TestMarkStaleRoutesPending(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("done"))
+	h.run(testCouncil("gone"))
+	doneReply := h.leavePending("done")
+	goneReply := h.leavePending("gone", func(c *Council) { c.State = StateRunning })
+	h.f.setText("router/route", routeJSON("ram"))
+
+	h.r.MarkStale()
+
+	for id, replyId := range map[string]string{"done": doneReply, "gone": goneReply} {
+		got := h.waitRouted(id, replyId)
+		if got.Routed.Pending || got.Routed.Failed || !slices.Equal(got.Routed.Chose, []string{"ram"}) || !slices.Equal(got.To, []string{"ram"}) || got.Answered {
+			t.Errorf("%s's reply = To %v routed %+v answered %v, want ram chosen and the reply left open", id, got.To, got.Routed, got.Answered)
+		}
+	}
+	h.idle()
+	if n := len(h.f.calls("route")); n != 2 {
+		t.Errorf("%d router calls, want one for each council's pending reply", n)
+	}
+	if n := len(h.f.calls("ans")); n != 0 {
+		t.Errorf("%d answer calls, want none: MarkStale settles the pick and answers nothing", n)
+	}
+	if c := h.load("done"); c.State != StateDone {
+		t.Errorf("done council = %s, want it still done", c.State)
+	}
+	if c := h.load("gone"); c.State != StateStopped || !strings.Contains(c.Error, "arcterm closed") {
+		t.Errorf("gone council = %s %q, want it stopped by MarkStale as before", c.State, c.Error)
+	}
+}
+
+// firstAnswerers walks the reply's To in its order, so a routed reply's first pick answers first; it skips a seat that is
+// not on the panel or has a failed call, and a reply already answered or answered by someone.
+func TestFirstAnswerersWalksTo(t *testing.T) {
+	c := testCouncil("c1")
+	c.Failed = map[string]CouncilFailure{"skeptic": {Round: 2, Error: "boom"}}
+	c.Replies = []CouncilReply{
+		{Id: "r1", Author: YouId, Text: "routed", To: []string{"ram", "ux"}},
+		{Id: "r2", Author: YouId, Text: "panel order", To: []string{"ux", "ram", "newuser", "skeptic"}},
+		{Id: "r3", Author: YouId, Text: "the first failed, the second is off the panel", To: []string{"skeptic", "ghost", "newuser"}},
+		{Id: "r4", Author: YouId, Text: "answered", To: []string{"ux"}, Answered: true},
+		{Id: "r5", Author: YouId, Text: "one seat answered", To: []string{"ram", "ux"}},
+		{Id: "r6", Author: "ux", ParentId: "r5", Text: "an answer"},
+		{Id: "r7", Author: YouId, Text: "pending", Routed: &CouncilRouted{Pending: true}},
+		{Id: "r8", Author: YouId, Text: "the coordinator", To: []string{"lead", "ram"}},
+	}
+	want := map[string]string{"r1": "ram", "r2": "ux", "r3": "newuser", "r8": "ram"}
+	if got := firstAnswerers(c); !reflect.DeepEqual(got, want) {
+		t.Errorf("firstAnswerers = %v, want %v", got, want)
+	}
+}
+
 func TestReplyRefusesWhatIsNotThere(t *testing.T) {
 	h := newHarness(t)
 	h.save(fixtureCouncil("c1", StateAwaiting, 2))
@@ -1697,7 +2429,7 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 	callsBefore := done.Calls
 
 	h.f.gate("ux/ans")
-	rep, err := h.r.Reply("c1", "", "", "What would you do about Mac?", true, nil)
+	rep, err := h.r.Reply("c1", "", "", "@all What would you do about Mac?", true, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
@@ -2069,8 +2801,8 @@ func TestFollowUpBringsBackTheStateItFound(t *testing.T) {
 	}
 }
 
-// A question to everyone is answered by the first seat on the panel first; the others answer after it, shown its answer,
-// and one with nothing to add answers with no words, which is sent at once as agreement.
+// A question to everyone (@all) is answered by the first seat on the panel first; the others answer after it, shown its
+// answer, and one with nothing to add answers with no words, which is sent at once as agreement.
 func TestAFollowUpToEveryoneIsAnsweredByOneSeatFirst(t *testing.T) {
 	h := newHarness(t)
 	h.run(testCouncil("c1"))
@@ -2081,7 +2813,7 @@ func TestAFollowUpToEveryoneIsAnsweredByOneSeatFirst(t *testing.T) {
 		}
 		return fence(mustJSON(map[string]any{"answers": answers}))
 	})
-	if _, err := h.r.Reply("c1", "", "", "You keep missing my point.", false, nil); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "@all You keep missing my point.", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	c := h.wait("c1")
@@ -2138,7 +2870,7 @@ func TestAnExpertThatFailedSitsTheAnswersPassOut(t *testing.T) {
 	h := newHarness(t)
 	h.f.setFail("ram/r1", errors.New("boom"))
 	c := h.run(testCouncil("c1"))
-	if _, err := h.r.Reply("c1", "", "", "Anyone?", false, nil); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "@all Anyone?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	c = h.wait("c1")
@@ -2158,7 +2890,7 @@ func TestAnAnswersPassFailureCanBeRetried(t *testing.T) {
 	h := newHarness(t)
 	h.run(testCouncil("c1"))
 	h.f.setFail("ux/ans", errors.New("rate limited"))
-	if _, err := h.r.Reply("c1", "", "", "Anyone?", false, nil); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "@all Anyone?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	c := h.wait("c1")
@@ -3835,15 +4567,24 @@ func TestMentionsSkipFileMentions(t *testing.T) {
 		}
 	}
 
-	// the same through a reply: a path never narrows who answers, the whole council does
+	// the same through a reply: a path never narrows who answers by naming a seat, so the whole council goes to the
+	// router, which is offered every seat
 	h := newHarness(t)
 	h.save(fixtureCouncil("c2", StateAwaiting, 2))
 	got, err := h.r.Reply("c2", "", "", "What about @ux/plan.md and @ram.go?", false, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
-	if to := got.Replies[len(got.Replies)-1].To; !slices.Equal(to, panelIds()) {
-		t.Errorf("a reply naming two files went to %v, want the whole council %v", to, panelIds())
+	if r := got.Replies[len(got.Replies)-1]; r.Routed == nil || !r.Tools {
+		t.Errorf("a reply naming two files = %+v, want it taken up by the router, with Let them read files on", r)
+	}
+	h.waitRouted("c2", "r3")
+	route := h.f.calls("route")
+	if len(route) != 1 {
+		t.Fatalf("%d router calls, want 1", len(route))
+	}
+	for _, id := range panelIds() {
+		mustContain(t, "the router's prompt", route[0].Prompt, "- "+id+" — ")
 	}
 }
 
@@ -3980,7 +4721,7 @@ func TestCallAddDirsFromAttachments(t *testing.T) {
 	h.run(testCouncil("c1"))
 	one, two, three := attached("2026-11-02-a1", "one.png"), attached("2026-11-02-b2", "two.png"), attached("2026-11-02-a1", "three.png")
 
-	if _, err := h.r.Reply("c1", "", "", "Compare these.", false, nil, one, two, three); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "@all Compare these.", false, nil, one, two, three); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	asked := repliesBy(h.wait("c1"), YouId)[0].Id
@@ -3994,11 +4735,11 @@ func TestCallAddDirsFromAttachments(t *testing.T) {
 			t.Errorf("answer call for %s: tools %v, folders %v, want tools and exactly %v", req.Expert.Id, req.Tools, req.AddDirs, want)
 		}
 		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt,
-			"The person's reply ["+asked+"]: Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
+			"The person's reply ["+asked+"]: @all Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
 	}
 
 	// the next follow-up has no attachment: no folder, and the tools are off as the client sent
-	if _, err := h.r.Reply("c1", "", "", "Thanks, and without them?", false, nil); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "@all Thanks, and without them?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	h.wait("c1")
@@ -4764,7 +5505,7 @@ func TestFollowupDraftKeepsDone(t *testing.T) {
 	if c.State != StateDone {
 		t.Fatalf("council ended %s, want done", c.State)
 	}
-	if _, err := h.r.Reply("a", "", "", "What about the Mac?", false, nil); err != nil {
+	if _, err := h.r.Reply("a", "", "", "@all What about the Mac?", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	c = h.wait("a")

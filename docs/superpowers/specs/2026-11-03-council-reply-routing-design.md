@@ -184,8 +184,9 @@ that long. *Agent's call.*
   `namedFile` heuristic). `To` = `Chose`, so the second `answerAll` pass has nobody left to run.
 - `MarkStale` (wavesrv's startup) routes every reply still pending, in the background, in any state: a wavesrv that
   quit in the router's 10–20 s left it pending, and in a done or stopped council no pass would ever come to route it, so
-  its post would read `Router is choosing a seat…` for good. Routing it there only settles the pick and its line; the
-  answer the lost follow-up owed it is lost as any follow-up cut by a quit is today (Retry or Ask <seat> too asks again).
+  its post would read `Router is choosing a seat…` for good. Routing it there only settles the pick and its line: the
+  reply stays open and unanswered, and the answers pass of the next follow-up the council runs (the next message the
+  person sends) answers it with the rest.
 
 ### `Reply`'s signature
 

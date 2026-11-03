@@ -45,6 +45,10 @@ type Runner struct {
 
 	mu     sync.Mutex // guards active and the queue, and orders a reply against the end of a run
 	active map[string]*run
+	// routing holds one channel per reply whose router call is in flight, keyed councilId + "/" + replyId and closed when
+	// the pick is saved: a pass that finds the reply still pending waits on it rather than make a second call. Guarded by
+	// mu, and made on first use.
+	routing map[string]chan struct{}
 }
 
 const (
@@ -1062,8 +1066,13 @@ func withoutNoEvidenceChip(ev []CouncilEvidence) []CouncilEvidence {
 // ---- round 2 ----
 
 // replyPass is a pass of reply rounds, round 2 or, in a council with three rounds, round 3: it has every expert that
-// proposed review the others' proposals, at once and from text. An expert whose round 1 call failed sits it out.
+// proposed review the others' proposals, at once and from text. An expert whose round 1 call failed sits it out. The
+// person's messages the router has not taken up yet are routed first, so a seat reads the ones put to it.
 func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) error {
+	r.routePending(ctx, id)
+	if ctx.Err() != nil {
+		return nil
+	}
 	snap, err := Load(id)
 	if err != nil {
 		return err
@@ -1077,7 +1086,7 @@ func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) e
 	}
 	var asks []string
 	for _, pr := range snap.Replies {
-		if pr.Author == YouId && !pr.Answered {
+		if pr.Author == YouId && !pr.Answered && !awaitsRoute(pr) { // one still pending (it could not be saved) is no seat's yet
 			asks = append(asks, pr.Id)
 		}
 	}
@@ -1426,8 +1435,13 @@ func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Counc
 // that answer and asked to add to it rather than say it again: answered all at once, three seats each opened a steer of
 // the person's with the same concession. The Summary is not rerun. Each reply is marked answered when the pass ends,
 // whatever came of its calls: a call that failed is on the council's Failed list with its Retry, and an expert already
-// on that list sits the pass out until it is retried.
+// on that list sits the pass out until it is retried. A message the router has not taken up yet is routed first (a router
+// already in flight is waited for), and its To, the router's order, is who answers it: the first seat in it first.
 func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
+	r.routePending(ctx, id)
+	if ctx.Err() != nil {
+		return nil
+	}
 	snap, err := Load(id)
 	if err != nil {
 		return err
@@ -1435,7 +1449,7 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 	round := max(SynthesisRound(snap), snap.Round)
 	var open []string
 	for _, pr := range snap.Replies {
-		if pr.Author == YouId && !pr.Answered {
+		if pr.Author == YouId && !pr.Answered && !awaitsRoute(pr) { // one still pending (it could not be saved) is marked answered by no pass
 			open = append(open, pr.Id)
 		}
 	}
@@ -1459,7 +1473,8 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 }
 
 // firstAnswerers maps each open reply of the person that no seat has answered yet to the seat that answers it first: the
-// first on the panel it is addressed to, of those with no failed call.
+// first in the reply's To, in its order, that is on the panel and has no failed call. A routed reply's To is the router's
+// order, so its first pick answers first; every other reply's To is in panel order, as replyTargets and withJoined store it.
 func firstAnswerers(c *Council) map[string]string {
 	out := map[string]string{}
 	panel := panelOf(c)
@@ -1467,9 +1482,10 @@ func firstAnswerers(c *Council) map[string]string {
 		if pr.Author != YouId || pr.Answered || len(answersTo(c, pr)) > 0 {
 			continue
 		}
-		for _, e := range panel {
-			if _, bad := c.Failed[e.Id]; !bad && slices.Contains(pr.To, e.Id) {
-				out[pr.Id] = e.Id
+		for _, id := range pr.To {
+			_, bad := c.Failed[id]
+			if !bad && slices.ContainsFunc(panel, func(e CouncilExpert) bool { return e.Id == id }) {
+				out[pr.Id] = id
 				break
 			}
 		}
@@ -1657,9 +1673,20 @@ func mentioned(c *Council, text string) []string {
 	return out
 }
 
-// replyTargets are the experts the person's reply goes to: the ones it @-mentions; else, in a branch, the proposal's
-// author and every expert on the path to the parent; else, with no proposal and no parent, the whole panel.
+// atAll says text asks every seat on purpose: it holds @all or @everyone as a whole word, in any case. An @all beside a
+// seat's name still reaches every seat. A message that does skips the router.
+func atAll(text string) bool {
+	lower := strings.ToLower(text)
+	return mentions(lower, "@all") || mentions(lower, "@everyone")
+}
+
+// replyTargets are the experts the person's reply goes to: with @all or @everyone, the whole panel; else the ones it
+// @-mentions; else, in a branch, the proposal's author and every expert on the path to the parent; else, with no
+// proposal and no parent, the whole panel (appendPersonReply routes that last case when there is a choice to make).
 func replyTargets(c *Council, proposalId string, parent *CouncilReply, text string) []string {
+	if atAll(text) {
+		return idsOf(panelOf(c))
+	}
 	if ids := mentioned(c, text); len(ids) > 0 {
 		return ids
 	}
@@ -1748,7 +1775,11 @@ func seatBeforeCoordinator(c *Council, seats []CouncilExpert) {
 // whatever tools says: the seat that answers it has to be able to read them.
 //
 // toolsAuto says Let them read files was on Auto and the message locked nothing on (no image, no @file): tools then holds
-// the composer's guess, and the router will decide it. Nothing reads it yet.
+// the composer's guess, and the router decides it (routeReply) for a message it takes up.
+//
+// A message with no proposal, no parent, no seat @-mentioned, no @all or @everyone and no chat seated by it goes to the
+// router when two or more seats can answer it (routeCandidates): it is stored with To empty and Routed pending, and
+// routeReply fills To in. With one seat that can answer, it goes to that seat, unrouted; with none, to the whole panel.
 func appendPersonReply(c *Council, proposalId, parentId, text string, tools, toolsAuto bool, attachments []string, joined []string, now int64) error {
 	var parent *CouncilReply
 	if parentId != "" {
@@ -1771,9 +1802,21 @@ func appendPersonReply(c *Council, proposalId, parentId, text string, tools, too
 	} else {
 		attachments = slices.Clone(attachments)
 	}
+	var routed *CouncilRouted
+	if proposalId == "" && parent == nil && len(joined) == 0 && !atAll(text) && len(mentioned(c, text)) == 0 {
+		switch cands := routeCandidates(c); len(cands) {
+		case 0: // nobody can answer: the whole panel, as it always was
+		case 1:
+			to = idsOf(cands) // nothing to choose
+		default:
+			to = nil // the router fills it in
+			routed = &CouncilRouted{Pending: true, AutoTools: toolsAuto && len(attachments) == 0 && !fileMentioned(text)}
+		}
+	}
 	c.Replies = append(c.Replies, CouncilReply{
 		Id: nextReplyId(c), ProposalId: proposalId, ParentId: parentId, Author: YouId, Text: text,
 		To: to, Tools: tools || len(attachments) > 0 || fileMentioned(text), Attachments: attachments, Round: c.Round, Ts: now,
+		Routed: routed,
 	})
 	return nil
 }
@@ -1820,12 +1863,18 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 // nobody. in.Attachments are the absolute paths of the files the person attached (the caller has checked them): the reply
 // stores them, and one with any, or with a file named by an @ in its text, is stored and answered with tools on whatever
 // in.Tools says, in a round or a follow-up.
+//
+// A message to the whole council (no proposal, no parent, no @-mention of a seat, no @all) that two or more seats could
+// answer is taken up by the router (routeReply): it is stored with To empty and Routed pending, and the router starts at
+// once on its own goroutine, whatever the council's state, so the pick shows within seconds. A pass that reads the
+// person's replies routes a reply still pending first (routePending), so no seat answers a message before it is routed.
 func (r *Runner) ReplyWith(id string, in ReplyIn) (*Council, error) {
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		return nil, errors.New("a reply needs some text")
 	}
-	return r.post(id, func(c *Council) error {
+	var replyId string
+	saved, err := r.post(id, func(c *Council) error {
 		joined, err := joiningSeats(c, in.Seats)
 		if err != nil {
 			return err
@@ -1834,8 +1883,180 @@ func (r *Runner) ReplyWith(id string, in ReplyIn) (*Council, error) {
 			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
 			seatBeforeCoordinator(c, joined)
 		}
-		return appendPersonReply(c, in.ProposalId, in.ParentId, text, in.Tools, in.ToolsAuto, in.Attachments, idsOf(joined), r.now())
+		if err := appendPersonReply(c, in.ProposalId, in.ParentId, text, in.Tools, in.ToolsAuto, in.Attachments, idsOf(joined), r.now()); err != nil {
+			return err
+		}
+		replyId = c.Replies[len(c.Replies)-1].Id
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	if pr := findReply(saved, replyId); pr != nil && awaitsRoute(*pr) {
+		inBackground(func(ctx context.Context) { r.routeReply(ctx, id, replyId) })
+	}
+	return saved, nil
+}
+
+// ---- routing the person's message ----
+
+// routeTimeout is how long a router call started outside a run (ReplyWith's, MarkStale's) may take before it counts as a
+// failed router.
+const routeTimeout = 2 * time.Minute
+
+// inBackground runs fn on a goroutine of its own, outside any run, under routeTimeout.
+func inBackground(fn func(ctx context.Context)) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), routeTimeout)
+		defer cancel()
+		fn(ctx)
+	}()
+}
+
+// awaitsRoute says pr is a message of the person's the router has not answered yet: its To is empty until it does.
+func awaitsRoute(pr CouncilReply) bool {
+	return pr.Author == YouId && pr.Routed != nil && pr.Routed.Pending
+}
+
+// routeReply routes the person's reply replyId of council id: one router call, whose pick it saves as the reply's To and
+// Routed, and reports. The Runner keeps one call in flight per reply, so a pass and the goroutine ReplyWith started
+// never make two: the later one waits for the first to save, then looks again, and routes the reply itself only when it
+// is still pending (the first was cut off or could not save). A reply that is gone or not pending is left as it is.
+//
+// When the router fails (the call errors, answers nothing usable, or names no seat that can still answer), the reply goes
+// to the first seat that can answer, in panel order, and Routed says it failed and why; Tools stays what the composer
+// sent. A call cut off by the run it belongs to being stopped is no failure: the reply stays pending for the next pass.
+// The router is no seat, so its call is booked on the council (Calls, Tokens) and on no seat's Stats.
+func (r *Runner) routeReply(ctx context.Context, id, replyId string) {
+	key := id + "/" + replyId
+	done := make(chan struct{})
+	for {
+		r.mu.Lock()
+		wait, flying := r.routing[key]
+		if !flying {
+			if r.routing == nil {
+				r.routing = map[string]chan struct{}{}
+			}
+			r.routing[key] = done
+		}
+		r.mu.Unlock()
+		if !flying {
+			break
+		}
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return
+		}
+	}
+	defer func() {
+		r.mu.Lock()
+		delete(r.routing, key)
+		r.mu.Unlock()
+		close(done)
+	}()
+
+	c, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: reply %s not routed: %v", id, replyId, err)
+		return
+	}
+	pr := findReply(c, replyId)
+	if pr == nil || !awaitsRoute(*pr) {
+		return
+	}
+	cands := routeCandidates(c)
+	if len(cands) < 2 { // seats failed since the message was sent: there is nothing left to choose between
+		r.saveRoute(id, replyId, func(c *Council, pr *CouncilReply) {
+			if cands := routeCandidates(c); len(cands) < 2 {
+				pr.Routed = nil
+				pr.To = idsOf(panelOf(c))
+				if len(cands) == 1 {
+					pr.To = idsOf(cands)
+				}
+			}
+		})
+		return
+	}
+	route, res, err := r.routeCall(ctx, c, *pr, cands)
+	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
+	called := r.Caller != nil // a runner with no caller made no call to book
+	r.saveRoute(id, replyId, func(c *Council, pr *CouncilReply) {
+		if called {
+			c.Calls++
+			c.Tokens += res.Tokens
+		}
+		settleRoute(c, pr, route, err)
+	})
+}
+
+// saveRoute applies change to reply replyId of council id when it is still pending, saves, and reports the save. A save
+// that fails is logged: the reply stays pending, and the next pass (or the next start) routes it again.
+func (r *Runner) saveRoute(id, replyId string, change func(c *Council, pr *CouncilReply)) {
+	saved, err := Update(id, func(c *Council) error {
+		pr := findReply(c, replyId)
+		if pr == nil || !awaitsRoute(*pr) {
+			return errSkip
+		}
+		change(c, pr)
+		return nil
+	})
+	switch {
+	case errors.Is(err, errSkip):
+	case err != nil:
+		log.Printf("[council] %s: router's pick for reply %s not saved: %v", id, replyId, err)
+	default:
+		r.changed(saved)
+	}
+}
+
+// settleRoute stores the router's pick on pr, or, when err is set or none of the seats it named can still answer, the first
+// seat that can: To is the pick, in the router's order, and Chose keeps it apart from To. Tools is the router's only when
+// the composer left it Auto (AutoTools). With no seat left to answer at all the reply goes to the whole panel, unrouted.
+func settleRoute(c *Council, pr *CouncilReply, route Route, err error) {
+	cands := routeCandidates(c)
+	var chose []string
+	if err == nil {
+		for _, id := range route.Seats {
+			if slices.ContainsFunc(cands, func(e CouncilExpert) bool { return e.Id == id }) {
+				chose = append(chose, id)
+			}
+		}
+		if len(chose) == 0 {
+			err = errors.New("the seats the router chose can no longer answer")
+		}
+	}
+	switch {
+	case err == nil:
+		pr.Routed.Chose, pr.Routed.Reason, pr.Routed.Failed = chose, route.Reason, false
+		if pr.Routed.AutoTools {
+			pr.Tools = route.Tools
+		}
+	case len(cands) == 0:
+		pr.Routed, pr.To = nil, idsOf(panelOf(c))
+		return
+	default:
+		pr.Routed.Chose, pr.Routed.Reason, pr.Routed.Failed = []string{cands[0].Id}, errText(err), true
+	}
+	pr.Routed.Pending = false
+	pr.To = slices.Clone(pr.Routed.Chose)
+}
+
+// routePending routes, one after another, every message of the person's in council id that the router has not answered
+// yet, each through routeReply. Every pass that reads the person's replies calls it first.
+func (r *Runner) routePending(ctx context.Context, id string) {
+	c, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: pending replies not routed: %v", id, err)
+		return
+	}
+	for _, pr := range c.Replies {
+		if awaitsRoute(pr) && ctx.Err() == nil {
+			r.routeReply(ctx, id, pr.Id)
+		}
+	}
 }
 
 // post saves change to council id as one save and has the council answer it. A council that is done, stopped or failed
@@ -2613,6 +2834,11 @@ func (r *Runner) Delete(id string) (*Council, error) {
 
 // MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. A council left
 // queued stays queued: StartNext starts it. Call it once at startup, before any council runs.
+//
+// It also routes, in the background, every message of the person's the router had not answered when wavesrv quit, in a
+// council in any state: in a done or stopped one no pass would come to do it, and its post would read "Router is choosing
+// a seat…" for good. That settles the pick and its line and no more: the reply stays open and unanswered, and the answers
+// pass of the next follow-up the council runs (the next message the person sends) answers it with the rest.
 func (r *Runner) MarkStale() {
 	list, err := List("")
 	if err != nil {
@@ -2642,6 +2868,11 @@ func (r *Runner) MarkStale() {
 		}
 		r.changed(saved)
 		err = nil
+	}
+	for _, c := range list {
+		if slices.ContainsFunc(c.Replies, awaitsRoute) {
+			inBackground(func(ctx context.Context) { r.routePending(ctx, c.Id) })
+		}
 	}
 }
 
