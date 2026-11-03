@@ -819,6 +819,11 @@ describe("replyLabel", () => {
         );
         // a post the pass has not reached yet keeps its usual label: the seat's failure may be on another call
         expect(replyLabel(two, mine({ round: 12, to: ["ux", "nu"] }))).toBe("Answering…");
+        // a seat whose failure line the channel draws under the post is left to that line
+        expect(replyLabel(two, mine({ round: 12, to: ["ux", "nu"], answered: true }), ["nu"])).toBe(
+            "UX could not answer"
+        );
+        expect(replyLabel(failed, hello, ["nu"])).toBe("");
     });
 
     it("leaves out a seat that failed before the post, or that answered it", () => {

@@ -585,34 +585,40 @@ export const ANSWERING = "Answering…";
  *  answer: <error>`, the seats' Retry brings it back. The pass that answers a post marks it answered whatever came of its
  *  calls, so a post that is answered while a seat it went to failed in its round or later and wrote no answer under it
  *  is one that seat failed on. Empty for a post not answered yet (a seat that failed meanwhile has its own failure line,
- *  and the pass may still reach the post), and when every seat it went to answered or has not failed. */
-function failedOn(c: Council, reply: CouncilReply): string {
+ *  and the pass may still reach the post), and when every seat it went to answered or has not failed. A seat in `below`
+ *  is left out: the channel draws its failure line under the post. */
+function failedOn(c: Council, reply: CouncilReply, below: readonly string[]): string {
+    return failedSeatsOn(c, reply)
+        .filter((id) => !below.includes(id))
+        .map((id) => {
+            const error = (c.failed?.[id]?.error ?? "").trim();
+            return `${authorName(c, id)} could not answer${error === "" ? "" : `: ${error}`}`;
+        })
+        .join(" · ");
+}
+
+/** Pure: the seats the person's post went to that failed on it and never answered it (`failedOn`), in its `to` order. */
+export function failedSeatsOn(c: Council, reply: CouncilReply): string[] {
     if (!reply.answered) {
-        return "";
+        return [];
     }
-    const lines: string[] = [];
-    for (const id of reply.to ?? []) {
+    return (reply.to ?? []).filter((id) => {
         const failure = c.failed?.[id];
         if (failure == null || failure.round < reply.round) {
-            continue;
+            return false;
         }
-        const answered = (c.replies ?? []).some((r) => r.parentid === reply.id && r.author === id);
-        if (!answered) {
-            const error = failure.error.trim();
-            lines.push(`${authorName(c, id)} could not answer${error === "" ? "" : `: ${error}`}`);
-        }
-    }
-    return lines.join(" · ");
+        return !(c.replies ?? []).some((r) => r.parentid === reply.id && r.author === id);
+    });
 }
 
 /** What the person's post says while the router has not picked its seats yet (`routed.pending`: its `to` is empty). */
 export const ROUTER_CHOOSING = "Router is choosing a seat…";
 
-export function replyLabel(c: Council, reply: CouncilReply): string {
+export function replyLabel(c: Council, reply: CouncilReply, below: readonly string[] = []): string {
     if (reply.author !== YOU) {
         return "";
     }
-    const failed = failedOn(c, reply);
+    const failed = failedOn(c, reply, below);
     if (failed !== "") {
         return failed;
     }

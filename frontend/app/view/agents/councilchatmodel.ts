@@ -33,6 +33,7 @@ import {
     authorName,
     chatSeatTabs,
     draftsWaitWord,
+    failedSeatsOn,
     fileMentions,
     headerChip,
     heldDrafts,
@@ -255,7 +256,8 @@ function routerParts(c: Council, r: CouncilReply): Pick<ReplyPost, "router" | "a
     return { router: first ? routerLine(c, ask) : "", askToo, routedReply: askToo.length > 0 ? ask.id : "" };
 }
 
-function replyPost(c: Council, r: CouncilReply): ReplyPost {
+// `below`: the seats whose failure line the channel draws under the post, which its label leaves to that line
+function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): ReplyPost {
     const mine = r.author === YOU;
     return {
         kind: "reply",
@@ -271,7 +273,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         reachIsDefault: mine && reachIsDefault(c, r),
         asks: mine ? [] : (r.asks ?? []),
         agrees: answerAgrees(c, r),
-        pending: mine ? replyLabel(c, r) : "",
+        pending: mine ? replyLabel(c, r, below) : "",
         parentid: r.parentid ?? "",
         proposalid: r.proposalid,
         on: r.proposalid === "" ? "" : ((c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? ""),
@@ -696,8 +698,9 @@ function quoteOnce(items: ChannelItem[]): ChannelItem[] {
 
 /** Pure: the channel of a council: the person's question, a divider for each round with something in the channel,
  *  every idea (sent, or held as a draft), the held reply drafts, the lines where an agent skipped a turn, and the
- *  person's posts to the whole council with the answers to them; then a failure line for each seat whose call failed,
- *  and last a typing row for each seat at work. A sent reply on an idea is not here: it is in that idea's thread
+ *  person's posts to the whole council with the answers to them; then a failure line for each seat whose call failed
+ *  (under the person's post it failed on, when it failed on one, so a later post never reads as the failed one), and
+ *  last a typing row for each seat at work. A sent reply on an idea is not here: it is in that idea's thread
  *  (`councilThread`), which the idea's reply chip counts and opens, as a group chat keeps a thread out of the channel.
  *  It is in time order, but for the seats taking turns in each settled round (`takeTurns`). A dropped item is left out.
  *
@@ -711,6 +714,23 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
     const push = (ts: number, rank: number, item: ChannelItem, turn?: Turn) =>
         entries.push({ ts, rank, index: entries.length, item, turn });
     const theirs = (author: string) => only == null || author === only;
+    // a seat that failed on the person's post in the channel has its failure line under that post (the newest, when it
+    // failed on several), not under the posts sent after it
+    const under = new Map<string, CouncilReply>();
+    if (only == null) {
+        for (const r of readableReplies(c)) {
+            if (r.author !== YOU || r.proposalid !== "") {
+                continue;
+            }
+            for (const id of failedSeatsOn(c, r)) {
+                const held = under.get(id);
+                if (held == null || r.ts >= held.ts) {
+                    under.set(id, r);
+                }
+            }
+        }
+    }
+    const below = (r: CouncilReply) => [...under].filter(([, post]) => post.id === r.id).map(([id]) => id);
 
     for (const p of sentProposals(c)) {
         if (theirs(p.author)) {
@@ -733,7 +753,7 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
                 r.author !== YOU && r.proposalid !== ""
                     ? { round: r.round, author: r.author, on: r.proposalid }
                     : undefined;
-            push(r.ts, 1, replyPost(c, r), turn);
+            push(r.ts, 1, replyPost(c, r, below(r)), turn);
         }
     }
     for (const s of c.skips ?? []) {
@@ -779,14 +799,24 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
     for (const e of c.experts) {
         const failure = c.failed?.[e.id];
         if (failure != null && theirs(e.id)) {
-            items.push({
+            const line: FailureLine = {
                 kind: "failure",
                 id: `failed:${e.id}`,
                 ...whoIs(c, e.id),
                 round: failure.round,
                 error: failure.error,
                 text: `${e.name} ${failedWhile(c, failure.round)}`,
-            });
+            };
+            const post = under.get(e.id);
+            let at = post == null ? -1 : items.findIndex((i) => i.kind === "reply" && i.id === post.id);
+            if (at >= 0) {
+                while (items[at + 1]?.kind === "failure") {
+                    at++; // after the lines already under the post, in the seats' order
+                }
+                items.splice(at + 1, 0, line);
+            } else {
+                items.push(line);
+            }
         }
     }
     for (const e of c.experts) {

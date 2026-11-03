@@ -668,6 +668,25 @@ describe("councilChannel: skipped turns, failures and seats at work", () => {
         expect(order.indexOf("failed:sec")).toBeLessThan(order.indexOf("typing:witness"));
     });
 
+    it("draws a seat's failure under the post it failed on, not under the posts sent after it", () => {
+        const limit = "You've hit your 5-hour limit · resets 6:50pm";
+        const c = room({
+            activity: {},
+            failed: { sk: { round: 4, error: limit } },
+            replies: [
+                reply("h1", "you", 300, { proposalid: "", round: 4, to: ["sk"], answered: true }),
+                reply("h2", "you", 400, { proposalid: "", round: 5, to: ["sec"] }),
+            ],
+        });
+        const items = councilChannel(c);
+        const order = ids(items);
+        expect(order.indexOf("failed:sk")).toBe(order.indexOf("h1") + 1);
+        expect(order.indexOf("failed:sk")).toBeLessThan(order.indexOf("h2"));
+        // the line says it, so the post does not say it again
+        expect(byId(items, "h1")).toMatchObject({ pending: "" });
+        expect(byId(items, "failed:sk")).toMatchObject({ error: limit });
+    });
+
     it("says where a failure failed by the council's own rounds", () => {
         const failureText = (c: Council, round: number) =>
             councilChannel({ ...c, failed: { sk: { round, error: "x" } } }).find((i) => i.kind === "failure");
