@@ -93,8 +93,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 - [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
   has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final
-  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219). Not
-  decidable from 40deb36e: its base (8860c5e) predates b47694219, so its merges ran the old script; the Kael sync run
+  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, 5eae7f42f). Not
+  decidable from 40deb36e: its base (e190d40c4) predates 5eae7f42f, so its merges ran the old script; the Kael sync run
   a1c7dbff (started 17:37 on 2026-11-03) is the first on the new script.
 
 - [ ] (arcterm) A force-landed run reads Landed: in the Agent tree and the Brief, find run c06ba9cb (Council UX pass,
