@@ -11,6 +11,9 @@ import {
     searchCouncilHistory,
 } from "./councilhistory";
 
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+
 const roots = new Map([
     ["waveterm", "D:\\code\\waveterm"],
     ["loom", "/home/u/loom"],
@@ -78,6 +81,30 @@ describe("councilHistoryRows", () => {
     it("keeps the question, trimmed, for the search and the row's tooltip", () => {
         const rows = councilHistoryRows([council("q", "/home/u/loom", { question: "  Which harness?  " })], roots);
         expect(rows[0].question).toBe("Which harness?");
+    });
+
+    it("marks the rows that offer Resume when given the last-opened map and the time", () => {
+        const now = 10 * DAY;
+        const opened = { seededAt: 0, opened: { old: now - DAY, fresh: now } };
+        const list = [
+            // ended three days ago and read: off the tree
+            council("old", "/home/u/loom", { updated: now - 3 * DAY }),
+            // ended an hour ago: the tree keeps it
+            council("fresh", "/home/u/loom", { updated: now - HOUR }),
+            // off the tree, but of no registered project: the tree has no folder for it
+            council("loose", "/tmp/scratch", { updated: now - 3 * DAY }),
+        ];
+        const rows = councilHistoryRows(list, roots, new Set(), {
+            opened: { ...opened, opened: { ...opened.opened, loose: now } },
+            now,
+        });
+        expect(Object.fromEntries(rows.map((r) => [r.id, r.resumable]))).toEqual({
+            old: true,
+            fresh: false,
+            loose: false,
+        });
+        // without them no row offers it
+        expect(councilHistoryRows(list, roots).every((r) => !r.resumable)).toBe(true);
     });
 
     it("has no rows before the list is loaded", () => {

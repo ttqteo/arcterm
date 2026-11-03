@@ -6,8 +6,9 @@
 // its search. The tree lists only some councils (councilRowsByProject); this is where every one is found again. No
 // React.
 
-import { councilRowVM, projectNamesByKey, type CouncilRowVM } from "./agentsidebarmodel";
+import { canResumeCouncil, councilRowVM, projectNamesByKey, type CouncilRowVM } from "./agentsidebarmodel";
 import { councilProjectKey, isPinnedCouncil } from "./councilmodel";
+import type { CouncilOpenedMap } from "./councilopened";
 
 export interface CouncilHistoryRow extends CouncilRowVM {
     /** the registered project's name, else the last folder of the path the council ran in */
@@ -16,6 +17,8 @@ export interface CouncilHistoryRow extends CouncilRowVM {
     question: string;
     /** the person pinned it (isPinnedCouncil): the tree keeps it at the top of its project */
     pinned: boolean;
+    /** it ended and the tree no longer lists it (canResumeCouncil): the row offers Resume */
+    resumable: boolean;
 }
 
 export type CouncilHistoryGroup = {
@@ -31,11 +34,13 @@ export function folderName(path: string): string {
 }
 
 /** Pure: every council (councilListAtom("")) as a row, newest message first (councilLastAt), a tie broken by id so the
- *  order never depends on the input's. `null` is a list not loaded yet, which has no rows. */
+ *  order never depends on the input's. `null` is a list not loaded yet, which has no rows. `tree`, the last-opened map
+ *  and the time the tree reads them at, marks the rows that offer Resume; without it none does. */
 export function councilHistoryRows(
     councils: readonly Council[] | null | undefined,
     roots: ReadonlyMap<string, string>,
-    unread: ReadonlySet<string> = new Set()
+    unread: ReadonlySet<string> = new Set(),
+    tree?: { opened: CouncilOpenedMap; now: number }
 ): CouncilHistoryRow[] {
     const list = councils ?? [];
     const nameOf = projectNamesByKey(roots);
@@ -47,6 +52,7 @@ export function councilHistoryRows(
                 projectName: nameOf.get(councilProjectKey(c.project)) ?? folderName(c.project),
                 question: (c.question ?? "").trim(),
                 pinned: isPinnedCouncil(c),
+                resumable: tree != null && canResumeCouncil(c, tree.opened, tree.now, roots),
             })
         )
         .sort((a, b) => b.lastAt - a.lastAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

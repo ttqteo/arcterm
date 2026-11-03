@@ -61,6 +61,7 @@ import {
     type SegmentState,
 } from "./councilmodel";
 import { CouncilPinButton } from "./councilpin";
+import { CouncilResumeButton } from "./councilresume";
 import { RetryWithButton } from "./councilretrymenu";
 import { CouncilSeats } from "./councilseats";
 import { seatableAgents } from "./councilsetupmodel";
@@ -336,6 +337,7 @@ function Header({
                             {acts.busy.has("stop") ? "Stopping…" : "Stop"}
                         </button>
                     )}
+                    <CouncilResumeButton c={c} />
                     <CouncilPinButton c={c} />
                 </div>
             </div>

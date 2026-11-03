@@ -8,6 +8,7 @@ import {
     agentExited,
     agentsElsewhere,
     ALL_PROJECTS,
+    canResumeCouncil,
     collidingTitles,
     CONVERSATION_PAGE,
     conversationCount,
@@ -663,13 +664,11 @@ describe("projectTree", () => {
         ...(cwd != null ? { cwd } : {}),
     });
     // a row as a short string: "group:<project>:<agents>a:<terminals>t[:closed]", "divider:<project>", "t:<id>",
-    // "a:<id>" for a plain agent row, "q:<entry id>:<place>" for a queued entry (place "-" when blocked), and for the
-    // council rows "ch:<project>" (the Councils head) and "c:<id>:<meta>"
+    // "a:<id>" for a plain agent row, "q:<entry id>:<place>" for a queued entry (place "-" when blocked), and
+    // "c:<id>:<meta>" for a council row
     const shape = (rows: ProjectTreeRow[]) =>
         rows.map((r) => {
             switch (r.kind) {
-                case "councilhead":
-                    return `ch:${r.project}`;
                 case "council":
                     return `c:${r.id}:${r.meta}`;
                 case "group":
@@ -953,14 +952,13 @@ describe("projectTree", () => {
             over: Partial<Parameters<typeof projectTree>[0]> = {}
         ) => ({ roots, councils: new Map(Object.entries(byProject)), ...over });
 
-        it("lists Councils and the councils newest first, after the agents and before the divider", () => {
+        it("lists the councils newest first, with no label, after the agents and before the divider", () => {
             const councils = {
                 waveterm: [cvm("old", 1), cvm("new", 3, { meta: "Round 2", tone: "working" }), cvm("mid", 2)],
             };
             expect(shape(build([agent("a")], [term("t1")], withCouncils(councils)))).toEqual([
                 "group:waveterm:1a:1t",
                 "a:a",
-                "ch:waveterm",
                 "c:new:Round 2",
                 "c:mid:Done",
                 "c:old:Done",
@@ -985,7 +983,7 @@ describe("projectTree", () => {
             });
         });
 
-        it("puts the pinned councils at the top of their folder, above the agents; the rest stay in the Councils block", () => {
+        it("puts the pinned councils at the top of their folder, above the agents; the rest follow the agents", () => {
             const councils = {
                 waveterm: [cvm("p1", 1, { pinned: true }), cvm("c2", 2), cvm("p3", 3, { pinned: true }), cvm("c4", 4)],
             };
@@ -994,17 +992,11 @@ describe("projectTree", () => {
                 "c:p3:Done",
                 "c:p1:Done",
                 "a:a",
-                "ch:waveterm",
                 "c:c4:Done",
                 "c:c2:Done",
                 "divider:waveterm",
                 "t:t1",
             ]);
-        });
-
-        it("has no Councils label when every council of the folder is pinned", () => {
-            const rows = build([agent("a")], [term("t1")], withCouncils({ waveterm: [cvm("p", 1, { pinned: true })] }));
-            expect(shape(rows)).toEqual(["group:waveterm:1a:1t", "c:p:Done", "a:a", "divider:waveterm", "t:t1"]);
         });
 
         it("puts the pinned councils first in a view filtered to the project too", () => {
@@ -1013,7 +1005,7 @@ describe("projectTree", () => {
                 [term("t1")],
                 withCouncils({ waveterm: [cvm("p", 1, { pinned: true }), cvm("c", 2)] }, { filter: "waveterm" })
             );
-            expect(shape(rows)).toEqual(["c:p:Done", "a:a", "ch:waveterm", "c:c:Done", "divider:waveterm", "t:t1"]);
+            expect(shape(rows)).toEqual(["c:p:Done", "a:a", "c:c:Done", "divider:waveterm", "t:t1"]);
         });
 
         it("breaks a tie in created by id, so the order never depends on the input's", () => {
@@ -1023,14 +1015,7 @@ describe("projectTree", () => {
 
         it("gives a project with no council no block: New council is in the New dialog, not the tree", () => {
             const rows = build([agent("a")], [term("t2", "loom")], withCouncils({ waveterm: [cvm("c1", 1)] }));
-            expect(shape(rows)).toEqual([
-                "group:waveterm:1a:0t",
-                "a:a",
-                "ch:waveterm",
-                "c:c1:Done",
-                "group:loom:0a:1t",
-                "t:t2",
-            ]);
+            expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "c:c1:Done", "group:loom:0a:1t", "t:t2"]);
         });
 
         it("gives a project whose only content is a council a folder, after the agents' projects", () => {
@@ -1039,7 +1024,6 @@ describe("projectTree", () => {
                 "group:waveterm:1a:0t",
                 "a:a",
                 "group:ops:0a:0t",
-                "ch:ops",
                 "c:c1:Done",
                 `group:${HOME_PROJECT}:0a:1t`,
                 "t:h",
@@ -1076,12 +1060,12 @@ describe("projectTree", () => {
                 filter: "waveterm",
                 collapsed: ["waveterm"],
             });
-            expect(shape(rows)).toEqual(["a:a", "ch:waveterm", "c:c1:Done", "divider:waveterm", "t:t1"]);
+            expect(shape(rows)).toEqual(["a:a", "c:c1:Done", "divider:waveterm", "t:t1"]);
         });
 
         it("shows a project its councils when the filter narrows to it, and nothing when it has none", () => {
             expect(shape(build([agent("a")], [], { ...withCouncils({ ops: [cvm("c1", 1)] }), filter: "ops" }))).toEqual(
-                ["ch:ops", "c:c1:Done"]
+                ["c:c1:Done"]
             );
             expect(shape(build([agent("a")], [], { ...withCouncils(), filter: "ops" }))).toEqual([]);
             // and nothing for a project with no root
@@ -1473,6 +1457,60 @@ describe("councilInTree", () => {
         expect(councilInTree(council({ state: "running", updated: NOW - 2 * HOUR }), closed, NOW)).toBe(true);
         expect(councilInTree(council({ updated: NOW - MIN }), closed, NOW)).toBe(true);
         expect(councilInTree(council({ updated: NOW - 2 * HOUR, pinned: NOW }), closed, NOW)).toBe(true);
+    });
+
+    it("keeps a council ended long ago for a day after the person resumed it, and drops it after", () => {
+        const resumed: CouncilOpenedMap = { ...read, opened: { c: NOW - HOUR }, resumed: { c: NOW - HOUR } };
+        expect(councilInTree(council({ updated: NOW - 5 * DAY }), resumed, NOW)).toBe(true);
+        expect(councilInTree(council({ updated: NOW - 5 * DAY }), resumed, NOW + DAY)).toBe(false);
+    });
+
+    it("drops a resumed council closed after the resume", () => {
+        const map: CouncilOpenedMap = { ...read, resumed: { c: NOW - HOUR }, closed: { c: NOW - MIN } };
+        expect(councilInTree(council({ updated: NOW - 5 * DAY }), map, NOW)).toBe(false);
+    });
+});
+
+describe("canResumeCouncil", () => {
+    const roots = new Map([["loom", "/home/u/loom/"]]);
+    const council = (over: Partial<Council> = {}): Council => ({
+        id: "c",
+        project: "/home/u/loom",
+        feature: "f",
+        experts: [],
+        state: "stopped",
+        round: 3,
+        tokens: 0,
+        calls: 0,
+        created: NOW - 30 * DAY,
+        updated: NOW - 3 * DAY,
+        ...over,
+    });
+    const read: CouncilOpenedMap = { seededAt: NOW - 20 * DAY, opened: { c: NOW - DAY } };
+
+    it("offers Resume on an ended council the tree no longer keeps, in a registered project", () => {
+        for (const state of ["done", "stopped", "failed"] as const) {
+            expect(canResumeCouncil(council({ state }), read, NOW, roots)).toBe(true);
+        }
+    });
+
+    it("offers none while the tree keeps it: within the day, unread, pinned, resumed, or not ended", () => {
+        expect(canResumeCouncil(council({ updated: NOW - HOUR }), read, NOW, roots)).toBe(false);
+        expect(canResumeCouncil(council({ id: "unread" }), read, NOW, roots)).toBe(false);
+        expect(canResumeCouncil(council({ pinned: NOW }), read, NOW, roots)).toBe(false);
+        expect(canResumeCouncil(council(), { ...read, resumed: { c: NOW - MIN } }, NOW, roots)).toBe(false);
+        for (const state of ["running", "awaiting-you", "queued", "not-run"] as const) {
+            expect(canResumeCouncil(council({ state }), read, NOW, roots)).toBe(false);
+        }
+    });
+
+    it("offers it on a council the person closed within the day", () => {
+        const closed: CouncilOpenedMap = { ...read, closed: { c: NOW - MIN } };
+        expect(canResumeCouncil(council({ updated: NOW - HOUR }), closed, NOW, roots)).toBe(true);
+    });
+
+    it("offers none for a council of a folder that is no registered project: the tree has no folder for it", () => {
+        expect(canResumeCouncil(council({ project: "/elsewhere" }), read, NOW, roots)).toBe(false);
     });
 });
 
@@ -2153,7 +2191,7 @@ describe("treeNavIds", () => {
                 ],
             ]),
         });
-        expect(rows.filter((r) => r.kind === "council" || r.kind === "councilhead")).toHaveLength(2);
+        expect(rows.filter((r) => r.kind === "council")).toHaveLength(1);
         expect(treeNavIds(rows)).toEqual(["a", "b", "t1", "c", "t2"]);
     });
     it("walks a split row's cells in reading order where the row sits", () => {

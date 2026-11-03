@@ -3,7 +3,7 @@
 //
 // council-tree (docs/superpowers/plans/2026-10-21-council.md, Task 13): the council rows in the Agent tree, the New
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
-// councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
+// councils and a terminal; a second registered project holds a terminal and no council, and so no council rows. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
 // and Pin / Unpin (the Report's tab bar and a Councils row, step 11) have their stop and pin commands replaced
 // in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
@@ -11,7 +11,9 @@
 // tree, and Unpin from the Report taking the pinned one off too. Step 11g
 // (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md) does the same for a pinned, stopped council with no summary,
 // whose ended time is its `updated`: Unpin from its Councils row takes it off the tree. Step 11b checks the tree
-// offers no Pin, and 11h that Close takes an ended council off the tree.
+// offers no Pin, 11h that Close takes an ended council off the tree, and 11i that Resume (on a council the tree no
+// longer lists) puts it back in the tree and opens its Discussion with the box focused. A project's councils carry no
+// label: they are peers of its agents.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -69,8 +71,6 @@ const TREE_ROWS = `(() => {
     return [...document.querySelectorAll("[data-agent-active-rows] > *")].map((w) => {
         const folder = w.querySelector("[data-project-folder]");
         if (folder) return { kind: "folder", project: folder.dataset.projectFolder };
-        const head = w.querySelector("[data-council-head]");
-        if (head) return { kind: "head", project: head.dataset.councilHead, text: flat(head) };
         const row = w.querySelector("[data-council-row]");
         if (row) {
             return {
@@ -251,14 +251,12 @@ export const councilTree = {
         // 1. the fixture project's folder
         const mine = folderRows(all, COUNCIL_PROJECT);
         const councils = (mine ?? []).filter((r) => r.kind === "council");
-        const head = (mine ?? [])[0];
-        const tail = (mine ?? []).slice(1 + councils.length);
+        const tail = (mine ?? []).slice(councils.length);
         rec(
-            "1. the fixture project's folder lists Councils and four councils newest first, ahead of its terminal, with no New council row",
+            "1. the fixture project's folder lists four councils newest first with no label, ahead of its terminal, with no New council row",
             mine != null &&
-                head?.kind === "head" &&
-                head.text === "Councils" &&
-                (mine ?? [])[1]?.kind === "council" &&
+                (mine ?? [])[0]?.kind === "council" &&
+                !(mine ?? []).some((r) => r.kind === "other") &&
                 councils.length === expected.length &&
                 councils.every((c, i) => c.id === expected[i]) &&
                 tail.every((r) => r.kind === "divider" || r.kind === "terminal") &&
@@ -291,7 +289,7 @@ export const councilTree = {
         // 4. the project with no council
         const empty = folderRows(all, EMPTY_PROJECT);
         rec(
-            "4. the project with no council has no Councils block: its folder holds only its terminal",
+            "4. the project with no council has no council rows: its folder holds only its terminal",
             empty != null && empty.length > 0 && empty.every((r) => r.kind === "terminal"),
             JSON.stringify(empty)
         );
@@ -615,17 +613,16 @@ export const councilTree = {
         await seedCouncil(h, ctx, "done", { id: oldRead, now: threeDaysAgo });
         await seedCouncil(h, ctx, "done", { id: oldPinned, now: threeDaysAgo, edit: (c) => (c.pinned = Date.now()) });
 
-        // 11d. the pinned council is drawn first in its folder, above the Councils label and the councils under it
+        // 11d. the pinned council is drawn first in its folder, above the other councils, with no label between
         const pinnedDrawn = await until(present(`[data-council-row="${oldPinned}"]`), ROWS_WAIT_MS);
         const ruled = folderRows(await rows(), COUNCIL_PROJECT) ?? [];
         rec(
-            "11d. a pinned council, ended three days ago, is drawn at the top of its folder, ahead of the Councils label and the other councils",
+            "11d. a pinned council, ended three days ago, is drawn at the top of its folder, ahead of the other councils",
             pinnedDrawn &&
                 ruled[0]?.kind === "council" &&
                 ruled[0].id === oldPinned &&
-                ruled[1]?.kind === "head" &&
-                ruled.filter((r) => r.kind === "council" && r.id === oldPinned).length === 1 &&
-                ruled.slice(2).some((r) => r.kind === "council"),
+                ruled[1]?.kind === "council" &&
+                ruled.filter((r) => r.kind === "council" && r.id === oldPinned).length === 1,
             JSON.stringify(ruled.map((r) => (r.kind === "council" ? `c:${r.id}` : r.kind)))
         );
         await h.shot("cdp-shots/council-tree-pinned-top.png");
@@ -742,6 +739,68 @@ export const councilTree = {
                 closedKept &&
                 closedListed,
             JSON.stringify({ closableDrawn, closeOffered, closeTitle, closedGone, closedKept, closedListed })
+        );
+
+        // 11i. Resume: `old-read` (ended three days ago and read, so off the tree since 11e) offers Resume on its row in
+        // Councils, a council the tree lists (the running one) does not, and its Report's tab bar offers it beside Pin. A
+        // click there puts it back in the tree (the resumed map, kept per browser), opens its Discussion with the
+        // channel's box focused, and the button goes, since the tree lists it now; nothing is sent to wavesrv. Close then
+        // takes it off again.
+        await h.ev(click("[data-agent-councils-open]"));
+        await until(present(historyRow(oldRead)));
+        const listResumeOffered = await hoverUntil(h, historyRow(oldRead), historyActShown(oldRead, "resume"));
+        const runningNoResume = await h.ev(`!${historyAct(runningId, "resume")}`);
+        await h.shot("cdp-shots/council-history-resume.png");
+        await pressEscape(h);
+        await openCouncil(h, oldRead, "summary");
+        const headerResume = await until(present("[data-council-tabbar] [data-council-resume]"));
+        await stubRpc(h, ["CouncilReplyCommand", "CouncilSummarizeCommand", "CouncilStartCommand"]);
+        await h.ev(click("[data-council-tabbar] [data-council-resume]"));
+        const resumedBack = await until(
+            `${present(`[data-council-row="${oldRead}"]`)} && ${present("[data-council-discussion]")}`,
+            ROWS_WAIT_MS
+        );
+        const boxFocused = await until(
+            `document.activeElement === document.querySelector('[data-council-composer="channel"] [data-council-composer-input]')`
+        );
+        const resumedKept = await h.ev(
+            `typeof window.__arcCouncil.opened().resumed?.[${JSON.stringify(oldRead)}] === "number"`
+        );
+        const resumeGone = await h.ev(`!${present("[data-council-resume]")}`);
+        const resumeCalls = await h.ev(`(window.__arcCouncilStub?.calls ?? []).length`);
+        await unstubRpc(h);
+        await h.shot("cdp-shots/council-tree-resumed.png");
+        const resumedCloseOffered = await hoverUntil(
+            h,
+            `[data-council-row="${oldRead}"] [data-council-feature]`,
+            actShown(oldRead, "close")
+        );
+        await h.ev(`${actOf(oldRead, "close")}?.click()`);
+        const resumedClosed = await until(`!${present(`[data-council-row="${oldRead}"]`)}`);
+        rec(
+            "11i. an ended council off the tree offers Resume in Councils and its Report; Resume puts it back in the tree, opens its Discussion with the box focused and runs nothing, and Close takes it off again",
+            listResumeOffered &&
+                runningNoResume &&
+                headerResume &&
+                resumedBack &&
+                boxFocused &&
+                resumedKept &&
+                resumeGone &&
+                resumeCalls === 0 &&
+                resumedCloseOffered &&
+                resumedClosed,
+            JSON.stringify({
+                listResumeOffered,
+                runningNoResume,
+                headerResume,
+                resumedBack,
+                boxFocused,
+                resumedKept,
+                resumeGone,
+                resumeCalls,
+                resumedCloseOffered,
+                resumedClosed,
+            })
         );
 
         // ---- the room's agents (steps 12 on) ----

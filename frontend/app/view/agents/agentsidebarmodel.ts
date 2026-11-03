@@ -3,8 +3,8 @@
 //
 // Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two parts, each
 // collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
-// them (agenttreemodel.ts), the project's councils (its pinned ones at the folder's top, the others under a Councils
-// label, those the tree rule councilInTree keeps), a divider, then
+// them (agenttreemodel.ts), the project's councils (its pinned ones at the folder's top, the others after the agents,
+// peers of them with no label, those the tree rule councilInTree keeps), a divider, then
 // the project's held services, then its plain terminals and tools. Terminals with no project sit in a
 // Home folder at the end; a project's split is one row in its folder, in place of its cells' rows. Conversations holds every ended session, in a collapsible folder per
 // project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
@@ -30,7 +30,7 @@ import {
     UNTITLED_COUNCIL,
     type CouncilTone,
 } from "./councilmodel";
-import { endedAt, isClosedCouncil, isUnreadCouncil, type CouncilOpenedMap } from "./councilopened";
+import { isClosedCouncil, isUnreadCouncil, keptSince, type CouncilOpenedMap } from "./councilopened";
 import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -433,17 +433,17 @@ export function councilRowVM(
     return row;
 }
 
-// how long an ended council stays in the tree after it ended, unless it is pinned or unread
+// how long an ended council stays in the tree after it ended (or the person resumed it), unless it is pinned or unread
 const COUNCIL_TREE_KEEP_MS = 24 * 60 * 60 * 1000;
 
 // the states in which a council has not ended: it runs, waits on the person, or waits its turn
 const COUNCIL_LIVE: ReadonlySet<string> = new Set(["running", "awaiting-you", "queued"]);
 
 /** Pure: whether the Agent tree lists council `c`: it runs, waits on the person or is queued; it is pinned; it ended
- *  (endedAt: its summary's time, else its last save) less than a day before `now`; or it ended after the person last
- *  opened it (isUnreadCouncil, against the last-opened map), unless the person closed it since it ended
- *  (isClosedCouncil), which takes it off the tree at once. Any other council, an ended one a day old that is unpinned
- *  and read, is left to Councils, so Unpin on one takes it off the tree at once. */
+ *  (endedAt: its summary's time, else its last save) or the person resumed it (keptSince) less than a day before
+ *  `now`; or it ended after the person last opened it (isUnreadCouncil, against the last-opened map), unless the person
+ *  closed it since (isClosedCouncil), which takes it off the tree at once. Any other council, an ended one a day old
+ *  that is unpinned and read, is left to Councils, so Unpin on one takes it off the tree at once. */
 export function councilInTree(c: Council, opened: CouncilOpenedMap, now: number): boolean {
     if (COUNCIL_LIVE.has(c.state) || isPinnedCouncil(c)) {
         return true;
@@ -451,7 +451,27 @@ export function councilInTree(c: Council, opened: CouncilOpenedMap, now: number)
     if (isClosedCouncil(c, opened)) {
         return false;
     }
-    return now - endedAt(c) < COUNCIL_TREE_KEEP_MS || isUnreadCouncil(c, opened);
+    return now - keptSince(c, opened) < COUNCIL_TREE_KEEP_MS || isUnreadCouncil(c, opened);
+}
+
+// the states a council can be resumed from: it ran and ended. A council that never ran (not-run) has nothing to resume.
+const COUNCIL_RESUMABLE: ReadonlySet<string> = new Set(["done", "stopped", "failed"]);
+
+/** Pure: whether council `c` offers Resume: it ran and ended, the tree does not list it now (councilInTree, against the
+ *  last-opened map `opened` at `now`: a day past its end, or closed), and it ran in a registered project (`roots`,
+ *  project name -> root path), whose folder it comes back to. Resume (councilresume.tsx) runs nothing: it puts the
+ *  council back in the tree for a day and opens its Discussion, where a reply starts a follow-up round. */
+export function canResumeCouncil(
+    c: Council,
+    opened: CouncilOpenedMap,
+    now: number,
+    roots: ReadonlyMap<string, string>
+): boolean {
+    return (
+        COUNCIL_RESUMABLE.has(c.state) &&
+        projectNamesByKey(roots).has(councilProjectKey(c.project)) &&
+        !councilInTree(c, opened, now)
+    );
 }
 
 /** Pure: the councils (councilListAtom("")) the tree lists (councilInTree, against the last-opened map `opened` at
@@ -504,9 +524,9 @@ export type ProjectTreeRow =
     | { kind: "terminal"; project: string; terminal: AgentVM; place?: string }
     // a held service (servicesstore.ts), after the divider and ahead of the terminals; `tabId` is its tab once it has one
     | { kind: "service"; project: string; serviceId: string; tabId?: string }
-    // the councils block of a project's folder, after its agents: the Councils label and a row per council, newest first.
-    // Neither is a focus target. A council is started from New (the launcher's Council row) or the palette.
-    | { kind: "councilhead"; project: string }
+    // a council of a project's folder, a peer of its agents with no label: the pinned ones at the folder's top, the others
+    // after the agents, newest first. No focus target. A council is started from New (the launcher's Council row) or the
+    // palette.
     | ({ kind: "council"; project: string } & CouncilRowVM)
     // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
     // "queued" row, which folds a run's queued tasks.
@@ -620,13 +640,13 @@ export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegi
  *  `starting` is the runs the New dialog handed off while they start: each goes in its project's folder ahead of the
  *  queued plans, and like them is no agent, no focus target and no count on the group row.
  *
- *  `councils` (councilRowsByProject, by project name) turns the councils block on: the folder of each registered project
- *  that has a council then holds its pinned councils at its top, above the agents and with no label, and right after its
- *  queued plans and ahead of the divider, a Councils label and one row per other council (each part by `created`, newest
- *  first); the councils the tree rule leaves out are not in it (councilInTree; Councils lists every council). A project
- *  with no council has no block; one whose only content is a council
- *  still gets a folder. A project with no root (Home, the agents with no registered project) has no block. The rows are
- *  no focus target, so treeNavIds skips them and j/k need no councils input.
+ *  `councils` (councilRowsByProject, by project name) puts the councils in: the folder of each registered project that
+ *  has a council then holds its pinned councils at its top, above the agents, and right after its queued plans and
+ *  ahead of the divider one row per other council (each part by `created`, newest first). Neither part has a label: a
+ *  council is a peer of the agents. The councils the tree rule leaves out are not in it (councilInTree; Councils lists
+ *  every council). A project whose only content is a council still gets a folder. A project with no root (Home, the
+ *  agents with no registered project) has no council rows. The rows are no focus target, so treeNavIds skips them and
+ *  j/k need no councils input.
  *
  *  Each project's split (`splits`, its grids of 2+ cells) is one row in its folder, where the topmost of its cells'
  *  rows was; the cells' own rows go. `roster` is every live agent and terminal, read for a cell the tree draws no row
@@ -695,14 +715,11 @@ export function projectTree(input: {
         councilsOf(project)
             .filter((c) => c.pinned)
             .map((c) => councilRow(project, c));
-    // a project's councils block, the pinned ones aside: nothing for a project with no other council
-    const councilRowsOf = (project: string): ProjectTreeRow[] => {
-        const list = councilsOf(project).filter((c) => !c.pinned);
-        if (list.length === 0) {
-            return [];
-        }
-        return [{ kind: "councilhead", project }, ...list.map((c) => councilRow(project, c))];
-    };
+    // a project's other councils, after its agents, with no label
+    const councilRowsOf = (project: string): ProjectTreeRow[] =>
+        councilsOf(project)
+            .filter((c) => !c.pinned)
+            .map((c) => councilRow(project, c));
     const splits = input.splits != null ? splitGrids(input.splits) : new Map<string, GridState>();
     const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));
     const fold = (project: string, body: ProjectTreeRow[]) => {

@@ -70,6 +70,7 @@ import {
     type StanceLabel,
 } from "./councilmodel";
 import { CouncilPinButton } from "./councilpin";
+import { CouncilResumeButton } from "./councilresume";
 import { RetryWithButton } from "./councilretrymenu";
 import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
 import {
@@ -1254,6 +1255,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         <CouncilTabs c={c} view="summary" className="flex-none @max-[900px]:gap-3" />
                         <span className="flex-1" />
                         <JumpLinks c={c} scroller={scroller} bar={tabBar} />
+                        <CouncilResumeButton c={c} className="self-center" />
                         <CouncilPinButton c={c} className="self-center" />
                     </div>
                 </div>

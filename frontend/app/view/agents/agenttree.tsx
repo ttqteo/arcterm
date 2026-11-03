@@ -2784,23 +2784,11 @@ export const COUNCIL_TONE: Record<CouncilTone, { text: string }> = {
     error: { text: "text-error" },
 };
 
-// The councils block of a project's folder (projectTree's councilhead and council rows), after its agents; the pinned
-// councils' rows sit at the folder's top instead, with no label.
+// A project's councils (projectTree's council rows) are peers of its agents, with no label: the pinned ones at the
+// folder's top, the others after the agents.
 // None of them is a focus target: a click opens the council centre mode (agentcenter.ts) and j/k, Ctrl+Tab and Alt+digit
 // keep moving between agents and terminals. They read as selected while that mode shows them, which the agent rows
 // cannot (useSelectedRowId shows none while the centre is not a terminal).
-
-// the Councils label: a section label like Conversations'
-function CouncilHeadRow({ project }: { project: string }) {
-    return (
-        <div
-            data-council-head={project}
-            className="flex h-[24px] items-center px-[10px] text-[10.5px] font-bold text-muted"
-        >
-            Councils
-        </div>
-    );
-}
 
 // The picture a council row leads with, as a chat list draws a group chat: two seat avatars overlapped in a 32px square,
 // the back one top right, the front one bottom left ringed in the row's fill so the overlap reads; one 26px circle for a
@@ -2875,7 +2863,8 @@ export function CouncilSeatPair({
 // color, `Waiting on you` in the amber one. A primary-ink dot after the feature says it ended while you were away.
 // A queued council offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
 // the queued run's row does. An ended, unpinned one offers Close the same way: it leaves the tree at once
-// (councilopened.ts' closed map, kept per browser) and stays in Councils; it comes back if it runs again. A running or
+// (councilopened.ts' closed map, kept per browser) and stays in Councils; it comes back if it runs again or the person
+// resumes it (Resume, councilresume.tsx, in Councils and the council's own header). A running or
 // pinned one offers no hover button. The tree offers no Pin: a council is pinned (and unpinned) from Councils (the
 // button at the sidebar's top), the project Overview's History and the council's own header, and a pinned one stays at
 // the top of its project here. An ended one's menu also offers Remove, behind a confirm, which moves the council's file
@@ -3652,8 +3641,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     );
                                 case "startingrun":
                                     return plain(`starting-run-${r.id}`, <StartingRunRow model={model} row={r} />);
-                                case "councilhead":
-                                    return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
                                 case "council":
                                     return plain(`council-${r.id}`, <CouncilRow model={model} row={r} />);
                                 case "service":

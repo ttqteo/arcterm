@@ -5,14 +5,16 @@
 // Yesterday / Earlier, the way the Canvas gallery shows its canvases. The tree keeps only some councils (live, pinned,
 // unread or recent ones), so this is where an older one is found again: a row opens the council (showCouncil), a pin
 // marks a pinned one, and each row's hover button and menu Pin it (Unpin a pinned one), which keeps it at the top of its
-// project in the tree. Thin: the rows, the search, the groups and the pin action come from councilhistory.ts.
+// project in the tree. A council the tree no longer lists also offers Resume (councilresume.tsx), which puts it back in
+// the tree for a day and opens its Discussion. Thin: the rows, the search, the groups and the pin action come from
+// councilhistory.ts.
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { Hash, Pin, PinOff, Search, Users } from "lucide-react";
+import { Hash, Pin, PinOff, Play, Search, Users } from "lucide-react";
 import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -26,6 +28,8 @@ import {
     searchCouncilHistory,
     type CouncilHistoryRow,
 } from "./councilhistory";
+import { councilOpenedAtom } from "./councilopened";
+import { resumeCouncil } from "./councilresume";
 import { councilUnreadAtom, setCouncilPinned, useCouncils } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 
@@ -37,6 +41,9 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
     const unread = useAtomValue(councilUnreadAtom);
     const registered = useAtomValue(projectsAtom);
     const now = useAtomValue(model.nowAtom);
+    const opened = useAtomValue(councilOpenedAtom);
+    // Resume reads the tree rule on the minute, as the tree does, so the rows are not rebuilt every second
+    const minute = Math.floor(now / 60_000);
     const [query, setQuery] = useAtom(councilHistoryQueryAtom);
     // project name -> root path, as the tree builds it, so a council reads its folder's name
     const roots = useMemo(() => {
@@ -48,7 +55,10 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
         }
         return out;
     }, [registered]);
-    const rows = useMemo(() => councilHistoryRows(councils, roots, unread), [councils, roots, unread]);
+    const rows = useMemo(
+        () => councilHistoryRows(councils, roots, unread, { opened, now: minute * 60_000 }),
+        [councils, roots, unread, opened, minute]
+    );
     const groups = groupCouncilHistory(searchCouncilHistory(rows, query), now);
     const has = rows.length > 0;
     const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -156,8 +166,9 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
 
 // One council: its seats' picture, its feature, then its project and its state in a word in its tone; at the right a
 // pin when the person pinned it, and the time since its newest message. A click opens it. Hover shows Pin (Unpin on a
-// pinned one), and the menu offers Copy id and the same Pin / Unpin, as the tree's council row does; the button cannot
-// hold the hover button, so the row sits in a wrapper beside it.
+// pinned one), and the menu offers Copy id and the same Pin / Unpin, as the tree's council row does; a council the tree
+// no longer lists adds Resume to both, ahead of Pin. The button cannot hold the hover buttons, so the row sits in a
+// wrapper beside them.
 function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: number }) {
     const tone = COUNCIL_TONE[row.tone];
     const pin = councilHistoryPinAct(row);
@@ -172,6 +183,9 @@ function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: numb
                 click: () => void navigator.clipboard.writeText(row.id),
             },
             { type: "separator" } as const,
+            ...(row.resumable
+                ? [{ label: "Resume", icon: <Play size={15} />, click: () => resumeCouncil(row.id) }]
+                : []),
             { label: pin.label, icon: <PinIcon size={15} />, click: act },
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
@@ -225,6 +239,18 @@ function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: numb
                 </span>
             </button>
             <span className="flex flex-none items-center pl-[6px] pr-[8px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                {row.resumable ? (
+                    <button
+                        type="button"
+                        data-council-history-act="resume"
+                        title="Resume: back in the tree, Discussion open; nothing runs until you reply"
+                        aria-label={`Resume ${row.feature}`}
+                        onClick={() => resumeCouncil(row.id)}
+                        className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[4px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <Play size={13} aria-hidden />
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     data-council-history-act={pin.act}

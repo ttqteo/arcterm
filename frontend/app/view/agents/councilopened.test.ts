@@ -6,9 +6,11 @@ import {
     COUNCIL_OPENED_KEY,
     isClosedCouncil,
     isUnreadCouncil,
+    keptSince,
     loadOpened,
     markClosed,
     markOpened,
+    markResumed,
     openedAt,
     saveOpened,
     type CouncilOpenedMap,
@@ -161,6 +163,44 @@ describe("markClosed and isClosedCouncil", () => {
         expect(loadOpened(store, 99)).toEqual({ seededAt: 7, opened: {}, closed: { a: 20 } });
         const partly = memStore({
             [COUNCIL_OPENED_KEY]: JSON.stringify({ seededAt: 3, opened: {}, closed: { b: "x" } }),
+        });
+        expect(loadOpened(partly, 50)).toEqual({ seededAt: 3, opened: {} });
+    });
+});
+
+describe("markResumed and keptSince", () => {
+    it("resumes the council, reads it and lifts its close, without touching the input", () => {
+        const closed = markClosed(MAP, "c1", 8_000);
+        const next = markResumed(closed, "c1", 9_000);
+        expect(next).toEqual({ seededAt: 1_000, opened: { seen: 5_000, c1: 9_000 }, resumed: { c1: 9_000 } });
+        expect(closed.closed).toEqual({ c1: 8_000 });
+        expect(isClosedCouncil(council({ updated: 7_000 }), next)).toBe(false);
+    });
+
+    it("keeps the other councils' closed times", () => {
+        const map = markResumed({ ...MAP, closed: { x: 9, c1: 8 } }, "c1", 10);
+        expect(map.closed).toEqual({ x: 9 });
+    });
+
+    it("is closed again when closed after it was resumed", () => {
+        const map = markClosed(markResumed(MAP, "c1", 9_000), "c1", 9_500);
+        expect(isClosedCouncil(council({ updated: 7_000 }), map)).toBe(true);
+    });
+
+    it("counts from the later of its end and its resume", () => {
+        const map = markResumed(MAP, "c1", 9_000);
+        expect(keptSince(council({ updated: 7_000 }), map)).toBe(9_000);
+        // it ran and ended again after the resume
+        expect(keptSince(council({ updated: 12_000 }), map)).toBe(12_000);
+        expect(keptSince(council({ id: "c2", updated: 7_000 }), map)).toBe(7_000);
+    });
+
+    it("round-trips through the store, dropping non-number resumed times", () => {
+        const store = memStore();
+        saveOpened(store, { seededAt: 7, opened: {}, resumed: { a: 20 } });
+        expect(loadOpened(store, 99)).toEqual({ seededAt: 7, opened: {}, resumed: { a: 20 } });
+        const partly = memStore({
+            [COUNCIL_OPENED_KEY]: JSON.stringify({ seededAt: 3, opened: {}, resumed: { b: "x" } }),
         });
         expect(loadOpened(partly, 50)).toEqual({ seededAt: 3, opened: {} });
     });

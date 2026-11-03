@@ -45,6 +45,7 @@ import {
     type StanceLabel,
 } from "./councilmodel";
 import { CouncilPinButton } from "./councilpin";
+import { CouncilResumeButton } from "./councilresume";
 import { CouncilSeats } from "./councilseats";
 import { councilMapOpenAtom, councilSelAtom, councilTimelineAtom, useCouncil } from "./councilstore";
 import { isBrainstorm, outcomeLabel } from "./councilsummarymodel";
@@ -148,6 +149,7 @@ function Header({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: strin
                     <StatusChip c={c} />
                     <div className="min-w-6 flex-1" />
                     <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
+                    <CouncilResumeButton c={c} />
                     <CouncilPinButton c={c} />
                 </div>
             </div>
