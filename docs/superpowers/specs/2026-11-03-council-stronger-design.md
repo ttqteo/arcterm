@@ -79,9 +79,9 @@ near the line. How near is the builder's call (see Left to the builder).
 **Verify requests.** The round 1 JSON gains an optional `verify` list per proposal: a command and what the expert
 expects (pass / fail, and why). Between round 1 and round 2, Go:
 
-1. Makes one throwaway worktree for the whole council from HEAD (`CreateRunWorktree` + `linkdeps`), copies the
-   checkout's uncommitted changes and untracked files into it as they were at council start, so commands run on the
-   code the experts read, and removes it when the council ends, fails or is stopped. The person's checkout is never
+1. Makes one throwaway tree for the whole council, detached at the snapshot commit Start took (see Which tree), with
+   no branch and the main checkout's `node_modules` linked in, so commands run on the code the experts read, and
+   removes it when the council ends, fails or is stopped. The person's checkout is never
    written to.
 2. Runs each requested command there, if it is on the allowlist, within limits:
    - Allowlist: `go test <one package> -run <pattern>`, `npx vitest run <one file>`, `cargo test <one test name>`
