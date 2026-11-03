@@ -4,7 +4,16 @@
 import type { Binding, KeyContext } from "@/app/store/keybindings/types";
 import { describe, expect, it, vi } from "vitest";
 import { THEMES } from "@/app/view/agents/themes";
-import { buildCommandItems, buildExtraItems, buildThemeItems, commandGroups, postCloseContext } from "./palette-commands";
+import {
+    buildCommandItems,
+    buildExtraItems,
+    buildThemeItems,
+    commandGroups,
+    postCloseContext,
+    START_BINDINGS,
+    START_DEFS,
+    startDefs,
+} from "./palette-commands";
 
 const bind = (over: Partial<Binding> & Pick<Binding, "id" | "keys" | "label">): Binding => ({
     group: "Global",
@@ -138,6 +147,35 @@ describe("buildExtraItems", () => {
         item?.run();
         expect(d.openToolPicker).toHaveBeenCalled();
         expect(d.openNewProject).not.toHaveBeenCalled();
+    });
+});
+
+describe("startDefs", () => {
+    it("adds Scan workflow in the home project, with its meta, verb and echo", () => {
+        const scan = startDefs("waveterm").find((d) => d.id === "scan");
+        expect(scan).toEqual({
+            id: "scan",
+            title: "Scan workflow",
+            meta: "#waveterm",
+            verb: "Start",
+            echo: "Starts a scan and opens its agent",
+        });
+    });
+    it("has no Scan workflow without a home project", () => {
+        expect(startDefs(null).map((d) => d.id)).toEqual(START_DEFS.map((d) => d.id));
+        expect(startDefs(null).map((d) => d.id)).not.toContain("scan");
+        expect(startDefs("").map((d) => d.id)).not.toContain("scan");
+    });
+    it("lists the scan row after the fixed rows", () => {
+        expect(startDefs("waveterm").map((d) => d.id)).toEqual([...START_DEFS.map((d) => d.id), "scan"]);
+    });
+    it("gives the scan row no binding, so START_BINDINGS skips it and every binding is a string", () => {
+        expect(startDefs("waveterm").find((d) => d.id === "scan")?.binding).toBeUndefined();
+        expect(START_BINDINGS.has(undefined as unknown as string)).toBe(false);
+        expect([...START_BINDINGS].sort()).toEqual(START_DEFS.map((d) => d.binding as string).sort());
+    });
+    it("leaves the fixed rows with no verb, so the palette says Open", () => {
+        expect(START_DEFS.every((d) => d.verb == null)).toBe(true);
     });
 });
 

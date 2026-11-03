@@ -372,21 +372,23 @@ func GetRunCandidatesByWorker(ctx context.Context, workerORef string) ([]*waveob
 }
 
 // GetRunsBySessionIds returns the runs launched under any of sessionIds, as the current Run.SessionId or as
-// an earlier lead session (Run.LeadSessionIds), across channels. Pure read (read pool).
+// an earlier lead session (Run.LeadSessionIds) or a one-shot consult session (Run.ConsultSessions), across
+// channels. Pure read (read pool).
 func GetRunsBySessionIds(ctx context.Context, sessionIds []string) ([]*waveobj.Run, error) {
 	if len(sessionIds) == 0 {
 		return nil, nil
 	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(sessionIds)), ",")
-	args := make([]any, 0, 2*len(sessionIds))
-	for range 2 {
+	args := make([]any, 0, 3*len(sessionIds))
+	for range 3 {
 		for _, id := range sessionIds {
 			args = append(args, id)
 		}
 	}
 	return selectRuns(ctx, `SELECT oid, version, data FROM db_run
 		WHERE json_extract(data, '$.sessionid') IN (`+marks+`)
-		OR EXISTS (SELECT 1 FROM json_each(db_run.data, '$.leadsessionids') WHERE value IN (`+marks+`))`, args...)
+		OR EXISTS (SELECT 1 FROM json_each(db_run.data, '$.leadsessionids') WHERE value IN (`+marks+`))
+		OR EXISTS (SELECT 1 FROM json_each(db_run.data, '$.consultsessions') WHERE json_extract(value, '$.sessionid') IN (`+marks+`))`, args...)
 }
 
 // GetRunsByStatus returns the runs whose status is any of statuses, across channels. Pure read (read pool).

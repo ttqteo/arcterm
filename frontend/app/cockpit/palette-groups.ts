@@ -26,7 +26,7 @@ export type GroupKind =
     | "theme"
     | "needs" // an attention item waiting on the user
     | "answer" // an inline option under the selected Needs you ask; answered by its digit, never selected
-    | "start" // New run…, New agent…, New initiative…
+    | "start" // New run…, New agent…, New initiative…, New council…, and Scan workflow with a home project
     | "launch" // the "Start in #project" rows
     | "as-goal" // the one quiet row that expands into the launch rows
     | "widen" // "Search everything for …" in an empty narrowed scope

@@ -59788,6 +59788,127 @@ const railTranslate = {
     },
 };
 
+// --- workflow-scan-entry: the ways into a workflow scan (docs/superpowers/specs/2026-10-26-workflow-scan-design.md)
+// The palette's Scan workflow Start row, and the address workflowscan:<runid> that the row's start opens. Step 1 never
+// fires the row: that starts a real Opus agent, so the start helper (palette-scan.ts) is unit-tested. A registered
+// project, not a bare channel: only a registered one is the palette's home project.
+const WFE_PROJECT = "verify-workflow-scan-entry";
+const WFE_SCAN_ECHO = "Starts a scan and opens its agent";
+const WFE_GOAL = "verify workflow-scan-entry: do nothing";
+
+// moves the palette's selection down until it sits on a row the predicate takes
+async function wfeSelect(h, ok) {
+    let state = await h.ev(PALETTE_STATE);
+    for (let i = 0; i < 30 && state != null && !ok(state.selected ?? ""); i++) {
+        await h.ev(paletteKey("ArrowDown"));
+        await polishNap(100);
+        state = await h.ev(PALETTE_STATE);
+    }
+    return state;
+}
+
+const workflowScanEntry = {
+    name: "workflow-scan-entry",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-workflow-scan-entry-")) };
+        try {
+            await h.rpc("createproject", { name: WFE_PROJECT, path: ctx.cwd });
+            ctx.project = WFE_PROJECT;
+            await waitForProjectInConfig(h, WFE_PROJECT);
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            ctx.channelId = channels.find((c) => norm(c.projectpath) === norm(ctx.cwd))?.oid;
+            if (!ctx.channelId) throw new Error("createproject made no channel at the project's path");
+            const wslist = await h.rpc("workspacelist", null);
+            // held in planning by deferstart: a record with no agent, so the address lands on its sheet
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: WFE_GOAL,
+                runtime: "claude",
+                model: "opus",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.landPath = created.run.landpath;
+            ctx.status = created.run.status;
+            // the channel and project lists are boot-primed
+            await polishReload(h);
+            // the fixture project is the active one, so it is the palette's home project
+            ctx.openedChannel = await h.ev(openAddressExpr(`channel:${ctx.channelId}`));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const shot = (name) => h.shot(`cdp-shots/workflow-scan-entry-${name}.png`);
+        if (ctx.arrangeError != null) {
+            rec("0. a registered project with one deferred quick run was made", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+
+        // 1. the Start row, typed for and selected but never run
+        const opened = await openPalette(h);
+        await h.ev(setInputExpr(PALETTE_INPUT, "scan"));
+        await paletteStateWhen(h, (s) => s.groups.some((g) => g.label === "Start" && g.rows.some((r) => r.startsWith("Scan workflow"))), 5000);
+        const typed = await wfeSelect(h, (sel) => sel.startsWith("Scan workflow") && sel.includes(`#${WFE_PROJECT}`));
+        const startGroup = typed?.groups.find((g) => g.label === "Start");
+        await shot("start-row");
+        rec(
+            "1. typing scan shows the Scan workflow Start row in the home project, verb Start and its echo",
+            opened &&
+                (startGroup?.rows ?? []).some((r) => r.startsWith("Scan workflow") && r.includes(`#${WFE_PROJECT}`)) &&
+                (typed?.selected ?? "").includes("Start") &&
+                (typed?.text ?? "").includes(WFE_SCAN_ECHO),
+            JSON.stringify({ opened, selected: typed?.selected, groups: typed?.groups })
+        );
+        await h.ev(PEEKS_ESC);
+        await polishWaitFor(h, `!${PALETTE_INPUT}`, 2000);
+
+        // 2. a run seeded as a scan waiting on its agent, opened by its address: with no live agent, its own sheet
+        const stored = await fstWriteRun(h, ctx.runId, (run) => ({
+            ...run,
+            status: ctx.status,
+            workflowscan: {
+                state: "picking",
+                stage: "",
+                project: WFE_PROJECT,
+                windowdays: 14,
+                fromts: Date.now() - 14 * 24 * 3600 * 1000,
+                tots: Date.now(),
+                runs: 6,
+                projects: 1,
+                candidates: 2,
+                kept: 1,
+                dropped: 0,
+            },
+        }));
+        await h.goto("jarvis");
+        const landed = await h.ev(openAddressExpr(`workflowscan:${ctx.runId}`));
+        const sheetShown = await polishWaitFor(h, `${flatOf(RUN_SHEET)}.includes(${JSON.stringify(WFE_GOAL)})`, 10000);
+        await shot("run-sheet");
+        rec(
+            "2. workflowscan:<runid> on a scan run with no live agent opens that run's sheet",
+            stored?.workflowscan?.state === "picking" && landed?.ok === true && sheetShown,
+            JSON.stringify({ seeded: stored?.workflowscan?.state, landed, sheetShown, sheet: await h.ev(flatOf(RUN_SHEET)) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await teardownFixtureRun(h, ctx, "workflow-scan-entry", {
+            what: "delete the project",
+            fn: () => (ctx.project ? h.rpc("deleteproject", { name: ctx.project }) : null),
+        });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -60016,6 +60137,7 @@ export const SCENARIOS = [
     projectOverview,
     projectOverviewHistory,
     railTranslate,
+    workflowScanEntry,
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];

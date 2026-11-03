@@ -189,11 +189,35 @@ func TestDagSubmitRunsSetupInTheLandingTree(t *testing.T) {
 	// a lead's `dag submit` carries a short RPC deadline; a Setup such as a fresh install outlives it
 	t.Run("setup is not bound by the submit's deadline", func(t *testing.T) {
 		tree, _ := newLandingRepo(t)
-		_, do, _ := newRun(t, tree, "sleep 2 && echo ok > prepared.txt")
-		short, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		_, do, _ := newRun(t, tree, "echo > started && until [ -f release ]; do sleep 0.05; done && echo ok > prepared.txt")
+		// the deadline passes while setup runs, not on a timer: the work before setup is still bound by it,
+		// and on a loaded machine a fixed 500ms expired there (loading run: context deadline exceeded)
+		short, cancel := context.WithCancel(ctx)
 		defer cancel()
-		if err := do(short); err != nil {
+		submitted := make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-submitted:
+					return
+				case <-time.After(20 * time.Millisecond):
+				}
+				if _, err := os.Stat(filepath.Join(tree, "started")); err == nil {
+					break
+				}
+			}
+			cancel()
+			if err := os.WriteFile(filepath.Join(tree, "release"), nil, 0o644); err != nil {
+				t.Errorf("releasing setup: %v", err)
+			}
+		}()
+		err := do(short)
+		close(submitted)
+		if err != nil {
 			t.Fatalf("submit: %v", err)
+		}
+		if short.Err() == nil {
+			t.Fatal("the submit returned before its context ended, so setup never outlived it")
 		}
 		if _, err := os.Stat(filepath.Join(tree, "prepared.txt")); err != nil {
 			t.Fatalf("setup did not finish: %v", err)

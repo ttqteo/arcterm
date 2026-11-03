@@ -64,6 +64,7 @@ import {
     Flag,
     GitFork,
     Plus,
+    ScanSearch,
     Search,
     SlidersHorizontal,
     Square,
@@ -92,7 +93,7 @@ import {
     GOTO_GROUP,
     postCloseContext,
     START_BINDINGS,
-    START_DEFS,
+    startDefs,
     type StartId,
 } from "./palette-commands";
 import { allRunsAtom, loadAllRuns, palettePickChannel } from "./palette-data";
@@ -139,6 +140,7 @@ import {
 import { deletePaletteNote, loadPaletteNotes, paletteNotesAtom, saveNoteDraft } from "./palette-notesstore";
 import { PaletteNotesView } from "./palette-notesview";
 import { FooterKeyLine, PaletteGroupView, type PaletteItem, type StatusTone } from "./palette-rows";
+import { startWorkflowScan } from "./palette-scan";
 import {
     backspaceEmpty,
     caretAtEnd,
@@ -181,6 +183,7 @@ const START_ICONS: Record<StartId, LucideIcon> = {
     agent: SquareTerminal,
     initiative: Flag,
     council: Users,
+    scan: ScanSearch,
 };
 
 // the attention kind as the one word a Needs you row's status shows
@@ -320,6 +323,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const previewRef = useRef<HTMLDivElement>(null);
     const bodyRef = useRef<HTMLTextAreaElement>(null);
     const savingRef = useRef(false);
+    const scanStartingRef = useRef(false);
     const loadedRef = useRef(false);
 
     const close = () => globalStore.set(model.paletteOpenAtom, false);
@@ -513,29 +517,53 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         return { gotoItems: goto, commandItems: commands };
     }, [bindings, surface, model, themeItems.length]);
 
+    // The Scan workflow row is there only with a home project. Unlike the rows that open a window, it does its work
+    // before the palette closes: a start that fails keeps the palette open on the error, as a launch does, and
+    // success lands on the scan's agent, then closes.
+    const homeLabel = homeChannel ? channelProjectLabel(homeChannel, projects) : null;
     const startItems = useMemo<PaletteItem[]>(() => {
-        const opens: Record<StartId, () => void> = {
+        const opens: Record<Exclude<StartId, "scan">, () => void> = {
             run: () => openLauncher(model, "run"),
             agent: () => openLauncher(model, "agent"),
             initiative: () => globalStore.set(model.newInitiativeOpenAtom, true),
             council: () => openNewCouncil(model),
         };
-        return START_DEFS.map((d) => ({
+        const scanHere = () => {
+            // the start waits on the agent's tab, so a second Enter meanwhile is the first one's, not a second scan
+            if (homeChannel == null || scanStartingRef.current) {
+                return;
+            }
+            scanStartingRef.current = true;
+            setPaletteError(undefined);
+            void runPaletteAction(() => startWorkflowScan(model, homeChannel.oid)).then((result) => {
+                scanStartingRef.current = false;
+                if ("error" in result) {
+                    setPaletteError(`Scan failed: ${errorText(result.error)}`);
+                    return;
+                }
+                close();
+            });
+        };
+        return startDefs(homeLabel).map((d) => ({
             key: `start:${d.id}`,
             kind: "start" as const,
             search: d.title,
             title: d.title,
             icon: START_ICONS[d.id],
             meta: d.meta,
-            chord: bindings.find((b) => b.id === d.binding && b.group === "Global")?.keys,
-            verb: "Open",
+            chord:
+                d.binding != null ? bindings.find((b) => b.id === d.binding && b.group === "Global")?.keys : undefined,
+            verb: d.verb ?? "Open",
             echo: d.echo,
-            run: () => {
-                close();
-                opens[d.id]();
-            },
+            run:
+                d.id === "scan"
+                    ? scanHere
+                    : () => {
+                          close();
+                          opens[d.id]();
+                      },
         }));
-    }, [bindings, model]);
+    }, [bindings, model, homeLabel, homeChannel]);
 
     // The Agents group: the live agents, then the plain terminals and tools, which open in the centre as an agent does
     // (model.openTerminal). A terminal reads as its tool's name while it carries the launch label (toolTerminalName),

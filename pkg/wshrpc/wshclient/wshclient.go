@@ -1721,6 +1721,24 @@ func WaveInfoCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.WaveInfoD
 	return resp, err
 }
 
+// command "workflowscan", wshserver.WorkflowScanCommand
+func WorkflowScanCommand(w *wshutil.WshRpc, data wshrpc.CommandWorkflowScanData, opts *wshrpc.RpcOpts) (*waveobj.WorkflowScan, error) {
+	resp, err := sendRpcRequestCallHelper[*waveobj.WorkflowScan](w, "workflowscan", data, opts)
+	return resp, err
+}
+
+// command "workflowscanresult", wshserver.WorkflowScanResultCommand
+func WorkflowScanResultCommand(w *wshutil.WshRpc, data wshrpc.CommandWorkflowScanResultData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "workflowscanresult", data, opts)
+	return err
+}
+
+// command "workflowscanstart", wshserver.WorkflowScanStartCommand
+func WorkflowScanStartCommand(w *wshutil.WshRpc, data wshrpc.CommandWorkflowScanStartData, opts *wshrpc.RpcOpts) (*wshrpc.CommandWorkflowScanStartRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandWorkflowScanStartRtnData](w, "workflowscanstart", data, opts)
+	return resp, err
+}
+
 // command "workspacelist", wshserver.WorkspaceListCommand
 func WorkspaceListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]wshrpc.WorkspaceInfoData, error) {
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.WorkspaceInfoData](w, "workspacelist", nil, opts)

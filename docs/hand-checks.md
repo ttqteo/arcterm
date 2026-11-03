@@ -1576,3 +1576,15 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   it. With 7 seats in a narrow pane, scroll the table sideways: the head follows the columns and its Idea cell stays
   put. `frontend/app/view/agents/councilmap.tsx` (`Matrix`); no dev app was running to try it, and the
   `council-map` CDP scenario was not rerun.
+- [ ] (arcterm) Kael sync: run a real workflow scan: in a project with a fortnight of runs, `wsh workflow scan --start`
+  (or the palette's Scan workflow row) → an Opus agent opens and its `wsh workflow scan` returns after the Sonnet
+  pass with each recounted pattern, its quote per run and a fix target; the agent asks one `AskUserQuestion` question
+  per suggestion (id as the header, Apply or Drop, a reason in Other; no more than 4 to a call, so more than 4
+  suggestions make a second call) and the cockpit shows it as an agent waiting on you. Apply a fix to this repo → the
+  edit lands as a `chore(workflow): …` commit; Drop one → a "Workflow scan: … (declined YYYY-MM-DD)" section lands in
+  `docs/deferred.md`; a fix whose project is another one is only shown as text, never applied. Start a second scan
+  while the first is live → refused naming its project and run. Go tests with a scripted Sonnet reply only: the
+  consult call, the AskUserQuestion flow, and the Apply/Drop commits have not run against a real agent
+  (`wshserver_workflowscan.go`, `wshcmd-workflow.go`, `pkg/workflowscan/goal.go`, run 12a23f8b Task 3). From the
+  palette's row, the open waits up to 15 s for the scan's agent to show in the roster and then lands on it, not on the
+  run's sheet (`palette-scan.ts`, unit tests with fake timers only; run 12a23f8b fix round Task 1).

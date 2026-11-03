@@ -329,12 +329,92 @@ type Run struct {
 	// historical: what the human wrote when they sent this run's gated plan back. Slice 5c removed the
 	// plan gate, so nothing writes or reads this any more; kept so a stored run still decodes as it was
 	// written.
-	PlanFeedback string      `json:"planfeedback,omitempty"`
-	Meta         MetaMapType `json:"meta"`
+	PlanFeedback string `json:"planfeedback,omitempty"`
+	// WorkflowScan marks a run as a workflow scan and holds every part of the scan's state.
+	WorkflowScan *WorkflowScan `json:"workflowscan,omitempty"`
+	// ConsultSessions are sessions the run started outside its own agent (a one-shot model call), each with the
+	// usage role it played, so the usage linker can place their tokens on this run.
+	ConsultSessions []ConsultSession `json:"consultsessions,omitempty"`
+	Meta            MetaMapType      `json:"meta"`
 }
 
 func (*Run) GetOType() string {
 	return OType_Run
+}
+
+type ConsultSession struct {
+	SessionId string `json:"sessionid"`
+	Role      string `json:"role"`
+}
+
+const (
+	WorkflowScanState_Scanning = "scanning"
+	WorkflowScanState_Picking  = "picking"
+	WorkflowScanState_Failed   = "failed"
+
+	WorkflowScanStage_Read     = "read"
+	WorkflowScanStage_Patterns = "patterns"
+	WorkflowScanStage_Recount  = "recount"
+	WorkflowScanStage_Checking = "checking"
+
+	WorkflowScanVerdict_Suggest  = "suggest"
+	WorkflowScanVerdict_Covered  = "covered"
+	WorkflowScanVerdict_Declined = "declined"
+)
+
+// WorkflowScan is a scan run's state. Done and cancelled are the run's own Status, not copied here. The owner's
+// picks never reach it: the scan agent asks them itself and applies them, so `picking` lasts while it asks.
+type WorkflowScan struct {
+	State      string `json:"state"`   // scanning | picking | failed
+	Stage      string `json:"stage"`   // while scanning: read | patterns | recount | checking
+	Project    string `json:"project"` // the scan's own project name
+	WindowDays int    `json:"windowdays"`
+	FromTs     int64  `json:"fromts"`
+	ToTs       int64  `json:"tots"`
+	Runs       int    `json:"runs"`       // runs read
+	Projects   int    `json:"projects"`   // projects those runs span
+	Candidates int    `json:"candidates"` // the patterns Sonnet named
+	Kept       int    `json:"kept"`       // survivors of the recount
+	Dropped    int    `json:"dropped"`    // run blocks cut for the corpus size cap
+	// Survivors and UnderFloor are written by code from the recount, so every number and quote the agent is
+	// given is never a model's.
+	Survivors  []WorkflowScanPattern `json:"survivors,omitempty"`
+	UnderFloor []WorkflowScanPattern `json:"underfloor,omitempty"`
+	Verdicts   []WorkflowScanVerdict `json:"verdicts,omitempty"` // the Opus agent's judgement per survivor
+	Error      string                `json:"error,omitempty"`    // why the scan failed
+}
+
+type WorkflowScanPattern struct {
+	Id        string                `json:"id"`
+	Title     string                `json:"title"`
+	FixTarget string                `json:"fixtarget"` // <file> · <symbol or section>
+	Runs      int                   `json:"runs"`      // verified runs
+	Days      int                   `json:"days"`      // distinct UTC dates of those runs
+	Projects  []WorkflowScanProject `json:"projects"`
+	Quotes    []WorkflowScanQuote   `json:"quotes"`
+}
+
+type WorkflowScanProject struct {
+	Name string `json:"name"`
+	Runs int    `json:"runs"`
+}
+
+type WorkflowScanQuote struct {
+	RunId   string `json:"runid"` // the full id
+	Project string `json:"project"`
+	Date    string `json:"date"` // YYYY-MM-DD
+	Text    string `json:"text"`
+}
+
+type WorkflowScanVerdict struct {
+	Id         string `json:"id"`
+	Verdict    string `json:"verdict"` // suggest | covered | declined
+	Note       string `json:"note,omitempty"`
+	File       string `json:"file,omitempty"`
+	Where      string `json:"where,omitempty"`
+	FixProject string `json:"fixproject,omitempty"`
+	Edit       string `json:"edit,omitempty"` // the drafted change as +/- lines
+	DeclinedAt int    `json:"declinedat,omitempty"`
 }
 
 // RunLand is where a run's branch stands on its way back into the branch it started from.
