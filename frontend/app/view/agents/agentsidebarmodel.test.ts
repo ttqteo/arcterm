@@ -13,6 +13,7 @@ import {
     conversationCount,
     conversationProjects,
     conversationTree,
+    councilInTree,
     councilRowsByProject,
     endedConversationsByProject,
     folderBlocks,
@@ -46,6 +47,7 @@ import {
 } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import type { CouncilOpenedMap } from "./councilopened";
 import type { RunInfo } from "./runlineage";
 import { queuedRows } from "./runqueuemodel";
 import { treeServiceInput } from "./servicesmodel";
@@ -941,6 +943,7 @@ describe("projectTree", () => {
             dot: null,
             lastAt: created,
             unread: false,
+            pinned: false,
             ...over,
         });
         // the council input of a project name -> councils object, over the roots the registry holds
@@ -979,6 +982,37 @@ describe("projectTree", () => {
                 meta: "Waiting on you",
                 tone: "asking",
             });
+        });
+
+        it("puts the pinned councils at the top of their folder, above the agents; the rest stay in the Councils block", () => {
+            const councils = {
+                waveterm: [cvm("p1", 1, { pinned: true }), cvm("c2", 2), cvm("p3", 3, { pinned: true }), cvm("c4", 4)],
+            };
+            expect(shape(build([agent("a")], [term("t1")], withCouncils(councils)))).toEqual([
+                "group:waveterm:1a:1t",
+                "c:p3:Done",
+                "c:p1:Done",
+                "a:a",
+                "ch:waveterm",
+                "c:c4:Done",
+                "c:c2:Done",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+        });
+
+        it("has no Councils label when every council of the folder is pinned", () => {
+            const rows = build([agent("a")], [term("t1")], withCouncils({ waveterm: [cvm("p", 1, { pinned: true })] }));
+            expect(shape(rows)).toEqual(["group:waveterm:1a:1t", "c:p:Done", "a:a", "divider:waveterm", "t:t1"]);
+        });
+
+        it("puts the pinned councils first in a view filtered to the project too", () => {
+            const rows = build(
+                [agent("a")],
+                [term("t1")],
+                withCouncils({ waveterm: [cvm("p", 1, { pinned: true }), cvm("c", 2)] }, { filter: "waveterm" })
+            );
+            expect(shape(rows)).toEqual(["c:p:Done", "a:a", "ch:waveterm", "c:c:Done", "divider:waveterm", "t:t1"]);
         });
 
         it("breaks a tie in created by id, so the order never depends on the input's", () => {
@@ -1362,6 +1396,66 @@ describe("projectTree", () => {
     });
 });
 
+describe("councilInTree", () => {
+    const council = (over: Partial<Council> = {}): Council => ({
+        id: "c",
+        project: "/home/u/loom",
+        feature: "f",
+        experts: [],
+        state: "done",
+        round: 3,
+        tokens: 0,
+        calls: 0,
+        created: NOW - 30 * DAY,
+        updated: NOW - 2 * DAY,
+        ...over,
+    });
+    // opened at the start of the tests' world, and council "c" opened after it ended (read)
+    const read: CouncilOpenedMap = { seededAt: NOW - 20 * DAY, opened: { c: NOW - DAY } };
+
+    it("keeps a council that runs, waits on the person or is queued, however long ago it last saved", () => {
+        for (const state of ["running", "awaiting-you", "queued"] as const) {
+            expect(councilInTree(council({ state, updated: NOW - 9 * DAY }), read, NOW)).toBe(true);
+        }
+    });
+
+    it("keeps a pinned council, ended long ago and read", () => {
+        expect(councilInTree(council({ pinned: NOW - 5 * DAY }), read, NOW)).toBe(true);
+    });
+
+    it("keeps an ended council the person has not opened since it ended (unread)", () => {
+        expect(councilInTree(council({ id: "other" }), read, NOW)).toBe(true);
+        expect(councilInTree(council(), { ...read, opened: { c: NOW - 3 * DAY } }, NOW)).toBe(true);
+    });
+
+    it("keeps an ended council for a day after it ended, read or not", () => {
+        expect(councilInTree(council({ updated: NOW - DAY + MIN }), read, NOW)).toBe(true);
+        expect(councilInTree(council({ updated: NOW - 2 * DAY, summary: summaryAt(NOW - 5 * MIN) }), read, NOW)).toBe(
+            true
+        );
+    });
+
+    it("drops an ended, unpinned, read council a day after it ended", () => {
+        for (const state of ["done", "failed", "stopped", "not-run"] as const) {
+            expect(councilInTree(council({ state }), read, NOW)).toBe(false);
+        }
+        expect(councilInTree(council({ updated: NOW - DAY }), read, NOW)).toBe(false);
+        // its summary's time is when it ended, not a later save
+        expect(councilInTree(council({ updated: NOW - MIN, summary: summaryAt(NOW - 2 * DAY) }), read, NOW)).toBe(
+            false
+        );
+    });
+
+    it("drops it once it is unpinned", () => {
+        expect(councilInTree(council({ pinned: 0 }), read, NOW)).toBe(false);
+    });
+});
+
+// a summary written at `at`, its text aside
+function summaryAt(at: number): CouncilSummary {
+    return { at } as CouncilSummary;
+}
+
 describe("councilRowsByProject", () => {
     const roots = new Map([
         ["waveterm", "D:\\code\\waveterm\\"],
@@ -1380,8 +1474,45 @@ describe("councilRowsByProject", () => {
         updated: 2000,
         ...over,
     });
-    // a council with no seats and no message: no picture, timed from when it was created
-    const noPicture = (created: number) => ({ seats: [], dot: null, lastAt: created });
+    // a council with no seats and no message: no picture, timed from when it was created; and not pinned
+    const noPicture = (created: number) => ({ seats: [], dot: null, lastAt: created, pinned: false });
+    // the tree rule's inputs that keep every council above: each ended (updated 2000) less than a day before AT, and
+    // none of them unread (all seeded as opened after they ended)
+    const READ: CouncilOpenedMap = { seededAt: 5000, opened: {} };
+    const AT = 3000;
+
+    it("keeps only the councils the tree rule keeps (councilInTree), the pinned ones flagged", () => {
+        const old = { updated: NOW - 2 * DAY };
+        const opened: CouncilOpenedMap = { seededAt: NOW - 10 * DAY, opened: { read: NOW - DAY } };
+        const rows = councilRowsByProject(
+            [
+                council("live", "/home/u/loom", { state: "running", ...old }),
+                council("pin", "/home/u/loom", { state: "done", pinned: 5, ...old }),
+                council("fresh", "/home/u/loom", { state: "done", updated: NOW - MIN }),
+                council("unseen", "/home/u/loom", { state: "done", ...old }),
+                council("read", "/home/u/loom", { state: "done", ...old }),
+            ],
+            roots,
+            opened,
+            NOW
+        );
+        expect(rows.get("loom")?.map((r) => [r.id, r.pinned])).toEqual([
+            ["live", false],
+            ["pin", true],
+            ["fresh", false],
+            ["unseen", false],
+        ]);
+    });
+
+    it("drops a project's folder entry when the rule keeps none of its councils", () => {
+        const rows = councilRowsByProject(
+            [council("read", "/home/u/loom", { state: "failed", updated: NOW - 2 * DAY })],
+            roots,
+            { seededAt: NOW, opened: {} },
+            NOW
+        );
+        expect(rows.has("loom")).toBe(false);
+    });
 
     it("files each council under the registered project whose root it ran in, however the path is spelled", () => {
         const rows = councilRowsByProject(
@@ -1391,7 +1522,9 @@ describe("councilRowsByProject", () => {
                 council("c", "/home/u/loom/"),
                 council("d", "/home/u/Loom"),
             ],
-            roots
+            roots,
+            READ,
+            AT
         );
         expect([...rows.keys()]).toEqual(["waveterm", "loom"]);
         expect(rows.get("waveterm")?.map((r) => r.id)).toEqual(["a", "b"]);
@@ -1406,7 +1539,9 @@ describe("councilRowsByProject", () => {
                 council("again", "/home/u/loom", { state: "running", pinned: 5 }),
                 council("plain", "/home/u/loom", { state: "done" }),
             ],
-            roots
+            roots,
+            READ,
+            AT
         );
         expect(rows.get("loom")?.map((r) => r.id)).toEqual(["pinned", "again", "plain"]);
     });
@@ -1420,7 +1555,9 @@ describe("councilRowsByProject", () => {
                 council("nr", "/home/u/loom", { state: "not-run", round: 0 }),
                 council("bad", "/home/u/loom", { state: "failed", round: 3 }),
             ],
-            roots
+            roots,
+            READ,
+            AT
         );
         expect(rows.get("loom")).toEqual([
             {
@@ -1486,7 +1623,9 @@ describe("councilRowsByProject", () => {
         ];
         const rows = councilRowsByProject(
             states.map((state) => council(state, "/home/u/loom", { state })),
-            roots
+            roots,
+            READ,
+            AT
         );
         expect(
             rows
@@ -1497,9 +1636,9 @@ describe("councilRowsByProject", () => {
     });
 
     it("leaves out a council of a project that is not registered, and has nothing before the list loads", () => {
-        expect(councilRowsByProject([council("x", "/elsewhere")], roots).size).toBe(0);
-        expect(councilRowsByProject(null, roots).size).toBe(0);
-        expect(councilRowsByProject(undefined, roots).size).toBe(0);
+        expect(councilRowsByProject([council("x", "/elsewhere")], roots, READ, AT).size).toBe(0);
+        expect(councilRowsByProject(null, roots, READ, AT).size).toBe(0);
+        expect(councilRowsByProject(undefined, roots, READ, AT).size).toBe(0);
     });
 
     it("marks the councils in the unread set, and keeps their meta", () => {
@@ -1509,6 +1648,8 @@ describe("councilRowsByProject", () => {
                 council("b", "/home/u/loom", { state: "done", round: 3 }),
             ],
             roots,
+            READ,
+            AT,
             new Set(["a"])
         );
         expect(rows.get("loom")?.map((r) => [r.id, r.unread, r.meta])).toEqual([
@@ -1518,7 +1659,7 @@ describe("councilRowsByProject", () => {
     });
 
     it("names a council whose feature is blank", () => {
-        const rows = councilRowsByProject([council("x", "/home/u/loom", { feature: "  " })], roots);
+        const rows = councilRowsByProject([council("x", "/home/u/loom", { feature: "  " })], roots, READ, AT);
         expect(rows.get("loom")?.[0].feature).toBe(UNTITLED_COUNCIL);
     });
 
@@ -1529,7 +1670,9 @@ describe("councilRowsByProject", () => {
                     council("run", "/home/u/loom", { feature: "Rail apps", state: "running" }),
                     council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             const queued = rows.get("loom")?.find((r) => r.id === "wait");
             expect(queued).toEqual({
@@ -1550,7 +1693,9 @@ describe("councilRowsByProject", () => {
                     council("run", "D:\\code\\waveterm", { feature: "Pinned apps", state: "running" }),
                     council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.[0].meta).toBe("Queued · after Pinned apps");
         });
@@ -1561,7 +1706,9 @@ describe("councilRowsByProject", () => {
                     council("gone", "/home/u/loom", { state: "queued", round: 0, queuedafter: "missing" }),
                     council("none", "/home/u/loom", { state: "queued", round: 0 }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.map((r) => [r.id, r.meta, r.queued])).toEqual([
                 ["gone", "Queued", true],
@@ -1575,7 +1722,9 @@ describe("councilRowsByProject", () => {
                     council("run", "/home/u/loom", { feature: " ", state: "running" }),
                     council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.[1].meta).toBe(`Queued · after ${UNTITLED_COUNCIL}`);
         });
@@ -1583,7 +1732,9 @@ describe("councilRowsByProject", () => {
         it("marks no other row queued", () => {
             const rows = councilRowsByProject(
                 [council("a", "/home/u/loom", { state: "running" }), council("b", "/home/u/loom", { state: "done" })],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.some((r) => r.queued)).toBe(false);
         });
@@ -1601,7 +1752,9 @@ describe("councilRowsByProject", () => {
                     }),
                     council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             const queued = rows.get("loom")?.find((r) => r.id === "wait");
             expect(queued?.meta).toBe("Queued · after Rail apps · waiting for Witness synthesis");
@@ -1616,7 +1769,9 @@ describe("councilRowsByProject", () => {
                         council("run", "/home/u/loom", { feature: "Rail apps", state: "running", activity }),
                         council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
                     ],
-                    roots
+                    roots,
+                    READ,
+                    AT
                 )
                     .get("loom")
                     ?.find((r) => r.id === "wait")?.meta;
@@ -1640,7 +1795,9 @@ describe("councilRowsByProject", () => {
                     }),
                     council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "held" }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.find((r) => r.id === "wait")?.meta).toBe("Queued · after Rail apps");
         });
@@ -1676,7 +1833,9 @@ describe("councilRowsByProject", () => {
                     council("ask", "/home/u/loom", { state: "awaiting-you", proposals: [idea("P1", "held")] }),
                     council("done", "/home/u/loom", { state: "done", round: 3, replies: [reply("r1", "held")] }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.map((r) => [r.id, r.meta, r.tone])).toEqual([
                 ["run", "2 drafts wait for you", "asking"],
@@ -1694,7 +1853,9 @@ describe("councilRowsByProject", () => {
                         replies: [reply("r1")],
                     }),
                 ],
-                roots
+                roots,
+                READ,
+                AT
             );
             expect(rows.get("loom")?.[0]).toMatchObject({ meta: "Running", tone: "working" });
         });
@@ -1709,7 +1870,7 @@ describe("councilRowsByProject", () => {
             ...(coordinator ? { coordinator } : {}),
         });
         const one = (over: Partial<Council>) =>
-            councilRowsByProject([council("x", "/home/u/loom", over)], roots).get("loom")![0];
+            councilRowsByProject([council("x", "/home/u/loom", over)], roots, READ, AT).get("loom")![0];
         const five = [
             seat("co", "Coordinator", true),
             seat("sk", "Skeptic"),
@@ -1961,6 +2122,7 @@ describe("treeNavIds", () => {
                             dot: null,
                             lastAt: 1,
                             unread: false,
+                            pinned: false,
                         },
                     ],
                 ],

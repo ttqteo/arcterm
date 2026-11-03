@@ -171,7 +171,8 @@ import {
     type TerminalShows,
 } from "./agentsidebarmodel";
 import { CouncilAvatar } from "./councilchat";
-import { isPinnedCouncil, type CouncilTone } from "./councilmodel";
+import type { CouncilTone } from "./councilmodel";
+import { councilOpenedAtom } from "./councilopened";
 import { confirmRemoveCouncil } from "./councilremove";
 import {
     councilListAtom,
@@ -2644,7 +2645,8 @@ export const COUNCIL_TONE: Record<CouncilTone, { text: string }> = {
     error: { text: "text-error" },
 };
 
-// The councils block of a project's folder (projectTree's councilhead and council rows), after its agents.
+// The councils block of a project's folder (projectTree's councilhead and council rows), after its agents; the pinned
+// councils' rows sit at the folder's top instead, with no label.
 // None of them is a focus target: a click opens the council centre mode (agentcenter.ts) and j/k, Ctrl+Tab and Alt+digit
 // keep moving between agents and terminals. They read as selected while that mode shows them, which the agent rows
 // cannot (useSelectedRowId shows none while the centre is not a terminal).
@@ -2745,7 +2747,7 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     const selected = center === "council" && view !== "setup" && open === row.id;
     const tone = COUNCIL_TONE[row.tone];
     const queued = row.queued === true;
-    const pinned = useAtomValue(councilListAtom(""))?.some((c) => c.id === row.id && isPinnedCouncil(c)) === true;
+    const pinned = row.pinned;
     const removeForGood = () => {
         const c = globalStore.get(councilListAtom(""))?.find((x) => x.id === row.id);
         if (c != null) {
@@ -3282,13 +3284,17 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         () => treeServiceInput(serviceList ?? [], focusId),
         [serviceList, focusId]
     );
-    // the councils (councilstore.ts), every project's, filed under the registered project each ran in; and the projects
-    // whose Setup holds an unsent draft, which New council says
+    // the councils (councilstore.ts) the tree keeps (councilInTree: live, pinned, unread or ended less than a day ago),
+    // every project's, filed under the registered project each ran in. The minute clock lets one leave the tree a day
+    // after it ended without a reload; the last-opened map (councilopened.ts) says which are unread.
     const councilList = useCouncils("");
     const councilUnread = useAtomValue(councilUnreadAtom);
+    const councilOpened = useAtomValue(councilOpenedAtom);
+    const minuteAtom = useMemo(() => atom((get) => Math.floor(get(model.structuralNowAtom) / 60_000)), [model]);
+    const minute = useAtomValue(minuteAtom);
     const councils = useMemo(
-        () => councilRowsByProject(councilList, roots, councilUnread),
-        [councilList, roots, councilUnread]
+        () => councilRowsByProject(councilList, roots, councilOpened, minute * 60_000, councilUnread),
+        [councilList, roots, councilOpened, minute, councilUnread]
     );
     const rows = projectTree({
         tree,
@@ -3418,7 +3424,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                     <LayoutGrid size={14} aria-hidden />
                     Canvas gallery
                 </button>
-                {/* every council, closed ones too: the tree lists only the open ones */}
+                {/* every council: the tree lists only the live, pinned, unread and recent ones (councilInTree) */}
                 <button
                     type="button"
                     data-agent-councils-open

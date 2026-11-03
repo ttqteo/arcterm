@@ -6,7 +6,9 @@
 // councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
 // and Pin / Unpin (the Report's tab bar, a tree row and a Councils row, step 11) have their stop and pin commands replaced
-// in the page.
+// in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
+// councils placed three days back and marked opened: the pinned one drawn at its folder's top, the unpinned one off the
+// tree, and Unpin from the Report taking the pinned one off too.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -48,6 +50,7 @@ const METAS = ["Running", "Waiting on you", "Done", "Not run"];
 const ROWS_WAIT_MS = 10_000;
 const UI_WAIT_MS = 5_000;
 const NOTICE_SETTLE_MS = 600;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // the corner toasts whose text holds `text`, and the row's meta and unread dot, as the page shows them
@@ -589,6 +592,78 @@ export const councilTree = {
             })
         );
 
+        // ---- the tree rule (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) ----
+        // Two copies of the done fixture placed three days back, both marked opened now in the last-opened map (so
+        // neither is unread): `old-pinned` is pinned, `old-read` is not. The tree keeps a council that is live, pinned,
+        // unread or ended less than a day ago, so only the pinned one is drawn, at the top of its folder.
+        const oldPinned = `${COUNCIL_ID_PREFIX}old-pinned`;
+        const oldRead = `${COUNCIL_ID_PREFIX}old-read`;
+        const threeDaysAgo = Date.now() - 3 * DAY_MS;
+        ctx.openedBefore = await h.ev(`window.__arcCouncil.opened()`);
+        await h.ev(`(() => {
+            const map = window.__arcCouncil.opened();
+            const now = Date.now();
+            window.__arcCouncil.setOpened({
+                seededAt: map.seededAt,
+                opened: { ...map.opened, ${JSON.stringify(oldPinned)}: now, ${JSON.stringify(oldRead)}: now },
+            });
+        })()`);
+        await seedCouncil(h, ctx, "done", { id: oldRead, now: threeDaysAgo });
+        await seedCouncil(h, ctx, "done", { id: oldPinned, now: threeDaysAgo, edit: (c) => (c.pinned = Date.now()) });
+
+        // 11d. the pinned council is drawn first in its folder, above the Councils label and the councils under it
+        const pinnedDrawn = await until(present(`[data-council-row="${oldPinned}"]`), ROWS_WAIT_MS);
+        const ruled = folderRows(await rows(), COUNCIL_PROJECT) ?? [];
+        rec(
+            "11d. a pinned council, ended three days ago, is drawn at the top of its folder, ahead of the Councils label and the other councils",
+            pinnedDrawn &&
+                ruled[0]?.kind === "council" &&
+                ruled[0].id === oldPinned &&
+                ruled[1]?.kind === "head" &&
+                ruled.filter((r) => r.kind === "council" && r.id === oldPinned).length === 1 &&
+                ruled.slice(2).some((r) => r.kind === "council"),
+            JSON.stringify(ruled.map((r) => (r.kind === "council" ? `c:${r.id}` : r.kind)))
+        );
+        await h.shot("cdp-shots/council-tree-pinned-top.png");
+
+        // 11e. the unpinned one, ended three days ago and opened since, is in no folder of the tree, though Councils
+        // lists it
+        const readGone = await h.ev(`!${present(`[data-council-row="${oldRead}"]`)}`);
+        await h.ev(click("[data-agent-councils-open]"));
+        const readListed = await until(present(historyRow(oldRead)));
+        await pressEscape(h);
+        rec(
+            "11e. an ended, unpinned council older than a day that was opened is not in the tree, and Councils still lists it",
+            readGone && readListed,
+            JSON.stringify({ readGone, readListed })
+        );
+
+        // 11f. Unpin from that pinned council's Report takes it off the tree at once
+        await openCouncil(h, oldPinned, "summary");
+        const reportPinned = await until(`${pinIn}?.dataset.councilPin === "pinned"`);
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${pinIn}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const reportUnpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // what wavesrv saves for that unpin
+        writeCouncil(ctx, "done", { id: oldPinned, now: threeDaysAgo });
+        await announceCouncil(h, ctx, oldPinned);
+        const unpinnedGone = await until(
+            `${pinIn}?.dataset.councilPin === "pin" && !${present(`[data-council-row="${oldPinned}"]`)}`
+        );
+        await h.shot("cdp-shots/council-tree-unpinned-gone.png");
+        await pressEscape(h);
+        rec(
+            "11f. Unpin in the Report of a council that ended more than a day ago asks wavesrv to unpin it, and once saved the council leaves the tree",
+            reportPinned &&
+                reportUnpins.length === 1 &&
+                reportUnpins[0].data?.id === oldPinned &&
+                reportUnpins[0].data?.pinned === false &&
+                unpinnedGone,
+            JSON.stringify({ reportPinned, reportUnpins, unpinnedGone })
+        );
+
         // ---- the room's agents (steps 12 on) ----
         // The roster write reloads the page onto the Jarvis surface, so go back to Agent. The councils so far seat no agent.
         ctx.roster = await writeRoomRoster(h);
@@ -722,6 +797,12 @@ export const councilTree = {
     },
 
     async teardown(h, ctx) {
+        // the last-opened map as it was before steps 11d to 11f marked their councils opened
+        if (ctx.openedBefore) {
+            await h
+                .ev(`window.__arcCouncil?.setOpened(${JSON.stringify(ctx.openedBefore)})`)
+                .catch((e) => console.error(`council-tree teardown: restoring the opened map failed: ${e?.message ?? e}`));
+        }
         // the roster first: putting it back reloads the page, and the fixture agents leave the tree with it
         if (ctx.roster) {
             await restoreRoomRoster(ctx.roster).catch((e) =>
