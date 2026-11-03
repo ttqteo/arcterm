@@ -384,6 +384,9 @@ func speaker(c *Council, id string) string {
 	if id == YouId {
 		return "the person"
 	}
+	if id == routerId {
+		return routerName
+	}
 	for _, e := range c.Experts {
 		if e.Id == id {
 			return e.Name

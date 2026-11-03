@@ -5,6 +5,7 @@ import {
     agentSeat,
     answerers,
     askedParts,
+    authorName,
     byAgreement,
     callSegments,
     canRemoveCouncil,
@@ -803,6 +804,34 @@ describe("replyLabel", () => {
         expect(replyLabel(council(), reply("r2", "ram", { round: 2, routed: { pending: true } }))).toBe("");
     });
 
+    it("says a seat the post went to could not answer it, with its error, though the post was marked answered", () => {
+        const limit = "You've hit your 5-hour limit · resets 6:50pm";
+        const failed = council({ state: "stopped", round: 3, failed: { nu: { round: 12, error: limit } } });
+        const hello = mine({ round: 12, to: ["nu"], answered: true, routed: { chose: ["nu"], failed: true } });
+        expect(replyLabel(failed, hello)).toBe(`New user could not answer: ${limit}`);
+        // the label says it whatever state the council is in, and names each seat that failed on it
+        const two = council({
+            state: "running",
+            failed: { nu: { round: 12, error: limit }, ux: { round: 12, error: "" } },
+        });
+        expect(replyLabel(two, mine({ round: 12, to: ["ux", "nu"], answered: true }))).toBe(
+            `UX could not answer · New user could not answer: ${limit}`
+        );
+        // a post the pass has not reached yet keeps its usual label: the seat's failure may be on another call
+        expect(replyLabel(two, mine({ round: 12, to: ["ux", "nu"] }))).toBe("Answering…");
+    });
+
+    it("leaves out a seat that failed before the post, or that answered it", () => {
+        const before = council({ state: "done", failed: { nu: { round: 3, error: "boom" } } });
+        expect(replyLabel(before, mine({ round: 12, to: ["nu"], answered: true }))).toBe("");
+        const answered = council({
+            state: "done",
+            failed: { nu: { round: 12, error: "boom" } },
+            replies: [reply("r2", "nu", { parentid: "r1", round: 12 })],
+        });
+        expect(replyLabel(answered, mine({ round: 12, to: ["nu"], answered: true }))).toBe("");
+    });
+
     it("queues a reply for the seats' next round until the last one", () => {
         const three = council({ rounds: 3, round: 2 });
         expect(replyLabel(three, mine({ round: 2 }))).toBe("Queued for the next step");
@@ -817,6 +846,15 @@ describe("replyLabel", () => {
         expect(replyLabel(three("running"), mine({ round: 5 }))).toBe("Answering…");
         expect(replyLabel(three("done"), mine({ round: 5 }))).toBe("");
         expect(replyLabel(council({ rounds: 1, state: "running", round: 3 }), mine({ round: 3 }))).toBe("Answering…");
+    });
+});
+
+describe("authorName", () => {
+    it("names the person, a seat, the router's own answer, and a raw id for anyone gone", () => {
+        expect(authorName(council(), "you")).toBe("You");
+        expect(authorName(council(), "nu")).toBe("New user");
+        expect(authorName(council(), "router")).toBe("Router");
+        expect(authorName(council(), "gone")).toBe("gone");
     });
 });
 

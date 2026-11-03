@@ -21,6 +21,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
   (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
 
+- [ ] (arcterm) The council router answers small talk itself, and a failed seat shows under your message: in a done
+  council with two or more seats, send `hello` to the whole council in the Chat → within seconds a Router reply
+  answers it, with Ask <seat> too chips under it, and no seat is called. Send a real question → the router picks a seat
+  as before. With a seat whose call fails (a 5-hour limit), the line under your message reads `<seat> could not
+  answer: <error>`. Go tests and vitest only (`pkg/council/router.go`, `settleRoute`, `councilmodel.ts` `replyLabel`).
+
 - [ ] (arcterm) A run in a monorepo folder starts and checks out only that folder: start an orchestrator run in the
   portal project (`D:\Workspace\SIEM\apps\portal`) → it starts without "creating landing tree" and is not cancelled;
   its tree under `%LOCALAPPDATA%\arc-wt\<run>` holds `apps\portal` and the repo's root files, not `src\` or
