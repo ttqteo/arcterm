@@ -35,6 +35,7 @@ import {
     COUNCIL_FIXTURES,
     COUNCIL_PROJECT,
     JOIN_AGENTS,
+    RELOAD_EXPR,
     ROOM_AGENTS,
     announceCouncil,
     arrangeCouncilProject,
@@ -802,13 +803,13 @@ describe("writeRoomRoster and restoreRoomRoster", () => {
 
         const roster = await writeRoomRoster(h, { file, now: NOW });
         expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(roomRoster(NOW));
-        expect(evals).toContain("location.reload()");
+        expect(evals).toContain(RELOAD_EXPR);
         expect(gotos).toEqual(["jarvis"]);
 
         evals.length = 0;
         await restoreRoomRoster(roster);
         expect(readFileSync(file, "utf8")).toBe('[{"id":"mock-ask-1"}]');
-        expect(evals).toContain("location.reload()");
+        expect(evals).toContain(RELOAD_EXPR);
         // a second restore changes and reloads nothing
         evals.length = 0;
         writeFileSync(file, "[]");
@@ -846,7 +847,7 @@ describe("writeRoomRoster and restoreRoomRoster", () => {
         const file = join(dir, "active.json");
         const { h } = rosterPage({
             async ev(expr) {
-                if (expr === "location.reload()") throw new Error("navigated");
+                if (expr === RELOAD_EXPR) throw new Error("navigated");
                 return expr.includes("TabRpcClient") ? true : undefined;
             },
         });

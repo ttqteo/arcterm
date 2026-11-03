@@ -179,14 +179,20 @@ const ROSTER_FILE = fileURLToPath(new URL("../../../public/cockpit-fixtures/acti
 const APP_READY = "!!window.TabRpcClient && !!document.querySelector('nav button')";
 const RELOAD_WAIT_MS = 30_000;
 
+// marks the old page before reloading it: until the reload commits, the old page still has TabRpcClient and its nav,
+// so a wait on those alone passed at once and the landing clicked into a page being torn down (`nav button "Jarvis"
+// not found`, then the next scenario's `TabRpcClient` undefined, when the council scenarios ran back to back)
+export const RELOAD_EXPR = "window.__cdpReloading = true; location.reload()";
+export const RELOADED_READY = `!window.__cdpReloading && ${APP_READY}`;
+
 // a reload, and the same wait and landing as scenarios.mjs's polishReload; a page that does not come back throws
 async function reloadApp(h) {
     try {
-        await h.ev("location.reload()");
+        await h.ev(RELOAD_EXPR);
     } catch {
         // the evaluate is cut off by the navigation it just started
     }
-    if (!(await waitFor((e) => h.ev(e), APP_READY, RELOAD_WAIT_MS))) {
+    if (!(await waitFor((e) => h.ev(e), RELOADED_READY, RELOAD_WAIT_MS))) {
         throw new Error(`the app did not come back within ${RELOAD_WAIT_MS / 1000}s of the reload`);
     }
     await h.goto("jarvis");

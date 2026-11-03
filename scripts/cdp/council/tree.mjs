@@ -464,6 +464,10 @@ export const councilTree = {
         const listed = await until(`!!document.querySelector(${historyRow})?.hasAttribute("data-council-history-closed")`);
         await h.shot("cdp-shots/council-history-closed.png");
         await h.ev(`document.querySelector(${historyRow})?.click()`);
+        // a council with a summary opens on its Report unless it was left on the Discussion, and Reopen sits in the
+        // Discussion's header alone
+        await until(`!!document.querySelector('[data-council-tab="discussion"]')`);
+        await h.ev(`document.querySelector('[data-council-tab="discussion"]')?.click()`);
         const reopen = await until(`!!document.querySelector('[data-council-close="reopen"]')`);
         // back to the terminal for the steps that follow
         await pressEscape(h);

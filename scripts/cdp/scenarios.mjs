@@ -22970,11 +22970,17 @@ async function waitForProjectInConfig(h, name) {
 
 async function polishReload(h) {
     try {
-        await h.ev("location.reload()");
+        await h.ev("window.__cdpReloading = true; location.reload()");
     } catch {
         /* the evaluate is cut off by the navigation it just started */
     }
-    await polishWaitFor(h, "!!window.TabRpcClient && !!document.querySelector('nav button')", 30000);
+    // the marker keeps the wait off the old page, which still has its nav until the reload commits: waiting on the nav
+    // alone passed at once and the landing clicked into a page being torn down
+    await polishWaitFor(
+        h,
+        "!window.__cdpReloading && !!window.TabRpcClient && !!document.querySelector('nav button')",
+        30000
+    );
     await h.goto("jarvis");
 }
 

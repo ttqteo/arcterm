@@ -331,7 +331,8 @@ export const councilSummary = {
                 ideas: [...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => e.dataset.councilIdea),
                 on: [...document.querySelectorAll("[data-council-channel] [data-council-reply-on]")].map((e) => e.dataset.councilReplyOn),
                 bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
-                pressed: document.querySelector("[data-council-seats]")?.getAttribute("data-only") ?? null,
+                // the button: the Agent tree's council row and Setup's seat list carry data-council-seats too
+                pressed: document.querySelector("button[data-council-seats]")?.getAttribute("data-only") ?? null,
             })`);
             await h.shot("cdp-shots/council-discussion-only.png");
             await click(h, "[data-council-channel] [data-council-reply-on='P3']");
