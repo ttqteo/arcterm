@@ -2061,7 +2061,7 @@ func TestAFollowUpToEveryoneIsAnsweredByOneSeatFirst(t *testing.T) {
 	}
 	mustNotContain(t, "UX's prompt", ans[0].Prompt, "Already answered", othersAnsweredRule)
 	for _, req := range ans[1:] {
-		mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, "- UX: Answer from ux", othersAnsweredRule)
+		mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, "- Ease of use: Answer from ux", othersAnsweredRule)
 	}
 	ask := repliesBy(c, YouId)[0]
 	var nod *CouncilReply
