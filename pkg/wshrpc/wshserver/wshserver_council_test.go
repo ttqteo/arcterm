@@ -317,6 +317,85 @@ func TestCouncilEstimateFollowupWithChats(t *testing.T) {
 	}
 }
 
+// TestCouncilEstimateRouted: Routed with an Id prices a whole-council message the router would take, from the saved
+// council's own seats, and sends the range (callsmax, tokensmax) on the wire; the router's call is the 15k of
+// council.routerTokens. Without Routed the old cases answer as they did, with no range.
+func TestCouncilEstimateRouted(t *testing.T) {
+	useCouncilStore(t)
+	ws := &WshServer{}
+	ctx := context.Background()
+	experts, err := council.ExpertsFor("ui-feature") // four role seats and the coordinator
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	saveCouncil(t, &council.Council{Id: "c1", Project: t.TempDir(), Feature: "Idle sleep", Experts: experts, State: council.StateDone, Round: 2})
+	withChat := append([]council.CouncilExpert{{Id: "agent-tab-1", Agent: "tab-1", Harness: "claude", Context: 300_000}}, experts...)
+	saveCouncil(t, &council.Council{Id: "c2", Project: t.TempDir(), Feature: "Idle sleep", Experts: withChat, State: council.StateDone, Round: 2,
+		Failed: map[string]council.CouncilFailure{experts[0].Id: {Round: 1, Error: "timeout"}}})
+
+	for _, tc := range []struct {
+		name string
+		data wshrpc.CommandCouncilEstimateData
+		want wshrpc.CouncilEstimateRtnData
+	}{
+		{"files off: router and one seat to router and two",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 40_000, Minutes: 1}},
+		{"files on",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, Tools: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 110_000, TokensMax: 15_000 + 220_000, Minutes: 2}},
+		{"Auto spans both branches",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, ToolsAuto: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 220_000, Minutes: 2}},
+		{"the council's own chat is priced at its context, and the seat whose call failed is left out",
+			wshrpc.CommandCouncilEstimateData{Id: "c2", Routed: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 300_000 + 20_000, Minutes: 1, AgentTokens: 300_000}},
+		{"Routed is read before a follow-up count",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, Followup: 2},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 40_000, Minutes: 1}},
+
+		// no Routed: the follow-up and remaining cases answer as before, with no range, and ToolsAuto changes nothing
+		{"a follow-up of two experts, no range",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, ToolsAuto: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
+		{"what the council has left, no range",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", ToolsAuto: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 5, Tokens: 4*45_000 + 80_000, Minutes: 3}},
+	} {
+		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if *got != tc.want {
+			t.Errorf("%s = %+v, want %+v", tc.name, *got, tc.want)
+		}
+	}
+
+	// the range crosses the wire as tokensmax and callsmax, and a plain estimate leaves both off
+	got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true})
+	if err != nil {
+		t.Fatalf("routed estimate: %v", err)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"callsmax":3`) || !strings.Contains(string(raw), `"tokensmax":55000`) {
+		t.Errorf("the routed estimate on the wire = %s, want callsmax and tokensmax", raw)
+	}
+	got, err = ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2})
+	if err != nil {
+		t.Fatalf("follow-up estimate: %v", err)
+	}
+	if raw, _ := json.Marshal(got); strings.Contains(string(raw), "max") {
+		t.Errorf("a plain estimate on the wire = %s, want no range", raw)
+	}
+
+	if _, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "missing", Routed: true}); err == nil {
+		t.Error("the routed estimate of a council that does not exist should fail")
+	}
+}
+
 // TestCouncilSaveDocWritesTheDocument: the command writes the whole document (report, discussion, run facts) at the
 // default path and keeps that path on the council, so a second save rewrites the same file. The path rules themselves
 // are council.DocPath's tests.
