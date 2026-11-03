@@ -4,9 +4,10 @@
 // The council's discussion as a group chat with threads (councilchat.tsx): what the channel, its thread panel, the seat
 // chips and the step chip draw, derived from a `Council`. The channel holds the person's question, a divider for each
 // round, every idea as a message (its evidence, the seats that agreed with it, the seats that picked it, a reply chip),
-// every reply as a message naming the idea it is on, the drafts held for the person, the lines where an agent skipped a
-// turn, a failure line with Retry, and a typing row for each seat at work; the seats take turns in it (`takeTurns`).
-// Each idea's thread gathers its replies again, a held reply draft among them. An item that was dropped is left out
+// the person's posts to the whole council and the answers to them, the drafts held for the person, the lines where an
+// agent skipped a turn, a failure line with Retry, and a typing row for each seat at work; the seats take turns in it
+// (`takeTurns`). The replies on an idea are in its thread alone, a held reply draft among them (it also waits in the
+// channel, where the person acts on it). An item that was dropped is left out
 // everywhere, and one the person edited before sending says so. Pure, no React, no Wave runtime imports, so every
 // rule here has a test (councilchatmodel.test.ts).
 //
@@ -590,16 +591,17 @@ function quoteOnce(items: ChannelItem[]): ChannelItem[] {
     });
 }
 
-/** Pure: the channel of a council: the person's question, a divider for each round reached, every idea (sent, or held
- *  as a draft), every reply (each on an idea names it, `on`, the first of a run on one idea only), the lines where an
- *  agent skipped a turn, and the person's posts with the answers to them; then a failure line for each seat whose call
- *  failed, and last a typing row for each seat at work. It is in time order, but for the seats taking turns in each
- *  settled round (`takeTurns`). A reply on an idea is in that idea's thread too (`councilThread`). A dropped item is
- *  left out.
+/** Pure: the channel of a council: the person's question, a divider for each round with something in the channel,
+ *  every idea (sent, or held as a draft), the held reply drafts, the lines where an agent skipped a turn, and the
+ *  person's posts to the whole council with the answers to them; then a failure line for each seat whose call failed,
+ *  and last a typing row for each seat at work. A sent reply on an idea is not here: it is in that idea's thread
+ *  (`councilThread`), which the idea's reply chip counts and opens, as a group chat keeps a thread out of the channel.
+ *  It is in time order, but for the seats taking turns in each settled round (`takeTurns`). A dropped item is left out.
  *
  *  With `only`, an expert's id, it is that seat's messages alone (the Summary's "show their messages"): the question,
- *  its ideas, and every reply it wrote, with its own lines; a round with nothing of its own leaves its divider out. An
- *  agreement with nothing to add is no message. */
+ *  its ideas, and every reply it wrote, its replies on ideas too (each names its idea, `on`, the first of a run on one
+ *  idea only), with its own lines; a round with nothing of its own leaves its divider out. An agreement with nothing to
+ *  add is no message. */
 export function councilChannel(c: Council, only?: string): ChannelItem[] {
     const view = sentView(c);
     const entries: Entry[] = [];
@@ -618,6 +620,10 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
         }
     }
     for (const r of readableReplies(c)) {
+        // a reply on an idea lives in its thread, which the idea's reply chip opens; one seat's view keeps them all
+        if (only == null && r.proposalid !== "") {
+            continue;
+        }
         if (theirs(r.author)) {
             // a seat's reply on an idea takes its turn; the person's posts, and the answers to a post, stay in time
             const turn =
@@ -686,11 +692,10 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
             items.push(typingRow(c, e, act));
         }
     }
-    return only == null
-        ? items
-        : items.filter(
-              (item, i) => item.kind !== "divider" || (i + 1 < items.length && items[i + 1].kind !== "divider")
-          );
+    // a round with nothing in the channel (its replies are all in threads) leaves its divider out
+    return items.filter(
+        (item, i) => item.kind !== "divider" || (i + 1 < items.length && items[i + 1].kind !== "divider")
+    );
 }
 
 // ---- a thread ----

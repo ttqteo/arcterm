@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council thread replies stay in their thread, with a live seat: on a running council's Discussion, open
+  an idea's reply chip and send a reply in the thread → it shows in the thread and the idea's chip counts it, no copy
+  in the channel, and the seat's answer lands in the thread only. The fixtures passed in headless Chrome
+  (`council-discussion`, `council-summary`, 2026-11-03); a real send and answer was not tried (`councilChannel`,
+  `frontend/app/view/agents/councilchatmodel.ts`).
+
 - [ ] (arcterm) Zoom is kept: press Ctrl+= twice, quit arcterm and open it again, then install a new build over it →
   the app opens at 120% both times; Ctrl+0 → 100%, and it stays 100% after the next restart. The factor is saved in
   localStorage `cockpit.zoom` (`frontend/tauri/chrome.ts` `restoreZoom`, run from `installChromeListeners` at boot).

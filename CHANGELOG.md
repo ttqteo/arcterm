@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
+
 ### Fixed
 
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.

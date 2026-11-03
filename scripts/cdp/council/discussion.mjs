@@ -224,22 +224,21 @@ async function round2(h, ctx, rec) {
         { kinds: kinds.slice(0, 3), marks }
     );
 
-    // every idea is a message with a reply chip, and the withdrawn P6 is one too; the channel draws every reply a person
-    // reads as a message of its own as well, and each is in its idea's thread
+    // every idea is a message with a reply chip, and the withdrawn P6 is one too; a reply on an idea is in its thread
+    // alone, so the channel draws none of them
     const counts = readableCounts("round2");
     const ideas = await ideaIds(h);
     const chipsOf = await h.ev(`[...document.querySelectorAll("[data-council-thread-open]")].map((b) => [b.getAttribute("data-council-thread-open"), b.getAttribute("data-replies")])`);
+    // every reply of this fixture is on an idea
     const replyPosts = await count(h, "[data-council-channel] [data-council-reply-post]");
-    // every reply of this fixture is on an idea, so the chips' counts add up to the replies in the channel
-    const readable = Object.values(counts).reduce((a, b) => a + b, 0);
     rec(
-        "round 2: six ideas in the channel with the seats taking turns, each with a reply chip counting the replies a person reads, and each of those replies a message of its own in the channel",
+        "round 2: six ideas in the channel with the seats taking turns, each with a reply chip counting the replies a person reads, and none of those replies in the channel",
         // UX's first, New user's, RAM's, Skeptic's, then UX's second and Skeptic's second (takeTurns, councilchatmodel.ts)
         ideas.join(",") === "P1,P4,P3,P5,P2,P6" &&
             chipsOf.length === 6 &&
             chipsOf.every(([p, n]) => Number(n) === (counts[p] ?? 0)) &&
-            replyPosts === readable,
-        { ideas, chipsOf, counts, replyPosts, readable }
+            replyPosts === 0,
+        { ideas, chipsOf, counts, replyPosts }
     );
 
     const typing = await typingLines(h);
@@ -888,16 +887,18 @@ async function done(h, ctx, rec) {
     const kinds = await channelKinds(h);
     const typing = await count(h, '[data-council-channel] [data-item-kind="typing"]');
     const drafts = await count(h, "[data-council-draft]");
+    // every reply of this fixture is on an idea, in its thread: round 2 has nothing in the channel, so no divider
+    const marks = await dividers(h);
     rec(
-        "done: the council shows as a channel (the question, two dividers, six ideas with reply chips), no pause, no draft and no typing row, with a message box",
+        "done: the council shows as a channel (the question, the round 1 divider, six ideas with reply chips, round 2's replies in their threads), no pause, no draft and no typing row, with a message box",
         kinds[0] === "question" &&
             (await ideaIds(h)).length === 6 &&
-            (await dividers(h)).length === 2 &&
+            marks.join("|") === "Round 1 · ideas" &&
             typing === 0 &&
             drafts === 0 &&
             !(await exists(h, "[data-council-pause]")) &&
             (await exists(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`)),
-        { kinds: kinds.slice(0, 3), typing, drafts }
+        { kinds: kinds.slice(0, 3), marks, typing, drafts }
     );
     await h.shot("cdp-shots/council-discussion-done.png");
     await jumps(h, rec);
