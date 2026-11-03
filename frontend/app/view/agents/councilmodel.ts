@@ -523,17 +523,77 @@ export function mentionsChat(text: string, tabId: string, tabIds: readonly strin
     }
     const others = tabIds.map((t) => t.toLowerCase()).filter((t) => t !== own);
     for (const found of withoutFileMentions(text).toLowerCase().matchAll(MENTIONED_WORD)) {
-        const word = found[2];
-        if (word.length >= MIN_CHAT_KEY && own.startsWith(word) && !others.some((t) => t.startsWith(word))) {
+        if (isChatKey(found[2], own, others)) {
             return true;
         }
     }
     return false;
 }
 
+// whether `word` (lower case) is the mention key of the chat `own` among `others` (lower case, `own` left out)
+function isChatKey(word: string, own: string, others: readonly string[]): boolean {
+    return word.length >= MIN_CHAT_KEY && own.startsWith(word) && !others.some((t) => t.startsWith(word));
+}
+
 /** Pure: the tab ids of the chats seated in a council, the chats a chat's mention key must be told apart from. */
 export function chatSeatTabs(c: Pick<Council, "experts">): string[] {
     return c.experts.flatMap((e) => (e.agent ? [e.agent] : []));
+}
+
+/** A seat a message names with an `@`, or every seat (`id` null: `@all`, `@everyone`): where the `@` sits (`start`) and
+ *  where the name ends. */
+export interface SeatMention {
+    start: number;
+    end: number;
+    id: string | null;
+}
+
+/** Pure: the names in a message that reach a seat of the panel, as `answerers` reads them (`mentions`, `mentionsChat`,
+ *  `mentionsAll`), in the order they sit in the text; where two names start at one `@` (`@New` and `@New user`), the
+ *  longer. An `@` that starts a file names no seat. */
+export function seatMentions(c: Council, text: string): SeatMention[] {
+    const said = withoutFileMentions(text);
+    const found: SeatMention[] = [];
+    const add = (re: RegExp, id: string | null) => {
+        for (const m of said.matchAll(re)) {
+            found.push({ start: m.index + m[1].length, end: m.index + m[0].length, id });
+        }
+    };
+    add(new RegExp(NAMES_ALL.source, "giu"), null);
+    const seats = panel(c);
+    for (const e of seats) {
+        for (const word of new Set([e.name.trim(), e.id.trim()])) {
+            if (word !== "") {
+                add(new RegExp(`(^|[^\\p{L}\\p{N}_])@${escapeRe(word)}(?![\\p{L}\\p{N}_])`, "giu"), e.id);
+            }
+        }
+    }
+    const tabs = chatSeatTabs(c).map((t) => t.toLowerCase());
+    for (const m of said.matchAll(MENTIONED_WORD)) {
+        const word = m[2].toLowerCase();
+        const seat = seats.find((e) => {
+            const own = e.agent?.toLowerCase() ?? "";
+            return (
+                own.length >= MIN_CHAT_KEY &&
+                isChatKey(
+                    word,
+                    own,
+                    tabs.filter((t) => t !== own)
+                )
+            );
+        });
+        if (seat != null) {
+            found.push({ start: m.index + m[1].length, end: m.index + m[0].length, id: seat.id });
+        }
+    }
+    found.sort((a, b) => a.start - b.start || b.end - a.end);
+    const out: SeatMention[] = [];
+    for (const m of found) {
+        if (m.start >= (out[out.length - 1]?.end ?? 0)) {
+            out.push(m);
+        }
+    }
+    return out;
 }
 
 // the seats a text names by an @ (and the chats joining with it), as `answerers` reads them: by name or id, a chat seat

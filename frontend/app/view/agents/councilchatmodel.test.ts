@@ -41,7 +41,7 @@ import {
     type Who,
 } from "./councilchatmodel";
 import { CHAT_THREAD } from "./councillistmodel";
-import type { SeatableAgent } from "./councilmodel";
+import { seatMentions, type SeatableAgent } from "./councilmodel";
 
 // local time, so the times of day the chat shows read the same in every time zone
 const STARTED = new Date(2026, 9, 31, 14, 0, 0).getTime();
@@ -538,7 +538,7 @@ describe("councilChannel: the person's posts", () => {
             tone: "you",
             label: "steers",
             mine: true,
-            reaches: "For everyone",
+            to: null,
             pending: "Answered after the summary",
             at: "14:02",
             when: "Oct 31 14:02 · 2:30 into the council",
@@ -554,9 +554,16 @@ describe("councilChannel: the person's posts", () => {
             ],
         });
         const items = councilChannel(c);
-        expect(byId(items, "r1")).toMatchObject({ reaches: "For Witness synthesis · t-w and UX audit · t-u" });
-        expect(byId(items, "r2")).toMatchObject({ reaches: "For Skeptic" });
-        expect(byId(items, "r3")).toMatchObject({ reaches: "" });
+        expect(byId(items, "r1")).toMatchObject({
+            to: {
+                by: "you",
+                seats: [{ author: "witness", name: "Witness synthesis · t-w" }, { author: "ux" }],
+                everyone: false,
+                title: "For Witness synthesis · t-w and UX audit · t-u",
+            },
+        });
+        expect(byId(items, "r2")).toMatchObject({ to: { by: "you", seats: [{ author: "sk" }], title: "For Skeptic" } });
+        expect(byId(items, "r3")).toMatchObject({ to: null });
     });
 
     it("knows when a post reaches whom it would anyway: everyone from the channel, the idea's seat in its thread", () => {
@@ -568,17 +575,16 @@ describe("councilChannel: the person's posts", () => {
             ],
         });
         const items = councilChannel(c);
-        expect(byId(items, "r1")).toMatchObject({ reaches: "For everyone", reachIsDefault: true });
-        expect(byId(items, "r11")).toMatchObject({ reaches: "For Skeptic", reachIsDefault: false });
+        expect(byId(items, "r1")).toMatchObject({ to: null });
+        expect(byId(items, "r11")).toMatchObject({ to: { by: "you", title: "For Skeptic" } });
         const thread = councilThread(c, "P1")!.items;
         // P1 is Security's: a reply to Witness is worth saying, one to Security goes without saying
         expect(thread.find((i) => i.id === "r5")).toMatchObject({
-            reaches: "For Witness synthesis · t-w",
-            reachIsDefault: false,
+            to: { by: "you", seats: [{ author: "witness" }], title: "For Witness synthesis · t-w" },
         });
-        expect(thread.find((i) => i.id === "r10")).toMatchObject({ reaches: "For Security", reachIsDefault: true });
-        // a seat's reply carries neither
-        expect(thread.find((i) => i.id === "r3")).toMatchObject({ reaches: "", reachIsDefault: false, asks: [] });
+        expect(thread.find((i) => i.id === "r10")).toMatchObject({ to: null });
+        // a seat's reply carries none
+        expect(thread.find((i) => i.id === "r3")).toMatchObject({ to: null, asks: [] });
     });
 
     it("says a post waits for the next step while the council waits on the person", () => {
@@ -625,7 +631,7 @@ describe("councilChannel: the person's posts", () => {
             author: "sk",
             label: "replies",
             mine: false,
-            reaches: "",
+            to: null,
             pending: "",
             parentid: "r1",
         });
@@ -799,7 +805,7 @@ describe("councilThread", () => {
             author: "you",
             mine: true,
             label: "replies",
-            reaches: "For Witness synthesis · t-w",
+            to: { by: "you", title: "For Witness synthesis · t-w" },
             pending: "Answered after the summary",
         });
     });
@@ -1325,10 +1331,14 @@ describe("a council saved before live agents", () => {
             thread: { count: 2, last: "Last reply 14:07" },
         });
         expect(byId(items, "P3")).toMatchObject({ picks: null });
-        expect(byId(items, "r2")).toMatchObject({ label: "steers", reaches: "For everyone", pending: "" });
+        expect(byId(items, "r2")).toMatchObject({ label: "steers", to: null, pending: "" });
         expect(byId(items, "r3")).toMatchObject({ author: "ux", parentid: "r2", label: "replies" });
         expect(councilThread(c, "P1")!.items.map((i) => i.id)).toEqual(["r1", "r4"]);
-        expect(councilThread(c, "P1")!.items[1]).toMatchObject({ mine: true, reaches: "For RAM", pending: "" });
+        expect(councilThread(c, "P1")!.items[1]).toMatchObject({
+            mine: true,
+            to: { by: "you", title: "For RAM" },
+            pending: "",
+        });
         expect(stepChip(c)).toEqual({ text: "Done", dot: "idle" });
     });
 
@@ -1935,7 +1945,7 @@ describe("threadAsks", () => {
     });
 });
 
-describe("a message the router took up: its line, its reach and Ask <seat> too", () => {
+describe("a message the router took up: its chips, its line and Ask <seat> too", () => {
     // a done council of role seats (UX, RAM, New user); the person's message r1 is routed and the answers hang on it
     const done = (extra: Partial<Council> = {}) => council({ experts: oldExperts, state: "done", round: 4, ...extra });
     const routedReply = (routed: CouncilRouted, extra: Partial<CouncilReply> = {}) =>
@@ -2030,12 +2040,20 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
     });
 
     describe("the person's post", () => {
-        it("names the seats the router chose, never For everyone, and is not the default reach", () => {
+        it("names the seats the router chose, never everyone, with the router's line as its hover", () => {
             const c = done({ replies: [routedReply({ chose: ["ux"], reason: "Why." }), answer("r2", "ux", 160)] });
-            expect(byId(items(c), "r1")).toMatchObject({ reaches: "For UX", reachIsDefault: false, pending: "" });
+            expect(byId(items(c), "r1")).toMatchObject({
+                to: {
+                    by: "router",
+                    seats: [{ author: "ux", name: "UX" }],
+                    everyone: false,
+                    title: "Router chose UX: Why.",
+                },
+                pending: "",
+            });
         });
 
-        it("reads For UX and RAM even when the two are the whole panel", () => {
+        it("names UX and RAM even when the two are the whole panel", () => {
             const two = council({
                 experts: [
                     { id: "ux", name: "UX", brief: "", model: "sonnet" },
@@ -2046,7 +2064,9 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
                 round: 4,
                 replies: [routedReply({ chose: ["ux", "ram"], reason: "Both." }, { to: ["ux", "ram"] })],
             });
-            expect(byId(items(two), "r1")).toMatchObject({ reaches: "For UX and RAM", reachIsDefault: false });
+            expect(byId(items(two), "r1")).toMatchObject({
+                to: { by: "router", seats: [{ author: "ux" }, { author: "ram" }], everyone: false },
+            });
             // the same two seats on a message nobody routed (an @all) are everyone, as before
             const all = council({
                 experts: two.experts,
@@ -2054,21 +2074,21 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
                 round: 4,
                 replies: [reply("r1", "you", 150, { proposalid: "", round: 4, to: ["ux", "ram"] })],
             });
-            expect(byId(items(all), "r1")).toMatchObject({ reaches: "For everyone", reachIsDefault: true });
+            expect(byId(items(all), "r1")).toMatchObject({ to: null });
         });
 
-        it("says the router is choosing and names no reach while it has not chosen", () => {
+        it("says the router is choosing, with no seat and no wait line, while it has not chosen", () => {
             const c = done({ replies: [routedReply({ pending: true }, { to: [] })] });
+            // its chips say so, at the top of its bubble: the line under it says nothing
             expect(byId(items(c), "r1")).toMatchObject({
-                reaches: "",
-                reachIsDefault: true,
-                pending: "Router is choosing a seat…",
+                to: { by: "choosing", seats: [], everyone: false, title: "" },
+                pending: "",
             });
         });
     });
 
     describe("a seat's answer", () => {
-        it("carries the router line on the first answer only, and the chips on the last", () => {
+        it("carries the chips on the last answer only, and no quote on answers right under their message", () => {
             const c = done({
                 replies: [
                     routedReply({ chose: ["ux", "ram"], reason: "Layout and memory." }, { to: ["ux", "ram"] }),
@@ -2078,21 +2098,21 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
             });
             const list = items(c);
             expect(byId(list, "r2")).toMatchObject({
-                router: "Router chose UX and RAM: Layout and memory.",
+                quote: null,
                 askToo: [],
                 routedReply: "",
             });
             expect(byId(list, "r3")).toMatchObject({
-                router: "",
+                quote: null,
                 askToo: [{ id: "nu", name: "New user" }],
                 routedReply: "r1",
             });
         });
 
-        it("puts the line and the chips on the one answer when there is only one", () => {
+        it("puts the chips on the one answer when there is only one", () => {
             const c = done({ replies: [routedReply({ chose: ["ux"], reason: "Why." }), answer("r2", "ux", 160)] });
             expect(byId(items(c), "r2")).toMatchObject({
-                router: "Router chose UX: Why.",
+                quote: null,
                 askToo: [
                     { id: "ram", name: "RAM" },
                     { id: "nu", name: "New user" },
@@ -2110,8 +2130,8 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
                 ],
             });
             const list = items(c);
-            expect(byId(list, "r2")).toMatchObject({ router: "Router chose UX and RAM: Both.", askToo: [] });
-            expect(byId(list, "r3")).toMatchObject({ router: "", routedReply: "r1" });
+            expect(byId(list, "r2")).toMatchObject({ quote: null, askToo: [] });
+            expect(byId(list, "r3")).toMatchObject({ quote: null, routedReply: "r1" });
         });
 
         it("skips a seat's answer with no words: it is a reaction, no post", () => {
@@ -2125,7 +2145,7 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
             const list = items(c);
             expect(byId(list, "r3")).toBeUndefined();
             expect(byId(list, "r2")).toMatchObject({
-                router: "Router chose UX and RAM: Both.",
+                quote: null,
                 askToo: [{ id: "nu", name: "New user" }],
                 routedReply: "r1",
             });
@@ -2140,7 +2160,7 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
             });
             expect(byId(items(everyone), "r2")).toMatchObject({ askToo: [], routedReply: "" });
             const pending = done({ replies: [routedReply({ pending: true }, { to: [] }), answer("r2", "ux", 160)] });
-            expect(byId(items(pending), "r2")).toMatchObject({ router: "", askToo: [], routedReply: "" });
+            expect(byId(items(pending), "r2")).toMatchObject({ quote: null, askToo: [], routedReply: "" });
         });
 
         it("carries nothing on an answer to a message the router did not take up, or on the person's own post", () => {
@@ -2150,8 +2170,183 @@ describe("a message the router took up: its line, its reach and Ask <seat> too",
                     answer("r2", "ux", 160),
                 ],
             });
-            expect(byId(items(c), "r2")).toMatchObject({ router: "", askToo: [], routedReply: "" });
-            expect(byId(items(c), "r1")).toMatchObject({ router: "", askToo: [], routedReply: "" });
+            expect(byId(items(c), "r2")).toMatchObject({ quote: null, askToo: [], routedReply: "" });
+            expect(byId(items(c), "r1")).toMatchObject({ quote: null, askToo: [], routedReply: "" });
         });
+    });
+});
+
+describe("an answer quotes the person's post it answers, when it is not right under it", () => {
+    const done = (replies: CouncilReply[], extra: Partial<Council> = {}) =>
+        council({ experts: oldExperts, state: "done", round: 4, replies, ...extra });
+    const post = (id: string, seconds: number, extra: Partial<CouncilReply> = {}) =>
+        reply(id, "you", seconds, { proposalid: "", round: 4, to: ["ux"], answered: true, ...extra });
+    const answer = (id: string, author: string, parent: string, seconds: number, extra: Partial<CouncilReply> = {}) =>
+        reply(id, author, seconds, { proposalid: "", parentid: parent, round: 4, ...extra });
+
+    it("quotes each post on its answer when three were sent in a row, on one line, with a jump to it", () => {
+        const c = done([
+            post("q1", 100, { text: "First\n  question?" }),
+            post("q2", 110, { text: "Second?", to: ["ram"] }),
+            post("q3", 120, { text: "Third?" }),
+            answer("a1", "ux", "q1", 130),
+            answer("a3", "ux", "q3", 140),
+            answer("a2", "ram", "q2", 150),
+        ]);
+        const items = councilChannel(c);
+        expect(byId(items, "a1")).toMatchObject({ quote: { id: "q1", text: "First question?", jump: true } });
+        expect(byId(items, "a3")).toMatchObject({ quote: { id: "q3", text: "Third?", jump: true } });
+        expect(byId(items, "a2")).toMatchObject({ quote: { id: "q2", text: "Second?", jump: true } });
+        expect(byId(items, "q1")).toMatchObject({ quote: null });
+    });
+
+    it("quotes nothing on an answer right under its post, nor on a second answer right under the first", () => {
+        const c = done([
+            post("q1", 100, { to: ["ux", "ram"] }),
+            answer("a1", "ux", "q1", 110),
+            answer("a2", "ram", "q1", 120),
+        ]);
+        const items = councilChannel(c);
+        expect(byId(items, "a1")).toMatchObject({ quote: null });
+        expect(byId(items, "a2")).toMatchObject({ quote: null });
+    });
+
+    it("looks past the failure line under a post: the answer after it is still right under it", () => {
+        const c = done([post("q1", 100, { to: ["ux", "ram"] }), answer("a1", "ux", "q1", 110)], {
+            failed: { ram: { round: 4, error: "claude exited with status 1" } },
+        });
+        const items = councilChannel(c);
+        expect(items.map((i) => i.id).slice(-3)).toEqual(["q1", "failed:ram", "a1"]);
+        expect(byId(items, "a1")).toMatchObject({ quote: null });
+    });
+
+    it("keeps the quote with no jump in one seat's view, which leaves the person's posts out", () => {
+        const c = done([post("q1", 100), answer("a1", "ux", "q1", 110)]);
+        expect(byId(councilChannel(c, "ux"), "a1")).toMatchObject({ quote: { id: "q1", jump: false } });
+    });
+
+    it("quotes in an idea's thread too, and nothing on a seat's reply that answers no post of the person's", () => {
+        const c = done(
+            [
+                post("q1", 100, { proposalid: "P1" }),
+                reply("x1", "ram", 105, { round: 4 }),
+                answer("a1", "ux", "q1", 110, { proposalid: "P1" }),
+            ],
+            { proposals: [prop("P1", "ux", 50)] }
+        );
+        const thread = councilThread(c, "P1")!.items;
+        expect(thread.find((i) => i.id === "a1")).toMatchObject({ quote: { id: "q1", jump: true } });
+        expect(thread.find((i) => i.id === "x1")).toMatchObject({ quote: null });
+    });
+});
+
+describe("the person's post: its chips and the seats its text names", () => {
+    const done = (replies: CouncilReply[]) => council({ experts: oldExperts, state: "done", round: 4, replies });
+    const post = (id: string, seconds: number, extra: Partial<CouncilReply> = {}) =>
+        reply(id, "you", seconds, { proposalid: "", round: 4, answered: true, ...extra });
+
+    it("draws no chips when its text names whom it reaches: the names are chips in its text", () => {
+        const items = councilChannel(
+            done([
+                post("q1", 100, { text: "@RAM how much?", to: ["ram"] }),
+                post("q2", 110, { text: "@all thoughts?", to: ["ux", "ram", "nu"] }),
+            ])
+        );
+        expect(byId(items, "q1")).toMatchObject({
+            to: null,
+            parts: [
+                { kind: "seat", text: "@RAM", who: { author: "ram", name: "RAM" } },
+                { kind: "text", text: " how much?" },
+            ],
+        });
+        expect(byId(items, "q2")).toMatchObject({
+            to: null,
+            parts: [
+                { kind: "seat", text: "@all", who: null },
+                { kind: "text", text: " thoughts?" },
+            ],
+        });
+    });
+
+    it("says the router failed, and names the seat that answered instead, with no reason", () => {
+        const failed = post("q1", 100, {
+            to: ["ux"],
+            routed: { chose: ["ux"], failed: true, reason: "claude exited with status 1" },
+        });
+        expect(byId(councilChannel(done([failed])), "q1")).toMatchObject({
+            to: { by: "failed", seats: [{ author: "ux" }], title: "Router failed, UX answered" },
+        });
+    });
+
+    it("cuts no text of a seat's reply: its parts are empty", () => {
+        const items = councilChannel(
+            done([
+                post("q1", 100, { to: ["ux"] }),
+                reply("a1", "ux", 110, { proposalid: "", parentid: "q1", round: 4, text: "@RAM agrees" }),
+            ])
+        );
+        expect(byId(items, "a1")).toMatchObject({ parts: [], to: null });
+    });
+});
+
+describe("seatMentions: the seats a message names", () => {
+    const c = council({ experts: oldExperts });
+
+    it("finds a seat by name or id, not inside an address nor at the start of a file", () => {
+        expect(seatMentions(c, "@UX and @ram, not a@nu.com nor @ux/plan.md")).toEqual([
+            { start: 0, end: 3, id: "ux" },
+            { start: 8, end: 12, id: "ram" },
+        ]);
+        expect(seatMentions(c, "@uxx and @rams")).toEqual([]);
+    });
+
+    it("reads @all and @everyone as every seat", () => {
+        expect(seatMentions(c, "hey @all, and @Everyone")).toEqual([
+            { start: 4, end: 8, id: null },
+            { start: 14, end: 23, id: null },
+        ]);
+    });
+
+    it("takes the longer of two names that start at one @", () => {
+        const two = council({
+            experts: [
+                { id: "new", name: "New", brief: "", model: "sonnet" },
+                { id: "nu", name: "New user", brief: "", model: "sonnet" },
+            ],
+        });
+        expect(seatMentions(two, "@New user, hi @New")).toEqual([
+            { start: 0, end: 9, id: "nu" },
+            { start: 14, end: 18, id: "new" },
+        ]);
+    });
+
+    it("finds a chat seat by its mention key, and not the coordinator", () => {
+        const chats = council({
+            experts: [
+                agent("notes", "0976023f-1111", "notes", 0),
+                agent("other", "1a2b3c4d-2222", "other", 0),
+                { id: "coordinator", name: "Coordinator", brief: "", model: "opus", coordinator: true },
+            ],
+        });
+        expect(seatMentions(chats, "@0976023f look, @1a2b3c4d too, @coordinator no")).toEqual([
+            { start: 0, end: 9, id: "notes" },
+            { start: 16, end: 25, id: "other" },
+        ]);
+    });
+});
+
+describe("messageSegments with its council: the seats it names are chips", () => {
+    it("cuts at seats and files in the order they sit, and joins back to the text", () => {
+        const c = council({ experts: oldExperts });
+        const text = "@RAM see @a.ts, @UX";
+        const parts = messageSegments(text, c);
+        expect(parts).toMatchObject([
+            { kind: "seat", text: "@RAM", who: { author: "ram" } },
+            { kind: "text", text: " see " },
+            { kind: "file", path: "a.ts" },
+            { kind: "text", text: ", " },
+            { kind: "seat", text: "@UX", who: { author: "ux" } },
+        ]);
+        expect(parts.map((p) => (p.kind === "file" ? `@${p.path}` : p.text)).join("")).toBe(text);
     });
 });

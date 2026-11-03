@@ -33,15 +33,18 @@ import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+    ArrowRight,
     Check,
     ChevronDown,
     ChevronUp,
     ChevronsLeft,
     ChevronsRight,
+    CircleAlert,
     CornerDownRight,
     FileText,
     Loader2,
     Plus,
+    Route,
     SendHorizontal,
     ThumbsDown,
     ThumbsUp,
@@ -60,6 +63,7 @@ import {
     type ClipboardEvent,
     type DragEvent,
     type KeyboardEvent,
+    type MouseEvent,
     type ReactNode,
     type RefObject,
 } from "react";
@@ -80,7 +84,6 @@ import {
     insertFileMention,
     insertMention,
     mentionPicker,
-    messageSegments,
     onlyLine,
     pickedChats,
     pickerRows,
@@ -92,6 +95,7 @@ import {
     seatLink,
     threadAsks,
     toolsOfChoice,
+    type AnswerQuote,
     type AskChip,
     type ChannelItem,
     type ChatPick,
@@ -102,6 +106,7 @@ import {
     type PillTone,
     type QuestionFold,
     type QuestionPost,
+    type ReachChips,
     type ReplyPost,
     type SkipLine,
     type ThreadItem,
@@ -114,6 +119,7 @@ import { councilList, railMeta, railOrderLabel, type IdeaRow } from "./councilli
 import { markSpans } from "./councilmarks";
 import {
     ANSWERING,
+    ROUTER_CHOOSING,
     ROUTER_PICKS_WHO,
     answerers,
     councilProjectName,
@@ -684,8 +690,8 @@ function ReplyHeader({
     );
 }
 
-// under the person's own post, as a messenger has it: who it reaches when not the usual ones, `edited`, what it waits
-// on, and on the newest one Sent or Seen; nothing at all when none of them applies
+// under the person's own post, as a messenger has it: `edited`, what it waits on, and on the newest one Sent or Seen;
+// nothing at all when none of them applies (whom it reaches is at the top of its bubble, ReachRow)
 function MineLine({
     item,
     status,
@@ -695,10 +701,9 @@ function MineLine({
     status?: SendStatus;
     onOpenIdea?: (id: string) => void;
 }) {
-    const reach = item.reachIsDefault ? "" : item.reaches;
     const waits = item.pending === ANSWERING ? "" : item.pending;
     const on = onOpenIdea != null && item.on !== "";
-    if (reach === "" && waits === "" && !item.edited && status == null && !on) {
+    if (waits === "" && !item.edited && status == null && !on) {
         return null;
     }
     return (
@@ -707,7 +712,6 @@ function MineLine({
             className="flex flex-wrap items-center justify-end gap-x-[7px] gap-y-[2px] text-[12px] text-muted"
         >
             <ReplyOn item={item} onOpenIdea={onOpenIdea} />
-            {reach !== "" && <span data-council-reaches>{reach}</span>}
             {item.edited && <span>edited</span>}
             {waits !== "" && <span data-council-waits>{waits}</span>}
             {status != null && <SendLine status={status} />}
@@ -761,23 +765,112 @@ function FileMentionChip({ councilId, owner, path }: { councilId: string; owner:
     );
 }
 
-// the person's own message: Markdown like a seat's, except one that names files, which is cut at them so each `@path` is
-// a chip in the line (a chip cannot sit inside a Markdown paragraph)
+// a seat, or every seat, as a chip in its colour: one the person named with `@UX` in their text, and one their post
+// reaches at the top of its bubble
+const SEAT_CHIP = "inline-flex max-w-full items-center rounded-full px-[7px] font-semibold";
+
+function SeatChip({ who, text, className }: { who: Who | null; text: string; className?: string }) {
+    return (
+        <span
+            data-council-seat-chip={who?.author ?? "all"}
+            className={cn(
+                SEAT_CHIP,
+                who == null ? "bg-pill text-secondary" : cn(TONE_FILL[who.tone], TONE_TEXT[who.tone]),
+                className
+            )}
+        >
+            {text}
+        </span>
+    );
+}
+
+// the person's own message: Markdown like a seat's, except one that names files or seats, which is cut at them so each
+// `@path` and `@UX` is a chip in the line (a chip cannot sit inside a Markdown paragraph)
 function PersonText({ councilId, item }: { councilId: string; item: ReplyPost }) {
-    const parts = useMemo(() => messageSegments(item.text), [item.text]);
-    if (!parts.some((p) => p.kind === "file")) {
+    if (!item.parts.some((p) => p.kind !== "text")) {
         return <CouncilText text={item.text} className="text-[14px] leading-[1.6]" />;
     }
     return (
         <p className="m-0 min-w-0 whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
-            {parts.map((p, i) =>
+            {item.parts.map((p, i) =>
                 p.kind === "text" ? (
                     <span key={i}>{p.text}</span>
+                ) : p.kind === "seat" ? (
+                    <SeatChip key={i} who={p.who} text={p.text} className="py-px align-baseline text-[13px]" />
                 ) : (
                     <FileMentionChip key={i} councilId={councilId} owner={item.id} path={p.path} />
                 )
             )}
         </p>
+    );
+}
+
+// at the top of the person's own bubble: whom it reaches, when that is not the usual ones and its text does not name
+// them, as chips in the seats' colours behind the router's mark (or an arrow, for seats the person chose), or that the
+// router is still choosing, or failed; the hover is the router's line, its reason with it
+function ReachRow({ to }: { to: ReachChips }) {
+    const failed = to.by === "failed";
+    const Icon = failed ? CircleAlert : to.by === "you" ? ArrowRight : Route;
+    return (
+        <div
+            data-council-reach={to.by}
+            title={to.title === "" ? undefined : to.title}
+            className={cn(
+                "flex min-w-0 flex-wrap items-center gap-[5px] text-[12px] leading-[1.4]",
+                failed ? "text-error-soft" : "text-muted"
+            )}
+        >
+            <Icon size={12} aria-hidden className="flex-none" />
+            {to.by === "choosing" && <span>{ROUTER_CHOOSING}</span>}
+            {failed && <span>Router failed</span>}
+            {to.everyone && <SeatChip who={null} text="Everyone" />}
+            {to.seats.map((who) => (
+                <SeatChip key={who.author} who={who} text={who.name} />
+            ))}
+        </div>
+    );
+}
+
+// at the top of a seat's bubble: the person's post it answers, when it is not right under it; a click scrolls to that
+// post, which sits in the same list (a seat's own view leaves the person's posts out: the quote is then only a quote)
+function QuoteRow({ quote }: { quote: AnswerQuote }) {
+    const body = (
+        <>
+            <CornerDownRight size={11} aria-hidden className="flex-none" />
+            <span className="flex-none font-semibold text-secondary">You</span>
+            <span className="min-w-0 truncate">{quote.text}</span>
+        </>
+    );
+    const box =
+        "-mx-[6px] flex min-w-0 items-center gap-[6px] rounded-[8px] bg-background/55 px-[9px] py-[5px] text-left text-[12.5px] leading-[1.4] text-muted";
+    if (!quote.jump) {
+        return (
+            <div data-council-quote={quote.id} className={box}>
+                {body}
+            </div>
+        );
+    }
+    const jump = (e: MouseEvent<HTMLButtonElement>) => {
+        const at = `[data-council-reply-post="${quote.id}"]`;
+        let list = e.currentTarget.parentElement;
+        while (list != null && list.querySelector(at) == null) {
+            list = list.parentElement;
+        }
+        list?.querySelector(at)?.scrollIntoView?.({ block: "center" });
+    };
+    return (
+        <button
+            type="button"
+            data-council-quote={quote.id}
+            title="Go to your message"
+            onClick={jump}
+            className={cn(
+                box,
+                "cursor-pointer border-0 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+            )}
+        >
+            {body}
+        </button>
     );
 }
 
@@ -887,20 +980,17 @@ function ReplyMessage({
                         }
                     />
                 )}
-                {item.router !== "" && (
-                    // who the router sent the message to and why, above the first answer to it
-                    <span data-council-router className="min-w-0 break-words text-[12px] leading-[1.4] text-muted">
-                        {item.router}
-                    </span>
-                )}
                 <div
                     data-council-bubble
                     className={cn(
-                        "flex min-w-0 flex-col gap-[6px] border px-[14px] py-[10px]",
+                        "flex min-w-0 flex-col gap-[6px] border px-[14px]",
                         item.mine ? "rounded-[14px_14px_4px_14px]" : "rounded-[4px_14px_14px_14px]",
+                        item.to != null || item.quote != null ? "pb-[10px] pt-[8px]" : "py-[10px]",
                         TONE_BUBBLE[item.tone]
                     )}
                 >
+                    {item.to != null && <ReachRow to={item.to} />}
+                    {item.quote != null && <QuoteRow quote={item.quote} />}
                     {item.mine ? (
                         <PersonText councilId={councilId} item={item} />
                     ) : (

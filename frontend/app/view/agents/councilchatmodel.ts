@@ -48,6 +48,7 @@ import {
     replyLabel,
     roundsOf,
     seatLabel,
+    seatMentions,
     sentProposals,
     sentReplies,
     thumbOf,
@@ -168,25 +169,52 @@ function replyPill(r: CouncilReply): { label: string; pill: PillTone } {
     }
 }
 
-// `For everyone` when the reply reaches the whole panel, else `For UX and RAM`; empty for a reply that names no one. A
-// reply the router took up (`routed`) always names its seats, also when they are the whole panel: the router chose them,
-// the person did not ask everyone; while the router has not chosen (`to` is empty) it reaches no one yet
-function reachOf(c: Council, r: CouncilReply): string {
-    const to = r.to ?? [];
-    if (to.length === 0) {
-        return "";
-    }
-    if (r.routed == null && panel(c).every((e) => to.includes(e.id))) {
-        return "For everyone";
-    }
-    return `For ${listNames(to.map((id) => authorName(c, id)))}`;
+/** Whom the person's post reaches, as the chips at the top of its bubble: the seats the router chose (`router`), or its
+ *  call failed and the first seat answered (`failed`), or it is still choosing (`choosing`, no seat yet); else the seats
+ *  the person's post went to (`you`), `everyone` when that is the whole panel. `title` is its hover: the router's line
+ *  (`routerLine`), or `For UX and RAM`. */
+export interface ReachChips {
+    by: "router" | "failed" | "choosing" | "you";
+    seats: Who[]; // in its `to` order; empty while the router chooses, and for `everyone`
+    everyone: boolean;
+    title: string;
 }
 
-/** Pure: the line above the first answer to a message the router took up: `Router chose UX: <reason>`, `Router chose UX
+// the chips of the person's post `r`: null for a seat's reply, for a post that reaches whom it would anyway, and for one
+// whose text names whom it reaches itself (an `@UX`, an `@all`: those are chips in the text). A post the router took up
+// always names its seats, also when they are the whole panel: the router chose them, the person did not ask everyone
+function reachChips(c: Council, r: CouncilReply): ReachChips | null {
+    if (r.author !== YOU) {
+        return null;
+    }
+    if (r.routed?.pending) {
+        return { by: "choosing", seats: [], everyone: false, title: "" };
+    }
+    const to = r.to ?? [];
+    if (to.length === 0) {
+        return null;
+    }
+    const seats = to.map((id) => whoIs(c, id));
+    if (r.routed != null) {
+        return { by: r.routed.failed ? "failed" : "router", seats, everyone: false, title: routerLine(c, r) };
+    }
+    if (reachIsDefault(c, r) || seatMentions(c, r.text).length > 0) {
+        return null;
+    }
+    const everyone = panel(c).every((e) => to.includes(e.id));
+    return {
+        by: "you",
+        seats: everyone ? [] : seats,
+        everyone,
+        title: everyone ? "For everyone" : `For ${listNames(seats.map((s) => s.name))}`,
+    };
+}
+
+/** Pure: the router's line, the hover on the chips of a message it took up: `Router chose UX: <reason>`, `Router chose UX
  *  and RAM: <reason>`, `Router chose UX · reading files: <reason>` when it decided to read files (`autotools`, and the
  *  reply's `tools`), or `Router failed, UX answered` when its call failed and the first seat answered instead. The reason
  *  is left out when it is empty. `reply` is the person's message; empty for one the router did not take up, and while it
- *  has not chosen yet (the post says so itself, `replyLabel`). */
+ *  has not chosen yet (its chips say so). */
 export function routerLine(c: Council, reply: CouncilReply): string {
     const routed = reply.routed;
     if (reply.author !== YOU || routed == null || routed.pending) {
@@ -232,9 +260,11 @@ export interface ReplyPost extends Who {
     claim: ClaimEvidence; // its evidence with the check label Go gave it: the chips under it (councilsources.ts `claimChips`)
     mine: boolean;
     thumb: CouncilThumb | ""; // the person's like or dislike on a seat's reply; always "" on the person's own
-    reaches: string; // the person's reply: `For everyone`, `For UX and RAM`
+    to: ReachChips | null; // the person's post: whom it reaches, at the top of its bubble (reachChips); else null
+    parts: MessageSegment[]; // the person's post: its text cut at the files and seats it names (messageSegments); else []
+    quote: AnswerQuote | null; // a seat's answer to a post of the person's: that post, when the answer is not right under it
     agrees: string[]; // `RAM agrees`: the seats that answered the person's post with no words (answerAgrees)
-    pending: string; // the person's reply: `Queued for the next step` until it is answered
+    pending: string; // the person's reply: `Queued for the next step` until it is answered; the router choosing is its chips'
     parentid: string;
     proposalid: string; // the idea it replies on; empty for a post to the whole council
     on: string; // that idea's title, the quote the channel shows above a run of replies on it; empty after the first
@@ -243,11 +273,55 @@ export interface ReplyPost extends Who {
     at: string; // the time of day it was posted (`14:32`)
     when: string; // its tooltip: the day, and how far into the council (`Oct 31 14:32 · 2:12 into the council`)
     ts: number; // when it was posted (ms), which councilseen.ts counts the Sent and Seen from
-    reachIsDefault: boolean; // the person's post reaches whom it would anyway: the line under it leaves `reaches` out
     asks: string[]; // a seat's answer: the replies it suggests the person send next (threadAsks); empty otherwise
-    router: string; // the first answer to a message the router took up: `Router chose UX: <reason>` (routerLine); else empty
-    askToo: { id: string; name: string }[]; // the last answer to such a message: the seats the person can still add (askTooSeats)
+    askToo: { id: string; name: string }[]; // the last answer to a routed message: the seats the person can still add (askTooSeats)
     routedReply: string; // with `askToo`: the id of the person's message the chips reopen
+}
+
+/** The person's post a seat's answer answers, quoted at the top of its bubble as a messenger quotes the message replied
+ *  to: its id, its text on one line, and whether that post is in the same list (`jump`: a click scrolls to it). */
+export interface AnswerQuote {
+    id: string;
+    text: string;
+    jump: boolean;
+}
+
+// the person's post `r` answers, as its quote: null for the person's own post, and for a seat's reply that answers none
+function quoteOf(c: Council, r: CouncilReply): AnswerQuote | null {
+    if (r.author === YOU || !r.parentid) {
+        return null;
+    }
+    const ask = sentReplies(c).find((x) => x.id === r.parentid && x.author === YOU);
+    if (ask == null) {
+        return null;
+    }
+    const text = ask.text
+        .split(/\s+/)
+        .filter((w) => w !== "")
+        .join(" ");
+    const shown = text !== "" ? text : (ask.attachments ?? []).length > 0 ? "Image" : "";
+    return shown === "" ? null : { id: ask.id, text: shown, jump: false };
+}
+
+/** Pure: `items` with the quote kept only on an answer that does not sit right under the post it answers (the item above
+ *  it, past the failure lines under a post, is neither that post nor another answer to it), each quote saying whether
+ *  that post is in `items` to scroll to. Three questions sent in a row, then their answers, read as which answers which. */
+export function quoteAsked<T extends ChannelItem | ThreadItem>(items: readonly T[]): T[] {
+    const here = new Set(items.filter((i) => i.kind === "reply" && i.mine).map((i) => i.id));
+    return items.map((item, i) => {
+        if (item.kind !== "reply" || item.quote == null) {
+            return item;
+        }
+        let j = i - 1;
+        while (j >= 0 && items[j].kind === "failure") {
+            j--;
+        }
+        const above = items[j];
+        const under =
+            above?.kind === "reply" &&
+            (above.id === item.quote.id || (!above.mine && above.parentid === item.quote.id));
+        return { ...item, quote: under ? null : { ...item.quote, jump: here.has(item.quote.id) } };
+    });
 }
 
 // the answers a seat gave to the person's message `ask`, in the order they were posted: a reaction is no post, so it is
@@ -260,10 +334,9 @@ function answersTo(c: Council, ask: CouncilReply): CouncilReply[] {
         .map(({ x }) => x);
 }
 
-// what a seat's answer carries of the router: its line when it is the first answer to a routed message of the person's,
-// the chips when it is the last
-function routerParts(c: Council, r: CouncilReply): Pick<ReplyPost, "router" | "askToo" | "routedReply"> {
-    const none = { router: "", askToo: [], routedReply: "" };
+// the Ask <seat> too chips a seat's answer carries: on the last answer to a routed message of the person's
+function askTooParts(c: Council, r: CouncilReply): Pick<ReplyPost, "askToo" | "routedReply"> {
+    const none = { askToo: [], routedReply: "" };
     if (r.author === YOU || !r.parentid) {
         return none;
     }
@@ -272,10 +345,8 @@ function routerParts(c: Council, r: CouncilReply): Pick<ReplyPost, "router" | "a
         return none;
     }
     const answers = answersTo(c, ask);
-    const first = answers[0]?.id === r.id;
-    const last = answers[answers.length - 1]?.id === r.id;
-    const askToo = last ? askTooSeats(c, ask) : [];
-    return { router: first ? routerLine(c, ask) : "", askToo, routedReply: askToo.length > 0 ? ask.id : "" };
+    const askToo = answers[answers.length - 1]?.id === r.id ? askTooSeats(c, ask) : [];
+    return { askToo, routedReply: askToo.length > 0 ? ask.id : "" };
 }
 
 // `below`: the seats whose failure line the channel draws under the post, which its label leaves to that line
@@ -291,11 +362,12 @@ function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): 
         claim: claimOf(c, r),
         mine,
         thumb: mine ? "" : thumbOf(r),
-        reaches: mine ? reachOf(c, r) : "",
-        reachIsDefault: mine && reachIsDefault(c, r),
+        to: reachChips(c, r),
+        parts: mine ? messageSegments(r.text, c) : [],
+        quote: quoteOf(c, r),
         asks: mine ? [] : (r.asks ?? []),
         agrees: answerAgrees(c, r),
-        pending: mine ? replyLabel(c, r, below) : "",
+        pending: mine && !r.routed?.pending ? replyLabel(c, r, below) : "",
         parentid: r.parentid ?? "",
         proposalid: r.proposalid,
         on: r.proposalid === "" ? "" : ((c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? ""),
@@ -303,7 +375,7 @@ function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): 
         edited: !!r.edited,
         ...postedAt(c, r.ts),
         ts: r.ts,
-        ...routerParts(c, r),
+        ...askTooParts(c, r),
     };
 }
 
@@ -315,7 +387,7 @@ function reachIsDefault(c: Council, r: CouncilReply): boolean {
         return true;
     }
     if (r.routed != null) {
-        return false; // the router chose these seats: the line under the post names them, even when they are everyone
+        return false; // the router chose these seats: the chips name them, even when they are everyone
     }
     if (r.proposalid === "") {
         return panel(c).every((e) => to.includes(e.id));
@@ -848,8 +920,8 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
         }
     }
     // a round with nothing in the channel (its replies are all in threads) leaves its divider out
-    return items.filter(
-        (item, i) => item.kind !== "divider" || (i + 1 < items.length && items[i + 1].kind !== "divider")
+    return quoteAsked(
+        items.filter((item, i) => item.kind !== "divider" || (i + 1 < items.length && items[i + 1].kind !== "divider"))
     );
 }
 
@@ -879,7 +951,7 @@ function threadItems(c: Council, proposalId: string): ThreadItem[] {
             dated.push({ ts: d.ts, item: draftPost(c, d) });
         }
     }
-    const items = dated.sort((a, b) => a.ts - b.ts).map((x) => x.item);
+    const items = quoteAsked(dated.sort((a, b) => a.ts - b.ts).map((x) => x.item));
     for (const e of c.experts) {
         const act = c.activity?.[e.id];
         if (isLit(c, e.id) && act != null && (act.proposalid ?? "") === proposalId) {
@@ -1290,19 +1362,35 @@ export function readsNote(reads: { why: string }): string {
     return reads.why === ROUTER_DECIDES ? reads.why : `it names ${reads.why}`;
 }
 
-/** A piece of a sent message: plain text, or the file an `@path` named (drawn as a chip in place of the `@path`). */
-export type MessageSegment = { kind: "text"; text: string } | { kind: "file"; path: string };
+/** A piece of a sent message: plain text, the file an `@path` named, or the seat an `@UX` named (`who` null for `@all`
+ *  and `@everyone`, `text` the `@` and the name as written); a file and a seat are drawn as a chip in their place. */
+export type MessageSegment =
+    | { kind: "text"; text: string }
+    | { kind: "file"; path: string }
+    | { kind: "seat"; text: string; who: Who | null };
 
-/** Pure: a message's text cut at its file mentions, in order, with no empty text between or around them; the text
- *  of the segments, with `@path` for each file, is the message again. An `@` that names a seat stays in the text. */
-export function messageSegments(text: string): MessageSegment[] {
+/** Pure: a message's text cut at its file mentions and, given its council, at the seats it names (`seatMentions`), in
+ *  order, with no empty text between or around them; the text of the segments, with `@path` for each file, is the
+ *  message again. Without the council an `@` that names a seat stays in the text. */
+export function messageSegments(text: string, c?: Council): MessageSegment[] {
+    const named: { start: number; end: number; part: MessageSegment }[] = [
+        ...fileMentions(text).map((m) => ({ ...m, part: { kind: "file", path: m.path } as const })),
+        ...(c == null ? [] : seatMentions(c, text)).map((m) => ({
+            ...m,
+            part: {
+                kind: "seat",
+                text: text.slice(m.start, m.end),
+                who: m.id == null ? null : whoIs(c, m.id),
+            } as const,
+        })),
+    ].sort((a, b) => a.start - b.start);
     const out: MessageSegment[] = [];
     let from = 0;
-    for (const m of fileMentions(text)) {
+    for (const m of named) {
         if (m.start > from) {
             out.push({ kind: "text", text: text.slice(from, m.start) });
         }
-        out.push({ kind: "file", path: m.path });
+        out.push(m.part);
         from = m.end;
     }
     if (from < text.length) {

@@ -27,7 +27,7 @@ const (
 	routerRecent = 6
 
 	routerTextMax   = 500 // a message in the history is cut at this many characters
-	routerReasonMax = 200 // the router's reason is cut at this many characters
+	routerReasonMax = 200 // the router's reason is cut at this many characters, "…" included (routerShown)
 	routerAnswerMax = 600 // the router's own answer is cut at this many characters
 	routerSeatsMax  = 2   // one seat, or two when the message asks about two areas: never more
 )
@@ -37,7 +37,7 @@ const (
 type Route struct {
 	Seats  []string // expert ids, at most routerSeatsMax, in the router's order; empty when Answer is set
 	Tools  bool     // the answer needs something the Discussion does not hold, so the seats should read files
-	Reason string   // one line, at most routerReasonMax characters
+	Reason string   // one line, at most routerReasonMax characters (routerShown)
 	Answer string   // the router's own answer when no seat is needed, at most routerAnswerMax characters; else empty
 }
 
@@ -51,6 +51,29 @@ func routerLine(s string, limit int) string {
 		s = string(r[:limit])
 	}
 	return s
+}
+
+// routerShownBack is how far back from its limit routerShown looks for a space to cut at.
+const routerShownBack = 40
+
+// routerShown is s as one line the person reads (the router's reason, the hover on a routed message), at most limit
+// characters: a longer one that the cut would split mid-word is cut at the last space within routerShownBack characters
+// of the limit (else at the limit), what cannot end a line before "…" (a space, an opening bracket, a comma) is dropped,
+// then "…", so it never stops like `kiểm chứng nhỏ được (`.
+func routerShown(s string, limit int) string {
+	s = routerFold(s)
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	cut := r[:limit-1]
+	for i := len(cut) - 1; r[limit-1] != ' ' && i >= 0 && i >= len(cut)-routerShownBack; i-- {
+		if cut[i] == ' ' {
+			cut = cut[:i]
+			break
+		}
+	}
+	return strings.TrimRight(string(cut), " ([{,;:-–—") + "…"
 }
 
 // attachmentNames are the file names of paths, with none of the folders in front of them, whichever separator they use.
@@ -226,11 +249,11 @@ func parseRoute(text string, candidates []CouncilExpert) (Route, error) {
 	}
 	if len(seats) == 0 {
 		if answer := routerAnswer(raw.Answer); answer != "" {
-			return Route{Reason: routerLine(raw.Reason, routerReasonMax), Answer: answer}, nil
+			return Route{Reason: routerShown(raw.Reason, routerReasonMax), Answer: answer}, nil
 		}
 		return Route{}, fmt.Errorf("%s reply names no seat on the panel", what)
 	}
-	return Route{Seats: seats, Tools: raw.Tools, Reason: routerLine(raw.Reason, routerReasonMax)}, nil
+	return Route{Seats: seats, Tools: raw.Tools, Reason: routerShown(raw.Reason, routerReasonMax)}, nil
 }
 
 // routerAnswer is the router's own answer trimmed and cut at routerAnswerMax characters; its line breaks are kept.

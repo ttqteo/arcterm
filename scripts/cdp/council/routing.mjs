@@ -6,10 +6,11 @@
 // takes. A plain message to the channel is no longer sent to every seat: the router picks the seat or two that answer it.
 // Task 5, the composer: the Read files switch is the three-way Auto · On · Off control (Auto lets the router decide), the
 // line under the box says `Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens` (a range: the router has not chosen
-// yet), and `@all` asks every seat on purpose (an All seats row, first in the `@` list). Task 6, the Discussion: the line
-// above the first answer to a routed message (`Router chose UX: …`, `· reading files`, `Router failed, UX answered`), the
-// person's post naming the seats it reached (`For UX`, never `For everyone`) or saying the router is choosing, and one
-// `Ask RAM too` chip per seat that was not asked, under the last answer.
+// yet), and `@all` asks every seat on purpose (an All seats row, first in the `@` list). Task 6, the Discussion: the
+// person's routed post opens on a chip row naming the seats the router chose (never Everyone), or that it failed or is
+// choosing, its hover the router's line (`Router chose UX: …`, `· reading files`, `Router failed, UX answered`); an answer
+// that is not right under its post opens on a quote of it, which jumps to it; an `@RAM` in the person's text is RAM's
+// chip; and one `Ask RAM too` chip per seat that was not asked, under the last answer.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). Nothing here
 // spends a token or starts an agent: CouncilReplyCommand and CouncilAskTooCommand are replaced in the page (fixtures.mjs
@@ -525,6 +526,17 @@ const ROUTED = {
         text: "Where should the asleep state show up on the rail?",
         pending: true,
     },
+    // two posts sent in a row, then their answers: the routed one (UX) and an `@RAM` one; each answer quotes its post
+    stacked: {
+        text: "Where should the asleep state show up on the rail?",
+        chose: ["ux"],
+        reason: "It is about what the rail icon shows.",
+        follow: { text: "@RAM what does waking cost?", to: ["ram"] },
+        answers: [
+            ["ux", "On the icon: a dimmed ring says asleep.", "r7"],
+            ["ram", "A cold start: the app gives its heap back while it sleeps.", "r20"],
+        ],
+    },
     // as `line`, but Docs' call failed: it is left out of the chips, a follow-up would call nobody
     failedseat: {
         text: "Where should the asleep state show up on the rail?",
@@ -575,11 +587,23 @@ function routedCouncil(c, key) {
                   ...(spec.autotools ? { autotools: true } : {}),
               },
     });
-    (spec.answers ?? []).forEach(([author, body], i) =>
+    if (spec.follow != null) {
+        c.replies.push({
+            id: "r20",
+            proposalid: "",
+            author: "you",
+            text: spec.follow.text,
+            to: spec.follow.to,
+            answered: true,
+            round: 4,
+            ts: t + 10_000,
+        });
+    }
+    (spec.answers ?? []).forEach(([author, body, parent], i) =>
         c.replies.push({
             id: `r${8 + i}`,
             proposalid: "",
-            parentid: "r7",
+            parentid: parent ?? "r7",
             author,
             text: body,
             round: 4,
@@ -617,22 +641,33 @@ async function openRouted(h, ctx, phase, key, reject) {
 const POST = (id) => `[data-council-reply-post="${id}"]`;
 const CHIPS = "[data-council-ask-too]";
 
-// what a post draws of the router: the line above its answer (and whether it sits above the bubble), the person's reach and
-// wait lines, the Ask <seat> too chips under it and a refusal. null when the post is not on screen.
+// what a post draws: the old router line above an answer (gone: null), the chips at the top of the person's bubble (whom it
+// reaches, `by` router, failed, choosing or you, the router's line as their hover), the quote at the top of a seat's
+// bubble (the post it answers, a button when it jumps), the seats its own text names as chips, its wait line, the Ask
+// <seat> too chips under it and a refusal. `top` says the chips or the quote are the bubble's first row. null when the
+// post is not on screen.
 const postOf = (h, id) =>
     h.ev(`(() => {
         const p = document.querySelector(${sel(POST(id))});
         if (!p) return null;
         const norm = (e) => (e?.textContent ?? "")${NORM};
         const router = p.querySelector("[data-council-router]");
-        const bubble = router?.nextElementSibling ?? null;
-        const reaches = p.querySelector("[data-council-reaches]");
+        const bubble = p.querySelector("[data-council-bubble]");
+        const reach = p.querySelector("[data-council-reach]");
+        const quote = p.querySelector("[data-council-quote]");
         const waits = p.querySelector("[data-council-waits]");
         const alert = p.querySelector("[role='alert']");
+        const seatsOf = (e) => [...(e?.querySelectorAll("[data-council-seat-chip]") ?? [])].map((x) => x.getAttribute("data-council-seat-chip")).join(",");
+        const named = [...(bubble?.querySelectorAll("p [data-council-seat-chip]") ?? [])];
         return {
             router: router ? norm(router) : null,
-            routerAbove: router && bubble ? router.getBoundingClientRect().bottom <= bubble.getBoundingClientRect().top + 1 : null,
-            reaches: reaches ? norm(reaches) : null,
+            reach: reach
+                ? { by: reach.getAttribute("data-council-reach"), seats: seatsOf(reach), text: norm(reach), title: reach.getAttribute("title"), top: bubble?.firstElementChild === reach }
+                : null,
+            quote: quote
+                ? { id: quote.getAttribute("data-council-quote"), text: norm(quote), jump: quote.tagName === "BUTTON", top: bubble?.firstElementChild === quote }
+                : null,
+            named: named.map((x) => ({ seat: x.getAttribute("data-council-seat-chip"), text: norm(x) })),
             waits: waits ? norm(waits) : null,
             chips: [...p.querySelectorAll(${sel(CHIPS)})].map((b) => ({ seat: b.getAttribute("data-council-ask-too"), text: norm(b), disabled: b.disabled })),
             alert: alert ? norm(alert) : null,
@@ -642,20 +677,24 @@ const postOf = (h, id) =>
 const countOf = (h, s) => h.ev(`document.querySelectorAll(${sel(s)}).length`);
 const chipSeats = (post) => (post?.chips ?? []).map((c) => c.seat).join(",");
 
-// the router chose UX: the line above its answer with the reason, the person's post naming UX
+// the router chose UX: the person's bubble opens on the UX chip, the router's line its hover; the answer right under it
+// carries no line and no quote
 async function routerLine(h, ctx, rec) {
     await openRouted(h, ctx, "line", "line");
     const mine = await postOf(h, "r7");
     const first = await postOf(h, "r8");
     const lines = await countOf(h, "[data-council-router]");
     rec(
-        "router-line: UX's answer carries `Router chose UX: <reason>` above its bubble, the only router line in the thread, and the person's post reads `For UX`, not `For everyone`",
-        first?.router === `Router chose UX: ${ROUTED.line.reason}` &&
-            first.routerAbove === true &&
-            lines === 1 &&
-            mine?.router === null &&
-            mine.reaches === "For UX" &&
-            mine.waits === null,
+        "router-line: the person's bubble opens on the router's chip row naming UX, its hover `Router chose UX: <reason>`, with no line under it; UX's answer right under it has no router line above it and no quote",
+        mine?.reach?.by === "router" &&
+            mine.reach.seats === "ux" &&
+            mine.reach.top === true &&
+            mine.reach.title === `Router chose UX: ${ROUTED.line.reason}` &&
+            mine.waits === null &&
+            first?.router === null &&
+            first.quote === null &&
+            first.reach === null &&
+            lines === 0,
         { mine, first, lines }
     );
     await h.shot("cdp-shots/council-routing-router-line.png");
@@ -669,12 +708,15 @@ async function routerTwo(h, ctx, rec) {
     const second = await postOf(h, "r9");
     const lines = await countOf(h, "[data-council-router]");
     rec(
-        "router-two: `Router chose UX and RAM: <reason>` sits above the first answer only, and the person's post reads `For UX and RAM`",
-        first?.router === `Router chose UX and RAM: ${ROUTED.two.reason}` &&
-            first.routerAbove === true &&
+        "router-two: the person's chips name UX and RAM, their hover `Router chose UX and RAM: <reason>`; neither answer, each right under the post or the other answer, carries a line or a quote",
+        mine?.reach?.by === "router" &&
+            mine.reach.seats === "ux,ram" &&
+            mine.reach.title === `Router chose UX and RAM: ${ROUTED.two.reason}` &&
+            first?.router === null &&
+            first.quote === null &&
             second?.router === null &&
-            lines === 1 &&
-            mine?.reaches === "For UX and RAM",
+            second.quote === null &&
+            lines === 0,
         { mine, first, second, lines }
     );
     await h.shot("cdp-shots/council-routing-router-two.png");
@@ -684,10 +726,12 @@ async function routerTwo(h, ctx, rec) {
     const smallFirst = await postOf(h, "r8");
     const smallLast = await postOf(h, "r9");
     rec(
-        "router-two: on a council of two seats where the router chose both, the post reads `For UX and RAM`, not `For everyone`, with the line on the first answer and no chip left to press",
-        small?.reaches === "For UX and RAM" &&
-            !small.reaches.includes("everyone") &&
-            smallFirst?.router === `Router chose UX and RAM: ${ROUTED.twoseats.reason}` &&
+        "router-two: on a council of two seats where the router chose both, the chips name UX and RAM, not Everyone, and no Ask too chip is left to press",
+        small?.reach?.by === "router" &&
+            small.reach.seats === "ux,ram" &&
+            !small.reach.text.includes("Everyone") &&
+            small.reach.title === `Router chose UX and RAM: ${ROUTED.twoseats.reason}` &&
+            smallFirst?.router === null &&
             smallLast?.router === null &&
             smallLast.chips.length === 0 &&
             smallFirst.chips.length === 0,
@@ -696,47 +740,101 @@ async function routerTwo(h, ctx, rec) {
     await h.shot("cdp-shots/council-routing-router-two-seats.png");
 }
 
-// Read files was Auto and the router turned it on: the line says so
+// Read files was Auto and the router turned it on: the chips' hover says so
 async function routerFiles(h, ctx, rec) {
     await openRouted(h, ctx, "files", "files");
-    const first = await postOf(h, "r8");
+    const mine = await postOf(h, "r7");
     rec(
-        "router-files: when the router decided to read files the line reads `Router chose UX · reading files: <reason>`",
-        first?.router === `Router chose UX · reading files: ${ROUTED.files.reason}` && first.routerAbove === true,
-        first
+        "router-files: when the router decided to read files the chips' hover reads `Router chose UX · reading files: <reason>`",
+        mine?.reach?.title === `Router chose UX · reading files: ${ROUTED.files.reason}` && mine.reach.seats === "ux",
+        mine
     );
     await h.shot("cdp-shots/council-routing-router-files.png");
 }
 
-// the router's call failed: the fallback seat answered, and the line says so without the error
+// the router's call failed: the fallback seat answered, and the chips say so without the error
 async function routerFailed(h, ctx, rec) {
     await openRouted(h, ctx, "failed", "failed");
     const mine = await postOf(h, "r7");
     const first = await postOf(h, "r8");
     rec(
-        "router-failed: the line reads `Router failed, UX answered`, with the failure's reason left out, and the person's post still names UX",
-        first?.router === "Router failed, UX answered" &&
-            first.routerAbove === true &&
-            !first.router.includes("exited") &&
-            mine?.reaches === "For UX",
+        "router-failed: the person's chip row reads `Router failed` and names UX, its hover `Router failed, UX answered` with the failure's reason left out, and the answer has no line above it",
+        mine?.reach?.by === "failed" &&
+            mine.reach.text === "Router failed UX" &&
+            mine.reach.seats === "ux" &&
+            mine.reach.title === "Router failed, UX answered" &&
+            !`${mine.reach.text} ${mine.reach.title}`.includes("exited") &&
+            first?.router === null,
         { mine, first }
     );
     await h.shot("cdp-shots/council-routing-router-failed.png");
 }
 
-// the router has not chosen: the post says so where it says what it waits for, names no one, and nothing else shows yet
+// the router has not chosen: the chip row at the top of the post says so, names no one, and nothing else shows yet
 async function routerPending(h, ctx, rec) {
     await openRouted(h, ctx, "pending", "pending");
     const mine = await postOf(h, "r7");
     const lines = await countOf(h, "[data-council-router]");
     const chips = await countOf(h, CHIPS);
-    const everyone = await h.ev(`(document.querySelector('[data-council-channel]')?.textContent ?? "").includes("For everyone")`);
+    const everyone = await h.ev(`(document.querySelector('[data-council-channel]')?.textContent ?? "").includes("everyone")`);
     rec(
-        "router-pending: the person's post reads `Router is choosing a seat…`, shows no reach (not `For everyone`), and no router line or chip shows",
-        mine?.waits === "Router is choosing a seat…" && mine.reaches === null && !everyone && lines === 0 && chips === 0,
+        "router-pending: the person's bubble opens on `Router is choosing a seat…` with no seat chip and no wait line under it, and no router line, Ask too chip or `everyone` shows",
+        mine?.reach?.by === "choosing" &&
+            mine.reach.text === "Router is choosing a seat…" &&
+            mine.reach.seats === "" &&
+            mine.reach.top === true &&
+            mine.waits === null &&
+            !everyone &&
+            lines === 0 &&
+            chips === 0,
         { mine, lines, chips, everyone }
     );
     await h.shot("cdp-shots/council-routing-router-pending.png");
+}
+
+// two posts sent in a row, then the answers: each answer opens on a quote of the post it answers, which jumps to it; the
+// `@RAM` post draws its seat as a chip in its text and no chip row
+async function quoteStacked(h, ctx, rec) {
+    await openRouted(h, ctx, "stacked", "stacked");
+    await until(h, `!!document.querySelector(${sel(POST("r9"))})`);
+    const routed = await postOf(h, "r7");
+    const named = await postOf(h, "r20");
+    const ux = await postOf(h, "r8");
+    const ram = await postOf(h, "r9");
+    rec(
+        "quote-stacked: with two posts sent before the answers, UX's answer opens on a quote of the routed post (`You` and its text) and RAM's on the `@RAM` post, each a jump button at the top of its bubble",
+        ux?.quote?.id === "r7" &&
+            ux.quote.text === `You ${ROUTED.stacked.text}` &&
+            ux.quote.jump === true &&
+            ux.quote.top === true &&
+            ram?.quote?.id === "r20" &&
+            ram.quote.text === `You ${ROUTED.stacked.follow.text}` &&
+            ram.quote.jump === true &&
+            routed?.quote === null,
+        { ux, ram, routed }
+    );
+    rec(
+        "quote-stacked: the `@RAM` post draws `@RAM` as RAM's chip in its text and no chip row; the routed post keeps its UX chip",
+        named?.reach === null &&
+            named.named.length === 1 &&
+            named.named[0].seat === "ram" &&
+            named.named[0].text === "@RAM" &&
+            routed?.reach?.seats === "ux",
+        { named, routed }
+    );
+    await h.shot("cdp-shots/council-routing-quote-stacked.png");
+    // a press on the quote brings the post it quotes into view
+    await h.ev(`document.querySelector(${sel(POST("r9"))})?.scrollIntoView({ block: "end" })`);
+    await click(h, `${POST("r8")} [data-council-quote]`);
+    const seen = await until(
+        h,
+        `(() => {
+            const r = document.querySelector(${sel(POST("r7"))})?.getBoundingClientRect();
+            const box = document.querySelector("[data-council-channel]")?.getBoundingClientRect();
+            return !!r && !!box && r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
+        })()`
+    );
+    rec("quote-stacked: pressing UX's quote brings the routed post into view in the channel", seen, { seen });
 }
 
 // one chip per seat that was not asked, under the last answer
@@ -833,6 +931,7 @@ const PHASES = [
     ["router-files", routerFiles],
     ["router-failed", routerFailed],
     ["router-pending", routerPending],
+    ["quote-stacked", quoteStacked],
     ["ask-too-chips", askTooChips],
     ["ask-too-press", askTooPress],
     ["ask-too-refused", askTooRefused],

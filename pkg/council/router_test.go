@@ -72,7 +72,7 @@ func TestParseRoute(t *testing.T) {
 			wantSeats: []string{"ux"}, wantWhy: "first line second line"},
 		{name: "reason left out", text: `{"seats":["ux"]}`, wantSeats: []string{"ux"}, wantWhy: ""},
 		{name: "reason over 200 characters is cut", text: `{"seats":["ux"],"reason":"` + long + `"}`,
-			wantSeats: []string{"ux"}, wantWhy: strings.Repeat("é", 200)},
+			wantSeats: []string{"ux"}, wantWhy: strings.Repeat("é", 199) + "…"},
 		{name: "no known seat", text: `{"seats":["ghost","nobody"],"reason":"r"}`, wantErr: true},
 		{name: "empty seats", text: `{"seats":[],"reason":"r"}`, wantErr: true},
 		{name: "no seats field", text: `{"reason":"r"}`, wantErr: true},
@@ -104,6 +104,34 @@ func TestParseRoute(t *testing.T) {
 			}
 			if got.Answer != tt.wantAnswer {
 				t.Errorf("answer = %q, want %q", got.Answer, tt.wantAnswer)
+			}
+		})
+	}
+}
+
+func TestRouterShown(t *testing.T) {
+	words := strings.Repeat("ab ", 100) // 300 characters, a space every third
+	tests := []struct {
+		name, in, want string
+		limit          int
+	}{
+		{name: "a short line stays, folded", in: "  one\n two  ", limit: 20, want: "one two"},
+		{name: "at the limit stays", in: "abcde", limit: 5, want: "abcde"},
+		{name: "a long word is cut at the limit", in: "abcdefgh", limit: 5, want: "abcd…"},
+		{name: "words are cut at the last space", in: "one two three four", limit: 12, want: "one two…"},
+		{name: "an opening bracket before the cut goes", in: "kiểm chứng nhỏ được (contrarian) và", limit: 24,
+			want: "kiểm chứng nhỏ được…"},
+		{name: "a comma before the cut goes", in: "one, two, three, four", limit: 10, want: "one, two…"},
+		{name: "at most limit characters", in: words, limit: 200, want: strings.TrimSpace(words[:198]) + "…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := routerShown(tt.in, tt.limit)
+			if got != tt.want {
+				t.Fatalf("routerShown(%q, %d) = %q, want %q", tt.in, tt.limit, got, tt.want)
+			}
+			if n := len([]rune(got)); n > tt.limit {
+				t.Fatalf("routerShown is %d characters, over its limit %d", n, tt.limit)
 			}
 		})
 	}
