@@ -1550,3 +1550,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   three times, once 3 minutes after a fresh copy): within ~10 s `waveapp.log` reads `stablewsh: … was killed on exec;
   replaced it`, `wsh version` exits 0 again, and the next turn ends with no "Stop hook error". Why the kernel flags
   the file is still unknown.
+- [ ] (arcterm) **Council Map's table header sticks.** On a council with ~20 ideas, open Map and scroll down: the head
+  row (Idea, each seat, Agreement, Outcome) stays flush at the top of the pane, with no strip of rows showing above
+  it. With 7 seats in a narrow pane, scroll the table sideways: the head follows the columns and its Idea cell stays
+  put. `frontend/app/view/agents/councilmap.tsx` (`Matrix`); no dev app was running to try it, and the
+  `council-map` CDP scenario was not rerun.
