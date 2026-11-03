@@ -80,9 +80,6 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 			// the summary of a clean exit describes the work, not a fault — never classify it
 			kind = FailureKindWorkerExit
 		}
-		if task.LastFailureKind != kind {
-			task.Attempts = 0
-		}
 		task.LastFailureKind = kind
 		mayRetry := retryDecision(kind, task.Attempts)
 		task.Attempts++

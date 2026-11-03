@@ -211,6 +211,14 @@ func RetryTask(g *waveobj.TaskGroup, taskID string) error {
 	return fmt.Errorf("no task %q", taskID)
 }
 
+// retryable is the states a retry may start a task over from: none has landed anything or holds a merge. A retry
+// from done, blocked-merge, verifying or verify-failed would lose work the lane already merged or is merging, and one
+// from pending, ready or skipped has nothing to start over. A reviewing task is not in the list: prepareActionLocked
+// leaves it to applyActionLocked, which refuses it by name.
+func retryable(state string) bool {
+	return taskActive(state) || state == TaskState_Failed || state == TaskState_ReviewFailed
+}
+
 func skippable(state string) bool {
 	return state == TaskState_Failed || state == TaskState_Stalled || state == TaskState_Ready || state == TaskState_ReviewFailed
 }

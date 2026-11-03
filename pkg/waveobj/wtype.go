@@ -434,7 +434,8 @@ type TaskNode struct {
 	// ToldTs is the transcript time of the newest message the human typed into the child's own session that
 	// the owning run already records as task-told, so each message is recorded once; 0 = none yet.
 	ToldTs int64 `json:"toldts,omitempty"`
-	// Attempts is the consecutive count for LastFailureKind.
+	// Attempts counts the failures in a row, of any kind, since the task last succeeded or a human retried or
+	// escalated it.
 	Attempts int `json:"attempts,omitempty"`
 	// LastFailureKind is the classifier output for the latest failed attempt.
 	LastFailureKind string `json:"lastfailurekind,omitempty"`

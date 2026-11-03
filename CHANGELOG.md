@@ -26,12 +26,21 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A failed final stage can be run again in the same round, for a failure outside the code (a service that was down, a tool that was not installed) once you have fixed it: **Rerun final stage** on the run sheet and in the Final verification pane, in the palette, or `wsh runs rerun-final <run>`. It spends no fix round, the lead is told to drop its fix plan, and a run held only by that failed stage lands by itself once the rerun passes.
 - A message to the whole council now goes to the one seat (or two) best placed to answer it, not to every seat: the answer says whom the router chose and why, Ask <seat> too has another seat weigh in, and `@all` asks everyone. Let them read files is Auto, On or Off, and in Auto the router decides for a message it takes.
 - A council checks what its experts claim. Every idea, and every reply that takes a side, is labelled by arcterm, never by a model: **Ran** when a test the expert asked for ran and came out as they said, **Disproved** when it came out the other way, **Read code** when a `path:line` it cites holds up, **Guess** when it cites nothing that holds. A cite that does not hold shows as **Wrong cite** on its chip. An expert can ask for up to two tests (`go test`, `vitest` or `cargo test` on one package, file or test), which run in a throwaway copy of your project as it stands, never in your checkout, before the pause after round 1, and every expert reads the results in round 2. <!-- big -->
 - A council has a **Map** tab beside Report and Discussion: a card per expert with what it is doing now and a bar of how many of its claims were run, disproved, read or guessed, and a table of who agrees with which idea, with each idea's label and how it ended. Click an idea to see each expert's reason. A seat's timeline of what it read, searched, ran and said opens from its card or from Seats. <!-- big -->
 
 ### Changed
 
+- In the final stage a Check or Verify that exits 3 now reads as unverified, like the Final command, and the stage goes on instead of failing; at a merge point exit 3 still fails.
+- The lead sends the leftovers inside the feature a run built (a defect, a doc that no longer matches it, a check a worker can write) to the fix round instead of a follow-up initiative; the run-finished wake says what counts as round work.
+- Two runs at once start at most 8 workers between them, a run refills only to its share while another run waits, and new workers wait while the machine's memory pressure reads warn or critical (one still starts when none is live).
+- While a task's commit is under review, another task starts in its slot at once instead of waiting for the review.
+- Plan review flags a Setup, Check or Verify command, or a task step, that names a path a later task creates (a package pattern, a test file) unless that task is among its Depends, instead of every worker hitting a command that fails in its tree.
+- Plan review checks the plan's claims about existing code (what a function calls, who calls it, what a test asserts) against the tree, so a false claim is a finding and not a worker stopping to ask the lead.
+- A failed plan review no longer types up to ~10k characters into the lead's composer: the wake keeps whole findings up to a cap and names `wsh jarvis dag planreview findings`, which prints them all.
+- A task wake tells the lead what failed (the review's first finding, the failure's first line, the first failing Verify line, the conflicted files) and ends on `wsh jarvis dag status <task>`, which now prints only that task; a worker-stopped task's wake no longer claims a spent retry.
 - A council's experts have plain names, in the language of your question: Ease of use, Memory watcher, Bug hunter, Summarizer, Final judge and Other side, or "Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi" and so on for a Vietnamese question. The roles Setup suggests are named in that language too.
 - A council expert's timeline: what it read, searched, ran (a verify command in mono, with whether it passed) and proposed, newest at the bottom. It opens in the Seats popover from a seat's Timeline button, a click on an expert's card in the Map, or a click on an expert's card while the experts first read.
 
@@ -52,6 +61,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A final step that something outside killed holds the land but asks for a rerun, not a fix round, since it judged nothing; a base Check that timed out or was killed no longer lets the run's own Check failures pass as shared.
+- The lead fixes every failing final step, one already failing on the base included, instead of reading the run-finished exemptions into it and leaving the land held.
+- A skip, retry, escalate or stop that cannot finish no longer cancels the whole dag: the task shows failed (worker-stopped), the other workers go on and the lead is woken.
+- Cancelling one worker's run by hand fails its task and leaves the dag and its other workers going.
+- A plan started with a spec leaves no untracked copy of it in the checkout, so the land no longer holds on a draft there; an autonomous lead writes its spec inside its own tree.
+- A spec git ignores, such as one under `.superpowers/`, is refused up front with the folder to use (`docs/superpowers/specs/`), instead of failing at submit after the lead planned the run.
+- A task whose tree's folder an editor or shell holds no longer fails every dispatch, retry-cleanup and skip: it runs in a fresh folder beside the old one, which shows as the task's cleanup debt until it can be deleted.
+- A plan's Setup or Verify that runs through a shim on PATH, such as corepack's pnpm, runs on Windows instead of failing with a node path on the wrong drive.
+- After the app quits mid-dispatch, the runs a tick had started but never recorded are cancelled at the next start instead of reading executing forever.
+- Closing the tab of a quick run's worker, or of an orchestrator lead before its plan, fails the run with a "tab was closed" reason instead of leaving it executing, and Resume restarts that worker in a new tab.
+- A lead that fixes a failed merge Verify in the run's tree and runs `dag merge --continue` without committing is told to commit first, instead of Verify passing on a fix the land then deletes; a land with uncommitted changes in that tree holds, naming the files, instead of merging without them.
+- A run whose project is a subfolder of its repo lands when its spec or plan also sits untracked in the checkout, instead of holding with git's "would overwrite untracked files".
+- `dag merge --continue` over a squash the lead threw away, or a resolution it committed itself, is refused with the way out instead of marking the task merged on the wrong commit or without its Arc trailers; the card and the lead's rules say to `git add` the resolution without committing.
+- A merge Verify that times out or is killed is no longer bisected, and its wake says so; a bisect step that times out stops the bisect instead of blaming its tip; and a failure only the landing tree shows lands every lane with the failure listed as a flaky item for the final stage.
+- Retrying a task that already merged, holds a merge conflict, or has a Verify running or failed is refused with the command to use instead, rather than running a second attempt whose commit never merges or letting later merges land on a failing commit.
+- `wsh jarvis dag escalate` on a task whose merge conflicted is refused with `dag merge <task> --continue`, instead of starting a fresh worker and leaving the conflicted squash holding later merges.
+- A worker that alternates a tool-call error with a failed spawn reaches the lead after three failures in a row, instead of being retried forever; a retry of your own gives it a fresh count.
 - A run that finished and landed with one task still failed no longer reads Cancelled in its Conversations group or a brainstorm's Run step, and `wsh runs show` says its plan was closed when the run ended instead of `status=cancelled`.
 - Deleting a session you just closed now says it was written to seconds ago and how long to wait, instead of "still running … stop it first"; a session a tab still holds says so on its own.
 - A council question that names an `.astro`, `.vue` or `.svelte` file turns on Let them read files by itself, like any other source file.

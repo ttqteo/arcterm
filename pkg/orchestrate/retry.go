@@ -62,8 +62,8 @@ func classifyFailure(summary string, exitCode int) string {
 // backoff. A fault that outlasts them is not transient: the task fails and the lead is woken.
 const MaxAutoDispatchRetries = 3
 
-// retryDecision reports whether the engine retries a failure of kind itself, given the consecutive failures of
-// that kind the task already has.
+// retryDecision reports whether the engine retries a failure of kind itself, given the failures in a row the task
+// already has, of any kind: counted per kind, a task alternating two kinds the engine retries was retried forever.
 func retryDecision(kind string, attempts int) bool {
 	switch kind {
 	case FailureKindToolError:

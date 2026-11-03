@@ -358,9 +358,6 @@ func failDispatch(ctx context.Context, g *waveobj.TaskGroup, taskID, kind string
 		return
 	}
 	task := &g.Tasks[idx]
-	if task.LastFailureKind != kind {
-		task.Attempts = 0
-	}
 	task.LastFailureKind = kind
 	retry := retryDecision(kind, task.Attempts)
 	task.Attempts++
