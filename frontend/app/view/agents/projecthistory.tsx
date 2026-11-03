@@ -140,8 +140,9 @@ function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: Rea
     ContextMenuModel.getInstance().showContextMenu(items, e);
 }
 
-// a run's rotated square or a council's dot, beside its kind word; it leads the row's meta line, so the title lines up
-// with a session's
+// a run's diamond or a council's dot, beside its kind word; it leads the row's meta line, so the title lines up with a
+// session's. The diamond is clipped, not a rotated square: a rotated square pokes ~1.5px past its box, and the meta
+// line's truncate cut its left tip off.
 function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
     return (
         <span className="inline-flex items-center gap-[5px] font-semibold text-ink-mid">
@@ -149,7 +150,7 @@ function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
                 aria-hidden="true"
                 className={
                     kind === "run"
-                        ? "h-[7px] w-[7px] flex-none rotate-45 bg-mark-run"
+                        ? "h-[9px] w-[9px] flex-none bg-mark-run [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]"
                         : "h-[7px] w-[7px] flex-none rounded-full bg-mark-council"
                 }
             />
