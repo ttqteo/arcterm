@@ -64,6 +64,12 @@ describe("the pane's fixed chrome", () => {
         expect(o.smoothScrolling).toBe(true);
         expect(o.scrollbar).toStrictEqual({ useShadows: false, verticalScrollbarSize: 6, horizontalScrollbarSize: 6 });
     });
+
+    // monaco's default is off, so a ligature face like Fira Code draws -> as two plain glyphs
+    it("draws the code font's ligatures", () => {
+        expect(paneOptions(false, false, false).fontLigatures).toBe(true);
+        expect(paneOptions(true, true, true).fontLigatures).toBe(true);
+    });
 });
 
 describe("folding", () => {

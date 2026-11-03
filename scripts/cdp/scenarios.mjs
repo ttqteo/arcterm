@@ -11146,6 +11146,42 @@ const codeDiff = {
             ok: toDiff === true && mounted === true && onHead === true,
             detail: `toggled=${toDiff} mounted=${mounted} head=${onHead}`,
         });
+
+        // Monaco defaults fontLigatures off, which draws the code font's -> and != as plain glyph pairs. No app module
+        // exports the monaco namespace and a bare `monaco-editor` import does not resolve in an evaluated script, so the
+        // namespace is imported from the url monaco-react.tsx's transformed source names: the module map is keyed by that
+        // url, so it is the instance the editors were built from. The option reads back as Monaco's font-feature-settings
+        // string, and both its on and off strings are truthy, so the read compares against the on string. The rendered
+        // line is read as well: the computed style is what the person sees.
+        const ligatures = await lookEval(
+            h,
+            `
+            const wrapper = await lookResolve("app/monaco/monaco-react.tsx");
+            if (wrapper == null) return { error: "monaco-react.tsx is not in the import graph" };
+            const source = await (await fetch(wrapper)).text();
+            const dep = source.match(/from\\s*["']([^"']*monaco-editor[^"']*)["']/)?.[1];
+            if (dep == null) return { error: "monaco-react.tsx imports no monaco-editor url" };
+            const monaco = await import(new URL(dep, wrapper).href);
+            const diffs = monaco.editor.getDiffEditors();
+            const line = document.querySelector(".monaco-diff-editor .view-line");
+            return {
+                diffs: diffs.length,
+                options: diffs.map((d) => d.getModifiedEditor().getOption(monaco.editor.EditorOption.fontLigatures)),
+                css: line == null ? null : getComputedStyle(line).fontFeatureSettings,
+            };
+        `
+        ).catch((e) => ({ error: String(e?.message ?? e) }));
+        const LIGATURES_ON = '"liga" on, "calt" on';
+        const cssOn = typeof ligatures?.css === "string" && /"liga"(?!\s*0)/.test(ligatures.css) && /"calt"(?!\s*0)/.test(ligatures.css);
+        steps.push({
+            step: "the Monaco diff editor draws the code font's ligatures",
+            ok:
+                ligatures?.error == null &&
+                ligatures.diffs >= 1 &&
+                ligatures.options.every((o) => o === LIGATURES_ON) &&
+                cssOn,
+            detail: ligatures?.error != null ? ligatures.error : JSON.stringify(ligatures),
+        });
         await h.shot("cdp-shots/code-diff.png");
 
         // `d` and `r` are gated on !editable, so focus has to leave Monaco first
