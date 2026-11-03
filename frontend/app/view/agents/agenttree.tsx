@@ -57,8 +57,6 @@ import {
     Moon,
     Pencil,
     PenTool,
-    Pin,
-    PinOff,
     Play,
     Plus,
     RotateCcw,
@@ -172,14 +170,13 @@ import {
 } from "./agentsidebarmodel";
 import { CouncilAvatar } from "./councilchat";
 import type { CouncilTone } from "./councilmodel";
-import { councilOpenedAtom } from "./councilopened";
+import { closeCouncil, councilOpenedAtom } from "./councilopened";
 import { confirmRemoveCouncil } from "./councilremove";
 import {
     councilListAtom,
     councilSelAtom,
     councilUnreadAtom,
     councilViewAtom,
-    setCouncilPinned,
     stopCouncil,
     useCouncils,
 } from "./councilstore";
@@ -2735,10 +2732,13 @@ export function CouncilSeatPair({
 // then the time since its newest message. The word is in the state's tone token and carries the state whatever the
 // color, `Waiting on you` in the amber one. A primary-ink dot after the feature says it ended while you were away.
 // A queued council offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
-// the queued run's row does. Every other one, running ones too, offers Pin (Unpin on a pinned one) the same way: a pinned
-// council stays at the top of its project, and Councils (the button at the sidebar's top) lists every council whatever
-// the tree keeps. An ended one's menu also offers Remove, behind a confirm, which moves the council's file to
-// ~/.arc/trash. The button cannot hold the action, so the row sits in a wrapper beside it. Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
+// the queued run's row does. An ended, unpinned one offers Close the same way: it leaves the tree at once
+// (councilopened.ts' closed map, kept per browser) and stays in Councils; it comes back if it runs again. A running or
+// pinned one offers no hover button. The tree offers no Pin: a council is pinned (and unpinned) from Councils (the
+// button at the sidebar's top), the project Overview's History and the council's own header, and a pinned one stays at
+// the top of its project here. An ended one's menu also offers Remove, behind a confirm, which moves the council's file
+// to ~/.arc/trash. The button cannot hold the action, so the row sits in a wrapper beside it. Every row's menu starts
+// with Copy id, the full id `wsh council show|wait|stop|rm` take.
 function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM }) {
     const now = useAtomValue(model.nowAtom);
     const center = useAtomValue(centerModeAtom);
@@ -2747,23 +2747,22 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     const selected = center === "council" && view !== "setup" && open === row.id;
     const tone = COUNCIL_TONE[row.tone];
     const queued = row.queued === true;
-    const pinned = row.pinned;
     const removeForGood = () => {
         const c = globalStore.get(councilListAtom(""))?.find((x) => x.id === row.id);
         if (c != null) {
             confirmRemoveCouncil(c);
         }
     };
-    // the hover button: a queued council leaves the queue, any other one pins or unpins
-    const act = () => {
-        if (queued) {
-            fireAndForget(() => stopCouncil(row.id));
-            return;
-        }
-        fireAndForget(() => setCouncilPinned(row.id, !pinned));
-    };
-    const actLabel = queued ? "Remove from queue" : pinned ? "Unpin" : "Pin";
-    const ActIcon = queued ? X : pinned ? PinOff : Pin;
+    const leaveQueue = () => fireAndForget(() => stopCouncil(row.id));
+    // an ended council that is not pinned can be closed: off the tree now, still in Councils
+    const closable = row.removable === true && !row.pinned;
+    const close = () => closeCouncil(row.id);
+    // the hover button: a queued council leaves the queue, an ended unpinned one closes, any other has none
+    const hoverAct = queued
+        ? { key: "remove", label: "Remove from queue", title: "Remove from queue", run: leaveQueue }
+        : closable
+          ? { key: "close", label: "Close", title: "Close · Councils keeps it", run: close }
+          : null;
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             {
@@ -2772,10 +2771,14 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
                 icon: <Hash size={15} />,
                 click: () => void navigator.clipboard.writeText(row.id),
             },
-            { type: "separator" } as const,
-            queued
-                ? { label: actLabel, icon: <X size={15} />, danger: true, click: act }
-                : { label: actLabel, icon: <ActIcon size={15} />, click: act },
+            ...(queued
+                ? [
+                      { type: "separator" } as const,
+                      { label: "Remove from queue", icon: <X size={15} />, danger: true, click: leaveQueue },
+                  ]
+                : []),
+            ...(closable || row.removable === true ? [{ type: "separator" } as const] : []),
+            ...(closable ? [{ label: "Close", sublabel: "Councils keeps it", icon: <X size={15} />, click: close }] : []),
             ...(row.removable === true
                 ? [{ label: "Remove council…", icon: <Trash2 size={15} />, danger: true, click: removeForGood }]
                 : []),
@@ -2848,28 +2851,30 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
             )}
         >
             {button}
-            <span
-                className={cn(
-                    "flex flex-none items-center pr-[6px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100",
-                    // a row's age sits at the right edge: the button covers it on hover instead of holding its place,
-                    // so the feature keeps the room when the row is not hovered
-                    !queued && "absolute inset-y-0 right-0 rounded-r-[6px] bg-inherit pl-[6px]"
-                )}
-            >
-                <button
-                    type="button"
-                    data-council-act={queued ? "remove" : pinned ? "unpin" : "pin"}
-                    title={actLabel}
-                    aria-label={`${actLabel} ${row.feature}`}
-                    onClick={act}
+            {hoverAct != null ? (
+                <span
                     className={cn(
-                        "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted",
-                        queued ? "hover:text-error" : "hover:text-secondary"
+                        "flex flex-none items-center pr-[6px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100",
+                        // a row's age sits at the right edge: the button covers it on hover instead of holding its
+                        // place, so the feature keeps the room when the row is not hovered
+                        !queued && "absolute inset-y-0 right-0 rounded-r-[6px] bg-inherit pl-[6px]"
                     )}
                 >
-                    <ActIcon size={12} aria-hidden />
-                </button>
-            </span>
+                    <button
+                        type="button"
+                        data-council-act={hoverAct.key}
+                        title={hoverAct.title}
+                        aria-label={`${hoverAct.label} ${row.feature}`}
+                        onClick={hoverAct.run}
+                        className={cn(
+                            "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted",
+                            queued ? "hover:text-error" : "hover:text-secondary"
+                        )}
+                    >
+                        <X size={12} aria-hidden />
+                    </button>
+                </span>
+            ) : null}
         </div>
     );
 }

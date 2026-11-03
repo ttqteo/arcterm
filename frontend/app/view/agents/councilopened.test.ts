@@ -4,8 +4,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
     COUNCIL_OPENED_KEY,
+    isClosedCouncil,
     isUnreadCouncil,
     loadOpened,
+    markClosed,
     markOpened,
     openedAt,
     saveOpened,
@@ -124,5 +126,42 @@ describe("markOpened", () => {
         expect(next).toEqual({ seededAt: 1_000, opened: { seen: 5_000, new: 8_000 } });
         expect(MAP.opened).toEqual({ seen: 5_000 });
         expect(openedAt(next, "new")).toBe(8_000);
+    });
+
+    it("keeps the closed times", () => {
+        expect(markOpened({ ...MAP, closed: { x: 9 } }, "new", 8_000).closed).toEqual({ x: 9 });
+    });
+});
+
+describe("markClosed and isClosedCouncil", () => {
+    it("closes the council and reads it at the same time, without touching the input", () => {
+        const next = markClosed(MAP, "c1", 8_000);
+        expect(next).toEqual({ seededAt: 1_000, opened: { seen: 5_000, c1: 8_000 }, closed: { c1: 8_000 } });
+        expect(MAP.closed).toBeUndefined();
+    });
+
+    it("is closed once ended and closed at or after its end", () => {
+        const map = markClosed(MAP, "c1", 8_000);
+        expect(isClosedCouncil(council({ updated: 7_000 }), map)).toBe(true);
+        expect(isClosedCouncil(council({ updated: 8_000 }), map)).toBe(true);
+        expect(isClosedCouncil(council({ id: "c2", updated: 7_000 }), map)).toBe(false);
+    });
+
+    it("is not closed when it ran and ended again after it was closed, nor while it runs", () => {
+        const map = markClosed(MAP, "c1", 8_000);
+        expect(isClosedCouncil(council({ updated: 9_000 }), map)).toBe(false);
+        for (const state of ["running", "awaiting-you", "queued"]) {
+            expect(isClosedCouncil(council({ state, updated: 7_000 }), map)).toBe(false);
+        }
+    });
+
+    it("round-trips through the store, dropping non-number closed times", () => {
+        const store = memStore();
+        saveOpened(store, { seededAt: 7, opened: {}, closed: { a: 20 } });
+        expect(loadOpened(store, 99)).toEqual({ seededAt: 7, opened: {}, closed: { a: 20 } });
+        const partly = memStore({
+            [COUNCIL_OPENED_KEY]: JSON.stringify({ seededAt: 3, opened: {}, closed: { b: "x" } }),
+        });
+        expect(loadOpened(partly, 50)).toEqual({ seededAt: 3, opened: {} });
     });
 });

@@ -43,7 +43,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An evidence chip that cites many lines of a file keeps the file's name and cuts the list of lines with an ellipsis (the tooltip holds all of them), where a long list used to push the name out.
 - The questions Ask next offers in a council, and the replies a seat suggests in a thread, stay while you type; pressing one puts its text in the box in place of what you typed.
 - The question at the top of a council's Chat folds under its text: Show more sits beneath the question and its limits, the text grows to its full height and the rest of the limits fade in, and Show less folds it back. It stays still when you ask for reduced motion.
-- Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, a tree row's hover button and Councils keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other.
+- Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, Councils and a project Overview's History keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other. Close on an ended council's tree row (on hover, and in its right-click menu) takes it off the tree at once; Councils still lists it.
 - A council's Discussion is a list of its ideas, one row each with its author, a New badge and its count of agrees, doubts and objections; a Chat row on top holds your messages and the answers to them, and a click opens a row's thread beside it.
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
 - A council's minutes count the time it ran, not the clock since it started, so a council chatted in the next day no longer reads hundreds of minutes.
@@ -53,12 +53,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run that finished and landed with one task still failed no longer reads Cancelled in its Conversations group or a brainstorm's Run step, and `wsh runs show` says its plan was closed when the run ended instead of `status=cancelled`.
 - Deleting a session you just closed now says it was written to seconds ago and how long to wait, instead of "still running … stop it first"; a session a tab still holds says so on its own.
 - A council question that names an `.astro`, `.vue` or `.svelte` file turns on Let them read files by itself, like any other source file.
 - A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.
 - A run you landed with Land anyway after its final check failed reads Landed in the Agent tree and the Brief, not Cancelled.
+- A council with a long question keeps its status chip readable in the Discussion and Map headers: the title shortens first, where the chip used to be cut to its first letter.
 - In a project's Overview, a run's diamond in History is no longer cut off on its left, and a Branches row with long branch names shortens them instead of spilling over the History column.
+- Starting a run in a project that is one folder of a large repo no longer fails and cancels itself while its tree checks out: the run's trees check out only that folder, and a tree that still takes long finishes in the background while the run waits for it.
 
 ## 0.15.21 — 2026-11-03
 

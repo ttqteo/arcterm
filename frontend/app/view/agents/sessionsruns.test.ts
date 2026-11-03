@@ -596,6 +596,12 @@ describe("runView head status", () => {
         expect(headOf([lead({ live: true })], { dag })).toEqual({ key: "muted", text: "cancelled" });
     });
 
+    it("does not read a done run's dag, closed when the run ended, as cancelled", () => {
+        const dag = dagOf([task("t-1", "done")], { status: "cancelled" });
+        const run = { oid: "r1", status: "done" } as Run;
+        expect(headOf([lead()], { dag, run })).not.toEqual({ key: "muted", text: "cancelled" });
+    });
+
     it("reads a live run with nothing running as working, or planning before it has a dag", () => {
         const dag = dagOf([task("t-1", "done")], { status: "running" });
         expect(headOf([lead({ live: true })], { dag })).toEqual({ key: "running", text: "working" });

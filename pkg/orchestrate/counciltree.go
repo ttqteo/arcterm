@@ -56,7 +56,7 @@ func (CouncilTrees) Make(ctx context.Context, project, commit, key string) (stri
 	if _, err := gitLocked(ctx, top, "worktree", "prune"); err != nil {
 		return "", fmt.Errorf("pruning worktrees: %w", err)
 	}
-	if _, err := addWorktree(ctx, top, "--detach", wt, commit); err != nil {
+	if _, err := addWorktree(ctx, top, wt, []string{"--detach"}, commit); err != nil {
 		return "", fmt.Errorf("creating the council's tree: %w", err)
 	}
 	if err := linkCouncilTree(ctx, wt); err != nil {

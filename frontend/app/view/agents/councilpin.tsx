@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pin a council, or unpin a pinned one: one labelled button for both of a council's views, the Discussion's header
-// (councildiscussion.tsx) and the Report's tab bar (councilsummary.tsx). It works in any state, running ones too: a
+// (councildiscussion.tsx) and the Report's tab bar (councilsummary.tsx), and for an unfolded council row of a project
+// Overview's History (projecthistory.tsx). The Agent tree's rows offer no Pin. It works in any state, running ones too: a
 // pinned council stays at the top of its project in the tree, and only the person pins (a run never touches it).
 
 import { cn } from "@/util/util";

@@ -30,7 +30,7 @@ import {
     UNTITLED_COUNCIL,
     type CouncilTone,
 } from "./councilmodel";
-import { endedAt, isUnreadCouncil, type CouncilOpenedMap } from "./councilopened";
+import { endedAt, isClosedCouncil, isUnreadCouncil, type CouncilOpenedMap } from "./councilopened";
 import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -441,15 +441,17 @@ const COUNCIL_LIVE: ReadonlySet<string> = new Set(["running", "awaiting-you", "q
 
 /** Pure: whether the Agent tree lists council `c`: it runs, waits on the person or is queued; it is pinned; it ended
  *  (endedAt: its summary's time, else its last save) less than a day before `now`; or it ended after the person last
- *  opened it (isUnreadCouncil, against the last-opened map). Any other council, an ended one a day old that is unpinned
+ *  opened it (isUnreadCouncil, against the last-opened map), unless the person closed it since it ended
+ *  (isClosedCouncil), which takes it off the tree at once. Any other council, an ended one a day old that is unpinned
  *  and read, is left to Councils, so Unpin on one takes it off the tree at once. */
 export function councilInTree(c: Council, opened: CouncilOpenedMap, now: number): boolean {
-    return (
-        COUNCIL_LIVE.has(c.state) ||
-        isPinnedCouncil(c) ||
-        now - endedAt(c) < COUNCIL_TREE_KEEP_MS ||
-        isUnreadCouncil(c, opened)
-    );
+    if (COUNCIL_LIVE.has(c.state) || isPinnedCouncil(c)) {
+        return true;
+    }
+    if (isClosedCouncil(c, opened)) {
+        return false;
+    }
+    return now - endedAt(c) < COUNCIL_TREE_KEEP_MS || isUnreadCouncil(c, opened);
 }
 
 /** Pure: the councils (councilListAtom("")) the tree lists (councilInTree, against the last-opened map `opened` at

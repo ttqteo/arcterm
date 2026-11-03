@@ -6,6 +6,25 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
+  that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
+  Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
+  unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
+  steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
+  (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
+
+- [ ] (arcterm) A run in a monorepo folder starts and checks out only that folder: start an orchestrator run in the
+  portal project (`D:\Workspace\SIEM\apps\portal`) → it starts without "creating landing tree" and is not cancelled;
+  its tree under `%LOCALAPPDATA%\arc-wt\<run>` holds `apps\portal` and the repo's root files, not `src\` or
+  `apps\website`, and `git -C <tree> sparse-checkout list` prints `apps/portal`. A tree slower than 45 s replies first
+  and the run shows its lead once the tree is done (`waveapp.log`: "still checking out … finishes in the background").
+  Unit tests only; needs the new wavesrv (`worktree.go` `addWorktree`, `wshserver_runs.go` `CreateRunCommand`).
+
+- [ ] (arcterm) A council's status chip keeps its word beside a long title: open a council with a long question on
+  Discussion and on Map in a narrow pane → the title ends in an ellipsis first and the chip still reads "Stopped" (or
+  its step) in full; it truncates only once the title is down to its 72px floor. Not tried in the app
+  (`councildiscussion.tsx`, `councilmap.tsx`: the title shrinks with weight 1000).
+
 - [ ] (arcterm) Deleting a just-closed session says how long to wait: after the next build, close an agent, then at
   once delete its session in History → the toast reads "…it was written to 20s ago (a closed agent writes its last
   lines as it exits), try again in 1m40s", and a delete after that wait goes through. Unit tests only
@@ -17,6 +36,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `wsh runs show` reads "failed, then accepted by the lead"; only a finding that changes the spec's decisions still
   comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
   3520d3a3f); no live run yet.
+
+- [ ] (arcterm) A done run's closed dag reads done, not cancelled: `wsh runs show 40deb36e` and `c06ba9cb` print
+  `status=closed (the run ended done)`; in Conversations, run 40deb36e's group head and a brainstorm whose Run step
+  points at a landed run with a failed task do not read cancelled. Unit tests only (`sessionsruns.ts`,
+  `brainstormrunmodel.ts`, `wshcmd-runs.go`); the app was not opened, and the installed wsh still prints the old line
+  until the next build.
 
 - [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
   has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final

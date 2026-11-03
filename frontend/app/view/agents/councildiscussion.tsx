@@ -290,7 +290,8 @@ function Header({
                     <h1
                         data-council-title
                         title={c.feature}
-                        className="m-0 min-w-[72px] flex-[0_1_auto] truncate text-[14px] font-semibold tracking-[-0.01em] text-primary"
+                        // shrinks far ahead of the status chip, so a long title truncates before the chip's word does
+                        className="m-0 min-w-[72px] flex-[0_1000_auto] truncate text-[14px] font-semibold tracking-[-0.01em] text-primary"
                     >
                         {c.feature}
                     </h1>

@@ -80,7 +80,8 @@ export function runStepView(runId: string, run: RunInfo | undefined, loaded: boo
     const notMerged = run.landPath ? `, so nothing has merged into ${into} yet` : "";
     const base: Base = { merged: false, canClose: false, closeOff: null, done, total, round: final?.round };
 
-    if (run.status === "cancelled" || run.dag?.status === "cancelled") {
+    // a done run's cancelled dag is the dag the engine closed when the run ended (endedRunSettles): it reads by its land
+    if (run.status === "cancelled" || (run.dag?.status === "cancelled" && run.status !== "done")) {
         return {
             ...base,
             state: "cancelled",

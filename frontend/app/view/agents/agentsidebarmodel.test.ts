@@ -54,7 +54,8 @@ import { treeServiceInput } from "./servicesmodel";
 import type { StartingRun } from "./startingrunsmodel";
 
 const MIN = 60_000;
-const DAY = 24 * 60 * MIN;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
 const NOW = 1_800_000_000_000;
 
 const session = (id: string, over: Partial<SessionActivity> = {}): SessionActivity => ({
@@ -1455,6 +1456,23 @@ describe("councilInTree", () => {
         const stopped = { state: "stopped", updated: NOW - 3 * DAY } as const;
         expect(councilInTree(council({ ...stopped, pinned: NOW - 2 * DAY }), read, NOW)).toBe(true);
         expect(councilInTree(council({ ...stopped, pinned: 0 }), read, NOW)).toBe(false);
+    });
+
+    it("drops a council closed after it ended at once, even within the day or unread", () => {
+        const fresh = council({ updated: NOW - MIN });
+        const closed: CouncilOpenedMap = { ...read, closed: { c: NOW } };
+        expect(councilInTree(fresh, read, NOW)).toBe(true);
+        expect(councilInTree(fresh, closed, NOW)).toBe(false);
+        expect(
+            councilInTree(council({ updated: NOW - MIN }), { seededAt: 0, opened: {}, closed: { c: NOW } }, NOW)
+        ).toBe(false);
+    });
+
+    it("keeps a closed council that runs again, ends again after the close, or is pinned", () => {
+        const closed: CouncilOpenedMap = { ...read, closed: { c: NOW - HOUR } };
+        expect(councilInTree(council({ state: "running", updated: NOW - 2 * HOUR }), closed, NOW)).toBe(true);
+        expect(councilInTree(council({ updated: NOW - MIN }), closed, NOW)).toBe(true);
+        expect(councilInTree(council({ updated: NOW - 2 * HOUR, pinned: NOW }), closed, NOW)).toBe(true);
     });
 });
 

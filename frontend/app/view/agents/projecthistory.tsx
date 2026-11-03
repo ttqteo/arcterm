@@ -11,11 +11,14 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronRight, Copy, ExternalLink, FileText, Play, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, ExternalLink, FileText, Pin, PinOff, Play, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort } from "./agentsviewmodel";
+import { isPinnedCouncil } from "./councilmodel";
+import { CouncilPinButton } from "./councilpin";
+import { setCouncilPinned } from "./councilstore";
 import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
 import {
     firstRows,
@@ -160,8 +163,19 @@ function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
 }
 
 // A council row unfolded: what it was asked, its answer or its error, its top directions, then Open council, which is
-// what takes the person to it (the Agent centre and its tree row). It lines up under the row's title.
-function CouncilPeekBody({ peek, nested, onOpen }: { peek: CouncilPeek; nested: boolean; onOpen: () => void }) {
+// what takes the person to it (the Agent centre and its tree row), and Pin (Pinned on a pinned one), which keeps it at
+// the top of its project in the tree. It lines up under the row's title.
+function CouncilPeekBody({
+    peek,
+    nested,
+    council,
+    onOpen,
+}: {
+    peek: CouncilPeek;
+    nested: boolean;
+    council: Council | undefined;
+    onOpen: () => void;
+}) {
     const empty = peek.question === "" && peek.answer === "" && peek.error === "" && peek.directions.length === 0;
     return (
         <div
@@ -192,9 +206,12 @@ function CouncilPeekBody({ peek, nested, onOpen }: { peek: CouncilPeek; nested: 
                 </ol>
             ) : null}
             {empty ? <p className="text-[12px] text-muted">No answer yet.</p> : null}
-            <button type="button" data-history-open onClick={onOpen} className={SMALL_BTN}>
-                Open council
-            </button>
+            <div className="flex items-center gap-2">
+                <button type="button" data-history-open onClick={onOpen} className={SMALL_BTN}>
+                    Open council
+                </button>
+                {council != null ? <CouncilPinButton c={council} className="h-[26px] text-[12px]" /> : null}
+            </div>
         </div>
     );
 }
@@ -341,6 +358,9 @@ export function HistoryColumn({
                 }
                 const isCouncil = row.kind === "council";
                 const open = isCouncil && unfolded === row.key;
+                const councilId = row.kind === "council" ? row.councilId : null;
+                const council = councilId != null ? h.councils?.find((c) => c.id === councilId) : undefined;
+                const pinned = council != null && isPinnedCouncil(council);
                 const button = (
                     <button
                         type="button"
@@ -357,6 +377,16 @@ export function HistoryColumn({
                                         icon: <ExternalLink size={15} />,
                                         click: () => openItem(row),
                                     },
+                                    ...(council != null
+                                        ? [
+                                              {
+                                                  label: pinned ? "Unpin" : "Pin",
+                                                  icon: pinned ? <PinOff size={15} /> : <Pin size={15} />,
+                                                  click: () =>
+                                                      fireAndForget(() => setCouncilPinned(council.id, !pinned)),
+                                              },
+                                          ]
+                                        : []),
                                     copyTitleItem(row.title),
                                 ],
                                 e
@@ -399,7 +429,12 @@ export function HistoryColumn({
                     <Fragment key={row.key}>
                         {button}
                         {open ? (
-                            <CouncilPeekBody peek={row.peek} nested={row.nested} onOpen={() => openItem(row)} />
+                            <CouncilPeekBody
+                                peek={row.peek}
+                                nested={row.nested}
+                                council={council}
+                                onOpen={() => openItem(row)}
+                            />
                         ) : null}
                     </Fragment>
                 );
