@@ -149,14 +149,16 @@ func Load(id string) (*Council, error) {
 	return c, nil
 }
 
-// writeLocked stamps Updated and writes the council through a temp file and a rename, so a reader sees the old
-// file or the new one and never half of either. Callers hold the id's lock.
-func writeLocked(c *Council) error {
+// writeLocked writes the council through a temp file and a rename, so a reader sees the old file or the new one and
+// never half of either; with stamp it first sets Updated to now. Callers hold the id's lock.
+func writeLocked(c *Council, stamp bool) error {
 	path, err := councilPath(c.Id)
 	if err != nil {
 		return err
 	}
-	c.Updated = now().UnixMilli()
+	if stamp {
+		c.Updated = now().UnixMilli()
+	}
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode council %s: %w", path, err)
@@ -179,12 +181,22 @@ func Save(c *Council) error {
 	mu := idLock(c.Id)
 	mu.Lock()
 	defer mu.Unlock()
-	return writeLocked(c)
+	return writeLocked(c, true)
 }
 
 // Update loads the council, applies fn and saves it, all under the id's lock, so two updates never lose one
 // another's change. When fn returns an error nothing is saved and the error comes back.
 func Update(id string, fn func(*Council) error) (*Council, error) {
+	return update(id, fn, true)
+}
+
+// UpdateMark is Update for a mark the person sets that is no change to the council itself (its pin): it keeps
+// Updated as loaded, which is the ended time of a council with no summary.
+func UpdateMark(id string, fn func(*Council) error) (*Council, error) {
+	return update(id, fn, false)
+}
+
+func update(id string, fn func(*Council) error, stamp bool) (*Council, error) {
 	if _, err := councilPath(id); err != nil {
 		return nil, err
 	}
@@ -198,7 +210,7 @@ func Update(id string, fn func(*Council) error) (*Council, error) {
 	if err := fn(c); err != nil {
 		return nil, err
 	}
-	if err := writeLocked(c); err != nil {
+	if err := writeLocked(c, stamp); err != nil {
 		return nil, err
 	}
 	return c, nil

@@ -8,7 +8,9 @@
 // and Pin / Unpin (the Report's tab bar, a tree row and a Councils row, step 11) have their stop and pin commands replaced
 // in the page. Steps 11d to 11f (docs/superpowers/plans/2026-11-03-council-ux.md, Task 6) check the tree rule with two
 // councils placed three days back and marked opened: the pinned one drawn at its folder's top, the unpinned one off the
-// tree, and Unpin from the Report taking the pinned one off too.
+// tree, and Unpin from the Report taking the pinned one off too. Step 11g
+// (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md) does the same for a pinned, stopped council with no summary,
+// whose ended time is its `updated`: Unpin from its tree row takes it off the tree.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -664,6 +666,50 @@ export const councilTree = {
             JSON.stringify({ reportPinned, reportUnpins, unpinnedGone })
         );
 
+        // 11g. the same rule for a council with no summary (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md): its
+        // ended time is its `updated`, which a pin leaves as it was. A stopped copy of the done fixture, its summary
+        // dropped, placed three days back, pinned and marked opened now, is in the tree; Unpin from its tree row's hover
+        // button asks wavesrv to unpin it, and once saved (`updated` still three days back) it leaves the tree.
+        const oldStopped = `${COUNCIL_ID_PREFIX}old-stopped`;
+        const stoppedEdit = (pinned) => (c) => {
+            c.state = "stopped";
+            delete c.summary;
+            c.pinned = pinned;
+        };
+        await h.ev(`(() => {
+            const map = window.__arcCouncil.opened();
+            window.__arcCouncil.setOpened({
+                seededAt: map.seededAt,
+                opened: { ...map.opened, ${JSON.stringify(oldStopped)}: Date.now() },
+            });
+        })()`);
+        await seedCouncil(h, ctx, "done", { id: oldStopped, now: threeDaysAgo, edit: stoppedEdit(Date.now()) });
+        const stoppedDrawn = await until(present(`[data-council-row="${oldStopped}"]`), ROWS_WAIT_MS);
+        const stoppedRead = await h.ev(`!${unreadDot(oldStopped)}`);
+        await hoverOn(h, `[data-council-row="${oldStopped}"] [data-council-feature]`);
+        const stoppedUnpinOffered = await until(actShown(oldStopped, "unpin"));
+        await stubRpc(h, ["CouncilPinCommand"]);
+        await h.ev(`${actOf(oldStopped, "unpin")}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const stoppedUnpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        // what wavesrv saves for that unpin: the pin gone, `updated` as it was
+        writeCouncil(ctx, "done", { id: oldStopped, now: threeDaysAgo, edit: stoppedEdit(0) });
+        await announceCouncil(h, ctx, oldStopped);
+        const stoppedGone = await until(`!${present(`[data-council-row="${oldStopped}"]`)}`);
+        await h.shot("cdp-shots/council-tree-unpinned-stopped-gone.png");
+        rec(
+            "11g. a pinned, stopped council with no summary, ended three days ago and opened, is in the tree; Unpin from its tree row asks wavesrv to unpin it, and once saved it leaves the tree",
+            stoppedDrawn &&
+                stoppedRead &&
+                stoppedUnpinOffered &&
+                stoppedUnpins.length === 1 &&
+                stoppedUnpins[0].data?.id === oldStopped &&
+                stoppedUnpins[0].data?.pinned === false &&
+                stoppedGone,
+            JSON.stringify({ stoppedDrawn, stoppedRead, stoppedUnpinOffered, stoppedUnpins, stoppedGone })
+        );
+
         // ---- the room's agents (steps 12 on) ----
         // The roster write reloads the page onto the Jarvis surface, so go back to Agent. The councils so far seat no agent.
         ctx.roster = await writeRoomRoster(h);
@@ -797,7 +843,8 @@ export const councilTree = {
     },
 
     async teardown(h, ctx) {
-        // the last-opened map as it was before steps 11d to 11f marked their councils opened
+        // the last-opened map as it was before steps 11d to 11g marked their councils opened; their council files go
+        // with the other fixtures' in teardownCouncilProject (ctx.written)
         if (ctx.openedBefore) {
             await h
                 .ev(`window.__arcCouncil?.setOpened(${JSON.stringify(ctx.openedBefore)})`)

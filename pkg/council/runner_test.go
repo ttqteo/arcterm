@@ -2404,6 +2404,31 @@ func TestSetPinnedOnAnEndedCouncil(t *testing.T) {
 	}
 }
 
+// The pin is the person's mark, not a change to the discussion: it must not move Updated, which is the ended time
+// of a council with no summary (a failed, stopped or not-run one), or Pin and Unpin would keep it in the tree a day.
+func TestSetPinnedKeepsUpdated(t *testing.T) {
+	h := newHarness(t)
+	tickClock(t) // every stamping save sees a later time, so a restamp shows
+	h.save(fixtureCouncil("c1", StateStopped, 1))
+	before := h.load("c1")
+	if before.Summary != nil || before.Updated == 0 {
+		t.Fatalf("fixture: summary %v, updated %d; want no summary and a known Updated", before.Summary, before.Updated)
+	}
+	for _, pinned := range []bool{true, false} {
+		c, err := h.r.SetPinned("c1", pinned)
+		if err != nil {
+			t.Fatalf("SetPinned(c1, %v): %v", pinned, err)
+		}
+		saved := h.load("c1")
+		if c.Updated != before.Updated || saved.Updated != before.Updated {
+			t.Errorf("SetPinned(c1, %v) moved Updated from %d to %d (saved %d)", pinned, before.Updated, c.Updated, saved.Updated)
+		}
+		if (c.Pinned != 0) != pinned || (saved.Pinned != 0) != pinned {
+			t.Errorf("SetPinned(c1, %v): returned Pinned %d, saved %d", pinned, c.Pinned, saved.Pinned)
+		}
+	}
+}
+
 func TestSetPinnedOnARunningCouncil(t *testing.T) {
 	h := newHarness(t)
 	h.f.gate("ux/r1")

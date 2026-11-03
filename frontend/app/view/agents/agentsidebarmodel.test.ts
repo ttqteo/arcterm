@@ -1449,6 +1449,13 @@ describe("councilInTree", () => {
     it("drops it once it is unpinned", () => {
         expect(councilInTree(council({ pinned: 0 }), read, NOW)).toBe(false);
     });
+
+    it("keeps a pinned stopped council with no summary, ended three days ago and read, and drops it unpinned", () => {
+        // with no summary its ended time is `updated`, which the pin leaves as it was
+        const stopped = { state: "stopped", updated: NOW - 3 * DAY } as const;
+        expect(councilInTree(council({ ...stopped, pinned: NOW - 2 * DAY }), read, NOW)).toBe(true);
+        expect(councilInTree(council({ ...stopped, pinned: 0 }), read, NOW)).toBe(false);
+    });
 });
 
 // a summary written at `at`, its text aside

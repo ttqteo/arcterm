@@ -2534,10 +2534,11 @@ func (r *Runner) endedLocked(id, what string) (*Council, error) {
 }
 
 // SetPinned pins a council (the tree keeps it at the top of its project) or unpins it, in any state, running ones too:
-// a run never touches Pinned. Pinning a pinned council keeps its first time. It reports the save.
+// a run never touches Pinned. Pinning a pinned council keeps its first time, and the pin leaves Updated as it was
+// (UpdateMark), so it never moves an ended council's time in the tree. It reports the save.
 func (r *Runner) SetPinned(id string, pinned bool) (*Council, error) {
 	r.mu.Lock()
-	c, err := Update(id, func(c *Council) error {
+	c, err := UpdateMark(id, func(c *Council) error {
 		if !pinned {
 			c.Pinned = 0
 		} else if c.Pinned == 0 {
