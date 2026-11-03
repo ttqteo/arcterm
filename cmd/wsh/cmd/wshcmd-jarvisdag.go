@@ -348,7 +348,8 @@ func planReviewLine(pr *waveobj.PlanReviewStage, now int64) string {
 		}
 		return head + "  " + next + ": " + compactText(flatText(pr.Findings), planReviewFindingsRunes)
 	case orchestrate.PlanReviewState_Accepted:
-		return head + "  failed, then accepted by the lead on the human's word"
+		// on a spec's run the lead may accept on its own call (jarvis.SpecPastPlanReview); the run's events hold the reason
+		return head + "  failed, then accepted by the lead"
 	}
 	return head
 }

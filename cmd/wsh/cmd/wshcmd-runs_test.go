@@ -408,6 +408,22 @@ func TestRunsShowLinesPrintsUsage(t *testing.T) {
 	}
 }
 
+// Land anyway after a failed final: the engine closes the done run's leftover dag as cancelled, and show says the run
+// was not cancelled; a cancelled run's dag line stays as it is
+func TestRunsShowLinesSaysADoneRunsCancelledDagWasClosed(t *testing.T) {
+	ch := &waveobj.Channel{OID: "ch-1", Name: "waveterm"}
+	digest := &wshrpc.CommandDagStatusRtnData{Group: &waveobj.TaskGroup{ID: "dag-1", Status: "cancelled"}}
+	const note = "(closed when the run ended: the run is done, not cancelled)"
+	done := strings.Join(runsShowLines(ch, &waveobj.Run{ID: "r-1", Status: "done", Mode: "orchestrator"}, digest, 2, nil, nil), "\n")
+	if !strings.Contains(done, "status=cancelled") || !strings.Contains(done, note) {
+		t.Fatalf("a done run's cancelled dag must say it was closed:\n%s", done)
+	}
+	cancelled := strings.Join(runsShowLines(ch, &waveobj.Run{ID: "r-2", Status: "cancelled", Mode: "orchestrator"}, digest, 2, nil, nil), "\n")
+	if strings.Contains(cancelled, note) {
+		t.Fatalf("a cancelled run's dag line must not say the run is done:\n%s", cancelled)
+	}
+}
+
 func TestRunsAttentionLines(t *testing.T) {
 	if got := runsAttentionLines(nil, 0); got[0] != "nothing is waiting on you" {
 		t.Fatalf("empty = %v", got)

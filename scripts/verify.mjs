@@ -1,6 +1,8 @@
 // Verify for this repo's engine plans. At each merge the engine sets ARC_VERIFY_CHANGED to a file listing the
 // paths the merge changed; this tests only what those paths can break. Unset (the final stage, or a human), it
-// runs everything the patterns name. A failed Go or vitest test that passes when rerun alone is flaky: the run
+// runs everything the patterns name, and typechecks the frontend. A scoped run never typechecks: one tsc takes 80
+// to 120 s whatever changed (an incremental one only skips when no TS file did, measured 2026-11-03), each merge's
+// Verify holds the next merge, and the worker already typechecked its own tree. A failed Go or vitest test that passes when rerun alone is flaky: the run
 // passes, and the test is appended to the file ARC_VERIFY_FLAKY names, so the engine reports it instead of a clean
 // pass.
 //
@@ -14,7 +16,6 @@ import { fileURLToPath } from "node:url";
 
 // a change to one of these can move any test's outcome
 const FRONTEND_CONFIG = new Set(["package.json", "package-lock.json", "vitest.config.ts", "tsconfig.json"]);
-const TS_FILE = /\.(ts|tsx)$/;
 const JS_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 // the module's Go packages live under these; a path elsewhere cannot change what a Go test sees
 const GO_DIRS = /^(pkg|cmd|db)\//;
@@ -53,7 +54,7 @@ export function readChanged(text) {
 }
 
 export function planVerify(changed, graph, universe, modulePath) {
-    const plan = { goAll: false, goPkgs: [], vitest: "none", tsc: false };
+    const plan = { goAll: false, goPkgs: [], vitest: "none" };
     const changedPkgs = new Set();
     const related = [];
     const pkgs = new Set(graph.map((p) => p.importPath));
@@ -73,10 +74,8 @@ export function planVerify(changed, graph, universe, modulePath) {
             const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
             changedPkgs.add(dir ? `${modulePath}/${dir}` : modulePath);
         } else if (FRONTEND_CONFIG.has(path)) {
-            plan.tsc = true;
             plan.vitest = "all";
         } else if (JS_FILE.test(path)) {
-            plan.tsc ||= TS_FILE.test(path);
             related.push(path);
         }
     }
@@ -511,6 +510,7 @@ async function main(patterns) {
     const changed = listFile ? readChangedFile(listFile) : null;
     if (!changed) {
         await goTest(patterns);
+        run("node", TSC);
         runVitest(VITEST);
         return;
     }
@@ -520,15 +520,12 @@ async function main(patterns) {
     const universe = goChanged ? new Set(goList(patterns)) : new Set();
     const plan = planVerify(changed, graph, universe, modulePath);
     const goArgs = plan.goAll ? patterns : plan.goPkgs;
-    if (goArgs.length === 0 && plan.vitest === "none" && !plan.tsc) {
+    if (goArgs.length === 0 && plan.vitest === "none") {
         console.log(`verify: nothing to test for the ${changed.length} changed path(s)`);
         return;
     }
     if (goArgs.length > 0) {
         await goTest(goArgs);
-    }
-    if (plan.tsc) {
-        run("node", TSC);
     }
     if (plan.vitest === "all") {
         runVitest(VITEST);

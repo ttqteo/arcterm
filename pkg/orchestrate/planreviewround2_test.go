@@ -238,7 +238,12 @@ func TestFollowupFailIsTheLastRound(t *testing.T) {
 			if pr.State != PlanReviewState_Failed || pr.Findings != want {
 				t.Fatalf("got %s %q, want %q", pr.State, pr.Findings, want)
 			}
-			if !strings.Contains(strings.Join(r.lead.sends, "\n"), planReviewFailedWake(2, want, true, autonomous)) {
+			// the plan answers to a spec, so an asking run's lead decides the findings the spec settles
+			wake := specPlanReviewFailedWake(2, want)
+			if autonomous {
+				wake = planReviewFailedWake(2, want, true, true)
+			}
+			if !strings.Contains(strings.Join(r.lead.sends, "\n"), wake) {
 				t.Fatalf("want the last-round wake, got %q", r.lead.sends)
 			}
 			if _, err := ReplacePlanReviewProposal(r.ctx, r.dag.OID, &waveobj.TaskGroup{PlanPath: roundTwoPlanPath, Tasks: picksTasks()}); err == nil {

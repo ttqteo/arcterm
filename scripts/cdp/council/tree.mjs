@@ -166,6 +166,19 @@ async function hoverOn(h, selector) {
     return true;
 }
 
+// hoverOn until shown holds, hovering again at the row's current place each try: a row that moves under the pointer
+// (a council just pinned climbs to its folder's top) leaves the hover on whichever row took its place
+async function hoverUntil(h, selector, shown, tries = 5, ms = 1500) {
+    for (let i = 0; i < tries; i++) {
+        if (await hoverOn(h, selector)) {
+            if (await waitFor((e) => h.ev(e), shown, ms)) return true;
+        } else {
+            await new Promise((r) => setTimeout(r, 200));
+        }
+    }
+    return false;
+}
+
 async function pressEscape(h) {
     for (const type of ["keyDown", "keyUp"]) {
         await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
@@ -501,13 +514,11 @@ export const councilTree = {
             return !!el && getComputedStyle(el.parentElement).opacity === "1";
         })()`;
         const stays = await until(present(`[data-council-row="${doneId}"]`));
-        await hoverOn(h, `[data-council-row="${doneId}"] [data-council-feature]`);
-        const unpinOffered = await until(actShown(doneId, "unpin"));
+        const unpinOffered = await hoverUntil(h, `[data-council-row="${doneId}"] [data-council-feature]`, actShown(doneId, "unpin"));
         const unpinTitle = await h.ev(`${actOf(doneId, "unpin")}?.title ?? null`);
         await h.shot("cdp-shots/council-tree-unpin.png");
         const runningId = councilFixtureId("round2");
-        await hoverOn(h, `[data-council-row="${runningId}"] [data-council-feature]`);
-        const pinOffered = await until(actShown(runningId, "pin"));
+        const pinOffered = await hoverUntil(h, `[data-council-row="${runningId}"] [data-council-feature]`, actShown(runningId, "pin"));
         const pinTitle = await h.ev(`${actOf(runningId, "pin")}?.title ?? null`);
         await h.shot("cdp-shots/council-tree-pin.png");
         const closeLeft = await h.ev(`!!document.querySelector('[data-council-act="close"]')`);
@@ -551,10 +562,8 @@ export const councilTree = {
         const listShown = await until(present(historyRow(doneId)));
         const marked = await until(markOn(doneId));
         const unmarkedOther = await h.ev(`!${markOn(runningId)}`);
-        await hoverOn(h, `${historyRow(runningId)}`);
-        const listPinOffered = await until(historyActShown(runningId, "pin"));
-        await hoverOn(h, `${historyRow(doneId)}`);
-        const listUnpinOffered = await until(historyActShown(doneId, "unpin"));
+        const listPinOffered = await hoverUntil(h, historyRow(runningId), historyActShown(runningId, "pin"));
+        const listUnpinOffered = await hoverUntil(h, historyRow(doneId), historyActShown(doneId, "unpin"));
         const listUnpinTitle = await h.ev(`${historyAct(doneId, "unpin")}?.title ?? null`);
         await h.shot("cdp-shots/council-history-pinned.png");
         await stubRpc(h, ["CouncilPinCommand"]);
@@ -686,8 +695,7 @@ export const councilTree = {
         await seedCouncil(h, ctx, "done", { id: oldStopped, now: threeDaysAgo, edit: stoppedEdit(Date.now()) });
         const stoppedDrawn = await until(present(`[data-council-row="${oldStopped}"]`), ROWS_WAIT_MS);
         const stoppedRead = await h.ev(`!${unreadDot(oldStopped)}`);
-        await hoverOn(h, `[data-council-row="${oldStopped}"] [data-council-feature]`);
-        const stoppedUnpinOffered = await until(actShown(oldStopped, "unpin"));
+        const stoppedUnpinOffered = await hoverUntil(h, `[data-council-row="${oldStopped}"] [data-council-feature]`, actShown(oldStopped, "unpin"));
         await stubRpc(h, ["CouncilPinCommand"]);
         await h.ev(`${actOf(oldStopped, "unpin")}?.click()`);
         await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);

@@ -1061,7 +1061,13 @@ func runsShowLines(ch *waveobj.Channel, r *waveobj.Run, digest *wshrpc.CommandDa
 	}
 	if digest != nil {
 		lines = append(lines, "")
-		lines = append(lines, dagStatusLines(digest, now)...)
+		dag := dagStatusLines(digest, now)
+		// the engine closes the dag a done run left unfinished as cancelled (Land anyway after a failed final);
+		// that is not the run being cancelled, and a reader takes it for one
+		if r.Status == jarvis.RunStatus_Done && digest.Group != nil && digest.Group.Status == orchestrate.DagStatus_Cancelled {
+			dag[0] += "  (closed when the run ended: the run is done, not cancelled)"
+		}
+		lines = append(lines, dag...)
 	}
 	if ev := r.Evidence; ev != nil {
 		lines = append(lines, "", fmt.Sprintf("sealed   %d files  +%d -%d  took %s", len(ev.Files), ev.AddTotal, ev.DelTotal, durOrZero(ev.DurationMs)))

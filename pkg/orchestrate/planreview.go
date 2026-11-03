@@ -29,7 +29,7 @@ const (
 	PlanReviewState_Reviewing = "reviewing"
 	PlanReviewState_Passed    = "passed"
 	PlanReviewState_Failed    = "failed"
-	PlanReviewState_Accepted  = "accepted" // failed, and the lead proceeded on the human's word
+	PlanReviewState_Accepted  = "accepted" // failed, and the lead proceeded: on the human's word, or its own call on an autonomous or spec run
 )
 
 // Plan reviewer lenses (PlanReviewer.Lens): round 1 runs full, the reviewer that picks models, beside second, an
@@ -152,6 +152,13 @@ const proceedPastPlanReview = "as one ask with the header `Plan review`, the pla
 // autonomousPastPlanReview is what an autonomous run's lead does after the last round instead of putting it to the
 // human: the same amend-then-accept, on its own call.
 const autonomousPastPlanReview = "The run is autonomous and nobody is at the cockpit, so the call is yours: carry each finding into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"` first, then run `wsh jarvis dag planreview accept \"autonomous run\"`, and record in your report that you proceeded and why; a finding no pending task can take is an open issue in your report"
+
+// specDecidesPlanReview reports an asking run whose plan answers to a spec: after the last round the spec, which
+// holds the human's decisions, settles every finding that leaves them standing, so the lead proceeds on those
+// itself. An autonomous run decides every finding alone anyway.
+func specDecidesPlanReview(g *waveobj.TaskGroup) bool {
+	return !g.Autonomous && g.SpecPath != ""
+}
 
 // NewPlanReview is the review a plan-file submit starts with.
 func NewPlanReview() *waveobj.PlanReviewStage {
@@ -590,6 +597,8 @@ func settlePlanReviewRound(ctx context.Context, g *waveobj.TaskGroup, pr *waveob
 		case passed:
 			PostQuiet(ctx, g.ChannelId, g.RunID, "plan review passed; workers are starting: "+flatLine(findings))
 			handOffLead(ctx, g)
+		case failed && last && specDecidesPlanReview(g):
+			PostWake(ctx, g.ChannelId, g.RunID, specPlanReviewFailedWake(round, findings))
 		case failed:
 			PostWake(ctx, g.ChannelId, g.RunID, planReviewFailedWake(round, findings, last, g.Autonomous))
 		default:
@@ -698,7 +707,8 @@ func handOffLead(ctx context.Context, g *waveobj.TaskGroup) {
 	}
 }
 
-// AcceptPlanReview proceeds past a failed plan review on the human's word, which reason records.
+// AcceptPlanReview proceeds past a failed plan review on the human's word, or the lead's own call on an
+// autonomous or spec run (specDecidesPlanReview), which reason records.
 func AcceptPlanReview(ctx context.Context, dagID, reason string) error {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
@@ -747,6 +757,9 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		}
 		if pr.Round >= MaxPlanReviewRounds && g.Autonomous {
 			return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s", pr.Round, autonomousPastPlanReview)
+		}
+		if pr.Round >= MaxPlanReviewRounds && specDecidesPlanReview(g) {
+			return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s. When a finding does need the human, put it to them %s", pr.Round, jarvis.SpecPastPlanReview, proceedPastPlanReview)
 		}
 		if pr.Round >= MaxPlanReviewRounds {
 			return fmt.Errorf("the plan review failed %d rounds, the most it gets; put it to the human, and %s", pr.Round, proceedPastPlanReview)

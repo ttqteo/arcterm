@@ -30,26 +30,26 @@ describe("planVerify", () => {
     it("tolerates a deleted package", () => {
         expect(planVerify(["pkg/gone/gone.go"], graph, universe, MOD).goPkgs).toEqual([]);
     });
-    it("typechecks and runs the related vitest files for a frontend change", () => {
+    it("runs the related vitest files, and no typecheck, for a frontend change", () => {
         const plan = planVerify(["frontend/app/view/agents/runmodel.ts"], graph, universe, MOD);
-        expect(plan).toMatchObject({ tsc: true, vitest: ["frontend/app/view/agents/runmodel.ts"], goPkgs: [] });
+        expect(plan).toEqual({ goAll: false, vitest: ["frontend/app/view/agents/runmodel.ts"], goPkgs: [] });
     });
     it("runs all of vitest for a config change", () => {
-        expect(planVerify(["package.json"], graph, universe, MOD)).toMatchObject({ tsc: true, vitest: "all" });
+        expect(planVerify(["package.json"], graph, universe, MOD)).toMatchObject({ vitest: "all" });
     });
-    it("runs vitest, not tsc, for a script change", () => {
-        expect(planVerify(["scripts/cdp/final-verify.mjs"], graph, universe, MOD)).toMatchObject({ tsc: false, vitest: ["scripts/cdp/final-verify.mjs"] });
+    it("runs vitest for a script change", () => {
+        expect(planVerify(["scripts/cdp/final-verify.mjs"], graph, universe, MOD)).toMatchObject({ vitest: ["scripts/cdp/final-verify.mjs"] });
     });
     it("maps a non-Go file to the Go package whose directory holds it", () => {
         expect(planVerify(["pkg/util/defaults/settings.json"], graph, universe, MOD).goPkgs).toEqual([`${MOD}/pkg/util`, `${MOD}/pkg/orchestrate`, `${MOD}/pkg/wshrpc`, `${MOD}/pkg/jarvis`]);
     });
     it("tests the Go package that embeds a script, and the script's own tests", () => {
         const plan = planVerify(["pkg/util/ext.ts"], graph, universe, MOD);
-        expect(plan).toMatchObject({ tsc: true, vitest: ["pkg/util/ext.ts"] });
+        expect(plan).toMatchObject({ vitest: ["pkg/util/ext.ts"] });
         expect(plan.goPkgs).toContain(`${MOD}/pkg/util`);
     });
     it("selects nothing for docs", () => {
-        expect(planVerify(["docs/open-issues.md", "AGENTS.md"], graph, universe, MOD)).toEqual({ goAll: false, goPkgs: [], vitest: "none", tsc: false });
+        expect(planVerify(["docs/open-issues.md", "AGENTS.md"], graph, universe, MOD)).toEqual({ goAll: false, goPkgs: [], vitest: "none" });
     });
 });
 

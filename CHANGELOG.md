@@ -46,12 +46,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
 - A council's minutes count the time it ran, not the clock since it started, so a council chatted in the next day no longer reads hundreds of minutes.
 - A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
+- A run started from a spec (Build … as specified in …, as a brainstorm starts it) no longer stops for your Plan review click after the plan's second review: the lead carries the findings into the tasks and goes on, and asks you only about a finding that would change what the spec decided.
 - An app's page header on the Agent surface is tidier: Back, Forward, Reload and Home show only while the page does, and Restart moved into a ⋯ menu beside Stop (with Keep running and Pin), so its arrow no longer sits next to Reload's.
 
 ### Fixed
 
+- A council question that names an `.astro`, `.vue` or `.svelte` file turns on Let them read files by itself, like any other source file.
 - A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.
+- A run you landed with Land anyway after its final check failed reads Landed in the Agent tree and the Brief, not Cancelled.
+- In a project's Overview, a run's diamond in History is no longer cut off on its left, and a Branches row with long branch names shortens them instead of spilling over the History column.
 
 ## 0.15.21 — 2026-11-03
 
