@@ -24,6 +24,8 @@ import {
     liveBranches,
     newCouncilRoot,
     notableBranch,
+    projectClose,
+    projectCloseMessage,
     projectLabel,
     projectTree,
     registeredConversations,
@@ -49,7 +51,7 @@ import {
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import type { CouncilOpenedMap } from "./councilopened";
-import type { RunInfo } from "./runlineage";
+import type { Lineage, RunInfo } from "./runlineage";
 import { queuedRows } from "./runqueuemodel";
 import { treeServiceInput } from "./servicesmodel";
 import type { StartingRun } from "./startingrunsmodel";
@@ -2384,5 +2386,57 @@ describe("jarvisCountsByProject", () => {
             queue
         );
         expect(Object.fromEntries(counts)).toEqual({ portal: 1 });
+    });
+});
+
+describe("projectClose: what Close project closes", () => {
+    const term = (id: string, project = "arc"): AgentVM => ({ ...agent(id, undefined, project), kind: "terminal" });
+    const run = { runId: "run-1", project: "arc" } as RunInfo;
+    // a worker's own project is its tree's folder name, which a run in a worktree reads as something else
+    const lineage: Lineage = {
+        roles: {
+            w1: { kind: "worker", leadRunId: "run-1", taskId: "t1" },
+            s1: { kind: "stage", leadRunId: "run-1", stageRole: "verifier" },
+        },
+        runs: { "run-1": run },
+    };
+    const input = {
+        project: "arc",
+        agents: [
+            { ...agent("a1", undefined, "arc"), state: "working" },
+            { ...agent("a2", undefined, "arc"), state: "sleeping" },
+            { ...agent("w1", undefined, "arc-wt-1f04"), state: "working" },
+            { ...agent("s1", undefined, "arc-wt-1f04"), state: "idle" },
+            agent("o1", undefined, "notes"),
+        ] as AgentVM[],
+        terminals: [term("t1"), term("t2"), term("svc"), term("t3", "notes")],
+        lineage,
+        serviceTabs: new Set(["svc"]),
+    };
+
+    it("takes the folder's agents with its run's workers and stage sessions, and its terminals but a service's", () => {
+        const close = projectClose(input);
+        expect(close.agents.map((a) => a.id)).toEqual(["a1", "a2", "w1", "s1"]);
+        expect(close.terminals.map((t) => t.id)).toEqual(["t1", "t2"]);
+        expect(close.working).toBe(2);
+    });
+
+    it("takes nothing from another folder", () => {
+        const close = projectClose({ ...input, project: "notes" });
+        expect(close.agents.map((a) => a.id)).toEqual(["o1"]);
+        expect(close.terminals.map((t) => t.id)).toEqual(["t3"]);
+    });
+
+    it("words the confirm with what it closes, what will stop and what stays", () => {
+        expect(projectCloseMessage("arc", projectClose(input))).toBe(
+            'Close "arc" and its 4 agents and 2 terminals? 2 are working and will stop. Their conversations stay in Conversations.'
+        );
+        expect(projectCloseMessage("notes", projectClose({ ...input, project: "notes" }))).toBe(
+            'Close "notes" and its 1 agent and 1 terminal? 1 is working and will stop. Their conversations stay in Conversations.'
+        );
+        expect(projectCloseMessage("arc", { agents: [], terminals: [term("t1")], working: 0 })).toBe(
+            'Close "arc" and its 1 terminal?'
+        );
+        expect(projectCloseMessage("arc", { agents: [], terminals: [], working: 0 })).toBe("");
     });
 });

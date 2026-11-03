@@ -9,6 +9,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget, stringToBase64 } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
+import { projectCloseMessage, type ProjectClose } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
 import { noteClosed } from "./recentlyclosed";
@@ -97,6 +98,23 @@ export function confirmCloseRun(title: string, tabIds: string[]) {
         confirmLabel: "Close run",
         destructive: true,
         onConfirm: () => closeTabs(ws.oid, tabIds),
+    });
+}
+
+// Close a whole project folder (its menu's Close project…): every agent and terminal in it (projectClose), after a
+// confirm that says how many and how many are at work. They go on the reopen stack, as a closed agent does, so its
+// conversations stay in Conversations; the folder's councils and services stay.
+export function confirmCloseProject(project: string, close: ProjectClose): void {
+    const message = projectCloseMessage(project, close);
+    if (message === "") {
+        return;
+    }
+    modalsModel.pushModal("ConfirmModal", {
+        title: "Close project",
+        message,
+        confirmLabel: "Close project",
+        destructive: true,
+        onConfirm: () => closeSessions([...close.agents, ...close.terminals]),
     });
 }
 

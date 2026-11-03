@@ -72,7 +72,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { confirmCloseRun, confirmCloseSession } from "./agentactions";
+import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { shortTabId } from "./agentrowmodel";
@@ -150,6 +150,7 @@ import {
     folderBlocks,
     folderCounts,
     HOME_PROJECT,
+    projectClose,
     jarvisCountsByProject,
     liveBranches,
     notableBranch,
@@ -2297,7 +2298,8 @@ function FoldBody({ open, children }: { open: boolean; children: React.ReactNode
 }
 
 // A project folder's right-click menu: a new agent in it (the launcher with the project picked), its Overview, then its
-// path's copy and reveal (the Code tree's items). Home has none: it is no project and has no path. Shift+F10 on the
+// path's copy and reveal (the Code tree's items), and last Close project…, which closes every agent and terminal in it
+// after a confirm (projectClose), while it holds any. Home has none: it is no project and has no path. Shift+F10 on the
 // focused row raises the same contextmenu event.
 function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseEvent): void {
     if (project === HOME_PROJECT) {
@@ -2318,6 +2320,24 @@ function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseE
     ];
     if (root) {
         items.push({ type: "separator" }, ...pathMenuItems(root, null));
+    }
+    const close = projectClose({
+        project,
+        agents: globalStore.get(model.agentsAtom),
+        terminals: globalStore.get(model.terminalsAtom),
+        lineage: globalStore.get(model.lineageAtom),
+        serviceTabs: treeServiceInput(globalStore.get(servicesAtom) ?? [], null).serviceTabs,
+    });
+    if (close.agents.length + close.terminals.length > 0) {
+        items.push(
+            { type: "separator" },
+            {
+                label: "Close project…",
+                icon: <X size={13} strokeWidth={1.8} />,
+                danger: true,
+                click: () => confirmCloseProject(project, close),
+            }
+        );
     }
     ContextMenuModel.getInstance().showContextMenu(items, e);
 }

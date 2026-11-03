@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Close project…** in a project folder's right-click menu in the Agent tree closes every agent and terminal in it at once, after a confirm that says how many and how many are still working. Their conversations stay in Conversations, and the folder's councils and services stay.
 - **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
 
 ### Changed

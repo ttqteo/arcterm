@@ -31,7 +31,7 @@ import {
     type CouncilTone,
 } from "./councilmodel";
 import { isClosedCouncil, isUnreadCouncil, keptSince, type CouncilOpenedMap } from "./councilopened";
-import type { RunInfo } from "./runlineage";
+import type { Lineage, RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
 import { groupRunSessions, memberSession, runSelKey, sessionKey, type RunSessions } from "./sessionsruns";
@@ -452,6 +452,54 @@ export function councilInTree(c: Council, opened: CouncilOpenedMap, now: number)
         return false;
     }
     return now - keptSince(c, opened) < COUNCIL_TREE_KEEP_MS || isUnreadCouncil(c, opened);
+}
+
+/** The tabs Close project closes, as its project folder holds them, and how many of the agents are at work. */
+export interface ProjectClose {
+    agents: AgentVM[];
+    terminals: AgentVM[];
+    working: number;
+}
+
+/** Pure: what Close project closes in `project`'s folder, as the tree files it: every agent there (a run's workers and
+ *  stage sessions with their run, whose project is its lead's: buildAgentTree's rule) and every terminal there, a
+ *  service's tab left out (`serviceTabs`: wavesrv holds services, and stops them on its own). Councils are no tabs and
+ *  stay. `working` counts the agents at work, which the confirm says will stop. */
+export function projectClose(input: {
+    project: string;
+    agents: readonly AgentVM[];
+    terminals: readonly AgentVM[];
+    lineage: Lineage;
+    serviceTabs: ReadonlySet<string>;
+}): ProjectClose {
+    const { project, lineage } = input;
+    const folderOf = (a: AgentVM): string => {
+        const role = lineage.roles[a.id];
+        const run = role?.kind === "worker" || role?.kind === "stage" ? lineage.runs[role.leadRunId] : undefined;
+        return (run != null ? run.project : projectOf(a)) || UNGROUPED_PROJECT;
+    };
+    const agents = input.agents.filter((a) => folderOf(a) === project);
+    const terminals = input.terminals.filter(
+        (t) => !input.serviceTabs.has(t.id) && (projectOf(t) || HOME_PROJECT) === project
+    );
+    return { agents, terminals, working: agents.filter((a) => a.state === "working").length };
+}
+
+/** Pure: Close project's confirm: `Close "arc" and its 3 agents and 2 terminals? 1 is working and will stop. Their
+ *  conversations stay in Conversations.` A part with none is left out; with nothing to close it is empty. */
+export function projectCloseMessage(project: string, close: ProjectClose): string {
+    const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+    const parts = [
+        ...(close.agents.length > 0 ? [count(close.agents.length, "agent")] : []),
+        ...(close.terminals.length > 0 ? [count(close.terminals.length, "terminal")] : []),
+    ];
+    if (parts.length === 0) {
+        return "";
+    }
+    const working =
+        close.working === 0 ? "" : ` ${close.working} ${close.working === 1 ? "is" : "are"} working and will stop.`;
+    const kept = close.agents.length > 0 ? " Their conversations stay in Conversations." : "";
+    return `Close "${project}" and its ${parts.join(" and ")}?${working}${kept}`;
 }
 
 // the states a council can be resumed from: it ran and ended. A council that never ran (not-run) has nothing to resume.

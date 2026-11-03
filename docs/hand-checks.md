@@ -1614,6 +1614,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **A chat seat's Seats button is the agent mark.** Open a council with a chat seat, then its Seats list:
   the seat's row ends on the Bot icon (not a terminal), its tooltip `Go to <name>`; click → the Agent surface on that
   chat. `councilseats.tsx`, commit 74981bd46; no dev app was up.
+- [ ] (arcterm) **Close project.** Right-click a project folder holding agents and terminals (one working, one asleep,
+  a run's worker among them) → Close project… is last, red; pick it → the confirm counts them and says how many are
+  working; Close project → every one of their tabs closes, the folder keeps its councils and any service, and the agents
+  are in Conversations (Mod+Shift+T reopens the last). A folder with no tab has no Close project…. `agenttree.tsx`
+  (`openFolderMenu`), `agentactions.ts` (`confirmCloseProject`); unit tests only, no dev app was up.
 - [ ] (arcterm) **Open asleep from History and Conversations.** Right-click an ended Claude or pi session in a project
   Overview's History, then one in the Agent tree's Conversations: Open asleep sits under Resume; pick it → the session is
   on the roster asleep (moon in its row), its transcript shows with a box to wake it, and no process starts until you
