@@ -1603,6 +1603,12 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   answer. An answer that is not right under its question opens on `↳ You · <question>`; click it → the channel glides
   up to that question (a jump with reduced motion). `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits
   bf8c79a0c and 2e2e65fdf; the `council-routing` scenario (its new `quote-stacked` step) has not run: no dev app was up.
+- [ ] (arcterm) **Open asleep from History and Conversations.** Right-click an ended Claude or pi session in a project
+  Overview's History, then one in the Agent tree's Conversations: Open asleep sits under Resume; pick it → the session is
+  on the roster asleep (moon in its row), its transcript shows with a box to wake it, and no process starts until you
+  Wake it or send a message; pick it again on the same session → it goes to that tab, no second one. A codex session's
+  menu has Resume only. `projecthistory.tsx`, `agenttree.tsx`, `sessionsdetail.tsx` (`openSessionAsleep`); unit tests
+  only, no dev app was up.
 - [ ] (arcterm) Kael sync: run a real workflow scan: in a project with a fortnight of runs, `wsh workflow scan --start`
   (or the palette's Scan workflow row) → an Opus agent opens and its `wsh workflow scan` returns after the Sonnet
   pass with each recounted pattern, its quote per run and a fix target; the agent asks one `AskUserQuestion` question

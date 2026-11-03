@@ -27,7 +27,7 @@ import {
     storedSessionHolders,
     type StoredAgentBlock,
 } from "@/app/view/agents/sessionsarchivestore";
-import { resumeLaunchOpts } from "@/app/view/agents/sessionsruns";
+import { reopenLaunchOpts } from "@/app/view/agents/sessionsruns";
 import { stringToBase64 } from "@/util/util";
 
 export interface LaunchAgentOpts {
@@ -287,13 +287,7 @@ export async function reopenClosedAgent(model: AgentsViewModel): Promise<void> {
         return;
     }
     try {
-        await launchAgent(model, {
-            ...resumeLaunchOpts(session),
-            resumeOf: session.transcriptpath,
-            ...(SLEEPABLE_AGENTS.has(session.runtime)
-                ? { asleep: { since: session.lastactivets, transcriptPath: session.transcriptpath } }
-                : {}),
-        });
+        await launchAgent(model, reopenLaunchOpts(session, SLEEPABLE_AGENTS.has(session.runtime)));
     } catch (e) {
         pushToast({
             title: `Couldn't reopen ${entry.name}`,

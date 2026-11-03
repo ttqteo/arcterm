@@ -5,6 +5,7 @@
 // session, each read as its transcript or its lifecycle events. @theme tokens only.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
@@ -16,14 +17,16 @@ import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "rea
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
+import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { CompactTranscript } from "./compacttranscript";
 import { runtimeMeta } from "./runtimemeta";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import type { LiveSession } from "./sessionsarchivestore";
 import {
+    canOpenAsleep,
     LEAD_MEMBER,
-    resumeLaunchOpts,
+    reopenLaunchOpts,
     sessionPrimary,
     type RunMember,
     type RunView,
@@ -107,10 +110,26 @@ export function runSessionPrimary(model: AgentsViewModel, session: LiveSession) 
 // Resume an ended session into a new tab on the same transcript, named after the session; message, when given, goes
 // in as its next message
 async function resumeSession(model: AgentsViewModel, session: LiveSession, message = ""): Promise<void> {
-    await launchAgent(model, {
-        ...resumeLaunchOpts(session),
-        task: message.trim(),
-        resumeOf: session.transcriptpath,
+    await launchAgent(model, { ...reopenLaunchOpts(session), task: message.trim() });
+}
+
+/** The menus' Open asleep (a project Overview's History, the Agent tree's Conversations): whether a session offers it,
+ *  an ended one whose harness can sleep. */
+export const offersOpenAsleep = (session: LiveSession) => canOpenAsleep(session, SLEEPABLE_AGENTS);
+
+/** Open asleep: an ended session back on the roster in its own tab, its transcript and a box to wake it, its process
+ *  started only by a Wake or a message, as Mod+Shift+T reopens a closed agent; a tab that already holds it is gone to. */
+export function openSessionAsleep(model: AgentsViewModel, session: LiveSession) {
+    fireAndForget(async () => {
+        try {
+            await launchAgent(model, reopenLaunchOpts(session, true));
+        } catch (e) {
+            pushToast({
+                title: `Couldn't open ${session.task?.trim() || "the session"} asleep`,
+                message: e instanceof Error ? e.message : String(e),
+                level: "error",
+            });
+        }
     });
 }
 

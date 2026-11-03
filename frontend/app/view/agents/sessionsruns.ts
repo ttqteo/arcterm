@@ -435,6 +435,26 @@ export function resumeLaunchOpts(s: SessionActivity): LaunchAgentOpts {
     };
 }
 
+// reopenLaunchOpts launches an ended session again in its own tab (resumeOf: a tab that already holds it is gone to
+// instead); `asleep` opens it asleep: its transcript on the roster and a box to wake it, its process started only by a
+// Wake or a message (asleepLaunchMeta), so it costs nothing until then
+export function reopenLaunchOpts(s: SessionActivity, asleep = false): LaunchAgentOpts {
+    return {
+        ...resumeLaunchOpts(s),
+        resumeOf: s.transcriptpath,
+        ...(asleep ? { asleep: { since: s.lastactivets, transcriptPath: s.transcriptpath } } : {}),
+    };
+}
+
+// canOpenAsleep: whether a session's menu offers Open asleep: an ended session that can be resumed, whose harness can
+// sleep (`sleepable`, agentsleep's SLEEPABLE_AGENTS: codex cannot, so it only resumes awake)
+export function canOpenAsleep(
+    s: Pick<LiveSession, "live" | "resumecommand" | "runtime">,
+    sleepable: ReadonlySet<string>
+): boolean {
+    return !s.live && !!s.resumecommand && sleepable.has(s.runtime);
+}
+
 // sessionLabel names a session in the merged feed: its run and place in it, else its own task
 export function sessionLabel(s: LiveSession, runTitles: Record<string, string>): string {
     const title = s.runid ? runTitles[s.runid] : undefined;

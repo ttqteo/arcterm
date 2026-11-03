@@ -4,11 +4,13 @@
 import { describe, expect, it } from "vitest";
 import type { LiveSession } from "./sessionsarchivestore";
 import {
+    canOpenAsleep,
     defaultMember,
     groupRunSessions,
     LEAD_MEMBER,
     memberOfSession,
     memberSession,
+    reopenLaunchOpts,
     resumeLaunchOpts,
     runView,
     sessionLabel,
@@ -652,5 +654,32 @@ describe("resumeLaunchOpts launch shape", () => {
     it("names a project-less session's agent 'agent', and keeps a named project's name", () => {
         expect(resumeLaunchOpts(mk({ ...base, projectname: "" })).projectName).toBe("agent");
         expect(resumeLaunchOpts(mk({ ...base })).projectName).toBe("proj");
+    });
+});
+
+describe("reopenLaunchOpts", () => {
+    const ended = mk({ resumecommand: "claude --resume x", transcriptpath: "/t.jsonl", lastactivets: 1234 });
+    it("resumes the session in its own tab, awake by default", () => {
+        const opts = reopenLaunchOpts(ended);
+        expect(opts).toMatchObject({ startupCommand: "claude --resume x", resumeOf: "/t.jsonl", task: "" });
+        expect(opts.asleep).toBeUndefined();
+    });
+    it("opens it asleep from when its session last moved, on its transcript", () => {
+        expect(reopenLaunchOpts(ended, true).asleep).toEqual({ since: 1234, transcriptPath: "/t.jsonl" });
+    });
+});
+
+describe("canOpenAsleep", () => {
+    const sleepable = new Set(["claude", "pi"]);
+    it("offers an ended resumable session whose harness can sleep", () => {
+        expect(canOpenAsleep(mk({ resumecommand: "claude --resume x" }), sleepable)).toBe(true);
+        expect(canOpenAsleep(mk({ runtime: "pi", resumecommand: "pi" }), sleepable)).toBe(true);
+    });
+    it("leaves out a live session, one that cannot be resumed, and codex, which cannot sleep", () => {
+        expect(canOpenAsleep(mk({ live: true, liveId: "tab-1", resumecommand: "claude --resume x" }), sleepable)).toBe(
+            false
+        );
+        expect(canOpenAsleep(mk(), sleepable)).toBe(false);
+        expect(canOpenAsleep(mk({ runtime: "codex", resumecommand: "codex resume x" }), sleepable)).toBe(false);
     });
 });

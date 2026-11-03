@@ -22,6 +22,12 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
+
 ## 1.0.0 — 2026-11-03
 
 ### Added

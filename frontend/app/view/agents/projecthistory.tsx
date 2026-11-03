@@ -11,7 +11,7 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronRight, Copy, ExternalLink, FileText, Pin, PinOff, Play, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, ExternalLink, FileText, Moon, Pin, PinOff, Play, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -31,7 +31,7 @@ import {
 } from "./projectoverviewmodel";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import type { LiveSession } from "./sessionsarchivestore";
-import { runSessionPrimary } from "./sessionsdetail";
+import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessionsdetail";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
@@ -108,8 +108,8 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
-// A session row's menu: open its transcript, resume it, copy its title, and delete it when it can be (an ended
-// Claude session; sessiondelete.ts).
+// A session row's menu: open its transcript, resume it (or open it asleep, for a harness that can sleep), copy its
+// title, and delete it when it can be (an ended Claude session; sessiondelete.ts).
 function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: React.MouseEvent) {
     const items: ContextMenuItem[] = [
         { label: "Open transcript", icon: <FileText size={15} />, click: () => showSession(model, key) },
@@ -120,6 +120,9 @@ function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: Rea
             icon: <Play size={15} />,
             click: () => runSessionPrimary(model, s),
         });
+    }
+    if (offersOpenAsleep(s)) {
+        items.push({ label: "Open asleep", icon: <Moon size={15} />, click: () => openSessionAsleep(model, s) });
     }
     items.push(copyTitleItem(s.task || "(untitled session)"));
     if (s.transcriptpath) {
