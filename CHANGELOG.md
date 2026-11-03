@@ -43,9 +43,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A task wake tells the lead what failed (the review's first finding, the failure's first line, the first failing Verify line, the conflicted files) and ends on `wsh jarvis dag status <task>`, which now prints only that task; a worker-stopped task's wake no longer claims a spent retry.
 - A council's experts have plain names, in the language of your question: Ease of use, Memory watcher, Bug hunter, Summarizer, Final judge and Other side, or "Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi" and so on for a Vietnamese question. The roles Setup suggests are named in that language too.
 - A council expert's timeline: what it read, searched, ran (a verify command in mono, with whether it passed) and proposed, newest at the bottom. It opens in the Seats popover from a seat's Timeline button, a click on an expert's card in the Map, or a click on an expert's card while the experts first read.
-
-### Changed
-
 - In a narrow pane (under 900 px) a council's Report, Discussion and Map tabs shrink to their icons, the word moving into the tooltip, and the Discussion's count stays beside its icon.
 - A like or dislike you give a council expert's message shows as a Liked or Disliked chip under it, which a press takes back; the time and the two thumbs sit together at the right end of the message's byline and show on hover.
 - An evidence chip that cites many lines of a file keeps the file's name and cuts the list of lines with an ellipsis (the tooltip holds all of them), where a long list used to push the name out.

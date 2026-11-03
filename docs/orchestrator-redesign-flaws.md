@@ -433,7 +433,7 @@ Gaps and fixes:
   before it returns (`ReportRunPhaseCommand`), and `wsh jarvis complete` prints `landed <sha>` or
   `held: <reason>`. `--force-land` and the failed-final hold are unchanged.
 - **A dirty-checkout hold waited for a human.** **Fixed:** such a hold is marked `RunLand.Dirty`, and the watchdog
-  (`retryDirtyLands`) lands the run once the land's checkout check passes, keeping its force. The land-held
+  (`retryHeldLands`) lands the run once the land's checkout check passes, keeping its force. The land-held
   attention item says so. A merge, rebase or cherry-pick another session stopped in the middle of is the same kind
   of hold since run 229ef9cd sat held after the cherry-pick that held it had ended.
 - **The unstaged-edit check could miss an edit.** Found while testing: the engine's `git` helper read combined
@@ -451,7 +451,7 @@ None of the fixes has run live; they are unit-tested (`TestRunFinishedWakeNamesT
 **Follow-up (2026-10-14, run ee18a780):** a dirty hold that never clears. The land held on
 `cmd/wsh/cmd/claude-mod/hooks/{ask-core,register}.ts`, copies `task sync:claudemod` writes on every dev build:
 `claude/arc-mod/` was committed in `59b80aac4` without its copy, so each build left them unstaged. Their bytes were the
-branch's already, but the check matched by name, so `retryDirtyLands` waited on edits nothing would remove, and the
+branch's already, but the check matched by name, so `retryHeldLands` waited on edits nothing would remove, and the
 human set them aside by hand. **Fixed:** `unstagedOverlap` (`land.go`) calls an edit that `hash-object`s to the
 branch's blob a copy, not an overlap; the land puts copies back (`clearEditedCopies`, under the checkout claim) and
 merges. A differing edit still holds. Unit-tested in `TestLandKeepsUncommittedEdits`; not yet run live.
