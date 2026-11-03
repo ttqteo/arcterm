@@ -37,6 +37,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.
+- A run you landed with Land anyway after its final check failed reads Landed in the Agent tree and the Brief, not Cancelled.
 
 ## 0.15.21 — 2026-11-03
 

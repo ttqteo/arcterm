@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A force-landed run reads Landed: in the Agent tree and the Brief, find run c06ba9cb (Council UX pass,
+  landed with Land anyway after Final round 2 failed) → its stage reads Landed with the Final check pip failed, not
+  Cancelled; `wsh runs show` adds "(closed when the run ended: the run is done, not cancelled)" to its dag line. Unit
+  tests only (`frontend/app/view/agents/runstage.ts`, `cmd/wsh/cmd/wshcmd-runs.go`); the app was not opened.
+
+- [ ] (arcterm) council-tree step 11b no longer flakes: `task verify:ui -- council-tree` passes 11b, 11c and 11g (the
+  hovers now retry at the row's current place, `hoverUntil` in `scripts/cdp/council/tree.mjs`). Not run: no dev app
+  was up.
+
 - [ ] (arcterm) Council thread replies stay in their thread, with a live seat: on a running council's Discussion, open
   an idea's reply chip and send a reply in the thread → it shows in the thread and the idea's chip counts it, no copy
   in the channel, and the seat's answer lands in the thread only. The fixtures passed in headless Chrome

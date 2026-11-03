@@ -63,14 +63,16 @@ const ORDER: RunStageKey[] = [
 function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
     const status = run.status ?? "";
     const dagStatus = run.dag?.status ?? "";
-    if (status === "cancelled" || dagStatus === "cancelled") {
+    // a done run's cancelled dag is not a cancelled run: the engine closes the dag a run left behind when it ended
+    // (Land anyway after a failed final leaves it blocked; endedRunSettles), so that run reads by its land below
+    if (status === "cancelled" || (dagStatus === "cancelled" && status !== "done")) {
         return "cancelled";
     }
     // a done run on its own branch is not in its base until the branch lands, whatever its dag still says (a human
     // can land a run whose final stage failed, and its dag stays blocked). With no land there is nothing to land,
     // so it is complete, unless its dag is itself unfinished: that run is not over, so it reads by its dag below.
     const land = run.land?.state;
-    if (status === "done" && (land != null || run.dag == null || dagStatus === "done")) {
+    if (status === "done" && (land != null || run.dag == null || dagStatus === "done" || dagStatus === "cancelled")) {
         return land == null ? "complete" : land === "landed" ? "landed" : land === "held" ? "land-held" : "landing";
     }
     if (dagStatus === "done") {
