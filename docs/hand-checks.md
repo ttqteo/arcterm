@@ -6,6 +6,17 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A run from a spec settles its last plan review itself: after the next build, start a run from a
+  brainstorm (Build … as specified in …) → if round 2 of the plan review fails, the lead carries the findings in with
+  `wsh jarvis dag amend` and runs `wsh jarvis dag planreview accept` on its own, with no Plan review ask, and
+  `wsh runs show` reads "failed, then accepted by the lead"; only a finding that changes the spec's decisions still
+  comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
+  3520d3a3f); no live run yet.
+
+- [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
+  has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final
+  stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219).
+
 - [ ] (arcterm) A force-landed run reads Landed: in the Agent tree and the Brief, find run c06ba9cb (Council UX pass,
   landed with Land anyway after Final round 2 failed) → its stage reads Landed with the Final check pip failed, not
   Cancelled; `wsh runs show` adds "(closed when the run ended: the run is done, not cancelled)" to its dag line. Unit
