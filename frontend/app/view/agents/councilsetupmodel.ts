@@ -331,6 +331,7 @@ export function seatableAgents(
             project: registry?.[projectOf(vm)]?.path || vm.cwd || fallbackProject,
             harness: vm.agent ?? "",
             context: usage?.contextmax ? Math.round(((usage.contextpct ?? 0) / 100) * usage.contextmax) : 0,
+            task: vm.task,
         });
     }
     return seatable;

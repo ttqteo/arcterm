@@ -31,6 +31,7 @@ import {
     answerers,
     askedParts,
     authorName,
+    chatMentionKeys,
     chatSeatTabs,
     draftsWaitWord,
     failedSeatsOn,
@@ -46,6 +47,7 @@ import {
     readableReplies,
     replyLabel,
     roundsOf,
+    seatLabel,
     sentProposals,
     sentReplies,
     thumbOf,
@@ -56,7 +58,7 @@ import {
 import { claimOf, type ClaimEvidence } from "./councilsources";
 import { fileMentionMatches, insertFileMention } from "./launchermention";
 
-export { insertFileMention };
+export { chatMentionKeys, insertFileMention };
 
 const YOU = "you";
 
@@ -71,6 +73,7 @@ export interface Who {
     initials: string; // the letters in its avatar (`ĐV`), which tell apart seats whose names start alike
     tone: Tone;
     tag: "agent" | "expert" | "";
+    tab: string; // a chat seat's tab id, which a click on its name or avatar opens (`seatLink`); empty for anyone else
 }
 
 function whoIs(c: Council, id: string): Who {
@@ -81,6 +84,25 @@ function whoIs(c: Council, id: string): Who {
         initials: seatInitials(c, id),
         tone: avatarTone(c, id),
         tag: seat == null ? "" : isAgentSeat(seat) ? "agent" : "expert",
+        tab: seat?.agent ?? "",
+    };
+}
+
+/** Pure: where a click on a seat's name or avatar goes: a chat seat whose chat is still live (in `chats`, the cockpit's
+ *  live chats, seated ones included) opens its terminal, and the hover names the chat's session by its title, which the
+ *  seat's short name leaves out. Null for a role expert, the person, and a chat whose tab is gone. */
+export function seatLink(
+    who: Pick<Who, "tab" | "name">,
+    chats: readonly Pick<SeatableAgent, "id" | "task">[]
+): { tab: string; title: string } | null {
+    const chat = who.tab === "" ? undefined : chats.find((a) => a.id === who.tab);
+    if (chat == null) {
+        return null;
+    }
+    const task = (chat.task ?? "").trim();
+    return {
+        tab: who.tab,
+        title: task === "" ? `Open the terminal of ${who.name}` : `${task} · click to open its terminal`,
     };
 }
 
@@ -194,7 +216,7 @@ export function askTooSeats(c: Council, reply: CouncilReply): { id: string; name
     const to = reply.to ?? [];
     return panel(c)
         .filter((e) => !to.includes(e.id) && c.failed?.[e.id] == null)
-        .map((e) => ({ id: e.id, name: e.name }));
+        .map((e) => ({ id: e.id, name: authorName(c, e.id) }));
 }
 
 /** A reply as a message: a seat's, or the person's (`mine`, with who it reaches and, until it is answered, what it waits
@@ -573,7 +595,7 @@ function typingRow(c: Council, e: CouncilExpert, act: CouncilActivity): TypingRo
         kind: "typing",
         id: `typing:${e.id}`,
         ...whoIs(c, e.id),
-        text: waiting ? act.text : `${e.name} is writing…`,
+        text: waiting ? act.text : `${authorName(c, e.id)} is writing…`,
         waiting,
         on,
         proposalid: act.proposalid ?? "",
@@ -805,7 +827,7 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
                 ...whoIs(c, e.id),
                 round: failure.round,
                 error: failure.error,
-                text: `${e.name} ${failedWhile(c, failure.round)}`,
+                text: `${authorName(c, e.id)} ${failedWhile(c, failure.round)}`,
             };
             const post = under.get(e.id);
             let at = post == null ? -1 : items.findIndex((i) => i.kind === "reply" && i.id === post.id);
@@ -930,9 +952,9 @@ function seatKind(e: CouncilExpert): string {
     return e.model ? `expert · ${e.model}` : "expert";
 }
 
-function seatTitle(e: CouncilExpert): string {
+function seatTitle(c: Council, e: CouncilExpert): string {
     if (isAgentSeat(e)) {
-        return `${e.name} (live agent). Click to open its terminal.`;
+        return `${authorName(c, e.id)} (live agent). Click to open its terminal.`;
     }
     return e.coordinator ? "Writes the summary at the end." : "Role expert, a fresh session that sees only this chat.";
 }
@@ -962,7 +984,7 @@ export function seatChips(c: Council): SeatChip[] {
     const view = sentView(c);
     return c.experts.map((e) => ({
         id: e.id,
-        name: e.name,
+        name: authorName(c, e.id),
         short: shortName(c, e.id),
         initials: seatInitials(c, e.id),
         ideas: sentProposals(c).filter((p) => p.author === e.id).length,
@@ -973,7 +995,7 @@ export function seatChips(c: Council): SeatChip[] {
         kind: seatKind(e),
         ...seatState(c, view, e),
         retry: c.failed?.[e.id] != null,
-        title: seatTitle(e),
+        title: seatTitle(c, e),
     }));
 }
 
@@ -1012,7 +1034,8 @@ export function replyReach(
     text: string,
     joining: readonly SeatableAgent[] = []
 ): { names: string[]; label: string } {
-    const names = answerers(c, proposalId, parentId, text, joining).map((e) => e.name);
+    const keys = chatMentionKeys([...chatSeatTabs(c), ...joining.map((a) => a.id)]);
+    const names = answerers(c, proposalId, parentId, text, joining).map((e) => seatLabel(e, keys));
     if (names.length === 0) {
         return { names, label: "Name a seat with @ to choose who answers" };
     }
@@ -1030,25 +1053,6 @@ const MENTION = /(^|[^\p{L}\p{N}_])@([^@\n]{0,200})$/u;
 
 // the words that ask every seat (`mentionsAll`), the first of them the one the All seats row inserts
 const ALL_WORDS = ["all", "everyone"];
-
-/** Pure: each chat's mention key, by tab id: the shortest start of the tab id, {@link MIN_CHAT_KEY} characters or more,
- *  that no other chat in `tabIds` shares (any case). `@82faafca` for a lone chat; for two whose ids start alike the key
- *  runs on past the `-` of a UUID (`3e19c0d2-a`, `3e19c0d2-b`). A tab id shorter than a key, or one that starts another
- *  chat's, keeps its whole id (a mention cannot reach it: `mentionsChat`). `tabIds` is the chat seats' plus the chats
- *  the picker lists, so a key it inserts is one of its own seat's the moment the chat is seated. */
-export function chatMentionKeys(tabIds: readonly string[]): Map<string, string> {
-    const ids = [...new Set(tabIds)];
-    const lower = ids.map((id) => id.toLowerCase());
-    const keys = new Map<string, string>();
-    ids.forEach((id, i) => {
-        let n = Math.min(MIN_CHAT_KEY, id.length);
-        while (n < id.length && lower.some((other, j) => j !== i && other.startsWith(lower[i].slice(0, n)))) {
-            n++;
-        }
-        keys.set(id, id.slice(0, n));
-    });
-    return keys;
-}
 
 /** Pure: the live chats the person can still add: the ones no seat holds (`agent`). */
 export function joinableChats(c: Council, chats: readonly SeatableAgent[]): SeatableAgent[] {

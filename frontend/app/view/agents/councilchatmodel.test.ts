@@ -32,11 +32,13 @@ import {
     replyReach,
     routerLine,
     seatChips,
+    seatLink,
     stepChip,
     threadAsks,
     toolsOfChoice,
     type ChannelItem,
     type IdeaPost,
+    type Who,
 } from "./councilchatmodel";
 import { CHAT_THREAD } from "./councillistmodel";
 import type { SeatableAgent } from "./councilmodel";
@@ -191,6 +193,7 @@ describe("questionPost", () => {
             initials: "Y",
             tone: "you",
             tag: "",
+            tab: "",
             label: "asked",
             text: "Which changes to the rail are worth making first?",
             limits: [],
@@ -316,7 +319,11 @@ describe("councilChannel: an idea", () => {
     });
 
     it("tags a live agent's idea as an agent's", () => {
-        expect(byId(councilChannel(room()), "P3")).toMatchObject({ author: "ux", name: "UX audit", tag: "agent" });
+        expect(byId(councilChannel(room()), "P3")).toMatchObject({
+            author: "ux",
+            name: "UX audit · t-u",
+            tag: "agent",
+        });
     });
 
     it("carries its evidence as Go checked it, its check label and the council's language, for the chips under it", () => {
@@ -401,8 +408,8 @@ describe("councilChannel: the reply chip", () => {
         const repliers = (idea as { thread: { repliers: { author: string; name: string; tag: string }[] } }).thread
             .repliers;
         expect(repliers.map((r) => [r.author, r.name, r.tag])).toEqual([
-            ["witness", "Witness synthesis", "agent"],
-            ["ux", "UX audit", "agent"],
+            ["witness", "Witness synthesis · t-w", "agent"],
+            ["ux", "UX audit · t-u", "agent"],
             ["you", "You", ""],
         ]);
     });
@@ -547,7 +554,7 @@ describe("councilChannel: the person's posts", () => {
             ],
         });
         const items = councilChannel(c);
-        expect(byId(items, "r1")).toMatchObject({ reaches: "For Witness synthesis and UX audit" });
+        expect(byId(items, "r1")).toMatchObject({ reaches: "For Witness synthesis · t-w and UX audit · t-u" });
         expect(byId(items, "r2")).toMatchObject({ reaches: "For Skeptic" });
         expect(byId(items, "r3")).toMatchObject({ reaches: "" });
     });
@@ -566,7 +573,7 @@ describe("councilChannel: the person's posts", () => {
         const thread = councilThread(c, "P1")!.items;
         // P1 is Security's: a reply to Witness is worth saying, one to Security goes without saying
         expect(thread.find((i) => i.id === "r5")).toMatchObject({
-            reaches: "For Witness synthesis",
+            reaches: "For Witness synthesis · t-w",
             reachIsDefault: false,
         });
         expect(thread.find((i) => i.id === "r10")).toMatchObject({ reaches: "For Security", reachIsDefault: true });
@@ -596,7 +603,7 @@ describe("councilChannel: the person's posts", () => {
         });
         const items = councilChannel(c);
         expect(ids(items.filter((i) => i.kind === "reply"))).toEqual(["r1", "r2", "r4"]);
-        expect(byId(items, "r2")).toMatchObject({ agrees: ["Skeptic agrees", "Witness synthesis agrees"] });
+        expect(byId(items, "r2")).toMatchObject({ agrees: ["Skeptic agrees", "Witness synthesis · t-w agrees"] });
         expect(byId(items, "r4")).toMatchObject({ agrees: [] });
         expect(byId(items, "r1")).toMatchObject({ agrees: [] });
     });
@@ -634,7 +641,7 @@ describe("councilChannel: skipped turns, failures and seats at work", () => {
             tab: "t-w",
             round: 2,
             reason: SKIP_REASON,
-            text: `Witness synthesis skipped round 2: ${SKIP_REASON}.`,
+            text: `Witness synthesis · t-w skipped round 2: ${SKIP_REASON}.`,
             at: "14:03",
             when: "Oct 31 14:03 · 3:00 into the council",
         });
@@ -707,7 +714,7 @@ describe("councilChannel: skipped turns, failures and seats at work", () => {
         expect(byId(items, "typing:ux")).toMatchObject({
             kind: "typing",
             author: "ux",
-            text: "UX audit is writing…",
+            text: "UX audit · t-u is writing…",
             waiting: false,
             on: "title P1",
             proposalid: "P1",
@@ -792,7 +799,7 @@ describe("councilThread", () => {
             author: "you",
             mine: true,
             label: "replies",
-            reaches: "For Witness synthesis",
+            reaches: "For Witness synthesis · t-w",
             pending: "Answered after the summary",
         });
     });
@@ -852,12 +859,26 @@ describe("seatChips", () => {
         expect(seatChips(bare)[0].kind).toBe("expert");
     });
 
+    it("opens a live chat seat's terminal from its name, its session's title on hover", () => {
+        const items = councilChannel(room());
+        const idea = byId(items, "P3") as Who; // UX audit's, a chat seat on tab t-u
+        expect(idea).toMatchObject({ name: "UX audit · t-u", tab: "t-u" });
+        expect(seatLink(idea, [{ id: "t-u", task: "Audit the rail's spacing" }])).toEqual({
+            tab: "t-u",
+            title: "Audit the rail's spacing · click to open its terminal",
+        });
+        expect(seatLink(idea, [{ id: "t-u" }])).toEqual({ tab: "t-u", title: "Open the terminal of UX audit · t-u" });
+        // a chat whose tab is gone, and a role expert, open nothing
+        expect(seatLink(idea, [])).toBeNull();
+        expect(seatLink(byId(items, "P1") as Who, [{ id: "t-u" }])).toBeNull();
+    });
+
     it("gives an agent its tab for a click on its chip, and a role expert none", () => {
         const s = chips(room());
         expect(s.witness).toMatchObject({
             agent: true,
             tab: "t-w",
-            title: "Witness synthesis (live agent). Click to open its terminal.",
+            title: "Witness synthesis · t-w (live agent). Click to open its terminal.",
         });
         expect(s.sec).toMatchObject({
             agent: false,
@@ -943,7 +964,7 @@ describe("stepChip", () => {
 describe("replyReach", () => {
     it("says everyone answers a post to the whole council", () => {
         expect(replyReach(room(), "", "", "")).toEqual({
-            names: ["Witness synthesis", "UX audit", "Security", "Skeptic"],
+            names: ["Witness synthesis · t-w", "UX audit · t-u", "Security", "Skeptic"],
             label: "Everyone answers",
         });
     });
@@ -954,8 +975,8 @@ describe("replyReach", () => {
             label: "Answered by: Skeptic",
         });
         expect(replyReach(room(), "", "", "@Witness synthesis and @ux").names).toEqual([
-            "Witness synthesis",
-            "UX audit",
+            "Witness synthesis · t-w",
+            "UX audit · t-u",
         ]);
     });
 
@@ -965,8 +986,8 @@ describe("replyReach", () => {
             label: "Answered by: Security",
         });
         expect(replyReach(room(), "P1", "r3", "a question")).toEqual({
-            names: ["Witness synthesis", "Security"],
-            label: "Answered by: Witness synthesis, Security",
+            names: ["Witness synthesis · t-w", "Security"],
+            label: "Answered by: Witness synthesis · t-w, Security",
         });
     });
 
@@ -1013,7 +1034,7 @@ describe("mentionPicker and insertMention", () => {
 
     it("makes an @ that replyReach reads as the seat", () => {
         const text = insertMention("@wit", 0, 4, { name: "Witness synthesis" }).text;
-        expect(replyReach(room(), "", "", text).names).toEqual(["Witness synthesis"]);
+        expect(replyReach(room(), "", "", text).names).toEqual(["Witness synthesis · t-w"]);
     });
 });
 
@@ -1199,22 +1220,25 @@ describe("pickedChats", () => {
 describe("replyReach: the chats a message adds and the chats it names", () => {
     it("names a picked chat among the answerers", () => {
         expect(replyReach(room(), "", "", "@82faafca", [far])).toEqual({
-            names: ["Design review"],
-            label: "Answered by: Design review",
+            names: ["Design review · 82faafca"],
+            label: "Answered by: Design review · 82faafca",
         });
-        expect(replyReach(room(), "", "", "@Skeptic and @82faafca", [far]).names).toEqual(["Skeptic", "Design review"]);
+        expect(replyReach(room(), "", "", "@Skeptic and @82faafca", [far]).names).toEqual([
+            "Skeptic",
+            "Design review · 82faafca",
+        ]);
         expect(replyReach(room(), "", "", "@Skeptic and @82faafca", [far]).label).toBe(
-            "Answered by: Skeptic, Design review"
+            "Answered by: Skeptic, Design review · 82faafca"
         );
     });
 
     it("never says everyone answers while a chat is joining", () => {
         const names = "@Witness synthesis @UX audit @Security @Skeptic @82faafca";
         expect(replyReach(room(), "", "", names, [far]).label).toBe(
-            "Answered by: Witness synthesis, UX audit, Security, Skeptic, Design review"
+            "Answered by: Witness synthesis · t-w, UX audit · t-u, Security, Skeptic, Design review · 82faafca"
         );
         expect(replyReach(room(), "", "", "@Witness synthesis @UX audit @Security", [far]).label).toBe(
-            "Answered by: Witness synthesis, UX audit, Security, Design review"
+            "Answered by: Witness synthesis · t-w, UX audit · t-u, Security, Design review · 82faafca"
         );
         expect(replyReach(room(), "", "", "").label).toBe("Everyone answers");
     });
@@ -1222,14 +1246,15 @@ describe("replyReach: the chats a message adds and the chats it names", () => {
     it("reaches a seated chat by its key, and two chats of one name apart", () => {
         const c = withSeatedChat();
         expect(replyReach(c, "", "", "@5b7c1d90 why?")).toEqual({
-            names: ["Witness synthesis"],
-            label: "Answered by: Witness synthesis",
+            names: ["Witness synthesis · 5b7c1d90"],
+            label: "Answered by: Witness synthesis · 5b7c1d90",
         });
         const twins = withSeatedChat({
             experts: [agent("a", NEAR_A, "Perf notes", 1), agent("b", NEAR_B, "Perf notes", 1), ...experts.slice(2)],
         });
-        expect(replyReach(twins, "", "", "@3e19c0d2-a why?").names).toEqual(["Perf notes"]);
-        expect(replyReach(twins, "", "", "@3e19c0d2-b why?").names).toEqual(["Perf notes"]);
+        // two chats of one project read apart by the key that tells them apart
+        expect(replyReach(twins, "", "", "@3e19c0d2-a why?").names).toEqual(["Perf notes · 3e19c0d2-a"]);
+        expect(replyReach(twins, "", "", "@3e19c0d2-b why?").names).toEqual(["Perf notes · 3e19c0d2-b"]);
         expect(replyReach(twins, "", "", "@3e19c0d2 why?").label).toBe("Everyone answers");
     });
 });
@@ -1793,8 +1818,8 @@ describe("mentionPicker: the project's files between the seats and the chats", (
     it("makes a mention that replyReach reads as no seat and readsFiles reads as a file", () => {
         const text = insertFileMention("@ux", 0, 3, "ux/plan.md").text;
         expect(replyReach(room(), "", "", text).names).toEqual([
-            "Witness synthesis",
-            "UX audit",
+            "Witness synthesis · t-w",
+            "UX audit · t-u",
             "Security",
             "Skeptic",
         ]);

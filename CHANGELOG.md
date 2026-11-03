@@ -35,6 +35,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A chat seated in a council reads as its name and the key you @ it by (`notes · 0976023f`), so two chats of one project no longer share a name; click its name or avatar on a message to open its terminal, and hover it for its session's title.
 - In the final stage a Check or Verify that exits 3 now reads as unverified, like the Final command, and the stage goes on instead of failing; at a merge point exit 3 still fails.
 - The lead sends the leftovers inside the feature a run built (a defect, a doc that no longer matches it, a check a worker can write) to the fix round instead of a follow-up initiative; the run-finished wake says what counts as round work.
 - Two runs at once start at most 8 workers between them, a run refills only to its share while another run waits, and new workers wait while the machine's memory pressure reads warn or critical (one still starts when none is live).

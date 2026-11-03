@@ -145,7 +145,41 @@ export function authorName(c: Council, id: string): string {
     if (id === ROUTER && !c.experts.some((e) => e.id === id)) {
         return "Router";
     }
-    return c.experts.find((e) => e.id === id)?.name ?? id;
+    const seat = c.experts.find((e) => e.id === id);
+    if (seat == null) {
+        return id;
+    }
+    return seatLabel(seat, isAgentSeat(seat) ? chatMentionKeys(chatSeatTabs(c)) : undefined);
+}
+
+/** Pure: the name a seat is shown by: a role expert's own; a chat's with its mention key from `keys` (`notes ·
+ *  0976023f`), since a chat seat is named for its tab, which is its project's name, so two chats of one project would
+ *  read alike. The key is the one an `@` names the chat by; with no key in `keys`, the tab id's first characters. */
+export function seatLabel(e: Pick<CouncilExpert, "name" | "agent">, keys?: ReadonlyMap<string, string>): string {
+    if (!isAgentSeat(e)) {
+        return e.name;
+    }
+    const tab = e.agent ?? "";
+    return `${e.name} · ${keys?.get(tab) ?? tab.slice(0, MIN_CHAT_KEY)}`;
+}
+
+/** Pure: each chat's mention key, by tab id: the shortest start of the tab id, {@link MIN_CHAT_KEY} characters or more,
+ *  that no other chat in `tabIds` shares (any case). `@82faafca` for a lone chat; for two whose ids start alike the key
+ *  runs on past the `-` of a UUID (`3e19c0d2-a`, `3e19c0d2-b`). A tab id shorter than a key, or one that starts another
+ *  chat's, keeps its whole id (a mention cannot reach it: `mentionsChat`). `tabIds` is the chat seats' plus the chats
+ *  the picker lists, so a key it inserts is one of its own seat's the moment the chat is seated. */
+export function chatMentionKeys(tabIds: readonly string[]): Map<string, string> {
+    const ids = [...new Set(tabIds)];
+    const lower = ids.map((id) => id.toLowerCase());
+    const keys = new Map<string, string>();
+    ids.forEach((id, i) => {
+        let n = Math.min(MIN_CHAT_KEY, id.length);
+        while (n < id.length && lower.some((other, j) => j !== i && other.startsWith(lower[i].slice(0, n)))) {
+            n++;
+        }
+        keys.set(id, id.slice(0, n));
+    });
+    return keys;
 }
 
 // the author of the router's own answer to small talk (Go council routerId): it is no seat
@@ -1349,6 +1383,7 @@ export interface SeatableAgent {
     project: string; // the path of the project the agent works in
     harness: string; // claude or pi
     context: number; // tokens in its context now, which the estimate prices a turn at
+    task?: string; // its session's title, which a seat's name leaves out (`seatLink` shows it on hover)
 }
 
 /** Pure: the seat for a live agent: the id is its own (it cannot meet a role expert's), `agent` names its tab, and it

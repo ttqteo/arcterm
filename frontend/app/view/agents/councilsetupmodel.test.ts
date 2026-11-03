@@ -957,7 +957,14 @@ describe("live agents", () => {
         const registry = { arc: { path: "D:\\code\\arc" }, other: { path: "D:\\code\\other" } };
         const found = seatableAgents(roster, registry, "D:\\code\\fallback");
         expect(found.map((a) => a.id)).toEqual(["a", "b", "lost"]);
-        expect(found[0]).toEqual({ id: "a", name: "a", project: "D:\\code\\arc", harness: "claude", context: 625_000 });
+        expect(found[0]).toEqual({
+            id: "a",
+            name: "a",
+            project: "D:\\code\\arc",
+            harness: "claude",
+            context: 625_000,
+            task: "",
+        });
         expect(found[1]).toMatchObject({ project: "D:\\code\\other", harness: "pi", context: 210_000 });
         expect(found[2]).toMatchObject({ project: "D:\\code\\cwd", context: 0 });
         const unregistered = seatableAgents([vm("x", { project: "gone", cwd: undefined })], registry, "D:\\code\\fb");

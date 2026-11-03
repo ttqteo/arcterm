@@ -49,7 +49,9 @@ import {
 } from "lucide-react";
 import { AnimatePresence, animate, motion } from "motion/react";
 import {
+    createContext,
     useCallback,
+    useContext,
     useEffect,
     useLayoutEffect,
     useMemo,
@@ -87,6 +89,7 @@ import {
     readsNote,
     replyReach,
     seatChips,
+    seatLink,
     threadAsks,
     toolsOfChoice,
     type AskChip,
@@ -356,13 +359,62 @@ const ghostButton =
 
 // ---- messages ----
 
-// the line over a message: who wrote it, then what the caller adds (a label, the time)
+// the live chats a seat's name or avatar can open (CouncilChat's `chats` and `onOpenTerminal`), so a message's byline
+// reaches them without each message taking them
+const SeatLinks = createContext<{ chats: readonly SeatableAgent[]; open: (tab: string) => void } | null>(null);
+
+// where a click on a seat's name or avatar goes (seatLink), with the call that goes there; null when it goes nowhere
+function useSeatLink(who: Who): { title: string; open: () => void } | null {
+    const links = useContext(SeatLinks);
+    const link = links == null ? null : seatLink(who, links.chats);
+    return link == null ? null : { title: link.title, open: () => links!.open(link.tab) };
+}
+
+// the line over a message: who wrote it, then what the caller adds (a label, the time); a live chat seat's name opens
+// its terminal
 function Byline({ who, children }: { who: Who; children?: ReactNode }) {
+    const link = useSeatLink(who);
     return (
         <div className="flex flex-wrap items-center gap-[7px] text-[12.5px]">
-            <span className={cn("font-semibold", TONE_TEXT[who.tone])}>{who.name}</span>
+            {link == null ? (
+                <span className={cn("font-semibold", TONE_TEXT[who.tone])}>{who.name}</span>
+            ) : (
+                <button
+                    type="button"
+                    data-council-seat-open={who.tab}
+                    title={link.title}
+                    onClick={link.open}
+                    className={cn(
+                        "cursor-pointer rounded-[4px] border-0 bg-transparent p-0 font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent",
+                        TONE_TEXT[who.tone]
+                    )}
+                >
+                    {who.name}
+                </button>
+            )}
             {children}
         </div>
+    );
+}
+
+// a message's avatar; a live chat seat's opens its terminal, as its name does
+function SeatAvatar({ who, large }: { who: Who; large?: boolean }) {
+    const link = useSeatLink(who);
+    const avatar = <CouncilAvatar tone={who.tone} name={who.name} initials={who.initials} large={large} />;
+    if (link == null) {
+        return avatar;
+    }
+    return (
+        <button
+            type="button"
+            data-council-seat-avatar={who.tab}
+            title={link.title}
+            aria-label={link.title}
+            onClick={link.open}
+            className="flex-none cursor-pointer self-start rounded-full border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            {avatar}
+        </button>
     );
 }
 
@@ -511,7 +563,7 @@ function IdeaMessage({
             data-focused={focused ? "true" : undefined}
             className="flex gap-[10px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} large />
+            <SeatAvatar who={item} large />
             <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-[6px]">
                 <Byline who={item}>
                     {item.wild ? (
@@ -822,7 +874,7 @@ function ReplyMessage({
             style={{ transformOrigin: "bottom right" }}
             className={cn("group/reply flex gap-[8px]", item.mine && "flex-row-reverse")}
         >
-            {!item.mine && <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />}
+            {!item.mine && <SeatAvatar who={item} />}
             <div className={cn("flex min-w-0 max-w-[680px] flex-col gap-[5px]", item.mine && "items-end")}>
                 {/* the person's own post has no byline, as a messenger draws it: the lines it needs go under it */}
                 {!item.mine && (
@@ -920,7 +972,7 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
             aria-label="Draft waiting for you"
             className="flex gap-[9px] rounded-[12px] border border-asking/30 bg-askingbg px-[12px] py-[10px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />
+            <SeatAvatar who={item} />
             <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                 <Byline who={item}>
                     <span className="inline-flex items-center gap-[5px] font-semibold text-warning-soft">
@@ -2680,6 +2732,7 @@ export function CouncilChat({
     const [openId, setOpenId] = useAtom(councilOpenProposalAtom(c.id));
     const [sources, setSources] = useAtom(councilSourcesAtom(c.id));
     const [focusedId, setFocusedId] = useState<string | null>(null);
+    const seatLinks = useMemo(() => ({ chats, open: onOpenTerminal }), [chats, onOpenTerminal]);
     const channel = useRef<HTMLDivElement>(null);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;
@@ -2779,179 +2832,186 @@ export function CouncilChat({
             return { id: c.id, picks: next };
         });
     return (
-        <div className="flex min-h-0 flex-1">
-            <div data-council-main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-                {!railShown && !sourcesOpen && (
-                    <button
-                        type="button"
-                        data-council-rail-unfold
-                        title="Show the Ideas rail"
-                        onClick={() => setFolded(false)}
-                        className="absolute right-6 top-3 z-20 flex h-[28px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-muted outline-none hover:border-edge-strong hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        <ChevronsLeft size={13} strokeWidth={2} aria-hidden />
-                        Ideas · {list.ideas.length}
-                    </button>
-                )}
-                {onlySeat != null && (
-                    <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted">
-                        <span role="status" data-council-only={onlySeat.id}>
-                            {onlyLine(onlySeat)}
-                        </span>
+        <SeatLinks.Provider value={seatLinks}>
+            <div className="flex min-h-0 flex-1">
+                <div data-council-main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                    {!railShown && !sourcesOpen && (
                         <button
                             type="button"
-                            data-council-action="show-everyone"
-                            onClick={() => setOnly(null)}
-                            className="h-[24px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[13px] text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                            data-council-rail-unfold
+                            title="Show the Ideas rail"
+                            onClick={() => setFolded(false)}
+                            className="absolute right-6 top-3 z-20 flex h-[28px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-muted outline-none hover:border-edge-strong hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
                         >
-                            Show everyone
+                            <ChevronsLeft size={13} strokeWidth={2} aria-hidden />
+                            Ideas · {list.ideas.length}
                         </button>
-                    </div>
-                )}
-                {retryAll && (
-                    <div
-                        data-council-retry-all-bar
-                        className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted"
-                    >
-                        <span>{retryAllSeats(c).length} seats failed</span>
-                        {retryAllSeats(c).map((e) => (
-                            <span key={e.id} className="flex items-center gap-[6px]">
-                                <span className="text-secondary">{e.name}</span>
-                                <RetryModelPick
-                                    expert={e}
-                                    error={c.failed?.[e.id]?.error}
-                                    picked={picks[e.id]}
-                                    onPick={(m) => setPick(e.id, m)}
-                                    disabled={c.state === "running"}
-                                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
-                                />
+                    )}
+                    {onlySeat != null && (
+                        <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted">
+                            <span role="status" data-council-only={onlySeat.id}>
+                                {onlyLine(onlySeat)}
                             </span>
-                        ))}
-                        <button
-                            type="button"
-                            data-council-action="retry-all"
-                            disabled={c.state === "running" || acts.busy.has("retry:all")}
-                            title={
-                                c.state === "running"
-                                    ? "The council is running: retry once it is done"
-                                    : "Run every failed seat again at once, each on the model picked beside it"
-                            }
-                            onClick={() =>
-                                void acts.run("retry:all", "Retry all", () =>
-                                    retryAllExperts(c.id, retryAllModels(c, picks))
-                                )
-                            }
-                            className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
+                            <button
+                                type="button"
+                                data-council-action="show-everyone"
+                                onClick={() => setOnly(null)}
+                                className="h-[24px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[13px] text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                                Show everyone
+                            </button>
+                        </div>
+                    )}
+                    {retryAll && (
+                        <div
+                            data-council-retry-all-bar
+                            className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted"
                         >
-                            {acts.busy.has("retry:all") ? "Retrying…" : `Retry all ${retryAllSeats(c).length}`}
-                        </button>
-                    </div>
-                )}
-                {notes}
-                <Channel
-                    boxRef={channel}
-                    councilId={c.id}
-                    view={onlyId ?? ""}
-                    count={items.length + (asks.length > 0 ? 1 : 0)}
-                    sent={ownPosts(items)}
-                >
-                    {items.map((item) => {
-                        switch (item.kind) {
-                            case "question":
-                                return <QuestionMessage key={item.id} item={item} />;
-                            case "divider":
-                                return <Divider key={item.id} text={item.text} round={item.round} />;
-                            case "idea":
-                                return (
-                                    <IdeaMessage
-                                        key={item.id}
-                                        councilId={c.id}
-                                        item={item}
-                                        acts={acts}
-                                        open={threadOpen && item.id === openId}
-                                        focused={item.id === focusedId}
-                                        onOpen={open}
+                            <span>{retryAllSeats(c).length} seats failed</span>
+                            {retryAllSeats(c).map((e) => (
+                                <span key={e.id} className="flex items-center gap-[6px]">
+                                    <span className="text-secondary">{e.name}</span>
+                                    <RetryModelPick
+                                        expert={e}
+                                        error={c.failed?.[e.id]?.error}
+                                        picked={picks[e.id]}
+                                        onPick={(m) => setPick(e.id, m)}
+                                        disabled={c.state === "running"}
+                                        className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
                                     />
-                                );
-                            case "draft":
-                                return <DraftCard key={item.id} c={c} item={item} acts={acts} />;
-                            case "reply":
-                                return (
-                                    <ReplyMessage
-                                        key={item.id}
-                                        councilId={c.id}
-                                        item={item}
-                                        acts={acts}
-                                        onOpenIdea={open}
-                                        rise={item.mine && entering.has(item.id)}
-                                        status={send.status?.postId === item.id ? send.status : undefined}
-                                    />
-                                );
-                            case "skip":
-                                return <SkippedLine key={item.id} item={item} onOpenTerminal={onOpenTerminal} />;
-                            case "failure":
-                                // the coordinator's failure has the Summary failed panel, in `notes`
-                                return coordinators.has(item.author) ? null : (
-                                    <FailedLine key={item.id} c={c} item={item} acts={acts} />
-                                );
-                            case "typing":
-                                return <TypingLine key={item.id} item={item} />;
-                        }
-                    })}
-                    {asks.length > 0 && <AskNext c={c} asks={asks} />}
-                </Channel>
-                {/* the channel's column: its px-6, its 10px scrollbar gutter on the right, its 860px centred */}
-                <div className="flex-none pb-4 pl-6 pr-[34px] pt-[10px]">
-                    <div className="mx-auto w-full max-w-[860px]">
-                        <span id="council-channel-label" className="sr-only">
-                            Message the council
-                        </span>
-                        <Composer
-                            c={c}
-                            scope="channel"
-                            proposalId=""
-                            placeholder="Message everyone · @ to ask one seat · paste an image · @ for a file"
-                            sendLabel="Send"
-                            labelledBy="council-channel-label"
-                            returnTo={() => channel.current}
-                            chats={chats}
-                        />
+                                </span>
+                            ))}
+                            <button
+                                type="button"
+                                data-council-action="retry-all"
+                                disabled={c.state === "running" || acts.busy.has("retry:all")}
+                                title={
+                                    c.state === "running"
+                                        ? "The council is running: retry once it is done"
+                                        : "Run every failed seat again at once, each on the model picked beside it"
+                                }
+                                onClick={() =>
+                                    void acts.run("retry:all", "Retry all", () =>
+                                        retryAllExperts(c.id, retryAllModels(c, picks))
+                                    )
+                                }
+                                className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
+                            >
+                                {acts.busy.has("retry:all") ? "Retrying…" : `Retry all ${retryAllSeats(c).length}`}
+                            </button>
+                        </div>
+                    )}
+                    {notes}
+                    <Channel
+                        boxRef={channel}
+                        councilId={c.id}
+                        view={onlyId ?? ""}
+                        count={items.length + (asks.length > 0 ? 1 : 0)}
+                        sent={ownPosts(items)}
+                    >
+                        {items.map((item) => {
+                            switch (item.kind) {
+                                case "question":
+                                    return <QuestionMessage key={item.id} item={item} />;
+                                case "divider":
+                                    return <Divider key={item.id} text={item.text} round={item.round} />;
+                                case "idea":
+                                    return (
+                                        <IdeaMessage
+                                            key={item.id}
+                                            councilId={c.id}
+                                            item={item}
+                                            acts={acts}
+                                            open={threadOpen && item.id === openId}
+                                            focused={item.id === focusedId}
+                                            onOpen={open}
+                                        />
+                                    );
+                                case "draft":
+                                    return <DraftCard key={item.id} c={c} item={item} acts={acts} />;
+                                case "reply":
+                                    return (
+                                        <ReplyMessage
+                                            key={item.id}
+                                            councilId={c.id}
+                                            item={item}
+                                            acts={acts}
+                                            onOpenIdea={open}
+                                            rise={item.mine && entering.has(item.id)}
+                                            status={send.status?.postId === item.id ? send.status : undefined}
+                                        />
+                                    );
+                                case "skip":
+                                    return <SkippedLine key={item.id} item={item} onOpenTerminal={onOpenTerminal} />;
+                                case "failure":
+                                    // the coordinator's failure has the Summary failed panel, in `notes`
+                                    return coordinators.has(item.author) ? null : (
+                                        <FailedLine key={item.id} c={c} item={item} acts={acts} />
+                                    );
+                                case "typing":
+                                    return <TypingLine key={item.id} item={item} />;
+                            }
+                        })}
+                        {asks.length > 0 && <AskNext c={c} asks={asks} />}
+                    </Channel>
+                    {/* the channel's column: its px-6, its 10px scrollbar gutter on the right, its 860px centred */}
+                    <div className="flex-none pb-4 pl-6 pr-[34px] pt-[10px]">
+                        <div className="mx-auto w-full max-w-[860px]">
+                            <span id="council-channel-label" className="sr-only">
+                                Message the council
+                            </span>
+                            <Composer
+                                c={c}
+                                scope="channel"
+                                proposalId=""
+                                placeholder="Message everyone · @ to ask one seat · paste an image · @ for a file"
+                                sendLabel="Send"
+                                labelledBy="council-channel-label"
+                                returnTo={() => channel.current}
+                                chats={chats}
+                            />
+                        </div>
                     </div>
                 </div>
-            </div>
-            {/* the right column slides in from its edge and back out (sheetPanel) as the rail folds and unfolds; the
+                {/* the right column slides in from its edge and back out (sheetPanel) as the rail folds and unfolds; the
                 Sources a citation opens take the rail's place in it without moving */}
-            <AnimatePresence initial={false}>
-                {sourcesOpen || railShown ? (
-                    <motion.div
-                        key="panel"
-                        variants={sheetPanel}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        className="flex min-h-0 flex-none"
-                    >
-                        {sourcesOpen ? (
-                            <CouncilSourcesPanel c={c} view={sources} onClose={closeSources} onOpenFile={onOpenFile} />
-                        ) : (
-                            <CouncilRail
-                                c={c}
-                                ideas={list.ideas}
-                                thread={thread}
-                                n={thread == null ? undefined : numbers.get(thread.id)}
-                                tab={railTab}
-                                on={threadOpen ? openId : focusedId}
-                                acts={acts}
-                                chats={chats}
-                                onTab={setRailTab}
-                                onPick={pick}
-                                onClose={() => setOpenId(null)}
-                                onFold={() => setFolded(true)}
-                            />
-                        )}
-                    </motion.div>
-                ) : null}
-            </AnimatePresence>
-        </div>
+                <AnimatePresence initial={false}>
+                    {sourcesOpen || railShown ? (
+                        <motion.div
+                            key="panel"
+                            variants={sheetPanel}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            className="flex min-h-0 flex-none"
+                        >
+                            {sourcesOpen ? (
+                                <CouncilSourcesPanel
+                                    c={c}
+                                    view={sources}
+                                    onClose={closeSources}
+                                    onOpenFile={onOpenFile}
+                                />
+                            ) : (
+                                <CouncilRail
+                                    c={c}
+                                    ideas={list.ideas}
+                                    thread={thread}
+                                    n={thread == null ? undefined : numbers.get(thread.id)}
+                                    tab={railTab}
+                                    on={threadOpen ? openId : focusedId}
+                                    acts={acts}
+                                    chats={chats}
+                                    onTab={setRailTab}
+                                    onPick={pick}
+                                    onClose={() => setOpenId(null)}
+                                    onFold={() => setFolded(true)}
+                                />
+                            )}
+                        </motion.div>
+                    ) : null}
+                </AnimatePresence>
+            </div>
+        </SeatLinks.Provider>
     );
 }

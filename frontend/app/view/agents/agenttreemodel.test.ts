@@ -1224,6 +1224,7 @@ describe("Discuss together", () => {
                 project: "D:\\code\\waveterm",
                 harness: "claude",
                 context: 625_000,
+                task: "",
             });
             expect(seatableOf(live("p", { agent: "pi", project: "loom", usage: { contextpct: 21 } }), roots)).toEqual({
                 id: "p",
@@ -1232,6 +1233,7 @@ describe("Discuss together", () => {
                 harness: "pi",
                 // no window size known: the context cannot be priced
                 context: 0,
+                task: "",
             });
         });
 

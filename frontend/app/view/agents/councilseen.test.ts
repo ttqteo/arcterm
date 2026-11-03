@@ -17,6 +17,7 @@ const typing = (author: string, waiting = false): TypingRow => ({
     initials: author.slice(0, 2).toUpperCase(),
     tone: "conn-1",
     tag: "expert",
+    tab: "",
     text: waiting ? `Waiting for ${author} to finish its task` : `${author.toUpperCase()} is writing…`,
     waiting,
     on: "",
