@@ -99,6 +99,16 @@ The user chooses source and target freely from a list of languages, with English
   through a new wshrpc command.
 - "Detect language" maps to `sl=auto` on Google. On Apple Translation, the source language is unknown until the
   translator detects it, or the bridge guesses it with `NLLanguageRecognizer`.
+- **As built (2026-11-02): Google first, Apple Translation as its fallback, both in wavesrv.** Measured on an 8 GB Mac
+  with macOS 27, Apple Translation took 0.6–2 s a request warm and about 6 s cold, against Google's ~0.3 s, and it
+  gives no phonetics or word classes, so the order above was flipped: `translate.Engine` (`pkg/translate/engine.go`)
+  asks Google and, when Google cannot answer (offline, an error, a 429), runs the helper `apple-translate.arm64`
+  beside wavesrv (`pkg/translate/apple/main.swift`, built by `swiftc` in the Taskfile's `build:translate:macos`),
+  one process a request, nothing kept running. After a 429 the engine leaves Google alone for its Retry-After or 5
+  minutes (at most an hour) and goes straight to Apple. There is no Tauri command and no native stub in the frontend;
+  the request's timeout is 25 s (`TRANSLATE_TIMEOUT_MS`). On "auto" the helper picks the Mac's own language over
+  `NLLanguageRecognizer`'s best guess when that guess is under 50% and the Mac's language has 15% or more, since a
+  lone word reads wrongly otherwise ("gold" as Turkish).
 
 ### Float
 

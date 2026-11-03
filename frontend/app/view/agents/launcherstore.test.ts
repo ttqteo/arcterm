@@ -14,13 +14,11 @@ import {
     closeLauncher,
     endLauncherDraft,
     endLauncherLaunch,
-    findLauncherSessions,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
-    launcherFoundAtom,
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
@@ -578,35 +576,5 @@ describe("the Resume list's pages", () => {
         await loadLauncherSessions("terminal", "/p/a");
         await loadLauncherSessions("claude", "");
         expect(recent).not.toHaveBeenCalled();
-    });
-
-    it("searches the backend and keeps the answer for its scope", async () => {
-        recent.mockResolvedValueOnce({ sessions: [sess("a")], nextcursor: "c1" });
-        await loadLauncherSessions("claude", "/p/a");
-        recent.mockResolvedValueOnce({ sessions: [sess("old")] });
-        await findLauncherSessions("old");
-        expect(lastArgs()).toEqual({
-            runtime: "claude",
-            projectpath: "/p/a",
-            limit: 30,
-            query: "old",
-        });
-        expect(globalStore.get(launcherFoundAtom)).toMatchObject({ query: "old", sessions: [{ id: "old" }] });
-        recent.mockResolvedValueOnce({ sessions: [] });
-        await loadLauncherSessions("claude", "/p/b");
-        expect(globalStore.get(launcherFoundAtom)).toBeNull();
-    });
-
-    it("drops an answer for a query that has been typed past", async () => {
-        recent.mockResolvedValueOnce({ sessions: [sess("a")] });
-        await loadLauncherSessions("claude", "/p/a");
-        const ol = deferred();
-        recent.mockReturnValueOnce(ol.promise);
-        const first = findLauncherSessions("ol");
-        recent.mockResolvedValueOnce({ sessions: [sess("old")] });
-        await findLauncherSessions("old");
-        ol.resolve({ sessions: [sess("olive")] });
-        await first;
-        expect(globalStore.get(launcherFoundAtom)).toMatchObject({ query: "old" });
     });
 });

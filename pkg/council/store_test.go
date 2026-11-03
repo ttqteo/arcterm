@@ -450,3 +450,80 @@ func TestSetRatingRefusesUnknown(t *testing.T) {
 		t.Errorf("SetRating of a missing council = %v, want fs.ErrNotExist", err)
 	}
 }
+
+func TestSetThumbOnIdeasAndSeatReplies(t *testing.T) {
+	useTempRoot(t)
+	c := sampleCouncil("c1", `D:\p`)
+	c.Proposals = append(c.Proposals, CouncilProposal{Id: "P2", Author: "ux", Title: "Held", Argument: "a", Draft: DraftHeld})
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r2", ProposalId: "P1", Author: "ux", Text: "because", Round: 2, Ts: 7},
+		CouncilReply{Id: "r3", ProposalId: "P1", Author: "ux", Text: "dropped", Round: 2, Ts: 8, Draft: DraftDropped},
+	)
+	if err := Save(c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetThumb("c1", "P1", ThumbLike); err != nil {
+		t.Fatalf("SetThumb P1: %v", err)
+	}
+	if _, err := SetThumb("c1", "r2", ThumbDislike); err != nil {
+		t.Fatalf("SetThumb r2: %v", err)
+	}
+	loaded, err := Load("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Proposals[0].Thumb != ThumbLike || loaded.Replies[1].Thumb != ThumbDislike {
+		t.Fatalf("thumbs = P1 %q, r2 %q, want like and dislike", loaded.Proposals[0].Thumb, loaded.Replies[1].Thumb)
+	}
+
+	// changing one's mind replaces it; an empty thumb takes it back
+	if _, err := SetThumb("c1", "P1", ThumbDislike); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetThumb("c1", "r2", ""); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _ = Load("c1")
+	if loaded.Proposals[0].Thumb != ThumbDislike || loaded.Replies[1].Thumb != "" {
+		t.Fatalf("after the change: P1 %q, r2 %q, want dislike and none", loaded.Proposals[0].Thumb, loaded.Replies[1].Thumb)
+	}
+}
+
+func TestSetThumbRefuses(t *testing.T) {
+	useTempRoot(t)
+	c := sampleCouncil("c1", `D:\p`)
+	c.Proposals = append(c.Proposals, CouncilProposal{Id: "P2", Author: "ux", Title: "Held", Argument: "a", Draft: DraftHeld})
+	c.Replies = append(c.Replies, CouncilReply{Id: "r2", ProposalId: "P1", Author: "ux", Text: "held", Round: 2, Draft: DraftHeld})
+	if err := Save(c); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ item, thumb, why string }{
+		{"P1", "love", "an unknown word"},
+		{"P1", "Like", "a word in the wrong case"},
+		{"r1", ThumbLike, "the person's own reply"},
+		{"P2", ThumbLike, "a held idea"},
+		{"r2", ThumbLike, "a held reply"},
+		{"P9", ThumbLike, "an idea the council does not have"},
+	} {
+		if _, err := SetThumb("c1", tc.item, tc.thumb); err == nil {
+			t.Errorf("SetThumb(%s, %q) = nil, want a refusal for %s", tc.item, tc.thumb, tc.why)
+		}
+	}
+	loaded, err := Load("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range loaded.Proposals {
+		if p.Thumb != "" {
+			t.Errorf("a refused thumb left %s with %q", p.Id, p.Thumb)
+		}
+	}
+	for _, r := range loaded.Replies {
+		if r.Thumb != "" {
+			t.Errorf("a refused thumb left %s with %q", r.Id, r.Thumb)
+		}
+	}
+	if _, err := SetThumb("nope", "P1", ThumbLike); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("SetThumb of a missing council = %v, want fs.ErrNotExist", err)
+	}
+}

@@ -4,7 +4,6 @@ import {
     answerParts,
     brainstormPrompt,
     canRunSummary,
-    currentSection,
     defaultCouncilView,
     directionRows,
     directionsHeading,
@@ -15,6 +14,7 @@ import {
     evidenceLabel,
     expertActivity,
     initiativeSeed,
+    jumpLinks,
     keptHeading,
     keptRows,
     outcomeLabel,
@@ -269,7 +269,9 @@ describe("a Brainstorm report", () => {
     it("gives each row its first step, and none for a row without one", () => {
         const [first, second] = directionRows(brainstorm());
         expect(first.firstStep).toBe("First step: Try it on one screen");
+        expect(first.step).toBe("Try it on one screen");
         expect(second.firstStep).toBe("");
+        expect(second.step).toBe("");
         expect(directionRows(council())[0].firstStep).toBe("");
     });
 
@@ -773,38 +775,21 @@ describe("outlineOf", () => {
     });
 });
 
-describe("currentSection", () => {
-    const tops = [
-        { id: "answer", top: -400 },
-        { id: "directions", top: -20 },
-        { id: "direction:1", top: 30 },
-        { id: "kept", top: null },
-        { id: "matrix", top: 900 },
-    ];
-    const middle = { atEnd: false, height: 600 };
-
-    it("is the last section whose top has passed the line, skipping one not drawn", () => {
-        expect(currentSection(tops, 40, middle)).toBe("direction:1");
-        expect(currentSection(tops, 0, middle)).toBe("directions");
+describe("jumpLinks", () => {
+    it("lists the directions, the kept ideas and the matrix of a Brainstorm", () => {
+        const base = council();
+        const kept = { ...base.summary!, kept: [direction(3, ["P6"]), direction(4, ["P7"])] };
+        const links = jumpLinks(council({ mode: "brainstorm", summary: kept }));
+        expect(links.map((e) => e.id)).toEqual(["directions", "kept", "matrix"]);
+        expect(links.map((e) => e.count)).toEqual([2, 2, 4]);
     });
 
-    it("is the first before any has passed, and null with nothing drawn", () => {
-        expect(
-            currentSection(
-                [
-                    { id: "answer", top: 20 },
-                    { id: "matrix", top: 500 },
-                ],
-                10,
-                middle
-            )
-        ).toBe("answer");
-        expect(currentSection([{ id: "answer", top: null }], 10, middle)).toBeNull();
+    it("leaves out kept when a Review keeps nothing aside", () => {
+        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["directions", "matrix"]);
     });
 
-    it("is the last one in view once the box is scrolled to its end", () => {
-        expect(currentSection(tops, 40, { atEnd: true, height: 1000 })).toBe("matrix");
-        expect(currentSection(tops, 40, { atEnd: true, height: 600 })).toBe("direction:1");
+    it("is empty before a summary", () => {
+        expect(jumpLinks(council({ summary: undefined }))).toEqual([]);
     });
 });
 

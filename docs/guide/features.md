@@ -81,7 +81,8 @@ thì bấm số phiên bản ở góc dưới bên phải (**What's new**), nút
 ## Công cụ nhỏ nhưng hay dùng
 
 - **Translate**: `Ctrl+Shift+D` từ bất cứ đâu. Vừa copy một từ thì chip **Paste** hiện dưới ô, `Tab` để dịch luôn; ô
-  trống thì liệt kê lịch sử, ☆ để lưu từ cần học, nút loa đọc to.
+  trống thì liệt kê lịch sử, ☆ để lưu từ cần học, nút loa đọc to. Khi Google từ chối (429) hay mất mạng, trên Mac
+  (macOS 26+) Apple Translation dịch ngay trên máy, không có phiên âm và từ loại.
 - **Note**: `Ctrl+Shift+N` thu cửa sổ thành ô nổi với một ghi chú markdown tự lưu. `Shift+F` để float terminal đang chọn.
 - **Notes trong Search**: `Ctrl+P`, gõ `no:` để liệt kê, xem, copy, sửa ghi chú; agent ghi chú bằng `wsh note add`.
 - **Open a tool**: `Ctrl+Shift+O` mở lazygit, yazi, btop… ngay trong thư mục của agent đang focus.

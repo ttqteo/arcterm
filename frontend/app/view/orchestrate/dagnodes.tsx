@@ -83,7 +83,9 @@ export function StateGlyph({ kind }: { kind: GlyphKind }) {
             {kind === "running" ? (
                 <span className="absolute -inset-[3px] rounded-full border-[1.5px] border-working pulse-soft" />
             ) : null}
-            <CrossFade swapKey={kind} className="relative">
+            {/* flex, not CrossFade's inline-flex: an inline box sits on a text line, which drops the 14px mark
+                below the box the halo is drawn around */}
+            <CrossFade swapKey={kind} className="relative flex">
                 <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" className="block">
                     <circle cx="7" cy="7" r="5.25" style={{ fill: g.fill, stroke: g.ring, strokeWidth: 1.5 }} />
                     {g.mark ? (

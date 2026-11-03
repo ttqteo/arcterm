@@ -5,6 +5,7 @@ package translate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // the shape of Google's answer for "gold" into Vietnamese, as trans -dump prints it, cut down
@@ -143,8 +145,41 @@ func TestGoogle_httpError(t *testing.T) {
 		http.Error(w, "slow down", http.StatusTooManyRequests)
 	})
 	_, err := Google(context.Background(), "en", "vi", "gold")
-	if err == nil || !strings.Contains(err.Error(), "429") {
+	if err == nil || err.Error() != "Google answered 429 Too Many Requests" {
 		t.Fatalf("err = %v", err)
+	}
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusTooManyRequests || se.RetryAfter != 0 {
+		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestGoogle_retryAfter(t *testing.T) {
+	googleAt(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	_, err := Google(context.Background(), "en", "vi", "gold")
+	var se *StatusError
+	if !errors.As(err, &se) || se.RetryAfter != 2*time.Minute {
+		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	for h, want := range map[string]time.Duration{
+		"":                              0,
+		"90":                            90 * time.Second,
+		" 5 ":                           5 * time.Second,
+		"-3":                            0,
+		"Mon, 02 Nov 2026 12:10:00 GMT": 10 * time.Minute,
+		"Mon, 02 Nov 2026 11:00:00 GMT": 0, // already past
+		"soon":                          0,
+	} {
+		if got := retryAfter(h, now); got != want {
+			t.Errorf("%q: %v, want %v", h, got, want)
+		}
 	}
 }
 

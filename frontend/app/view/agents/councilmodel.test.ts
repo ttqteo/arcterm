@@ -23,6 +23,7 @@ import {
     firstFollowRound,
     flattenThread,
     followupLabel,
+    glanceFigures,
     hasAgents,
     headerChip,
     heldDrafts,
@@ -32,6 +33,7 @@ import {
     latestStances,
     matrixRows,
     mentionsChat,
+    nextThumb,
     outdatedCount,
     panel,
     pickCount,
@@ -48,7 +50,9 @@ import {
     summaryFacts,
     synthesisRound,
     threadTree,
+    thumbOf,
     treeMeta,
+    withThumb,
     type SeatableAgent,
 } from "./councilmodel";
 
@@ -1668,5 +1672,67 @@ describe("proseOf", () => {
 
     it("is empty for a message that is only a table", () => {
         expect(proseOf("| a |\n|---|\n| 1 |")).toBe("");
+    });
+});
+
+describe("glanceFigures", () => {
+    const started = 1_000_000;
+
+    it("gives the experts, the minutes and the tokens of a done council", () => {
+        const c = council({
+            state: "done",
+            round: 3,
+            tokens: 860_000,
+            started,
+            updated: started + 40 * MIN,
+            summary: { text: "", directions: [], outcomes: {}, at: started + 11 * MIN },
+        });
+        expect(glanceFigures(c, started + 99 * MIN)).toEqual([
+            { value: "4", label: "experts" },
+            { value: "11", label: "min" },
+            { value: "0.86M", label: "tokens" },
+        ]);
+    });
+
+    it("leaves the minutes out of a council that never started", () => {
+        const notRun = council({ state: "not-run", round: 0 });
+        expect(glanceFigures(notRun, started).map((f) => f.label)).toEqual(["experts", "tokens"]);
+    });
+
+    it("says expert for a panel of one", () => {
+        const one = council({ experts: [council().experts[0]] });
+        expect(glanceFigures(one, started)[0]).toEqual({ value: "1", label: "expert" });
+    });
+});
+
+describe("thumbs", () => {
+    it("reads a known thumb and nothing else", () => {
+        expect(thumbOf({ thumb: "like" })).toBe("like");
+        expect(thumbOf({ thumb: "dislike" })).toBe("dislike");
+        expect(thumbOf({})).toBe("");
+        expect(thumbOf({ thumb: "love" })).toBe("");
+    });
+
+    it("a press puts the thumb on, swaps the other one, and a second press takes it back", () => {
+        expect(nextThumb("", "like")).toBe("like");
+        expect(nextThumb("dislike", "like")).toBe("like");
+        expect(nextThumb("like", "like")).toBe("");
+        expect(nextThumb("dislike", "dislike")).toBe("");
+    });
+
+    it("sets one idea's or reply's thumb and leaves the rest of the record alone", () => {
+        const c = council({ replies: [reply("r1", "ram"), reply("r2", "sk", { thumb: "like" })] });
+        const liked = withThumb(c, "P3", "like");
+        expect(liked.proposals.find((p) => p.id === "P3")?.thumb).toBe("like");
+        expect(liked.proposals.filter((p) => p.thumb != null)).toHaveLength(1);
+        expect(liked.replies).toBe(c.replies);
+        expect(c.proposals.find((p) => p.id === "P3")?.thumb).toBeUndefined();
+
+        const off = withThumb(c, "r2", "");
+        expect(off.replies.find((r) => r.id === "r2")?.thumb).toBeUndefined();
+        expect(off.replies.find((r) => r.id === "r1")).toBe(c.replies[0]);
+        expect(off.proposals).toBe(c.proposals);
+
+        expect(withThumb(c, "P9", "like")).toBe(c);
     });
 });

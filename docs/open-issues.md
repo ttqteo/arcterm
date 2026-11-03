@@ -27,6 +27,22 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council report under a cover, in the real app (WebKit; the run checked only headless Chrome): open a
+  Done council → a cover with the question, the answer and the glance box on the right, Report | Discussion tabs that
+  stay at the top when you scroll, the ideas as cards with one open at a time and its detail under the row; click
+  Discussion → one 52px header row with the tabs, title, seats as avatars with counts, cost and Close; click a seat →
+  only its messages and a Show everyone line; narrow the pane → the title keeps a readable width. (d660217e5)
+- [ ] (arcterm) Council seats and report panel, in the real app: on a council's Discussion, hover the seats' stack →
+  a list of every seat (name, kind, doing, count) opens under it, leave → it closes; click a row → only its messages,
+  the others' avatars dim; Close is an X. On the Report, hover a seat in The panel → the row does not grow, an arrow
+  shows at the end of its line and the hint sits to the row's right, not over the next seat. (13008d427, a9cfb0639,
+  77011c8ce)
+- [ ] (arcterm) New project search reads paths from `~`: open Agent → New project, type your user name → both
+  sections empty; type `cuscofi` → the folders named cuscofi first, then any that hold it only in their path; type
+  `~/Workspaces/dev` → only the folders under it. (9d23c1862)
+- [ ] (arcterm) Jump buttons are arrows only: scroll a council's Discussion off both ends → round ↑ / ↩ / ↓ buttons in
+  its bottom right, no words, each with its tooltip on hover; scroll up in an agent's transcript (a card's or the
+  rail's) → a round ↓ at the bottom centre, no "Latest". (d059f1b58, dfadeab66)
 - [ ] (arcterm) A live chat joins a council that already exists: open a Done council, type `@` in its message box →
   the seats, then **Add a live chat** with each real claude or pi chat (short id, title, harness, project, context
   size; none of the seated ones). Pick one and send a question → the line under the box counts it ("… and 1 chat
@@ -288,6 +304,20 @@ does not, say what you saw and it becomes a bug row under Actionable.
   speaker in the box reads the English word and the one beside copy reads the Vietnamese (on a Mac, the Linh voice;
   with none installed the button is off and its tooltip says so), and closing the panel stops it. Untried in WKWebView,
   which no CDP scenario reaches. (commit "feat(translate): a history with stars, and listen buttons")
+- [ ] (arcterm) Translate's Apple Translation fallback, on a Mac with macOS 26+ after a build: `ls
+  /Applications/arcterm.app/Contents/Resources/bin/apple-translate.arm64` is there. With the Wi-Fi off, type
+  "Contrarian" (English → Vietnamese): a translation comes back after a second or two, with no phonetic or word class;
+  with Detect language as the source, it names English. English → a language whose pack is not downloaded shows the error naming the pack and
+  System Settings → Translation Languages, and no macOS download sheet opens over arcterm. Not seen in the app: Google's
+  429 path and the helper were only run from Go tests and the shell. (commit "feat(translate): fall back to Apple
+  Translation on the device when Google cannot answer")
+- [ ] (arcterm) A council's chat as a messenger, after a build: in a done council's thread, send a follow-up. The thread
+  scrolls to it; your bubble has no name line, its time shows on hover beside it; under it Sent turns to Seen with the
+  seat's small avatar about a second later, then the seat's bubble of three dots rising in turn shows (still with
+  Reduce motion on: the dots rest). When the answer lands, Seen goes and two or three suggestion chips show over the
+  box; a click puts one in the box, typing hides them. A seat's plain reply has no `replies` pill, a doubt keeps `has
+  doubts`. The send button is round with a send icon. No CDP scenario covers these yet, and the dev app was not run.
+  (commit "feat(council): the chat as a messenger: Sent then Seen, typing dots, fewer labels, suggested replies")
 - [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
   down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
   `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.
@@ -356,11 +386,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Open and Show in Explorer; Open starts PowerPoint on it, Show in Explorer
   selects it. A `.exe` path offers neither. `src-tauri/src/commands.rs` `open_path`, `filetab.tsx`, commit
 - [ ] (arcterm) Close council, not delete: in the Agent tree hover a Failed or Done council row and click its ×: no
-  confirm, the row moves into a `Closed councils (1)` fold at the end of the project's Councils, and `wsh council list`
-  shows it `(closed)`. Open the fold: the row's hover button is ↺ Reopen, which puts it back. Close it again and press
-  Retry on it (or `wsh council retry`): it comes back by itself. Right-click → Remove council… asks, then its file is in
-  `~/.arc/trash/<ms>-council-<id>/`. The Discussion header's button reads Close / Reopen. A Running or Waiting on you
-  row has no ×. `pkg/council/runner.go` `SetClosed`, `agenttree.tsx` `ClosedCouncilsRow`, commit
+  confirm, the row leaves the tree (no fold), and `wsh council list` shows it `(closed)`. Councils at the sidebar's top
+  (`Ctrl+G` `o`) lists it with a Closed tag; open it and its header's Reopen puts it back in the tree. Close it again
+  and press Retry on it (or `wsh council retry`): it comes back by itself. Right-click → Remove council… asks, then its
+  file is in `~/.arc/trash/<ms>-council-<id>/`. A Running or Waiting on you row has no ×. `pkg/council/runner.go`
+  `SetClosed`, `councilhistoryview.tsx`, commit
 - [ ] (arcterm) A slow wake clears its sleep marks: after installing a build with this fix, the `arcterm` tab whose
   block `027015dd` runs while its meta still holds `agent:sleeping` (a 2026-10-22 20:26 wake whose 10s write clock had
   run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and
@@ -1453,6 +1483,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 | (arcterm) Sprout can rest half out of the Float ledge: in about 5 of 11 runs of `jarvis-modes` step 5 (Windows dev app, 2026-11-02) the sprite stood 26 px above its stand line, its top ~25 px over the ledge, for 6 s and more (sprite 645–693 against ledge 670–721); a synthetic `resize` put it right (671–719). A resting walker stops ticking (`petwalk.ts` `nextTick`, `delayMs` null), so only an input like `resize` re-measures the ledge (`petview.tsx` ~647): Float entry seems to measure it mid-resize and nothing measures again. Re-measure when the ledge box moves (a ResizeObserver, or once the window settles after Float entry). Breaks spec 2026-10-10-jarvis-modes "the ledge holds the whole sprite" | bug | S | `frontend/app/view/jarvis/petview.tsx`, `petwalk.ts`; `jarvis-modes` step 5 detail carries the geometry |
 | (arcterm) The float window may grow 16×9 px per float cycle: across repeated `jarvis-modes` runs on the dev app (2026-11-02) it went from 1088×667 to 1248×757. Other float scenarios ran on the same app meanwhile, so unconfirmed: float and unfloat a few times by hand and compare the saved rect | bug | S | `frontend/app/cockpit/floatstore.ts` / `floatwindow.ts` (the float rect save and restore) |
 | (arcterm) `float-mini` is stale on Windows: it asserts the folded box `h <= 264` (`MINI_REST_SIZE` is 320×336 since cf5e94b19), reads `window.innerHeight` under the pinned 1600×950 viewport (clear it with `Emulation.clearDeviceMetricsOverride` as `jarvis-modes` now does), and clicks only `[data-float-minimize]`, which renders on a Mac only (Windows folds from the bar's "Fold into <pet>"). Port it as `jarvis-modes` was; the Pet stay pin hand check above waits on it | bug | S | `scripts/cdp/scenarios.mjs` ~45080 |
+| (arcterm) Right-click on an Agent tree row opens the macOS page menu (Look Up, Translate, Search with Google, Copy…) instead of the row's own menu, on a Mac in the installed app (0.15.20, 2026-11-02 21:49): seen on the lead row of run f321b6cf ("Council report"), the menu quoting text selected in the `portfolio` service's page (:8386, "y Sổ Tích luỹ kỳ hạn 12 …"). The cockpit prevents the page menu everywhere outside inputs (`cockpit-root.tsx`), so the click reached a pinned app's cross-origin frame (`AppFrames`, `apppane.tsx`), not the row; nothing was logged. It comes and goes: minutes later the same row opened its own menu (Rename … Copy run id, Close agent). A new agent had started 5 s before the failing click (block 54e980b7, 21:49:54 in `waveapp.log`), a lead, not a cause. Not reproduced: a WKWebView harness on the same Mac sent the right-click to the row with the frame hidden over it (`visibility:hidden`, as an app out of sight is), with the frame shown under a row painted over it, and after a text selection in the frame then hiding it. Next: does it repeat, which way the page was opened (rail or tree row), and does stopping the service bring the row's menu back | bug | S | screenshot 2026-11-02 21:49:59; `frontend/app/view/agents/apppane.tsx` `AppFrame`, `frontend/app/cockpit/cockpit-root.tsx` contextmenu listener |
+| (arcterm) `rail-transcript-tab` step 4 fails on `main` (2026-11-02, twice, the dev app alone): Compactions does not leave the newest marker at the top clear of the pinned prompt's band, then load an earlier chunk. This is the last Transcript edit of run 66c39bd5, whose Final ran out of RAM and never ran it; steps 1–3 and 5–8, `agent-rail-tabs` and `surface-smoke` pass | bug | S | `frontend/app/view/agents/` Transcript tab; commit "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs" |
+| (arcterm) CDP scenarios failing on `main` in the Windows dev app (2026-11-02, each rerun alone): `rail-translate` a, g, j, k, l (step a: the box is not empty on open, `"empty":false`; j: the terminal does not get the keys back) and `float-note` 1, 5, 6a–c, 7, 8d–f (the hand checks of Translate and the float's Note stay open above); `whats-new` 5 (the fold's note does not grow on click) and 6 (no `go:usage` note in the releases shown); `dag-motion` throws `dagPeekPublish is not defined` (scenario bug); `code-diff` base step fails only on its own text read (the shot shows main's copy on the left: the selector `.editor.original .view-lines` misses and falls back to both sides); `new-run-window` 8 ("the window did not open"); `agent-sleep` 1; `jarvis-peek` 6; `jarvis-pet` 8; `project-overview-history` 3; `tools-tree` 4; `tools-found` 2; `tools-app` 8–9; `agy-harness` 2, 5–7, 9; `run-queue` 1b–6 (the store held queued plans from older runs, so this one may be leftover state). Triage each: fix the app, or the scenario | bug | M | `scripts/cdp/scenarios.mjs`; open-issues hand-check pass of 2026-11-02 |
+| (arcterm) A run's sheet timeline shows the raw event kind `queued-start` where `run-queue` step 6 expects "Started from the queue": no frontend label exists for the kind (`runEventKindQueuedStart`, `pkg/wshrpc/wshserver/wshserver_runqueue.go:40`). Not from the project Overview run, whose diff reaches no run-sheet code (not rerun on the base) | bug | S | run 3d198707 Final, `data/final-shots/bd35362c-a6b5-4df7-9d46-6f522a0bca94/1/shots.json` |
 | (arcterm) `TestRepliesPostedAsARunEndsAreNeverLost` in `pkg/council` is flaky: it failed, then passed on a rerun, in run 74b368ce's Verify after merging its t-10 | bug | S | run 74b368ce final report; `pkg/council/runner_test.go` |
 | (arcterm) `pkg/council` `TestRepliesPostedAsARunEndsAreNeverLost` is flaky: it failed, then passed on a rerun, in the Verify after a merge of run 74b368ce, which left that run's Final unverified | bug | S | run 74b368ce report; `pkg/council/runner_test.go` |
 | (arcterm) Two vitest cases are flaky: `gridstore.persist.test.ts` "starts empty for a profile that never stored a grid" and `railstore.test.ts` "is on for a profile that never stored a choice" each failed, then passed on a rerun, in run 3f0ba255's Verify after merging its t-5; both read a profile's stored state, so a store left by an earlier test is the first suspect | bug | S | run 3f0ba255 final report; `frontend/app/view/agents/gridstore.persist.test.ts`, `railstore.test.ts` |

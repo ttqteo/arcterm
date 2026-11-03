@@ -10,7 +10,7 @@
 // stops pulsing gets its own opacity back and restarts from the top if it pulses again.
 
 import { useEffect } from "react";
-import { PULSES, pulseOpacity, type PulseSpec } from "./pulse";
+import { PULSES, pulseOpacity, pulseStart, type PulseSpec } from "./pulse";
 
 const PULSE_FRAME_MS = 1_000 / 12;
 const DEFAULT_PROP = "opacity";
@@ -54,7 +54,7 @@ export function PulseDriver() {
                     }
                     let start = startedAt.get(el);
                     if (start == null) {
-                        start = now;
+                        start = pulseStart(now, spec, el.dataset.pulseLag);
                         startedAt.set(el, start);
                     }
                     const value = pulseOpacity(spec, now - start).toFixed(3);

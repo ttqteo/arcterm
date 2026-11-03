@@ -226,6 +226,19 @@ describe("translateErrorLine", () => {
         );
         expect(translateErrorLine(new Error("bad\nthing"))).not.toContain("\n");
     });
+    it("does not promise a retry while Google rests after a 429", () => {
+        expect(
+            translateErrorLine(new Error("Google answered 429 Too Many Requests; arcterm asks it again after 23:55"))
+        ).toBe(
+            "Couldn't translate: Google answered 429 Too Many Requests; arcterm asks it again after 23:55. Your text stays here."
+        );
+        // Apple Translation tried too and failed: the rest is still named
+        expect(
+            translateErrorLine(
+                "Google turned away too many requests; arcterm asks it again after 9:05; Apple Translation: it doesn't translate English into Latin"
+            )
+        ).toMatch(/Latin\. Your text stays here\.$/);
+    });
 });
 
 describe("history", () => {

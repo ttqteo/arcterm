@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council's discussion as a channel of speech bubbles with threads (boards J-chat-bubbles and J3-seat-filter-panel in
-// .superpowers/design/council-report; councilchatmodel.ts derives what it draws). Under the header the discussion draws
-// (councildiscussion.tsx): Everyone and a filter for each seat (its letters, short name and how many messages it wrote;
-// a click shows its messages alone; while it works, waits or failed its dot and what it is doing; an agent's terminal
-// and a failed seat's Retry beside it), then the channel, one column: the person's question on the right in their
-// bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble in its seat's
-// colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
+// .superpowers/design/council-report; councilchatmodel.ts derives what it draws). The seat filters sit in the
+// discussion's header (councilseats.tsx); here, while one is on, an Only line with Show everyone, and with two or more
+// seats failed a Retry all bar with a model pick per seat; then the channel, one column: the person's question on the
+// right in their bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble
+// in its seat's colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
 // Edit, Drop); the line where an agent skipped a turn, a failure with Retry, and a typing row for whoever is at work;
 // under it the composer, which posts to everyone, and `@` lists the seats (a pick asks that one), the project's files
 // (a pick names the file; the seats that answer read it) and the live claude and pi chats no seat holds under Add a live
@@ -38,7 +37,9 @@ import {
     FileText,
     Loader2,
     Plus,
-    SquareTerminal,
+    SendHorizontal,
+    ThumbsDown,
+    ThumbsUp,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -74,6 +75,7 @@ import {
     readsFiles,
     replyReach,
     seatChips,
+    threadAsks,
     type AskChip,
     type ChannelItem,
     type ChatPick,
@@ -83,7 +85,6 @@ import {
     type IdeaPost,
     type PillTone,
     type ReplyPost,
-    type SeatChip,
     type SkipLine,
     type ThreadItem,
     type TypingRow,
@@ -92,7 +93,16 @@ import {
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
-import { answerers, councilProjectName, draftsWaitWord, followupLabel, type SeatableAgent } from "./councilmodel";
+import {
+    ANSWERING,
+    answerers,
+    councilProjectName,
+    draftsWaitWord,
+    followupLabel,
+    nextThumb,
+    type CouncilThumb,
+    type SeatableAgent,
+} from "./councilmodel";
 import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
 import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import {
@@ -103,9 +113,11 @@ import {
     jumpPills,
     keepPlace,
     keptPlace,
+    ownPosts,
     placeOf,
     readingRow,
     returnTop,
+    sentSince,
     stillLanded,
     topFor,
     type JumpPills,
@@ -114,6 +126,7 @@ import {
     type RowBox,
     type ScrollPlace,
 } from "./councilscroll";
+import { sendState, shownItems, type SendState, type SendStatus } from "./councilseen";
 import { basename } from "./councilsetupmodel";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
@@ -130,6 +143,7 @@ import {
     replyCouncil,
     retryAllExperts,
     retryExpert,
+    thumbCouncil,
     useEstimate,
 } from "./councilstore";
 import { imageFilesOf, imagesPending, type TaskImage } from "./launcherimages";
@@ -204,7 +218,7 @@ const TONE_BUBBLE_ON: Record<AvatarTone, string> = {
 
 /** The dot on an avatar's corner: an expert writing is green, one whose call failed red. Its word is in the avatar's
  *  title, so the colour never stands alone. */
-type AvatarDot = "working" | "failed" | null;
+type AvatarDot = "working" | "waiting" | "failed" | null;
 
 export function CouncilAvatar({
     tone,
@@ -255,7 +269,7 @@ export function CouncilAvatar({
                 <span
                     className={cn(
                         "absolute -bottom-[2px] -right-[2px] box-border h-[7px] w-[7px] rounded-full border-[1.5px] border-background",
-                        dot === "working" ? "bg-working pulse-dot" : "bg-error",
+                        dot === "working" ? "bg-working pulse-dot" : dot === "waiting" ? "bg-asking" : "bg-error",
                         dotClassName
                     )}
                 />
@@ -318,126 +332,6 @@ const secondaryButton =
 const ghostButton =
     "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 
-// ---- the seats ----
-
-const SEAT_DOT: Record<SeatChip["dot"], string> = {
-    working: "bg-working pulse-dot",
-    waiting: "bg-asking",
-    failed: "bg-error",
-    idle: "bg-ink-faint",
-};
-
-// A seat as a filter (board J3-seat-filter-panel.dc.html): its letters, short name and how many messages it wrote; a
-// click shows its messages alone, again shows everyone. While it works, waits or failed, its dot shows beside the
-// name, and what it is doing is on hover with its kind and tooltip. An agent's terminal and a failed seat's Retry sit
-// beside it.
-// With two or more seats failed, each failed seat holds a model pick instead (RetryModelPick) and the strip ends in one
-// Retry all: one Retry each would be refused while the first runs.
-function SeatFilter({
-    c,
-    chip,
-    on,
-    acts,
-    onToggle,
-    onOpenTerminal,
-    pick,
-}: {
-    c: Council;
-    chip: SeatChip;
-    on: boolean;
-    acts: Actions;
-    onToggle: () => void;
-    onOpenTerminal: (tab: string) => void;
-    pick: { picked: string | undefined; onPick: (model: string | undefined) => void } | null; // set under Retry all
-}) {
-    const key = `retry:${chip.id}`;
-    const running = c.state === "running";
-    const expert = c.experts.find((e) => e.id === chip.id);
-    const count = chip.ideas + chip.replies;
-    const live = chip.dot !== "idle";
-    return (
-        <div
-            role="listitem"
-            data-council-expert-chip={chip.id}
-            data-lit={chip.dot === "working" || chip.dot === "waiting" ? "true" : "false"}
-            data-dot={chip.dot}
-            title={`${chip.name} · ${chip.kind}${live ? `: ${chip.doing}` : ""}. ${chip.title}`}
-            className="flex max-w-[420px] items-center gap-[4px]"
-        >
-            <button
-                type="button"
-                data-council-filter={chip.id}
-                aria-pressed={on}
-                disabled={count === 0}
-                onClick={onToggle}
-                className={cn(
-                    // flat, like a row: the seat's colour stays in its avatar and name, never a tinted, bordered pill
-                    "flex h-[28px] min-w-0 cursor-pointer items-center gap-[7px] rounded-[6px] border py-0 pl-[3px] pr-[10px] text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
-                    on
-                        ? "border-edge-mid bg-surface-selected font-semibold"
-                        : "border-transparent bg-transparent hover:bg-surface-hover disabled:hover:bg-transparent",
-                    TONE_TEXT[chip.tone]
-                )}
-            >
-                <CouncilAvatar tone={chip.tone} name={chip.name} initials={chip.initials} />
-                <span className="flex-none">{chip.short}</span>
-                {count > 0 && <span className="flex-none font-normal tabular-nums text-muted">{count}</span>}
-                {live && (
-                    <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", SEAT_DOT[chip.dot])} />
-                )}
-                {/* the dot says it; the words are in the hover, and the header and the writing rows already say them */}
-                <span data-council-seat-doing className="sr-only">
-                    {chip.doing}
-                </span>
-            </button>
-            {chip.agent && (
-                <button
-                    type="button"
-                    data-council-chip-open={chip.tab}
-                    aria-label={`Open the terminal of ${chip.name}`}
-                    title={`Open the terminal of ${chip.name}`}
-                    onClick={() => onOpenTerminal(chip.tab)}
-                    className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <SquareTerminal size={15} strokeWidth={1.8} aria-hidden />
-                </button>
-            )}
-            {chip.retry && pick != null && (
-                <RetryModelPick
-                    expert={expert}
-                    error={c.failed?.[chip.id]?.error}
-                    picked={pick.picked}
-                    onPick={pick.onPick}
-                    disabled={running}
-                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
-                />
-            )}
-            {chip.retry && pick == null && (
-                <button
-                    type="button"
-                    data-council-chip-retry={chip.id}
-                    aria-label={`Retry ${chip.name}`}
-                    disabled={running || acts.busy.has(key)}
-                    title={running ? "The council is running: retry once it is done" : undefined}
-                    onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id))}
-                    className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
-                >
-                    {acts.busy.has(key) ? "Retrying…" : "Retry"}
-                </button>
-            )}
-            {chip.retry && pick == null && (
-                <RetryWithButton
-                    expert={expert}
-                    error={c.failed?.[chip.id]?.error}
-                    disabled={running || acts.busy.has(key)}
-                    onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id, model))}
-                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
-                />
-            )}
-        </div>
-    );
-}
-
 // ---- messages ----
 
 // the line over a message: who wrote it, then what the caller adds (a label, the time)
@@ -468,18 +362,81 @@ const Reaction = ({ text }: { text: string }) => (
     </span>
 );
 
+// the person's like and dislike on a seat's idea or reply: quiet until one is on, which takes its tint; a press on the
+// one that is on takes it back. The seats' later prompts and the summary read it, so it steers them with no words.
+const THUMBS: { thumb: CouncilThumb; Icon: typeof ThumbsUp; word: string; on: string }[] = [
+    { thumb: "like", Icon: ThumbsUp, word: "Like", on: "bg-success/12 text-success-soft" },
+    { thumb: "dislike", Icon: ThumbsDown, word: "Dislike", on: "bg-error/12 text-error-soft" },
+];
+
+function Thumbs({
+    councilId,
+    item,
+    thumb,
+    acts,
+    quiet,
+}: {
+    councilId: string;
+    item: string;
+    thumb: CouncilThumb | "";
+    acts: Actions;
+    quiet?: boolean; // a reply's byline: smaller, and hidden until its reply is hovered or focused while neither is on
+}) {
+    const key = `thumb:${item}`;
+    const busy = acts.busy.has(key);
+    return (
+        <span
+            data-council-thumbs={item}
+            data-thumb={thumb === "" ? undefined : thumb}
+            className={cn(
+                "inline-flex gap-[2px]",
+                quiet &&
+                    thumb === "" &&
+                    "opacity-0 group-hover/reply:opacity-100 focus-within:opacity-100 group-focus-within/reply:opacity-100"
+            )}
+        >
+            {THUMBS.map(({ thumb: t, Icon, word, on }) => {
+                const pressed = thumb === t;
+                return (
+                    <button
+                        key={t}
+                        type="button"
+                        data-council-thumb={t}
+                        aria-pressed={pressed}
+                        aria-label={pressed ? `Take back your ${word.toLowerCase()}` : word}
+                        title={pressed ? `Take back your ${word.toLowerCase()}` : `${word}: the council reads it`}
+                        disabled={busy}
+                        onClick={() =>
+                            void acts.run(key, word, () => thumbCouncil(councilId, item, nextThumb(thumb, t)))
+                        }
+                        className={cn(
+                            "flex cursor-pointer items-center justify-center rounded-[6px] border-0 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
+                            quiet ? "h-[20px] w-[22px]" : "h-[24px] w-[26px]",
+                            pressed ? on : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                        )}
+                    >
+                        <Icon size={quiet ? 12 : 13} strokeWidth={2} aria-hidden />
+                    </button>
+                );
+            })}
+        </span>
+    );
+}
+
 function IdeaMessage({
     councilId,
     item,
     open,
     focused,
     onOpen,
+    acts,
 }: {
     councilId: string;
     item: IdeaPost;
     open: boolean;
     focused: boolean;
     onOpen: (id: string) => void;
+    acts: Actions;
 }) {
     const t = item.thread;
     return (
@@ -553,6 +510,7 @@ function IdeaMessage({
                         {item.agrees.map((text, i) => (
                             <Reaction key={i} text={text} />
                         ))}
+                        <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
                         {item.picks != null && (
                             <span
                                 data-council-picks
@@ -571,26 +529,98 @@ function IdeaMessage({
 
 // the pill and the time beside a reply's author; a thread's reply drawn in the channel (one seat's messages) also names
 // the idea it is on, a click opening that thread
-function ReplyHeader({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: string) => void }) {
+// a reply's way to its idea's thread, in the channel: `↳` and the idea's title
+function ReplyOn({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: string) => void }) {
+    if (onOpenIdea == null || item.on === "") {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-council-reply-on={item.proposalid}
+            onClick={() => onOpenIdea(item.proposalid)}
+            className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[12px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            <CornerDownRight size={11} aria-hidden className="flex-none" />
+            <span className="min-w-0 truncate">{item.on}</span>
+        </button>
+    );
+}
+
+// shown while its reply is hovered or focused: a post's time, which says little at a glance
+const HOVER_ONLY = "opacity-0 group-hover/reply:opacity-100 group-focus-within/reply:opacity-100";
+
+// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and on hover its time and
+// the thumbs
+function ReplyHeader({
+    item,
+    onOpenIdea,
+    thumbs,
+}: {
+    item: ReplyPost;
+    onOpenIdea?: (id: string) => void;
+    thumbs?: ReactNode;
+}) {
     return (
         <Byline who={item}>
-            <CouncilPill word={item.label} tone={item.pill} />
-            <PostTime at={item.at} when={item.when} />
+            {item.pill !== "neutral" && <CouncilPill word={item.label} tone={item.pill} />}
             {item.edited && <span className="text-muted">edited</span>}
-            {item.reaches !== "" && <span className="text-muted">{item.reaches}</span>}
-            {item.pending !== "" && <span className="text-muted">{item.pending}</span>}
-            {onOpenIdea != null && item.on !== "" && (
-                <button
-                    type="button"
-                    data-council-reply-on={item.proposalid}
-                    onClick={() => onOpenIdea(item.proposalid)}
-                    className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[12px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <CornerDownRight size={11} aria-hidden className="flex-none" />
-                    <span className="min-w-0 truncate">{item.on}</span>
-                </button>
-            )}
+            <ReplyOn item={item} onOpenIdea={onOpenIdea} />
+            <span className={HOVER_ONLY}>
+                <PostTime at={item.at} when={item.when} />
+            </span>
+            {thumbs}
         </Byline>
+    );
+}
+
+// under the person's own post, as a messenger has it: who it reaches when not the usual ones, `edited`, what it waits
+// on, and on the newest one Sent or Seen; nothing at all when none of them applies
+function MineLine({
+    item,
+    status,
+    onOpenIdea,
+}: {
+    item: ReplyPost;
+    status?: SendStatus;
+    onOpenIdea?: (id: string) => void;
+}) {
+    const reach = item.reachIsDefault ? "" : item.reaches;
+    const waits = item.pending === ANSWERING ? "" : item.pending;
+    const on = onOpenIdea != null && item.on !== "";
+    if (reach === "" && waits === "" && !item.edited && status == null && !on) {
+        return null;
+    }
+    return (
+        <div
+            data-council-mine-line
+            className="flex flex-wrap items-center justify-end gap-x-[7px] gap-y-[2px] text-[12px] text-muted"
+        >
+            <ReplyOn item={item} onOpenIdea={onOpenIdea} />
+            {reach !== "" && <span data-council-reaches>{reach}</span>}
+            {item.edited && <span>edited</span>}
+            {waits !== "" && <span data-council-waits>{waits}</span>}
+            {status != null && <SendLine status={status} />}
+        </div>
+    );
+}
+
+// Sent, then Seen with the small avatars of the seats working on it
+function SendLine({ status }: { status: SendStatus }) {
+    return (
+        <span role="status" data-council-send-status={status.word} className="flex items-center gap-[4px]">
+            {status.seen.map((who) => (
+                <CouncilAvatar
+                    key={who.author}
+                    tone={who.tone}
+                    name={who.name}
+                    initials={who.initials}
+                    title={`${who.name} has seen it`}
+                    className="h-[14px] w-[14px] text-[6.5px]"
+                />
+            ))}
+            {status.word}
+        </span>
     );
 }
 
@@ -644,16 +674,21 @@ function PersonText({ councilId, item }: { councilId: string; item: ReplyPost })
 function ReplyMessage({
     councilId,
     item,
+    acts,
     inThread,
     onOpenIdea,
     rise,
+    status,
 }: {
     councilId: string;
     item: ReplyPost;
+    acts: Actions;
     inThread?: boolean;
     onOpenIdea?: (id: string) => void;
     rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
+    status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
+    const openIdea = inThread ? undefined : onOpenIdea;
     return (
         <motion.article
             data-council-item
@@ -666,11 +701,21 @@ function ReplyMessage({
             initial={rise ? "initial" : false}
             animate="animate"
             style={{ transformOrigin: "bottom right" }}
-            className={cn("flex gap-[8px]", item.mine && "flex-row-reverse")}
+            className={cn("group/reply flex gap-[8px]", item.mine && "flex-row-reverse")}
         >
             {!item.mine && <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />}
             <div className={cn("flex min-w-0 max-w-[680px] flex-col gap-[5px]", item.mine && "items-end")}>
-                <ReplyHeader item={item} onOpenIdea={inThread ? undefined : onOpenIdea} />
+                {/* the person's own post has no byline, as a messenger draws it: the lines it needs go under it */}
+                {!item.mine && (
+                    <ReplyHeader
+                        item={item}
+                        onOpenIdea={openIdea}
+                        thumbs={
+                            // in its byline, shown on hover or focus until one is on, so a reply is no taller
+                            <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} quiet />
+                        }
+                    />
+                )}
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px] py-[10px]",
@@ -700,7 +745,14 @@ function ReplyMessage({
                         ))}
                     </div>
                 )}
+                {item.mine && <MineLine item={item} status={status} onOpenIdea={openIdea} />}
             </div>
+            {item.mine && (
+                // the time beside the bubble, on hover
+                <span className={cn("flex-none self-center text-[12px]", HOVER_ONLY)}>
+                    <PostTime at={item.at} when={item.when} />
+                </span>
+            )}
         </motion.article>
     );
 }
@@ -983,6 +1035,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
                 data-council-retry={item.author}
                 aria-label={`Retry ${item.name}`}
                 disabled={running || acts.busy.has(key)}
+                title={running ? "The council is running: retry once it is done" : undefined}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, item.author))}
                 className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
             >
@@ -999,7 +1052,10 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
     );
 }
 
-function TypingLine({ item }: { item: TypingRow }) {
+// a seat at work: its avatar and a bubble of three dots that rise in turn, as a messenger shows someone typing (the
+// words stay for a screen reader); a seat waiting on its own agent says what it waits for instead. In a thread the
+// idea it replies on goes without saying.
+function TypingLine({ item, inThread }: { item: TypingRow; inThread?: boolean }) {
     return (
         <div
             data-council-item
@@ -1007,13 +1063,35 @@ function TypingLine({ item }: { item: TypingRow }) {
             data-council-typing-row={item.author}
             data-waiting={item.waiting ? "true" : undefined}
             data-item-on={item.proposalid || undefined}
-            className="flex items-center gap-[9px] px-[10px] py-[6px]"
+            className="flex items-center gap-[8px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} dashed />
-            <span data-council-typing className="text-[13px] text-muted">
-                {item.text}
-            </span>
-            {item.on !== "" && (
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} dashed={item.waiting} />
+            {item.waiting ? (
+                <span data-council-typing className="text-[13px] text-muted">
+                    {item.text}
+                </span>
+            ) : (
+                <span
+                    data-council-typing
+                    role="status"
+                    className={cn(
+                        "flex items-center gap-[4px] rounded-[4px_14px_14px_14px] border px-[13px] py-[11px]",
+                        TONE_BUBBLE[item.tone],
+                        TONE_TEXT[item.tone]
+                    )}
+                >
+                    <span className="sr-only">{item.text}</span>
+                    {TYPING_LAGS.map((lag) => (
+                        <span
+                            key={lag}
+                            aria-hidden
+                            data-pulse-lag={lag}
+                            className="pulse-typing h-[6px] w-[6px] rounded-full bg-current"
+                        />
+                    ))}
+                </span>
+            )}
+            {!inThread && item.on !== "" && (
                 <span className="flex min-w-0 items-center gap-[5px] text-[12px] text-muted">
                     <CornerDownRight size={11} aria-hidden className="flex-none" />
                     <span className="min-w-0 truncate">{item.on}</span>
@@ -1022,6 +1100,9 @@ function TypingLine({ item }: { item: TypingRow }) {
         </div>
     );
 }
+
+// each typing dot's step behind the first, in ms of pulse.ts's 1.2 s pulse-typing
+const TYPING_LAGS = [0, 160, 320];
 
 // ---- the composer ----
 
@@ -1489,7 +1570,8 @@ function Composer({
                     )}
                 </ul>
             )}
-            <div className="flex flex-col gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
+            {/* 23px: the round send button's 15 plus the 8 around it, so the corners run with it and one line is a pill */}
+            <div className="flex flex-col gap-[8px] rounded-[23px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
                 <DraftImages councilId={c.id} boxKey={proposalId} images={images} />
                 <div className="flex items-end gap-[8px]">
                     <textarea
@@ -1508,21 +1590,27 @@ function Composer({
                         onKeyDown={onKeyDown}
                         onPaste={onPaste}
                         className={cn(
-                            // a line (21px) padded to the Send button's 30px, so one line sits level with its label
-                            // and not at the foot of the row; more lines grow above the button, which stays at the foot
+                            // a line (21px) padded to the send button's 30px, so one line sits level with it and
+                            // not at the foot of the row; more lines grow above the button, which stays at the foot
                             "box-border min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
                             rows < 5 ? "overflow-hidden" : "overflow-y-auto"
                         )}
                     />
+                    {/* a round send button, as a messenger has: the icon alone, its name for a screen reader and the tooltip */}
                     <button
                         type="button"
                         data-council-composer-send
                         disabled={text.trim() === "" || busy || uploading}
                         onClick={() => void send()}
-                        title={uploading ? "Waiting for an image to finish uploading" : "Send (Enter)"}
-                        className={cn(primaryButton, "h-[30px] px-[14px] text-[13.5px]")}
+                        aria-label={busy ? "Sending…" : sendLabel}
+                        title={uploading ? "Waiting for an image to finish uploading" : `${sendLabel} (Enter)`}
+                        className="flex h-[30px] w-[30px] flex-none cursor-pointer items-center justify-center rounded-full border-0 bg-accent text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50"
                     >
-                        {busy ? "Sending…" : sendLabel}
+                        {busy ? (
+                            <Loader2 size={15} aria-hidden className="animate-spin motion-reduce:animate-none" />
+                        ) : (
+                            <SendHorizontal size={15} strokeWidth={2.2} aria-hidden />
+                        )}
                     </button>
                 </div>
             </div>
@@ -1615,6 +1703,58 @@ function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
     );
 }
 
+// what the newest seat answer in a thread suggests the person send next (threadAsks), over the thread's box: a click
+// puts it in the box to edit and send, as Ask next does; sending at once would spend a seat's turn on a guess
+function ThreadAsks({ c, proposalId, asks }: { c: Council; proposalId: string; asks: string[] }) {
+    const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
+    const fill = (t: string) => {
+        setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } }));
+        requestAnimationFrame(() => {
+            const box = document.querySelector<HTMLTextAreaElement>(
+                '[data-council-composer="thread"] [data-council-composer-input]'
+            );
+            box?.focus();
+            box?.setSelectionRange(t.length, t.length);
+        });
+    };
+    return (
+        <div
+            role="group"
+            aria-label="Suggested replies"
+            data-council-thread-asks
+            className="flex flex-none flex-wrap justify-end gap-[6px] px-3 pt-[8px]"
+        >
+            {asks.map((a, i) => (
+                <button
+                    key={a}
+                    type="button"
+                    data-council-thread-ask={i}
+                    onClick={() => fill(a)}
+                    title="Put it in the box to edit and send"
+                    className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    {a}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// the person's newest post's Sent / Seen and whether the typing bubbles wait (councilseen.ts), drawn again when either
+// changes by itself, a second after the send
+function useSendState(items: readonly (ChannelItem | ThreadItem)[]): SendState {
+    const [, redraw] = useState(0);
+    const state = sendState(items, Date.now());
+    useEffect(() => {
+        if (state.nextMs <= 0) {
+            return;
+        }
+        const t = setTimeout(() => redraw((n) => n + 1), state.nextMs);
+        return () => clearTimeout(t);
+    }, [state.nextMs]);
+    return state;
+}
+
 // ---- the thread ----
 
 // the ids that arrived while `key` (the council and its view) stayed put. no-cascade guard: opening a council, a seat's
@@ -1644,7 +1784,17 @@ function ThreadPanel({
 }) {
     const idea = thread.idea;
     const scroller = useRef<HTMLDivElement>(null);
-    const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`);
+    const send = useSendState(thread.items);
+    const items = useMemo(() => shownItems(thread.items, send.holdTyping), [thread.items, send.holdTyping]);
+    const draft = useAtomValue(councilChatDraftAtom(c.id)).texts[idea.id] ?? "";
+    // what the newest seat answer suggests sending next, while the box is empty
+    const asks = draft.trim() === "" ? threadAsks(items) : [];
+    const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`, {
+        follow: true,
+        start: "top",
+        count: items.length,
+        sent: ownPosts(items),
+    });
     const entering = useEntering(
         `${c.id}:${idea.id}`,
         thread.items.map((item) => item.id)
@@ -1696,13 +1846,12 @@ function ThreadPanel({
                                 weak={idea.weak}
                                 source={{ councilId: c.id, owner: idea.id, title: idea.title }}
                             />
-                            {idea.agrees.length > 0 && (
-                                <div className="flex flex-wrap gap-[6px]">
-                                    {idea.agrees.map((text, i) => (
-                                        <Reaction key={i} text={text} />
-                                    ))}
-                                </div>
-                            )}
+                            <div className="flex flex-wrap items-center gap-[6px]">
+                                {idea.agrees.map((text, i) => (
+                                    <Reaction key={i} text={text} />
+                                ))}
+                                <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
+                            </div>
                         </div>
                     </div>
                 </article>
@@ -1710,22 +1859,25 @@ function ThreadPanel({
                     {idea.thread.label}
                     <span aria-hidden className="h-px flex-1 bg-edge-faint" />
                 </div>
-                {thread.items.map((item: ThreadItem) =>
+                {items.map((item: ThreadItem) =>
                     item.kind === "reply" ? (
                         <ReplyMessage
                             key={item.id}
                             councilId={c.id}
                             item={item}
+                            acts={acts}
                             inThread
                             rise={item.mine && entering.has(item.id)}
+                            status={send.status?.postId === item.id ? send.status : undefined}
                         />
                     ) : item.kind === "draft" ? (
                         <DraftCard key={item.id} c={c} item={item} acts={acts} />
                     ) : (
-                        <TypingLine key={item.id} item={item} />
+                        <TypingLine key={item.id} item={item} inThread />
                     )
                 )}
             </div>
+            {asks.length > 0 && <ThreadAsks c={c} proposalId={idea.id} asks={asks} />}
             <div className="flex-none px-3 pb-4 pt-[10px]">
                 <span id="council-thread-reply-label" className="sr-only">
                     Reply in the thread
@@ -1749,20 +1901,30 @@ function ThreadPanel({
 
 /** Keeps a council scroller where the reader left it, under `key` (councilscroll.ts): back there after a remount (another
  *  council, the Summary, another agent) and after the surface comes back from display:none, which drops an element's
- *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows, and a scroller with nothing kept
- *  starts there; without it, at the top. Returns the scroller's onScroll. */
+ *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows. A scroller with nothing kept
+ *  starts at `start`: the end by default when it follows, else the top. One more of the person's own posts (`sent`,
+ *  councilscroll.ownPosts) brings the end into view wherever the reader was, so what they just sent shows. Returns the
+ *  scroller's onScroll. */
 export function useKeptScroll(
     ref: RefObject<HTMLElement | null>,
     key: string,
-    { follow = false, count = 0 }: { follow?: boolean; count?: number } = {}
+    {
+        follow = false,
+        count = 0,
+        start,
+        sent = 0,
+    }: { follow?: boolean; count?: number; start?: "top" | "end"; sent?: number } = {}
 ): () => void {
+    const startAtEnd = (start ?? (follow ? "end" : "top")) === "end";
     const place = useRef<ScrollPlace | undefined>(undefined);
     const restore = useCallback(() => {
         const el = ref.current;
         if (el != null && el.clientHeight > 0) {
-            el.scrollTop = topFor(place.current, el, follow);
+            el.scrollTop = topFor(place.current, el, startAtEnd);
+            // measured where it opened, so one that opens at the top follows new lines only once the reader is at the end
+            place.current ??= placeOf(el);
         }
-    }, [ref, follow]);
+    }, [ref, startAtEnd]);
     useLayoutEffect(() => {
         place.current = keptPlace(key);
         restore();
@@ -1772,6 +1934,17 @@ export function useKeptScroll(
             restore();
         }
     }, [count, follow, restore]);
+    const sentWas = useRef({ key, n: sent });
+    useLayoutEffect(() => {
+        const was = sentWas.current;
+        sentWas.current = { key, n: sent };
+        const el = ref.current;
+        if (sentSince(was, key, sent) && el != null && el.clientHeight > 0) {
+            el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+            place.current = placeOf(el);
+            keepPlace(key, place.current);
+        }
+    }, [ref, key, sent]);
     // shown again (its offset is gone), or resized while following (the thread opening rewraps the channel)
     useEffect(() => {
         const el = ref.current;
@@ -1967,9 +2140,9 @@ function JumpPill({
                 title={label}
                 aria-label={label}
                 onClick={onClick}
-                className="flex cursor-pointer items-center gap-[5px] rounded-full border border-edge-strong bg-surface-raised px-[12px] py-[5px] text-[12.5px] font-medium text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex size-[28px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-[14px] leading-none text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
             >
-                {children}
+                <span aria-hidden>{children}</span>
             </button>
         </PopoverReveal>
     );
@@ -1982,16 +2155,18 @@ function Channel({
     councilId,
     view,
     count,
+    sent,
     boxRef,
 }: {
     children: ReactNode;
     councilId: string;
     view: string;
     count: number;
+    sent: number; // the person's own posts in it (councilscroll.ownPosts)
     boxRef: RefObject<HTMLDivElement | null>;
 }) {
     const rowsRef = useRef<HTMLDivElement>(null);
-    const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count });
+    const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count, sent });
     const jumps = useChannelJumps(boxRef, rowsRef, `${councilId}:${view}`, count, onKeptScroll);
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
@@ -2011,7 +2186,7 @@ function Channel({
             </div>
             <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
-                    <span aria-hidden>↑</span> Top
+                    ↑
                 </JumpPill>
                 <JumpPill
                     show={jumps.pills.back}
@@ -2019,10 +2194,10 @@ function Channel({
                     label="Back to the message you were reading"
                     onClick={jumps.back}
                 >
-                    <span aria-hidden>↩</span> Back
+                    ↩
                 </JumpPill>
                 <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
-                    <span aria-hidden>↓</span> Latest
+                    ↓
                 </JumpPill>
             </div>
         </div>
@@ -2071,7 +2246,10 @@ export function CouncilChat({
     // one seat's messages only, when the Summary's column asked for them (a seat no longer on the panel shows everyone)
     const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
-    const items = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    // the person's newest post's Sent / Seen, and the typing bubbles held a moment after it (councilseen.ts)
+    const send = useSendState(all);
+    const items = useMemo(() => shownItems(all, send.holdTyping), [all, send.holdTyping]);
     const channelDraft = useAtomValue(councilChatDraftAtom(c.id)).texts[""] ?? "";
     const asks = isFollowUp(c) && channelDraft === "" ? askChips(c) : [];
     const seats = useMemo(() => seatChips(c), [c]);
@@ -2129,43 +2307,40 @@ export function CouncilChat({
     return (
         <div className="flex min-h-0 flex-1">
             <div data-council-main className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <div
-                    data-council-experts
-                    role="list"
-                    aria-label="Seats: a click shows one seat's messages"
-                    className="flex flex-none flex-wrap items-center gap-[6px] border-b border-edge-faint px-6 py-[10px]"
-                >
-                    <button
-                        type="button"
-                        data-council-action="show-everyone"
-                        aria-pressed={onlyId == null}
-                        onClick={() => setOnly(null)}
-                        className={cn(
-                            "h-[28px] cursor-pointer rounded-[6px] border px-[10px] text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                            onlyId == null
-                                ? "border-edge-mid bg-surface-selected font-semibold text-primary"
-                                : "border-transparent bg-transparent text-secondary hover:bg-surface-hover hover:text-primary"
-                        )}
+                {onlySeat != null && (
+                    <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted">
+                        <span role="status" data-council-only={onlySeat.id}>
+                            {onlyLine(onlySeat)}
+                        </span>
+                        <button
+                            type="button"
+                            data-council-action="show-everyone"
+                            onClick={() => setOnly(null)}
+                            className="h-[24px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[13px] text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            Show everyone
+                        </button>
+                    </div>
+                )}
+                {retryAll && (
+                    <div
+                        data-council-retry-all-bar
+                        className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted"
                     >
-                        Everyone
-                    </button>
-                    {seats.map((chip) => (
-                        <SeatFilter
-                            key={chip.id}
-                            c={c}
-                            chip={chip}
-                            on={chip.id === onlyId}
-                            acts={acts}
-                            onToggle={() => setOnly(chip.id === onlyId ? null : chip.id)}
-                            onOpenTerminal={onOpenTerminal}
-                            pick={
-                                retryAll && chip.retry && !coordinators.has(chip.id)
-                                    ? { picked: picks[chip.id], onPick: (m) => setPick(chip.id, m) }
-                                    : null
-                            }
-                        />
-                    ))}
-                    {retryAll && (
+                        <span>{retryAllSeats(c).length} seats failed</span>
+                        {retryAllSeats(c).map((e) => (
+                            <span key={e.id} className="flex items-center gap-[6px]">
+                                <span className="text-secondary">{e.name}</span>
+                                <RetryModelPick
+                                    expert={e}
+                                    error={c.failed?.[e.id]?.error}
+                                    picked={picks[e.id]}
+                                    onPick={(m) => setPick(e.id, m)}
+                                    disabled={c.state === "running"}
+                                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
+                                />
+                            </span>
+                        ))}
                         <button
                             type="button"
                             data-council-action="retry-all"
@@ -2184,19 +2359,15 @@ export function CouncilChat({
                         >
                             {acts.busy.has("retry:all") ? "Retrying…" : `Retry all ${retryAllSeats(c).length}`}
                         </button>
-                    )}
-                    {onlySeat != null && (
-                        <span role="status" data-council-only={onlySeat.id} className="ml-[6px] text-[13px] text-muted">
-                            {onlyLine(onlySeat)}
-                        </span>
-                    )}
-                </div>
+                    </div>
+                )}
                 {notes}
                 <Channel
                     boxRef={channel}
                     councilId={c.id}
                     view={onlyId ?? ""}
                     count={items.length + (asks.length > 0 ? 1 : 0)}
+                    sent={ownPosts(items)}
                 >
                     {items.map((item) => {
                         switch (item.kind) {
@@ -2210,6 +2381,7 @@ export function CouncilChat({
                                         key={item.id}
                                         councilId={c.id}
                                         item={item}
+                                        acts={acts}
                                         open={threadOpen && item.id === openId}
                                         focused={item.id === focusedId}
                                         onOpen={open}
@@ -2223,8 +2395,10 @@ export function CouncilChat({
                                         key={item.id}
                                         councilId={c.id}
                                         item={item}
+                                        acts={acts}
                                         onOpenIdea={open}
                                         rise={item.mine && entering.has(item.id)}
+                                        status={send.status?.postId === item.id ? send.status : undefined}
                                     />
                                 );
                             case "skip":

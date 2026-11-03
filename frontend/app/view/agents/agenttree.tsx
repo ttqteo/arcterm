@@ -126,6 +126,7 @@ import {
     overviewProjectAtom,
     showCanvases,
     showCouncil,
+    showCouncils,
     showCouncilSetupWithAgents,
     showHistory,
     showProjectOverview,
@@ -209,7 +210,6 @@ import {
     collapsedConversationProjectsAtom,
     collapsedProjectsAtom,
     collapsedSectionsAtom,
-    openClosedCouncilsAtom,
     toggleFold,
     type SidebarSection,
 } from "./projectfoldstore";
@@ -2635,7 +2635,7 @@ function ServiceRow({
     );
 }
 
-const COUNCIL_TONE: Record<CouncilTone, { text: string }> = {
+export const COUNCIL_TONE: Record<CouncilTone, { text: string }> = {
     working: { text: "text-working" },
     asking: { text: "text-asking" },
     muted: { text: "text-muted" },
@@ -2659,48 +2659,32 @@ function CouncilHeadRow({ project }: { project: string }) {
     );
 }
 
-// The fold at the end of a project's councils block: the councils the person closed, folded away until opened.
-function ClosedCouncilsRow({ project, count, open }: { project: string; count: number; open: boolean }) {
-    return (
-        <button
-            type="button"
-            data-council-closed={project}
-            aria-expanded={open}
-            aria-label={`${open ? "Hide" : "Show"} ${count} closed councils of ${project}`}
-            onClick={() =>
-                globalStore.set(openClosedCouncilsAtom, toggleFold(globalStore.get(openClosedCouncilsAtom), project))
-            }
-            className={PAGER_BUTTON}
-        >
-            {open ? (
-                <ChevronDown size={11} aria-hidden className="w-[12px] flex-none" />
-            ) : (
-                <ChevronRight size={11} aria-hidden className="w-[12px] flex-none" />
-            )}
-            <span className="tabular-nums">Closed councils ({count})</span>
-        </button>
-    );
-}
-
 // The picture a council row leads with, as a chat list draws a group chat: two seat avatars overlapped in a 32px square,
 // the back one top right, the front one bottom left ringed in the row's fill so the overlap reads; one 26px circle for a
 // council of a single seat. Each disc sits on the row's ground, so the seat tone's faint fill reads opaque. The front
 // circle carries the corner dot (a seat writes, a seat's call failed), worded in its title. The row's state word says
-// the same, so the picture is hidden from a screen reader. `ground` is the row's fill: the tree's, or the selected one;
-// a hover fill comes from the row's `group/council`.
-function CouncilSeatPair({
+// the same, so the picture is hidden from a screen reader. `ground` is the row's fill: the tree's, or the selected one,
+// or the page's for a row of Councils (`onPage`); a hover fill comes from the row's `group/council`.
+export function CouncilSeatPair({
     seats,
     dot,
     selected,
+    onPage = false,
 }: {
     seats: CouncilRowSeat[];
     dot: CouncilRowVM["dot"];
     selected: boolean;
+    onPage?: boolean;
 }) {
     const ground = selected
         ? "bg-surface-selected ring-surface-selected"
-        : "bg-surface ring-surface group-hover/council:bg-surface-hover group-hover/council:ring-surface-hover";
-    const dotRing = selected ? "border-surface-selected" : "border-surface group-hover/council:border-surface-hover";
+        : cn(
+              onPage ? "bg-background ring-background" : "bg-surface ring-surface",
+              "group-hover/council:bg-surface-hover group-hover/council:ring-surface-hover"
+          );
+    const dotRing = selected
+        ? "border-surface-selected"
+        : cn(onPage ? "border-background" : "border-surface", "group-hover/council:border-surface-hover");
     const dotWord = dot === "working" ? "a seat is writing" : dot === "failed" ? "a seat's call failed" : null;
     const disc = (seat: CouncilRowSeat, front: boolean, className: string) => (
         <span
@@ -2748,7 +2732,8 @@ function CouncilSeatPair({
 // color, `Waiting on you` in the amber one. A primary-ink dot after the feature says it ended while you were away.
 // A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
 // the queued run's row does. An ended one (done, failed, stopped, not run) offers Close the same way, which deletes
-// nothing: the row moves into its project's Closed councils fold, where its × reopens it. The menu also offers Remove,
+// nothing: the row leaves the tree, and Councils (the button at the sidebar's top) still lists it, where it opens and
+// its header's Reopen puts it back. The menu also offers Remove,
 // behind a confirm, which moves the council's file to ~/.arc/trash. The button cannot hold the action, so such a row
 // sits in a wrapper beside it. Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
 function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM }) {
@@ -2760,22 +2745,21 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     const tone = COUNCIL_TONE[row.tone];
     const queued = row.queued === true;
     const wrapped = queued || row.removable === true;
-    const closed = row.closed === true;
     const removeForGood = () => {
         const c = globalStore.get(councilListAtom(""))?.find((x) => x.id === row.id);
         if (c != null) {
             confirmRemoveCouncil(c);
         }
     };
-    // the hover button: a queued council leaves the queue, an ended one closes, a closed one reopens
+    // the hover button: a queued council leaves the queue, an ended one closes
     const remove = () => {
         if (queued) {
             fireAndForget(() => stopCouncil(row.id));
             return;
         }
-        fireAndForget(() => closeCouncil(row.id, !closed));
+        fireAndForget(() => closeCouncil(row.id));
     };
-    const removeLabel = queued ? "Remove from queue" : closed ? "Reopen council" : "Close council";
+    const removeLabel = queued ? "Remove from queue" : "Close council";
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             {
@@ -2792,11 +2776,7 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
                 : wrapped
                   ? [
                         { type: "separator" } as const,
-                        {
-                            label: removeLabel,
-                            icon: closed ? <RotateCcw size={15} /> : <X size={15} />,
-                            click: remove,
-                        },
+                        { label: removeLabel, icon: <X size={15} />, click: remove },
                         { label: "Remove council…", icon: <Trash2 size={15} />, danger: true, click: removeForGood },
                     ]
                   : []),
@@ -2888,7 +2868,7 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
             >
                 <button
                     type="button"
-                    data-council-act={queued ? "remove" : closed ? "reopen" : "close"}
+                    data-council-act={queued ? "remove" : "close"}
                     title={removeLabel}
                     aria-label={`${removeLabel} ${row.feature}`}
                     onClick={remove}
@@ -2897,7 +2877,7 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
                         queued ? "hover:text-error" : "hover:text-secondary"
                     )}
                 >
-                    {closed ? <RotateCcw size={12} aria-hidden /> : <X size={12} aria-hidden />}
+                    <X size={12} aria-hidden />
                 </button>
             </span>
         </div>
@@ -3317,7 +3297,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the councils (councilstore.ts), every project's, filed under the registered project each ran in; and the projects
     // whose Setup holds an unsent draft, which New council says
     const councilList = useCouncils("");
-    const openClosedCouncils = useAtomValue(openClosedCouncilsAtom);
     const councilUnread = useAtomValue(councilUnreadAtom);
     const councils = useMemo(
         () => councilRowsByProject(councilList, roots, councilUnread),
@@ -3336,7 +3315,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         splits,
         roster: [...agents, ...terminals],
         councils,
-        openClosedCouncils,
     });
     // each folder's share of the nav rail's Jarvis badge, on its icon (jarvisCountsByProject)
     const attention = useAtomValue(attentionAtom);
@@ -3452,6 +3430,22 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                     <LayoutGrid size={14} aria-hidden />
                     Canvas gallery
                 </button>
+                {/* every council, closed ones too: the tree lists only the open ones */}
+                <button
+                    type="button"
+                    data-agent-councils-open
+                    aria-current={center === "councils" ? "true" : undefined}
+                    onClick={() => showCouncils(model)}
+                    className={cn(
+                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px]",
+                        center === "councils"
+                            ? "bg-surface-selected text-primary"
+                            : "text-secondary hover:bg-surface-hover hover:text-primary"
+                    )}
+                >
+                    <Users size={14} aria-hidden />
+                    Councils
+                </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
@@ -3521,11 +3515,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
                                 case "council":
                                     return plain(`council-${r.id}`, <CouncilRow model={model} row={r} />);
-                                case "councilclosed":
-                                    return plain(
-                                        `council-closed-${r.project}`,
-                                        <ClosedCouncilsRow project={r.project} count={r.count} open={r.open} />
-                                    );
                                 case "service":
                                     return plain(
                                         `service-${r.serviceId}`,

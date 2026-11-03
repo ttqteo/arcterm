@@ -44,13 +44,24 @@ export function placeOf(el: Scroller): ScrollPlace {
 }
 
 /** The scrollTop that puts the reader back: the end for a place at the bottom, else its offset. With no place kept, a
- *  scroller that `follow`s new lines starts at the end and any other at the top. */
-export function topFor(place: ScrollPlace | undefined, el: Scroller, follow: boolean): number {
+ *  scroller starts at the end when `startAtEnd` (the channel), else at the top (a thread, the Summary). */
+export function topFor(place: ScrollPlace | undefined, el: Scroller, startAtEnd: boolean): number {
     const end = Math.max(0, el.scrollHeight - el.clientHeight);
     if (place == null) {
-        return follow ? end : 0;
+        return startAtEnd ? end : 0;
     }
     return place.bottom ? end : Math.min(place.top, end);
+}
+
+/** How many of the person's own posts a channel or thread holds: one more is a post they just sent. */
+export function ownPosts(items: readonly { kind: string; mine?: boolean }[]): number {
+    return items.filter((i) => i.kind === "reply" && i.mine === true).length;
+}
+
+/** Whether the person sent a post since the scroller last rendered: more own posts under the same key. A new key
+ *  (another council, another thread) only seeds the count, so opening one never jumps it. */
+export function sentSince(was: { key: string; n: number }, key: string, n: number): boolean {
+    return was.key === key && n > was.n;
 }
 
 /** Whether new lines keep the scroller at the end: a following scroller the reader has not scrolled up in. */

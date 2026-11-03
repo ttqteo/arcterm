@@ -152,6 +152,34 @@ export function isReaction(r: CouncilReply): boolean {
     return r.author !== YOU && (r.stance === "accept" || !r.stance) && r.text.trim() === "";
 }
 
+/** The person's like or dislike on a seat's sent idea or reply (Go council.ThumbLike, council.ThumbDislike); the seats'
+ *  later prompts and the summary read it as the person's view. Not a reaction: that is a seat's agreement. */
+export type CouncilThumb = "like" | "dislike";
+
+/** Pure: an idea's or a reply's thumb, "" for none or a word the cockpit does not know. */
+export function thumbOf(x: { thumb?: string }): CouncilThumb | "" {
+    return x.thumb === "like" || x.thumb === "dislike" ? x.thumb : "";
+}
+
+/** Pure: the thumb a press leaves: the one pressed, or none when it was already on (a second press takes it back). */
+export function nextThumb(current: CouncilThumb | "", pressed: CouncilThumb): CouncilThumb | "" {
+    return current === pressed ? "" : pressed;
+}
+
+/** Pure: `c` with the thumb of the idea or reply `item` set ("" takes it off), the rest of the record as it was; `c`
+ *  itself when it has no such item. */
+export function withThumb(c: Council, item: string, thumb: CouncilThumb | ""): Council {
+    const set = <T extends { id: string; thumb?: string }>(xs: T[] | undefined): T[] | undefined =>
+        xs?.map((x) => (x.id === item ? { ...x, thumb: thumb === "" ? undefined : thumb } : x));
+    if ((c.proposals ?? []).some((p) => p.id === item)) {
+        return { ...c, proposals: set(c.proposals) };
+    }
+    if ((c.replies ?? []).some((r) => r.id === item)) {
+        return { ...c, replies: set(c.replies) };
+    }
+    return c;
+}
+
 /** Pure: the replies a person reads as replies, which leaves out the reactions and every reply that is still a draft
  *  or was dropped. */
 export function readableReplies(c: Council): CouncilReply[] {
@@ -504,12 +532,15 @@ export function answerers(
 /** Pure: the label under the person's own reply while it waits for an answer; empty once it is answered, and for
  *  anyone else's reply. A reply posted before the last seat round reaches the seats at the next one; one posted in the
  *  last round or while the summary is written is answered in the follow-up pass, after the summary. */
+// the person's follow-up while the seats answer it (councilseen.ts reads it as Sent, then Seen)
+export const ANSWERING = "Answering…";
+
 export function replyLabel(c: Council, reply: CouncilReply): string {
     if (reply.author !== YOU || reply.answered) {
         return "";
     }
     if (reply.round >= firstFollowRound(c)) {
-        return c.state === "running" ? "Answering…" : "";
+        return c.state === "running" ? ANSWERING : "";
     }
     if (reply.round < roundsOf(c) || c.state === "awaiting-you") {
         return "Queued for the next step";
@@ -703,15 +734,24 @@ export function queuedLine(holder: Council | null | undefined): string {
     return agents.length > 0 ? `${line} · waiting for ${listAnd([...new Set(agents)])}` : line;
 }
 
-/** Pure: the Summary's side column opens on the state word, with `4 experts · 11 min · 0.86M tokens` under it. */
-export function summaryFacts(c: Council, nowMs: number): { state: string; facts: string } {
-    const parts = [plural(panel(c).length, "expert", "experts")];
-    const ms = elapsedMs(c, nowMs);
+/** Pure: the three figures of the report's glance box: the experts, the minutes (when the council started) and the
+ *  tokens, each a value over its label. */
+export function glanceFigures(c: Council, nowMs: number): { value: string; label: string }[] {
+    const n = panel(c).length;
+    const figures = [{ value: String(n), label: n === 1 ? "expert" : "experts" }];
     if (c.started) {
-        parts.push(`${Math.max(1, Math.round(ms / 60_000))} min`);
+        figures.push({ value: String(Math.max(1, Math.round(elapsedMs(c, nowMs) / 60_000))), label: "min" });
     }
-    parts.push(`${countTokens(c.tokens)} tokens`);
-    return { state: STATE_WORD[c.state] ?? c.state, facts: parts.join(" · ") };
+    figures.push({ value: countTokens(c.tokens), label: "tokens" });
+    return figures;
+}
+
+/** Pure: the Summary's state word, with `4 experts · 11 min · 0.86M tokens` as the glance box's label. */
+export function summaryFacts(c: Council, nowMs: number): { state: string; facts: string } {
+    const facts = glanceFigures(c, nowMs)
+        .map((f) => `${f.value} ${f.label}`)
+        .join(" · ");
+    return { state: STATE_WORD[c.state] ?? c.state, facts };
 }
 
 /** Pure: the Discussion header's cost line: `7:20 · 19 replies · 0.55M tokens` (reactions are no replies). */

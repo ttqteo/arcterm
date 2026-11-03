@@ -112,9 +112,10 @@ export function JumpToLatestPill({ show, onClick }: { show: boolean; onClick: ()
                     onClick();
                 }}
                 title="Jump to latest"
-                className="flex items-center gap-1 rounded-full border border-edge-strong bg-surface-raised px-2.5 py-1 text-[11px] font-medium text-secondary shadow-popover-sm hover:border-accent hover:text-primary"
+                aria-label="Jump to latest"
+                className="flex size-[26px] items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-[13px] leading-none text-secondary shadow-popover-sm hover:border-accent hover:text-primary"
             >
-                <span className="text-[12px] leading-none">↓</span> Latest
+                <span aria-hidden>↓</span>
             </button>
         </PopoverReveal>
     );

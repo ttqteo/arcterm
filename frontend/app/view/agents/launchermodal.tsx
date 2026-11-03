@@ -10,8 +10,10 @@
 // Start column is always shown (the chip that folded it away, 2026-10-28-new-launcher-declutter-design.md D1/D7, was
 // dropped 2026-10-29) and sets the band's height: a long Project, Session or Tool list scrolls inside its column, so
 // the dialog keeps its height however many projects and sessions there are. Digits pick in the focused column (0 is
-// Home), → and ← step between the columns, and Tab walks the dialog without leaving it; each row draws its key. Every
-// close keeps the draft (launcherstore), which is what lets a click outside close it.
+// Home), → and ← step between the columns, and Tab walks the dialog without leaving it; each row draws its key. A letter
+// typed in a column goes to the Task or Goal box; a pick with neither (a terminal, a tool, a council, a run from a plan
+// file) types it into the Project column's filter instead. Every close keeps the draft (launcherstore), which is what
+// lets a click outside close it.
 //
 // The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
@@ -72,7 +74,7 @@ import {
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
-import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
+import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
 import { startLauncherRun } from "./launcherrun";
@@ -89,7 +91,6 @@ import {
     launcherBusyAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
-    launcherFoundAtom,
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
@@ -206,7 +207,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
     const sessions = useAtomValue(launcherSessionsAtom);
-    const found = useAtomValue(launcherFoundAtom);
     const resumeId = useAtomValue(launcherResumeAtom);
     const images = useAtomValue(launcherImagesAtom);
     const commands = useAtomValue(launcherCommandAtom);
@@ -282,10 +282,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const branchNames = branches.map((b) => b.name);
     // the sessions this agent and project offer, and the one picked (a pick no longer on offer launches nothing)
     const choices = resumeChoices(sessions, runtime, projectPath);
-    // a row found by the Resume list's search can be older than every loaded page, and still resumes
     const scopeKey = resumeScopeKey(runtime, projectPath);
-    const foundHere = found != null && found.key === scopeKey ? found.sessions : [];
-    const resume = isAgent ? pickedResume(appendPage(choices, foundHere), resumeId) : null;
+    const resume = isAgent ? pickedResume(choices, resumeId) : null;
     // a resumed session keeps its own folder, so the worktree option is neither shown nor applied
     const wantsWorktree = isAgent && !atHome && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
     const chosenBranch = (branchPick ?? currentBranch).trim();
@@ -332,6 +330,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         prototype,
         autonomous,
     };
+    // the pick has a box a typed letter starts: an agent's Task (a terminal has none) or a run's Goal (a run from a plan
+    // file has none). With no box, letters filter the Project column.
+    const hasTextBox =
+        !isTool && !isCouncil && (isRun ? !(shape === "orchestrator" && start === "plan") : runtimeShowsTask(runtime));
     // the project's own channel is where its profile lives; null while the channel list is still loading
     const target = isRun && project != null ? resolveChannelTarget(channels, project.name, project.path) : null;
     const pickedOid = target?.kind === "existing" ? target.oid : null;
@@ -773,8 +775,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             focusTrapTarget(stops, document.activeElement, e.shiftKey)?.focus();
             return;
         }
-        // the box a letter typed in the Start column starts: an agent's Task, or a run's Goal (none for a terminal, a
-        // tool, a council, or a run from a plan file)
+        // the box a letter typed in a column starts: an agent's Task, or a run's Goal (none for a terminal, a tool, a
+        // council, or a run from a plan file)
         const textField = isTool || isCouncil ? null : isRun ? goalRef.current : taskRef.current;
         const action = launcherKey(
             {
@@ -912,7 +914,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     if (projectFocused) {
         projectHint =
             filter === "" && visible.length > 0
-                ? `type to filter · 1–${Math.min(9, visible.length)}${picks.includes(HOME_PICK) ? ", 0 Home" : ""}`
+                ? `${hasTextBox ? "↑↓" : "type to filter"} · 1–${Math.min(9, visible.length)}${picks.includes(HOME_PICK) ? ", 0 Home" : ""}`
                 : "";
     } else if (candidates.length > 9) {
         projectHint = `${candidates.length} · last used first`;

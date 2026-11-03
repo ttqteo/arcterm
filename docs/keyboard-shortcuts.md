@@ -76,13 +76,13 @@ column. The Tool row is the last in Start, so the other rows keep their digits.
 | `0` | In the Project column: Home, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
 | `→` / `←` | Step Start, Project, then the Session or Tool column, and back |
-| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project or Session column, filter it by name; `Backspace` shortens the filter |
+| letters | In the Start, Project or Session column, start typing the task (or a run's goal): focus moves to that box with the letter in it. A pick with no such box (a terminal, a tool, a council, a run from a plan file) filters the Project column by name instead; `Backspace` shortens the filter |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
 | `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
-| `Esc` | Close the open menu or a column's filter first, then the dialog. What you typed is kept for the next open |
+| `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 
 ## Open a tool (`Mod`+`Shift`+`O`)
 
@@ -109,6 +109,7 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `r` | Radar |
 | `Mod`+`G` `s` | Conversation History (in the Agent surface) |
 | `Mod`+`G` `v` | Canvas gallery — every project's design canvases (in the Agent surface) |
+| `Mod`+`G` `o` | Councils — every project's councils, closed ones too (in the Agent surface) |
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
 | `Mod`+`G` `b` | Code — browse source |
@@ -244,7 +245,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `Mod`+`Shift`+`N` | Float the note, from anywhere, even from inside a terminal: the window shrinks to a float showing the Note tab, the one markdown scratch note that saves itself (`Esc` or the same key goes back to the terminal). The float's strip holds the Note and Translate tabs at its left; the Translate tab opens the Translate panel over the terminal, and opening one of the two closes the other |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
-| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid or a session transcript, back to the terminal |
+| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid, Councils or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, Changes, Transcript, File) while its tab strip has focus; the agent keys stand down there |

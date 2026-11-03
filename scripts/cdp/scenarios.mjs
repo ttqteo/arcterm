@@ -23736,19 +23736,22 @@ const LAUNCHER_KEYS = {
 };
 // Input.dispatchKeyEvent's modifiers bit for Shift
 const CDP_SHIFT = 8;
-async function launcherPress(h, key, { shift = false } = {}) {
+// `type` sends the key with its character, as a person's key does: a key the dialog lets through (a letter it moves
+// into the Task box) then lands in whatever has focus
+async function launcherPress(h, key, { shift = false, type = false } = {}) {
     const spec =
         LAUNCHER_KEYS[key] ??
         (/^[0-9]$/.test(key)
             ? { code: `Digit${key}`, keyCode: 48 + Number(key) }
             : { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0) });
-    for (const type of ["rawKeyDown", "keyUp"]) {
+    for (const event of [type ? "keyDown" : "rawKeyDown", "keyUp"]) {
         await h.cdp("Input.dispatchKeyEvent", {
-            type,
+            type: event,
             key,
             code: spec.code,
             windowsVirtualKeyCode: spec.keyCode,
             modifiers: shift ? CDP_SHIFT : 0,
+            ...(type && event === "keyDown" ? { text: key } : {}),
         });
     }
     await polishNap(150);
@@ -24164,6 +24167,19 @@ const launcherScenario = {
         const offered = await launcherStartRows(h);
         const agentRow = offered.includes("claude") ? "claude" : offered[0];
         await launcherPickStart(h, agentRow);
+
+        // with a Task box, a letter in the Project column is the task's, not a filter's
+        const taskBefore = (await state()).task ?? "";
+        await h.ev(focusColumn("project"));
+        await launcherPress(h, "x", { type: true });
+        s = await state();
+        await h.shot("cdp-shots/launcher-6b-project-letter.png");
+        rec(
+            "16b. on an agent row, a letter typed in the Project column goes into the Task box, which takes focus, and filters nothing",
+            s.focus === "launcher-task" && s.task === `${taskBefore}x` && s.filter === null && s.project === LAUNCHER_PROJECT_B,
+            JSON.stringify({ taskBefore, ...s })
+        );
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, taskBefore));
         await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => /^Launch agent/.test((b.textContent ?? '').trim()))?.focus()`);
         await launcherPress(h, "Tab");
         const tabbedTo = (await state()).focus;
@@ -25136,7 +25152,7 @@ function removeTrashedSession(id) {
 const LAUNCHER_OLDER_PROJECT = "verify-launcher-older";
 const LAUNCHER_OLDER_PROJECT_B = "verify-launcher-older-b";
 const LAUNCHER_OLDER_NEW = 40;
-// wide words, so the title runs past the ~650px Session column whatever the font; no "older" in it (step 6 types that)
+// wide words, so the title runs past the ~650px Session column whatever the font
 const LAUNCHER_OLDER_LONG = "verify lazy 1 WWW MMM wide headline words that make this session title run far past the row WWWW MMMM WWWW";
 
 // The Session column as the page draws it: its rows, the hint beside its label, whether its last row is the loading row,
@@ -25353,7 +25369,7 @@ const launcherResumeOlder = {
                 JSON.stringify({ picked: s.picked, thirtieth, inView, rows: s.ids.length })
             );
 
-            // 6. a row only a search can reach resumes like a loaded one
+            // 6. the Session column has no filter: a letter typed on its row is the task's
             await h.ev(focusColumn("project"));
             await launcherPress(h, "Escape");
             const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
@@ -25361,29 +25377,26 @@ const launcherResumeOlder = {
             await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
             await polishWaitFor(h, `${rowCount} > 0`, 8000);
             await polishNap(300);
+            const taskField = `${LAUNCHER}?.querySelector('#launcher-task')`;
+            const taskBefore = await h.ev(`${taskField}?.value ?? ''`);
+            const rowsBefore = (await state()).ids.length;
             await h.ev(`${LAUNCHER}?.querySelector('[data-resume-new]')?.focus()`);
             for (const ch of "older") {
-                await launcherPress(h, ch);
+                await launcherPress(h, ch, { type: true });
             }
-            const found = await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.olderId}"]')`, 4000);
             s = await state();
-            await h.shot("cdp-shots/launcher-resume-older-6-found.png");
-            const beforeClick = { rows: s.ids.length, scrollTop: s.scrollTop };
-            await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.olderId}"]')?.click()`);
-            await polishNap(300);
-            await launcherOpenCommand(h);
-            rs = await resumeState();
+            const typed = await h.ev(`({ task: ${taskField}?.value ?? null, focus: document.activeElement?.id || null })`);
+            await h.shot("cdp-shots/launcher-resume-older-6-typed.png");
             rec(
-                "6. closed and reopened, typing older shows the 10-day-old row before any scroll; clicking it makes the button read Resume agent and the command (under Command ›) claude --resume <its id>",
+                "6. closed and reopened, older typed on the New session row goes into the Task box, which takes focus; the Session column keeps every row",
                 closed &&
-                    found &&
-                    beforeClick.scrollTop === 0 &&
-                    beforeClick.rows === 1 &&
-                    rs.picked === ctx.olderId &&
-                    rs.primary?.text.startsWith("Resume agent") &&
-                    rs.cmd === `claude --resume ${ctx.olderId}`,
-                JSON.stringify({ closed, found, ...beforeClick, picked: rs.picked, primary: rs.primary?.text, cmd: rs.cmd })
+                    typed.focus === "launcher-task" &&
+                    typed.task === `${taskBefore}older` &&
+                    rowsBefore > 0 &&
+                    s.ids.length === rowsBefore,
+                JSON.stringify({ closed, taskBefore, ...typed, rowsBefore, rows: s.ids.length })
             );
+            await h.ev(setFieldExpr(taskField, taskBefore));
             await h.shot("cdp-shots/launcher-resume-older-6-picked.png");
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));

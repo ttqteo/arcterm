@@ -107,6 +107,20 @@ tasks:
         cmds:
             - task: build:server
             - task: build:wsh
+            - task: build:translate:macos
+
+    build:translate:macos:
+        desc: Build apple-translate, the helper wavesrv runs for Apple Translation on the device when Google cannot answer Quick translate (pkg/translate/apple.go), into dist/bin.
+        platforms: [darwin]
+        sources:
+            - pkg/translate/apple/*.swift
+        generates:
+            - dist/bin/apple-translate.arm64
+        cmds:
+            - mkdir -p dist/bin
+            # 13.0 is the app's floor (tauri.macos.conf.json); Translation is weak-linked so the helper still starts
+            # there and answers "needs macOS 26" instead of failing to load
+            - swiftc -O -target arm64-apple-macos13.0 -Xlinker -weak_framework -Xlinker Translation -o dist/bin/apple-translate.arm64 pkg/translate/apple/main.swift
 
     build:backend:quickdev:
         desc: Build only the wavesrv component for quickdev (arm64 macOS only, no generate, no wsh).
@@ -213,6 +227,7 @@ tasks:
             - task: build:backend:quickdev
             - task: build:backend:quickdev:windows
             - task: build:wsh:devhost
+            - task: build:translate:macos
 
     build:backend:devhost:full:
         desc: Fallback backend build for hosts without a quickdev flavor (linux uses build:backend).

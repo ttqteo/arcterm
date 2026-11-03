@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // Each parser takes the model's whole reply, finds the JSON in it and reads the shape prompts.go asks for. The
@@ -43,6 +44,30 @@ type Answer struct {
 	Text     string
 	Stance   CouncilStance
 	Evidence []CouncilEvidence
+	Asks     []string // replies the person might send next (cleanReplyAsks); none for an answer with no words
+}
+
+// MaxReplyAsks is how many replies to send next an answer suggests; maxAskRunes is the longest one kept.
+const (
+	MaxReplyAsks = 3
+	maxAskRunes  = 120
+)
+
+// cleanReplyAsks keeps an answer's suggestions that are worth a chip: trimmed, non-empty, not over maxAskRunes, each once,
+// at most MaxReplyAsks.
+func cleanReplyAsks(in []string) []string {
+	var out []string
+	for _, a := range in {
+		a = strings.Join(strings.Fields(a), " ")
+		if a == "" || utf8.RuneCountInString(a) > maxAskRunes || slices.Contains(out, a) {
+			continue
+		}
+		out = append(out, a)
+		if len(out) == MaxReplyAsks {
+			break
+		}
+	}
+	return out
 }
 
 // Round2Result is everything an expert's round 2 reply holds.
@@ -282,6 +307,7 @@ type answerEntry struct {
 	Text     string       `json:"text"`
 	Stance   string       `json:"stance"`
 	Evidence evidenceList `json:"evidence"`
+	Asks     []string     `json:"asks"`
 }
 
 func convertAnswers(what string, in []answerEntry) ([]Answer, error) {
@@ -291,6 +317,9 @@ func convertAnswers(what string, in []answerEntry) ([]Answer, error) {
 			return nil, fmt.Errorf("%s reply: an answer needs a replyid", what)
 		}
 		ans := Answer{ReplyId: strings.TrimSpace(a.ReplyId), Text: strings.TrimSpace(a.Text), Evidence: a.Evidence}
+		if ans.Text != "" {
+			ans.Asks = cleanReplyAsks(a.Asks)
+		}
 		if strings.TrimSpace(a.Stance) != "" {
 			s, err := parseStance(a.Stance)
 			if err != nil {

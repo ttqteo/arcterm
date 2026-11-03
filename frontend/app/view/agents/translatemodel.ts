@@ -149,6 +149,10 @@ export const PAIR_KEY = "translate.pair";
 // how long after the last keystroke the text is sent
 export const TRANSLATE_DEBOUNCE_MS = 400;
 
+// how long a request may take: Google's 10 s, then Apple Translation's 15 s when Google could not answer
+// (pkg/translate/engine.go); with no timeout wavesrv gives the call 5 s, which a cold Apple start outlasts
+export const TRANSLATE_TIMEOUT_MS = 25_000;
+
 // Google's limit; text over it is still sent, and wavesrv's refusal is the panel's error line
 export const MAX_CHARS = 5000;
 
@@ -507,5 +511,9 @@ export function translateErrorLine(err: unknown): string {
         .replace(/\s*\n\s*/g, " ")
         .trim();
     const what = message === "" ? "Couldn't translate" : `Couldn't translate: ${message}`;
+    // after a 429 wavesrv leaves Google alone until the time it names, so an edit before then does not try Google again
+    if (/\bagain after \d{1,2}:\d{2}\b/.test(message)) {
+        return `${what}. Your text stays here.`;
+    }
     return `${what}. Your text stays here, and your next edit tries again.`;
 }

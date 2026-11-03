@@ -48,10 +48,6 @@ export const launcherPageAtom = atom({ key: "", cursor: "", loading: false }) as
     cursor: string;
     loading: boolean;
 }>;
-// what the backend found for the text typed in the Resume list, in the scope it was asked in
-export const launcherFoundAtom = atom<{ key: string; query: string; sessions: SessionInfo[] } | null>(
-    null
-) as PrimitiveAtom<{ key: string; query: string; sessions: SessionInfo[] } | null>;
 // the session to resume, by id; honored only while it is among the choices (launcherresume.ts pickedResume)
 export const launcherResumeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // the images pasted or dropped into the Task box, each with its temp file once written (launcherimages.ts)
@@ -204,20 +200,17 @@ export function pickLauncherTool(id: string): void {
     globalStore.set(launcherToolAtom, id);
 }
 
-// What the Resume list is loaded for. A load or a search answered after another load began is not this list's, so each
-// answer is checked against these before it lands.
+// What the Resume list is loaded for. A load answered after another load began is not this list's, so each answer is
+// checked against these before it lands.
 let pageScope = { runtime: "" as Runtime | "", projectPath: "" };
 let loadSeq = 0;
-let findSeq = 0;
 
 // The first page of one runtime's sessions in one project, replacing the list: a scan of transcripts on disk is read
 // once per open and per switch, and a stale list offers a session that has moved on.
 export async function loadLauncherSessions(runtime: Runtime, projectPath: string): Promise<void> {
     const key = resumeScopeKey(runtime, projectPath);
     const seq = ++loadSeq;
-    findSeq++;
     pageScope = { runtime, projectPath };
-    globalStore.set(launcherFoundAtom, null);
     if (key === "") {
         globalStore.set(launcherPageAtom, { key, cursor: "", loading: false });
         return;
@@ -268,30 +261,6 @@ export async function loadMoreLauncherSessions(): Promise<void> {
         if (seq === loadSeq) {
             globalStore.set(launcherPageAtom, { key: page.key, cursor: "", loading: false });
         }
-    }
-}
-
-// One page of the sessions in the current scope whose title holds `query`, which reaches the pages not loaded yet. The
-// answer is kept until the scope changes, so a row picked from it stays resumable once the filter is gone.
-export async function findLauncherSessions(query: string): Promise<void> {
-    const key = globalStore.get(launcherPageAtom).key;
-    const q = query.trim();
-    const seq = ++findSeq;
-    if (key === "" || q === "") {
-        return;
-    }
-    try {
-        const rtn = await RpcApi.GetRecentSessionsCommand(TabRpcClient, {
-            runtime: pageScope.runtime,
-            projectpath: pageScope.projectPath,
-            limit: RESUME_PAGE,
-            query: q,
-        });
-        if (seq === findSeq) {
-            globalStore.set(launcherFoundAtom, { key, query: q, sessions: rtn.sessions ?? [] });
-        }
-    } catch {
-        // the rows already loaded still filter
     }
 }
 

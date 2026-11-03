@@ -105,6 +105,7 @@ export interface DirectionRow {
     direction: CouncilDirection;
     meta: string; // `from UX and RAM · 1 file · 1 weak claim`; a Brainstorm's starts `Had it: UX · built on by RAM`
     firstStep: string; // `First step: Try it on one screen`, or empty when the coordinator gave none
+    step: string; // the coordinator's first step alone (`Try it on one screen`), or empty: the card's First step box
     chips: StanceChip[]; // the experts that proposed or took a stance, in panel order
     tag: string; // `Everyone agrees`, `Reader has doubts`, `RAM is against it` (directionTag)
     positions: Position[];
@@ -246,6 +247,7 @@ export function directionRows(c: Council): DirectionRow[] {
             direction,
             meta: meta.join(" · "),
             firstStep: firstStep === "" ? "" : `First step: ${firstStep}`,
+            step: firstStep,
             chips: panel(c).flatMap((expert): StanceChip[] => {
                 const stance = asStance(direction.stances?.[expert.id]);
                 if (stance != null) {
@@ -571,18 +573,8 @@ export function outlineOf(c: Council): OutlineEntry[] {
     return entries;
 }
 
-/** Pure: the outline entry being read: the last whose element's top (from the scroll box's top, in px) has passed
- *  `line`; once the box is scrolled to its end, the last whose top is in view. The first entry when none has. An entry
- *  with no top (its element is not drawn) is skipped. */
-export function currentSection(
-    tops: readonly { id: string; top: number | null }[],
-    line: number,
-    end: { atEnd: boolean; height: number }
-): string | null {
-    const drawn = tops.filter((t): t is { id: string; top: number } => t.top != null);
-    if (drawn.length === 0) {
-        return null;
-    }
-    const passed = drawn.filter((t) => t.top <= (end.atEnd ? end.height - 1 : line));
-    return (passed[passed.length - 1] ?? drawn[0]).id;
+/** Pure: the tab bar's jump links: the outline's sections after the answer (the answer is the cover), in page order:
+ *  the directions, the kept ideas when there are any, the matrix. Empty before a summary. */
+export function jumpLinks(c: Council): OutlineEntry[] {
+    return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer");
 }

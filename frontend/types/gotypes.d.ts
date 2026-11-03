@@ -868,6 +868,13 @@ declare global {
         files?: string[];
     };
 
+    // wshrpc.CommandCouncilThumbData
+    type CommandCouncilThumbData = {
+        id: string;
+        item: string;
+        thumb?: string;
+    };
+
     // wshrpc.CommandCreateBlockData
     type CommandCreateBlockData = {
         tabid: string;
@@ -2581,6 +2588,7 @@ declare global {
         wild?: boolean;
         draft?: string;
         edited?: boolean;
+        thumb?: string;
     };
 
     // council.CouncilReply
@@ -2601,7 +2609,9 @@ declare global {
         ts: number;
         draft?: string;
         edited?: boolean;
+        thumb?: string;
         attachments?: string[];
+        asks?: string[];
         revision?: CouncilRevision;
     };
 

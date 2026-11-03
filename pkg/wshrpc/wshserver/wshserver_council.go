@@ -408,6 +408,20 @@ func (ws *WshServer) CouncilRateCommand(ctx context.Context, data wshrpc.Command
 	})
 }
 
+// CouncilThumbCommand keeps the person's like or dislike on an idea or a seat's reply and announces the change. No round
+// starts: the seats' next prompts and the summary read it.
+func (ws *WshServer) CouncilThumbCommand(ctx context.Context, data wshrpc.CommandCouncilThumbData) error {
+	if data.Id == "" {
+		return errors.New("a council id is required")
+	}
+	c, err := council.SetThumb(data.Id, data.Item, data.Thumb)
+	if err != nil {
+		return err
+	}
+	publishCouncilChanged(c)
+	return nil
+}
+
 // ---- the benchmark ----
 
 // councilBenchWiring is what bench.Run is given beside the data dir and the options: the real calls. A test replaces

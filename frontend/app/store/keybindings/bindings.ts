@@ -8,7 +8,7 @@ import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
-import { centerModeAtom, showCanvases, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
+import { centerModeAtom, showCanvases, showCouncils, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { openRailTranscript } from "@/app/view/agents/agentrailstore";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
@@ -181,8 +181,8 @@ function focusCodeSearchInput(): void {
     }
 }
 
-// g-leader surface teleports (collision-free letters; see design spec). Conversation History and the Canvas gallery are modes of
-// the Agent surface, not surfaces, so each target carries its own id and the opener that shows its mode.
+// g-leader surface teleports (collision-free letters; see design spec). Conversation History, the Canvas gallery and
+// Councils are modes of the Agent surface, not surfaces, so each target carries its own id and the opener that shows its mode.
 const GO_TARGETS: {
     letter: string;
     surface: SurfaceKey;
@@ -196,6 +196,7 @@ const GO_TARGETS: {
     { letter: "r", surface: "radar", label: "Radar" },
     { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", open: showHistory },
     { letter: "v", surface: "agent", label: "Canvas gallery", id: "go:canvases", open: showCanvases },
+    { letter: "o", surface: "agent", label: "Councils", id: "go:councils", open: showCouncils },
     { letter: "f", surface: "files", label: "Diff" },
     { letter: "u", surface: "usage", label: "Usage" },
     { letter: "b", surface: "code", label: "Code (browse source)" },
@@ -1350,7 +1351,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             id: "agent:leave-center",
             keys: "Escape",
             group: "Agent",
-            label: "Back to the terminal (from History, a session or the canvases)",
+            label: "Back to the terminal (from History, a session, the canvases or the councils)",
             // exclusive with agent:back (which needs the centre at rest) and with subagent:back (which needs a focused
             // subagent), so Escape never means two things. Deliberately not gated on noCanvas(): the focused agent's
             // canvas or review can still be on while History covers the terminal, and Escape must leave History then

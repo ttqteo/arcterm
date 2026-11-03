@@ -19,6 +19,7 @@ import { ArrowLeft, FolderOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo } from "./agentsviewmodel";
+import { homeDir } from "./appsuggeststore";
 import { filterProjects, moveCursor, onDiskProjects, uniqueProjectName, unregisteredProjects } from "./newprojectmodel";
 import { projectListAtom, registerProject } from "./projectsstore";
 
@@ -39,6 +40,8 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
     // the disk search, asked once per opening on the first typed character: null until it answers
     const [onDisk, setOnDisk] = useState<ProjectFolderData[] | null>(null);
     const diskAsked = useRef(false);
+    // the home folder, so the search reads paths from "~" ("" until the server says, or when it cannot)
+    const [home, setHome] = useState("");
     // which opening an answer belongs to, so one that lands after a close and reopen is dropped
     const openGen = useRef(0);
     const [query, setQuery] = useState("");
@@ -66,6 +69,7 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
                     setScanFailed(true);
                 }
             });
+        homeDir().then((h) => live && setHome(h));
         return () => {
             live = false;
         };
@@ -84,8 +88,8 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
             .catch(() => gen === openGen.current && setOnDisk([]));
     }, [open, typed, scanned, rows]);
 
-    const candidates = filterProjects(unregisteredProjects(scanned ?? [], rows), query);
-    const diskRows = onDiskProjects(onDisk ?? [], scanned ?? [], rows, query);
+    const candidates = filterProjects(unregisteredProjects(scanned ?? [], rows), query, home);
+    const diskRows = onDiskProjects(onDisk ?? [], scanned ?? [], rows, query, home);
     // one cursor runs down both sections: the Claude Code rows, then the disk ones
     const options: { name: string; path: string }[] = [...candidates, ...diskRows];
     const picked = mode === "scan" ? options[cursor] : undefined;

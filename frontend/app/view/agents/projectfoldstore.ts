@@ -15,8 +15,6 @@ export const collapsedProjectsAtom = atomWithStorage<string[]>("agent.tree.colla
 export const collapsedTerminalProjectsAtom = atomWithStorage<string[]>("agent.tree.terminals.collapsed", []);
 // the Conversations section's project folders
 export const collapsedConversationProjectsAtom = atomWithStorage<string[]>("agent.tree.conversations.collapsed", []);
-// the projects whose Closed councils fold is open (closed by default)
-export const openClosedCouncilsAtom = atomWithStorage<string[]>("agent.tree.closedcouncils.open", []);
 // the sections themselves (SidebarSection)
 export const collapsedSectionsAtom = atomWithStorage<string[]>("agent.tree.sections.collapsed", []);
 

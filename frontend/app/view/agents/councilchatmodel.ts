@@ -46,6 +46,8 @@ import {
     roundsOf,
     sentProposals,
     sentReplies,
+    thumbOf,
+    type CouncilThumb,
     type HeldDraft,
     type SeatableAgent,
 } from "./councilmodel";
@@ -177,6 +179,7 @@ export interface ReplyPost extends Who {
     evidence: string[];
     weak: string; // a claim marked weak, as the chip reads (`Weak · no measurement`)
     mine: boolean;
+    thumb: CouncilThumb | ""; // the person's like or dislike on a seat's reply; always "" on the person's own
     reaches: string; // the person's reply: `For everyone`, `For UX and RAM`
     agrees: string[]; // `RAM agrees`: the seats that answered the person's post with no words (answerAgrees)
     pending: string; // the person's reply: `Queued for the next step` until it is answered
@@ -187,6 +190,9 @@ export interface ReplyPost extends Who {
     edited: boolean;
     at: string; // the time of day it was posted (`14:32`)
     when: string; // its tooltip: the day, and how far into the council (`Oct 31 14:32 · 2:12 into the council`)
+    ts: number; // when it was posted (ms), which councilseen.ts counts the Sent and Seen from
+    reachIsDefault: boolean; // the person's post reaches whom it would anyway: the line under it leaves `reaches` out
+    asks: string[]; // a seat's answer: the replies it suggests the person send next (threadAsks); empty otherwise
 }
 
 function replyPost(c: Council, r: CouncilReply): ReplyPost {
@@ -200,7 +206,10 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         attachments: r.attachments ?? [],
         ...evidenceOf(r.evidence),
         mine,
+        thumb: mine ? "" : thumbOf(r),
         reaches: mine ? reachOf(c, r) : "",
+        reachIsDefault: mine && reachIsDefault(c, r),
+        asks: mine ? [] : (r.asks ?? []),
         agrees: answerAgrees(c, r),
         pending: mine ? replyLabel(c, r) : "",
         parentid: r.parentid ?? "",
@@ -209,7 +218,35 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         revised: !!r.revised,
         edited: !!r.edited,
         ...postedAt(c, r.ts),
+        ts: r.ts,
     };
+}
+
+// whether the person's post reaches whom it would by default: the whole council from the channel, the idea's seat in
+// its thread
+function reachIsDefault(c: Council, r: CouncilReply): boolean {
+    const to = r.to ?? [];
+    if (to.length === 0) {
+        return true;
+    }
+    if (r.proposalid === "") {
+        return panel(c).every((e) => to.includes(e.id));
+    }
+    const author = (c.proposals ?? []).find((p) => p.id === r.proposalid)?.author;
+    return to.length === 1 && to[0] === author;
+}
+
+/** Pure: the replies a thread offers the person above its box: the ones its newest seat answer suggests, while that
+ *  answer is the thread's last post (a reply of theirs since, or a held draft, takes them away). */
+export function threadAsks(items: readonly ThreadItem[]): string[] {
+    for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        if (item.kind === "typing") {
+            continue;
+        }
+        return item.kind === "reply" && !item.mine ? item.asks : [];
+    }
+    return [];
 }
 
 /** Pure: the reactions a reply carries: the seats that answered a post of the person's with no words (they agree with
@@ -313,6 +350,7 @@ export interface IdeaPost extends Who {
     evidence: string[];
     weak: string;
     agrees: string[]; // `Skeptic agrees`: the seats that agreed with nothing to add
+    thumb: CouncilThumb | ""; // the person's like or dislike
     picks: { count: number; label: string; title: string } | null; // `Picked by 2`; null when no seat picked it
     edited: boolean;
     at: string;
@@ -338,6 +376,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         text: p.argument,
         ...evidenceOf(p.evidence),
         agrees: reactions(view, p.id),
+        thumb: thumbOf(p),
         picks:
             picked != null && picked > 0
                 ? {

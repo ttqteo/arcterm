@@ -16,7 +16,13 @@ import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { useEffect, useState } from "react";
 import { isOversize } from "./composerattachments";
-import { councilProjectKey, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
+import {
+    councilProjectKey,
+    withThumb,
+    type CouncilSetupDraft,
+    type CouncilThumb,
+    type CouncilView,
+} from "./councilmodel";
 import type { CouncilRating, KeptCouncilView } from "./councilsummarymodel";
 import { imageRoom, type TaskImage } from "./launcherimages";
 
@@ -233,7 +239,8 @@ export function stopCouncil(id: string): Promise<CouncilCall<void>> {
 }
 
 /** Closes an ended council (canRemoveCouncil), or opens a closed one again (`closed` false). Nothing is deleted: the
- *  tree moves it into its project's Closed councils fold, and council:changed brings the saved council to every atom. */
+ *  tree stops listing it, Councils (councilhistory.ts) still does, and council:changed brings the saved council to every
+ *  atom. */
 export function closeCouncil(id: string, closed = true): Promise<CouncilCall<void>> {
     return call(closed ? "close" : "reopen", () => RpcApi.CouncilCloseCommand(TabRpcClient, { id, closed }));
 }
@@ -321,6 +328,18 @@ export async function rateCouncil(id: string, rating: CouncilRating): Promise<Co
     const rated = globalStore.get(councilAtom(id));
     if (r.ok && rated != null) {
         globalStore.set(councilAtom(id), { ...rated, rating, ratedat: Date.now() });
+    }
+    return r;
+}
+
+/** The person's like or dislike on a seat's sent idea or reply (`item`, P1 or r3), "" to take it back. wavesrv keeps it
+ *  and the seats' later prompts and the summary read it. As with a rating, the command answers nothing, so on success
+ *  the council's atom is patched from what was sent and the button does not wait for `council:changed`. */
+export async function thumbCouncil(id: string, item: string, thumb: CouncilThumb | ""): Promise<CouncilCall<void>> {
+    const r = await call("thumb", () => RpcApi.CouncilThumbCommand(TabRpcClient, { id, item, thumb }));
+    const marked = globalStore.get(councilAtom(id));
+    if (r.ok && marked != null) {
+        globalStore.set(councilAtom(id), withThumb(marked, item, thumb));
     }
     return r;
 }

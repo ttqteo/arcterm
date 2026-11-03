@@ -5,20 +5,21 @@ package wshrpc
 
 import "context"
 
-// TranslateCommands is the rail's Quick translate and `wsh trans`: wavesrv asks Google for the text's
-// translation and answers it with the source language Google detected.
+// TranslateCommands is the rail's Quick translate: wavesrv asks Google for the text's translation, or Apple
+// Translation on a Mac when Google cannot answer (pkg/translate.Engine), and answers it with the source language
+// detected.
 type TranslateCommands interface {
 	TranslateCommand(ctx context.Context, data CommandTranslateData) (*CommandTranslateRtnData, error)
 }
 
-// CommandTranslateData is one request. Source is a language code, or "auto" to let Google detect it.
+// CommandTranslateData is one request. Source is a language code (Google's), or "auto" to detect it.
 type CommandTranslateData struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
 	Text   string `json:"text"`
 }
 
-// CommandTranslateRtnData is the answer. Source is the language Google detected when the request said
+// CommandTranslateRtnData is the answer. Source is the language detected when the request said
 // "auto", else the request's own.
 type CommandTranslateRtnData struct {
 	Translation string           `json:"translation"`

@@ -10,6 +10,7 @@
 //             and the member sessionsMemberAtom, as History's run detail reads them
 //   history   Conversation History: the old Sessions surface's master-detail, embedded
 //   canvases  Canvas gallery: the gallery of every project's design canvases, and its viewer (canvasgallerystore.ts)
+//   councils  Councils: every project's councils, closed ones too, newest first (councilhistory.ts); a row opens `council`
 //   council   one council's Discussion or report (Summary), or a project's council Setup (councilpane.tsx); which council, which
 //             of the three views and which project's draft are councilstore.ts's councilSelAtom, councilViewAtom and
 //             councilSetupProjectAtom
@@ -42,7 +43,7 @@ import {
 import { reopenView } from "./councilsummarymodel";
 import { runIdOfSel } from "./sessionsruns";
 
-export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "council" | "project";
+export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "councils" | "council" | "project";
 
 export const centerModeAtom = atom<CenterMode>("terminal") as PrimitiveAtom<CenterMode>;
 
@@ -72,6 +73,12 @@ export function showHistory(model: Pick<AgentsViewModel, "surfaceAtom">): void {
 /** Open the Canvas gallery in the Agent surface. */
 export function showCanvases(model: Pick<AgentsViewModel, "surfaceAtom">): void {
     globalStore.set(centerModeAtom, "canvases");
+    landOn(model.surfaceAtom, "agent");
+}
+
+/** Open Councils, every council, closed ones too, in the Agent surface. */
+export function showCouncils(model: Pick<AgentsViewModel, "surfaceAtom">): void {
+    globalStore.set(centerModeAtom, "councils");
     landOn(model.surfaceAtom, "agent");
 }
 

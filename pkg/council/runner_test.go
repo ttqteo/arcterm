@@ -2088,6 +2088,18 @@ func TestAnAnswerWithNoWordsIsNotHeld(t *testing.T) {
 	}
 }
 
+// An answer's asks are stored on its reply, for the thread to offer.
+func TestAnAnswerKeepsItsAsks(t *testing.T) {
+	c := &Council{
+		Experts: []CouncilExpert{{Id: "ux", Name: "UX"}},
+		Replies: []CouncilReply{{Id: "r1", Author: YouId, Text: "Why?", To: []string{"ux"}}},
+	}
+	applyAnswers(c, c.Experts[0], []Answer{{ReplyId: "r1", Text: "Because.", Asks: []string{"And on M5?"}}}, 4, 1)
+	if got := c.Replies[1]; !reflect.DeepEqual(got.Asks, []string{"And on M5?"}) {
+		t.Errorf("UX's answer = %+v, want its asks kept", got)
+	}
+}
+
 func TestAnExpertThatFailedSitsTheAnswersPassOut(t *testing.T) {
 	h := newHarness(t)
 	h.f.setFail("ram/r1", errors.New("boom"))

@@ -30,9 +30,42 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A run's timeline reads "Started from the queue", "Land in line" and "Resolving conflicts with the base" again, where it showed the raw event names.
 
 ## 0.15.20 — 2026-11-02
+### Changed
+
+- A council's chat reads more like a messenger. Your own messages have no name line above them (the time shows on
+  hover), and under the newest one Sent turns to Seen, with the small avatars of the seats on it, a second after you
+  send; only then do their typing bubbles of three rising dots appear, in place of the "… is writing" line. A seat's
+  reply names its stance only when it takes one, with its time on hover, and "For …" shows only when your message goes
+  to someone other than the usual seats.
+- A council's reply box sends from a round button with a send icon, in a box whose corners follow it, as a messenger's
+  does. The tooltip still names Reply or Send and Enter.
+- A council's Discussion header shows its seats as one stack of avatars instead of a row that cut a seat in half on a
+  narrow pane: hover or click it for the list of every seat, with what each is doing and its message count, and pick
+  one to see only its messages. Close is now an X (Reopen an arrow).
+- A council's report now reads like one: a cover holds the question, the answer and the council at a glance (its
+  state, experts, time and tokens, who did what, the saved document), the ideas worth trying are cards with their
+  first step, and a click on one opens why it was picked and who weighed in under them. Report and Discussion are two
+  tabs instead of a Show the discussion button, and the Discussion's seats sit in its one-row header, so the chat gets
+  the height. <!-- try: go:councils -->
+- In the New dialog, typing a letter in the Project or Session column now starts the task, as it does in the Start
+  column: focus jumps to the Task (or Goal) box with the letter in it, instead of filtering the list. Digits and the
+  arrows still pick a project or a session. Only a pick with no Task box (a terminal, a tool, a council, a run from a
+  plan file) still filters the projects as you type, and the Session column no longer searches older sessions.
+  <!-- try: new-agent -->
+- A closed council no longer stays in the Agent tree under a Closed councils fold: it leaves the tree. Every council,
+  closed ones too, is in the new Councils list at the top of the Agent sidebar (under Canvas gallery, or `Ctrl+G` `o`),
+  newest first by Today, Yesterday and Earlier, with a search; open one there and Reopen puts it back in the tree.
+  <!-- try: go:councils -->
+- The jump buttons are now just their arrows: a council's Top, Back and Latest (↑ ↩ ↓), and the Latest button (↓) in
+  an agent's transcript; hover one to see what it does.
 
 ### Added
 
+- A seat's answer in a council thread suggests two or three replies you might send next, as chips over the thread's
+  box: a click puts one in the box to edit and send.
+- Like or dislike a council's messages: 👍 and 👎 sit under every idea, and in the line over each seat's reply when
+  you hover it. The seats read what you liked and disliked in their next turns and the summary weighs it as your own
+  view, so you can steer the discussion without typing; press the same thumb again to take it back.
 - A council that already exists, running or done, can take a live claude or pi chat into it: type `@` in its message
   box, pick the chat under Add a live chat (its short id, title, project and how much context it holds are listed) and
   send. The chat joins the council, answers that message from its own context, and stays a seat.
@@ -167,6 +200,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A reply you send in a council's thread or channel scrolls into view, wherever you had scrolled to, and a thread you
+  are reading at its end keeps up with the seats' new replies instead of leaving them below the fold.
+- Translate keeps working when Google turns it away ("429 Too Many Requests") or cannot be reached: on a Mac, Apple
+  Translation answers on the device instead (macOS 26 or later, with the language pair downloaded in System Settings →
+  General → Language & Region → Translation Languages; it adds no phonetics or word classes). After a 429, arcterm
+  leaves Google alone for a few minutes instead of asking again on every edit, and the error says until when.
+  <!-- try: translate -->
+- The New project search no longer matches every folder when you type your user name: it reads paths from `~`, and
+  lists the folders whose name matches before the ones that match only by path.
+- A running task's mark in a run's graph sits back in the middle of its pulsing ring, and every task's mark lines up
+  with its title again, instead of sitting a few pixels low.
 - A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,
   so pressing it again in the minute before the agent records the run no longer starts the same run twice.
 - A brainstorm's "What you handed over" list keeps its text readable: where each decision came from now sits under the
