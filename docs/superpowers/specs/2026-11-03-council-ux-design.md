@@ -64,6 +64,12 @@ shows without waiting for an unrelated change. No Reload button.
 
 ### 3. The Discussion is a list of ideas
 
+> **Superseded 2026-11-03.** The person had read this as a side rail, not a list in place of the chat. The channel of
+> messages is back as the Discussion's main view, and the ideas sit in a quiet rail beside it, shaped like the brainstorm's
+> Decided so far (number, author, title, a line of replies and stances; a click scrolls the channel to the idea; it folds).
+> An idea's thread opens on the rail's second tab. Boards: `.superpowers/design/council-discussion/project/A-decided-rail.dc.html`
+> and `A2-decided-rail-thread.dc.html`. The order, the numbers, New and the seat filter below still hold for the rail.
+
 As the board draws it:
 
 - A **Chat** row on top holds the person's own messages and the seats' answers to them (the replies

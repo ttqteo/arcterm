@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_THREAD, chatRow, councilList, listNavOrder, listOrder } from "./councillistmodel";
+import {
+    CHAT_THREAD,
+    chatRow,
+    councilList,
+    listNavOrder,
+    listOrder,
+    railMeta,
+    railOrderLabel,
+    type IdeaRow,
+} from "./councillistmodel";
 
 const STARTED = new Date(2026, 10, 3, 9, 0, 0).getTime();
 const at = (seconds: number) => STARTED + seconds * 1000;
@@ -264,5 +273,46 @@ describe("listNavOrder", () => {
     it("is the Chat row, then the ideas as the list draws them", () => {
         const list = councilList(council({ proposals: ideas() }), 0);
         expect(listNavOrder(list)).toEqual([CHAT_THREAD, "P1", "P3", "P2", "P4", "P5"]);
+    });
+});
+
+describe("railMeta and railOrderLabel: the Ideas rail's quiet lines", () => {
+    const row = (extra: Partial<IdeaRow> = {}): IdeaRow => ({
+        id: "P1",
+        n: 1,
+        author: "ux",
+        name: "UX",
+        initials: "UX",
+        tone: "conn-1",
+        title: "title P1",
+        label: "idea",
+        isNew: false,
+        agrees: 0,
+        doubts: 0,
+        against: 0,
+        replies: 0,
+        repliesLabel: "no replies",
+        draft: false,
+        held: false,
+        ...extra,
+    });
+
+    it("says nothing for an idea nobody answered", () => {
+        expect(railMeta(row())).toBe("");
+    });
+
+    it("names the replies, then each stance taken, then a draft that waits", () => {
+        expect(railMeta(row({ replies: 4, repliesLabel: "4 replies", agrees: 2, doubts: 1 }))).toBe(
+            "4 replies · 2 agree · 1 has doubts"
+        );
+        expect(railMeta(row({ against: 2, draft: true }))).toBe("2 are against it · draft waits");
+        expect(railMeta(row({ agrees: 1, doubts: 2, against: 1 }))).toBe("1 agrees · 2 have doubts · 1 is against it");
+    });
+
+    it("captions the order the list keeps: arrival, then the Report's once there is a summary", () => {
+        expect(railOrderLabel(council())).toBe("in the order they came");
+        expect(railOrderLabel(council({ summary: { at: at(100), directions: [] } as CouncilSummary }))).toBe(
+            "in the Report's order"
+        );
     });
 });

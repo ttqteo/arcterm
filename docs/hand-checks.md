@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council's Discussion is the chat again, with a quiet Ideas rail beside it: open a council that has
+  ideas → the channel of messages fills the pane and the rail on its right lists each idea (number · author, title, a
+  muted line of replies and stances); a row scrolls the channel to that idea. An idea's replies button opens its thread
+  on the rail's second tab (`Idea N · M replies`), × closes it; » folds the rail and `Ideas · N` over the channel brings
+  it back, still folded after a restart. The `council-discussion`, `council-routing` and `council-summary` scenarios
+  pass in headless Chrome (`task dev:browser`) and in the Tauri dev app on Windows (2026-11-03, 138 + 21 + 28 steps,
+  the rail steps included); left: the fold kept after a real restart, and WKWebView (`councilchat.tsx` `CouncilRail`).
+
 - [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
   that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
   Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
