@@ -1142,13 +1142,16 @@ async function done(h, ctx, rec) {
         typed === 3 && second !== "" && replaced.replace(/\s+/g, " ").trim() === second && replaced !== "W" && afterReplace === 3,
         { typed, second, replaced, afterReplace }
     );
-    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "What does rail-apps.json hold?");
-    const auto = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "aria-checked");
+    // it names a seat, so the router does not take it: Read files stays on Auto and the question decides (the routed Auto
+    // case, where the router decides, is council-routing's composer-auto step)
+    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "@UX What does rail-apps.json hold?");
+    const state = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-state");
+    const readsNow = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-on");
     const why = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-why");
     rec(
-        "done: a question that names a file turns Let them read files on by itself and says which file",
-        auto === "true" && why === "rail-apps.json",
-        { auto, why }
+        "done: a question that names a file turns Read files (on Auto) on by itself and says which file",
+        state === "auto" && readsNow === "true" && why === "rail-apps.json",
+        { state, readsNow, why }
     );
     await h.shot("cdp-shots/council-discussion-readsfiles.png");
     await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "");
@@ -1162,12 +1165,12 @@ async function done(h, ctx, rec) {
     await typeInto(h, `${THREAD_COMPOSER} [data-council-composer-input]`, FOLLOWUP_TEXT);
     const plain = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /^1 expert answers · ≈ 1 call · ~\d+k tokens$/);
 
-    await click(h, `${THREAD_COMPOSER} [data-council-tools]`);
+    await click(h, `${THREAD_COMPOSER} [data-council-tools-option="on"]`);
     const reading = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /reading files · ≈ 1 call · ~[\d.]+[kM] tokens$/);
-    const on = await attr(h, `${THREAD_COMPOSER} [data-council-tools]`, "aria-checked");
+    const on = await attr(h, `${THREAD_COMPOSER} [data-council-tools]`, "data-council-tools-state");
     rec(
-        "follow-up: Let them read files changes the cost label from `≈ 1 call` to one that says `reading files` with more tokens",
-        !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "true",
+        "follow-up: Read files On changes the cost label from `≈ 1 call` to one that says `reading files` with more tokens",
+        !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "on",
         `${plain}  →  ${reading}`
     );
     // the one reply after the summary is the person's own, which leaves it current (spec decision 5): the header draws
@@ -1479,17 +1482,19 @@ async function roomComposer(h, ctx, rec) {
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     await stubRpc(h, ["CouncilReplyCommand"]);
 
+    // a plain message goes to the router now; `@all` is how a message asks everyone
     const input = `${CHANNEL_COMPOSER} [data-council-composer-input]`;
-    await typeInto(h, input, FOLLOWUP_TEXT);
+    const ASK_ALL = `@all ${FOLLOWUP_TEXT}`;
+    await typeInto(h, input, ASK_ALL);
     const everyone = await settledText(h, `${CHANNEL_COMPOSER} [data-council-composer-hint]`, /Everyone answers/);
     await click(h, `${CHANNEL_COMPOSER} [data-council-composer-send]`);
     await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilReplyCommand").length >= 1`);
     const first = (await rpcCalls(h, "CouncilReplyCommand"))[0]?.data;
     rec(
-        "composer: a message to the box posts to everyone (`Everyone answers`): CouncilReplyCommand (stubbed) carries its text and no idea",
+        "composer: an `@all` message to the box posts to everyone (`Everyone answers`): CouncilReplyCommand (stubbed) carries its text and no idea",
         everyone === "Everyone answers" &&
             first?.id === id &&
-            first.text === FOLLOWUP_TEXT &&
+            first.text === ASK_ALL &&
             first.proposalid === undefined &&
             first.tools === undefined,
         first
@@ -1750,10 +1755,21 @@ async function addChatPicker(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-add-chat-picker.png");
 
-    // the arrow keys run on from the last chat row back to the first seat
+    // the arrow keys run on from the last chat row back to the first row, All seats, and on to the first seat
+    const selectedMention = () =>
+        h.ev(`(() => {
+            const r = document.querySelector('[data-council-mentions] [data-selected="true"]');
+            return r?.hasAttribute("data-council-mention-all") ? "all" : (r?.getAttribute("data-council-mention") ?? null);
+        })()`);
     for (let i = 0; i < 2; i++) await pressArrowDown(h);
-    const wrapped = await h.ev(`document.querySelector('[data-council-mentions] [data-selected="true"]')?.getAttribute("data-council-mention") ?? null`);
-    rec("add-chat-picker: the arrow keys wrap from the last chat row to the first seat", wrapped === "witness", wrapped);
+    const toAll = await selectedMention();
+    await pressArrowDown(h);
+    const wrapped = await selectedMention();
+    rec(
+        "add-chat-picker: the arrow keys wrap from the last chat row to the first row, All seats, then the first seat",
+        toAll === "all" && wrapped === "witness",
+        { toAll, wrapped }
+    );
     await typeInto(h, CHAT_INPUT, "");
 }
 
@@ -2050,10 +2066,19 @@ const clearChips = (h, scope) =>
     h.ev(`document.querySelectorAll(${sel(`${scope} [data-council-image-remove]`)}).forEach((b) => b.click())`);
 const sendDisabled = (h, send = CHAT_SEND) => h.ev(`document.querySelector(${sel(send)})?.disabled ?? null`);
 const valueOf = (h, input) => h.ev(`document.querySelector(${sel(input)})?.value ?? ""`);
+// the Read files control of a box: `state` is the option pressed (auto / on / off), `on` whether the seats read files now,
+// `disabled` whether an image or an @file locks it (Auto and Off cannot be pressed), `why` what decided it
 const toolsSwitch = (h, scope) =>
     h.ev(`(() => {
-        const b = document.querySelector(${sel(`${scope} [data-council-tools]`)});
-        return b ? { on: b.getAttribute("aria-checked") === "true", disabled: b.disabled === true, why: b.getAttribute("data-council-tools-why") } : null;
+        const g = document.querySelector(${sel(`${scope} [data-council-tools]`)});
+        return g
+            ? {
+                  state: g.getAttribute("data-council-tools-state"),
+                  on: g.getAttribute("data-council-tools-on") === "true",
+                  disabled: g.getAttribute("data-council-tools-locked") === "true",
+                  why: g.getAttribute("data-council-tools-why"),
+              }
+            : null;
     })()`);
 const replyCalls = (h) => rpcCalls(h, "CouncilReplyCommand");
 
@@ -2264,7 +2289,8 @@ async function attachLocked(h, ctx, rec) {
     await pasteImage(h, CHAT_INPUT);
     await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
     const image = await toolsSwitch(h, CHANNEL_COMPOSER);
-    await h.ev(`document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-tools]`)})?.click()`);
+    // a click on Off (disabled while the image is in) leaves it on
+    await h.ev(`document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-tools-option="off"]`)})?.click()`);
     const afterClick = await toolsSwitch(h, CHANNEL_COMPOSER);
     const priced = await until(
         h,
@@ -2277,17 +2303,22 @@ async function attachLocked(h, ctx, rec) {
     await typeInto(h, CHAT_INPUT, `Look at @${ATTACH_FILE} for this`);
     const file = await toolsSwitch(h, CHANNEL_COMPOSER);
     rec(
-        "attach-locked-switch: Let them read files is off and free for a plain question; with an image attached, or an @file in the text, it is on and disabled (a click leaves it on), the estimate is asked with `tools: true`, and without them it is free again",
-        plain?.on === false &&
+        "attach-locked-switch: Read files is Auto, off and free for a plain question; with an image attached, or an @file in the text, it is On and locked (a click on Off leaves it on), the estimate is asked with `tools: true`, and without them it is free again",
+        plain?.state === "auto" &&
+            plain.on === false &&
             plain.disabled === false &&
-            image?.on === true &&
+            image?.state === "on" &&
+            image.on === true &&
             image.disabled === true &&
             image.why === "an image" &&
             afterClick?.on === true &&
+            afterClick.state === "on" &&
             priced &&
-            released?.on === false &&
+            released?.state === "auto" &&
+            released.on === false &&
             released.disabled === false &&
-            file?.on === true &&
+            file?.state === "on" &&
+            file.on === true &&
             file.disabled === true &&
             file.why === ATTACH_FILE,
         { plain, image, afterClick, priced, released, file }
@@ -2385,14 +2416,15 @@ async function attachPicker(h, ctx, rec) {
     );
 
     // a message that names a file is sent with the seats reading it, in a round as in a follow-up, and it names no seat
-    const BODY = `@${ATTACH_FILE} what do you make of this plan?`;
+    // (`@all` asks everyone: a plain message would go to the router)
+    const BODY = `@all @${ATTACH_FILE} what do you make of this plan?`;
     await typeInto(h, CHAT_INPUT, BODY);
     const hint = await settledText(h, CHAT_HINT, /^Everyone answers/);
     await click(h, CHAT_SEND);
     await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilReplyCommand")`);
     const sent = (await replyCalls(h))[0]?.data;
     rec(
-        "attach-send-call: in a round, a message that names @docs/recap-notes.md reaches everyone, and Send (stubbed) records `tools: true` with the text as typed and no attachments",
+        "attach-send-call: in a round, an `@all` message that names @docs/recap-notes.md reaches everyone, and Send (stubbed) records `tools: true` with the text as typed and no attachments",
         hint === "Everyone answers" &&
             sent?.id === id &&
             sent.text === BODY &&

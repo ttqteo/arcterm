@@ -317,6 +317,85 @@ func TestCouncilEstimateFollowupWithChats(t *testing.T) {
 	}
 }
 
+// TestCouncilEstimateRouted: Routed with an Id prices a whole-council message the router would take, from the saved
+// council's own seats, and sends the range (callsmax, tokensmax) on the wire; the router's call is the 15k of
+// council.routerTokens. Without Routed the old cases answer as they did, with no range.
+func TestCouncilEstimateRouted(t *testing.T) {
+	useCouncilStore(t)
+	ws := &WshServer{}
+	ctx := context.Background()
+	experts, err := council.ExpertsFor("ui-feature") // four role seats and the coordinator
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	saveCouncil(t, &council.Council{Id: "c1", Project: t.TempDir(), Feature: "Idle sleep", Experts: experts, State: council.StateDone, Round: 2})
+	withChat := append([]council.CouncilExpert{{Id: "agent-tab-1", Agent: "tab-1", Harness: "claude", Context: 300_000}}, experts...)
+	saveCouncil(t, &council.Council{Id: "c2", Project: t.TempDir(), Feature: "Idle sleep", Experts: withChat, State: council.StateDone, Round: 2,
+		Failed: map[string]council.CouncilFailure{experts[0].Id: {Round: 1, Error: "timeout"}}})
+
+	for _, tc := range []struct {
+		name string
+		data wshrpc.CommandCouncilEstimateData
+		want wshrpc.CouncilEstimateRtnData
+	}{
+		{"files off: router and one seat to router and two",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 40_000, Minutes: 1}},
+		{"files on",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, Tools: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 110_000, TokensMax: 15_000 + 220_000, Minutes: 2}},
+		{"Auto spans both branches",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, ToolsAuto: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 220_000, Minutes: 2}},
+		{"the council's own chat is priced at its context, and the seat whose call failed is left out",
+			wshrpc.CommandCouncilEstimateData{Id: "c2", Routed: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 300_000 + 20_000, Minutes: 1, AgentTokens: 300_000}},
+		{"Routed is read before a follow-up count",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, Followup: 2},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 40_000, Minutes: 1}},
+
+		// no Routed: the follow-up and remaining cases answer as before, with no range, and ToolsAuto changes nothing
+		{"a follow-up of two experts, no range",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, ToolsAuto: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
+		{"what the council has left, no range",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", ToolsAuto: true},
+			wshrpc.CouncilEstimateRtnData{Calls: 5, Tokens: 4*45_000 + 80_000, Minutes: 3}},
+	} {
+		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if *got != tc.want {
+			t.Errorf("%s = %+v, want %+v", tc.name, *got, tc.want)
+		}
+	}
+
+	// the range crosses the wire as tokensmax and callsmax, and a plain estimate leaves both off
+	got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true})
+	if err != nil {
+		t.Fatalf("routed estimate: %v", err)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"callsmax":3`) || !strings.Contains(string(raw), `"tokensmax":55000`) {
+		t.Errorf("the routed estimate on the wire = %s, want callsmax and tokensmax", raw)
+	}
+	got, err = ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2})
+	if err != nil {
+		t.Fatalf("follow-up estimate: %v", err)
+	}
+	if raw, _ := json.Marshal(got); strings.Contains(string(raw), "max") {
+		t.Errorf("a plain estimate on the wire = %s, want no range", raw)
+	}
+
+	if _, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "missing", Routed: true}); err == nil {
+		t.Error("the routed estimate of a council that does not exist should fail")
+	}
+}
+
 // TestCouncilSaveDocWritesTheDocument: the command writes the whole document (report, discussion, run facts) at the
 // default path and keeps that path on the council, so a second save rewrites the same file. The path rules themselves
 // are council.DocPath's tests.
@@ -1263,6 +1342,80 @@ func TestCouncilReplyValidatesAndAnswers(t *testing.T) {
 	waitCouncil(t, done.Id)
 	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, ProposalId: "P2", ParentId: mine.Id, Text: "wrong thread"}); err == nil {
 		t.Error("a parent that belongs to another proposal should be refused")
+	}
+}
+
+// TestCouncilReplyCommandCarriesToolsAuto: the composer's Auto switch (toolsauto) reaches the runner's ReplyWith with
+// ToolsAuto set, Tools holding its guess; a reply sent without it reaches it with ToolsAuto off. The runner stores
+// ToolsAuto nowhere until the router reads it, so the test reads what the command hands ReplyWith through its seam.
+func TestCouncilReplyCommandCarriesToolsAuto(t *testing.T) {
+	var (
+		got []council.ReplyIn
+		ids []string
+	)
+	prev := councilReplyWith
+	councilReplyWith = func(r *council.Runner, id string, in council.ReplyIn) (*council.Council, error) {
+		ids = append(ids, id)
+		got = append(got, in)
+		return nil, nil
+	}
+	t.Cleanup(func() { councilReplyWith = prev })
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{
+		Id: "c1", ProposalId: "P1", ParentId: "r2", Text: "what about Mac?", Tools: true, ToolsAuto: true,
+	}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: "c2", Text: "and Linux?", Tools: true}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ReplyWith ran %d times, want 2", len(got))
+	}
+	if want := (council.ReplyIn{ProposalId: "P1", ParentId: "r2", Text: "what about Mac?", Tools: true, ToolsAuto: true}); ids[0] != "c1" || !reflect.DeepEqual(got[0], want) {
+		t.Errorf("auto reply reached ReplyWith(%q, %+v), want c1 and %+v", ids[0], got[0], want)
+	}
+	if want := (council.ReplyIn{Text: "and Linux?", Tools: true}); ids[1] != "c2" || !reflect.DeepEqual(got[1], want) {
+		t.Errorf("plain reply reached ReplyWith(%q, %+v), want c2 and %+v", ids[1], got[1], want)
+	}
+}
+
+// TestCouncilAskTooCommandReturnsRefusal: Ask <seat> too on a reply the router never took up (no Routed) is refused with
+// an error and changes nothing. A reply on a proposal is never routed, so the same input is refused whatever the router
+// does to a whole-council message.
+func TestCouncilAskTooCommandReturnsRefusal(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+	done := startDoneCouncil(t, ws)
+
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, ProposalId: "P1", Text: "why does it break?"}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	after := waitCouncil(t, done.Id)
+	mine := findCouncilReply(after, func(r council.CouncilReply) bool { return r.Author == council.YouId })
+	if mine == nil || mine.Routed != nil {
+		t.Fatalf("the person's reply = %+v, want one with no Routed", mine)
+	}
+	var experts []string
+	for _, e := range after.Experts {
+		if !e.Coordinator {
+			experts = append(experts, e.Id)
+		}
+	}
+	if len(experts) < 2 {
+		t.Fatalf("panel of %v is too small to ask a seat too", experts)
+	}
+
+	err := ws.CouncilAskTooCommand(ctx, wshrpc.CommandCouncilAskTooData{Id: done.Id, ReplyId: mine.Id, ExpertId: experts[1]})
+	if err == nil {
+		t.Fatal("Ask seat too on a reply the router never took up should be refused")
+	}
+	if got, _ := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id}); got == nil || len(got.Replies) != len(after.Replies) || got.State != council.StateDone {
+		t.Errorf("a refused Ask seat too changed the council: %+v", got)
 	}
 }
 

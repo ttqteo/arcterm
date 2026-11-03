@@ -208,6 +208,16 @@ export function replyCouncil(data: CommandCouncilReplyData): Promise<CouncilCall
     return call("reply", () => RpcApi.CouncilReplyCommand(TabRpcClient, data));
 }
 
+/** Ask <seat> too: reopens the person's routed message `replyId` for the seat `expertId` (a panel seat the router did not
+ *  choose), which answers under that message seeing the answers already there. wavesrv refuses a reply that was not
+ *  routed or is still pending, a seat that is not on the panel or already answers it; the council reloads through
+ *  `council:changed`. */
+export function askCouncilSeatToo(id: string, replyId: string, expertId: string): Promise<CouncilCall<void>> {
+    return call("ask too", () =>
+        RpcApi.CouncilAskTooCommand(TabRpcClient, { id, replyid: replyId, expertid: expertId })
+    );
+}
+
 /** Continues a council waiting at the pause: `cut` is the proposal ids the person unticked, `question` what they ask. */
 export function continueCouncil(data: CommandCouncilContinueData): Promise<CouncilCall<void>> {
     return call("continue", () => RpcApi.CouncilContinueCommand(TabRpcClient, data));

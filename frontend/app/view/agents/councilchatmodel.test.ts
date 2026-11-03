@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
     DRAFT_ACTIONS,
     DRAFT_WAIT,
+    ROUTER_DECIDES,
     askChips,
+    askTooSeats,
     chatMentionKeys,
     contextLabel,
     councilThread,
@@ -10,6 +12,7 @@ import {
     foldSettle,
     foldToggle,
     foldView,
+    insertAllMention,
     insertChatMention,
     insertFileMention,
     insertMention,
@@ -22,11 +25,15 @@ import {
     pickedChats,
     pickerRows,
     questionPost,
+    readsChoice,
     readsFiles,
+    readsNote,
     replyReach,
+    routerLine,
     seatChips,
     stepChip,
     threadAsks,
+    toolsOfChoice,
     type IdeaPost,
     type ThreadItem,
 } from "./councilchatmodel";
@@ -1252,6 +1259,137 @@ describe("namedFile and readsFiles: a follow-up reads files when the question na
         expect(readsFiles(false, "mail a@ram.com")).toEqual({ on: false, why: "", locked: false });
         expect(readsFiles(false, "see ux/plan.md")).toEqual({ on: false, why: "", locked: false });
     });
+
+    describe("for a message the router takes", () => {
+        it("leaves the decision to the router in Auto, `on` staying the file-naming guess", () => {
+            expect(readsFiles(null, "Review the v5.1 we just fixed", 0, true)).toEqual({
+                on: false,
+                why: ROUTER_DECIDES,
+                locked: false,
+            });
+            expect(readsFiles(null, "Trong rail-apps.json có gì?", 0, true)).toEqual({
+                on: true,
+                why: ROUTER_DECIDES,
+                locked: false,
+            });
+            expect(ROUTER_DECIDES).toBe("the router decides");
+        });
+
+        it("keeps the person's On or Off: the router never changes it", () => {
+            expect(readsFiles(true, "Làm hướng nào trước?", 0, true)).toEqual({ on: true, why: "", locked: false });
+            expect(readsFiles(false, "Trong rail-apps.json có gì?", 0, true)).toEqual({
+                on: false,
+                why: "",
+                locked: false,
+            });
+        });
+
+        it("is still on and locked for an image or an @file, whatever the router says", () => {
+            expect(readsFiles(null, "what next?", 1, true)).toEqual({ on: true, why: "an image", locked: true });
+            expect(readsFiles(null, "see @ux/plan.md", 0, true)).toEqual({ on: true, why: "ux/plan.md", locked: true });
+            expect(readsFiles(false, "see @ux/plan.md", 1, true)).toEqual({
+                on: true,
+                why: "ux/plan.md",
+                locked: true,
+            });
+        });
+
+        it("reads the same as before for a message it does not take", () => {
+            expect(readsFiles(null, "Trong rail-apps.json có gì?", 0, false)).toEqual(
+                readsFiles(null, "Trong rail-apps.json có gì?")
+            );
+        });
+    });
+});
+
+describe("the Read files control: Auto, On, Off", () => {
+    it("presses the person's pick, and On while an image or an @file locks it", () => {
+        expect(readsChoice(null, false)).toBe("auto");
+        expect(readsChoice(true, false)).toBe("on");
+        expect(readsChoice(false, false)).toBe("off");
+        expect(readsChoice(null, true)).toBe("on");
+        expect(readsChoice(false, true)).toBe("on");
+    });
+
+    it("sets drafts.tools from an option: null for Auto", () => {
+        expect(toolsOfChoice("auto")).toBeNull();
+        expect(toolsOfChoice("on")).toBe(true);
+        expect(toolsOfChoice("off")).toBe(false);
+    });
+
+    it("notes what the router or the question decided, and nothing otherwise", () => {
+        expect(readsNote({ why: ROUTER_DECIDES })).toBe("the router decides");
+        expect(readsNote({ why: "rail-apps.json" })).toBe("it names rail-apps.json");
+        expect(readsNote({ why: "an image" })).toBe("it names an image");
+        expect(readsNote({ why: "" })).toBe("");
+    });
+});
+
+describe("mentionPicker: the All seats row", () => {
+    const seatIds = (p: ReturnType<typeof mentionPicker>) => p!.seats.map((e) => e.id);
+
+    it("lists All seats for a bare @, before the seats", () => {
+        const picker = mentionPicker(room(), "@", 1)!;
+        expect(picker.all).toBe(true);
+        expect(seatIds(picker)).toEqual(["witness", "ux", "sec", "sk"]);
+        expect(pickerRows(picker).map((r) => r.kind)).toEqual(["all", "seat", "seat", "seat", "seat"]);
+        expect(pickerRows(picker)[0]).toEqual({ kind: "all" });
+    });
+
+    it("lists it while what follows the @ starts `all` or `everyone`, in any case", () => {
+        for (const typed of ["a", "al", "all", "ALL", "e", "ev", "Everyone", "everyone"]) {
+            expect(mentionPicker(room(), `@${typed}`, typed.length + 1)?.all, typed).toBe(true);
+        }
+    });
+
+    it("is the only row for `@all`, which no seat's name holds, and sits among the seats that match `@a`", () => {
+        const all = mentionPicker(room(), "@all", 4)!;
+        expect(all.all).toBe(true);
+        expect(pickerRows(all)).toEqual([{ kind: "all" }]);
+        const a = mentionPicker(room(), "@a", 2)!;
+        expect(pickerRows(a)[0]).toEqual({ kind: "all" });
+        expect(seatIds(a)).toEqual(["ux"]); // "UX audit"
+    });
+
+    it("does not list it once the word is something else, and finds no match for `@alx`", () => {
+        for (const typed of ["ux", "wit", "sec", "ec", "x", "allx", "everyonex"]) {
+            expect(mentionPicker(room(), `@${typed}`, typed.length + 1)?.all ?? false, typed).toBe(false);
+        }
+        expect(mentionPicker(room(), "@alx", 4)).toBeNull();
+    });
+
+    it("closes after `@all ` or `@everyone `, as it does after a whole seat name", () => {
+        expect(mentionPicker(room(), "@all ", 5)).toBeNull();
+        expect(mentionPicker(room(), "@everyone ", 10)).toBeNull();
+        expect(mentionPicker(room(), "@Witness synthesis ", 19)).toBeNull();
+    });
+
+    it("is listed with no files and no chats of its own, and with the live chats a bare @ offers", () => {
+        const bare = mentionPicker(room(), "@", 1, [far], ["ux/plan.md"])!;
+        expect(bare.all).toBe(true);
+        expect(bare.files).toEqual([]);
+        expect(pickerRows(bare).map((r) => r.kind)).toEqual(["all", "seat", "seat", "seat", "seat", "chat"]);
+        expect(mentionPicker(room(), "@ux", 3, [far], [])!.all).toBe(false);
+    });
+
+    it("has pickerRows list it only when the picker says so", () => {
+        expect(pickerRows({ all: true, seats: [], files: [], chats: [] })).toEqual([{ kind: "all" }]);
+        expect(pickerRows({ all: false, seats: [], files: [], chats: [] })).toEqual([]);
+    });
+});
+
+describe("insertAllMention", () => {
+    it("replaces what was typed with `@all` and a space, and puts the caret after it", () => {
+        expect(insertAllMention("@", 0, 1)).toEqual({ text: "@all ", caret: 5 });
+        expect(insertAllMention("hi @ev", 3, 6)).toEqual({ text: "hi @all ", caret: 8 });
+        expect(insertAllMention("@ what next?", 0, 1)).toEqual({ text: "@all what next?", caret: 5 });
+    });
+
+    it("makes an @ that replyReach reads as everyone, and that closes the picker", () => {
+        const put = insertAllMention("@", 0, 1);
+        expect(replyReach(room(), "", "", put.text).label).toBe("Everyone answers");
+        expect(mentionPicker(room(), put.text, put.caret)).toBeNull();
+    });
 });
 
 describe("mentionPicker: the project's files between the seats and the chats", () => {
@@ -1476,5 +1614,226 @@ describe("threadAsks", () => {
         ).toEqual([]);
         expect(threadAsks(followUp([reply("r1", "you", 150, { to: ["sec"] }), reply("r2", "sec", 160)]))).toEqual([]);
         expect(threadAsks([])).toEqual([]);
+    });
+});
+
+describe("a message the router took up: its line, its reach and Ask <seat> too", () => {
+    // a done council of role seats (UX, RAM, New user); the person's message r1 is routed and the answers hang on it
+    const done = (extra: Partial<Council> = {}) => council({ experts: oldExperts, state: "done", round: 4, ...extra });
+    const routedReply = (routed: CouncilRouted, extra: Partial<CouncilReply> = {}) =>
+        reply("r1", "you", 150, { proposalid: "", round: 4, to: ["ux"], routed, ...extra });
+    const answer = (id: string, author: string, seconds: number, extra: Partial<CouncilReply> = {}) =>
+        reply(id, author, seconds, { proposalid: "", parentid: "r1", round: 4, ...extra });
+    const items = (c: Council) => councilThread(c, CHAT_THREAD)!.items;
+
+    describe("routerLine", () => {
+        const line = (routed: CouncilRouted, extra: Partial<CouncilReply> = {}) =>
+            routerLine(done(), routedReply(routed, extra));
+
+        it("names the one seat the router chose and why", () => {
+            expect(line({ chose: ["ux"], reason: "It is about the rail's layout." })).toBe(
+                "Router chose UX: It is about the rail's layout."
+            );
+        });
+
+        it("names both seats when it chose two", () => {
+            expect(line({ chose: ["ux", "ram"], reason: "Layout and memory." }, { to: ["ux", "ram"] })).toBe(
+                "Router chose UX and RAM: Layout and memory."
+            );
+        });
+
+        it("says it reads files when the router decided that (autotools) and the reply reads them", () => {
+            expect(
+                line({ chose: ["ux"], reason: "v5.1 is not in the thread.", autotools: true }, { tools: true })
+            ).toBe("Router chose UX · reading files: v5.1 is not in the thread.");
+            expect(
+                line({ chose: ["ux", "ram"], reason: "Both.", autotools: true }, { tools: true, to: ["ux", "ram"] })
+            ).toBe("Router chose UX and RAM · reading files: Both.");
+        });
+
+        it("says nothing of files when the router left them off, or the person's On or Off decided", () => {
+            expect(line({ chose: ["ux"], reason: "Why.", autotools: true }, { tools: false })).toBe(
+                "Router chose UX: Why."
+            );
+            expect(line({ chose: ["ux"], reason: "Why." }, { tools: true })).toBe("Router chose UX: Why.");
+        });
+
+        it("says the router failed and which seat answered, with no reason", () => {
+            expect(line({ chose: ["ux"], failed: true, reason: "claude exited 1" })).toBe("Router failed, UX answered");
+            expect(line({ chose: ["ux"], failed: true, reason: "" })).toBe("Router failed, UX answered");
+        });
+
+        it("leaves the reason out when it is empty", () => {
+            expect(line({ chose: ["ux"], reason: "" })).toBe("Router chose UX");
+            expect(line({ chose: ["ux"], reason: "   " })).toBe("Router chose UX");
+            expect(line({ chose: ["ux"] })).toBe("Router chose UX");
+        });
+
+        it("keeps naming the seats the router chose after Ask <seat> too adds one to `to`", () => {
+            expect(line({ chose: ["ux"], reason: "Why." }, { to: ["ux", "ram"] })).toBe("Router chose UX: Why.");
+        });
+
+        it("is empty while the router has not chosen, and for a message it did not take up", () => {
+            expect(line({ pending: true }, { to: [] })).toBe("");
+            expect(routerLine(done(), reply("r1", "you", 150, { proposalid: "", to: ["ux"] }))).toBe("");
+            expect(routerLine(done(), reply("r2", "ux", 160, { routed: { chose: ["ux"] } }))).toBe("");
+        });
+    });
+
+    describe("askTooSeats", () => {
+        it("lists the panel seats that are not in `to`, in panel order, never the coordinator", () => {
+            expect(askTooSeats(done(), routedReply({ chose: ["ram"] }, { to: ["ram"] }))).toEqual([
+                { id: "ux", name: "UX" },
+                { id: "nu", name: "New user" },
+            ]);
+            expect(askTooSeats(done(), routedReply({ chose: ["ux"] }))).toEqual([
+                { id: "ram", name: "RAM" },
+                { id: "nu", name: "New user" },
+            ]);
+        });
+
+        it("leaves out a seat added with Ask <seat> too, and has none left once everyone answers", () => {
+            expect(askTooSeats(done(), routedReply({ chose: ["ux"] }, { to: ["ux", "ram"] }))).toEqual([
+                { id: "nu", name: "New user" },
+            ]);
+            expect(askTooSeats(done(), routedReply({ chose: ["ux"] }, { to: ["ux", "ram", "nu"] }))).toEqual([]);
+        });
+
+        it("leaves out a seat whose call failed: a follow-up would call nobody", () => {
+            const c = done({ failed: { ram: { round: 4, error: "x" } } });
+            expect(askTooSeats(c, routedReply({ chose: ["ux"] }))).toEqual([{ id: "nu", name: "New user" }]);
+        });
+
+        it("is empty while the router has not chosen, and on an unrouted message or a seat's reply", () => {
+            expect(askTooSeats(done(), routedReply({ pending: true }, { to: [] }))).toEqual([]);
+            expect(askTooSeats(done(), reply("r1", "you", 150, { proposalid: "", to: ["ux"] }))).toEqual([]);
+            expect(askTooSeats(done(), reply("r2", "ux", 160, { routed: { chose: ["ux"] } }))).toEqual([]);
+        });
+    });
+
+    describe("the person's post", () => {
+        it("names the seats the router chose, never For everyone, and is not the default reach", () => {
+            const c = done({ replies: [routedReply({ chose: ["ux"], reason: "Why." }), answer("r2", "ux", 160)] });
+            expect(byId(items(c), "r1")).toMatchObject({ reaches: "For UX", reachIsDefault: false, pending: "" });
+        });
+
+        it("reads For UX and RAM even when the two are the whole panel", () => {
+            const two = council({
+                experts: [
+                    { id: "ux", name: "UX", brief: "", model: "sonnet" },
+                    { id: "ram", name: "RAM", brief: "", model: "sonnet" },
+                    { id: "coordinator", name: "Coordinator", brief: "", model: "opus", coordinator: true },
+                ],
+                state: "done",
+                round: 4,
+                replies: [routedReply({ chose: ["ux", "ram"], reason: "Both." }, { to: ["ux", "ram"] })],
+            });
+            expect(byId(items(two), "r1")).toMatchObject({ reaches: "For UX and RAM", reachIsDefault: false });
+            // the same two seats on a message nobody routed (an @all) are everyone, as before
+            const all = council({
+                experts: two.experts,
+                state: "done",
+                round: 4,
+                replies: [reply("r1", "you", 150, { proposalid: "", round: 4, to: ["ux", "ram"] })],
+            });
+            expect(byId(items(all), "r1")).toMatchObject({ reaches: "For everyone", reachIsDefault: true });
+        });
+
+        it("says the router is choosing and names no reach while it has not chosen", () => {
+            const c = done({ replies: [routedReply({ pending: true }, { to: [] })] });
+            expect(byId(items(c), "r1")).toMatchObject({
+                reaches: "",
+                reachIsDefault: true,
+                pending: "Router is choosing a seat…",
+            });
+        });
+    });
+
+    describe("a seat's answer", () => {
+        it("carries the router line on the first answer only, and the chips on the last", () => {
+            const c = done({
+                replies: [
+                    routedReply({ chose: ["ux", "ram"], reason: "Layout and memory." }, { to: ["ux", "ram"] }),
+                    answer("r2", "ux", 160),
+                    answer("r3", "ram", 170),
+                ],
+            });
+            const list = items(c);
+            expect(byId(list, "r2")).toMatchObject({
+                router: "Router chose UX and RAM: Layout and memory.",
+                askToo: [],
+                routedReply: "",
+            });
+            expect(byId(list, "r3")).toMatchObject({
+                router: "",
+                askToo: [{ id: "nu", name: "New user" }],
+                routedReply: "r1",
+            });
+        });
+
+        it("puts the line and the chips on the one answer when there is only one", () => {
+            const c = done({ replies: [routedReply({ chose: ["ux"], reason: "Why." }), answer("r2", "ux", 160)] });
+            expect(byId(items(c), "r2")).toMatchObject({
+                router: "Router chose UX: Why.",
+                askToo: [
+                    { id: "ram", name: "RAM" },
+                    { id: "nu", name: "New user" },
+                ],
+                routedReply: "r1",
+            });
+        });
+
+        it("finds the first and the last answer by time, whatever order they were saved in", () => {
+            const c = done({
+                replies: [
+                    routedReply({ chose: ["ux", "ram"], reason: "Both." }, { to: ["ux", "ram"] }),
+                    answer("r3", "ram", 170),
+                    answer("r2", "ux", 160),
+                ],
+            });
+            const list = items(c);
+            expect(byId(list, "r2")).toMatchObject({ router: "Router chose UX and RAM: Both.", askToo: [] });
+            expect(byId(list, "r3")).toMatchObject({ router: "", routedReply: "r1" });
+        });
+
+        it("skips a seat's answer with no words: it is a reaction, no post", () => {
+            const c = done({
+                replies: [
+                    routedReply({ chose: ["ux", "ram"], reason: "Both." }, { to: ["ux", "ram"] }),
+                    answer("r2", "ux", 160),
+                    answer("r3", "ram", 170, { text: "" }),
+                ],
+            });
+            const list = items(c);
+            expect(byId(list, "r3")).toBeUndefined();
+            expect(byId(list, "r2")).toMatchObject({
+                router: "Router chose UX and RAM: Both.",
+                askToo: [{ id: "nu", name: "New user" }],
+                routedReply: "r1",
+            });
+        });
+
+        it("has no chips once every seat answers, and none while the router is still choosing", () => {
+            const everyone = done({
+                replies: [
+                    routedReply({ chose: ["ux"], reason: "Why." }, { to: ["ux", "ram", "nu"] }),
+                    answer("r2", "ux", 160),
+                ],
+            });
+            expect(byId(items(everyone), "r2")).toMatchObject({ askToo: [], routedReply: "" });
+            const pending = done({ replies: [routedReply({ pending: true }, { to: [] }), answer("r2", "ux", 160)] });
+            expect(byId(items(pending), "r2")).toMatchObject({ router: "", askToo: [], routedReply: "" });
+        });
+
+        it("carries nothing on an answer to a message the router did not take up, or on the person's own post", () => {
+            const c = done({
+                replies: [
+                    reply("r1", "you", 150, { proposalid: "", round: 4, to: ["ux", "ram", "nu"] }),
+                    answer("r2", "ux", 160),
+                ],
+            });
+            expect(byId(items(c), "r2")).toMatchObject({ router: "", askToo: [], routedReply: "" });
+            expect(byId(items(c), "r1")).toMatchObject({ router: "", askToo: [], routedReply: "" });
+        });
     });
 });

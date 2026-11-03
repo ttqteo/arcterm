@@ -454,6 +454,16 @@ function mentions(text: string, e: CouncilExpert): boolean {
     });
 }
 
+// `@all` or `@everyone` as a whole word after an @ that does not sit inside a word: the rule `mentions` reads a seat by
+const NAMES_ALL = /(^|[^\p{L}\p{N}_])@(?:all|everyone)(?![\p{L}\p{N}_])/iu;
+
+/** Pure: whether `text` asks every seat on purpose, with `@all` or `@everyone` (a whole word, any case; not `@allison`,
+ *  an address, or an `@all.md` that starts a file). Such a message skips the router and reaches the whole panel, as
+ *  `replyTargets` in pkg/council reads it. */
+export function mentionsAll(text: string): boolean {
+    return NAMES_ALL.test(withoutFileMentions(text));
+}
+
 /** The fewest characters of a chat's tab id that make a mention key: `@82faafca`. */
 export const MIN_CHAT_KEY = 8;
 
@@ -486,10 +496,25 @@ export function chatSeatTabs(c: Pick<Council, "experts">): string[] {
     return c.experts.flatMap((e) => (e.agent ? [e.agent] : []));
 }
 
-/** Pure: the experts a reply of the person's reaches (pkg/council's `To`, worked out the same way): the ones it
- *  @-mentions by name or id (a chat seat also by its mention key, `mentionsChat`), else the proposal's author and every
- *  expert on the path to the reply it answers; with no proposal (Ask the whole council), every non-coordinator expert.
- *  The coordinator never answers.
+// the seats a text names by an @ (and the chats joining with it), as `answerers` reads them: by name or id, a chat seat
+// also by its mention key
+function namedExperts(c: Council, text: string, joining: readonly SeatableAgent[]): CouncilExpert[] {
+    const seated = new Set(chatSeatTabs(c));
+    const joined = new Set(joining.map((a) => a.id));
+    const tabs = [...seated, ...joined];
+    return [
+        ...panel(c).filter(
+            (e) => mentions(text, e) || (isAgentSeat(e) && (joined.has(e.agent) || mentionsChat(text, e.agent, tabs)))
+        ),
+        ...joining.filter((a) => !seated.has(a.id)).map(agentSeat),
+    ];
+}
+
+/** Pure: the experts a reply of the person's reaches (pkg/council's `To`, worked out the same way): every expert for an
+ *  `@all` or `@everyone` (`mentionsAll`); else the ones it @-mentions by name or id (a chat seat also by its mention key,
+ *  `mentionsChat`), else the proposal's author and every expert on the path to the reply it answers; with no proposal
+ *  (Ask the whole council), every non-coordinator expert. The coordinator never answers. Whether the router narrows
+ *  that last case to one seat or two is `routedMessage`: this is who it is addressed to.
  *
  *  `joining` are the live chats the message adds to the council (the ones its @ picked): they count as named, after the
  *  seats, each as the seat wavesrv seats it as (`agentSeat`); a chat that already is a seat is the seat, once. */
@@ -501,15 +526,11 @@ export function answerers(
     joining: readonly SeatableAgent[] = []
 ): CouncilExpert[] {
     const pool = panel(c);
-    const seated = new Set(chatSeatTabs(c));
-    const joined = new Set(joining.map((a) => a.id));
-    const tabs = [...seated, ...joined];
-    const named = [
-        ...pool.filter(
-            (e) => mentions(text, e) || (isAgentSeat(e) && (joined.has(e.agent) || mentionsChat(text, e.agent, tabs)))
-        ),
-        ...joining.filter((a) => !seated.has(a.id)).map(agentSeat),
-    ];
+    if (mentionsAll(text)) {
+        const seated = new Set(chatSeatTabs(c));
+        return [...pool, ...joining.filter((a) => !seated.has(a.id)).map(agentSeat)];
+    }
+    const named = namedExperts(c, text, joining);
     if (named.length > 0) {
         return named;
     }
@@ -527,15 +548,42 @@ export function answerers(
     return pool.filter((e) => path.has(e.id));
 }
 
+/** Pure: whether the router takes up a message of the person's: wavesrv's rule (`appendPersonReply` in pkg/council) for
+ *  when it narrows a whole-council message to the seat or two best placed to answer. The message is on no idea and
+ *  under no reply, names no seat and no chat with an @, holds no `@all`, seats no chat (`joining`), and the council has
+ *  two seats or more with no failed call to choose from: with one there is nothing to choose, and the whole panel
+ *  answers as before. */
+export function routedMessage(
+    c: Council,
+    proposalId: string,
+    parentId: string,
+    text: string,
+    joining: readonly SeatableAgent[] = []
+): boolean {
+    if (proposalId !== "" || parentId !== "" || joining.length > 0 || mentionsAll(text)) {
+        return false;
+    }
+    if (namedExperts(c, text, []).length > 0) {
+        return false;
+    }
+    return panel(c).filter((e) => c.failed?.[e.id] == null).length >= 2;
+}
+
 /** Pure: the label under the person's own reply while it waits for an answer; empty once it is answered, and for
  *  anyone else's reply. A reply posted before the last seat round reaches the seats at the next one; one posted in the
  *  last round or while the summary is written is answered in the follow-up pass, after the summary. */
 // the person's follow-up while the seats answer it (councilseen.ts reads it as Sent, then Seen)
 export const ANSWERING = "Answering…";
 
+/** What the person's post says while the router has not picked its seats yet (`routed.pending`: its `to` is empty). */
+export const ROUTER_CHOOSING = "Router is choosing a seat…";
+
 export function replyLabel(c: Council, reply: CouncilReply): string {
     if (reply.author !== YOU || reply.answered) {
         return "";
+    }
+    if (reply.routed?.pending) {
+        return ROUTER_CHOOSING;
     }
     if (reply.round >= firstFollowRound(c)) {
         return c.state === "running" ? ANSWERING : "";
@@ -578,13 +626,40 @@ export function estimateTokens(n: number): string {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`≈ 5 calls · ~0.3M tokens`). */
+// a range's ends in one unit where they can be (`35k–235k`, not `35k–0.2M`): thousands up to a million, then estimateTokens
+function rangeTokens(n: number): string {
+    return n >= 1000 && n < 1_000_000 ? `${Math.round(n / 1000)}k` : estimateTokens(n);
+}
+
+/** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`≈ 5 calls · ~0.3M tokens`). An
+ *  estimate that holds a high end (`callsmax`, `tokensmax`: a message the router picks the seats for) draws each end that
+ *  differs from its low end as a range: `≈ 2–3 calls · ~35k–235k tokens`. */
 export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): string {
-    const parts = [`≈ ${plural(est.calls, "call", "calls")}`, `~${estimateTokens(est.tokens)} tokens`];
+    const callsMax = est.callsmax != null && est.callsmax !== est.calls ? est.callsmax : null;
+    const tokensMax = est.tokensmax != null && est.tokensmax !== est.tokens ? est.tokensmax : null;
+    const parts = [
+        callsMax == null
+            ? `≈ ${plural(est.calls, "call", "calls")}`
+            : `≈ ${est.calls}–${plural(callsMax, "call", "calls")}`,
+        tokensMax == null
+            ? `~${estimateTokens(est.tokens)} tokens`
+            : `~${rangeTokens(est.tokens)}–${rangeTokens(tokensMax)} tokens`,
+    ];
     if (minutes) {
         parts.push(`~${est.minutes} min`);
     }
     return parts.join(" · ");
+}
+
+/** The line under a composer whose message the router would take, outside a follow-up (nothing is priced there). */
+export const ROUTER_PICKS_WHO = "The router picks who answers";
+
+/** Pure: the cost label under a follow-up's composer for a message the router takes (`routedMessage`): `Router picks 1–2
+ *  seats`, then the estimate's range once it is in (`≈ 2–3 calls · ~35k–235k tokens`). A reply of no calls is wavesrv's
+ *  "nobody can answer": it draws no figure, as before the estimate came back. */
+export function routedLabel(est: CouncilEstimateRtnData | null): string {
+    const head = "Router picks 1–2 seats";
+    return est == null || est.calls <= 0 ? head : `${head} · ${estimateLabel(est, false)}`;
 }
 
 /** Pure: the cost label under a follow-up's composer: who answers (`experts` role experts and `chats` live chats, both

@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A message to the whole council now goes to the one seat (or two) best placed to answer it, not to every seat: the answer says whom the router chose and why, Ask <seat> too has another seat weigh in, and `@all` asks everyone. Let them read files is Auto, On or Off, and in Auto the router decides for a message it takes.
 - A council checks what its experts claim. Every idea, and every reply that takes a side, is labelled by arcterm, never by a model: **Ran** when a test the expert asked for ran and came out as they said, **Disproved** when it came out the other way, **Read code** when a `path:line` it cites holds up, **Guess** when it cites nothing that holds. A cite that does not hold shows as **Wrong cite** on its chip. An expert can ask for up to two tests (`go test`, `vitest` or `cargo test` on one package, file or test), which run in a throwaway copy of your project as it stands, never in your checkout, before the pause after round 1, and every expert reads the results in round 2. <!-- big -->
 - A council has a **Map** tab beside Report and Discussion: a card per expert with what it is doing now and a bar of how many of its claims were run, disproved, read or guessed, and a table of who agrees with which idea, with each idea's label and how it ended. Click an idea to see each expert's reason. A seat's timeline of what it read, searched, ran and said opens from its card or from Seats. <!-- big -->
 
