@@ -105,7 +105,7 @@ passes with the fork's `shelltasks.test.ts` cases for kinds, labels and transcri
 `BackgroundTask`. No view changes in this task.
 
 ### Task 5: The Events and Output peek for a monitor
-**Depends on:** Task 4
+**Depends on:** Task 4 (uses `monitorPeekAtom`, the output read and the label helpers it adds)
 
 **Files:** `frontend/app/view/agents/backgroundtaskpeek.tsx`
 
@@ -120,7 +120,7 @@ Events tab (a monitor's events) and an Output tab (the output tail, sticking to 
 **Acceptance:** `task check:ts` passes; the views are shot by Task 7's scenario.
 
 ### Task 6: Monitor rows in the Agent tree
-**Depends on:** Task 4, Task 5
+**Depends on:** Task 4 (uses the label helpers and `monitorPeekAtom`), Task 5 (mounts the `BackgroundTaskPeek` it adds)
 
 **Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/agenttreemodel.ts`, `frontend/app/view/agents/agenttreemodel.test.ts`
 
@@ -136,7 +136,7 @@ it. The rows must not touch the terminal stack: no pane re-parenting or remount,
 views are shot by Task 7's scenario.
 
 ### Task 7: The `monitor-tasks` scenario
-**Depends on:** Task 3, Task 6
+**Depends on:** Task 3, Task 6 (shoots the tree rows and peek it mounts)
 
 **Files:** `scripts/cdp/scenarios-monitor-tasks.mjs`, `scripts/cdp/scenarios.mjs`
 
@@ -151,7 +151,7 @@ unchanged).
 **Acceptance:** `task verify:ui -- monitor-tasks` passes against a dev app with Tasks 4 to 6 in.
 
 ### Task 8: What's new and the hand checks
-**Depends on:** Task 1, Task 2, Task 3, Task 7
+**Depends on:** Task 1 (describes the backlog flow it adds), Task 2 (describes its animations), Task 3 (describes the ligatures), Task 7 (describes the monitor rows and peek its scenario shows)
 
 **Files:** `CHANGELOG.md`, `docs/hand-checks.md`
 
