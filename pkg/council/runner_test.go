@@ -2475,6 +2475,76 @@ func TestMarkStaleStopsWhatWavesrvLeftRunning(t *testing.T) {
 	}
 }
 
+// ---- the time rounds ran ----
+
+// stillClock makes the runner's clock read a time the test sets, so a run's span is known.
+func stillClock(h *harness, at int64) *atomic.Int64 {
+	var clock atomic.Int64
+	clock.Store(at)
+	h.r.Now = clock.Load
+	return &clock
+}
+
+func TestRanMsAddsTheSpansOfTwoRuns(t *testing.T) {
+	h := newHarness(t)
+	clock := stillClock(h, 10_000)
+	h.f.gate("ux/r1")
+	h.start(testCouncil("c1"))
+	h.f.entered(t, "ux/r1")
+	if c := h.load("c1"); c.RunStarted != 10_000 || c.RanMs != 0 {
+		t.Fatalf("while round 1 runs: runstarted %d ranms %d, want 10000 and 0", c.RunStarted, c.RanMs)
+	}
+	clock.Store(15_000)
+	h.f.release("ux/r1")
+	if c := h.wait("c1"); c.State != StateDone || c.RanMs != 5_000 || c.RunStarted != 0 {
+		t.Fatalf("after the rounds: %s ranms %d runstarted %d, want done, 5000 and 0", c.State, c.RanMs, c.RunStarted)
+	}
+
+	// the clock moves while the council rests: that time is not counted
+	clock.Store(100_000)
+	h.f.gate("lead/r3")
+	if _, err := h.r.Summarize("c1"); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	h.f.entered(t, "lead/r3")
+	if c := h.load("c1"); c.RunStarted != 100_000 || c.RanMs != 5_000 {
+		t.Fatalf("while the summary runs: runstarted %d ranms %d, want 100000 and 5000", c.RunStarted, c.RanMs)
+	}
+	clock.Store(107_000)
+	h.f.release("lead/r3")
+	if c := h.wait("c1"); c.RanMs != 12_000 || c.RunStarted != 0 {
+		t.Fatalf("after the summary: ranms %d runstarted %d, want 12000 and 0", c.RanMs, c.RunStarted)
+	}
+}
+
+func TestRanMsCountsAStoppedRun(t *testing.T) {
+	h := newHarness(t)
+	clock := stillClock(h, 20_000)
+	h.f.gate("ux/r1")
+	h.start(testCouncil("c1"))
+	h.f.entered(t, "ux/r1")
+	clock.Store(23_000)
+	c, err := h.r.Stop("c1")
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if c.State != StateStopped || c.RanMs != 3_000 || c.RunStarted != 0 {
+		t.Fatalf("after Stop: %s ranms %d runstarted %d, want stopped, 3000 and 0", c.State, c.RanMs, c.RunStarted)
+	}
+}
+
+func TestRanMsAddsNothingForAStaleCouncil(t *testing.T) {
+	h := newHarness(t)
+	stillClock(h, 900_000)
+	c := fixtureCouncil("stale", StateRunning, 2)
+	c.RanMs, c.RunStarted = 4_000, 50_000
+	h.save(c)
+	h.r.MarkStale()
+	if got := h.load("stale"); got.State != StateStopped || got.RanMs != 4_000 || got.RunStarted != 0 {
+		t.Fatalf("after MarkStale: %s ranms %d runstarted %d, want stopped, 4000 and 0", got.State, got.RanMs, got.RunStarted)
+	}
+}
+
 // ---- wait ----
 
 func TestWait(t *testing.T) {
