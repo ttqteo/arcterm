@@ -846,7 +846,7 @@ export function askChips(c: Council): AskChip[] {
 // a file by a name with an extension a project holds as text, a path with two slashes or more (one slash is a pair,
 // "pass/fail"), one that starts ./ ../ ~/ or /, or a code span holding a dot or a slash
 const FILE_EXT =
-    "json|jsonl|md|mdx|txt|csv|tsv|ya?ml|toml|ini|go|ts|tsx|js|jsx|mjs|cjs|py|ipynb|rs|java|kt|swift|c|h|cpp|rb|php|sh|sql|html|css|scss|tex|bib|log";
+    "json|jsonl|md|mdx|txt|csv|tsv|ya?ml|toml|ini|go|ts|tsx|js|jsx|mjs|cjs|py|ipynb|rs|java|kt|swift|c|h|cpp|rb|php|sh|sql|html|css|scss|tex|bib|log|astro|vue|svelte";
 const NAMED_FILE = new RegExp(`(?:^|[\\s(\`"'])([\\w~./-]*[\\w-]\\.(?:${FILE_EXT}))(?=$|[\\s),.:;!?\`"'])`, "iu");
 const NAMED_PATH = /(?:^|[\s(`"'])((?:\.{1,2}\/|~\/|\/)[\w.-]+(?:\/[\w.-]+)*|[\w.-]+(?:\/[\w.-]+){2,})/u;
 const NAMED_SPAN = /`([^`\s]*[./][^`\s]*)`/u;

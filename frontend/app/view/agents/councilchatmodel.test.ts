@@ -1177,6 +1177,8 @@ describe("namedFile and readsFiles: a follow-up reads files when the question na
             locked: false,
         });
         expect(readsFiles(null, "Làm hướng nào trước?")).toEqual({ on: false, why: "", locked: false });
+        expect(readsFiles(null, "Sửa TourVideo.astro chưa?").why).toBe("TourVideo.astro");
+        expect(readsFiles(null, "xem App.vue và Nav.svelte").why).toBe("App.vue");
         expect(readsFiles(false, "Trong rail-apps.json có gì?")).toEqual({ on: false, why: "", locked: false });
         expect(readsFiles(true, "Làm hướng nào trước?")).toEqual({ on: true, why: "", locked: false });
     });
