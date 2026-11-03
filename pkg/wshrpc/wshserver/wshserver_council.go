@@ -21,6 +21,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -32,7 +33,8 @@ import (
 var councilRunner = newCouncilRunner(council.ConsultCaller{})
 
 func newCouncilRunner(caller council.Caller) *council.Runner {
-	return &council.Runner{Caller: caller, Agents: council.AgentCaller{Link: liveAgentLink{}}, OnChange: publishCouncilChanged}
+	// Trees: the verify commands run in a detached tree of the council's snapshot, which only pkg/orchestrate can make
+	return &council.Runner{Caller: caller, Agents: council.AgentCaller{Link: liveAgentLink{}}, Trees: orchestrate.CouncilTrees{}, OnChange: publishCouncilChanged}
 }
 
 // publishCouncilChanged tells the cockpit and `wsh council wait` that a council was saved.

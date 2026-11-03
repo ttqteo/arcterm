@@ -7,6 +7,9 @@ import {
     contextLabel,
     councilThread,
     failureLines,
+    foldSettle,
+    foldToggle,
+    foldView,
     insertChatMention,
     insertFileMention,
     insertMention,
@@ -146,6 +149,31 @@ const room = (extra: Partial<Council> = {}): Council =>
         ...extra,
     });
 
+describe("the question's fold", () => {
+    it("opens a folded question and closes an open one, through the phases in which its height moves", () => {
+        expect(foldToggle("folded")).toBe("opening");
+        expect(foldToggle("open")).toBe("closing");
+        expect(foldSettle("opening")).toBe("open");
+        expect(foldSettle("closing")).toBe("folded");
+    });
+
+    it("ignores a click while the height moves, and settles a phase that is not moving as it is", () => {
+        expect(foldToggle("opening")).toBeNull();
+        expect(foldToggle("closing")).toBeNull();
+        expect(foldSettle("folded")).toBe("folded");
+        expect(foldSettle("open")).toBe("open");
+    });
+
+    it("draws three lines and two limits only when folded; the label and aria-expanded follow the intent", () => {
+        expect(foldView("folded")).toEqual({ expanded: false, clamp: true, allLimits: false });
+        // opening: the whole text and every limit are drawn, so the height can grow into them
+        expect(foldView("opening")).toEqual({ expanded: true, clamp: false, allLimits: true });
+        expect(foldView("open")).toEqual({ expanded: true, clamp: false, allLimits: true });
+        // closing: still all of it until the height has come down, but the control already reads Show more
+        expect(foldView("closing")).toEqual({ expanded: false, clamp: false, allLimits: true });
+    });
+});
+
 describe("questionPost", () => {
     it("is the person's question as a message of theirs, at the time the council started", () => {
         expect(questionPost(council())).toEqual({
@@ -186,8 +214,7 @@ describe("councilThread: an idea", () => {
             label: "proposes",
             title: "title P1",
             text: "argument P1",
-            evidence: ["pkg/services/model.go:38"],
-            weak: "",
+            claim: { evidence: [{ ref: "pkg/services/model.go:38" }], label: "", lang: "en" },
             wild: false,
             edited: false,
             at: "14:01",
@@ -208,8 +235,30 @@ describe("councilThread: an idea", () => {
         expect(ideaOf(room(), "P3")).toMatchObject({ author: "ux", name: "UX audit", initials: "UA", tag: "agent" });
     });
 
-    it("keeps a weak claim apart from the evidence, as the chip reads", () => {
-        expect(ideaOf(room(), "P2")).toMatchObject({ evidence: ["a.ts:1"], weak: "Weak · no measurement" });
+    it("carries its evidence as Go checked it, its check label and the council's language, for the chips under it", () => {
+        const c = room({ lang: "vi" });
+        c.proposals[1].label = "read";
+        c.proposals[1].evidence = [
+            { ref: "a.ts:1", cite: "ok" },
+            { ref: "b.ts:900", cite: "wrong", citenote: "line 900 is past the end (412 lines)" },
+            { ref: "", weak: true, note: "no measurement" },
+        ];
+        expect(ideaOf(c, "P2").claim).toEqual({ evidence: c.proposals[1].evidence, label: "read", lang: "vi" });
+        // a council with no language reads as English, and an idea Go did not label has none
+        expect(ideaOf(room(), "P2").claim).toMatchObject({ label: "", lang: "en" });
+    });
+
+    it("carries the claim of a seat's reply and of a held draft, idea or reply", () => {
+        const c = room({ lang: "vi" });
+        c.replies.find((r) => r.id === "r3")!.label = "guess";
+        c.replies.find((r) => r.id === "r6")!.label = "ran";
+        c.proposals.find((p) => p.id === "P4")!.label = "disproved";
+        const items = councilThread(c, "P1")!.items;
+        expect(byId(items, "r3")).toMatchObject({ claim: { label: "guess", lang: "vi" } });
+        // a reply Go did not label has no badge
+        expect(byId(items, "r4")).toMatchObject({ claim: { label: "", lang: "vi" } });
+        expect(byId(items, "r6")).toMatchObject({ kind: "draft", claim: { label: "ran", lang: "vi" } });
+        expect(councilThread(c, "P4")!).toMatchObject({ draft: { kind: "draft", claim: { label: "disproved" } } });
     });
 
     it("says an idea the person edited before sending was edited", () => {

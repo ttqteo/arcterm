@@ -187,6 +187,12 @@ Harnesses:
 
 Cockpit and surfaces:
 
+- **(arcterm) Council: session resume across rounds** (2026-11-03) — each expert turn is still a fresh `claude -p`
+  with no session resume (`pkg/consult/consult.go`), so every round re-reads the context. Deferred because the verify
+  step now sits between round 1 and round 2 and changes the time between an expert's turns, while the prompt cache
+  lives 5 minutes (`consult.go:80`). Measure the gap between rounds once that has settled, then decide whether
+  resuming the session pays; source `docs/superpowers/specs/2026-11-03-council-stronger-design.md` ("Not in this
+  change").
 - **(arcterm) Translate's starred words sent to Lingua** (2026-10-31) — starred words stay in arcterm's localStorage;
   sending them to Lingua (its course shelf, or a personal word list it can drill) waits on the person's ask. Notes in
   `docs/deferred.md`.

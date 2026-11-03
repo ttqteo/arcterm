@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -37,6 +38,10 @@ type Runner struct {
 	Caller Caller
 	// Agents is the caller for the seats with Agent set, an AgentCaller over the live agents; Caller serves the rest.
 	Agents Caller
+	// Trees makes and removes the throwaway tree the verify commands run in (RunVerifies). pkg/orchestrate implements it
+	// and wavesrv wires it: orchestrate imports this package, so this one cannot import it. Nil runs no command, and the
+	// timeline says so.
+	Trees TreeMaker
 	// OnChange is told after each save, with the council as saved. It may be called from several goroutines at once, and
 	// the council is the callee's to read, not to change.
 	OnChange func(c *Council)
@@ -126,6 +131,10 @@ func (p prevState) restore(c *Council) { c.State, c.Round, c.Error = p.state, p.
 func prevOf(c *Council) prevState { return prevState{c.State, c.Round, c.Error} }
 
 var errSkip = errors.New("nothing to save")
+
+// takeSnapshot is the snapshot a Review council takes of its project when its run begins (Snapshot). It is a variable so a
+// test never runs git unless it asks to.
+var takeSnapshot = Snapshot
 
 func (r *Runner) now() int64 {
 	if r.Now != nil {
@@ -302,6 +311,7 @@ func (r *Runner) stampNew(c *Council) {
 	c.Activity, c.Failed, c.Skips, c.Stats = nil, nil, nil, nil
 	c.Tokens, c.Calls, c.Started, c.Error = 0, 0, 0, ""
 	c.RanMs, c.RunStarted = 0, 0
+	c.Timeline, c.Snapshot = nil, ""
 }
 
 // beginRun marks where a run (a council's rounds, or a follow-up: a reply, Continue, Summarize, Retry) begins; its
@@ -320,7 +330,9 @@ func endRun(c *Council, now int64) {
 // beginFresh is where a council's run begins, whether Start, StartSaved or the queue starts it, so it is where the
 // council records the harness it runs under, and where Rounds, which only a council with agents honours, is cleared from
 // one without: it runs today's two rounds. It is also where the draft mode is taken: cleared and frozen again from the
-// seats the council has now, so a re-run of a saved council takes the mode its seats give at that start.
+// seats the council has now, so a re-run of a saved council takes the mode its seats give at that start. And it is where
+// the council's language is read, from the question else the feature (LangOf), and each stock role's seat is named in it
+// (NameSeats): a seat the person renamed, an agent seat and a role of their own keep the name they have.
 func (r *Runner) beginFresh(c *Council) {
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
 	r.beginRun(c)
@@ -330,6 +342,17 @@ func (r *Runner) beginFresh(c *Council) {
 	if !HasAgents(c) {
 		c.Rounds = 0
 	}
+	c.Lang = councilLang(c.Question, c.Feature)
+	NameSeats(c)
+}
+
+// councilLang is the language a council is held in: the question's when it has one, else the feature's. It is the text
+// Setup reads too (setupLang in councilsetupmodel.ts), so the names Setup showed are the names Start gives.
+func councilLang(question, feature string) string {
+	if strings.TrimSpace(question) != "" {
+		return LangOf(question)
+	}
+	return LangOf(feature)
 }
 
 // absent is nil when nothing is saved under id yet.
@@ -763,6 +786,11 @@ func (r *Runner) roundsWork(from int) work {
 			return loadFailed(err)
 		}
 		synth, held, at := SynthesisRound(snap), HoldsDrafts(snap), snap.Round
+		snapped := func() {}
+		if from == 1 {
+			snapped = r.snapshotTree(ctx, rn, id, snap)
+		}
+		defer snapped() // a run that ends early still waits for it
 		for round := from; round < synth; round++ {
 			if round != at {
 				r.setRound(rn, id, round)
@@ -770,8 +798,23 @@ func (r *Runner) roundsWork(from int) work {
 			}
 			if round == 1 {
 				forEachExpert(panelOf(snap), func(e CouncilExpert) { r.round1(ctx, rn, id, snap, e) })
-			} else if err := r.replyPass(ctx, rn, id, round); err != nil {
-				return loadFailed(err)
+				snapped()
+				// the checks on what round 1 claimed come before the pause, so the person cuts ideas knowing which ones held up
+				r.settleClaims(ctx, rn, id)
+			} else {
+				// an idea the person sent after round 1 (held drafts) asked for commands too: they run before it is argued over
+				if r.verifyClaims(ctx, rn, id) && ctx.Err() == nil {
+					r.checkClaims(ctx, rn, id)
+				}
+				if ctx.Err() != nil {
+					return ending{}
+				}
+				if err := r.replyPass(ctx, rn, id, round); err != nil {
+					return loadFailed(err)
+				}
+				if ctx.Err() == nil {
+					r.checkClaims(ctx, rn, id)
+				}
 			}
 			if ctx.Err() != nil {
 				return ending{}
@@ -894,8 +937,12 @@ func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller
 		req.OnTool = func(text string) {
 			act := first
 			act.Text = text
+			step, tool := toolStep(text, r.now())
 			r.updateLogged(rn, id, func(c *Council) error {
 				setActivity(c, e.Id, act)
+				if tool {
+					addStep(c, e.Id, step)
+				}
 				return nil
 			})
 		}
@@ -947,7 +994,9 @@ func (r *Runner) finishCall(ctx context.Context, rn *run, id string, e CouncilEx
 			setFailed(c, e.Id, CouncilFailure{Round: round, Error: errText(err)})
 		default:
 			delete(c.Failed, e.Id)
+			ideas, replies := len(c.Proposals), len(c.Replies)
 			apply(c)
+			recordPosts(c, e.Id, ideas, replies)
 			if res.fellBack != "" {
 				c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: round, Model: res.fellBack, Was: e.Model, Ts: r.now(), Auto: true})
 			}
@@ -1034,6 +1083,11 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 			} else {
 				p.Wild = false // only a Brainstorm has wild ideas
 			}
+			if isBrainstorm(c) || IsAgent(e) {
+				// a Brainstorm asks for no check and an agent seat is never offered the commands, but a model may send a
+				// verify list all the same: the parser cannot know the mode or the seat, so it is dropped here
+				p.Runs = nil
+			}
 			c.Proposals = append(c.Proposals, p)
 		}
 	})
@@ -1045,6 +1099,296 @@ func withoutNoEvidenceChip(ev []CouncilEvidence) []CouncilEvidence {
 		return nil
 	}
 	return ev
+}
+
+// ---- checked claims, verify requests and the timeline ----
+
+// seatLookup bounds how long the runner waits to learn where a live agent works.
+const seatLookup = 5 * time.Second
+
+// snapshotTree starts the snapshot (Snapshot) of a Review council's project as its run begins, and keeps the commit on the
+// council: the verify commands run on it. A Brainstorm runs no command, so it takes none. A project that is not a git repo
+// has none, and a snapshot that fails is logged and left out: the council runs all the same, and each command it asked for
+// says there was no tree to run it in.
+//
+// Hashing the whole tree takes from about a second to over ten on a cold file cache, and the experts only read, so it runs
+// beside round 1 instead of holding the first call back. The func it returns waits for it: the verify step needs the commit,
+// and a run must not end with the snapshot still writing to the council.
+func (r *Runner) snapshotTree(ctx context.Context, rn *run, id string, snap *Council) (wait func()) {
+	if isBrainstorm(snap) {
+		return func() {}
+	}
+	done := make(chan struct{})
+	project := snap.Project
+	go func() {
+		defer close(done)
+		commit, err := takeSnapshot(ctx, project)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("[council] %s: no snapshot of %s: %v", id, project, err)
+			}
+			return
+		}
+		if commit == "" {
+			return
+		}
+		r.updateLogged(rn, id, func(c *Council) error {
+			c.Snapshot = commit
+			return nil
+		})
+	}()
+	return func() { <-done }
+}
+
+// agentLink is the AgentLink behind the runner's Agents when they are an AgentCaller, nil for any other Caller.
+func (r *Runner) agentLink() AgentLink {
+	switch a := r.Agents.(type) {
+	case AgentCaller:
+		return a.Link
+	case *AgentCaller:
+		if a != nil {
+			return a.Link
+		}
+	}
+	return nil
+}
+
+// citeRoots are the folders and files the cites of a role expert are read against: the project first, then each file and
+// folder the council attached (c.Files, which Setup may write relative to the project) and the folder of each image the
+// person attached to a reply (the AddDirs of the call that answers it). All are absolute, as CheckEvidence needs them.
+func citeRoots(c *Council) []string {
+	var roots []string
+	add := func(p string) {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if p = filepath.Clean(p); !slices.Contains(roots, p) {
+			roots = append(roots, p)
+		}
+	}
+	if project := strings.TrimSpace(c.Project); project != "" {
+		add(project)
+	}
+	attached := func(p string) {
+		if p = strings.TrimSpace(p); p == "" {
+			return
+		}
+		if !filepath.IsAbs(p) && strings.TrimSpace(c.Project) != "" {
+			p = filepath.Join(c.Project, p)
+		}
+		add(p)
+	}
+	for _, f := range c.Files {
+		attached(f)
+	}
+	for _, x := range c.Replies {
+		if x.Author == YouId {
+			for _, a := range x.Attachments {
+				attached(filepath.Dir(a))
+			}
+		}
+	}
+	return roots
+}
+
+// checkRoots gives the folders each expert's cites are read against (ApplyChecks): citeRoots for a role expert, and for a
+// live agent's seat its own working directory first, when the link knows it, then the same. A seat whose folder is not
+// known reads against the project.
+func (r *Runner) checkRoots(ctx context.Context, c *Council) func(expertId string) []string {
+	base := citeRoots(c)
+	seats := map[string][]string{}
+	if link := r.agentLink(); link != nil {
+		for _, e := range c.Experts {
+			if !IsAgent(e) {
+				continue
+			}
+			lctx, cancel := context.WithTimeout(ctx, seatLookup)
+			st, err := link.Seat(lctx, e.Agent)
+			cancel()
+			cwd := strings.TrimSpace(st.Cwd)
+			if err != nil || cwd == "" {
+				continue
+			}
+			if abs, err := filepath.Abs(cwd); err == nil {
+				cwd = abs
+			}
+			roots := []string{filepath.Clean(cwd)}
+			for _, b := range base {
+				if !slices.Contains(roots, b) {
+					roots = append(roots, b)
+				}
+			}
+			seats[e.Id] = roots
+		}
+	}
+	return func(expertId string) []string {
+		if roots, ok := seats[expertId]; ok {
+			return roots
+		}
+		return base
+	}
+}
+
+// checkClaims checks the cites of what the experts have said so far and labels each claim (ApplyChecks), as one save. It
+// runs after round 1, after each reply pass, once a verify step has filled in its results, and when the person sends a
+// held idea. It starts every claim from scratch, so running it again is safe.
+func (r *Runner) checkClaims(ctx context.Context, rn *run, id string) {
+	snap, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: claims not checked: %v", id, err)
+		return
+	}
+	if isBrainstorm(snap) {
+		return
+	}
+	rootsFor := r.checkRoots(ctx, snap)
+	r.updateLogged(rn, id, func(c *Council) error {
+		ApplyChecks(c, rootsFor)
+		return nil
+	})
+}
+
+// hasOpenRequests says an idea that is out in the room and not cut still holds a verify request nothing has handled.
+func hasOpenRequests(c *Council) bool {
+	return slices.ContainsFunc(c.Proposals, func(p CouncilProposal) bool {
+		return Sent(p.Draft) && !p.Cut && slices.ContainsFunc(p.Runs, func(x CouncilRun) bool { return x.State == "" })
+	})
+}
+
+// verifyClaims runs the commands the experts asked for (RunVerifies) and says whether there were any. RunVerifies works on
+// a council nobody else writes, so it gets a copy of the ideas, and each result is merged back into the saved council as
+// its command ends, to show on the Map and the timeline while the next one runs. The step it reports for a command is the
+// timeline's row (a result replaces its opening row), and the card of the expert it belongs to shows the command while it
+// runs.
+func (r *Runner) verifyClaims(ctx context.Context, rn *run, id string) bool {
+	snap, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: commands not run: %v", id, err)
+		return false
+	}
+	if isBrainstorm(snap) || !hasOpenRequests(snap) {
+		return false
+	}
+	work := *snap
+	work.Proposals = slices.Clone(snap.Proposals)
+	for i := range work.Proposals {
+		work.Proposals[i].Runs = slices.Clone(work.Proposals[i].Runs)
+	}
+	onStep := func(expertId string, s CouncilStep) {
+		r.updateLogged(rn, id, func(c *Council) error {
+			upsertStep(c, expertId, s)
+			if s.Result == "" {
+				setActivity(c, expertId, CouncilActivity{Text: s.Target})
+			} else {
+				delete(c.Activity, expertId)
+				mergeRuns(c, &work)
+			}
+			return nil
+		})
+	}
+	RunVerifies(ctx, r.Trees, &work, onStep)
+	r.updateLogged(rn, id, func(c *Council) error {
+		mergeRuns(c, &work) // what ended before a Stop; the rest stays a request
+		return nil
+	})
+	return true
+}
+
+// mergeRuns copies the verify requests src has handled onto the same requests of dst, which is the council as saved.
+func mergeRuns(dst, src *Council) {
+	for _, sp := range src.Proposals {
+		dp := findProposal(dst, sp.Id)
+		if dp == nil {
+			continue
+		}
+		for j, sr := range sp.Runs {
+			if sr.State != "" && j < len(dp.Runs) && dp.Runs[j].Command == sr.Command && dp.Runs[j].State == "" {
+				dp.Runs[j] = sr
+			}
+		}
+	}
+}
+
+// settleClaims is what follows a round of ideas: check the cites and label the claims, run the commands the ideas asked
+// for, and label them again with the results in. A Stop leaves it half done.
+func (r *Runner) settleClaims(ctx context.Context, rn *run, id string) {
+	if ctx.Err() != nil {
+		return
+	}
+	r.checkClaims(ctx, rn, id)
+	if r.verifyClaims(ctx, rn, id) && ctx.Err() == nil {
+		r.checkClaims(ctx, rn, id)
+	}
+}
+
+// toolStep is the timeline row for a tool line an expert reported: the first word is the kind (Read is read, Grep and Glob
+// are search, any other keeps its own word: a live agent's roster says "reading seat.go", "running go test", or a bare
+// tool name), the rest is the target. A blank line is no step.
+func toolStep(text string, ts int64) (CouncilStep, bool) {
+	word, rest, _ := strings.Cut(strings.TrimSpace(text), " ")
+	if word == "" {
+		return CouncilStep{}, false
+	}
+	kind := word
+	switch word {
+	case "Read":
+		kind = StepRead
+	case "Grep", "Glob":
+		kind = StepSearch
+	}
+	return CouncilStep{Ts: ts, Kind: kind, Target: strings.TrimSpace(rest)}, true
+}
+
+// addStep puts a row at the end of an expert's timeline and drops the oldest past MaxTimelineSteps.
+func addStep(c *Council, expertId string, s CouncilStep) {
+	if c.Timeline == nil {
+		c.Timeline = map[string][]CouncilStep{}
+	}
+	rows := append(c.Timeline[expertId], s)
+	if over := len(rows) - MaxTimelineSteps; over > 0 {
+		rows = slices.Clone(rows[over:])
+	}
+	c.Timeline[expertId] = rows
+}
+
+// upsertStep is addStep for a step that comes twice, a command's opening and its result: the second replaces the row with
+// the same time, kind and target.
+func upsertStep(c *Council, expertId string, s CouncilStep) {
+	rows := c.Timeline[expertId]
+	for i := len(rows) - 1; i >= 0; i-- {
+		if rows[i].Ts == s.Ts && rows[i].Kind == s.Kind && rows[i].Target == s.Target {
+			rows[i] = s
+			return
+		}
+	}
+	addStep(c, expertId, s)
+}
+
+// recordPosts adds a row for each idea and reply expertId posted since c had ideas ideas and replies replies: apply
+// appends them, so the new ones are the tails.
+func recordPosts(c *Council, expertId string, ideas, replies int) {
+	if ideas <= len(c.Proposals) {
+		for _, p := range c.Proposals[ideas:] {
+			if p.Author == expertId {
+				addStep(c, expertId, CouncilStep{Ts: p.Ts, Kind: StepPropose, Target: p.Title})
+			}
+		}
+	}
+	if replies <= len(c.Replies) {
+		for _, x := range c.Replies[replies:] {
+			if x.Author == expertId {
+				addStep(c, expertId, CouncilStep{Ts: x.Ts, Kind: StepReply, Target: replyTarget(c, x)})
+			}
+		}
+	}
+}
+
+// replyTarget is what a reply was posted on: "P2 · the idea's title", or the whole council when it is on no idea.
+func replyTarget(c *Council, x CouncilReply) string {
+	if p := findProposal(c, x.ProposalId); p != nil {
+		return p.Id + " · " + p.Title
+	}
+	return "the whole council"
 }
 
 // ---- round 2 ----
@@ -2229,6 +2573,16 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 		saved *Council
 		start func()
 	)
+	// an idea or a reply that takes a stance is labelled once it is out in the room, so a draft the person sends is
+	// checked now: the checks skipped it while it was held
+	rootsFor := r.checkRoots(context.Background(), cur)
+	settle := func(c *Council) error {
+		if err := settleDraft(c, itemId, action, text); err != nil {
+			return err
+		}
+		ApplyChecks(c, rootsFor)
+		return nil
+	}
 	// the last held draft of a council waiting on them starts what comes next; a draft that is not held fails in settleDraft
 	if from := cur.Round + 1; cur.State == StateAwaiting && r.active[id] == nil && HeldDrafts(cur) == 1 {
 		if r.Caller == nil {
@@ -2236,7 +2590,7 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 		} else {
 			saved, start, err = r.launchLocked(context.Background(), id, func() (*Council, error) {
 				return Update(id, func(c *Council) error {
-					if err := settleDraft(c, itemId, action, text); err != nil {
+					if err := settle(c); err != nil {
 						return err
 					}
 					c.State, c.Round, c.Error = StateRunning, from, ""
@@ -2246,7 +2600,7 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 			}, r.roundsWork(from))
 		}
 	} else {
-		saved, err = Update(id, func(c *Council) error { return settleDraft(c, itemId, action, text) })
+		saved, err = Update(id, settle)
 	}
 	r.mu.Unlock()
 	if err != nil {
@@ -2338,6 +2692,7 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState, mo
 			return loadFailed(err)
 		}
 		r.retrySeat(ctx, rn, id, snap, e, f, model)
+		r.settleClaims(ctx, rn, id) // what the seat said now is checked, and its commands run, as in the round it missed
 		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
 	}
 }
@@ -2472,6 +2827,7 @@ func (r *Runner) retryAllLocked(id string, models map[string]string) (*Council, 
 			wg.Go(func() { r.retrySeat(ctx, rn, id, snap, j.e, j.f, j.model) })
 		}
 		wg.Wait()
+		r.settleClaims(ctx, rn, id)
 		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
 	})
 }
@@ -2661,7 +3017,9 @@ const suggestShape = `{
 
 const maxSuggestedRoles = 2
 
-func suggestPrompt(project, feature, question string, files []string, roles []CouncilExpert, groups []CouncilGroup) string {
+// suggestPrompt is Setup's suggestion prompt. lang is the language of the person's question (councilLang): a Vietnamese one
+// asks for the suggested roles' names in Vietnamese too (LangLine).
+func suggestPrompt(project, feature, question string, files []string, roles []CouncilExpert, groups []CouncilGroup, lang string) string {
 	names := map[string]string{}
 	for _, role := range roles {
 		names[role.Id] = role.Name
@@ -2701,6 +3059,9 @@ func suggestPrompt(project, feature, question string, files []string, roles []Co
 		"the feature and the question are a problem or a goal with no answer yet (\"how do we…\", \"what should…\"), \"" +
 		ModeReview + "\" when they are a thing to judge (a feature, a spec, a plan or a draft that exists; \"review this\", " +
 		"\"what's wrong with…\"). A brainstorm fits a group made for ideas, a review one made for judging.\n\n")
+	if l := LangLine(lang); l != "" {
+		b.WriteString(l + "\n\n")
+	}
 	b.WriteString(jsonRule + "\n```json\n" + suggestShape + "\n```\n")
 	return b.String()
 }
@@ -2787,7 +3148,7 @@ func (r *Runner) Suggest(ctx context.Context, project, feature, question string,
 	asker := CouncilExpert{Id: "suggest", Name: "Coordinator", Model: ModelExpert}
 	res, err := r.Caller.Call(ctx, CallReq{
 		Expert: asker, Cwd: project, Tools: true,
-		Prompt: suggestPrompt(project, feature, question, files, roles, groups),
+		Prompt: suggestPrompt(project, feature, question, files, roles, groups, councilLang(question, feature)),
 	})
 	if err == nil {
 		err = emptyReply(res)

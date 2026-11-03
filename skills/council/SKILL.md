@@ -73,8 +73,8 @@ wsh council start --mode <review|brainstorm> --mode-why "<one line: why this mod
   role seat, `--model skeptic=opus` for one (repeatable; a named seat wins). `estimate` takes it too, so quote the price
   with the same flags. A seated chat answers on its own session's model.
 - `--group` is optional: `brainstorm` takes `product-ideas` and `review` takes `ui-feature` (a UI feature, a spec or a
-  plan) when you leave it out; with `--agent`, `brainstorm` takes `agents-ideas` (a Contrarian and the Facilitator) and
-  `review` takes `agents` (a Skeptic and the coordinator). Use `--group paper` ("Paper review") for a `.tex` draft. An
+  plan) when you leave it out; with `--agent`, `brainstorm` takes `agents-ideas` (an Other side and the Host) and
+  `review` takes `agents` (a Bug hunter and the Summarizer). Use `--group paper` ("Paper review") for a `.tex` draft. An
   explicit `--group` adds its roles beside the seated chats.
 - Leave `--pause` out unless the person asked for it: a paused council stops after round 1 and only the person can
   continue it. `--queue` is accepted and does nothing more; every second start is queued.
@@ -105,8 +105,8 @@ A council's directions are only in its report. Its document is saved under the p
 
 By default a council is fresh role experts. When the person **names chats or tabs** for it ("a council on v5 này +
 5065bd8c + 71d93e40"), those chats sit in it and speak from their own context: each takes its turn in its own tab, and
-the talk lands in that tab's transcript. The panel is the named chats, one fresh Skeptic (a Contrarian in `brainstorm`)
-who looks for holes in what they say, and a fresh coordinator (the Facilitator in `brainstorm`) who writes the report.
+the talk lands in that tab's transcript. The panel is the named chats, one fresh Bug hunter (an Other side in `brainstorm`)
+who looks for holes in what they say, and a fresh Summarizer (the Host in `brainstorm`) who writes the report.
 
 - Pass each named tab as `--agent <tab id>`, repeated once per tab. The ids are the ones `wsh agents list --all` prints
   (id, project, title); match the person's names against that list.

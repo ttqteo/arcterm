@@ -11,8 +11,8 @@
 //   history   Conversation History: the old Sessions surface's master-detail, embedded
 //   canvases  Canvas gallery: the gallery of every project's design canvases, and its viewer (canvasgallerystore.ts)
 //   councils  Councils: every project's councils, closed ones too, newest first (councilhistory.ts); a row opens `council`
-//   council   one council's Discussion or report (Summary), or a project's council Setup (councilpane.tsx); which council, which
-//             of the three views and which project's draft are councilstore.ts's councilSelAtom, councilViewAtom and
+//   council   one council's Discussion, report (Summary) or Map, or a project's council Setup (councilpane.tsx); which council,
+//             which of the four views and which project's draft are councilstore.ts's councilSelAtom, councilViewAtom and
 //             councilSetupProjectAtom
 //   project   one project's Overview (projectoverview.tsx): what in it waits on you and runs; which project is overviewProjectAtom
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
@@ -92,12 +92,12 @@ export function showProjectOverview(project: string, model?: Pick<AgentsViewMode
     }
 }
 
-/** Open one council in the Agent surface, on `view` when given, else on the view the person left it on, unless a
- *  summary was written since (reopenView); a council not shown before opens on its report when it has ended with a
- *  summary and on its Discussion otherwise (defaultCouncilView, read from the council's atom, else from the list of
- *  every council; a council not loaded yet opens on its Discussion). From the Agent surface itself (a tree row) nothing more is needed;
- *  from any other (the palette) pass the model, which lands on Agent. `only`, an expert's id, has the Discussion show
- *  that seat's messages alone (the Summary's column); every call without it shows everyone again. */
+/** Open one council in the Agent surface, on `view` when given (its Discussion, its report, or its Map), else on the view
+ *  the person left it on, unless a summary was written since (reopenView); a council not shown before opens on its report
+ *  when it has ended with a summary and on its Discussion otherwise (defaultCouncilView, read from the council's atom, else
+ *  from the list of every council; a council not loaded yet opens on its Discussion). From the Agent surface itself (a tree
+ *  row) nothing more is needed; from any other (the palette) pass the model, which lands on Agent. `only`, an expert's id,
+ *  has the Discussion show that seat's messages alone (the Summary's column); every call without it shows everyone again. */
 export function showCouncil(
     id: string,
     view?: Exclude<CouncilView, "setup">,

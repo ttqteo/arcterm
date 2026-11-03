@@ -171,6 +171,92 @@ func TestParseRound1Rejects(t *testing.T) {
 	}
 }
 
+func TestParseRound1Verify(t *testing.T) {
+	props, _, err := ParseRound1(jsonFence(`{"overview": "", "proposals": [
+	  {"title": "Sleep sooner", "argument": "A", "evidence": [{"ref": "pkg/services/idle.go:12"}],
+	   "verify": [
+	     {"command": " go test ./pkg/services -run TestIdle ", "expect": "FAIL", "why": " it never sleeps "},
+	     {"command": "npx vitest run frontend/a.test.ts", "expect": " pass "},
+	     {"command": "   ", "expect": "pass"},
+	     {"command": "cargo test idle_sleep", "expect": "maybe"},
+	     {"command": "go test ./pkg/x -run TestZ"},
+	     "go test ./pkg/y -run TestY",
+	     {"command": "go test ./pkg/z -run TestZ", "expect": true}
+	   ]},
+	  {"title": "Show the state", "argument": "B"},
+	  {"title": "Third", "argument": "C", "verify": []},
+	  {"title": "Fourth", "argument": "D", "verify": "go test ./pkg/x -run TestY"}
+	]}`))
+	if err != nil {
+		t.Fatalf("a verify list with slips in it failed the whole reply: %v", err)
+	}
+	if len(props) != 4 {
+		t.Fatalf("proposals = %+v, want 4", props)
+	}
+	// a request keeps its words; a request with no command, an expect that is neither pass nor fail, or no expect to judge
+	// the result by is no request, and neither is an item that is not an object. State stays empty: Go runs them later.
+	want := []CouncilRun{
+		{Command: "go test ./pkg/services -run TestIdle", Expect: RunFail, Why: "it never sleeps"},
+		{Command: "npx vitest run frontend/a.test.ts", Expect: RunPass},
+	}
+	if !reflect.DeepEqual(props[0].Runs, want) {
+		t.Errorf("runs = %+v\nwant %+v", props[0].Runs, want)
+	}
+	for i := 1; i < 4; i++ {
+		if props[i].Runs != nil {
+			t.Errorf("proposal %d runs = %+v, want none", i+1, props[i].Runs)
+		}
+	}
+}
+
+func TestParseRound1KeepsEveryRequestForTheRunnerToCap(t *testing.T) {
+	// the cap of 2 per expert is Go's to apply when it runs them, with the reason on the third; parsing keeps all of them
+	props, _, err := ParseRound1(jsonFence(`{"proposals": [{"title": "T", "argument": "A", "verify": [
+	  {"command": "go test ./a -run TestA", "expect": "pass"},
+	  {"command": "go test ./b -run TestB", "expect": "pass"},
+	  {"command": "go test ./c -run TestC", "expect": "fail"}]}]}`))
+	if err != nil || len(props) != 1 || len(props[0].Runs) != 3 {
+		t.Fatalf("got %+v, %v; want the three requests", props, err)
+	}
+}
+
+func TestParseQuote(t *testing.T) {
+	// round 1: a quote rides on its evidence item, trimmed; a bare string has none; an item with no ref is dropped
+	props, _, err := ParseRound1(jsonFence(`{"proposals": [{"title": "T", "argument": "A", "evidence": [
+	  {"ref": "a.go:1", "quote": "  func f() {  "}, "b.go:2", {"ref": "", "quote": "orphan"}, {"ref": "c.go:3", "quote": "   "}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []CouncilEvidence{{Ref: "a.go:1", Quote: "func f() {"}, {Ref: "b.go:2"}, {Ref: "c.go:3"}}
+	if !reflect.DeepEqual(props[0].Evidence, want) {
+		t.Errorf("round 1 evidence = %+v\nwant %+v", props[0].Evidence, want)
+	}
+
+	// round 2: a stance's evidence
+	r2, err := ParseRound2(jsonFence(`{"stances": [{"proposalid": "P1", "stance": "challenge", "reason": "r",
+	  "evidence": [{"ref": "d.go:4", "quote": "x := 1"}]}],
+	  "answers": [{"replyid": "r3", "text": "t", "evidence": [{"ref": "e.go:5", "quote": "y := 2"}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []CouncilEvidence{{Ref: "d.go:4", Quote: "x := 1"}}; !reflect.DeepEqual(r2.Stances[0].Evidence, want) {
+		t.Errorf("round 2 stance evidence = %+v, want %+v", r2.Stances[0].Evidence, want)
+	}
+	if want := []CouncilEvidence{{Ref: "e.go:5", Quote: "y := 2"}}; !reflect.DeepEqual(r2.Answers[0].Evidence, want) {
+		t.Errorf("round 2 answer evidence = %+v, want %+v", r2.Answers[0].Evidence, want)
+	}
+
+	// the answers pass
+	ans, err := ParseAnswers(jsonFence(`{"answers": [{"replyid": "r3", "text": "t", "stance": "accept",
+	  "evidence": [{"ref": "f.go:6", "quote": "z := 3"}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []CouncilEvidence{{Ref: "f.go:6", Quote: "z := 3"}}; !reflect.DeepEqual(ans[0].Evidence, want) {
+		t.Errorf("answers evidence = %+v, want %+v", ans[0].Evidence, want)
+	}
+}
+
 func TestParseRound2(t *testing.T) {
 	reply := jsonFence(`{
 	  "stances": [
@@ -450,6 +536,25 @@ func TestShapesParse(t *testing.T) {
 	if props, _, err := ParseRound1(jsonFence(round1Shape)); err != nil || len(props) != 2 || props[0].Evidence[0].Weak ||
 		!hasPicture(props[1].Argument) {
 		t.Errorf("round1Shape: %+v, %v", props, err)
+	} else {
+		// the shape shows a quote on its evidence and one verify request, an allowed form with an expect to judge it by
+		if props[0].Evidence[0].Quote == "" {
+			t.Errorf("round1Shape: the first proposal's evidence has no quote: %+v", props[0].Evidence)
+		}
+		if len(props[0].Runs) != 1 || props[0].Runs[0].Expect != RunFail || props[0].Runs[0].State != "" {
+			t.Errorf("round1Shape: the first proposal's runs = %+v, want one request that expects a fail", props[0].Runs)
+		} else if cmd := props[0].Runs[0].Command; !strings.HasPrefix(cmd, "go test ") || !strings.Contains(cmd, " -run ") ||
+			strings.ContainsAny(cmd, "|&;<>`$") {
+			t.Errorf("round1Shape: its example command %q is not a plain `go test <package> -run <pattern>`", cmd)
+		}
+	}
+	// the shape an agent seat gets asks for the quote and no verify request
+	if props, _, err := ParseRound1(jsonFence(round1ShapeNoVerify)); err != nil || len(props) != 2 || props[0].Evidence[0].Weak ||
+		props[0].Evidence[0].Quote == "" || props[0].Runs != nil || !hasPicture(props[1].Argument) {
+		t.Errorf("round1ShapeNoVerify: %+v, %v", props, err)
+	}
+	if strings.Contains(round1ShapeNoVerify, "verify") {
+		t.Errorf("round1ShapeNoVerify still shows verify:\n%s", round1ShapeNoVerify)
 	}
 	if r, err := ParseRound2(jsonFence(round2Shape)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 || len(r.Picks) != 3 {
 		t.Errorf("round2Shape: %+v, %v", r, err)

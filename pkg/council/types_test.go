@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -179,6 +180,227 @@ func TestSent(t *testing.T) {
 		if got := Sent(draft); got != want {
 			t.Errorf("Sent(%q) = %v, want %v", draft, got, want)
 		}
+	}
+}
+
+// strongerJSON is a saved council that holds every field the "Council, stronger" change added: a quote and a checked
+// cite on evidence, a proposal's verify runs and label, a reply's label, the per-expert timeline, the language, the
+// snapshot commit and a Vietnamese name on an expert. Every value is non-zero, so none of it is dropped by omitempty.
+const strongerJSON = `{
+  "id": "stronger",
+  "project": "/p",
+  "feature": "f",
+  "experts": [
+    {"id": "skeptic", "name": "Bug hunter", "namevi": "Người soi lỗi", "brief": "b", "model": "sonnet"}
+  ],
+  "state": "done",
+  "round": 3,
+  "proposals": [
+    {
+      "id": "P1",
+      "author": "skeptic",
+      "title": "t",
+      "argument": "a",
+      "evidence": [
+        {"ref": "pkg/x/y.go:42", "quote": "if err != nil", "cite": "ok"},
+        {"ref": "pkg/x/y.go:900", "cite": "wrong", "citenote": "line 900 is past the end (412 lines)"}
+      ],
+      "ts": 1,
+      "runs": [
+        {
+          "command": "go test ./pkg/x -run TestY",
+          "expect": "fail",
+          "why": "the nil check is missing",
+          "state": "fail",
+          "exit": 1,
+          "tail": "--- FAIL: TestY\nFAIL",
+          "matched": true,
+          "reason": "ran in the council's tree"
+        },
+        {
+          "command": "cargo test slow",
+          "expect": "pass",
+          "state": "not-run",
+          "reason": "timed out after 3 min"
+        }
+      ],
+      "label": "ran"
+    }
+  ],
+  "replies": [
+    {
+      "id": "r1",
+      "proposalid": "P1",
+      "author": "skeptic",
+      "stance": "accept",
+      "text": "t",
+      "evidence": [{"ref": "pkg/x/y.go:7", "quote": "return nil", "cite": "wrong", "citenote": "quote not found near line 7"}],
+      "round": 2,
+      "ts": 2,
+      "label": "read"
+    }
+  ],
+  "timeline": {
+    "skeptic": [
+      {"ts": 10, "kind": "read", "target": "pkg/x/y.go"},
+      {"ts": 11, "kind": "search", "target": "IdleSleep", "result": "3 matches"},
+      {"ts": 12, "kind": "run", "target": "go test ./pkg/x -run TestY", "result": "fail"},
+      {"ts": 13, "kind": "propose", "target": "P1"},
+      {"ts": 14, "kind": "reply", "target": "P1"}
+    ]
+  },
+  "lang": "vi",
+  "snapshot": "0123456789abcdef0123456789abcdef01234567",
+  "tokens": 0,
+  "calls": 0,
+  "created": 1,
+  "updated": 1
+}`
+
+// A saved council with every new field loads with all of it, and loading and saving it again leaves its JSON as it was
+// (Save stamps Updated, so that one key is set aside).
+func TestCouncilStrongerRoundTrip(t *testing.T) {
+	root := useTempRoot(t)
+	dir := filepath.Join(root, "councils")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "stronger.json")
+	if err := os.WriteFile(path, []byte(strongerJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load("stronger")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p := c.Proposals[0]
+	if p.Label != LabelRan || len(p.Runs) != 2 {
+		t.Fatalf("proposal label %q with %d runs, want %q with 2", p.Label, len(p.Runs), LabelRan)
+	}
+	if ev := p.Evidence[0]; ev.Quote != "if err != nil" || ev.Cite != CiteOK || ev.CiteNote != "" {
+		t.Errorf("first cite = %+v", ev)
+	}
+	if ev := p.Evidence[1]; ev.Cite != CiteWrong || ev.CiteNote != "line 900 is past the end (412 lines)" {
+		t.Errorf("second cite = %+v", ev)
+	}
+	want := CouncilRun{
+		Command: "go test ./pkg/x -run TestY", Expect: "fail", Why: "the nil check is missing", State: RunFail,
+		Exit: 1, Tail: "--- FAIL: TestY\nFAIL", Matched: true, Reason: "ran in the council's tree",
+	}
+	if p.Runs[0] != want {
+		t.Errorf("first run = %+v, want %+v", p.Runs[0], want)
+	}
+	if r := p.Runs[1]; r.State != RunNotRun || r.Reason != "timed out after 3 min" || r.Exit != 0 || r.Matched {
+		t.Errorf("second run = %+v", r)
+	}
+	if r := c.Replies[0]; r.Label != LabelRead || r.Evidence[0].Cite != CiteWrong || r.Evidence[0].CiteNote == "" {
+		t.Errorf("reply = %+v", r)
+	}
+	steps := c.Timeline["skeptic"]
+	wantKinds := []string{StepRead, StepSearch, StepRun, StepPropose, StepReply}
+	if len(steps) != len(wantKinds) {
+		t.Fatalf("timeline holds %d steps, want %d", len(steps), len(wantKinds))
+	}
+	for i, k := range wantKinds {
+		if steps[i].Kind != k || steps[i].Ts != int64(10+i) {
+			t.Errorf("step %d = %+v, want kind %q at ts %d", i, steps[i], k, 10+i)
+		}
+	}
+	if steps[1].Target != "IdleSleep" || steps[1].Result != "3 matches" {
+		t.Errorf("search step = %+v", steps[1])
+	}
+	if c.Lang != LangVi || c.Snapshot != "0123456789abcdef0123456789abcdef01234567" {
+		t.Errorf("lang %q, snapshot %q", c.Lang, c.Snapshot)
+	}
+	if c.Experts[0].NameVi != "Người soi lỗi" {
+		t.Errorf("expert namevi = %q", c.Experts[0].NameVi)
+	}
+
+	if err := Save(c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after map[string]any
+	if err := json.Unmarshal([]byte(strongerJSON), &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(saved, &after); err != nil {
+		t.Fatal(err)
+	}
+	delete(before, "updated")
+	delete(after, "updated")
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("the council changed on a load and save:\nbefore %v\nafter  %v", before, after)
+	}
+}
+
+// A council saved before the change loads with every new field empty, and writes none of their keys back.
+func TestCouncilStrongerOldCouncilLoadsEmpty(t *testing.T) {
+	root := useTempRoot(t)
+	dir := filepath.Join(root, "councils")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"id": "old", "project": "/p", "feature": "f",
+	  "experts": [{"id": "ux", "name": "UX", "brief": "b", "model": "sonnet"}],
+	  "state": "done", "round": 3,
+	  "proposals": [{"id": "P1", "author": "ux", "title": "t", "argument": "a", "evidence": [{"ref": "a.go:1"}], "ts": 1}],
+	  "replies": [{"id": "r1", "proposalid": "P1", "author": "ux", "stance": "accept", "text": "t", "round": 2, "ts": 2}],
+	  "tokens": 0, "calls": 0, "created": 1, "updated": 1}`
+	if err := os.WriteFile(filepath.Join(dir, "old.json"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load("old")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p, r := c.Proposals[0], c.Replies[0]
+	if p.Label != "" || p.Runs != nil || r.Label != "" {
+		t.Errorf("an old claim loads with label %q, runs %v, reply label %q", p.Label, p.Runs, r.Label)
+	}
+	if ev := p.Evidence[0]; ev.Quote != "" || ev.Cite != "" || ev.CiteNote != "" {
+		t.Errorf("an old cite loads with %+v", ev)
+	}
+	if c.Timeline != nil || c.Lang != "" || c.Snapshot != "" || c.Experts[0].NameVi != "" {
+		t.Errorf("an old council loads with timeline %v, lang %q, snapshot %q, namevi %q", c.Timeline, c.Lang, c.Snapshot, c.Experts[0].NameVi)
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"quote"`, `"cite"`, `"citenote"`, `"runs"`, `"label"`, `"timeline"`, `"lang"`, `"snapshot"`, `"namevi"`} {
+		if strings.Contains(string(b), key) {
+			t.Errorf("an old council writes %s: %s", key, b)
+		}
+	}
+}
+
+// A group's Vietnamese name is omitted until set, and the step cap is the spec's 200.
+func TestCouncilStrongerGroupAndCap(t *testing.T) {
+	b, err := json.Marshal(CouncilGroup{Id: "g", Name: "G", Roles: []string{"ux"}, Coordinator: "coordinator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "namevi") {
+		t.Errorf("a group with no Vietnamese name writes it: %s", b)
+	}
+	b, err = json.Marshal(CouncilGroup{Id: "g", Name: "G", NameVi: "Nhóm", Roles: []string{"ux"}, Coordinator: "coordinator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"namevi":"Nhóm"`) {
+		t.Errorf("a group with a Vietnamese name writes %s", b)
+	}
+	if MaxTimelineSteps != 200 {
+		t.Errorf("MaxTimelineSteps = %d, want 200", MaxTimelineSteps)
+	}
+	// the agent seat state carries the working directory and the current tool line
+	if st := (AgentSeatState{State: SeatWorking, Cwd: "/w", Activity: `Grep "x"`}); st.Cwd != "/w" || st.Activity != `Grep "x"` {
+		t.Errorf("seat state = %+v", st)
 	}
 }
 

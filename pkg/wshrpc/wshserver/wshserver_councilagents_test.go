@@ -16,6 +16,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
 // claudeTurn is an assistant line of a claude transcript: a text answer at ts, from a request that carried the context
@@ -142,6 +143,62 @@ func TestLiveAgentLinkSeatContext(t *testing.T) {
 	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{claude}})
 	if st, err := (liveAgentLink{}).Seat(ctx, agentsTabA); err != nil || st.Context != 0 {
 		t.Errorf("seat with an unreadable transcript = %+v, %v, want an unknown context and no failure", st, err)
+	}
+}
+
+// a seat reports the directory its agent works in (the session's own, not its project's) and, while the agent is on a
+// tool, the roster's tool line
+func TestCouncilAgentLinkSeatCwdAndActivity(t *testing.T) {
+	worktree := agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Working)
+	worktree.ProjectPath = "/work/main-checkout"
+	worktree.Status.Cwd = "/work/main-checkout/.claude/worktrees/t-3"
+	worktree.Status.Detail = "reading seat.go"
+
+	between := agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Working) // PostToolUse: working, no tool
+	idleStale := agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Idle)
+	idleStale.Status.Detail = "reading seat.go"
+	asking := agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Asking)
+	asking.Status.Detail = "AskUserQuestion"
+	unknownCwd := agentFacts(agentsTabA, "a", agentsBlockA, "pi", baseds.AgentState_Working)
+	unknownCwd.Status.Cwd = ""
+	unknownCwd.Status.Detail = "running go test ./pkg/council"
+	spread := agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Working)
+	spread.Status.Detail = "  running go test\n\t./pkg/council  "
+	long := agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Working)
+	long.Status.Detail = "running " + strings.Repeat("é", 200)
+	slept := sleepingClaude(time.Now())
+	slept.Status.Cwd = ""
+	slept.Status.Detail = "reading seat.go"
+	applySleepMeta(&slept, waveobj.MetaMapType{waveobj.MetaKey_Cmd: "claude", waveobj.MetaKey_AgentSleeping: float64(slept.Sleeping), waveobj.MetaKey_CmdCwd: "/work/slept"})
+
+	cases := []struct {
+		name          string
+		facts         agentTabFacts
+		cwd, activity string
+	}{
+		{"the session's own directory and its tool", worktree, "/work/main-checkout/.claude/worktrees/t-3", "reading seat.go"},
+		{"between two tools, none", between, "/work/a", ""},
+		{"a seat at rest has no tool", idleStale, "/work/a", ""},
+		{"a seat with a question open has no tool", asking, "/work/a", ""},
+		{"a directory nobody reported is empty", unknownCwd, "", "running go test ./pkg/council"},
+		{"the tool line is one line", spread, "/work/a", "running go test ./pkg/council"},
+		{"a long tool line is cut", long, "/work/a", "running " + strings.Repeat("é", seatActivityMax-len([]rune("running "))-1) + "…"},
+		{"a sleeping seat keeps its block's directory", slept, "/work/slept", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{c.facts}})
+			got, err := liveAgentLink{}.Seat(context.Background(), agentsTabA)
+			if err != nil || got.Cwd != c.cwd || got.Activity != c.activity {
+				t.Errorf("Seat = %+v, %v, want cwd %q and activity %q", got, err, c.cwd, c.activity)
+			}
+		})
+	}
+
+	// a gone seat reports neither
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{worktree}})
+	if got, err := (liveAgentLink{}).Seat(context.Background(), "no-such-tab"); err != nil || got != (council.AgentSeatState{State: council.SeatGone}) {
+		t.Errorf("Seat of a gone tab = %+v, %v, want only the state", got, err)
 	}
 }
 

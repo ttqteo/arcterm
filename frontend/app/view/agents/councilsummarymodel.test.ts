@@ -25,6 +25,7 @@ import {
     ratingRow,
     reopenView,
     savedLine,
+    summarizerName,
     writtenLine,
 } from "./councilsummarymodel";
 
@@ -137,6 +138,26 @@ describe("positionsOf", () => {
         expect(byId.ux).toEqual(c.proposals![1].evidence);
         expect(byId.ram).toEqual([{ ref: "pkg/services/model.go:36" }]);
         expect(byId.sk).toEqual([]);
+    });
+
+    it("carries the check label of the claim it shows: the reply's own, or the label of the proposal whose argument it shows", () => {
+        const c = council();
+        const d = c.summary!.directions.find((x) => x.rank === 1)!;
+        c.proposals!.find((p) => p.id === "P2")!.label = "read";
+        c.proposals!.find((p) => p.id === "P3")!.label = "guess";
+        c.replies!.find((r) => r.id === "r1")!.label = "ran";
+        c.replies!.find((r) => r.id === "r2")!.label = "disproved";
+        const byId = Object.fromEntries(positionsOf(c, d).map((p) => [p.expert.id, p.label]));
+        // ux only proposed P2; ram proposed P3 but took a stance, so its reply r1 shows; nu's last accept (r4) has none
+        expect(byId).toEqual({ ux: "read", ram: "ran", nu: "", sk: "disproved" });
+        // two proposals of one author in a direction: the first one's label, as its argument is the text shown
+        c.proposals!.find((p) => p.id === "P3")!.author = "ux";
+        const both = positionsOf(c, direction(1, ["P2", "P3"], { stances: {} }));
+        expect(both).toHaveLength(1);
+        expect(both[0].label).toBe("read");
+        // a label the cockpit does not know reads as none
+        c.proposals!.find((p) => p.id === "P2")!.label = "certain";
+        expect(positionsOf(c, direction(1, ["P2"], { stances: {} }))[0].label).toBe("");
     });
 
     it("falls back to the expert's last reply of any stance, then to no text", () => {
@@ -784,13 +805,12 @@ describe("expertActivity", () => {
 });
 
 describe("outlineOf", () => {
-    it("lists the answer, the directions with each one under them, and the matrix with its rows", () => {
+    it("lists the answer and the directions with each one under them, and no matrix: the Map tab holds it", () => {
         expect(outlineOf(council()).map((e) => [e.id, e.label, e.count, e.depth])).toEqual([
             ["answer", "The answer", null, 0],
             ["directions", "Directions", 2, 0],
             ["direction:1", "direction 1", null, 1],
             ["direction:2", "direction 2", null, 1],
-            ["matrix", "Every expert on every idea", 4, 0],
         ]);
     });
 
@@ -802,7 +822,6 @@ describe("outlineOf", () => {
             ["The answer", null],
             ["Ideas worth trying", 2],
             ["Wild ideas kept aside", 2],
-            ["Every expert on every idea", 4],
         ]);
         expect(outlineOf(council({ summary: kept })).find((e) => e.id === "kept")?.label).toBe("Also raised");
     });
@@ -813,16 +832,16 @@ describe("outlineOf", () => {
 });
 
 describe("jumpLinks", () => {
-    it("lists the directions, the kept ideas and the matrix of a Brainstorm", () => {
+    it("lists the directions and the kept ideas of a Brainstorm", () => {
         const base = council();
         const kept = { ...base.summary!, kept: [direction(3, ["P6"]), direction(4, ["P7"])] };
         const links = jumpLinks(council({ mode: "brainstorm", summary: kept }));
-        expect(links.map((e) => e.id)).toEqual(["directions", "kept", "matrix"]);
-        expect(links.map((e) => e.count)).toEqual([2, 2, 4]);
+        expect(links.map((e) => e.id)).toEqual(["directions", "kept"]);
+        expect(links.map((e) => e.count)).toEqual([2, 2]);
     });
 
     it("leaves out kept when a Review keeps nothing aside", () => {
-        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["directions", "matrix"]);
+        expect(jumpLinks(council()).map((e) => e.id)).toEqual(["directions"]);
     });
 
     it("is empty before a summary", () => {
@@ -848,5 +867,42 @@ describe("reopenView", () => {
     it("keeps a running council's Discussion, which has no summary yet", () => {
         const running = council({ state: "running", summary: undefined });
         expect(reopenView(running, { view: "discussion", summaryAt: 0 })).toBe("discussion");
+    });
+
+    it("reopens a council left on its Map there, while its summary is the same", () => {
+        expect(reopenView(done, { view: "map", summaryAt: at })).toBe("map");
+        const running = council({ state: "running", summary: undefined });
+        expect(reopenView(running, { view: "map", summaryAt: 0 })).toBe("map");
+    });
+
+    it("opens a summary written since on the report even for a council left on its Map", () => {
+        expect(reopenView(done, { view: "map", summaryAt: 0 })).toBe("summary");
+    });
+});
+
+describe("summarizerName", () => {
+    const withSummarizer = (name: string): CouncilExpert[] => [
+        ...experts.filter((e) => !e.coordinator),
+        { id: "coordinator", name, brief: "", model: "opus", coordinator: true },
+    ];
+
+    it("is the summarizing seat's own name: the stock one, a renamed one, the Vietnamese one", () => {
+        expect(summarizerName(council({ experts: withSummarizer("Summarizer") }))).toBe("Summarizer");
+        expect(summarizerName(council({ experts: withSummarizer("Chair of the table") }))).toBe("Chair of the table");
+        expect(summarizerName(council({ experts: withSummarizer("Người tổng hợp") }))).toBe("Người tổng hợp");
+    });
+
+    it("reads the seat with coordinator: true, not the one with the id coordinator", () => {
+        const seats: CouncilExpert[] = [
+            { id: "coordinator", name: "Not it", brief: "", model: "sonnet" },
+            { id: "areachair", name: "Area chair", brief: "", model: "opus", coordinator: true },
+        ];
+        expect(summarizerName(council({ experts: seats }))).toBe("Area chair");
+    });
+
+    it("falls back to Summarizer with no summarizing seat, or one with a blank name", () => {
+        expect(summarizerName(council({ experts: experts.filter((e) => !e.coordinator) }))).toBe("Summarizer");
+        expect(summarizerName(council({ experts: [] }))).toBe("Summarizer");
+        expect(summarizerName(council({ experts: withSummarizer("  ") }))).toBe("Summarizer");
     });
 });

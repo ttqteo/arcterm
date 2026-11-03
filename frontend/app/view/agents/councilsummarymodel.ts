@@ -9,6 +9,7 @@
 
 import { failedWhile, listNames } from "./councildiscussionmodel";
 import {
+    checkLabelOf,
     councilProjectKey,
     isReaction,
     outdatedChanges,
@@ -16,6 +17,7 @@ import {
     sentProposals,
     sentReplies,
     STANCE_WORD,
+    type CheckLabel,
     type OutdatedChanges,
     type StanceLabel,
 } from "./councilmodel";
@@ -39,14 +41,17 @@ export function defaultCouncilView(c: Council | null | undefined): "discussion" 
 
 /** The view a council was last shown on, with the time of the summary it had then (0 for none). */
 export interface KeptCouncilView {
-    view: "discussion" | "summary";
+    view: "discussion" | "summary" | "map";
     summaryAt: number;
 }
 
 /** Pure: the view a council opens on when the way in names none (its tree row, the palette): the one the person left
- *  it on, so a council left on its Discussion opens there again; but a summary written since then opens on the
- *  report, and a council never shown opens on defaultCouncilView. */
-export function reopenView(c: Council | null | undefined, kept: KeptCouncilView | null): "discussion" | "summary" {
+ *  it on, so a council left on its Discussion or its Map opens there again; but a summary written since then opens on
+ *  the report, and a council never shown opens on defaultCouncilView. */
+export function reopenView(
+    c: Council | null | undefined,
+    kept: KeptCouncilView | null
+): "discussion" | "summary" | "map" {
     if (kept != null && kept.summaryAt === (c?.summary?.at ?? 0)) {
         return kept.view;
     }
@@ -101,6 +106,7 @@ export interface Position {
     stance: StanceLabel;
     text: string; // the proposal's argument for its author, else the expert's last reply of that stance
     evidence: CouncilEvidence[];
+    label: CheckLabel | ""; // the check label Go gave the claim shown (its proposal's, or its reply's); "" for none
 }
 
 export interface DirectionRow {
@@ -137,7 +143,13 @@ export function positionsOf(c: Council, d: CouncilDirection): Position[] {
         if (stance != null) {
             const reply = lastReply(c, expert.id, from, stance) ?? lastReply(c, expert.id, from);
             out.push({
-                position: { expert, stance, text: reply?.text ?? "", evidence: reply?.evidence ?? [] },
+                position: {
+                    expert,
+                    stance,
+                    text: reply?.text ?? "",
+                    evidence: reply?.evidence ?? [],
+                    label: checkLabelOf(reply ?? {}),
+                },
                 proposer: authored.length > 0,
             });
         } else if (authored.length > 0) {
@@ -147,6 +159,7 @@ export function positionsOf(c: Council, d: CouncilDirection): Position[] {
                     stance: "proposed",
                     text: authored[0].argument,
                     evidence: authored.flatMap((p) => p.evidence ?? []),
+                    label: checkLabelOf(authored[0]),
                 },
                 proposer: true,
             });
@@ -494,6 +507,16 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
     return build(lines);
 }
 
+// ---- the seat that writes the summary ----
+
+/** Pure: the name of the seat that writes the summary (the expert with `coordinator: true`), by its own `name`, so a
+ *  renamed seat and a Vietnamese council's "Người tổng hợp" carry through. "Summarizer" when the council has no such
+ *  seat, or its name is blank. */
+export function summarizerName(c: Council): string {
+    const name = c.experts.find((e) => e.coordinator)?.name.trim() ?? "";
+    return name !== "" ? name : "Summarizer";
+}
+
 // ---- the column beside the report ----
 
 /** What one seat did, as the column beside the report lists it: `7 ideas, 3 in the summary · 12 replies`. `filter` is
@@ -554,8 +577,9 @@ export interface OutlineEntry {
     rank: number | null;
 }
 
-/** Pure: the report's outline, in page order: the answer, the directions (each one under them), the kept or also-raised
- *  ideas, and the matrix with its row count. Empty before a summary: then the column has no outline. */
+/** Pure: the report's outline, in page order: the answer, the directions (each one under them) and the kept or
+ *  also-raised ideas. Who agrees with which idea is the Map tab's, not a section here. Empty before a summary: then the
+ *  column has no outline. */
 export function outlineOf(c: Council): OutlineEntry[] {
     const summary = c.summary;
     if (summary == null) {
@@ -580,15 +604,11 @@ export function outlineOf(c: Council): OutlineEntry[] {
     if (kept.length > 0) {
         entries.push({ id: "kept", label: keptHeading(c), count: kept.length, depth: 0, rank: null });
     }
-    const rows = sentProposals(c).length;
-    if (rows > 0) {
-        entries.push({ id: "matrix", label: "Every expert on every idea", count: rows, depth: 0, rank: null });
-    }
     return entries;
 }
 
 /** Pure: the tab bar's jump links: the outline's sections after the answer (the answer is the cover), in page order:
- *  the directions, the kept ideas when there are any, the matrix. Empty before a summary. */
+ *  the directions and the kept ideas when there are any. Empty before a summary. */
 export function jumpLinks(c: Council): OutlineEntry[] {
     return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer");
 }

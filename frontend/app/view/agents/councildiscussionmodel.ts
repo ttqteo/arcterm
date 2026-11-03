@@ -89,13 +89,6 @@ export function modeWord(c: Council): "Review" | "Brainstorm" {
     return c.mode === "brainstorm" ? "Brainstorm" : "Review";
 }
 
-/** Pure: the avatar stack for a screen reader: the panel, and who is writing. */
-export function avatarStackLabel(c: Council): string {
-    const names = c.experts.map((e) => e.name).join(", ");
-    const lit = c.experts.filter((e) => isLit(c, e.id)).map((e) => e.name);
-    return lit.length === 0 ? names : `${names}; ${listNames(lit)} ${lit.length === 1 ? "is" : "are"} writing`;
-}
-
 /** Pure: the letter in an avatar. */
 export function initialOf(name: string): string {
     const first = [...name.trim()][0];
