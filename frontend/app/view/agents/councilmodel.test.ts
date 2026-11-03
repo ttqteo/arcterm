@@ -32,6 +32,7 @@ import {
     isSent,
     latestStances,
     matrixRows,
+    mentionsAll,
     mentionsChat,
     nextThumb,
     outdatedChanges,
@@ -44,6 +45,8 @@ import {
     readableReplies,
     replyLabel,
     roundsOf,
+    routedLabel,
+    routedMessage,
     score,
     sentProposals,
     sentReplies,
@@ -402,6 +405,116 @@ describe("answerers", () => {
     it("is every non-coordinator expert with no proposal", () => {
         expect(ids(answerers(c, "", "", "anyone?"))).toEqual(["ux", "ram", "nu", "sk"]);
     });
+
+    it("is every expert for an @all or an @everyone, a whole word in any case, in a thread too", () => {
+        const all = ["ux", "ram", "nu", "sk"];
+        expect(ids(answerers(c, "", "", "@all what do you think"))).toEqual(all);
+        expect(ids(answerers(c, "", "", "@Everyone, weigh in"))).toEqual(all);
+        expect(ids(answerers(c, "P2", "r1", "why? @ALL"))).toEqual(all);
+        expect(ids(answerers(c, "P3", "", "@all"))).toEqual(all);
+    });
+
+    it("keeps @all beside a seat's name: every seat still answers", () => {
+        expect(ids(answerers(c, "", "", "@all and @RAM first"))).toEqual(["ux", "ram", "nu", "sk"]);
+    });
+
+    it("does not read @allison, an address or an @all file as @all", () => {
+        expect(ids(answerers(c, "P2", "r1", "@allison and mail a@all.com"))).toEqual(["ux", "sk"]);
+        expect(ids(answerers(c, "P2", "r1", "see @all.md and @allx and @allies"))).toEqual(["ux", "sk"]);
+        expect(ids(answerers(c, "P2", "r1", "@everyones"))).toEqual(["ux", "sk"]);
+    });
+
+    it("adds the chats a message seats to an @all, once each", () => {
+        const recap: SeatableAgent = {
+            id: "82faafca-4b1e",
+            name: "Recap",
+            project: "p",
+            harness: "claude",
+            context: 1,
+        };
+        const got = answerers(c, "", "", "@all and @82faafca", [recap]);
+        expect(ids(got)).toEqual(["ux", "ram", "nu", "sk", agentSeat(recap).id]);
+    });
+});
+
+describe("mentionsAll", () => {
+    it("reads @all and @everyone as whole words after an @ that sits in no word", () => {
+        expect(mentionsAll("@all")).toBe(true);
+        expect(mentionsAll("hey @Everyone: go")).toBe(true);
+        expect(mentionsAll("(@all)")).toBe(true);
+        expect(mentionsAll("@all. next")).toBe(true);
+        expect(mentionsAll("@allison")).toBe(false);
+        expect(mentionsAll("a@all.com")).toBe(false);
+        expect(mentionsAll("@all.md")).toBe(false);
+        expect(mentionsAll("all of you")).toBe(false);
+        expect(mentionsAll("")).toBe(false);
+    });
+});
+
+describe("routedMessage", () => {
+    const chat = (id: string): CouncilExpert => agentOf(id, `Chat ${id}`);
+    const ask = (c: Council, text = "what next?", proposalId = "", parentId = "") =>
+        routedMessage(c, proposalId, parentId, text, []);
+
+    it("is true for a plain message to the whole council of two seats or more", () => {
+        expect(ask(council())).toBe(true);
+        expect(ask(council(), "")).toBe(true);
+        expect(ask(council({ experts: experts.slice(0, 2).concat(experts[4]) }))).toBe(true);
+    });
+
+    it("is false in an idea's thread and under a reply", () => {
+        expect(ask(council(), "why?", "P2")).toBe(false);
+        expect(ask(council(), "why?", "", "r1")).toBe(false);
+        expect(ask(council(), "why?", "P2", "r1")).toBe(false);
+    });
+
+    it("is false when a seat is named, by name or id, or a chat by its key", () => {
+        expect(ask(council(), "@RAM why?")).toBe(false);
+        expect(ask(council(), "@nu why?")).toBe(false);
+        const withChat = council({
+            experts: [...experts.slice(0, 2), agentOf("82faafca-4b1e-4c57-9d0a-3c5e8f1a2b61", "Recap"), experts[4]],
+        });
+        expect(ask(withChat, "@82faafca why?")).toBe(false);
+        expect(ask(withChat, "what next?")).toBe(true);
+    });
+
+    it("is true when the @ names no seat: an address, an unknown name, a file", () => {
+        expect(ask(council(), "mail a@ram.com")).toBe(true);
+        expect(ask(council(), "@bob what next?")).toBe(true);
+        expect(ask(council(), "@ux/plan.md what next?")).toBe(true);
+    });
+
+    it("is false for @all and @everyone: the person asked everyone", () => {
+        expect(ask(council(), "@all what next?")).toBe(false);
+        expect(ask(council(), "@everyone what next?")).toBe(false);
+        expect(ask(council(), "@allison what next?")).toBe(true);
+    });
+
+    it("is false while a chat joins with the message", () => {
+        const recap: SeatableAgent = {
+            id: "82faafca-4b1e",
+            name: "Recap",
+            project: "p",
+            harness: "claude",
+            context: 1,
+        };
+        expect(routedMessage(council(), "", "", "what next?", [recap])).toBe(false);
+        expect(routedMessage(council(), "", "", "what next?", [])).toBe(true);
+    });
+
+    it("is false with fewer than two seats that have no failed call: one candidate has nothing to choose", () => {
+        const failed = (...ids: string[]) =>
+            Object.fromEntries(ids.map((id) => [id, { round: 1, error: "timed out" }])) as Council["failed"];
+        expect(ask(council({ failed: failed("ux") }))).toBe(true);
+        expect(ask(council({ failed: failed("ux", "ram") }))).toBe(true);
+        expect(ask(council({ failed: failed("ux", "ram", "nu") }))).toBe(false);
+        expect(ask(council({ failed: failed("ux", "ram", "nu", "sk") }))).toBe(false);
+        // the coordinator's failure is no seat's
+        expect(ask(council({ failed: failed("coordinator") }))).toBe(true);
+        // a panel of one seat has nothing to choose either
+        expect(ask(council({ experts: [experts[0], experts[4]] }))).toBe(false);
+        expect(ask(council({ experts: [chat("a")] }))).toBe(false);
+    });
 });
 
 // live chats: tab ids are UUIDs, whose 9th character is a `-`
@@ -661,6 +774,29 @@ describe("replyLabel", () => {
         expect(replyLabel(council(), reply("r2", "ram", { round: 2 }))).toBe("");
     });
 
+    it("says the router is choosing a seat while a routed reply is pending, whatever the council's state", () => {
+        const pending = { pending: true };
+        expect(replyLabel(council({ state: "done", round: 3 }), mine({ round: 4, routed: pending }))).toBe(
+            "Router is choosing a seat…"
+        );
+        expect(replyLabel(council({ state: "running", round: 3 }), mine({ round: 4, routed: pending }))).toBe(
+            "Router is choosing a seat…"
+        );
+        expect(replyLabel(council({ round: 1, state: "awaiting-you" }), mine({ round: 1, routed: pending }))).toBe(
+            "Router is choosing a seat…"
+        );
+    });
+
+    it("goes back to the usual labels once the router has chosen, and says nothing of a pick that was answered", () => {
+        const chose = { chose: ["ux"], reason: "ux owns it" };
+        expect(replyLabel(council({ state: "running", round: 3 }), mine({ round: 4, routed: chose }))).toBe(
+            "Answering…"
+        );
+        expect(replyLabel(council({ state: "done", round: 3 }), mine({ round: 4, routed: chose }))).toBe("");
+        expect(replyLabel(council(), mine({ round: 2, answered: true, routed: { pending: true } }))).toBe("");
+        expect(replyLabel(council(), reply("r2", "ram", { round: 2, routed: { pending: true } }))).toBe("");
+    });
+
     it("queues a reply for the seats' next round until the last one", () => {
         const three = council({ rounds: 3, round: 2 });
         expect(replyLabel(three, mine({ round: 2 }))).toBe("Queued for the next step");
@@ -741,6 +877,41 @@ describe("estimateLabel and followupLabel", () => {
             "2 experts and 1 chat answer, reading files · ≈ 3 calls · ~84k tokens"
         );
         expect(followupLabel(est, 0, true, 2)).toBe("2 chats answer, reading files · ≈ 3 calls · ~84k tokens");
+    });
+
+    it("draws a range when the estimate holds a high end: calls and tokens as ends, the time as one number", () => {
+        const range = { calls: 2, callsmax: 3, tokens: 35_000, tokensmax: 235_000, minutes: 2 };
+        expect(estimateLabel(range, false)).toBe("≈ 2–3 calls · ~35k–235k tokens");
+        expect(estimateLabel(range)).toBe("≈ 2–3 calls · ~35k–235k tokens · ~2 min");
+        expect(estimateLabel({ ...range, tokens: 15_000, tokensmax: 1_240_000 }, false)).toBe(
+            "≈ 2–3 calls · ~15k–1.2M tokens"
+        );
+        expect(estimateLabel({ ...range, tokens: 800, tokensmax: 50_000 }, false)).toBe(
+            "≈ 2–3 calls · ~800–50k tokens"
+        );
+    });
+
+    it("draws each end alone when its high end is unset or the same as its low end", () => {
+        const one = { calls: 2, tokens: 40_000, minutes: 1 };
+        expect(estimateLabel({ ...one, callsmax: 3 }, false)).toBe("≈ 2–3 calls · ~40k tokens");
+        expect(estimateLabel({ ...one, tokensmax: 90_000 }, false)).toBe("≈ 2 calls · ~40k–90k tokens");
+        expect(estimateLabel({ ...one, callsmax: 2, tokensmax: 40_000 }, false)).toBe("≈ 2 calls · ~40k tokens");
+        expect(estimateLabel(one, false)).toBe("≈ 2 calls · ~40k tokens");
+    });
+
+    it("words the router's hint: who picks, then the range once it is in", () => {
+        const range = { calls: 2, callsmax: 3, tokens: 35_000, tokensmax: 235_000, minutes: 2 };
+        expect(routedLabel(null)).toBe("Router picks 1–2 seats");
+        expect(routedLabel(range)).toBe("Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens");
+        expect(routedLabel({ calls: 2, tokens: 40_000, minutes: 1 })).toBe(
+            "Router picks 1–2 seats · ≈ 2 calls · ~40k tokens"
+        );
+    });
+
+    it("draws one value when the range's ends meet (one candidate), and no figure for an all-zero reply", () => {
+        const one = { calls: 2, callsmax: 2, tokens: 35_000, tokensmax: 35_000, minutes: 1 };
+        expect(routedLabel(one)).toBe("Router picks 1–2 seats · ≈ 2 calls · ~35k tokens");
+        expect(routedLabel({ calls: 0, tokens: 0, minutes: 0 })).toBe("Router picks 1–2 seats");
     });
 });
 

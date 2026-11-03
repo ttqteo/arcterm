@@ -150,16 +150,55 @@ function replyPill(r: CouncilReply): { label: string; pill: PillTone } {
     }
 }
 
-// `For everyone` when the reply reaches the whole panel, else `For UX and RAM`; empty for a reply that names no one
+// `For everyone` when the reply reaches the whole panel, else `For UX and RAM`; empty for a reply that names no one. A
+// reply the router took up (`routed`) always names its seats, also when they are the whole panel: the router chose them,
+// the person did not ask everyone; while the router has not chosen (`to` is empty) it reaches no one yet
 function reachOf(c: Council, r: CouncilReply): string {
     const to = r.to ?? [];
     if (to.length === 0) {
         return "";
     }
-    if (panel(c).every((e) => to.includes(e.id))) {
+    if (r.routed == null && panel(c).every((e) => to.includes(e.id))) {
         return "For everyone";
     }
     return `For ${listNames(to.map((id) => authorName(c, id)))}`;
+}
+
+/** Pure: the line above the first answer to a message the router took up: `Router chose UX: <reason>`, `Router chose UX
+ *  and RAM: <reason>`, `Router chose UX · reading files: <reason>` when it decided to read files (`autotools`, and the
+ *  reply's `tools`), or `Router failed, UX answered` when its call failed and the first seat answered instead. The reason
+ *  is left out when it is empty. `reply` is the person's message; empty for one the router did not take up, and while it
+ *  has not chosen yet (the post says so itself, `replyLabel`). */
+export function routerLine(c: Council, reply: CouncilReply): string {
+    const routed = reply.routed;
+    if (reply.author !== YOU || routed == null || routed.pending) {
+        return "";
+    }
+    const chose = (routed.chose ?? []).length > 0 ? (routed.chose ?? []) : (reply.to ?? []);
+    if (chose.length === 0) {
+        return "";
+    }
+    const names = listNames(chose.map((id) => authorName(c, id)));
+    if (routed.failed) {
+        return `Router failed, ${names} answered`;
+    }
+    const reading = routed.autotools && reply.tools ? " · reading files" : "";
+    const reason = (routed.reason ?? "").trim();
+    return `Router chose ${names}${reading}${reason === "" ? "" : `: ${reason}`}`;
+}
+
+/** Pure: the seats under the last answer to a message the router took up that the person can still ask: the panel seats
+ *  that are not in the reply's `to`, in panel order, a seat whose call failed left out (its follow-up would call nobody:
+ *  Retry reruns it). Empty for a message the router did not take up, one it has not chosen for yet, and one nobody can be
+ *  added to. */
+export function askTooSeats(c: Council, reply: CouncilReply): { id: string; name: string }[] {
+    if (reply.author !== YOU || reply.routed == null || reply.routed.pending) {
+        return [];
+    }
+    const to = reply.to ?? [];
+    return panel(c)
+        .filter((e) => !to.includes(e.id) && c.failed?.[e.id] == null)
+        .map((e) => ({ id: e.id, name: e.name }));
 }
 
 /** A reply as a message: a seat's, or the person's (`mine`, with who it reaches and, until it is answered, what it waits
@@ -189,6 +228,37 @@ export interface ReplyPost extends Who {
     ts: number; // when it was posted (ms), which councilseen.ts counts the Sent and Seen from
     reachIsDefault: boolean; // the person's post reaches whom it would anyway: the line under it leaves `reaches` out
     asks: string[]; // a seat's answer: the replies it suggests the person send next (threadAsks); empty otherwise
+    router: string; // the first answer to a message the router took up: `Router chose UX: <reason>` (routerLine); else empty
+    askToo: { id: string; name: string }[]; // the last answer to such a message: the seats the person can still add (askTooSeats)
+    routedReply: string; // with `askToo`: the id of the person's message the chips reopen
+}
+
+// the answers a seat gave to the person's message `ask`, in the order they were posted: a reaction is no post, so it is
+// not one of them
+function answersTo(c: Council, ask: CouncilReply): CouncilReply[] {
+    return readableReplies(c)
+        .map((x, i) => ({ x, i }))
+        .filter(({ x }) => x.parentid === ask.id && x.author !== YOU)
+        .sort((a, b) => a.x.ts - b.x.ts || a.i - b.i)
+        .map(({ x }) => x);
+}
+
+// what a seat's answer carries of the router: its line when it is the first answer to a routed message of the person's,
+// the chips when it is the last
+function routerParts(c: Council, r: CouncilReply): Pick<ReplyPost, "router" | "askToo" | "routedReply"> {
+    const none = { router: "", askToo: [], routedReply: "" };
+    if (r.author === YOU || !r.parentid) {
+        return none;
+    }
+    const ask = sentReplies(c).find((x) => x.id === r.parentid && x.author === YOU);
+    if (ask?.routed == null || ask.routed.pending) {
+        return none;
+    }
+    const answers = answersTo(c, ask);
+    const first = answers[0]?.id === r.id;
+    const last = answers[answers.length - 1]?.id === r.id;
+    const askToo = last ? askTooSeats(c, ask) : [];
+    return { router: first ? routerLine(c, ask) : "", askToo, routedReply: askToo.length > 0 ? ask.id : "" };
 }
 
 function replyPost(c: Council, r: CouncilReply): ReplyPost {
@@ -215,6 +285,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         edited: !!r.edited,
         ...postedAt(c, r.ts),
         ts: r.ts,
+        ...routerParts(c, r),
     };
 }
 
@@ -224,6 +295,9 @@ function reachIsDefault(c: Council, r: CouncilReply): boolean {
     const to = r.to ?? [];
     if (to.length === 0) {
         return true;
+    }
+    if (r.routed != null) {
+        return false; // the router chose these seats: the line under the post names them, even when they are everyone
     }
     if (r.proposalid === "") {
         return panel(c).every((e) => to.includes(e.id));
@@ -674,6 +748,9 @@ export function replyReach(
 // New dialog's `@` list reads one as far as 200 characters)
 const MENTION = /(^|[^\p{L}\p{N}_])@([^@\n]{0,200})$/u;
 
+// the words that ask every seat (`mentionsAll`), the first of them the one the All seats row inserts
+const ALL_WORDS = ["all", "everyone"];
+
 /** Pure: each chat's mention key, by tab id: the shortest start of the tab id, {@link MIN_CHAT_KEY} characters or more,
  *  that no other chat in `tabIds` shares (any case). `@82faafca` for a lone chat; for two whose ids start alike the key
  *  runs on past the `-` of a UUID (`3e19c0d2-a`, `3e19c0d2-b`). A tab id shorter than a key, or one that starts another
@@ -705,9 +782,11 @@ export interface ChatPick {
     key: string;
 }
 
-/** What the `@` picker lists: the seats, the project's files and the live chats that match, and where the `@` sits. */
+/** What the `@` picker lists: the All seats row, the seats, the project's files and the live chats that match, and where
+ *  the `@` sits. */
 export interface MentionPicker {
     start: number;
+    all: boolean; // the All seats row (`@all`) is listed, first among the seats
     seats: CouncilExpert[];
     files: string[]; // project paths, relative to the project, best match first
     chats: ChatPick[];
@@ -743,9 +822,15 @@ export function mentionPicker(
     };
     const wordsOf = (e: CouncilExpert) => [e.name, e.id, keyOf(e.agent)];
     const whole = (word: string) => word !== "" && query === `${word.toLowerCase()} `;
-    if (seats.some((e) => wordsOf(e).some(whole)) || joinable.some((a) => whole(keyOf(a.id)))) {
+    if (
+        seats.some((e) => wordsOf(e).some(whole)) ||
+        joinable.some((a) => whole(keyOf(a.id))) ||
+        ALL_WORDS.some(whole)
+    ) {
         return null;
     }
+    // the All seats row (`@all`) is the first of the seats while what follows the @ is empty or starts `all` or `everyone`
+    const all = ALL_WORDS.some((word) => word.startsWith(query));
     const holds = (word: string) => word.toLowerCase().includes(query);
     const isPath = /[/.]/.test(query);
     const matching = isPath ? [] : seats.filter((e) => query === "" || wordsOf(e).some(holds));
@@ -756,21 +841,24 @@ export function mentionPicker(
         : joinable
               .filter((a) => query === "" || [keys.get(a.id) ?? "", a.name, a.project].some(holds))
               .map((a) => ({ chat: a, key: keys.get(a.id) ?? "" }));
-    return matching.length > 0 || named.length > 0 || listed.length > 0
-        ? { start: caret - found[2].length - 1, seats: matching, files: named, chats: listed }
+    return matching.length > 0 || named.length > 0 || listed.length > 0 || all
+        ? { start: caret - found[2].length - 1, all, seats: matching, files: named, chats: listed }
         : null;
 }
 
-/** One row of the `@` list: a seat, a file or a live chat to add. */
+/** One row of the `@` list: All seats (`@all`), a seat, a file or a live chat to add. */
 export type PickerRow =
+    | { kind: "all" }
     | { kind: "seat"; seat: CouncilExpert }
     | { kind: "file"; path: string }
     | { kind: "chat"; chat: ChatPick };
 
-/** Pure: the one list the arrow keys walk, in the order the list draws it: the Seats, then the Files, then Add a live
- *  chat. The cursor starts on the first row: a seat when any matches. */
-export function pickerRows(picker: Pick<MentionPicker, "seats" | "files" | "chats">): PickerRow[] {
+/** Pure: the one list the arrow keys walk, in the order the list draws it: All seats, then the Seats, then the Files,
+ *  then Add a live chat. The cursor starts on the first row: All seats when it is listed, else a seat when any
+ *  matches. */
+export function pickerRows(picker: Pick<MentionPicker, "seats" | "files" | "chats"> & { all?: boolean }): PickerRow[] {
     return [
+        ...(picker.all ? [{ kind: "all" } as PickerRow] : []),
         ...picker.seats.map((seat): PickerRow => ({ kind: "seat", seat })),
         ...picker.files.map((path): PickerRow => ({ kind: "file", path })),
         ...picker.chats.map((chat): PickerRow => ({ kind: "chat", chat })),
@@ -791,6 +879,12 @@ export function insertMention(
         text: text.slice(0, start) + (rest.startsWith(" ") ? mention : `${mention} `) + rest,
         caret: start + mention.length + 1,
     };
+}
+
+/** Pure: `text` with the `@…` typed between `start` and `caret` replaced by `@all` and a space (the one that already
+ *  follows the caret, if there is one), and where the caret goes: after that space. The row All seats puts it in. */
+export function insertAllMention(text: string, start: number, caret: number): { text: string; caret: number } {
+    return insertMention(text, start, caret, { name: ALL_WORDS[0] });
 }
 
 /** Pure: `text` with the `@…` typed between `start` and `caret` replaced by `@<chat's key>` and a space (the one that
@@ -862,14 +956,22 @@ export function namedFile(text: string): string {
     return "";
 }
 
+/** What `readsFiles` says for a message in Auto that the router takes up (`routed`): the router reads the question and
+ *  decides whether the seats read files, so the composer words it as that. */
+export const ROUTER_DECIDES = "the router decides";
+
 /** Pure: whether a message lets the seats read files, `why` and `locked` with it. It is on, and `locked` (the person
  *  cannot turn it off), when `attached` images go with it or its text has an `@file` (the first one is `why`, else
- *  "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they flipped
- *  Let them read files (`choice`), else on exactly when the question names a file or a path, `why` naming it. */
+ *  "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they set
+ *  Read files to On or Off (`choice`; null is Auto), else on exactly when the question names a file or a path, `why`
+ *  naming it. In Auto, for a `routed` message (the router picks its seats, `routedMessage`), the router decides it:
+ *  `why` is `ROUTER_DECIDES` and `on` stays the file-naming guess, which is what Send sends as `tools` and the
+ *  estimate prices when the router fails, or has not answered yet. */
 export function readsFiles(
     choice: boolean | null,
     text: string,
-    attached = 0
+    attached = 0,
+    routed = false
 ): { on: boolean; why: string; locked: boolean } {
     const mention = fileMentions(text)[0];
     if (attached > 0 || mention != null) {
@@ -879,7 +981,29 @@ export function readsFiles(
         return { on: choice, why: "", locked: false };
     }
     const file = namedFile(text);
-    return { on: file !== "", why: file, locked: false };
+    return { on: file !== "", why: routed ? ROUTER_DECIDES : file, locked: false };
+}
+
+/** The three states of the composer's Read files control. */
+export type ReadsChoice = "auto" | "on" | "off";
+
+/** Pure: which option of Read files is pressed: the person's pick (`choice` null is Auto), or On while an image or an
+ *  `@file` locks it. */
+export function readsChoice(choice: boolean | null, locked: boolean): ReadsChoice {
+    return locked ? "on" : choice == null ? "auto" : choice ? "on" : "off";
+}
+
+/** Pure: the `drafts.tools` an option sets: null for Auto, else On / Off. */
+export function toolsOfChoice(choice: ReadsChoice): boolean | null {
+    return choice === "auto" ? null : choice === "on";
+}
+
+/** Pure: the note after the Read files control: `the router decides`, `it names rail-apps.json`, or none. */
+export function readsNote(reads: { why: string }): string {
+    if (reads.why === "") {
+        return "";
+    }
+    return reads.why === ROUTER_DECIDES ? reads.why : `it names ${reads.why}`;
 }
 
 /** A piece of a sent message: plain text, or the file an `@path` named (drawn as a chip in place of the `@path`). */

@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A message to the whole council now goes to the one seat (or two) best placed to answer it, not to every seat: the answer says whom the router chose and why, Ask <seat> too has another seat weigh in, and `@all` asks everyone. Let them read files is Auto, On or Off, and in Auto the router decides for a message it takes.
+
 ### Changed
 
 - Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, a tree row's hover button and Councils keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other.
