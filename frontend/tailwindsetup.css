@@ -406,6 +406,13 @@
         -webkit-user-select: text;
         user-select: text;
     }
+
+    /* a textarea wraps, so it never scrolls sideways. WebKit (macOS) lays out an empty textarea's inner box at its
+       width times the page zoom: at a zoom above 1 (cockpit.zoom 1.1) a one-line box overflows by 10%, the global
+       10px scrollbar shows, takes 10px of the box's height, and a vertical one follows. */
+    textarea {
+        overflow-x: hidden;
+    }
 }
 
 /* With Ctrl held (cockpit-root.tsx sets the flag), a link that opens a target shows that a click peeks it

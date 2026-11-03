@@ -63,7 +63,11 @@ export const AgentComposer = forwardRef<
             return;
         }
         el.style.height = "auto";
-        el.style.height = `${Math.min(Math.max(el.scrollHeight, ComposerMinH), ComposerMaxH)}px`;
+        // the height is the border box: scrollHeight leaves out the border, so without it a box of two lines or more
+        // came out 2px short and showed a scrollbar. The 1px more covers scrollHeight's rounding at a page zoom
+        // (cockpit.zoom 1.25 left a wrapped placeholder 1px short)
+        const border = el.offsetHeight - el.clientHeight;
+        el.style.height = `${Math.min(Math.max(el.scrollHeight + border + 1, ComposerMinH), ComposerMaxH)}px`;
     }, [text]);
     const canSend = canSendComposer(text, blockId) && !waking;
     const send = () => {
