@@ -6,6 +6,19 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync: a real Claude Code Monitor in the Agent tree: in a live Claude session ask for a Monitor
+  (a command that prints a line every few seconds, with a timeout) → a row appears under that agent with its label and
+  an "N m left" chip; click it → the peek's Events tab gains an event each time the command prints, and the footer
+  keeps counting. Click Stop (Windows, two clicks) → the Monitor's process ends, the row leaves the tree and the peek
+  closes. Only fixture transcripts drive the `monitor-tasks` scenario, so no live Monitor was seen, a running
+  Monitor's Output tab (it names no output file yet) was not either, and the Stop RPC's kill of a real process was
+  not run (`monitortasks.ts`, `backgroundtaskpeek.tsx`, `agenttree.tsx`).
+
+- [ ] (arcterm) Kael sync: ligatures in a font that has them: with the code font set to JetBrains Mono or Fira Code,
+  open a file in Code, Diff or an agent's File tab with `->`, `!=`, `=>` and `>=` in it → each draws as one joined
+  glyph; with Hack picked they stay plain pairs (Hack has none). The `code-diff` scenario reads the option and the
+  computed `font-feature-settings`, not the glyphs (`diffoptions.ts`).
+
 - [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
   that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
   Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
