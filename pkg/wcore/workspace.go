@@ -255,6 +255,11 @@ func createTabObj(ctx context.Context, workspaceId string, name string, meta wav
 	return tab, nil
 }
 
+// WorkerTabCloseHook, when set (by pkg/orchestrate at init), hears a tab about to close while it still names the
+// run it works for: the close deletes the tab's block before its process ends, so the exit hook cannot find the
+// run. Injected to keep wcore free of an orchestrate import.
+var WorkerTabCloseHook func(ctx context.Context, tabId string)
+
 // Must delete all blocks individually first.
 // recursive: if true, will recursively close parent window, workspace, if they are empty.
 // Returns new active tab id, error.
@@ -274,6 +279,9 @@ func DeleteTab(ctx context.Context, workspaceId string, tabId string, recursive 
 	// close blocks (sends events + stops block controllers)
 	tab, _ := wstore.DBGet[*waveobj.Tab](ctx, tabId)
 	if tab != nil {
+		if WorkerTabCloseHook != nil {
+			WorkerTabCloseHook(ctx, tabId)
+		}
 		for _, blockId := range tab.BlockIds {
 			err := DeleteBlock(ctx, blockId, false)
 			if err != nil {

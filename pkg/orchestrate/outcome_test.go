@@ -350,6 +350,45 @@ func TestLeadExitLeavesOtherRunsAlone(t *testing.T) {
 	}
 }
 
+// a closed tab deletes its block before the process exits, so the exit finds no run: the close itself fails it
+func TestLeadTabCloseBeforeSubmitFailsTheRunWithAReason(t *testing.T) {
+	ctx, channelId, run, rows := newLeadExitRun(t, nil)
+	HandleWorkerTabClose(ctx, "lead-tab")
+	got, err := wstore.GetRun(ctx, channelId, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != jarvis.RunStatus_Blocked || got.Phases[0].State != jarvis.PhaseState_Failed {
+		t.Fatalf("run status=%q phase=%q, want blocked and failed", got.Status, got.Phases[0].State)
+	}
+	if len(*rows) != 1 || (*rows)[0]["eventkind"] != waveobj.RunEventKindLeadExited || (*rows)[0]["reason"] != leadTabClosedNote {
+		t.Fatalf("want one lead-exited row with the tab-closed reason, got %+v", *rows)
+	}
+}
+
+func TestLeadTabCloseLeavesOtherRunsAlone(t *testing.T) {
+	for name, mutate := range map[string]func(*waveobj.Run){
+		"submitted": func(r *waveobj.Run) { r.DagORef = "dag-1" },
+		"finished": func(r *waveobj.Run) {
+			next, _ := jarvis.CompletePhase(*r, 0, nil, 2)
+			*r = next
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, channelId, run, rows := newLeadExitRun(t, mutate)
+			before := run.Status
+			HandleWorkerTabClose(ctx, "lead-tab")
+			got, err := wstore.GetRun(ctx, channelId, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != before || len(*rows) != 0 {
+				t.Fatalf("status %q -> %q, rows %+v: closing a %s run's tab must not fail it", before, got.Status, *rows, name)
+			}
+		})
+	}
+}
+
 func TestWorkerExitFailsAQuickOrPipelineRun(t *testing.T) {
 	for name, mode := range map[string]string{"quick": jarvis.RunMode_Quick, "pipeline": jarvis.RunMode_Pipeline} {
 		t.Run(name, func(t *testing.T) {

@@ -183,7 +183,7 @@ func TestDispatchFailureWakesLeadAfterCommit(t *testing.T) {
 		fn()
 	}
 
-	want := "wake: task t-3 failed (spawn-failed), retry spent. wsh jarvis dag status"
+	want := "wake: task t-3 failed (spawn-failed): pty refused, retry spent. wsh jarvis dag status t-3"
 	if len(f.sends) != 1 || f.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, f.sends)
 	}
@@ -196,9 +196,23 @@ func TestBlockedChildRunWakesLead(t *testing.T) {
 
 	h.scheduleTimes(t, 1)
 
-	want := "wake: task t-0 failed (unknown), retry spent. wsh jarvis dag status"
+	want := "wake: task t-0 failed (unknown), retry spent. wsh jarvis dag status t-0"
 	if len(f.sends) != 1 || f.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, f.sends)
+	}
+}
+
+// a worker whose run was cancelled while its dag went on reaches the lead as a stop nobody judged
+func TestStoppedWorkerWakesLeadWithoutASpentRetry(t *testing.T) {
+	f := newFakeLead(t)
+	h := newNotifyHarness(t, 1, []waveobj.TaskNode{{ID: "t-0", Label: "a"}})
+	h.finishTask(t, "t-0", jarvis.RunStatus_Cancelled)
+
+	h.scheduleTimes(t, 1)
+
+	want := taskFailedWake("t-0", FailureKindWorkerStopped, "")
+	if len(f.sends) != 1 || f.sends[0] != want || strings.Contains(f.sends[0], "retry spent") {
+		t.Fatalf("want one wake %q, got %q", want, f.sends)
 	}
 }
 
@@ -216,7 +230,7 @@ func TestChildFailureWakesLeadOnlyWhenRetryIsSpent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "wake: task t-0 failed (tool_call_error), retry spent. wsh jarvis dag status"
+	want := "wake: task t-0 failed (tool_call_error): tool call errored: connection refused, retry spent. wsh jarvis dag status t-0"
 	if len(f.sends) != 1 || f.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, f.sends)
 	}
@@ -230,7 +244,7 @@ func TestMergeConflictWakesLead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "wake: merge conflict landing lane ending at task t-0. git status"
+	want := "wake: merge conflict landing lane ending at task t-0. git status, then wsh jarvis dag status t-0"
 	if len(f.sends) != 1 || f.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, f.sends)
 	}
@@ -504,4 +518,69 @@ func timedEventsReachTheFakeLead(t *testing.T) {
 		appendRunEvent(ctx, channelId, runId, kind, phaseIdx, detail)
 	}
 	restoreAfterStages(t, func() { appendRunEventAt = prev })
+}
+
+// A task wake carries the first fact the lead acts on, on one line, and names that task's status rather than the
+// whole dag's; with no fact it says only what happened.
+func TestTaskWakesCarryTheFactAndNameTheTasksStatus(t *testing.T) {
+	cases := []struct{ name, got, want string }{
+		{"review failed", reviewFailedWake("t-2", "1) misses the empty-input case.\n2) no test for the retry"),
+			"wake: review failed for task t-2: 1) misses the empty-input case. wsh jarvis dag status t-2"},
+		{"review failed, no note", reviewFailedWake("t-2", ""), "wake: review failed for task t-2. wsh jarvis dag status t-2"},
+		{"task failed", taskFailedWake("t-1", FailureKindTimeout, "\nrequest timed out after 300s\nretrying"),
+			"wake: task t-1 failed (timeout): request timed out after 300s, retry spent. wsh jarvis dag status t-1"},
+		{"task failed, no detail", taskFailedWake("t-1", "", ""),
+			"wake: task t-1 failed (unknown), retry spent. wsh jarvis dag status t-1"},
+		{"verify failed", verifyFailedWake("t-0", "exit 1", "--- FAIL: TestLand (0.02s)\n    land_test.go:40: boom"),
+			"wake: Verify failed after merging task t-0 (exit 1): --- FAIL: TestLand (0.02s). wsh jarvis dag status t-0"},
+		{"verify timed out", verifyFailedWake("t-0", "timed out after 20m", ""),
+			"wake: Verify failed after merging task t-0 (timed out after 20m). wsh jarvis dag status t-0"},
+		{"merge conflict", mergeConflictWake("t-3", []string{"pkg/a.go", "pkg/b.go"}),
+			"wake: merge conflict landing lane ending at task t-3 in pkg/a.go, pkg/b.go. wsh jarvis dag status t-3"},
+		{"merge conflict, files unread", mergeConflictWake("t-3", nil),
+			"wake: merge conflict landing lane ending at task t-3. git status, then wsh jarvis dag status t-3"},
+		{"hung", taskHungWake("t-4", 7), "wake: task t-4 hung: silent 7m, process alive, no ask pending. wsh jarvis dag status t-4"},
+		{"turn ended", taskTurnEndedWake("t-4"),
+			"wake: task t-4's worker ended its turn without completing and is idle; its complete may not have landed or it stopped on a question. wsh jarvis dag status t-4"},
+		{"turn failed", taskTurnFailedWake("t-4", "502 status code."), "wake: task t-4's worker is idle after its last turn failed: 502 status code. wsh jarvis dag status t-4"},
+		{"worker gone", taskWorkerGoneWake("t-4"), "wake: task t-4's worker exited without reporting complete. wsh jarvis dag status t-4"},
+		{"suspect", taskSuspectWake("t-4", "no progress"),
+			"wake: task t-4 may be stuck: no progress. Tell it (`wsh jarvis dag tell t-4 \"…\"`), retry, escalate, or let it run. wsh jarvis dag status t-4"},
+		{"merge refused", mergeFailedWake("t-4", "untracked file in the way\nmore"),
+			"wake: git refused the merge landing lane ending at task t-4 (untracked file in the way). wsh jarvis dag status t-4"},
+		{"note for later tasks", downstreamWake("t-5", "use  parseDate\nhere"),
+			"wake: task t-5 passed review with a note for later tasks: use parseDate here. wsh jarvis dag status t-5"},
+		{"note not delivered", downstreamMissedWake("t-5", "use parseDate", []string{"t-6, which is done"}),
+			"wake: task t-5 passed review with a note for later tasks (not delivered to t-6, which is done): use parseDate. wsh jarvis dag status t-5"},
+		{"for later not delivered", forLaterMissedWake("t-5", "For later tasks", "keep the flag", []string{"t-6, which is done"}),
+			"wake: task t-5 passed review; its worker's For later tasks (not delivered to t-6, which is done): keep the flag. wsh jarvis dag status t-5"},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, c.got, c.want)
+		}
+	}
+	long := taskFailedWake("t-1", FailureKindUnknown, strings.Repeat("x", 3*MaxFailureDetailLen))
+	if len(long) > 2*MaxFailureDetailLen {
+		t.Fatalf("a long detail must be cut, got %d chars", len(long))
+	}
+}
+
+// A worker whose run was cancelled while its dag went on was never retried and never judged: its wake says so and
+// leaves the call to the lead, instead of claiming a retry was spent.
+func TestWorkerStoppedWakeLeavesTheCallToTheLead(t *testing.T) {
+	for _, detail := range []string{"", "worker stopped by a skip that could not finish"} {
+		w := taskFailedWake("t-2", FailureKindWorkerStopped, detail)
+		if strings.Contains(w, "retry spent") {
+			t.Fatalf("a worker that was never retried must not read as a spent retry, got %q", w)
+		}
+		for _, want := range []string{"task t-2 failed (worker-stopped)", "not judged", "nothing retried it", "as you judge", "wsh jarvis dag status t-2"} {
+			if !strings.Contains(w, want) {
+				t.Fatalf("detail %q: want %q in %q", detail, want, w)
+			}
+		}
+		if detail != "" && !strings.Contains(w, ": "+detail+".") {
+			t.Fatalf("the first detail line rides along, got %q", w)
+		}
+	}
 }

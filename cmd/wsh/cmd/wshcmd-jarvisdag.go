@@ -201,9 +201,9 @@ func dagSubmittedLines(g *waveobj.TaskGroup, round bool) string {
 }
 
 var dagStatusCmd = &cobra.Command{
-	Use:     "status",
-	Short:   "print a per-task status digest (state, stall/ask signal, next action)",
-	Args:    cobra.NoArgs,
+	Use:     "status [task-id]",
+	Short:   "print a per-task status digest (state, stall/ask signal, next action); with a task id, that task only",
+	Args:    cobra.MaximumNArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
@@ -214,7 +214,13 @@ var dagStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		for _, line := range dagStatusLines(rtn, time.Now().UnixMilli()) {
+		lines := dagStatusLines(rtn, time.Now().UnixMilli())
+		if len(args) == 1 {
+			if lines, err = dagTaskStatusLines(rtn, time.Now().UnixMilli(), args[0]); err != nil {
+				return err
+			}
+		}
+		for _, line := range lines {
 			fmt.Println(line)
 		}
 		return nil
@@ -251,13 +257,37 @@ func dagStatusLines(rtn *wshrpc.CommandDagStatusRtnData, now int64) []string {
 	if len(g.Tasks) == 0 {
 		return lines
 	}
+	return append(lines, taskLines(rtn, now, g.Tasks)...)
+}
+
+// dagTaskStatusLines is one task's part of dag status, under the dag's own line: a wake names one task, so the lead
+// reads that task, not every task's output again.
+func dagTaskStatusLines(rtn *wshrpc.CommandDagStatusRtnData, now int64, taskID string) ([]string, error) {
+	g := rtn.Group
+	if g == nil {
+		return nil, fmt.Errorf("dag status unavailable")
+	}
+	for _, t := range g.Tasks {
+		if t.ID == taskID {
+			head := fmt.Sprintf("dag %s  status=%s", g.ID, g.Status)
+			return append([]string{head}, taskLines(rtn, now, []waveobj.TaskNode{t})...), nil
+		}
+	}
+	return nil, fmt.Errorf("no task %q in dag %s", taskID, g.ID)
+}
+
+// taskLines renders tasks from the digest: a row each, then the failures the lead fixes from, then its account of
+// the work, then what the human typed to a worker.
+func taskLines(rtn *wshrpc.CommandDagStatusRtnData, now int64, tasks []waveobj.TaskNode) []string {
+	d := rtn.Digest
 	taskDigestByID := map[string]wshrpc.DagTaskDigest{}
 	for _, td := range d.Tasks {
 		taskDigestByID[td.TaskId] = td
 	}
+	var lines []string
 	var buf strings.Builder
 	w := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
-	for _, t := range g.Tasks {
+	for _, t := range tasks {
 		td, ok := taskDigestByID[t.ID]
 		if !ok {
 			continue
@@ -265,11 +295,11 @@ func dagStatusLines(rtn *wshrpc.CommandDagStatusRtnData, now int64) []string {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", t.ID, t.State, taskSignal(t.State, td, now), strings.Join(td.HumanActions, ","), t.Label)
 	}
 	w.Flush()
-	for _, row := range strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n") {
-		lines = append(lines, row)
+	if rows := strings.TrimSuffix(buf.String(), "\n"); rows != "" {
+		lines = append(lines, strings.Split(rows, "\n")...)
 	}
 	// the lead fixes a failed Verify from its output, so the whole kept tail is printed
-	for _, t := range g.Tasks {
+	for _, t := range tasks {
 		if t.State == orchestrate.TaskState_VerifyFailed && t.VerifyError != "" {
 			lines = append(lines, fmt.Sprintf("%s verify failed: %s", t.ID, t.VerifyError))
 		}
@@ -279,7 +309,9 @@ func dagStatusLines(rtn *wshrpc.CommandDagStatusRtnData, now int64) []string {
 		}
 	}
 	// what each task did and how its review went: the lead's account of the work, not just its state
-	for _, t := range g.Tasks {
+	shown := map[string]bool{}
+	for _, t := range tasks {
+		shown[t.ID] = true
 		td, ok := taskDigestByID[t.ID]
 		if !ok {
 			continue
@@ -296,7 +328,9 @@ func dagStatusLines(rtn *wshrpc.CommandDagStatusRtnData, now int64) []string {
 	}
 	// nothing wakes the lead for what the human typed to a worker, so this is where it learns of it
 	for _, told := range d.Told {
-		lines = append(lines, fmt.Sprintf("%s the human told this worker %s ago: %s", told.TaskId, durOrZero(now-told.Ts), strings.Join(strings.Fields(told.Text), " ")))
+		if shown[told.TaskId] {
+			lines = append(lines, fmt.Sprintf("%s the human told this worker %s ago: %s", told.TaskId, durOrZero(now-told.Ts), strings.Join(strings.Fields(told.Text), " ")))
+		}
 	}
 	return lines
 }
@@ -313,8 +347,8 @@ func reportPresenceLine(taskID string, sections []string) string {
 	return fmt.Sprintf("%s report: %s (wsh jarvis dag report %s)", taskID, what, taskID)
 }
 
-// planReviewFindingsRunes is how much of a failed review's findings the status line quotes; the lead's wake carries
-// them whole.
+// planReviewFindingsRunes is how much of a failed review's findings the status line quotes; `dag planreview findings`
+// prints them whole.
 const planReviewFindingsRunes = 240
 
 // planReviewLine says where the dag's plan review stands. The dag's status reads plan-review both while a reviewer
@@ -726,8 +760,10 @@ var dagMergeCmd = &cobra.Command{
 	Use:   "merge <task-id>",
 	Short: "squash-merge a finished task's worktree back into the project branch",
 	Long: "Squash-merge a finished task's worktree back into the project branch. On a squash\n" +
-		"conflict the task enters blocked-merge: resolve the conflicts in the project tree, then\n" +
-		"re-run with --continue so the engine commits the resolved state. When the plan's Verify\n" +
+		"conflict the task enters blocked-merge: resolve the conflicts in the project tree and\n" +
+		"`git add` them without committing, then re-run with --continue so the engine commits the\n" +
+		"squash with its trailers (a resolution you committed yourself is refused: undo it with\n" +
+		"`git reset --soft HEAD~1`). When the plan's Verify\n" +
 		"fails after a merge the task enters verify-failed: fix it in the project tree, commit, then\n" +
 		"re-run with --continue so the engine runs Verify again.",
 	Args:    cobra.ExactArgs(1),
@@ -1088,6 +1124,40 @@ var dagPlanReviewCmd = &cobra.Command{
 	},
 }
 
+var dagPlanReviewFindingsCmd = &cobra.Command{
+	Use:     "findings",
+	Short:   "print the failed plan review's findings whole, one block per reviewer",
+	Args:    cobra.NoArgs,
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		channelId, runId, err := dagIds(cmd, dagRpcTimeoutMs)
+		if err != nil {
+			return err
+		}
+		st, err := wshclient.DagStatusCommand(RpcClient, wshrpc.CommandDagStatusData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs})
+		if err != nil {
+			return err
+		}
+		if st.Group == nil {
+			return fmt.Errorf("this run holds no dag")
+		}
+		text, err := planReviewFindingsText(st.Group.PlanReview)
+		if err != nil {
+			return err
+		}
+		fmt.Println(text)
+		return nil
+	},
+}
+
+// planReviewFindingsText is a failed plan review round's findings as the engine merged them.
+func planReviewFindingsText(pr *waveobj.PlanReviewStage) (string, error) {
+	if pr == nil || pr.State != orchestrate.PlanReviewState_Failed {
+		return "", fmt.Errorf("the plan review has no failed round to read findings from")
+	}
+	return pr.Findings, nil
+}
+
 // dagFinalData is the final verifier's verdict payload. RunId resolves to the verifier's own run, which is
 // how the server knows the verdict is its.
 func dagFinalData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionData, error) {
@@ -1341,9 +1411,10 @@ func leadTree() string {
 }
 
 func init() {
+	dagPlanReviewCmd.AddCommand(dagPlanReviewFindingsCmd)
 	jarvisDagCmd.AddCommand(dagSubmitCmd, dagStatusCmd, dagMergeCmd, dagAsksCmd, dagAnswerCmd, dagForwardCmd, dagRulesCmd, dagReportCmd, dagReviewCmd, dagPlanReviewCmd, dagFinalCmd, dagAmendCmd, dagTellCmd, dagGoalpostCmd)
 	jarvisDagCmd.AddCommand(dagAction("approve"), dagSendbackCmd, dagAction("retry"), dagAction("skip"), dagActionWithin("stop", 60_000), dagEscalateCmd, dagAction("cancel"), dagActionWithin("retry-cleanup", 60_000))
-	for _, c := range jarvisDagCmd.Commands() {
+	for _, c := range append(jarvisDagCmd.Commands(), dagPlanReviewFindingsCmd) {
 		c.Flags().String("runid", "", "run id")
 		c.Flags().String("channel", "", "channel id")
 	}

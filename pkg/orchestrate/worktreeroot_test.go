@@ -528,3 +528,25 @@ func TestSweepWorktreeRootKeepsTheMarkerOf(t *testing.T) {
 		})
 	}
 }
+
+// a lane tree checked out at a fresh path (claimLaneTreeDir) is still its key's: the folder <prefix>-t-1.1 maps back to
+// the key of <prefix>-t-1
+func TestRunKeyForTreeDirDropsAFreshPathsNumber(t *testing.T) {
+	root := useRoot(t)
+	id := uuid.NewString()
+	if err := claimRunPrefix(root, id); err != nil {
+		t.Fatal(err)
+	}
+	prefix := id[:runPrefixLen]
+	for name, want := range map[string]string{
+		prefix + "-t-1":    id + "-t-1",
+		prefix + "-t-1.1":  id + "-t-1",
+		prefix + "-t-1.12": id + "-t-1",
+		prefix + ".2":      id,
+		id + "-t-1.3":      id + "-t-1",
+	} {
+		if got, ok := RunKeyForTreeDir(root, name); !ok || got != want {
+			t.Errorf("RunKeyForTreeDir(%q) = %q, %v; want %q", name, got, ok, want)
+		}
+	}
+}

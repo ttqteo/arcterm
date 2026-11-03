@@ -20,8 +20,10 @@ var ErrTreeBusy = errors.New("the engine is removing it")
 func WorktreeRoot() string { return worktreeRoot() }
 
 // RunKeyForTreeDir maps a folder name under the worktree root to its engine key: a full key as is, a
-// <8-char prefix><suffix> name through the prefix's .run marker. ok=false: no marker, or not an engine name.
+// <8-char prefix><suffix> name through the prefix's .run marker, either with the number a fresh path adds
+// (claimLaneTreeDir) dropped. ok=false: no marker, or not an engine name.
 func RunKeyForTreeDir(root, name string) (string, bool) {
+	name = strings.TrimSuffix(name, treeDirAlt.FindString(name))
 	if _, _, ok := splitRunKey(name); ok {
 		return name, true
 	}

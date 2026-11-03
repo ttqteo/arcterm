@@ -232,6 +232,9 @@ func landPrecheck(ctx context.Context, run *waveobj.Run) *waveobj.RunLand {
 // Check and Verify, so a held reason the human can fix at once is not minutes away, and again under the checkout
 // claim, since the checkout can change while they run.
 func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force bool) *waveobj.RunLand {
+	if reason := landingTreeHold(ctx, run); reason != "" {
+		return heldLand(reason)
+	}
 	if commit := mergedCommit(ctx, run); commit != "" {
 		removeLandedTree(ctx, run.ProjectPath, run.ID)
 		return &waveobj.RunLand{State: LandState_Landed, Commit: commit}
@@ -305,6 +308,23 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	}
 	removeLandedTree(ctx, project, run.ID)
 	return land
+}
+
+// landingTreeHold is why the land may not remove the run's landing tree, which every land ends by doing: changes
+// nothing committed there would go with it. "" when there are none.
+func landingTreeHold(ctx context.Context, run *waveobj.Run) string {
+	changed, err := landingTreeChanges(ctx, run, false)
+	if err != nil {
+		return err.Error()
+	}
+	if len(changed) == 0 {
+		return ""
+	}
+	// the changes of a merge someone left open are that merge's, not the run's
+	if open := midMergeHold(ctx, run); open != "" {
+		return open
+	}
+	return fmt.Sprintf("the landing tree %s has uncommitted changes to %s, which removing the tree would delete: commit them on wave/%s or drop them, then `wsh runs land %s`", run.LandPath, strings.Join(changed, ", "), run.ID, run.ID)
 }
 
 // removeLandedTree drops a landed run's tree and branch; the evidence keeps the branch's tip, so neither is needed.
@@ -710,11 +730,16 @@ func untrackedDiffersReason(path string) string {
 // untrackedCopies lists, as full paths, the untracked files in the checkout that are versions of ones the branch
 // adds, or names the first that is not instead. It changes nothing.
 func untrackedCopies(ctx context.Context, project, branch string) (copies []string, differs string, err error) {
-	base, err := git(ctx, project, "merge-base", "HEAD", branch)
+	// git names what the branch adds from the repo root, which a project in a subfolder of its repo is not
+	top, err := git(ctx, project, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, "", fmt.Errorf("finding the checkout's repo root: %w", err)
+	}
+	base, err := git(ctx, top, "merge-base", "HEAD", branch)
 	if err != nil {
 		return nil, "", fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
-	added, err := git(ctx, project, "diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", base, branch)
+	added, err := git(ctx, top, "diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", base, branch)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing what the run adds: %w", err)
 	}
@@ -722,24 +747,24 @@ func untrackedCopies(ctx context.Context, project, branch string) (copies []stri
 		if p == "" {
 			continue
 		}
-		full := filepath.Join(project, filepath.FromSlash(p))
+		full := filepath.Join(top, filepath.FromSlash(p))
 		if info, err := os.Stat(full); err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if _, err := git(ctx, project, "ls-files", "--error-unmatch", "--", p); err == nil {
+		if _, err := git(ctx, top, "ls-files", "--error-unmatch", "--", p); err == nil {
 			continue // tracked: git merges it or refuses on its own
 		}
 		// hash-object applies the checkout's filters, so a CRLF copy of an LF file still reads as the same
-		theirs, err := git(ctx, project, "rev-parse", branch+":"+p)
+		theirs, err := git(ctx, top, "rev-parse", branch+":"+p)
 		if err != nil {
 			return nil, "", fmt.Errorf("reading %s on the run's branch: %w", p, err)
 		}
-		mine, err := git(ctx, project, "hash-object", "--", p)
+		mine, err := git(ctx, top, "hash-object", "--", p)
 		if err != nil {
 			return nil, "", fmt.Errorf("reading the untracked %s: %w", p, err)
 		}
 		if mine != theirs {
-			held, err := runHeld(ctx, project, base, branch, p, mine)
+			held, err := runHeld(ctx, top, base, branch, p, mine)
 			if err != nil {
 				return nil, "", err
 			}
@@ -755,13 +780,13 @@ func untrackedCopies(ctx context.Context, project, branch string) (copies []stri
 // runHeld reports whether blob is a version of p the run's branch has held since base: in its history, or at a
 // tip its reflog records, which keeps the docs snapshot a resubmit after a failed plan review amended away (run
 // dca34385 revised the spec it adopted, and its land held on the untracked original).
-func runHeld(ctx context.Context, project, base, branch, p, blob string) (bool, error) {
+func runHeld(ctx context.Context, top, base, branch, p, blob string) (bool, error) {
 	raw := []string{"log", "--raw", "-m", "--no-abbrev", "--no-renames", "--format="}
 	for _, args := range [][]string{
 		slices.Concat(raw, []string{base + ".." + branch, "--", p}),
 		slices.Concat(raw, []string{"--walk-reflogs", branch, "--", p}),
 	} {
-		out, err := git(ctx, project, args...)
+		out, err := git(ctx, top, args...)
 		if err != nil {
 			return false, fmt.Errorf("listing the versions of %s the run's branch held: %w", p, err)
 		}
@@ -808,14 +833,30 @@ func LandConflicts(ctx context.Context, run *waveobj.Run) ([]string, error) {
 	return slices.Compact(files), nil
 }
 
+// conflictedFiles lists the paths a stopped merge left unmerged in tree. The diff filter reads the index, so it does
+// not depend on the language git prints its messages in.
+func conflictedFiles(ctx context.Context, tree string) ([]string, error) {
+	out, err := git(ctx, tree, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
 // objectID is a git object id, sha1 or sha256.
 var objectID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 // mergeRefusal says why git would not make the merge. A conflict is aborted, so the checkout is left with no
 // merge state; a refusal to overwrite uncommitted edits never started one, and the edits are untouched.
 func mergeRefusal(ctx context.Context, project, base string, merr error) string {
-	if conflicted, err := git(ctx, project, "diff", "--name-only", "--diff-filter=U"); err == nil && conflicted != "" {
-		files := strings.Join(strings.Fields(conflicted), ", ")
+	if conflicted, err := conflictedFiles(ctx, project); err == nil && len(conflicted) > 0 {
+		files := strings.Join(conflicted, ", ")
 		if _, err := git(ctx, project, "merge", "--abort"); err != nil {
 			return fmt.Sprintf("the merge conflicts with %s in %s, and aborting it failed: %v", base, files, err)
 		}

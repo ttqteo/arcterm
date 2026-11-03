@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -145,5 +146,50 @@ func TestResumeLeavesThePhaseFailedWhenTheRestartFails(t *testing.T) {
 	}
 	if got.Status != jarvis.RunStatus_Blocked || got.Phases[0].State != jarvis.PhaseState_Failed {
 		t.Fatalf("status=%q phase=%q, want blocked and failed", got.Status, got.Phases[0].State)
+	}
+}
+
+// a worker whose tab was closed resumes in a new tab, which takes its place on the phase and carries the run's
+// owner stamp, so the resumed agent's wsh calls resolve to its run
+func TestResumeRestartsAClosedTabsWorkerInANewTab(t *testing.T) {
+	stubRunServer(t, "claude", nil)
+	calls := stubResumeRunWorker(t, nil)
+	closed := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	channelId, run := newFailedQuickRun(t, func(r *waveobj.Run) { r.Phases[0].WorkerOrefs = []string{closed} })
+	if err := resume(channelId, run.ID); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	ctx := context.Background()
+	got, err := wstore.GetRun(ctx, channelId, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workers := got.Phases[0].WorkerOrefs
+	if len(workers) != 1 || workers[0] == closed || got.Phases[0].State != jarvis.PhaseState_Running {
+		t.Fatalf("want the closed tab %s replaced by a running worker, got %v %s", closed, workers, got.Phases[0].State)
+	}
+	if want := (resumeCall{workers[0], "claude", "sess-1"}); len(*calls) != 1 || (*calls)[0] != want {
+		t.Fatalf("want the session resumed in the new tab, got %+v (want %+v)", *calls, want)
+	}
+	runORef, _, err := wstore.GetWorkerOwner(ctx, workers[0])
+	if err != nil || runORef != waveobj.MakeORef(waveobj.OType_Run, run.ID).String() {
+		t.Fatalf("want the new tab stamped with run %s, got %q %v", run.ID, runORef, err)
+	}
+}
+
+func TestResumeLeavesThePhaseFailedWhenANewTabCannotOpen(t *testing.T) {
+	stubRunServer(t, "claude", errors.New("no workspace"))
+	calls := stubResumeRunWorker(t, nil)
+	closed := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	channelId, run := newFailedQuickRun(t, func(r *waveobj.Run) { r.Phases[0].WorkerOrefs = []string{closed} })
+	if err := resume(channelId, run.ID); err == nil {
+		t.Fatal("want the spawn's error")
+	}
+	got, err := wstore.GetRun(context.Background(), channelId, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Phases[0].State != jarvis.PhaseState_Failed || len(*calls) != 0 || got.Phases[0].WorkerOrefs[0] != closed {
+		t.Fatalf("phase=%q workers=%v resumes=%d, want failed, the closed tab kept, nothing started", got.Phases[0].State, got.Phases[0].WorkerOrefs, len(*calls))
 	}
 }

@@ -137,7 +137,7 @@ func TestLaneConflictBlocksItsLastTaskAndContinueLandsTheLane(t *testing.T) {
 	if g.Tasks[1].State != TaskState_BlockedMerge || g.Tasks[0].State != TaskState_Done || g.Tasks[0].Merged {
 		t.Fatalf("the conflict belongs to the lane's last task, got %s / %s merged=%v", g.Tasks[0].State, g.Tasks[1].State, g.Tasks[0].Merged)
 	}
-	want := "wake: merge conflict landing lane ending at task t-2. git status"
+	want := "wake: merge conflict landing lane ending at task t-2. git status, then wsh jarvis dag status t-2"
 	if len(lead.sends) != 1 || lead.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, lead.sends)
 	}

@@ -532,8 +532,8 @@ func TestContinueRetriesARefusedMerge(t *testing.T) {
 	}
 }
 
-// a lane landing between the resolver's fix commit and its --continue becomes the HEAD --continue credits,
-// so a conflict awaiting --continue holds every other merge, automatic or explicit
+// a lane landing between the resolver's staging of the fix and its --continue would be mixed into the squash
+// --continue commits, so a conflict awaiting --continue holds every other merge, automatic or explicit
 func TestConflictAwaitingContinueHoldsOtherMerges(t *testing.T) {
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "conflicts"}, {ID: "t-1", Label: "clean"}})
 	f.finish(t, "t-0")

@@ -18,11 +18,16 @@ import (
 // boundary at or below the limit (at the limit when the first line is longer) and ends with the command that reads
 // the rest, so nothing reaches a reader shortened without saying so. An empty key names the whole report.
 func capSection(taskID, key, text string) string {
+	return capText(text, reportSectionMaxLen, strings.TrimSpace(fmt.Sprintf("wsh jarvis dag report %s %s", taskID, key)))
+}
+
+// capText is capSection's cut for any text: past limit runes, at the last line boundary, naming cmd for the rest.
+func capText(text string, limit int, cmd string) string {
 	runes := []rune(text)
-	if len(runes) <= reportSectionMaxLen {
+	if len(runes) <= limit {
 		return text
 	}
-	cut := reportSectionMaxLen
+	cut := limit
 	if runes[cut] != '\n' {
 		for i := cut - 1; i > 0; i-- {
 			if runes[i] == '\n' {
@@ -31,7 +36,6 @@ func capSection(taskID, key, text string) string {
 			}
 		}
 	}
-	cmd := strings.TrimSpace(fmt.Sprintf("wsh jarvis dag report %s %s", taskID, key))
 	return strings.TrimRight(string(runes[:cut]), " \t\n") + fmt.Sprintf("\n… %d more characters: %s", len(runes)-cut, cmd)
 }
 

@@ -323,6 +323,30 @@ func TestRunFinishedWakeNamesTheConflictsTheLandWouldHoldOn(t *testing.T) {
 	}
 }
 
+// the land removes the landing tree, so changes the lead left uncommitted there would go with it: unlike the
+// checkout's, they are the lead's to commit or drop before it completes
+func TestRunFinishedWakeTellsTheLeadToCommitWhatIsUncommittedInItsTree(t *testing.T) {
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "", "")
+	tree := f.land(t)
+	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
+		r.BaseBranch = "main"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	commitOnBranch(t, tree, "base.txt", "branch\n")
+	writeFile(t, filepath.Join(tree, "base.txt"), "the lead's uncommitted edit\n")
+
+	runFinal(t, f)
+
+	want := runFinishedWake + "\nThe final stage passed on the merged result.\n" + roundLeftLine +
+		"\nThe land will hold: this tree has uncommitted changes to base.txt, and the land removes the tree. They are this run's: commit them, or drop them, before you complete."
+	if len(lead.sends) != 1 || lead.sends[0] != want {
+		t.Fatalf("want %q, got %q", want, lead.sends)
+	}
+}
+
 // the verifier is briefed with the reviewers' caveats, so its pass answers them; a missing Verify still counts
 func TestAVerifiersPassSettlesReviewCaveatsButNotAMissingVerify(t *testing.T) {
 	f := finalFixture(t, "", "", "")

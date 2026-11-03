@@ -480,7 +480,7 @@ func TestOrchestrationRulesCoverReviewAndDownstream(t *testing.T) {
 		"wsh jarvis dag amend <task>",
 		"wsh jarvis dag tell <task>",
 		"never add, remove or reorder tasks",
-		"- review failed:",
+		"- review failed: the wake carries the first finding, and the rest are in `wsh jarvis dag status <task>`.",
 		"wsh jarvis dag sendback <task>",
 		"wsh jarvis dag approve <task>",
 	} {
@@ -559,6 +559,8 @@ func TestLaunchPromptAutonomous(t *testing.T) {
 			"- spike:",
 			"- bounded: implement it here",
 			"- architectural:",
+			// the spec is committed from the run's tree: one written in the main checkout is a second copy the land holds on
+			"write the design straight into a spec file in your working directory, never in the project's main checkout",
 			"write the decisions you make beyond it, with why, into the plan's header",
 			"wsh jarvis dag submit --plan <plan path> --spec <spec path>",
 			"wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>",

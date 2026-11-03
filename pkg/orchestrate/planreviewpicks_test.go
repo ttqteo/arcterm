@@ -77,10 +77,12 @@ func TestPlanReviewPromptUnchangedWithoutPicks(t *testing.T) {
 		"- every requirement in the spec has a task;\n" +
 		"- no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;\n" +
 		"- types, functions and flags have the same names in every task that mentions them;\n" +
+		"- each claim the plan makes about existing code (what a function calls, who calls it, what a test asserts) holds in the tree: grep the callers of what a task changes or removes; a claim that does not hold is a finding;\n" +
 		"- no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;\n" +
 		"- " + planReviewDependsReasonItem + "\n" +
 		"- each task states its acceptance criteria and names the tests that prove them;\n" +
 		"- the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;\n" +
+		"- no Setup, Check or Verify command, and no task step, names a path a task of this plan creates (a package pattern, a test file) unless that task is among the step's Depends: a task's tree holds only what its Depends landed, so the command fails there and every worker works around it. Final runs on the merged result, so it may name them;\n" +
 		"- no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;\n" +
 		"- " + planReviewManifestItem + "\n" +
 		"- the Final command checks the running app: every task that adds or changes a rendered view, a visual state (loading, empty, error, gone) or an interaction names in its acceptance the scenario step that shows that view or performs that interaction, and Final runs that scenario. A scenario that only opens the surface or panel the view sits in does not count. A check left to a person has no owner in a run, so a plan that leaves one is a finding.\n" +

@@ -323,6 +323,15 @@ type batchOutcome struct {
 	cancelled     bool // the claim was cancelled mid-judging: nothing is recorded
 }
 
+// verifyFailureLine is the first line of a failed Verify's output that names a failure, or "" when none does.
+func verifyFailureLine(err error) string {
+	var pe *planCommandError
+	if !errors.As(err, &pe) {
+		return ""
+	}
+	return firstFailureExcerpt(pe.output)
+}
+
 // verifyReason is the short cause a Verify failure's wake carries.
 func verifyReason(err error) string {
 	var pe *planCommandError
@@ -334,7 +343,8 @@ func verifyReason(err error) string {
 
 // judgeBatch turns the batch's Verify result into its outcome. A failure of an ordered batch of two or more, with
 // nothing committed on top, is bisected over its prefixes in a detached tree to the tip that broke it; otherwise it
-// blames the oldest tip and holds the rest.
+// blames the oldest tip and holds the rest. A failure no prefix reproduces is run once more as the whole batch in
+// that tree, and one that passes there lands every tip with the failure kept as a flaky item.
 func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output string, flaky []string, verr error, run batchRunner) batchOutcome {
 	out := batchOutcome{batch: tipIDs(batch), output: output, err: verr}
 	if verr == nil {
@@ -345,13 +355,18 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 	if !ordered || len(batch) < 2 {
 		return out
 	}
+	// a Verify cut off by its timeout or from outside judged no tip, and each bisect step would wait on the same load
+	if planCommandUnfinished(verr) {
+		out.reason = verifyReason(verr) + "; not bisected: Verify did not finish"
+		return out
+	}
 	// a fix committed on top before a --continue is not any prefix's: the continued tip owns the failure
 	if head, err := git(ctx, run.tree, "rev-parse", "HEAD"); err != nil || head != batch[len(batch)-1].commit {
 		return out
 	}
 	lo, hi := 0, len(batch) // prefix i is the tree at batch[i-1].commit; prefix 0 passed its own Verify, prefix n just failed
 	failOut, failErr := output, verr
-	passOut := ""
+	passOut, cleanPass := "", false
 	var passFlaky []string
 	steps := 0
 	first := batch[len(batch)/2-1].commit
@@ -359,32 +374,54 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 	// its first tip as the batch's Verify was; each step is its tip's
 	treeCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID}), run.runID, PlanCmd_Verify, batch[0].id)
 	stepErr := withDetachedTree(treeCtx, run.project, run.runID+"-bisect", "bisect tree", first, run.setup, func(wt string) error {
+		// verifyPrefix runs Verify in the tree moved to the first n tips; a step error is a verdict, a treeStepError not
+		verifyPrefix := func(n int) (string, []string, error) {
+			commit := batch[n-1].commit
+			if _, err := git(ctx, wt, "checkout", "--detach", "--force", commit); err != nil {
+				return "", nil, &treeStepError{"moving the bisect tree to " + commit, err}
+			}
+			if run.progress != nil {
+				run.progress(fmt.Sprintf("verify: bisecting: testing %s at %.8s", strings.Join(tipIDs(batch[:n]), ", "), commit))
+			}
+			env := changedFilesEnv(ctx, wt, batch[0].commit+"^", commit, run.dagID+"/bisect")
+			stepCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID, Label: "Verify · bisect", Always: true}), run.runID, PlanCmd_Verify, batch[n-1].id)
+			steps++
+			stepOut, stepFlaky, err := runVerifyCommand(stepCtx, wt, run.command, env, run.progress)
+			if err != nil {
+				return stepOut, nil, bisectStepError(err)
+			}
+			return stepOut, stepFlaky, nil
+		}
 		for hi-lo > 1 {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			mid := (lo + hi) / 2
-			commit := batch[mid-1].commit
-			if _, err := git(ctx, wt, "checkout", "--detach", "--force", commit); err != nil {
-				return &treeStepError{"moving the bisect tree to " + commit, err}
-			}
-			if run.progress != nil {
-				run.progress(fmt.Sprintf("verify: bisecting: testing %s at %.8s", strings.Join(tipIDs(batch[:mid]), ", "), commit))
-			}
-			env := changedFilesEnv(ctx, wt, batch[0].commit+"^", commit, run.dagID+"/bisect")
-			stepCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID, Label: "Verify · bisect", Always: true}), run.runID, PlanCmd_Verify, batch[mid-1].id)
-			stepOut, stepFlaky, err := runVerifyCommand(stepCtx, wt, run.command, env, run.progress)
-			steps++
+			stepOut, stepFlaky, err := verifyPrefix(mid)
 			if err == nil {
 				lo, passOut, passFlaky = mid, stepOut, stepFlaky
 				continue
 			}
-			var pe *planCommandError
-			if !errors.As(err, &pe) {
-				return &treeStepError{"running Verify in the bisect tree", err}
+			var stopped *treeStepError
+			if errors.As(err, &stopped) {
+				return err
 			}
 			hi, failOut, failErr = mid, stepOut, err
 		}
+		if hi < len(batch) {
+			return nil
+		}
+		// every prefix passed: whether the whole batch fails outside the landing tree decides if the newest tip broke it
+		stepOut, stepFlaky, err := verifyPrefix(len(batch))
+		if err == nil {
+			cleanPass, passOut, passFlaky = true, stepOut, stepFlaky
+			return nil
+		}
+		var stopped *treeStepError
+		if errors.As(err, &stopped) {
+			return err
+		}
+		failOut, failErr = stepOut, err
 		return nil
 	})
 	if ctx.Err() != nil {
@@ -398,10 +435,32 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 		out.reason = verifyReason(verr) + "; bisect stopped: " + stepErr.Error()
 		return out
 	}
+	if cleanPass {
+		// the failure was the landing tree's own (a leftover file, a port in use), not any lane's: it goes to the
+		// final stage as a flaky item, which runs the whole Verify again
+		where := fmt.Sprintf("%s in the landing tree, the rerun in a clean tree at %.8s, %s", verifyReason(verr), batch[len(batch)-1].commit, afterMerging(out.batch))
+		out.passed, out.failed, out.held, out.err = out.batch, "", nil, nil
+		out.passedOutput = withFlakyItems(withFlakyItems(passOut, passFlaky, afterMerging(out.batch)), []string{"the whole Verify"}, where)
+		return out
+	}
 	out.passed, out.failed, out.held = out.batch[:hi-1], out.batch[hi-1], out.batch[hi:]
 	out.passedOutput, out.output, out.err = withFlakyItems(passOut, passFlaky, afterMerging(out.passed)), failOut, failErr
 	out.reason = verifyReason(failErr) + "; bisected from " + strings.Join(out.batch, ", ")
 	return out
+}
+
+// bisectStepError is a bisect step's Verify error as the bisect takes it: a treeStepError stops the bisect, since an
+// error that is not the command's, or a command cut off by its timeout or from outside, judged nothing; any other
+// is the step's verdict.
+func bisectStepError(err error) error {
+	var pe *planCommandError
+	if !errors.As(err, &pe) {
+		return &treeStepError{"running Verify in the bisect tree", err}
+	}
+	if planCommandUnfinished(err) {
+		return &treeStepError{"Verify in the bisect tree did not finish", err}
+	}
+	return err
 }
 
 // startVerify runs Verify in the project checkout for every lane tip the caller left verifying, and releases l
@@ -581,7 +640,7 @@ func recordBatchVerifyLocked(ctx context.Context, dagID string, out batchOutcome
 		data["bisect"] = out.bisect
 	}
 	appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskVerifyFailed, nil, data)
-	PostWake(ctx, g.ChannelId, g.RunID, verifyFailedWake(out.failed, reason))
+	PostWake(ctx, g.ChannelId, g.RunID, verifyFailedWake(out.failed, reason, verifyFailureLine(out.err)))
 	return nil
 }
 

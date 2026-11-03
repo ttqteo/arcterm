@@ -18,6 +18,7 @@ var workerOwnerOf = wstore.GetWorkerOwner
 func init() {
 	jarvis.ChildOutcomeHook = HandleChildOutcome
 	jarvis.RunWorkerExitHook = HandleRunWorkerExit
+	wcore.WorkerTabCloseHook = HandleWorkerTabClose
 }
 
 // HandleChildOutcome reacts to a dag child's worker process exiting. A "failed" outcome is classified
@@ -112,7 +113,12 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 			publishDagEvent(DagEventTaskRetried, g, task.ID)
 			appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskRetried, nil, detail)
 		} else {
-			PostWake(ctx, g.ChannelId, g.RunID, taskFailedWake(task.ID, kind))
+			// a clean exit's summary describes the work, not what went wrong
+			why := data.Summary
+			if data.Status == "done" {
+				why = ""
+			}
+			PostWake(ctx, g.ChannelId, g.RunID, taskFailedWake(task.ID, kind, why))
 		}
 		poke = true
 		return nil
@@ -166,6 +172,12 @@ const leadExitedNote = "lead exited before submitting a plan"
 // workerExitedNote is why a quick or pipeline run whose worker exited without completing its phase stopped.
 const workerExitedNote = "worker exited before completing its phase"
 
+// leadTabClosedNote and workerTabClosedNote are the same stops, by a close of the agent's tab.
+const (
+	leadTabClosedNote   = "lead's tab was closed before it submitted a plan"
+	workerTabClosedNote = "worker's tab was closed before it completed its phase"
+)
+
 // HandleRunWorkerExit fails a non-dag run whose worker exits without completing the phase it was running:
 // nothing else will move the run, and the human needs to see why it stopped. It covers every run mode that
 // has no dag of its own to reconcile the exit for it:
@@ -192,17 +204,38 @@ func HandleRunWorkerExit(ctx context.Context, workerORef string, exit jarvis.Wor
 	if run.DagORef != "" {
 		return nil
 	}
+	return failWorkerPhase(ctx, channelId, runId, workerORef, workerExitedNote, leadExitedNote)
+}
+
+// HandleWorkerTabClose fails a non-dag run whose worker's tab is closing, as HandleRunWorkerExit does when the
+// worker exits: the close deletes the block before the process ends, so that exit finds no run to fail. A dag
+// child's closed tab is the watchdog's, which reads a missing tab as a gone worker. Best-effort: a failure is
+// logged and never stops the close.
+func HandleWorkerTabClose(ctx context.Context, tabId string) {
+	workerORef := waveobj.MakeORef(waveobj.OType_Tab, tabId).String()
+	channelId, runId, err := workerRunIds(ctx, workerORef)
+	if err == nil && runId != "" {
+		err = failWorkerPhase(ctx, channelId, runId, workerORef, workerTabClosedNote, leadTabClosedNote)
+	}
+	if err != nil {
+		log.Printf("closing worker tab %s: %v", tabId, err)
+	}
+}
+
+// failWorkerPhase fails the run's running phase when workerORef works it, recording why with the worker's note,
+// or the lead's on an orchestrator run.
+func failWorkerPhase(ctx context.Context, channelId, runId, workerORef, workerNote, leadNote string) error {
 	phaseIdx, mode, err := failRunningPhase(ctx, channelId, runId, func(workers []string) bool {
-		// a worker that exited belongs to an earlier or later phase's roster; only the phase actually
-		// running when it exited is this exit's to fail
+		// a worker that stopped belongs to an earlier or later phase's roster; only the phase actually
+		// running when it stopped is this stop's to fail
 		return slices.Contains(workers, workerORef)
 	})
 	if err != nil || phaseIdx < 0 {
 		return err
 	}
-	kind, reason := waveobj.RunEventKindWorkerExited, workerExitedNote
+	kind, reason := waveobj.RunEventKindWorkerExited, workerNote
 	if mode == jarvis.RunMode_Orchestrator {
-		kind, reason = waveobj.RunEventKindLeadExited, leadExitedNote
+		kind, reason = waveobj.RunEventKindLeadExited, leadNote
 	}
 	appendRunEvent(ctx, channelId, runId, kind, nil, map[string]any{"reason": reason})
 	sendRunUpdates(channelId, runId)

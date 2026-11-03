@@ -152,7 +152,7 @@ func TestVerifyFailureBlocksTheDagAndWakesTheLead(t *testing.T) {
 	if g.Status != DagStatus_Blocked || g.Tasks[1].State != TaskState_Running || len(spawned) != 2 {
 		t.Fatalf("a failed Verify blocks the dag; the dependents started at the merge, got %s / %s / %d spawns", g.Status, g.Tasks[1].State, len(spawned))
 	}
-	want := "wake: Verify failed after merging task t-0 (exit 1). wsh jarvis dag status"
+	want := "wake: Verify failed after merging task t-0 (exit 1): FAIL pkg/orchestrate. wsh jarvis dag status t-0"
 	if len(lead.sends) != 1 || lead.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, lead.sends)
 	}
@@ -326,7 +326,7 @@ func TestVerifyTimeoutIsAFailure(t *testing.T) {
 	if got := f.dag(t).Tasks[0].State; got != TaskState_VerifyFailed {
 		t.Fatalf("a Verify past its timeout fails the task, got %s", got)
 	}
-	want := "wake: Verify failed after merging task t-0 (timed out after 20m). wsh jarvis dag status"
+	want := "wake: Verify failed after merging task t-0 (timed out after 20m). wsh jarvis dag status t-0"
 	if len(lead.sends) != 1 || lead.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, lead.sends)
 	}

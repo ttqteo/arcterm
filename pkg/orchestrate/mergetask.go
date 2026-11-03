@@ -95,12 +95,20 @@ func ContinueMerge(ctx context.Context, channelID, ownerRunID, taskID string) er
 	}
 	switch {
 	case task.State == TaskState_VerifyFailed:
+		// Verify runs on the tree, so it would pass on a fix that the land never merges and then deletes
+		changed, err := landingTreeChanges(ctx, owner, false)
+		if err != nil {
+			return err
+		}
+		if len(changed) > 0 {
+			return fmt.Errorf("the landing tree %s has uncommitted changes to %s: commit the fix first, then run --continue again", owner.LandPath, strings.Join(changed, ", "))
+		}
 		return rerunVerify(ctx, channelID, owner, taskID)
 	case task.Merged:
 		if !task.CleanupPending && task.CleanupError == "" {
 			return nil
 		}
-		return removeLaneTree(ctx, owner.DagORef, taskID)
+		return removeLaneTreeThenTick(ctx, owner.DagORef, taskID)
 	case task.State == TaskState_BlockedMerge && task.MergeError != "":
 		return retryRefusedMerge(ctx, channelID, owner, taskID)
 	case task.State == TaskState_BlockedMerge:
@@ -135,6 +143,14 @@ func continueBlockedMerge(ctx context.Context, channelID string, owner *waveobj.
 	if err := checkLandingTree(ctx, owner); err != nil {
 		return err
 	}
+	// the squash commits the index, so a resolution left unstaged would stay behind in the tree the land removes
+	unstaged, err := landingTreeChanges(ctx, owner, true)
+	if err != nil {
+		return err
+	}
+	if len(unstaged) > 0 {
+		return fmt.Errorf("the landing tree %s has changes not added to the merge in %s: `git add` the resolution, then run --continue again", owner.LandPath, strings.Join(unstaged, ", "))
+	}
 	l, err := claimProject(jarvis.LandPath(owner), owner.DagORef, task.ID)
 	if err != nil {
 		return err
@@ -153,7 +169,7 @@ func continueBlockedMerge(ctx context.Context, channelID string, owner *waveobj.
 		return ferr
 	})
 	landAfterMerge(channelID, owner, verify, l)
-	if rerr := removeLaneTree(ctx, owner.DagORef, task.ID); err == nil {
+	if rerr := removeLaneTreeThenTick(ctx, owner.DagORef, task.ID); err == nil {
 		err = rerr
 	}
 	return err
@@ -182,7 +198,7 @@ func mergeTaskEntry(ctx context.Context, channelID, ownerRunID, taskID string, r
 	})
 	landAfterMerge(channelID, owner, verify, l)
 	// after the lock: removal takes tens of seconds, and the workers it stops exit into that lock
-	if rerr := removeLaneTree(ctx, owner.DagORef, taskID); err == nil {
+	if rerr := removeLaneTreeThenTick(ctx, owner.DagORef, taskID); err == nil {
 		err = rerr
 	}
 	return err
@@ -201,6 +217,20 @@ func removeLaneTree(ctx context.Context, dagID, taskID string) error {
 		return nil
 	}
 	return removeTaskTree(ctx, dagID, tip.ID, true)
+}
+
+// removeLaneTreeThenTick is removeLaneTree for a merge made outside a tick. The Verify the merge started ticks on
+// its own, and can do so while the lane still owes this cleanup, when the dag cannot finish yet; the cleanup's write
+// then makes it finalizing, and only a tick starts the final stage. So it ticks when its removal left the stage
+// waiting, and not otherwise: a tick also retries merges.
+func removeLaneTreeThenTick(ctx context.Context, dagID, taskID string) error {
+	err := removeLaneTree(ctx, dagID, taskID)
+	if g, gerr := wstore.GetDag(ctx, dagID); gerr == nil && g.Status == DagStatus_Finalizing && (g.Final == nil || g.Final.State == "") {
+		if serr := Schedule(context.WithoutCancel(ctx), dagID); serr != nil {
+			log.Printf("dag %s: schedule after removing task %s's tree: %v", dagID, taskID, serr)
+		}
+	}
+	return err
 }
 
 // landAfterMerge hands the project claim to the Verify a landed merge waits on, or releases it. That Verify judges
@@ -289,7 +319,11 @@ func mergeTaskLocked(ctx context.Context, channelID string, owner *waveobj.Run, 
 	if err != nil {
 		if errors.Is(err, ErrMergeConflict) {
 			appendRunEvent(ctx, channelID, owner.ID, waveobj.RunEventKindTaskMergeBlocked, nil, map[string]any{"taskid": task.ID})
-			if derr := markBlockedMergeLocked(ctx, owner.DagORef, childRunID); derr != nil {
+			files, ferr := conflictedFiles(ctx, jarvis.LandPath(owner))
+			if ferr != nil {
+				log.Printf("dag %s task %s: reading the conflicted files: %v", owner.DagORef, task.ID, ferr)
+			}
+			if derr := markBlockedMergeLocked(ctx, owner.DagORef, childRunID, files); derr != nil {
 				return "", derr
 			}
 			return "", err
@@ -307,8 +341,8 @@ func mergeTaskLocked(ctx context.Context, channelID string, owner *waveobj.Run, 
 
 // conflictAwaitingContinue names a task other than except whose squash merge conflicted and has not been
 // continued: blocked-merge with no MergeError. A refused merge records one, and its squash never touched
-// the tree. Such a task owns the project: its resolver commits the fix and then continues, and a lane
-// landing in between would be the HEAD that --continue credits.
+// the tree. Such a task owns the project: its resolver stages the resolution and then continues, and a lane
+// landing in between would be mixed into the squash that --continue commits.
 func conflictAwaitingContinue(g *waveobj.TaskGroup, except string) string {
 	for i := range g.Tasks {
 		t := &g.Tasks[i]

@@ -471,7 +471,7 @@ func failReview(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode, 
 	taskID, round := t.ID, t.ReviewRound
 	*afterCommit = append(*afterCommit, func() {
 		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskReviewFailed, nil, map[string]any{"taskid": taskID, "note": reason, "round": round, "final": true})
-		PostWake(ctx, g.ChannelId, g.RunID, reviewFailedWake(taskID))
+		PostWake(ctx, g.ChannelId, g.RunID, reviewFailedWake(taskID, reason))
 	})
 }
 

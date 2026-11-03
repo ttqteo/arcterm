@@ -438,13 +438,14 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 
 func MarkBlockedMerge(ctx context.Context, dagID, childRunID string) error {
 	return withDagMutation(dagID, func() error {
-		return markBlockedMergeLocked(ctx, dagID, childRunID)
+		return markBlockedMergeLocked(ctx, dagID, childRunID, nil)
 	})
 }
 
 // markBlockedMergeLocked is the body of MarkBlockedMerge for callers already holding the dag
-// mutation lock (the merge path takes it before running git, so it cannot re-enter).
-func markBlockedMergeLocked(ctx context.Context, dagID, childRunID string) error {
+// mutation lock (the merge path takes it before running git, so it cannot re-enter). files are the conflicted
+// paths the lead's wake names, nil when the caller could not read them.
+func markBlockedMergeLocked(ctx context.Context, dagID, childRunID string, files []string) error {
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
 		return fmt.Errorf("loading dag: %w", err)
@@ -474,7 +475,7 @@ func markBlockedMergeLocked(ctx context.Context, dagID, childRunID string) error
 		return err
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, g.OID))
-	PostWake(ctx, g.ChannelId, g.RunID, mergeConflictWake(taskID))
+	PostWake(ctx, g.ChannelId, g.RunID, mergeConflictWake(taskID, files))
 	return nil
 }
 

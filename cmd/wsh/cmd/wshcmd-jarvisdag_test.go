@@ -943,3 +943,84 @@ func TestPlanReviewLineListsReviewers(t *testing.T) {
 		t.Fatalf("a settled round lists no reviewers, got %q", got)
 	}
 }
+
+func TestPlanReviewFindingsTextIsTheFailedRoundsWholeFindings(t *testing.T) {
+	// longer than the status line's quote and the wake's cap: the command is how the lead reads all of it
+	findings := "[Spec coverage] no task for 4.1\n\n[Plan format] Task 3 has no Depends line\n\n[Tests] " + strings.Repeat("a long finding ", 400)
+	got, err := planReviewFindingsText(&waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Failed, Round: 1, Findings: findings})
+	if err != nil || got != findings {
+		t.Fatalf("got %q, %v; want the findings with their block breaks", got, err)
+	}
+	for _, pr := range []*waveobj.PlanReviewStage{nil, {State: orchestrate.PlanReviewState_Reviewing, Round: 1}} {
+		if _, err := planReviewFindingsText(pr); err == nil {
+			t.Fatalf("no failed round: want an error, plan review %+v", pr)
+		}
+	}
+}
+
+// the wake names `dag planreview findings`, so the command has to be reachable under planreview and take the same
+// run flags as its siblings
+func TestPlanReviewFindingsIsASubcommandOfPlanReview(t *testing.T) {
+	sub, _, err := dagPlanReviewCmd.Find([]string{"findings"})
+	if err != nil || sub != dagPlanReviewFindingsCmd {
+		t.Fatalf("planreview findings must resolve to its own command, got %v, %v", sub, err)
+	}
+	for _, flag := range []string{"runid", "channel"} {
+		if dagPlanReviewFindingsCmd.Flags().Lookup(flag) == nil {
+			t.Fatalf("planreview findings has no --%s flag", flag)
+		}
+	}
+	if err := dagStatusCmd.Args(dagStatusCmd, []string{"t-1"}); err != nil {
+		t.Fatalf("dag status takes one task id: %v", err)
+	}
+	if err := dagStatusCmd.Args(dagStatusCmd, []string{"t-1", "t-2"}); err == nil {
+		t.Fatal("dag status takes at most one task id")
+	}
+}
+
+// dag status <task> prints the dag's own line and that one task's part: its row, the failure the lead fixes from,
+// its review and what the human told it, and nothing of any other task.
+func TestDagTaskStatusLinesShowOnlyThatTask(t *testing.T) {
+	g := &waveobj.TaskGroup{
+		ID: "dag-1", Status: "blocked",
+		Tasks: []waveobj.TaskNode{
+			{ID: "t-0", Label: "a", State: orchestrate.TaskState_VerifyFailed, VerifyError: "exit 1: FAIL pkg/a"},
+			{ID: "t-1", Label: "b", State: orchestrate.TaskState_ReviewFailed},
+		},
+	}
+	rtn := &wshrpc.CommandDagStatusRtnData{
+		Group: g,
+		Digest: wshrpc.DagStatusDigest{
+			Tasks: []wshrpc.DagTaskDigest{
+				{TaskId: "t-0", HumanActions: []string{"resolve-merge"}},
+				{TaskId: "t-1", HumanActions: []string{"approve", "sendback"}, ReviewVerdict: "fail", ReviewNote: "misses the empty case"},
+			},
+			Told: []wshrpc.DagTold{{TaskId: "t-0", Ts: 1, Text: "stop"}, {TaskId: "t-1", Ts: 1, Text: "use parseDate"}},
+		},
+	}
+	lines, err := dagTaskStatusLines(rtn, 1000, "t-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"dag dag-1  status=blocked", "approve,sendback", "misses the empty case", "use parseDate"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+	for _, other := range []string{"t-0", "FAIL pkg/a", "stop"} {
+		if strings.Contains(joined, other) {
+			t.Fatalf("t-1's status shows %q of another task:\n%s", other, joined)
+		}
+	}
+	if _, err := dagTaskStatusLines(rtn, 1000, "t-9"); err == nil || !strings.Contains(err.Error(), "t-9") {
+		t.Fatalf("an unknown task must error naming it, got %v", err)
+	}
+	// the dag-wide status still lists every task, so nothing of the whole-dag view moved
+	all := strings.Join(dagStatusLines(rtn, 1000), "\n")
+	for _, want := range []string{"t-0", "t-1", "FAIL pkg/a", "stop", "use parseDate"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("dag status without a task lost %q:\n%s", want, all)
+		}
+	}
+}

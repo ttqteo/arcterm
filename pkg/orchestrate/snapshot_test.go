@@ -215,6 +215,90 @@ func TestSnapshotDocsKeepsAnEmptySlot(t *testing.T) {
 	}
 }
 
+// a spec left in the checkout is a second copy the land later finds there, matching nothing the branch held
+func TestMoveSpecIntoTreeLeavesNoCopyInTheCheckout(t *testing.T) {
+	tree, spec, _ := snapshotFixture(t)
+	moved, err := MoveSpecIntoTree(context.Background(), tree, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(tree, "docs", "specs", "s.md"); moved != want {
+		t.Fatalf("moved to %q, want %q", moved, want)
+	}
+	if got, err := os.ReadFile(moved); err != nil || string(got) != "# spec\n" {
+		t.Fatalf("the tree's spec = %q, %v", got, err)
+	}
+	if _, err := os.Stat(spec); !os.IsNotExist(err) {
+		t.Fatalf("the checkout still holds the spec: %v", err)
+	}
+}
+
+func TestMoveSpecIntoTreeLeavesWhatItDoesNotOwn(t *testing.T) {
+	ctx := context.Background()
+	t.Run("tracked", func(t *testing.T) {
+		tree, spec, _ := snapshotFixture(t)
+		dir := filepath.Dir(filepath.Dir(filepath.Dir(spec)))
+		gitCmd(t, dir, "add", "--", spec)
+		gitCmd(t, dir, "commit", "-m", "spec")
+		assertSpecStays(t, ctx, tree, spec)
+	})
+	t.Run("ignored", func(t *testing.T) {
+		tree, spec, _ := snapshotFixture(t)
+		writeDoc(t, filepath.Join(filepath.Dir(spec), ".gitignore"), "s.md\n")
+		assertSpecStays(t, ctx, tree, spec)
+	})
+	t.Run("already in the tree", func(t *testing.T) {
+		tree, _, plan := snapshotFixture(t)
+		assertSpecStays(t, ctx, tree, plan)
+	})
+	t.Run("its place in the tree is taken", func(t *testing.T) {
+		tree, spec, _ := snapshotFixture(t)
+		writeDoc(t, filepath.Join(tree, "docs", "specs", "s.md"), "# the lead's\n")
+		assertSpecStays(t, ctx, tree, spec)
+	})
+	t.Run("another repository", func(t *testing.T) {
+		tree, _, _ := snapshotFixture(t)
+		other := filepath.Join(newGitRepo(t), "spec.md")
+		writeDoc(t, other, "# elsewhere\n")
+		assertSpecStays(t, ctx, tree, other)
+	})
+	t.Run("no spec", func(t *testing.T) {
+		tree, _, _ := snapshotFixture(t)
+		assertSpecStays(t, ctx, tree, "")
+	})
+}
+
+func TestSpecIgnored(t *testing.T) {
+	ctx := context.Background()
+	_, spec, _ := snapshotFixture(t)
+	if ignored, err := SpecIgnored(ctx, spec); err != nil || ignored {
+		t.Fatalf("an untracked spec: ignored = %v, %v", ignored, err)
+	}
+	writeDoc(t, filepath.Join(filepath.Dir(spec), ".gitignore"), "s.md\n")
+	if ignored, err := SpecIgnored(ctx, spec); err != nil || !ignored {
+		t.Fatalf("an ignored spec: ignored = %v, %v", ignored, err)
+	}
+	outside := filepath.Join(t.TempDir(), "spec.md")
+	writeDoc(t, outside, "# spec\n")
+	if _, err := SpecIgnored(ctx, outside); err == nil {
+		t.Fatal("a spec outside any repository reported no error")
+	}
+}
+
+func assertSpecStays(t *testing.T, ctx context.Context, tree, spec string) {
+	t.Helper()
+	moved, err := MoveSpecIntoTree(ctx, tree, spec)
+	if err != nil || moved != spec {
+		t.Fatalf("MoveSpecIntoTree = %q, %v; want %q left in place", moved, err, spec)
+	}
+	if spec == "" {
+		return
+	}
+	if _, err := os.Stat(spec); err != nil {
+		t.Fatalf("the spec is gone: %v", err)
+	}
+}
+
 func TestDocPath(t *testing.T) {
 	tree := t.TempDir()
 	abs := filepath.Join(t.TempDir(), "plan.md")

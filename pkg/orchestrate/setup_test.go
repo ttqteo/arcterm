@@ -170,7 +170,7 @@ func TestSetupFailureFailsTheTaskDropsItsWorktreeAndWakesTheLead(t *testing.T) {
 	if _, err := os.Stat(worktreeDir(f.project, TaskWorktreeKey(f.ownerID, "t-0"))); !os.IsNotExist(err) {
 		t.Fatalf("a half-prepared tree must go, so a retry sets up a new one; stat err = %v", err)
 	}
-	want := "wake: task t-0 failed (setup), retry spent. wsh jarvis dag status"
+	want := "wake: task t-0 failed (setup): exit 1: task: not found, retry spent. wsh jarvis dag status t-0"
 	if len(lead.sends) != 1 || lead.sends[0] != want {
 		t.Fatalf("want %q, got %q", want, lead.sends)
 	}

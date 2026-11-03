@@ -140,7 +140,7 @@ func runBaseCheck(ctx context.Context, runID, project, commit, setup, check stri
 	if errors.As(err, &pe) {
 		// cut off by its timeout or from outside, it judged nothing about the base: a failed base Check would
 		// excuse the run's own Check failures as shared
-		if pe.timeout > 0 || pe.killed != "" {
+		if planCommandUnfinished(err) {
 			return BaseCheckState_Skipped, "Check did not finish: " + pe.reason()
 		}
 		return BaseCheckState_Failed, failureDetail(err)

@@ -5,6 +5,8 @@ package orchestrate
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -104,4 +106,89 @@ func TestForwardTaskAcceptsAFailedVerify(t *testing.T) {
 	if lead.countKind(waveobj.RunEventKindTaskForwarded) != 1 {
 		t.Fatalf("want one task-forwarded row, got %+v", lead.rows)
 	}
+}
+
+// A fix the lead left uncommitted in the landing tree passes a re-run Verify there, then never lands: the land
+// merges the branch and removes the tree with it. A resolution left unstaged is missing from the squash commit.
+func TestContinueRefusesUncommittedWorkInTheLandingTree(t *testing.T) {
+	for _, tc := range []struct{ state, want string }{
+		{TaskState_VerifyFailed, "commit the fix"},
+		{TaskState_BlockedMerge, "git add"},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+			f.setPlanCommands(t, verifyCmd, "")
+			tree := f.land(t)
+			f.finish(t, "t-0")
+			if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+				cur.Tasks[0].State, cur.Tasks[0].Merged = tc.state, tc.state == TaskState_VerifyFailed
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(tree, "base.txt"), "the lead's fix\n")
+			calls := stubPlanCommand(t, func(context.Context, string, string) error { return nil })
+
+			err := ContinueMerge(f.ctx, f.channel, f.ownerID, "t-0")
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "base.txt") {
+				t.Fatalf("continue over an uncommitted change: err = %v, want a refusal saying %q and naming base.txt", err, tc.want)
+			}
+			if got := f.dag(t).Tasks[0].State; got != tc.state || len(calls.list()) != 0 {
+				t.Fatalf("a refused continue moved the task to %s and ran %d commands", got, len(calls.list()))
+			}
+		})
+	}
+}
+
+// A fix committed in the landing tree, or a resolution staged there, is what --continue is for: the refusal above
+// must not stand in front of it.
+func TestContinueAcceptsWhatIsCommittedOrStagedInTheLandingTree(t *testing.T) {
+	t.Run("a committed fix", func(t *testing.T) {
+		f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+		f.setPlanCommands(t, verifyCmd, "")
+		tree := f.land(t)
+		f.finish(t, "t-0")
+		if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+			cur.Tasks[0].State, cur.Tasks[0].Merged = TaskState_VerifyFailed, true
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(tree, "base.txt"), "the lead's fix\n")
+		gitCmd(t, tree, "add", "base.txt")
+		gitCmd(t, tree, "commit", "-m", "fix the failure")
+		calls := stubPlanCommand(t, func(context.Context, string, string) error { return nil })
+		await := awaitVerify(t)
+
+		if err := ContinueMerge(f.ctx, f.channel, f.ownerID, "t-0"); err != nil {
+			t.Fatal(err)
+		}
+		await()
+		if len(calls.list()) != 1 {
+			t.Fatalf("want Verify run once over the committed fix, got %d runs", len(calls.list()))
+		}
+	})
+	t.Run("a staged resolution", func(t *testing.T) {
+		f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+		tree := f.land(t)
+		f.finish(t, "t-0")
+		if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+			cur.Tasks[0].State = TaskState_BlockedMerge
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(tree, "base.txt"), "the resolution\n")
+		gitCmd(t, tree, "add", "base.txt")
+		orig := continueMerge
+		continueMerge = func(context.Context, string, string, MergeLane, []string) (string, error) { return "sha-2", nil }
+		restoreAfterStages(t, func() { continueMerge = orig })
+
+		if err := ContinueMerge(f.ctx, f.channel, f.ownerID, "t-0"); err != nil {
+			t.Fatalf("a staged resolution is what --continue commits: %v", err)
+		}
+		if !f.dag(t).Tasks[0].Merged {
+			t.Fatal("the continued squash is merged")
+		}
+	})
 }

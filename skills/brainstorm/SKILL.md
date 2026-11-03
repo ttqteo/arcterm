@@ -97,7 +97,7 @@ Everything else is optional and read leniently, but write every field as describ
 
 | Field | What it holds |
 |---|---|
-| `spec` | The spec path, relative to the project (or absolute). You write the spec there on `brainstorm: check`. |
+| `spec` | The spec path, relative to the project (or absolute). You write the spec there on `brainstorm: check`. Use `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, never a path under `.superpowers/`: git ignores that folder, and a run refuses a spec it cannot commit with its plan. |
 | `canvas` | The `arc:design` topic whose boards and spikes the parts list: boards live in `.superpowers/design/<canvas>/project/`, spikes anywhere under `.superpowers/design/<canvas>/`. Omit it when there are no mockups. |
 | `question` | `{ "n", "text", "part", "why", "read", "options", "multi", "approaches", "judge" }`: the question you are waiting on, its number (1, 2, 3, ...), the id of the part it is for, why you ask it, your one-line read of the options, the answers you offer, and `multi: true` when the user may take more than one of them (below). On an approach question, `approaches` is the list you made for the judge, and `read`, `options` and `judge` come from the judge (**Approach questions go to the judge**, below). Leave `part` out for a question about no part (below). `null` while you are not asking. |
 | `working` | One short line on what is still underway, set only when a turn ends with work running in the background (below). Arc shows it in place of the question and locks the pane's controls while it is set. `null` otherwise. |

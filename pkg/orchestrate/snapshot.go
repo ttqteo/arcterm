@@ -75,6 +75,66 @@ func SnapshotDocs(ctx context.Context, landTree, runID, title string, paths ...s
 
 const snapshotSubjectPrefix = "docs: spec and plan for "
 
+// MoveSpecIntoTree moves a spec git does not track from the project checkout into the run's landing tree, at
+// the same repo-relative path, and returns where it is now. Left behind, it is a second copy: the lead revises
+// the one in its tree, and the land then finds a draft in the checkout that matches nothing the run's branch
+// held, and holds on it. A tracked or ignored spec, one already in the tree, one from another repository, and
+// one whose place in the tree is taken all stay where they are.
+func MoveSpecIntoTree(ctx context.Context, tree, spec string) (string, error) {
+	if spec == "" {
+		return spec, nil
+	}
+	target, err := treeTarget(ctx, tree, spec)
+	if err != nil || target == spec {
+		return spec, nil
+	}
+	untracked, err := git(ctx, filepath.Dir(spec), "ls-files", "--others", "--exclude-standard", "--", filepath.Base(spec))
+	if err != nil {
+		return spec, fmt.Errorf("checking whether git tracks %s: %w", spec, err)
+	}
+	if untracked == "" {
+		return spec, nil
+	}
+	if _, err := os.Stat(target); err == nil {
+		return spec, nil
+	}
+	if err := MoveFile(spec, target); err != nil {
+		return spec, err
+	}
+	return target, nil
+}
+
+// SpecIgnored reports whether git ignores spec. SnapshotDocs commits a run's spec with its plan, and git add
+// refuses an ignored path, so such a spec fails only at submit, after the lead has planned the whole run. A
+// spec outside any repository is an error here: it is treeTarget's to refuse.
+func SpecIgnored(ctx context.Context, spec string) (bool, error) {
+	out, err := git(ctx, filepath.Dir(spec), "ls-files", "--others", "--ignored", "--exclude-standard", "--", filepath.Base(spec))
+	if err != nil {
+		return false, fmt.Errorf("checking whether git ignores %s: %w", spec, err)
+	}
+	return out != "", nil
+}
+
+// MoveFile moves from to to, creating to's directory. It copies rather than renames, since the landing tree
+// can sit on another volume than the checkout.
+func MoveFile(from, to string) error {
+	data, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(to, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Remove(from); err != nil {
+		os.Remove(to)
+		return fmt.Errorf("removing %s after copying it to %s: %w", from, to, err)
+	}
+	return nil
+}
+
 // revisableSnapshot reports whether the tree's HEAD is runID's own earlier docs snapshot and only the run's
 // landing branch holds it. A lane cut from it is a branch that holds it too, and has read those docs.
 func revisableSnapshot(ctx context.Context, tree, runID string) bool {

@@ -294,7 +294,7 @@ func TestReviewDownstreamWithNoLaterTaskWakesTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	schedule(t, ctx, dag.OID)
-	want := "wake: task t-0 passed review with a note for later tasks: fmtDate lives in util/date.go. wsh jarvis dag status"
+	want := "wake: task t-0 passed review with a note for later tasks: fmtDate lives in util/date.go. wsh jarvis dag status t-0"
 	if !strings.Contains(strings.Join(f.sends, "\n"), want) {
 		t.Fatalf("want the downstream wake %q, got %q", want, f.sends)
 	}
@@ -340,7 +340,7 @@ func TestSecondFailedReviewGoesToTheLead(t *testing.T) {
 	if task.State != TaskState_ReviewFailed || task.ReviewNote != "still misses it" || task.RunID != worker.ID {
 		t.Fatalf("want review-failed keeping the findings and the worker run, got %+v", task)
 	}
-	if !strings.Contains(strings.Join(f.sends, "\n"), "wake: review failed for task t-0. wsh jarvis dag status") {
+	if !strings.Contains(strings.Join(f.sends, "\n"), "wake: review failed for task t-0: still misses it. wsh jarvis dag status t-0") {
 		t.Fatalf("the lead must be woken, got %q", f.sends)
 	}
 }
@@ -658,7 +658,7 @@ func TestReviewDownstreamForAFinishedTaskWakesTheLead(t *testing.T) {
 	captureSpawns(t)
 	f := newFakeLead(t)
 	passWithDownstream(t, ctx, dag, "t-1")
-	want := "wake: task t-0 passed review with a note for later tasks (not delivered to t-1, which is done): fmtDate lives in util/date.go. wsh jarvis dag status"
+	want := "wake: task t-0 passed review with a note for later tasks (not delivered to t-1, which is done): fmtDate lives in util/date.go. wsh jarvis dag status t-0"
 	if !strings.Contains(strings.Join(f.sends, "\n"), want) {
 		t.Fatalf("want %q, got %q", want, f.sends)
 	}
@@ -860,7 +860,7 @@ func TestReviewPassForLaterTasksSkipsADescendantWaitingOnAQuestion(t *testing.T)
 		t.Fatalf("nothing may be typed into a worker's open question, got %q", got)
 	}
 	joined := strings.Join(f.sends, "\n")
-	want := "wake: task t-0 passed review; its worker's For later tasks (not delivered to t-1, which is waiting on a question): " + forLaterText + ". wsh jarvis dag status"
+	want := "wake: task t-0 passed review; its worker's For later tasks (not delivered to t-1, which is waiting on a question): " + forLaterText + ". wsh jarvis dag status t-0"
 	if !strings.Contains(joined, want) {
 		t.Fatalf("want %q, got %q", want, f.sends)
 	}

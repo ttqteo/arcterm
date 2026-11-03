@@ -58,17 +58,31 @@ func TestPlanCommandPassesQuotedArgumentsThrough(t *testing.T) {
 
 func TestPlanCommandRunsInAPosixShell(t *testing.T) {
 	dir := newGitRepo(t)
-	// an inline VAR=value prefix and $(...), which cmd.exe rejected in acceptance 2, and a /-leading
-	// argument Git Bash would otherwise rewrite into a Windows path
-	command := `WAVE_PROBE="$(echo two) words" sh -c 'git config wave.one "$WAVE_PROBE"' && git config wave.two /usr`
+	// an inline VAR=value prefix and $(...), which cmd.exe rejected in acceptance 2
+	command := `WAVE_PROBE="$(echo two) words" sh -c 'git config wave.one "$WAVE_PROBE"'`
 	if _, err := execPlanCommandEnv(context.Background(), dir, command, nil, time.Minute, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := gitCmd(t, dir, "config", "wave.one"); got != "two words" {
 		t.Fatalf("want the prefixed variable with its substitution, got %q", got)
 	}
-	if got := gitCmd(t, dir, "config", "wave.two"); got != "/usr" {
-		t.Fatalf("want the argument unchanged, got %q", got)
+}
+
+// a shell shim on PATH, like corepack's pnpm or an npm global bin, hands a native program a path built from
+// its own $0. In Git Bash that is a POSIX path (/c/...), which only works if bash converts it on the way to
+// the program: run 810fbc02's Setup failed on pnpm, whose node was handed /c/Program Files/... unconverted.
+func TestPlanCommandShimPassesItsOwnPathToANativeProgram(t *testing.T) {
+	bin := t.TempDir()
+	shim := "#!/bin/sh\nexec git config --file \"$(dirname \"$0\")/probe.cfg\" wave.probe yes\n"
+	if err := os.WriteFile(filepath.Join(bin, "probe"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH")}
+	if out, err := execPlanCommandEnv(context.Background(), newGitRepo(t), "probe", env, time.Minute, nil); err != nil {
+		t.Fatalf("shim failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(bin, "probe.cfg")); err != nil {
+		t.Fatalf("want the shim to write beside itself: %v", err)
 	}
 }
 

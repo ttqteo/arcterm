@@ -185,9 +185,9 @@ func TestStalledTaskWakesLeadUnlessWorkerIsAsking(t *testing.T) {
 		wantState string
 		want      []string
 	}{
-		{"hung-alive", true, false, blockcontroller.Status_Running, TaskState_Stalled, []string{"wake: task t-0 hung: silent 6m, process alive, no ask pending. wsh jarvis dag status"}},
+		{"hung-alive", true, false, blockcontroller.Status_Running, TaskState_Stalled, []string{"wake: task t-0 hung: silent 6m, process alive, no ask pending. wsh jarvis dag status t-0"}},
 		{"hung-asking", true, true, blockcontroller.Status_Running, TaskState_Running, nil},
-		{"hung-exited", false, false, blockcontroller.Status_Done, TaskState_Stalled, []string{"wake: task t-0's worker exited without reporting complete. wsh jarvis dag status"}},
+		{"hung-exited", false, false, blockcontroller.Status_Done, TaskState_Stalled, []string{"wake: task t-0's worker exited without reporting complete. wsh jarvis dag status t-0"}},
 		// no process ever means no exit hook either, so the lead is the only one who will hear of it
 		{"never-started", false, false, blockcontroller.Status_Init, TaskState_Stalled, []string{"wake: task t-0 never started: no worker process 6m after spawn. wsh jarvis dag retry t-0"}},
 	}
@@ -688,7 +688,7 @@ func TestWorkerIdleAfterAFailedTurnWakesTheLeadWithTheError(t *testing.T) {
 	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
 		t.Fatalf("a worker idle past TurnEndedGrace with flat CPU stalls, got %s", task.State)
 	}
-	if want := []string{"wake: task t-0's worker is idle after its last turn failed: 502 status code (no body). wsh jarvis dag status"}; !reflect.DeepEqual(f.sends, want) {
+	if want := []string{"wake: task t-0's worker is idle after its last turn failed: 502 status code (no body). wsh jarvis dag status t-0"}; !reflect.DeepEqual(f.sends, want) {
 		t.Fatalf("want wakes %q, got %q", want, f.sends)
 	}
 }
@@ -714,7 +714,7 @@ func TestWorkerOnARefusedRouteStallsAtOnceForTheLead(t *testing.T) {
 	if want := []string{"pi : " + deadRouteError, "pi dead/m1: " + deadRouteError}; !reflect.DeepEqual(marked, want) {
 		t.Fatalf("refused routes = %q, want %q", marked, want)
 	}
-	if want := []string{"wake: task t-0's worker is idle after its last turn failed: 403: An active subscription is required to use this model. wsh jarvis dag status"}; !reflect.DeepEqual(f.sends, want) {
+	if want := []string{"wake: task t-0's worker is idle after its last turn failed: 403: An active subscription is required to use this model. wsh jarvis dag status t-0"}; !reflect.DeepEqual(f.sends, want) {
 		t.Fatalf("want wakes %q, got %q", want, f.sends)
 	}
 }

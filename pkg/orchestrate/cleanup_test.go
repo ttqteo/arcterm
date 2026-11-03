@@ -78,8 +78,9 @@ func TestCleanupTaskWorktreeAllowsUnmergedOnlyAfterCancellation(t *testing.T) {
 		return nil
 	})
 
-	if err := CleanupTaskWorktree(context.Background(), g, "t-0"); err == nil {
-		t.Fatal("active unmerged task must reject cleanup")
+	// an unmerged task's tree is its lane's: only directories its removals left behind go
+	if err := CleanupTaskWorktree(context.Background(), g, "t-0"); err != nil || calls != 0 {
+		t.Fatalf("active unmerged task's cleanup removed its tree %d times, err %v", calls, err)
 	}
 	g.Status = DagStatus_Cancelled
 	if err := CleanupTaskWorktree(context.Background(), g, "t-0"); err != nil {
@@ -432,8 +433,9 @@ func TestPendingCleanupTasksOrder(t *testing.T) {
 	if !HasCleanupDebt(g) {
 		t.Fatal("persisted cleanup flags must report debt even before merge identity is present")
 	}
-	if got := PendingCleanupTasks(g); len(got) != 0 {
-		t.Fatalf("active unmerged debt must not be retried, got %v", got)
+	// its cleanup reaches only what its tree's removals left behind (TestCleanupTaskWorktreeAllowsUnmergedOnlyAfterCancellation)
+	if got := PendingCleanupTasks(g); len(got) != 1 || got[0].ID != "t-0" {
+		t.Fatalf("active unmerged debt is retried, got %v", got)
 	}
 	g.Status = DagStatus_Cancelled
 	if got := PendingCleanupTasks(g); len(got) != 1 || got[0].ID != "t-0" {

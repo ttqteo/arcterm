@@ -257,7 +257,7 @@ func dagBlockedReason(g *waveobj.TaskGroup, owner *waveobj.Run) (text, why strin
 				fmt.Sprintf("%s Clear what git refused over, then retry with `wsh jarvis dag merge %s --continue`.", done, t.ID)
 		}
 		return fmt.Sprintf("Merge of %s is blocked by a conflict and needs resolving.", name(t)),
-			fmt.Sprintf("%s Resolve the conflict in %s, commit, then run `wsh jarvis dag merge %s --continue`.", done, fixTree(owner), t.ID)
+			fmt.Sprintf("%s Resolve the conflict in %s, `git add` it without committing, then run `wsh jarvis dag merge %s --continue`, which commits the squash.", done, fixTree(owner), t.ID)
 	}
 	for _, t := range g.Tasks {
 		if t.State == "verify-failed" {

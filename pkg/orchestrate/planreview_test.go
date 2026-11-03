@@ -5,6 +5,7 @@ package orchestrate
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -489,5 +490,43 @@ func TestADagWithNoPlanReviewDispatchesAtOnce(t *testing.T) {
 	schedule(t, ctx, dag.OID)
 	if g := loadDag(t, ctx, dag.OID); g.PlanReview != nil || g.Tasks[0].State != TaskState_Running || len(*calls) != 1 {
 		t.Fatalf("want the task dispatched, got review %+v task %s", g.PlanReview, g.Tasks[0].State)
+	}
+}
+
+// five failing lenses at their note cap would put ~10k characters in the lead's composer: the wake keeps whole
+// findings up to the cap and names the command that prints the rest
+func TestAPlanReviewFailedWakeCapsLongFindings(t *testing.T) {
+	var blocks []string
+	for i := 0; i < 5; i++ {
+		blocks = append(blocks, fmt.Sprintf("[Lens %d] %s", i, strings.Repeat("x ", MaxReviewNoteLen/2)))
+	}
+	findings := strings.Join(blocks, "\n\n")
+	wakes := map[string]string{
+		"full, not last":       planReviewFailedWake(1, findings, false, false),
+		"full, last":           planReviewFailedWake(1, findings, true, false),
+		"autonomous, not last": planReviewFailedWake(1, findings, false, true),
+		"autonomous, last":     planReviewFailedWake(1, findings, true, true),
+		"spec decides, last":   specPlanReviewFailedWake(1, findings),
+	}
+	for name, w := range wakes {
+		if !strings.Contains(w, "[Lens 0]") || strings.Contains(w, "[Lens 4]") {
+			t.Fatalf("%s: the wake keeps the first findings and drops the rest, got %d chars", name, len(w))
+		}
+		if !strings.Contains(w, "more characters: "+planReviewFindingsCmd) || strings.Contains(w, "\n") {
+			t.Fatalf("%s: the wake is one line naming %q for the rest, got %q", name, planReviewFindingsCmd, w[len(w)-200:])
+		}
+		if n := len([]rune(w)); n > reportSectionMaxLen+len(proceedPastPlanReview)+len(jarvis.SpecPastPlanReview)+300 {
+			t.Fatalf("%s: the wake is capped, got %d runes", name, n)
+		}
+	}
+}
+
+// findings under the cap reach the lead whole, with no pointer to a command
+func TestAPlanReviewFailedWakeKeepsShortFindingsWhole(t *testing.T) {
+	findings := "[Spec coverage] no task for 4.1\n\n[Plan format] Task 3 has no Depends line"
+	for _, w := range []string{planReviewFailedWake(1, findings, false, false), specPlanReviewFailedWake(2, findings)} {
+		if !strings.Contains(w, flatLine(findings)) || strings.Contains(w, planReviewFindingsCmd) {
+			t.Fatalf("short findings go whole and name no command, got %q", w)
+		}
 	}
 }
