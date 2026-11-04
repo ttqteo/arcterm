@@ -332,11 +332,15 @@ export function validateNewTool(form: {
     return form.autoPort ? null : appUrlProblem(form.url ?? "");
 }
 
-// a lowercase slug of the name, the id a tool of yours is kept under in tools.json
+// a lowercase slug of the name, the id a tool of yours is kept under in tools.json; diacritics are dropped before the
+// rest, so "Công cụ" keeps its letters ("cong-cu"), the way pkg/util/asciifold folds a Go slug
 export function toolIdFrom(name: string): string {
     return (
         name
             .toLowerCase()
+            .normalize("NFD")
+            .replace(/\p{M}/gu, "")
+            .replace(/đ/g, "d")
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-+|-+$/g, "") || "tool"
     );

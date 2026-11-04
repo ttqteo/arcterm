@@ -217,6 +217,7 @@ describe("toolIdFrom and uniqueToolId", () => {
         expect(toolIdFrom("PR dashboard")).toBe("pr-dashboard");
         expect(toolIdFrom("  Lazy_Git!! v2 ")).toBe("lazy-git-v2");
         expect(toolIdFrom("k9s")).toBe("k9s");
+        expect(toolIdFrom("Công cụ Đo")).toBe("cong-cu-do");
     });
 
     it("has a slug for a name made only of symbols", () => {

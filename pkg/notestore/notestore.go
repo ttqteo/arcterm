@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/memroots"
+	"github.com/wavetermdev/waveterm/pkg/util/asciifold"
 	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wavevault"
@@ -99,7 +100,7 @@ func cleanTitle(title string) (string, error) {
 }
 
 func slugOf(title string) string {
-	slug := strings.Trim(nonSlugRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
+	slug := strings.Trim(nonSlugRe.ReplaceAllString(asciifold.Lower(title), "-"), "-")
 	if len(slug) > maxSlugLen {
 		slug = strings.Trim(slug[:maxSlugLen], "-")
 	}

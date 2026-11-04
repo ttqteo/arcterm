@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/util/asciifold"
 )
 
 // nowFn returns the current time in Unix millis. A package var so tests can pin it.
@@ -22,10 +24,10 @@ var linkRe = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
 const maxSlugLen = 48
 
-// boundedSlug lowercases s, replaces runs of non-alphanumerics with '-', trims, substitutes fallback
+// boundedSlug lowercases s and drops its diacritics ("Cải tiến" → "cai-tien"), replaces runs of non-alphanumerics with '-', trims, substitutes fallback
 // when empty, and caps length so a generated filename never overruns Windows MAX_PATH.
 func boundedSlug(s, fallback string) string {
-	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "-"), "-")
+	slug := strings.Trim(slugRe.ReplaceAllString(asciifold.Lower(strings.TrimSpace(s)), "-"), "-")
 	if slug == "" {
 		return fallback
 	}

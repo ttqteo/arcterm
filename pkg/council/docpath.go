@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/wavetermdev/waveterm/pkg/util/asciifold"
 )
 
 // DocDay is the date a saved document's default file name starts with; a test replaces it.
@@ -21,50 +23,16 @@ var DocDay = func() time.Time { return time.Now() }
 // docSlugRunes cuts a feature's slug so a long feature does not make a long file name.
 const docSlugRunes = 60
 
-// latinFold maps a lower-case Latin letter with diacritics to its plain ASCII letters.
-var latinFold = func() map[rune]string {
-	m := map[rune]string{'ß': "ss", 'æ': "ae", 'œ': "oe"}
-	for base, letters := range map[string]string{
-		"a": "àáảãạăằắẳẵặâầấẩẫậäåāą",
-		"c": "çćč",
-		"d": "đď",
-		"e": "èéẻẽẹêềếểễệëēęě",
-		"g": "ğ",
-		"i": "ìíỉĩịïîī",
-		"l": "ł",
-		"n": "ñńň",
-		"o": "òóỏõọôồốổỗộơờớởỡợöøō",
-		"r": "ř",
-		"s": "śšş",
-		"t": "ť",
-		"u": "ùúủũụưừứửữựüûūů",
-		"y": "ỳýỷỹỵÿ",
-		"z": "źżž",
-	} {
-		for _, r := range letters {
-			m[r] = base
-		}
-	}
-	return m
-}()
-
 // FeatureSlug is a feature as a file name part, plain ASCII so a terminal can open the path as a link: letters and
 // digits, lower case, diacritics dropped ("Chế độ" → "che-do"), runs of anything else one dash. A combining mark is
 // dropped with no dash (a decomposed "é" folds like the composed one); a letter with no ASCII form counts as a separator.
 func FeatureSlug(feature string) string {
 	var b strings.Builder
 	runes, dash := 0, false
-	for _, r := range strings.ToLower(feature) {
-		if unicode.IsMark(r) {
-			continue
-		}
-		plain, ok := latinFold[r]
-		if !ok && r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
-			plain, ok = string(r), true
-		}
-		if ok {
-			b.WriteString(plain)
-			runes += len(plain)
+	for _, r := range asciifold.Lower(feature) {
+		if r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			b.WriteRune(r)
+			runes++
 			dash = false
 		} else if !dash && runes > 0 {
 			b.WriteByte('-')
@@ -130,8 +98,9 @@ func DocPath(c *Council, asked string) (string, error) {
 }
 
 // WriteDocument writes Document(c) at DocPath(c, asked), making the folders, and returns the path; the crops of its
-// screenshot regions are copied into `<doc name>-regions/` beside it and embedded (copyRegions). It writes those files
-// and nothing else: it never stages or commits, and it works in a folder that is not a git repository.
+// screenshot regions are copied into `<doc name>-regions/` beside it and embedded (copyRegions), and every `path:line` it
+// cites is checked against the council's folders (citeRoots) into its "Cite check" section, with no model. It writes
+// those files and nothing else: it never stages or commits, and it works in a folder that is not a git repository.
 func WriteDocument(c *Council, asked string) (string, error) {
 	path, err := DocPath(c, asked)
 	if err != nil {
@@ -140,7 +109,7 @@ func WriteDocument(c *Council, asked string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(documentWith(c, copyRegions(c, path))), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(documentWith(c, copyRegions(c, path), citeRoots(c))), 0o644); err != nil {
 		return "", fmt.Errorf("writing %s: %w", path, err)
 	}
 	return path, nil

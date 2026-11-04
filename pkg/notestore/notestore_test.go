@@ -92,6 +92,25 @@ func TestAddSlugsATitleWithNoLettersOrDigits(t *testing.T) {
 	}
 }
 
+// a Vietnamese title keeps its words: the diacritics go, not the letters that carry them
+func TestAddSlugsAVietnameseTitleWithoutDroppingLetters(t *testing.T) {
+	useTempRoot(t)
+	note, err := Add("Council: ý cải tiến (từ council 04/11)", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := testDay + "-council-y-cai-tien-tu-council-04-11"; note.ID != want {
+		t.Fatalf("id = %q, want %q", note.ID, want)
+	}
+	note, err = Add("Đường đi", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := testDay + "-duong-di"; note.ID != want {
+		t.Fatalf("id = %q, want %q", note.ID, want)
+	}
+}
+
 func TestListIsNewestDayFirstAndSkipsOtherFiles(t *testing.T) {
 	root := useTempRoot(t)
 	dir := filepath.Join(root, NotesDir)
