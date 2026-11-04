@@ -14,7 +14,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-03.1"
+const HarnessVersion = "2026-11-04.1"
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -520,6 +520,45 @@ func writeContext(b *strings.Builder, c *Council, e CouncilExpert, role string) 
 	fmt.Fprintf(b, "Project folder: %s\n", c.Project)
 }
 
+// outranksReport closes a seat's chosen direction block: where the direction and the council's report differ, the
+// direction wins.
+const outranksReport = "It outranks the council's report wherever the two differ."
+
+// chosenDirectionOf is the text of the direction the person chose for the council, trimmed. It is empty when none is
+// chosen, which includes a memory that holds only history and cards.
+func chosenDirectionOf(c *Council) string {
+	if c.Memory == nil || c.Memory.Chosen == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Memory.Chosen.Text)
+}
+
+// writeChosenDirection opens a seat's prompt with the direction the person chose, above the report and every other
+// section, and says it outranks the report. It starts and ends with a line break so it fits between a prompt's context
+// lines and the line that follows them, which starts with its own. A council with no chosen direction writes nothing, so
+// its prompts read as they did without a memory.
+func writeChosenDirection(b *strings.Builder, c *Council) {
+	text := chosenDirectionOf(c)
+	if text == "" {
+		return
+	}
+	fmt.Fprintf(b, "\n## The chosen direction\n\nThe person settled on this direction for the council:\n\n%s\n\n%s\n", text, outranksReport)
+}
+
+// writeSettledDirection tells the coordinator the chosen direction is settled and binding on the report, a Review's or a
+// Brainstorm's: it takes the first place and the rest are written around it. It sits above "What to do", the ranking
+// rules it overrides, and ends with a blank line. A council with no chosen direction writes nothing.
+func writeSettledDirection(b *strings.Builder, c *Council) {
+	text := chosenDirectionOf(c)
+	if text == "" {
+		return
+	}
+	fmt.Fprintf(b, "## The chosen direction\n\nThe person settled on this direction for the council:\n\n%s\n\n"+
+		"It is settled and binding. In \"directions\", rank it as direction 1 whatever the picks and the stances say, and write "+
+		"the other directions around it: what each adds to it, changes in it or leaves aside. Do not weigh it against the "+
+		"proposals above.\n\n", text)
+}
+
 // writeProposal writes one proposal under a heading of the given level. A Brainstorm's wild idea says so, and its
 // evidence line is left out: a Brainstorm asks for none. The checks Go ran for it follow its evidence (writeResults).
 func writeProposal(b *strings.Builder, c *Council, p CouncilProposal, level string) {
@@ -679,6 +718,7 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 	var b strings.Builder
 	writeContext(&b, c, e, "one expert on")
 	writeFiles(&b, c)
+	writeChosenDirection(&b, c)
 	if isBrainstorm(c) {
 		fmt.Fprintf(&b, "\nThis is round 1 of %d: ideas. You have Read, Grep and Glob in the project folder. "+
 			"You brainstorm; you never edit anything.\n\n", SynthesisRound(c))
@@ -856,6 +896,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 		toolsLine = round2ReadsNote
 	}
 	writeContext(&b, c, e, "one expert on")
+	writeChosenDirection(&b, c)
 	if isBrainstorm(c) {
 		fmt.Fprintf(&b, "\nThis is round %d of %d: build on each other. %s\n\n", round, SynthesisRound(c), toolsLine)
 	} else {
@@ -1052,6 +1093,7 @@ func SynthesisPrompt(c *Council) string {
 	}
 	writeThumbs(&b, c)
 
+	writeSettledDirection(&b, c) // above the ranking rules it overrides, a Brainstorm's too
 	b.WriteString("## What to do\n\n")
 	if isBrainstorm(c) {
 		return writeBrainstormSynthesisTask(&b, c)
@@ -1161,6 +1203,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		others bool // a seat answered one of the replies before this one: say not to repeat it
 	)
 	writeContext(&b, c, e, "one expert on")
+	writeChosenDirection(&b, c) // above the report
 	b.WriteString("\nThe council has already met. The person replied in the discussion, and you answer from your own " +
 		"angle, as yourself.\n")
 	if tools {
@@ -1410,6 +1453,7 @@ func AgentFirstPrompt(c *Council, e CouncilExpert, round int) string {
 	}
 	fmt.Fprintf(&b, "Project folder: %s\n", c.Project)
 	writeFiles(&b, c)
+	writeChosenDirection(&b, c)
 
 	b.WriteString("\n## Who sits in the council\n\n")
 	for _, s := range c.Experts {
@@ -1439,11 +1483,13 @@ func AgentLaterPrompt(c *Council, e CouncilExpert, round int) string {
 	var b strings.Builder
 	if round >= SynthesisRound(c) {
 		b.WriteString("The council has already met. The person replied in the discussion, and you answer from your own angle, " +
-			"as yourself.\n\n")
+			"as yourself.\n")
 	} else {
 		fmt.Fprintf(&b, "You are back in the council as %s. Below is what was sent since your last turn; the others answer a "+
-			"round at the same time as you, so none of this round's answers is here.\n\n", e.Name)
+			"round at the same time as you, so none of this round's answers is here.\n", e.Name)
 	}
+	writeChosenDirection(&b, c)
+	b.WriteString("\n")
 	writeAgentTurn(&b, c, e, round, false)
 	return b.String()
 }
