@@ -2808,3 +2808,37 @@ func TestCouncilReplyRefusesAnAttachmentThatIsNotKept(t *testing.T) {
 		t.Errorf("CouncilReplyCommand = %v, want the refusal naming %q", err, stray)
 	}
 }
+
+// A direction the command refuses (no council id, an unknown council, an unknown action) names the refusal and publishes
+// nothing: the cockpit never reloads a council that did not change.
+func TestCouncilDirectionRefusesWhatItCannotDo(t *testing.T) {
+	events := useCouncilRig(t, newCouncilFake())
+	saveCouncil(t, &council.Council{Id: "dir-1", Project: `D:\p`, Feature: "x", State: council.StateDone})
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	for name, tc := range map[string]struct {
+		data wshrpc.CommandCouncilDirectionData
+		want string
+	}{
+		"no council id":     {wshrpc.CommandCouncilDirectionData{Action: council.ActionSet, Text: "ship it"}, "council id"},
+		"a missing council": {wshrpc.CommandCouncilDirectionData{Id: "gone", Action: council.ActionSet, Text: "ship it"}, ""},
+		"an unknown action": {wshrpc.CommandCouncilDirectionData{Id: "dir-1", Action: "chot", Text: "ship it"}, `"chot"`},
+		"no action at all":  {wshrpc.CommandCouncilDirectionData{Id: "dir-1", Text: "ship it"}, "direction action"},
+	} {
+		err := ws.CouncilDirectionCommand(ctx, tc.data)
+		if err == nil {
+			t.Errorf("%s: CouncilDirectionCommand = nil, want a refusal", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error %q should mention %q", name, err, tc.want)
+		}
+	}
+	if got := events.all(); len(got) != 0 {
+		t.Errorf("a refused direction published %d council:changed events: %+v", len(got), got)
+	}
+	if c, _ := council.Load("dir-1"); c.Memory != nil {
+		t.Errorf("a refused direction left a memory on the council: %+v", c.Memory)
+	}
+}

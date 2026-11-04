@@ -35,6 +35,7 @@ type CouncilCommands interface {
 	CouncilSaveGroupCommand(ctx context.Context, data council.CouncilGroup) error
 	CouncilRateCommand(ctx context.Context, data CommandCouncilRateData) error
 	CouncilThumbCommand(ctx context.Context, data CommandCouncilThumbData) error
+	CouncilDirectionCommand(ctx context.Context, data CommandCouncilDirectionData) error
 	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
 	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
 	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
@@ -226,6 +227,18 @@ type CommandCouncilThumbData struct {
 	Id    string `json:"id"`
 	Item  string `json:"item"`
 	Thumb string `json:"thumb,omitempty"`
+}
+
+// CommandCouncilDirectionData is one move on a council's direction memory. Action is one of council.ActionSet,
+// ActionPin, ActionEdit, ActionAccept, ActionDismiss, ActionSetAnyway, ActionDiscard and ActionUnpin; any other word is
+// refused. Text is the direction for set, pin and edit, and From the idea (P3) or message (r7) a pin comes from. A set,
+// pin or edit is checked against what the seats said before it is set: it is set, or held for the person to set anyway
+// or discard.
+type CommandCouncilDirectionData struct {
+	Id     string `json:"id"`
+	Action string `json:"action"`
+	Text   string `json:"text,omitempty"`
+	From   string `json:"from,omitempty"`
 }
 
 // CommandCouncilBenchData picks a benchmark: the cases (every case not retired when empty), the variants (council and

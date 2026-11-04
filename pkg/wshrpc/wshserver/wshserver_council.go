@@ -466,6 +466,22 @@ func (ws *WshServer) CouncilThumbCommand(ctx context.Context, data wshrpc.Comman
 	return nil
 }
 
+// CouncilDirectionCommand applies one move to the council's direction memory (set, pin, edit, accept, dismiss, set
+// anyway, discard or unpin) and announces the change, as CouncilThumbCommand does. A refused move changed nothing and
+// publishes nothing. The command is the one that publishes: Runner.Direction returns the saved council without calling
+// the runner's own changed, which would announce it twice.
+func (ws *WshServer) CouncilDirectionCommand(ctx context.Context, data wshrpc.CommandCouncilDirectionData) error {
+	if data.Id == "" {
+		return errors.New("a council id is required")
+	}
+	c, err := councilRunner.Direction(data.Id, council.DirectionIn{Action: data.Action, Text: data.Text, From: data.From})
+	if err != nil {
+		return err
+	}
+	publishCouncilChanged(c)
+	return nil
+}
+
 // ---- the benchmark ----
 
 // councilBenchWire is what bench.Run is given beside the data dir and the options: the real calls. A test replaces it

@@ -779,6 +779,14 @@ declare global {
         question?: string;
     };
 
+    // wshrpc.CommandCouncilDirectionData
+    type CommandCouncilDirectionData = {
+        id: string;
+        action: string;
+        text?: string;
+        from?: string;
+    };
+
     // wshrpc.CommandCouncilDraftData
     type CommandCouncilDraftData = {
         id: string;
