@@ -99,7 +99,7 @@ func memoryShort(p jobqueue.Pressure) bool {
 // refills only to its fair share: the dag whose worker just finished ticks first and would otherwise take every
 // freed slot. While memory is short (memoryShort) a run starts no worker beside one of its own, so the machine
 // drains before it takes on more; a run with none live still starts one, whatever other runs hold, so a machine
-// short of memory for reasons outside Arc (on Windows, a commit charge past the RAM, where a dev box often sits)
+// short of memory for reasons outside Arc (on Windows, a commit charge past the RAM with little of it free)
 // slows runs down instead of stalling them. Gating on other runs' workers starved a run for two hours on
 // 2026-11-04: the run beside it always had one live, and its own dispatch, ticking first when its worker finished,
 // took the freed slot each time.
