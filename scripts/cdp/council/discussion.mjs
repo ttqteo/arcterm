@@ -2964,7 +2964,9 @@ const thumbFacts = (h, post) =>
             endRight: Math.round(end.getBoundingClientRect().right),
             bylineRight: Math.round(byline.getBoundingClientRect().right),
             endAfterName: end.getBoundingClientRect().left >= name.getBoundingClientRect().right,
-            inEnd: [...end.children].map((e) => (e.hasAttribute("data-council-thumbs") ? "thumbs" : "time")).join(),
+            inEnd: [...end.children]
+                .map((e) => (e.hasAttribute("data-council-thumbs") ? "thumbs" : e.hasAttribute("data-council-tools") ? "tools" : "time"))
+                .join(),
             buttons: [...thumbs.querySelectorAll("[data-council-thumb]")].map((b) => b.dataset.councilThumb + "=" + b.getAttribute("aria-pressed")),
             chip: chip
                 ? {
@@ -3036,13 +3038,13 @@ async function thumbsAndLines(h, ctx, rec) {
 
     // with the pointer away, no thumb button shows in the byline: the time and the buttons are at its right end, dimmed out
     rec(
-        "thumbs: with the pointer away the byline's time and both thumb buttons are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
+        "thumbs: with the pointer away the byline's time, its Copy and Pin to Report buttons and both thumb buttons are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
         [r4, r5, idea].every(
             (f) =>
                 f.endOpacity === "0" &&
                 f.endRight === f.bylineRight &&
                 f.endAfterName &&
-                f.inEnd === "time,thumbs" &&
+                f.inEnd === "time,tools,thumbs" &&
                 f.buttons.length === 2
         ) &&
             r4.buttons.join() === "like=true,dislike=false" &&
