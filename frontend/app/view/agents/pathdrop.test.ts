@@ -10,6 +10,7 @@ import {
     isPathsDrag,
     RAIL_PATHS_MIME,
     setDraggedPathsCount,
+    splitDroppable,
 } from "./pathdrop";
 
 const agent = (cwd: string | null) => ({ agent: true, cwd });
@@ -124,6 +125,29 @@ describe("formatDroppedPaths", () => {
 
     it("types nothing for no paths", () => {
         expect(formatDroppedPaths([], agent("/home/u/proj"))).toBe("");
+    });
+});
+
+describe("splitDroppable", () => {
+    it("keeps ordinary paths, spaces and $ included", () => {
+        const paths = ["/home/u/proj/a.ts", "/home/u/proj/my notes.md", "/home/u/proj/$x/"];
+        expect(splitDroppable(paths)).toEqual({ ok: paths, refused: [] });
+    });
+
+    // a newline typed into a shell without bracketed paste is an Enter: the line would run before the person sees it
+    it("refuses a path holding a control character", () => {
+        expect(splitDroppable(["/home/u/proj/a.ts", "/home/u/proj/x\nrm -rf ~", "/tmp/b\r.md"])).toEqual({
+            ok: ["/home/u/proj/a.ts"],
+            refused: ["/home/u/proj/x\nrm -rf ~", "/tmp/b\r.md"],
+        });
+    });
+
+    // inside @"..." or "..." a double quote ends the quoting early, so the terminal is given another path
+    it("refuses a path holding a double quote", () => {
+        expect(splitDroppable(['/home/u/proj/say "hi".md', "/home/u/proj/a.ts"])).toEqual({
+            ok: ["/home/u/proj/a.ts"],
+            refused: ['/home/u/proj/say "hi".md'],
+        });
     });
 });
 
