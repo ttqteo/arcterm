@@ -45,6 +45,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On Windows, Float and the fold into Sprout take a maximized window out of maximized first and size and place it right on a scaled display (125%, 150%), and coming back to arcterm grows a folded Sprout back to Full, maximized: they had followed macOS's rules.
 - A click on an idea in a council's Ideas rail glides the Discussion to it instead of jumping there (still a jump with reduced motion on).
 - Settings → Storage no longer marks a finished run's tree "has uncommitted changes" when all it holds are the links its Setup made (`node_modules`, `src-tauri/target`), so Clean all and the automatic cleanup now remove it.
 - A background task's Output and a Monitor's Events show the colors the program printed (a build's file names, a test run's ✓ and ✗) instead of raw escape codes like `▯[36m`; a progress line redrawn in place shows its last state.

@@ -214,7 +214,8 @@ async function giveFrameBack(win: Window, restore: FloatRestore | null): Promise
 }
 
 let busy = false;
-const MAC = isMacOS();
+// isMacOS() is read where it is used, never kept in a module constant: this module loads before bootWaveCore's
+// setPlatform, while the platform still reads as macOS
 
 // Out of maximized before the window takes a smaller frame. Windows needs the restore first. macOS runs unmaximize as
 // an animated zoom back to the frame it was last zoomed from (an old float's, often): the window was seen jumping there
@@ -233,7 +234,7 @@ async function setMinSize(win: Window, min: { width: number; height: number } | 
 }
 
 async function leaveMaximized(win: Window): Promise<void> {
-    if (!MAC) {
+    if (!isMacOS()) {
         await win.unmaximize();
     }
 }
@@ -361,27 +362,27 @@ async function nextFrame(): Promise<void> {
 
 async function spaceFrame(win: Window): Promise<WinRect> {
     const [frame, scale] = await Promise.all([frameOf(win), win.scaleFactor()]);
-    return toSpace(frame, scale, MAC);
+    return toSpace(frame, scale, isMacOS());
 }
 
 // the window content's top-left, in the fold's space
 async function spaceInner(win: Window): Promise<Pt> {
     const [pos, scale] = await Promise.all([win.innerPosition(), win.scaleFactor()]);
-    const r = toSpace({ x: pos.x, y: pos.y, width: 0, height: 0 }, scale, MAC);
+    const r = toSpace({ x: pos.x, y: pos.y, width: 0, height: 0 }, scale, isMacOS());
     return { x: r.x, y: r.y };
 }
 
 function spaceScreen(m: Monitor): Screen {
     const { position, size } = m.workArea;
     const area = { x: position.x, y: position.y, width: size.width, height: size.height };
-    return { area: toSpace(area, m.scaleFactor, MAC), scale: spaceScale(m.scaleFactor, MAC) };
+    return { area: toSpace(area, m.scaleFactor, isMacOS()), scale: spaceScale(m.scaleFactor, isMacOS()) };
 }
 
 // macOS takes points back as logical, which every monitor shares; tao would read physical with the window's current
 // scale, which is the wrong one once the window is on another monitor. The position first, so the size is read on the
 // monitor the window lands on.
 async function setSpaceFrame(win: Window, rect: WinRect): Promise<void> {
-    if (MAC) {
+    if (isMacOS()) {
         await win.setPosition(new LogicalPosition(rect.x, rect.y));
         await win.setSize(new LogicalSize(rect.width, rect.height));
     } else {
@@ -447,7 +448,7 @@ async function holdFrame(win: Window, want: WinRect): Promise<void> {
 // Where the window has Sprout now: a drag moves the window, and the last settle may not have run yet.
 async function sproutNow(win: Window): Promise<WinRect> {
     const [frame, scale] = await Promise.all([spaceFrame(win), win.scaleFactor()]);
-    return sproutFromWindow(frame, globalStore.get(miniSidesAtom), spaceScale(scale, MAC));
+    return sproutFromWindow(frame, globalStore.get(miniSidesAtom), spaceScale(scale, isMacOS()));
 }
 
 export function resizeMini(chat: boolean): Promise<void> {
@@ -582,7 +583,7 @@ export function foldToSprout(): Promise<void> {
                 void playTeleport("walk", "depart");
                 await new Promise((r) => setTimeout(r, FOLD_DEPART_LEAD_MS));
             }
-            await scaleContent(sproutCenter(spot, inner, spaceScale(scale, MAC), viewport), "sprout");
+            await scaleContent(sproutCenter(spot, inner, spaceScale(scale, isMacOS()), viewport), "sprout");
             // hide the shell before the window shrinks: a terminal that saw the small window would refit its PTY to it.
             // The folded Sprout waits unseen until the window stands around its spot, or it shows in a corner of the
             // big window first.
@@ -662,7 +663,7 @@ async function leaveMini(win: Window): Promise<Unfold> {
     }
     // the restored frame is the content's box (a borderless window, or macOS's overlaid title bar), and it is read from
     // the restore rather than the window, whose own size may not have reached the page yet
-    const scale = spaceScale(await win.scaleFactor(), MAC);
+    const scale = spaceScale(await win.scaleFactor(), isMacOS());
     const frame = restore.rect;
     const viewport = { width: frame.width / scale, height: frame.height / scale };
     return {
@@ -675,7 +676,7 @@ async function leaveMini(win: Window): Promise<Unfold> {
 // Where the content grows out of Sprout's box in the window's frame as it stands now, in its CSS px
 async function growCenter(win: Window, from: WinRect): Promise<Pt> {
     const [frame, scaleFactor] = await Promise.all([spaceFrame(win), win.scaleFactor()]);
-    const scale = spaceScale(scaleFactor, MAC);
+    const scale = spaceScale(scaleFactor, isMacOS());
     return sproutCenter(from, { x: frame.x, y: frame.y }, scale, {
         width: frame.width / scale,
         height: frame.height / scale,
@@ -960,8 +961,8 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
             return;
         }
         if (autoRestoreOnReturn({ size: currentSize().size, pressGapMs, chatOpened })) {
-            foldLog(`back in arcterm: growing back${MAC ? "" : " to Full, maximized"}`);
-            void (MAC ? restoreFromSprout(model) : returnFromSprout(model));
+            foldLog(`back in arcterm: growing back${isMacOS() ? "" : " to Full, maximized"}`);
+            void (isMacOS() ? restoreFromSprout(model) : returnFromSprout(model));
         } else if (currentSize().size === "sprout") {
             foldLog(`back in arcterm: staying folded (press gap ${pressGapMs}, chat opened ${chatOpened})`);
         }
