@@ -42,6 +42,9 @@ export const PULSES: Record<string, PulseSpec> = {
     "pulse-soft": { periodMs: 2_000, low: 0.5, ease: cubicBezier(0.4, 0, 0.6, 1) },
     // breatheGlow 2.4s ease-in-out: tailwindsetup.css's .pulse-glow reads the curve as the glow's strength
     "pulse-glow": { periodMs: 2_400, low: 0, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--pulse" },
+    // the same breath on an asking agent's row in the Agent tree: tailwindsetup.css's .pulse-tint reads it as the
+    // strength of an amber wash and edge over the row's own fill
+    "pulse-tint": { periodMs: 2_400, low: 0, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--pulse" },
     // a council seat's typing bubble (councilchat.tsx TypingDots): three dots, each a step behind the one before it
     // (data-pulse-lag); tailwindsetup.css's .pulse-typing reads the curve as each dot's lift and brightness
     "pulse-typing": { periodMs: 1_200, low: 0.35, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--typing" },

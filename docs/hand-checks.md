@@ -21,6 +21,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   blocked-merge → each is refused naming `dag merge <task> --continue`, and the task and its worker tab stay as they
   were (run aebf7808 Task 6).
 
+- [ ] (arcterm) An asking agent's whole row breathes in the Agent tree: get an agent to ask (a permission prompt or a
+  brainstorm question) → its row, selected or not, pulses a faint amber wash and edge every ~2.4s alongside its glyph;
+  answer it → the row goes back to plain. With reduced motion on it rests at a faint amber wash. No dev app was up; the
+  pulse unit tests only (`.pulse-tint` in `tailwindsetup.css`, `pulse.ts`, `agenttree.tsx`).
 - [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
   that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
   Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,

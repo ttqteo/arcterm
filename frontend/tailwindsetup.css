@@ -511,6 +511,18 @@ svg [aria-label="tip"] g path {
     );
 }
 
+/* An asking agent's row in the Agent tree breathes amber over the whole row: a wash laid as a background image, so a
+   selected row keeps its grey fill under it, and an inset edge. pulsedriver.tsx sets --pulse (1 at rest, 0 at the
+   peak) at 12fps; without the driver (reduced motion) it rests at the faint wash. */
+.pulse-tint {
+    --tint: calc(1 - var(--pulse, 1));
+    background-image: linear-gradient(
+        color-mix(in oklab, var(--color-warning) calc(4% + 10% * var(--tint)), transparent),
+        color-mix(in oklab, var(--color-warning) calc(4% + 10% * var(--tint)), transparent)
+    );
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-warning) calc(18% + 32% * var(--tint)), transparent);
+}
+
 /* Finished settle (moment 4): a single soft scale acknowledgement on working -> idle. */
 @keyframes settle {
     0% {
