@@ -914,14 +914,14 @@ func (r *Runner) callerFor(e CouncilExpert) (Caller, error) {
 // call's tool events (and, for an agent seat, from the wait for its session). It returns what the Caller returned. A
 // role seat's call that Claude's safeguards flagged runs again once on SafeguardFallback, as Claude Code does; when
 // that answers, the result's fellBack names it, and finishCall keeps a CouncilRetry.
-func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, tools bool, dirs []string, first CouncilActivity) (CallRes, error) {
+func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, tools, web bool, dirs []string, first CouncilActivity) (CallRes, error) {
 	caller, err := r.callerFor(e)
 	if err != nil {
 		return CallRes{}, err
 	}
 	e = r.rebind(ctx, rn, id, caller, e)
 	rn.begin(e.Id, callClock{start: r.now(), base: snap.Stats[e.Id].Ms})
-	res, err := r.callOnce(ctx, rn, id, caller, e, snap, prompt, tools, dirs, first)
+	res, err := r.callOnce(ctx, rn, id, caller, e, snap, prompt, tools, web, dirs, first)
 	if err == nil || ctx.Err() != nil || !IsSafeguardFlag(err) || IsAgent(e) || strings.EqualFold(e.Model, SafeguardFallback) {
 		return res, err
 	}
@@ -930,7 +930,7 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 	act.Text = "Flagged by safeguards: answering on Opus 4.8"
 	on := e
 	on.Model = SafeguardFallback
-	again, err2 := r.callOnce(ctx, rn, id, caller, on, snap, prompt, tools, dirs, act)
+	again, err2 := r.callOnce(ctx, rn, id, caller, on, snap, prompt, tools, web, dirs, act)
 	again.Tokens += res.Tokens
 	if err2 != nil {
 		if ctx.Err() != nil {
@@ -969,13 +969,14 @@ func (r *Runner) rebind(ctx context.Context, rn *run, id string, caller Caller, 
 }
 
 // callOnce is one call of e through caller: it shows first as e's activity and keeps it current from the tool events. dirs
-// are the folders outside the project the call may also read (readsOf).
-func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller, e CouncilExpert, snap *Council, prompt string, tools bool, dirs []string, first CouncilActivity) (CallRes, error) {
+// are the folders outside the project the call may also read (readsOf); web says its prompt carries a link of the
+// person's, so a call with tools also has WebFetch.
+func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller, e CouncilExpert, snap *Council, prompt string, tools, web bool, dirs []string, first CouncilActivity) (CallRes, error) {
 	r.updateLogged(rn, id, func(c *Council) error {
 		setActivity(c, e.Id, first)
 		return nil
 	})
-	req := CallReq{Expert: e, Cwd: snap.Project, Prompt: prompt, Tools: tools, AddDirs: dirs}
+	req := CallReq{Expert: e, Cwd: snap.Project, Prompt: prompt, Tools: tools, Web: tools && web, AddDirs: dirs}
 	if tools || IsAgent(e) {
 		req.OnTool = func(text string) {
 			act := first
@@ -1100,7 +1101,7 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(snap, e, 1)
 	}
-	res, err := r.call(ctx, rn, id, e, snap, prompt, true, nil, CouncilActivity{Text: actStarting})
+	res, err := r.call(ctx, rn, id, e, snap, prompt, true, questionLinks(snap), nil, CouncilActivity{Text: actStarting})
 	var (
 		props []CouncilProposal
 		plain string
@@ -1515,8 +1516,9 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(view, e, round)
 	}
-	tools, dirs := readsOf(unansweredFor(view, e.Id))
-	res, err := r.call(ctx, rn, id, e, view, prompt, tools, dirs, *target)
+	owed := unansweredFor(view, e.Id)
+	tools, dirs := readsOf(owed)
+	res, err := r.call(ctx, rn, id, e, view, prompt, tools, webOf(owed), dirs, *target)
 	var (
 		out   Round2Result
 		plain string
@@ -1772,13 +1774,14 @@ func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now 
 // (readsOf). A live agent is sent its own prompt, and what it answers that holds no JSON is heard as one plain reply under
 // the first reply it owes.
 func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, replies []CouncilReply, round int) {
-	tools, dirs := readsOf(personRepliesIn(snap, replies))
+	carried := personRepliesIn(snap, replies)
+	tools, dirs := readsOf(carried)
 	first := CouncilActivity{Text: actPerson, ProposalId: replies[0].ProposalId, ParentId: replies[0].Id}
 	prompt := AnswersPrompt(snap, e, replies)
 	if IsAgent(e) {
 		prompt = agentPrompt(withOpenAsks(snap, e), e, round)
 	}
-	res, err := r.call(ctx, rn, id, e, snap, prompt, tools, dirs, first)
+	res, err := r.call(ctx, rn, id, e, snap, prompt, tools, webOf(carried), dirs, first)
 	var (
 		answers []Answer
 		plain   string
@@ -1946,6 +1949,18 @@ func fileMentions(text string) []string {
 
 // fileMentioned says text names at least one file with an @: the reply is then answered with tools, so the seat can read it.
 func fileMentioned(text string) bool { return len(fileMentions(text)) > 0 }
+
+// linkRe matches a web address the person pasted: http:// or https:// and the run after it up to a space, a quote or
+// a bracket. The frontend's linkIn carries the same rule.
+var linkRe = regexp.MustCompile("(?i)\\bhttps?://[^\\s<>\"'`()\\[\\]]+")
+
+// linkMentioned says text holds a web address: the reply is then answered with tools and WebFetch, so the seat can open
+// the page instead of guessing at it.
+func linkMentioned(text string) bool { return linkRe.MatchString(text) }
+
+// locksTools says the text alone turns Let them read files on, whatever the person set: it names a file with an @, or
+// it holds a web address. The seat that answers has to be able to open what the message points at.
+func locksTools(text string) bool { return fileMentioned(text) || linkMentioned(text) }
 
 // mentions reports whether text holds token as a whole word, not inside an address or a longer name. A token that starts
 // with @ is not found in an @ that starts a file mention: @ux/plan.md and @ram.go name files, not UX or RAM.
@@ -2142,10 +2157,10 @@ func seatBeforeCoordinator(c *Council, seats []CouncilExpert) {
 
 // appendPersonReply adds the person's reply to c, in the round c is in, addressed also to the chats in joined (the ids of
 // the seats this reply just seated). A reply to a reply takes the proposal of its parent; it is an error to name a
-// proposal or a parent that is not there. A reply that attaches files or names one with an @ is stored with tools on,
-// whatever tools says: the seat that answers it has to be able to read them.
+// proposal or a parent that is not there. A reply that attaches files, names one with an @ or holds a web address is
+// stored with tools on, whatever tools says: the seat that answers it has to be able to read them (locksTools).
 //
-// toolsAuto says Let them read files was on Auto and the message locked nothing on (no image, no @file): tools then holds
+// toolsAuto says Let them read files was on Auto and the message locked nothing on (no image, no @file, no link): tools then holds
 // the composer's guess, and the router decides it (routeReply) for a message it takes up.
 //
 // A message with no proposal, no parent, no seat @-mentioned, no @all or @everyone and no chat seated by it goes to the
@@ -2181,12 +2196,12 @@ func appendPersonReply(c *Council, proposalId, parentId, text string, tools, too
 			to = idsOf(cands) // nothing to choose
 		default:
 			to = nil // the router fills it in
-			routed = &CouncilRouted{Pending: true, AutoTools: toolsAuto && len(attachments) == 0 && !fileMentioned(text)}
+			routed = &CouncilRouted{Pending: true, AutoTools: toolsAuto && len(attachments) == 0 && !locksTools(text)}
 		}
 	}
 	c.Replies = append(c.Replies, CouncilReply{
 		Id: nextReplyId(c), ProposalId: proposalId, ParentId: parentId, Author: YouId, Text: text,
-		To: to, Tools: tools || len(attachments) > 0 || fileMentioned(text), Attachments: attachments, Round: c.Round, Ts: now,
+		To: to, Tools: tools || len(attachments) > 0 || locksTools(text), Attachments: attachments, Round: c.Round, Ts: now,
 		Routed: routed,
 	})
 	return nil
@@ -2571,7 +2586,7 @@ func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model str
 		coord.Model = model
 	}
 	at := r.now() // the Summary reads what was said up to now; a reply posted while it is written reads as newer
-	res, err := r.call(ctx, rn, id, coord, snap, SynthesisPrompt(snap), false, nil, CouncilActivity{Text: actSummary})
+	res, err := r.call(ctx, rn, id, coord, snap, SynthesisPrompt(snap), false, false, nil, CouncilActivity{Text: actSummary})
 	var (
 		sum  CouncilSummary
 		weak []WeakNote

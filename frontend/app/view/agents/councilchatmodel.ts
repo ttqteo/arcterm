@@ -1314,6 +1314,19 @@ const NAMED_FILE = new RegExp(`(?:^|[\\s(\`"'])([\\w~./-]*[\\w-]\\.(?:${FILE_EXT
 const NAMED_PATH = /(?:^|[\s(`"'])((?:\.{1,2}\/|~\/|\/)[\w.-]+(?:\/[\w.-]+)*|[\w.-]+(?:\/[\w.-]+){2,})/u;
 const NAMED_SPAN = /`([^`\s]*[./][^`\s]*)`/u;
 
+// a web address: http:// or https:// and the run after it up to a space, a quote or a bracket (Go's linkRe, same rule)
+const LINK = /\bhttps?:\/\/[^\s<>"'`()[\]]+/iu;
+
+/** Pure: the host of the first web address a message holds ("blackdiamond.biglabs.net"), "" when it holds none. A
+ *  link locks Read files on: the seats answer it with WebFetch beside Read, Grep and Glob. */
+export function linkIn(text: string): string {
+    const m = LINK.exec(text);
+    if (m == null) {
+        return "";
+    }
+    return m[0].replace(/^https?:\/\//iu, "").split(/[/?#]/u)[0];
+}
+
 /** Pure: the first file or path a question names, "" when it names none. */
 export function namedFile(text: string): string {
     for (const re of [NAMED_FILE, NAMED_PATH, NAMED_SPAN]) {
@@ -1330,8 +1343,8 @@ export function namedFile(text: string): string {
 export const ROUTER_DECIDES = "the router decides";
 
 /** Pure: whether a message lets the seats read files, `why` and `locked` with it. It is on, and `locked` (the person
- *  cannot turn it off), when `attached` images go with it or its text has an `@file` (the first one is `why`, else
- *  "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they set
+ *  cannot turn it off), when `attached` images go with it or its text has an `@file` or a web address (the first
+ *  `@file` is `why`, else the link's host, else "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they set
  *  Read files to On or Off (`choice`; null is Auto), else on exactly when the question names a file or a path, `why`
  *  naming it. In Auto, for a `routed` message (the router picks its seats, `routedMessage`), the router decides it:
  *  `why` is `ROUTER_DECIDES` and `on` stays the file-naming guess, which is what Send sends as `tools` and the
@@ -1343,8 +1356,9 @@ export function readsFiles(
     routed = false
 ): { on: boolean; why: string; locked: boolean } {
     const mention = fileMentions(text)[0];
-    if (attached > 0 || mention != null) {
-        return { on: true, why: mention?.path ?? "an image", locked: true };
+    const link = linkIn(text);
+    if (attached > 0 || mention != null || link !== "") {
+        return { on: true, why: mention?.path ?? (link || "an image"), locked: true };
     }
     if (choice != null) {
         return { on: choice, why: "", locked: false };
