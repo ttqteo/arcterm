@@ -204,7 +204,7 @@ func TestCouncilEstimatePricesAgentSeats(t *testing.T) {
 		rounds int
 		want   wshrpc.CouncilEstimateRtnData
 	}{
-		// the Skeptic's 140k and 45k, two chats' 135,020 a round, a 15k round check after each reply pass, the summary's
+		// the Skeptic's 140k and 45k, two chats' 135,020 a round, an 18k round check after each reply pass, the summary's
 		// 80k; 3 calls a round, a check a reply pass, and the summary
 		{"two rounds, the default", 0, wshrpc.CouncilEstimateRtnData{Calls: 8, Tokens: 140_000 + 45_000 + 2*135_020 + 18_000 + 80_000, Minutes: 6, AgentTokens: 2 * 135_020}},
 		{"three rounds", 3, wshrpc.CouncilEstimateRtnData{Calls: 12, Tokens: 140_000 + 2*45_000 + 3*135_020 + 2*18_000 + 80_000, Minutes: 8, AgentTokens: 3 * 135_020}},
