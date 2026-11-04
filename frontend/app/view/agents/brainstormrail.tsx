@@ -54,8 +54,9 @@ import {
     DEFAULT_BOARD_W,
     paneState,
     shownBoard,
+    withContentHeights,
 } from "./canvasmodel";
-import { BoardFrameView, CANVAS_TOP_PAD, ServerDown, useSteadyFitWidth } from "./canvaspane";
+import { BoardFrameView, CANVAS_TOP_PAD, ServerDown, useContentHeights, useSteadyFitWidth } from "./canvaspane";
 import { attachCanvas, canvasStateAtom, setMarking, type CanvasState } from "./canvasstore";
 import { SWAP_BTN, SWAP_BTN_ON } from "./swapbar";
 
@@ -580,13 +581,14 @@ function WidenedBoard({
 }) {
     const [measureRef, , rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
+    const [heights, reportHeight] = useContentHeights(`${cs.topic}:${cs.reloadKey}`);
     // marks are drawn over the board on screen, so leaving it drops them and the marking mode with them
     useEffect(() => () => setMarking(agent.id, false), [agent.id]);
     const base = cs.base ?? s.base;
     const seen: CanvasState = cs.boards.length > 0 ? cs : { ...cs, boards: s.boards };
     const pane = cs.status === "probing" && base != null ? "board" : paneState(cs);
     const board = shownBoard(seen);
-    const frame = canvasLayout([board], fitWidth).frames[0];
+    const frame = canvasLayout(withContentHeights([board], heights), fitWidth).frames[0];
     const marking = cs.marking && pane === "board";
     const shown = head(board.name) ?? {
         name: board.name,
@@ -646,6 +648,7 @@ function WidenedBoard({
                             src={pane === "board" && base != null ? boardUrl(base, cs.topic, board.name) : null}
                             reloadKey={cs.reloadKey}
                             onOpen={onClose}
+                            onContentHeight={(h) => reportHeight(board.name, h)}
                         >
                             {marking ? (
                                 <MarkLayer agentId={agent.id} marks={cs.marks} />

@@ -37,6 +37,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A canvas board whose page runs longer than its board size is now drawn whole, at its page's full height, where it showed a second scrollbar inside the board beside the canvas's own.
 - A chat seated in a council whose tab you closed comes back: open its conversation again (Resume, Open asleep, or click the seat's name, avatar or @ chip, which now opens it asleep) and Retry reaches it in its new tab, where Retry used to fail with "is gone" for good. A seat from before this keeps its conversation from its next turn, while its tab is still open.
 - A council synced from your other computer opens a chat seat's conversation again when you click its name, avatar or @ chip, and Retry reaches it, where it said "Couldn't reopen the session: its conversation is no longer in Conversation History" because the seat named the session by the other computer's path.
 - A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.

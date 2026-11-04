@@ -56,6 +56,7 @@ import {
     DEFAULT_BOARD_H,
     DEFAULT_BOARD_W,
     paneState,
+    withContentHeights,
     type CanvasBoard,
 } from "./canvasmodel";
 import {
@@ -65,6 +66,7 @@ import {
     Removed,
     ServerDown,
     StepButton,
+    useContentHeights,
     useSteadyFitWidth,
 } from "./canvaspane";
 import { pollCanvasOnce, tauriCanvasIO, type CanvasIO } from "./canvaspoller";
@@ -664,6 +666,7 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
     const maker = useCanvasMaker(model, canvas.dir);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
+    const [heights, reportHeight] = useContentHeights(`${canvas.dir}:${s.reloadKey}`);
     const tabsRef = useRef<HTMLDivElement>(null);
     const at = Math.min(Math.max(0, g.board), canvas.boards.length - 1);
     const name = canvas.boards[at];
@@ -680,7 +683,7 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
                   w: DEFAULT_BOARD_W,
                   h: DEFAULT_BOARD_H,
               });
-    const layout = canvasLayout(board != null ? [board] : [], fitWidth);
+    const layout = canvasLayout(board != null ? withContentHeights([board], heights) : [], fitWidth);
     useEffect(() => {
         tabsRef.current
             ?.querySelector('[aria-selected="true"]')
@@ -780,6 +783,7 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
                                     src={s.base != null ? boardUrl(s.base, s.topic, f.board.name) : null}
                                     reloadKey={s.reloadKey}
                                     onOpen={() => {}}
+                                    onContentHeight={(h) => reportHeight(f.board.name, h)}
                                     onSettled={(el) =>
                                         void maybeCaptureThumb(tauriThumbIO, {
                                             topicDir: canvas.dir,
