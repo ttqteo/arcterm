@@ -365,10 +365,8 @@ function useFileMention(task: string, filesRoot: string, taskRef: RefObject<HTML
                                     )}
                                 >
                                     <FileIcon path={path} size={14} />
-                                    <span className="shrink-0 font-mono text-[12px] text-primary">
-                                        {path.slice(slash + 1)}
-                                    </span>
-                                    <span className="min-w-0 truncate font-mono text-[11px] text-muted">
+                                    <span className="shrink-0 text-[12px] text-primary">{path.slice(slash + 1)}</span>
+                                    <span className="min-w-0 truncate text-[11px] text-muted">
                                         {slash === -1 ? "" : path.slice(0, slash)}
                                     </span>
                                 </li>

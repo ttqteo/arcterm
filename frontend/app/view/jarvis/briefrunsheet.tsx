@@ -165,7 +165,7 @@ function ResolvedNote({ header }: { header: string }) {
             <div className="flex items-center gap-2">
                 <span className="h-[7px] w-[7px] flex-none rounded-full bg-success" />
                 <span className="text-[12.5px] font-semibold text-secondary">{note.title}</span>
-                <span className="ml-auto font-mono text-[10.5px] text-muted">just now</span>
+                <span className="ml-auto text-[10.5px] text-muted">just now</span>
             </div>
             <span className="text-[11.5px] leading-[1.5] text-ink-mid">{note.body}</span>
         </div>

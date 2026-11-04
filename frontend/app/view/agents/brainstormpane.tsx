@@ -490,7 +490,7 @@ function CheckWait({
                         <span
                             data-brainstorm-check-clock={clock.running ? "running" : "stopped"}
                             className={cn(
-                                "font-mono text-[13px] font-semibold",
+                                "tabular-nums text-[13px] font-semibold",
                                 clock.running ? "text-secondary" : "text-ink-mid"
                             )}
                         >
@@ -519,7 +519,7 @@ function CheckWait({
                     {clock.times != null ? (
                         <span
                             data-brainstorm-check-times
-                            className="flex-none whitespace-nowrap font-mono text-[10.5px]"
+                            className="flex-none whitespace-nowrap tabular-nums text-[10.5px]"
                         >
                             {clock.times}
                         </span>
@@ -760,7 +760,7 @@ function PartRow({
                         {said != null ? (
                             <SaidLine said={said} open={open} />
                         ) : part.from ? (
-                            <span title={part.from} className="truncate font-mono text-[10.5px] text-muted">
+                            <span title={part.from} className="truncate text-[10.5px] text-muted">
                                 {part.from}
                             </span>
                         ) : null}
@@ -955,7 +955,7 @@ function DecidedRail({
                                     data-unseen={h.unseen ? "" : undefined}
                                     className="flex flex-col gap-[5px] border-t border-border py-[12px]"
                                 >
-                                    <span className="font-mono text-[10.5px] text-muted">
+                                    <span className="text-[10.5px] text-muted">
                                         {h.label}
                                         {h.unseen ? <span className="text-accent-soft"> · new</span> : null}
                                     </span>
@@ -983,7 +983,7 @@ function RailQuestion({ h, justNow, goTo }: { h: HistoryRow; justNow: boolean; g
             className="flex flex-col gap-[8px] border-t border-border py-[12px]"
         >
             <div className="flex items-baseline gap-[8px]">
-                <span className="flex-none font-mono text-[10.5px] text-muted">
+                <span className="flex-none text-[10.5px] text-muted">
                     {h.label}
                     {h.dropped ? " · dropped" : justNow ? " · just now" : ""}
                 </span>
@@ -1158,7 +1158,7 @@ function Unreadable({ s }: { s: BrainstormState }) {
                 Arc could not read this brainstorm
             </span>
             <span className={EXPLAINER}>{s.error}</span>
-            <span className="max-w-full break-all font-mono text-[11px] text-muted">{s.path}</span>
+            <span className="max-w-full break-all text-[11px] text-muted">{s.path}</span>
         </EdgeState>
     );
 }

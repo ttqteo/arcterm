@@ -143,7 +143,7 @@ function QueueSheetBody({ model, row }: { model: AgentsViewModel; row: QueuedRow
                 {m.plan != null ? (
                     // text, not a button: the Brief has no panel to open a file in
                     <Field label="plan" data-queue-sheet-plan="">
-                        <span className="select-text break-all font-mono text-[12px]">{m.plan}</span>
+                        <span className="select-text break-all text-[12px]">{m.plan}</span>
                     </Field>
                 ) : null}
                 {m.goal != null ? (

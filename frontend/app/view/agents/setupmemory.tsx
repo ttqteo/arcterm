@@ -201,7 +201,7 @@ function ProjectRail({ projects, selected }: { projects: MemHygieneProject[]; se
                             <Meter pct={row.pct} />
                         </span>
                         {row.meter ? (
-                            <span className="font-mono text-[10.5px] text-ink-mid">{row.meter}</span>
+                            <span className="tabular-nums text-[10.5px] text-ink-mid">{row.meter}</span>
                         ) : null}
                         <span className={cn("flex items-center gap-1.5 text-[11px]", TONE_TEXT[row.tone])}>
                             <Dot tone={row.tone} />
@@ -227,7 +227,7 @@ function IndexCardView({ card }: { card: IndexCard }) {
         <div className="flex flex-col gap-1.5">
             <div className="flex justify-between text-[12px]">
                 <span className="text-ink-mid">{label}</span>
-                <span className="font-mono text-secondary">{value}</span>
+                <span className="tabular-nums text-secondary">{value}</span>
             </div>
             <Meter pct={pct} />
         </div>
@@ -380,9 +380,9 @@ function ChangeTable({ p, selected }: { p: MemHygieneProject; selected: string |
                                         >
                                             {c.title}
                                         </span>
-                                        <PathTail path={fileLabel(c)} className="font-mono" />
+                                        <PathTail path={fileLabel(c)} />
                                     </span>
-                                    <span role="cell" className="font-mono text-[11px] text-ink-mid">
+                                    <span role="cell" className="tabular-nums text-[11px] text-ink-mid">
                                         {c.effect}
                                     </span>
                                     <motion.span
@@ -626,7 +626,7 @@ function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }
                     <KindChip p={p} change={change} />
                 </span>
                 <div className="text-[14px] font-semibold text-primary">{change.title}</div>
-                <div className="break-all font-mono text-[10.5px] text-muted">{fileLabel(change)}</div>
+                <div className="break-all text-[10.5px] text-muted">{fileLabel(change)}</div>
             </div>
             {change.status === "conflict" ? <ConflictAlert p={p} change={change} /> : null}
             {isPending(change) && gate.blocked ? (

@@ -49,9 +49,7 @@ const STATUS_TONE: Record<string, string> = {
 function Section({ title, children }: { title: string; children: ReactNode }) {
     return (
         <div className="mb-6">
-            <h3 className="mb-2.5 font-mono text-[10.5px] font-semibold uppercase tracking-[.1em] text-muted">
-                {title}
-            </h3>
+            <h3 className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[.1em] text-muted">{title}</h3>
             {children}
         </div>
     );

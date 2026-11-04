@@ -53,6 +53,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - On a council's report, clicking Report scrolls down past the answer to the report itself, where it did nothing, and the Directions and Also raised links glide down to their section instead of jumping there.
 - A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.
 - A run graph's task and Final verification details read in the app's own font: the worker, review, tokens, activity times and the Open in Agent button were drawn in the code font.
+- More labels read in the app's own font instead of the code font: the brainstorm pane (question numbers, the check clock, topic and file names), the background task peek's title, state and tabs, Setup → Memory's line counts and file names, the @ file picker, the roles in the Claude account restart list, and the Brief's plan path, "just now" and field labels.
 
 ## 1.0.0 — 2026-11-03
 

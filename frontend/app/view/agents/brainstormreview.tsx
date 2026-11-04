@@ -301,7 +301,7 @@ function ReviewRowView({
                     {row.gist}
                 </span>
                 {row.cause ? (
-                    <span data-brainstorm-review-cause className="font-mono text-[10.5px] text-muted">
+                    <span data-brainstorm-review-cause className="text-[10.5px] text-muted">
                         {row.cause}
                     </span>
                 ) : null}

@@ -9,6 +9,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Click a task node, then the Final verification node, in a run's graph → the peek's Worker / Review /
   Tokens values, activity lines and Open in Agent read in Inter like the title; only a Verify output tail stays mono
   (22a9f852e).
+- [ ] (arcterm) Open a brainstorm (question card, check clock, run sheet), a background task peek, Setup → Memory and
+  the @ file picker in the New dialog → labels, counts, file names and times read in Inter; only commands, output,
+  keycaps and hashes stay mono.
 - [ ] (arcterm) Rerun final stage from the Final verification pane: on a run whose final stage failed, focus its Final
   verification row → the pane header shows Rerun final stage; click it → the stage restarts in the same round and the
   button goes. The `final-rerun` scenario's step 4 passed in run aebf7808's first final stage and failed in its second

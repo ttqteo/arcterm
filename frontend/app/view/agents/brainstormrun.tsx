@@ -80,7 +80,7 @@ export function RunStep({
                         <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
                             <h1 className="m-0 text-[18px] font-bold text-primary">{f.title}</h1>
                             {f.spec ? (
-                                <span title={f.spec} className="truncate font-mono text-[10.5px] text-muted">
+                                <span title={f.spec} className="truncate text-[10.5px] text-muted">
                                     {f.spec}
                                 </span>
                             ) : null}
@@ -244,7 +244,7 @@ function HandedRow({ f, p }: { f: BrainstormFile; p: BrainstormPart }) {
             <span className="flex min-w-0 flex-col gap-[2px]">
                 <span className="text-[13.5px] leading-[1.45] text-secondary">{partGist(f, p)}</span>
                 {p.from ? (
-                    <span title={p.from} className="truncate font-mono text-[10.5px] text-muted">
+                    <span title={p.from} className="truncate text-[10.5px] text-muted">
                         {p.from}
                     </span>
                 ) : null}

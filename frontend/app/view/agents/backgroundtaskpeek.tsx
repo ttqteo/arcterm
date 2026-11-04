@@ -174,7 +174,7 @@ function PeekFooter({
     return (
         <div
             data-testid="background-task-peek-footer"
-            className="flex items-center gap-[8px] border-t border-edge-mid px-[10px] py-[6px] font-mono text-[10.5px] text-muted"
+            className="flex items-center gap-[8px] border-t border-edge-mid px-[10px] py-[6px] text-[10.5px] text-muted"
         >
             <span className="min-w-0 flex-1 truncate" title={leftTitle}>
                 {left}
@@ -203,7 +203,7 @@ function PeekTab({
             aria-selected={active}
             onClick={onSelect}
             className={cn(
-                "h-[20px] cursor-pointer rounded-[4px] px-[8px] font-mono text-[10.5px] font-semibold",
+                "h-[20px] cursor-pointer rounded-[4px] px-[8px] text-[10.5px] font-semibold",
                 active ? "bg-accentbg text-accent-soft" : "text-secondary hover:text-primary"
             )}
         >
@@ -386,13 +386,13 @@ export function BackgroundTaskPeek({
                     <span
                         data-testid="background-task-peek-title"
                         title={current.label}
-                        className="min-w-0 flex-1 truncate font-mono text-[11.5px] font-medium text-secondary"
+                        className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-secondary"
                     >
                         {current.label}
                     </span>
                     <span
                         data-testid="background-task-peek-state"
-                        className={cn("flex-none font-mono text-[10.5px] font-semibold", STATE_TONE[state])}
+                        className={cn("flex-none text-[10.5px] font-semibold", STATE_TONE[state])}
                     >
                         {state}
                     </span>

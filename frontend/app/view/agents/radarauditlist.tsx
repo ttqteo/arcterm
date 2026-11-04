@@ -115,7 +115,7 @@ export function RadarAuditList({
                         <span data-radar-audit-group-label className={cn(REGION_LABEL, "text-ink-mid")}>
                             {g.label}
                         </span>
-                        <span className="font-mono text-[10.5px] text-muted">{g.rows.length}</span>
+                        <span className="tabular-nums text-[10.5px] text-muted">{g.rows.length}</span>
                     </div>
                     {g.rows.map((row) => (
                         <AuditRowView key={row.key} row={row} live={live} framed={framed} />

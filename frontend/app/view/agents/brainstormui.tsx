@@ -66,7 +66,6 @@ export const FIELD =
 export const LINK = "cursor-pointer text-accent-soft hover:underline";
 const PRIMARY_BTN =
     "flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
-export const CARD_LABEL = "font-mono text-[11px] font-semibold";
 export const ERROR_LINE = "text-[12px] text-error";
 export const SECTION_HEAD = "m-0 text-[13px] font-semibold text-secondary";
 // an answer row, and the approach rows the judge weighs, which answer the same way; on a question that takes more
@@ -145,7 +144,7 @@ export function Toolbar({
 }) {
     return (
         <div className="flex flex-none items-center gap-[14px] border-b border-edge-faint bg-surface px-[22px] py-[8px]">
-            <span className="min-w-0 truncate font-mono text-[12px] font-semibold text-secondary">{topic}</span>
+            <span className="min-w-0 truncate text-[12px] font-semibold text-secondary">{topic}</span>
             <div className="flex-1" />
             {f != null ? (
                 <>
@@ -893,7 +892,7 @@ function QuestionHead({ f, goTo, children }: { f: BrainstormFile; goTo: (id: str
             <span className="flex items-center gap-[10px] text-[13px] text-warning">
                 {q.part ? (
                     <>
-                        <span className="font-mono font-semibold">{q.n} →</span>
+                        <span className="font-semibold">{q.n} →</span>
                         <button
                             type="button"
                             onClick={() => goTo(q.part)}
@@ -903,7 +902,7 @@ function QuestionHead({ f, goTo, children }: { f: BrainstormFile; goTo: (id: str
                         </button>
                     </>
                 ) : (
-                    <span className="font-mono font-semibold">Question {q.n}</span>
+                    <span className="font-semibold">Question {q.n}</span>
                 )}
             </span>
             <h1 className="m-0 whitespace-pre-line text-[30px] font-bold leading-[1.3] text-primary">{q.text}</h1>
@@ -1145,7 +1144,7 @@ export function DesignHead({ f }: { f: BrainstormFile }) {
         <div className="flex flex-col gap-[4px] border-b border-border px-[14px] pb-[6px]">
             <h1 className="m-0 text-[16px] font-bold text-primary">{f.title}</h1>
             {f.spec ? (
-                <span title={f.spec} className="truncate font-mono text-[10.5px] text-muted">
+                <span title={f.spec} className="truncate text-[10.5px] text-muted">
                     {f.spec}
                 </span>
             ) : null}
