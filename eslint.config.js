@@ -54,6 +54,24 @@ export default [
         },
     },
 
+    // the build and test scripts run on Node; the CDP scenarios also hand functions to the page they drive
+    {
+        files: ["scripts/**/*.{js,mjs}"],
+        languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+        },
+    },
+    {
+        files: ["scripts/cdp/**/*.{js,mjs}"],
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
+        },
+    },
+
     {
         files: ["**/*.js", "**/*.cjs"],
         rules: {
