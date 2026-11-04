@@ -106,6 +106,7 @@ Everything else is optional and read leniently, but write every field as describ
 | `done` | `true` only when nothing is left to ask. |
 | `check` | The builder check's result (below), else `null`. |
 | `run` | The run id once a run started from this brainstorm, else `null`. |
+| `runShape` | The run you suggest building it with, written with the spec (below): `"quick"` or `"orchestrator"`. Leave it out and Arc offers an orchestrator run. |
 | `compacted` | Unix milliseconds of your last re-read after a compaction (below). |
 
 Part states:
@@ -414,9 +415,16 @@ time in milliseconds, write it back. Carry on from the file, not from memory.
 to you. You write the spec, start the reviewer, and later sort what it asked.
 
 On `brainstorm: check`: the user pressed **Check with a builder**, which is their go-ahead: do not ask
-again. Write the spec at `spec` from the parts, then run `wsh brainstorm check <absolute path of
-brainstorm.json>`. Write nothing else to the file: Arc tracks the check and shows the user that a builder
-is reading. End the turn with one line naming the spec's path. If the command fails, put its error in
+again. Write the spec at `spec` from the parts, set `runShape`, then run `wsh brainstorm check <absolute
+path of brainstorm.json>`. Write nothing else to the file: Arc tracks the check and shows the user that a
+builder is reading.
+
+`runShape` is `"quick"` when one worker can build the spec in one sitting from the spec alone: a
+change to a few files, nothing that splits into parts worth building side by side, and no board the
+build must match. A quick run has no plan, no final check and no merge of its own, so anything
+larger, or that needs the app checked on screen, is `"orchestrator"`. A part that lists a board keeps
+the orchestrator run whatever you write, since only that run carries the design. Revisit it when the
+builder's questions grow the spec. End the turn with one line naming the spec's path. If the command fails, put its error in
 `question` with the next `n` (no `part`), so the pane shows it, and write the file.
 
 On `brainstorm: builder questions <path>`: the reviewer is done. Read the file at `<path>`: its ranked
@@ -481,8 +489,8 @@ decision.
 **Approving.** Arc enables approve only once no question is open, every builder question is
 answered or decided by you, and every decision is `yours`.
 
-**The run.** On `brainstorm: approved`, stop; Arc opens the launcher, and sends `brainstorm: run <id>`
-once the run starts.
+**The run.** On `brainstorm: approved`, stop; Arc opens the launcher on the `runShape` you set (the
+user can change it there), and sends `brainstorm: run <id>` once the run starts.
 
 **Resuming.** Asked to resume a brainstorm from a `brainstorm.json` path (a new agent after the old
 one exited): read the file, carry on from its `question` or its next step, and keep writing the

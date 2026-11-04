@@ -7,6 +7,7 @@
 import type { NewRunPrefill } from "@/app/view/jarvis/newrun";
 import type { AgentVM } from "./agentsviewmodel";
 import { canvasDir, canvasProjectDir, join, type CanvasBoard } from "./canvasmodel";
+import type { RunShape } from "./runconfig";
 
 export const BRAINSTORM_POLL_MS = 3000;
 export const BUILDER_PART = "builder";
@@ -95,6 +96,8 @@ export type BrainstormFile = {
     done: boolean;
     check: BuilderCheck | null;
     run: string | null;
+    // the agent's read of the build's size, written with the spec: "quick" when one worker builds it in one sitting
+    runShape?: RunShape;
     compacted?: number;
 };
 export type ParseResult = { ok: true; file: BrainstormFile } | { ok: false; error: string };
@@ -333,6 +336,7 @@ function buildFile(j: Rec): BrainstormFile {
         done: j.done === true,
         check: parseCheck(j.check),
         run: str(j.run) ?? null,
+        ...(j.runShape === "quick" || j.runShape === "orchestrator" ? { runShape: j.runShape } : {}),
         ...(typeof j.compacted === "number" ? { compacted: j.compacted } : {}),
     };
 }
@@ -1662,15 +1666,27 @@ function firstBoard(f: BrainstormFile): string | undefined {
     return f.parts.find((p) => p.boards != null && p.boards.length > 0)?.boards?.[0];
 }
 
+// the run the approve bar offers: quick only when the agent judged the build small, and never with a board to attach,
+// since a prototype rides only an orchestrator run (prefillToLaunch would turn it back anyway)
+export function suggestedShape(f: BrainstormFile): RunShape {
+    return f.runShape === "quick" && !(f.canvas && firstBoard(f)) ? "quick" : "orchestrator";
+}
+
 export function runPrefill(f: BrainstormFile, a: { projectName: string; cwd: string }): NewRunPrefill {
     const board = firstBoard(f);
     const prototype = f.canvas && board ? join(canvasProjectDir(canvasDir(a.cwd, f.canvas)), board) : undefined;
     const goal = f.spec ? `Build ${f.title} as specified in ${absoluteSpec(f.spec, a.cwd)}.` : `Build ${f.title}.`;
-    return { projectName: a.projectName, shape: "orchestrator", goal, ...(prototype != null ? { prototype } : {}) };
+    return { projectName: a.projectName, shape: suggestedShape(f), goal, ...(prototype != null ? { prototype } : {}) };
 }
 
-export function runLine(projectName: string): string {
-    return `${projectName} · orchestrator · this design attached`;
+export function runTitle(shape: RunShape): string {
+    return shape === "quick" ? "Approve and start a quick run" : "Approve and start an orchestrator run";
+}
+
+export function runLine(projectName: string, shape: RunShape = "orchestrator"): string {
+    return shape === "quick"
+        ? `${projectName} · quick run · one worker, no plan`
+        : `${projectName} · orchestrator · this design attached`;
 }
 
 // made in the frontend and fed only to the taskbar flash; the server has no such item
