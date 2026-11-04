@@ -29,6 +29,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   in the background → its row shows a `3 running` chip and no task rows under it; click it → the rows list, click
   again → they fold. With one or two running, the rows show and no chip appears. No dev app was up; unit tests and the
   typecheck only (`tasksShown` in `agenttreemodel.ts`, `agenttree.tsx`, 701fef533).
+- [ ] (arcterm) A council stopped after its summary reads Done: in the Agent tree, the HarnessX council in mit-thesis
+  (stopped, has a summary) reads `Done`, not `Stopped`, and its Discussion header chip reads `Done`; ask it a follow-up →
+  once answered it still reads `Done`. A council stopped mid-round (no summary) still reads `Stopped`. No dev app was
+  up; unit tests and the typecheck only (`shownState` in `councilmodel.ts`).
 - [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
   that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
   Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
