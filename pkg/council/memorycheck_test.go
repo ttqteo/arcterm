@@ -131,7 +131,7 @@ func TestPresetCheckCallErrorsKeepTheTokens(t *testing.T) {
 
 func TestRoundCheckParseNoChange(t *testing.T) {
 	for _, reply := range []string{`{"change": false}`, "```json\n{\"change\": false, \"reason\": \"nothing moved\"}\n```", `{"change":false,"direction":"ignored","messages":["r1"]}`} {
-		got, err := parseRoundCheck(reply, []string{"r1"})
+		got, err := parseRoundCheck(reply, []string{"r1"}, nil)
 		if err != nil {
 			t.Errorf("%q: %v", reply, err)
 			continue
@@ -144,7 +144,7 @@ func TestRoundCheckParseNoChange(t *testing.T) {
 
 func TestRoundCheckParseSuggestion(t *testing.T) {
 	reply := "```json\n" + `{"change":true,"direction":"  Poll less and show the sleep badge  ","reason":" Three seats now back it. ","messages":["r1","P2"]}` + "\n```"
-	got, err := parseRoundCheck(reply, []string{"r1", "r2", "P1", "P2"})
+	got, err := parseRoundCheck(reply, []string{"r1", "r2", "P1", "P2"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestRoundCheckParseSuggestion(t *testing.T) {
 
 func TestRoundCheckParseDropsIdsItDidNotSee(t *testing.T) {
 	reply := `{"change":true,"direction":"Poll less","reason":"r","messages":["r9","r1","r1"," r2 ","P7","", "R1"]}`
-	got, err := parseRoundCheck(reply, []string{"r1", "r2"})
+	got, err := parseRoundCheck(reply, []string{"r1", "r2"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRoundCheckParseDropsIdsItDidNotSee(t *testing.T) {
 }
 
 func TestRoundCheckParseASuggestionWithoutChangeFlag(t *testing.T) {
-	got, err := parseRoundCheck(`{"direction":"Poll less","reason":"r","messages":["r1"]}`, []string{"r1"})
+	got, err := parseRoundCheck(`{"direction":"Poll less","reason":"r","messages":["r1"]}`, []string{"r1"}, nil)
 	if err != nil || !got.Change || got.Text != "Poll less" {
 		t.Errorf("got %+v err %v, want a suggestion: a direction with no change flag is one", got, err)
 	}
@@ -181,7 +181,7 @@ func TestRoundCheckParseRefusesMalformedOutput(t *testing.T) {
 		"neither a change nor none":       `{"reason":"r"}`,
 		"messages of the wrong shape":     `{"change":true,"direction":"x","messages":"r1"}`,
 	} {
-		if got, err := parseRoundCheck(reply, []string{"r1"}); err == nil {
+		if got, err := parseRoundCheck(reply, []string{"r1"}, nil); err == nil {
 			t.Errorf("%s: want an error, got %+v", name, got)
 		}
 	}
@@ -416,5 +416,209 @@ func TestAllGreenListsEveryGreenIdeaInArrivalOrder(t *testing.T) {
 	}
 	if strings.Join(from, ",") != "P1,P2" {
 		t.Errorf("green ideas = %v, want P1 then P2: the order the ideas arrived in", from)
+	}
+}
+
+// ---- the memory entries in the checks ----
+
+// checkedCouncil is a done council with a direction and four entries: m1 an automatic Open, m2 the person's Agreed, m3 the
+// person's Ruled out, m4 the person's Open.
+func checkedCouncil() *Council {
+	c := fixtureCouncil("c1", StateDone, 2)
+	m := MemoryOf(c)
+	m.Choose(CouncilMemoryDirection{Text: "Poll less", How: DirectionPin}, "", 10)
+	m.AddEntry(entry(EntryOpen, "Who owns the poll interval?", EntryByAuto), 11)
+	m.AddEntry(entry(EntryAgreed, "Keep the sleep badge", EntryByYou), 12)
+	ruled := entry(EntryRuledOut, "Polling every second", EntryByYou)
+	ruled.Why = "It wakes the laptop"
+	m.AddEntry(ruled, 13)
+	m.AddEntry(entry(EntryOpen, "Which badge colour?", EntryByYou), 14)
+	return c
+}
+
+func TestRoundCheckPromptShowsMemory(t *testing.T) {
+	before := fixtureCouncil("c1", StateDone, 2)
+	c := checkedCouncil()
+	c.Replies = append(c.Replies, checkReply("r3", "P2", "newuser", StanceAccept, 4))
+	p := roundCheckPrompt(c, readRound(c, before))
+	mustContain(t, "round-check prompt", p,
+		"## The council's memory", "Poll less",
+		"- [m1] Who owns the poll interval?",
+		"- [m2] Keep the sleep badge (the person's)",
+		"- [m3] Polling every second (why: It wakes the laptop) (the person's)",
+		"- [m4] Which badge colour?\n", // an Open of the person's is not marked: the check may drop it
+		`"entries"`, `"op"`, `"drop"`, `"ruledout"`,
+	)
+	mustNotContain(t, "round-check prompt", p, "[m1] Who owns the poll interval? (the person's)", "<nil>", "%!")
+}
+
+func TestPresetPromptShowsMemory(t *testing.T) {
+	c := checkedCouncil()
+	p := presetPrompt(c, "Ship the sleep badge first")
+	mustContain(t, "pre-set prompt", p,
+		"## The council's memory", "Poll less",
+		"- [m1] Who owns the poll interval?", "- [m2] Keep the sleep badge",
+		"- [m3] Polling every second (why: It wakes the laptop)",
+		"Ship the sleep badge first",
+	)
+	mustNotContain(t, "pre-set prompt", p, "<nil>", "%!")
+}
+
+func TestParseRoundCheckEntriesWithNoChange(t *testing.T) {
+	got, err := parseRoundCheck(`{"change": false, "entries": [{"op":"add","kind":"agreed","text":"T","messages":["r1","r9"]}]}`, []string{"r1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Change || got.Text != "" {
+		t.Errorf("got %+v, want no direction change", got)
+	}
+	if len(got.Entries) != 1 || got.Entries[0].Op != "add" || got.Entries[0].Kind != EntryAgreed || got.Entries[0].Text != "T" {
+		t.Fatalf("entries = %+v, want the one add", got.Entries)
+	}
+	if strings.Join(got.Entries[0].Messages, ",") != "r1" {
+		t.Errorf("messages = %v, want only r1: r9 was never shown", got.Entries[0].Messages)
+	}
+}
+
+func TestParseRoundCheckEntriesWithoutDirection(t *testing.T) {
+	add := `{"op":"add","kind":"open","text":"Who owns it?"}`
+	for name, reply := range map[string]string{
+		"entries alone":               `{"entries": [` + add + `]}`,
+		"a change with no direction":  `{"change": true, "entries": [` + add + `]}`,
+		"a change with a blank one":   `{"change": true, "direction": "  ", "entries": [` + add + `]}`,
+		"a direction and the entries": `{"change": true, "direction": "Poll less", "entries": [` + add + `]}`,
+	} {
+		got, err := parseRoundCheck(reply, nil, nil)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if len(got.Entries) != 1 {
+			t.Errorf("%s: entries = %+v, want the add kept", name, got.Entries)
+		}
+		if wantChange := name == "a direction and the entries"; got.Change != wantChange {
+			t.Errorf("%s: change = %v, want %v", name, got.Change, wantChange)
+		}
+	}
+	if got, err := parseRoundCheck(`{"change": true}`, nil, nil); err == nil {
+		t.Errorf("a change with neither a direction nor entries: want an error, got %+v", got)
+	}
+	if got, err := parseRoundCheck(`{"change": true, "entries": []}`, nil, nil); err == nil {
+		t.Errorf("a change with an empty entries list and no direction: want an error, got %+v", got)
+	}
+}
+
+func TestParseRoundCheckEntriesFiltered(t *testing.T) {
+	long := strings.Repeat("x", memoryDirMax+50)
+	reply := `{"change": false, "entries": [
+		{"op":"add","kind":"bogus","text":"unknown kind"},
+		{"op":"add","kind":"agreed","text":"   "},
+		{"op":"drop","entry":"m9"},
+		{"op":"drop","entry":""},
+		{"op":"swap","kind":"agreed","text":"unknown op"},
+		{"op":"add","kind":"ruledout","text":"` + long + `","why":"` + long + `"},
+		{"op":"drop","entry":"m1"},
+		{"op":"add","kind":"open","text":"fourth"},
+		{"op":"add","kind":"open","text":"fifth"}
+	]}`
+	got, err := parseRoundCheck(reply, nil, []string{"m1", "m2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Entries) != 3 {
+		t.Fatalf("entries = %+v, want 3: the bad ones dropped, then cut at three", got.Entries)
+	}
+	if e := got.Entries[0]; e.Op != "add" || e.Kind != EntryRuledOut || len([]rune(e.Text)) > memoryDirMax || len([]rune(e.Why)) > memoryReasonMax {
+		t.Errorf("first = %+v, want the ruled-out add with its text cut at %d and its why at %d", e, memoryDirMax, memoryReasonMax)
+	}
+	if e := got.Entries[1]; e.Op != "drop" || e.Entry != "m1" {
+		t.Errorf("second = %+v, want the drop of m1", e)
+	}
+	if e := got.Entries[2]; e.Text != "fourth" {
+		t.Errorf("third = %+v, want the add 'fourth'", e)
+	}
+}
+
+// roundCheckRig saves checkedCouncil with one reply r3 the pass added, and returns the harness and the council as the pass
+// found it.
+func roundCheckRig(t *testing.T, reply string) (h *harness, before *Council) {
+	t.Helper()
+	h = newHarness(t)
+	before = checkedCouncil()
+	c := checkedCouncil()
+	c.Replies = append(c.Replies, checkReply("r3", "P2", "newuser", StanceAccept, 4))
+	h.save(c)
+	h.f.setText("check/roundcheck", reply)
+	return h, before
+}
+
+func TestCheckMemoryAppliesEntries(t *testing.T) {
+	h, before := roundCheckRig(t, `{"change": false, "entries": [
+		{"op":"add","kind":"agreed","text":"Poll only when a seat is idle","messages":["r3","r9","P2"]},
+		{"op":"drop","entry":"m1"},
+		{"op":"add","kind":"agreed","text":"  keep the SLEEP badge "}
+	]}`)
+	h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+	got := h.load("c1").Memory
+	var texts []string
+	for _, e := range got.Entries {
+		texts = append(texts, e.Id+" "+e.Text)
+	}
+	if want := "m2 Keep the sleep badge,m3 Polling every second,m4 Which badge colour?,m5 Poll only when a seat is idle"; strings.Join(texts, ",") != want {
+		t.Fatalf("entries = %v, want m1 dropped, the duplicate skipped silently and m5 added", texts)
+	}
+	e := got.Entries[3]
+	if e.Kind != EntryAgreed || e.By != EntryByAuto || e.Round != 3 || strings.Join(e.Messages, ",") != "r3,P2" {
+		t.Errorf("added = %+v, want an auto Agreed from round 3 resting on r3 and P2 only: r9 was never shown", e)
+	}
+	if slices.Contains(got.Removed, "open:who owns the poll interval?") {
+		t.Errorf("removed = %v, want none: the check's drop leaves no key", got.Removed)
+	}
+	if got.Chosen == nil || got.Chosen.Text != "Poll less" || got.Suggestion != nil {
+		t.Errorf("chosen = %+v suggestion = %+v, want the direction untouched and no suggestion", got.Chosen, got.Suggestion)
+	}
+}
+
+func TestCheckMemoryAppliesEntriesBesideADirectionSuggestion(t *testing.T) {
+	h, before := roundCheckRig(t, `{"change": true, "direction": "Poll less and idle-only", "reason": "Agreed.", "messages": ["r3"],
+		"entries": [{"op":"add","kind":"open","text":"What counts as idle?"}]}`)
+	h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+	got := h.load("c1").Memory
+	if s := got.Suggestion; s == nil || s.Text != "Poll less and idle-only" {
+		t.Errorf("suggestion = %+v, want the direction suggestion", s)
+	}
+	if n := len(got.Entries); n != 5 || got.Entries[4].Text != "What counts as idle?" {
+		t.Errorf("entries = %+v, want the add beside the suggestion", got.Entries)
+	}
+}
+
+func TestCheckMemoryDropRefusedForYours(t *testing.T) {
+	h, before := roundCheckRig(t, `{"entries": [{"op":"drop","entry":"m2"},{"op":"drop","entry":"m3"},{"op":"drop","entry":"m4"}]}`)
+	h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+	got := h.load("c1").Memory
+	var ids []string
+	for _, e := range got.Entries {
+		ids = append(ids, e.Id)
+	}
+	if strings.Join(ids, ",") != "m1,m2,m3" {
+		t.Errorf("entries = %v, want m2 (the person's Agreed) and m3 (their Ruled out) kept and m4 (their Open) dropped", ids)
+	}
+}
+
+func TestCheckMemoryDoesNotAddBackWhatThePersonRemoved(t *testing.T) {
+	h := newHarness(t)
+	before := checkedCouncil()
+	c := checkedCouncil()
+	if err := MemoryOf(c).RemoveEntry("m1"); err != nil {
+		t.Fatal(err)
+	}
+	c.Replies = append(c.Replies, checkReply("r3", "P2", "newuser", StanceAccept, 4))
+	h.save(c)
+	h.f.setText("check/roundcheck", `{"entries": [{"op":"add","kind":"open","text":"  WHO owns the   poll interval? "}]}`)
+	h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+	for _, e := range h.load("c1").Memory.Entries {
+		if e.Id == "m5" {
+			t.Errorf("entries hold %+v, want the removed entry refused by its folded key", e)
+		}
 	}
 }

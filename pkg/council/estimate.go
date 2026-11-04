@@ -21,7 +21,7 @@ const (
 	followupTokens       = 20_000  // one expert answering a reply from text
 	followupToolsTokens  = 110_000 // the same, with Read, Grep and Glob on: three sonnet answers took 80k–147k on 2026-11-01
 	routerTokens         = 15_000  // one router call: a sonnet call with no tools. A first guess: re-measure once real routed messages run
-	roundCheckTokens     = 15_000  // one round check: a haiku call with no tools that reads a round's messages, priced like the router. A first guess too
+	roundCheckTokens     = 18_000  // one round check: a haiku call with no tools that reads a round's messages and the memory's entries, priced like the router plus the memory. A first guess too
 	round1Minutes        = 3
 	replyPassMinutes     = 2 // round 2, and again for a third round
 	synthesisMinutes     = 1
