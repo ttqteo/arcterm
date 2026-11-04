@@ -442,6 +442,46 @@ func TestApplySeedsShippedSkillsOnlyWhenNotDryRun(t *testing.T) {
 	}
 }
 
+// a skill arcterm stopped shipping (ideas, whose `wsh idea` is gone) leaves the vault on the next seed, and the copy the
+// reconcile had projected into the harness as if it were the user's goes with it; a skill of the user's stays
+func TestApplyRetiresARemovedShippedSkillFromTheVaultAndTheHarness(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude")
+	seedSkill(t, p, "ideas")
+	seedSkill(t, p, "mine")
+	if _, err := Apply(p, false); err != nil { // no shipped FS yet: ideas reads as the user's and is projected
+		t.Fatal(err)
+	}
+	claudeIdeas := filepath.Join(p.Home, ".claude", "skills", "ideas", skillFile)
+	if _, err := os.Stat(claudeIdeas); err != nil {
+		t.Fatalf("setup: ideas was not projected: %v", err)
+	}
+	p.Shipped = shippedFS()
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.SkillsRoot, "ideas")); !os.IsNotExist(err) {
+		t.Errorf("ideas is still in the vault: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(claudeIdeas)); !os.IsNotExist(err) {
+		t.Errorf("ideas is still in ~/.claude/skills: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Home, ".claude", "skills", "mine", skillFile)); err != nil {
+		t.Errorf("the user's own skill was removed: %v", err)
+	}
+}
+
+// a removed name arcterm ships again is seeded, not retired
+func TestSeedKeepsARemovedNameThatShipsAgain(t *testing.T) {
+	root := t.TempDir()
+	shipped := fstest.MapFS{"ideas/SKILL.md": {Data: []byte("---\nname: ideas\n---\nback\n")}}
+	if err := seedShippedSkills(root, shipped); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(root, "ideas", skillFile)); got != "---\nname: ideas\n---\nback\n" {
+		t.Errorf("ideas SKILL.md = %q", got)
+	}
+}
+
 // the final stage's dev app keeps a vault of its own, which lacks the user's skills: projecting it would remove them
 // from the user's ~/.claude, so it seeds its vault and only reports what it would do to the harnesses
 func TestApplyWithKeepHarnessesSeedsTheVaultAndWritesNoHarness(t *testing.T) {

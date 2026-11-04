@@ -347,6 +347,29 @@ func retireRenamedSkill(skillsRoot, oldName, newName string) error {
 	return nil
 }
 
+// removedShipped are the skills arcterm once shipped and ships no longer, with no successor: their command is gone
+// (`ideas` documented `wsh idea`, removed 2026-10-27 in favour of Brainstorm mode). Without this list the vault copy
+// outlives the removal, reads as one of the user's own skills, and is projected into every harness, Claude's included,
+// where it tells the agent to run a command that answers `unknown command`. A seed deletes the vault copy, delta and all
+// (a delta has nothing left to apply to); the reconcile then removes the harness copies arcterm wrote.
+var removedShipped = []string{"ideas"}
+
+// retireRemovedSkill deletes the vault copy of a skill arcterm no longer ships, unless arcterm ships one of that name
+// again.
+func retireRemovedSkill(skillsRoot, name string, shipped fs.FS) error {
+	if st, err := fs.Stat(shipped, name); err == nil && st.IsDir() {
+		return nil
+	}
+	dir := filepath.Join(skillsRoot, name)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("removing retired shipped skill %s: %w", name, err)
+	}
+	return nil
+}
+
 // seedShippedSkills makes each shipped skill in the vault match what arcterm ships, so the reconcile
 // that follows projects the shipped copy. The .arc delta directory is the user's and survives, a rename included.
 func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
@@ -362,6 +385,11 @@ func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
 			continue
 		}
 		if err := retireRenamedSkill(skillsRoot, oldName, newName); err != nil {
+			return err
+		}
+	}
+	for _, name := range removedShipped {
+		if err := retireRemovedSkill(skillsRoot, name, shipped); err != nil {
 			return err
 		}
 	}
