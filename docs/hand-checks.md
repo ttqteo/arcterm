@@ -1777,3 +1777,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Cut council idea.** In a council with a pause, untick an idea and continue → in the Discussion that
   idea has a grey outlined `Cut` pill (hover: "You left it out at the pause…") and a dim bubble; its thread's title is
   struck through. Unit tests and the typecheck only (`councilchat.tsx` `OutPill`); no dev app was up.
+- [ ] (arcterm) **History tree line.** Cockpit → a project's Overview → History, on a session that started a council
+  and a run → a 2px grey line drops from under the session through its child rows: ├ into each child but the last, a
+  rounded └ into the last, the turn meeting the child's title line; unfold a council that is not the last child → the
+  line runs on through its peek to the next child; a top-level council or run has no line. Unit tests and the typecheck
+  only (`TreeLine` in `projecthistory.tsx`, `isLastChild`, 3fcd9c943); no dev app was up.
