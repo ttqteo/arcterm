@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In a council's Discussion, every idea and reply a seat has sent now has **Copy** (its markdown, a table or list as the seat wrote it) and **Pin to Report** beside the thumbs when you point at it. The pinned message shows as the Report's **Final proposal** at its end, with Open in Discussion, Copy and Unpin, and it closes the saved document; a council with no summary shows it too.
 - **Close project…** in a project folder's right-click menu in the Agent tree closes every agent and terminal in it at once, after a confirm that says how many and how many are still working. Their conversations stay in Conversations, and the folder's councils and services stay.
 - **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
 - In a council, a seat that cites part of a screenshot or a pasted image now marks it with a box, and the boxed part shows as an image with a red rectangle under the idea or reply, in the channel and the thread panel. A click opens the whole screenshot in Sources with the same box on it, and the council's saved document embeds the images. A box that does not fit the image is a Wrong cite, and in a checked claim a screenshot cited with no box counts as no evidence. <!-- big -->
