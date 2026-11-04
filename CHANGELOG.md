@@ -22,11 +22,12 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.0.0 — 2026-11-04
 
 ### Added
 
-- **A council has a Memory tab, and a Chốt button to fill it**: the direction the seats read before the Report. Chốt an idea or a seat's message (the button beside like and dislike, or `p` on the idea under the cursor), or write the direction yourself; it is checked against what the seats agreed first, and one that clashes waits on the tab for you to Edit, Set anyway or Discard. After a round the check may suggest a new direction, with Show the messages it rests on. The tab keeps the chosen direction and what it replaced, and a change of direction marks the Report Outdated.
+- **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette --> <!-- big -->
+- **A council has a Memory tab, and a Chốt button to fill it**: the direction the seats read before the Report. Chốt an idea or a seat's message (the button beside like and dislike, or `p` on the idea under the cursor), or write the direction yourself; it is checked against what the seats agreed first, and one that clashes waits on the tab for you to Edit, Set anyway or Discard. After a round the check may suggest a new direction, with Show the messages it rests on. The tab keeps the chosen direction and what it replaced, and a change of direction marks the Report Outdated. <!-- big -->
 - **A council's Ideas tab groups the ideas by where the seats stand**: Waiting on you, Agreed, Has doubts, Someone against it, No stance yet and Withdrawn, each under a header with its colour and a count, in the order they arrived. An idea moves group as a seat changes its stance; a withdrawn one says which round it left in, and one you cut says `cut by you`.
 - **Close project…** in a project folder's right-click menu in the Agent tree closes every agent and terminal in it at once, after a confirm that says how many and how many are still working. Their conversations stay in Conversations, and the folder's councils and services stay.
 - **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
@@ -45,7 +46,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council message with a web link (`https://…`) now lets the experts open that page with WebFetch, where they said they could not open it and read the repo instead; the link locks Let them read files on and names the site. A link in the council's question does the same for round 1.
 - In a council's Discussion, the idea whose replies are open on the right wears a bright ring, where only its tint deepened and it barely stood out from its neighbours.
 - In a council, an idea its author withdrew wears a Withdrawn badge and is drawn dim, its title struck in its thread, and the author's reply reads "withdrew it" with the reason it gave, where the thread only showed a bare "Withdrawn." reply.
-- A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed
 
@@ -62,12 +62,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.
 - A run graph's task and Final verification details read in the app's own font: the worker, review, tokens, activity times and the Open in Agent button were drawn in the code font.
 - More labels read in the app's own font instead of the code font: the brainstorm pane (question numbers, the check clock, topic and file names), the background task peek's title, state and tabs, Setup → Memory's line counts and file names, the @ file picker, the roles in the Claude account restart list, and the Brief's plan path, "just now" and field labels.
-
-## 1.0.0 — 2026-11-03
-
-### Added
-
-- **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette --> <!-- big -->
 
 ## 0.15.21 — 2026-11-03
 
