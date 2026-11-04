@@ -2674,6 +2674,9 @@ declare global {
         held?: CouncilMemoryCard;
         dismissed?: string[];
         changed?: number;
+        entries?: CouncilMemoryEntry[];
+        removed?: string[];
+        nextentry?: number;
     };
 
     // council.CouncilMemoryCard
@@ -2687,6 +2690,7 @@ declare global {
         from?: string;
         messages?: string[];
         edited?: boolean;
+        entry?: string;
         at: number;
     };
 
@@ -2700,6 +2704,18 @@ declare global {
         at: number;
         replaced?: number;
         ended?: string;
+    };
+
+    // council.CouncilMemoryEntry
+    type CouncilMemoryEntry = {
+        id: string;
+        kind: string;
+        text: string;
+        why?: string;
+        by: string;
+        round?: number;
+        messages?: string[];
+        at: number;
     };
 
     // council.CouncilProposal

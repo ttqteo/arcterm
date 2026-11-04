@@ -358,6 +358,31 @@ const (
 	SourceGreen = "green" // or all green: the seats agreed on an idea
 )
 
+// The memory's entries: what the discussion has reached besides the direction. By says who wrote one: the round check
+// (auto) or the person (you).
+const (
+	EntryAgreed   = "agreed"   // settled as true
+	EntryRuledOut = "ruledout" // dropped
+	EntryOpen     = "open"     // still to settle
+
+	EntryByAuto = "auto"
+	EntryByYou  = "you"
+
+	MemoryEntriesMax = 40
+)
+
+// CouncilMemoryEntry is one thing the discussion has reached: Agreed, Ruled out or Open. Why is kept for Ruled out only.
+type CouncilMemoryEntry struct {
+	Id       string   `json:"id"`   // m1, m2…, numbered by CouncilMemory.NextEntry and never reused
+	Kind     string   `json:"kind"` // EntryAgreed / EntryRuledOut / EntryOpen
+	Text     string   `json:"text"`
+	Why      string   `json:"why,omitempty"`      // Ruled out only: the reason it was dropped
+	By       string   `json:"by"`                 // EntryByAuto / EntryByYou
+	Round    int      `json:"round,omitempty"`    // the round an automatic entry came after
+	Messages []string `json:"messages,omitempty"` // the message ids it rests on (Show the messages)
+	At       int64    `json:"at"`                 // when it was added, in ms
+}
+
 // CouncilMemoryDirection is one direction the person chose: the one in force (Chosen) or one it left (Replaced).
 type CouncilMemoryDirection struct {
 	Text     string `json:"text"`
@@ -382,6 +407,7 @@ type CouncilMemoryCard struct {
 	From     string   `json:"from,omitempty"`     // an idea id (all green) or the message it was pinned from
 	Messages []string `json:"messages,omitempty"` // a check suggestion: the message ids it rests on (Show the messages)
 	Edited   bool     `json:"edited,omitempty"`   // a held card that came from Edit: setting it ends the old one as EndEdited
+	Entry    string   `json:"entry,omitempty"`    // the memory entry (m3) a Chốt on it set this card from
 	At       int64    `json:"at"`                 // when it was raised, in ms
 }
 
@@ -394,6 +420,9 @@ type CouncilMemory struct {
 	Held       *CouncilMemoryCard       `json:"held,omitempty"`       // a second slot: a suggestion never drops it
 	Dismissed  []string                 `json:"dismissed,omitempty"`  // suggestion keys never raised again
 	Changed    int64                    `json:"changed,omitempty"`    // when Chosen last changed (set, edit, unpin): the Report's Outdated cause
+	Entries    []CouncilMemoryEntry     `json:"entries,omitempty"`    // arrival order
+	Removed    []string                 `json:"removed,omitempty"`    // keys (EntryKey) of automatic entries the person removed: never added again
+	NextEntry  int                      `json:"nextentry,omitempty"`  // the number the last entry took; ids are never reused
 }
 
 // CouncilAsk is a question the coordinator suggests the person ask the panel next: Text as the person would type it, in
