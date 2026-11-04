@@ -27,6 +27,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
+- In the New agent dialog, Flag, Worktree and Command are small icons beside the Task box, so its hint shows in full; Worktree lights up when on, and the flags you turned on sit as chips under the text.
 
 ### Fixed
 

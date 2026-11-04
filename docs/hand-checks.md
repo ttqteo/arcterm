@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **New agent's Task row icons.** New agent → a Claude row in a git project → the Task hint shows whole,
+  and on its right sit three icons: a flag, a git branch and a terminal with ›. The branch icon lights clay when
+  clicked on and the branch row opens under the box; a flag turned on in the flag menu puts a count on the flag icon
+  and a chip under the text, and the chip's × takes it off; the terminal icon opens and folds the command strip. The
+  CDP scenario `launcher` was updated but could not run: a fresh dev store's wavesrv exits on "error creating
+  starter workspace … transaction has already been committed or rolled back" (`launcheragentfields.tsx`).
 - [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
   a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
   never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`
