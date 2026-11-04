@@ -15,7 +15,8 @@ const matrixReasonRunes = 120 // a matrix cell keeps one line of the reason, cut
 // Markdown is the report as a document, what `wsh council wait` and `show` print: the feature, the question and its
 // one-sentence answer, the coordinator's paragraph, the directions in rank order (a Brainstorm's ideas worth trying),
 // each with its first step and each expert's stance, then one line each for a Brainstorm's wild ideas kept aside or a
-// Review's directions also raised, the questions to ask next, then proposals × experts. Document adds the whole discussion and the run facts to it.
+// Review's directions also raised, the questions to ask next, then proposals × experts, and last the message the person
+// pinned as the Final proposal, while one is pinned. Document adds the whole discussion and the run facts to it.
 func Markdown(c *Council) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Council: %s\n\n", c.Feature)
@@ -64,7 +65,61 @@ func Markdown(c *Council) string {
 		b.WriteString("\n## Matrix\n\n")
 		writeMatrix(&b, c)
 	}
+	writeFinalProposal(&b, c)
 	return b.String()
+}
+
+// writeFinalProposal ends the report with the message the person pinned (Council.FinalPick): the seat that wrote it,
+// then its markdown. It writes nothing while nothing is pinned, or the pin names a message the council lacks.
+func writeFinalProposal(b *strings.Builder, c *Council) {
+	body, ok := MessageMarkdown(c, c.FinalPick)
+	if !ok {
+		return
+	}
+	fmt.Fprintf(b, "\n## Final proposal\n\n_From %s_\n\n%s\n", messageSeatName(c, c.FinalPick), body)
+}
+
+// messageSeatName is the display name of the seat that wrote an idea or a reply.
+func messageSeatName(c *Council, id string) string {
+	author := ""
+	if p := findProposal(c, id); p != nil {
+		author = p.Author
+	} else if r := findReply(c, id); r != nil {
+		author = r.Author
+	}
+	if e, ok := seatOf(c, author); ok && e.Name != "" {
+		return e.Name
+	}
+	return speaker(c, author)
+}
+
+// MessageMarkdown is one idea's or reply's markdown, the text the chat's Copy puts on the clipboard and the Final
+// proposal section holds: a reply is its words, trimmed; an idea is its title as a heading, its argument, and when it
+// has evidence one list line per item (evidenceItemText). A Review idea's checks and an item's quote, cite and region are
+// left out. frontend/app/view/agents/councilfinalmodel.ts writes the same text (messageMarkdown). The bool is false for
+// an id the council lacks.
+func MessageMarkdown(c *Council, id string) (string, bool) {
+	if id == "" {
+		return "", false
+	}
+	if p := findProposal(c, id); p != nil {
+		parts := []string{"## " + p.Title}
+		if arg := strings.TrimSpace(p.Argument); arg != "" {
+			parts = append(parts, arg)
+		}
+		if len(p.Evidence) > 0 {
+			lines := make([]string, len(p.Evidence))
+			for i, e := range p.Evidence {
+				lines[i] = "- " + evidenceItemText(e)
+			}
+			parts = append(parts, strings.Join(lines, "\n"))
+		}
+		return strings.Join(parts, "\n\n"), true
+	}
+	if r := findReply(c, id); r != nil {
+		return strings.TrimSpace(r.Text), true
+	}
+	return "", false
 }
 
 // askedOf is who a question to ask next goes to: the seat's name, or the whole panel.

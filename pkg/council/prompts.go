@@ -486,6 +486,22 @@ func coordinatorExpert(c *Council) (CouncilExpert, bool) {
 	return CouncilExpert{}, false
 }
 
+// evidenceItemText is one evidence item as text: its ref, or for a weak item the ref and why it is weak. The prompts and
+// the document join them on one line (evidenceText); the Final proposal's markdown lists one per line.
+func evidenceItemText(e CouncilEvidence) string {
+	switch {
+	case !e.Weak:
+		return e.Ref
+	case e.Ref != "" && e.Note != "":
+		return fmt.Sprintf("%s (weak: %s)", e.Ref, e.Note)
+	case e.Ref != "":
+		return e.Ref + " (weak)"
+	case e.Note != "":
+		return "weak: " + e.Note
+	}
+	return "weak"
+}
+
 // evidenceText lists evidence on one line; a weak item says so and why.
 func evidenceText(ev []CouncilEvidence) string {
 	if len(ev) == 0 {
@@ -493,18 +509,7 @@ func evidenceText(ev []CouncilEvidence) string {
 	}
 	parts := make([]string, 0, len(ev))
 	for _, e := range ev {
-		switch {
-		case !e.Weak:
-			parts = append(parts, e.Ref)
-		case e.Ref != "" && e.Note != "":
-			parts = append(parts, fmt.Sprintf("%s (weak: %s)", e.Ref, e.Note))
-		case e.Ref != "":
-			parts = append(parts, e.Ref+" (weak)")
-		case e.Note != "":
-			parts = append(parts, "weak: "+e.Note)
-		default:
-			parts = append(parts, "weak")
-		}
+		parts = append(parts, evidenceItemText(e))
 	}
 	return strings.Join(parts, "; ")
 }
