@@ -4,6 +4,8 @@
 package devservers
 
 import (
+	"context"
+	"os"
 	"reflect"
 	"testing"
 )
@@ -230,6 +232,33 @@ func TestSelectGivesADetachedChainItsHighestLiveAncestor(t *testing.T) {
 	}
 	if got[1].LauncherCmdline != "" {
 		t.Fatalf("an app's row has no launcher: %+v", got[1])
+	}
+}
+
+func TestCheckNotProtectedRefusesATreeHoldingTheBackend(t *testing.T) {
+	protected := map[int32]bool{100: true, 50: true} // wavesrv 100, its parent 50
+	if err := CheckNotProtected([]int32{300, 301, 302}, protected); err != nil {
+		t.Fatalf("a server tree apart from the backend: %v", err)
+	}
+	for name, tree := range map[string][]int32{
+		"the backend itself":                  {100},
+		"an ancestor of the backend":          {50, 100, 120},
+		"a tree whose descendant is the host": {10, 50, 100},
+	} {
+		err := CheckNotProtected(tree, protected)
+		if err == nil {
+			t.Fatalf("%s: want a refusal", name)
+		}
+		if want := "refusing to stop arcterm's own backend or a process that started it"; err.Error() != want {
+			t.Fatalf("%s: error = %q, want %q", name, err.Error(), want)
+		}
+	}
+}
+
+func TestProtectedPidsHoldThisProcessAndItsParent(t *testing.T) {
+	p := protectedPids(context.Background())
+	if !p[int32(os.Getpid())] || !p[int32(os.Getppid())] {
+		t.Fatalf("protected = %v, want this process %d and its parent %d", p, os.Getpid(), os.Getppid())
 	}
 }
 

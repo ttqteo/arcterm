@@ -6,6 +6,7 @@ package devservers
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/shirou/gopsutil/v4/net"
 	"github.com/shirou/gopsutil/v4/process"
@@ -156,10 +157,37 @@ func Stop(ctx context.Context, pid int32, createMs int64) error {
 		return err
 	}
 	tree := processTree(ctx, root)
+	pids := make([]int32, len(tree))
+	for i, p := range tree {
+		pids[i] = p.Pid
+	}
+	if err := CheckNotProtected(pids, protectedPids(ctx)); err != nil {
+		return err
+	}
 	for i := len(tree) - 1; i > 0; i-- {
 		_ = tree[i].KillWithContext(ctx)
 	}
 	return root.KillWithContext(ctx)
+}
+
+// protectedPids is this process (wavesrv) and every process above it, which a Stop must never kill: a listed PID
+// can name one of them, and a tree rooted above wavesrv holds wavesrv. The walk stops at a parent it cannot read,
+// at a loop a reused PID makes, and after 64 levels.
+func protectedPids(ctx context.Context) map[int32]bool {
+	self := int32(os.Getpid())
+	out := map[int32]bool{self: true, int32(os.Getppid()): true}
+	seen := map[int32]bool{self: true}
+	p, err := process.NewProcessWithContext(ctx, self)
+	for i := 0; err == nil && i < 64; i++ {
+		parent, perr := p.ParentWithContext(ctx)
+		if perr != nil || parent.Pid <= 0 || seen[parent.Pid] {
+			break
+		}
+		seen[parent.Pid] = true
+		out[parent.Pid] = true
+		p = parent
+	}
+	return out
 }
 
 // processTree is root and every descendant in breadth-first order, so the reverse is deepest first. gopsutil lists

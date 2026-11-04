@@ -158,6 +158,18 @@ func sortedUnique(ports []int) []int {
 	return out
 }
 
+// CheckNotProtected refuses a stop whose process tree holds a protected PID: wavesrv itself, or a process above it
+// (the Tauri host, the shell that launched it). A tree rooted above wavesrv holds wavesrv too, so a Stop of an
+// ancestor is refused the same way.
+func CheckNotProtected(tree []int32, protected map[int32]bool) error {
+	for _, pid := range tree {
+		if protected[pid] {
+			return errors.New("refusing to stop arcterm's own backend or a process that started it")
+		}
+	}
+	return nil
+}
+
 // CheckStop guards a stop against a reused PID: the process must still be the one that was listed.
 func CheckStop(listedCreateMs, actualCreateMs int64) error {
 	if listedCreateMs != actualCreateMs {
