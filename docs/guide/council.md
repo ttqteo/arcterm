@@ -69,7 +69,7 @@ Mã vai không đổi, nên council cũ vẫn mở bình thường.
 | `designer` | Designer | Thiết kế |
 | `builder` | Builder | Dev |
 | `contrarian` | Other side | Phản biện |
-| `facilitator` | Host | Dẫn dắt |
+| `facilitator` | Host | Điều phối |
 
 Ngoài các vai, council còn xếp được ghế cho các **chat đang sống** của bạn:
 
