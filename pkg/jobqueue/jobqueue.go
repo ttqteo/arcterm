@@ -563,6 +563,17 @@ func Hold(ctx context.Context, req Request) (release func(), err error) {
 	return slot.Release, nil
 }
 
+// Off reports whether the default queue starts every job at once: jobs:mode off, or a jobs:pauseuntil still ahead.
+// It is the person's "don't wait for memory", which the engine's worker gate obeys too. With no default queue it is
+// false.
+func Off() bool {
+	q := Default
+	if q == nil {
+		return false
+	}
+	return NormMode(q.cfg.Mode()) == ModeOff || !q.pausedUntil(q.cfg.Now()).IsZero()
+}
+
 // Poke has the default queue read its inputs again now: a changed jobs:slots or jobs:mode takes effect at once
 // rather than at the next release or Tick. With no default queue it does nothing.
 func Poke() {

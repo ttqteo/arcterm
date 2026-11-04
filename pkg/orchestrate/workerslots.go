@@ -20,7 +20,19 @@ const MaxLiveWorkers = MaxParallelism
 
 // workerPressure is the OS's memory pressure, read once per dispatch: the one reading the job queue gates each heavy
 // command by, so there is no second measure of the machine here. A var so tests can stand in for it.
-var workerPressure = jobqueue.ReadPressure
+var workerPressure = machinePressure
+
+// readPressure is the OS's reading behind machinePressure; a var so a test can stand in for it.
+var readPressure = jobqueue.ReadPressure
+
+// machinePressure is the OS's memory pressure, or no reading while the job queue is off (jobs:mode off, or paused):
+// the person switched the wait for memory off, and the worker gate must not keep waiting on its own.
+func machinePressure(ctx context.Context) jobqueue.Pressure {
+	if jobqueue.Off() {
+		return jobqueue.PressureUnknown
+	}
+	return readPressure(ctx)
+}
 
 // liveDags lists the dags whose workers count against the cap: every nonterminal one. A var so tests can
 // leave out the dags other tests left in the shared store.
@@ -85,17 +97,19 @@ func memoryShort(p jobqueue.Pressure) bool {
 
 // workerGrant is how many of want new workers a dag with mine in flight may start. While other dags wait, it
 // refills only to its fair share: the dag whose worker just finished ticks first and would otherwise take every
-// freed slot. While memory is short (memoryShort) no worker starts beside a live one, so the machine drains before
-// it takes on more. With nothing live anywhere one worker always starts, so a machine short of memory for reasons
-// outside Arc (on Windows, a commit charge past the RAM) slows runs down instead of stalling them with nothing to
-// say why.
+// freed slot. While memory is short (memoryShort) a run starts no worker beside one of its own, so the machine
+// drains before it takes on more; a run with none live still starts one, whatever other runs hold, so a machine
+// short of memory for reasons outside Arc (on Windows, a commit charge past the RAM, where a dev box often sits)
+// slows runs down instead of stalling them. Gating on other runs' workers starved a run for two hours on
+// 2026-11-04: the run beside it always had one live, and its own dispatch, ticking first when its worker finished,
+// took the freed slot each time.
 func workerGrant(want, mine int, l workerLoad, pressure jobqueue.Pressure) int {
 	room := MaxLiveWorkers - l.live - mine
 	if l.waiting > 0 {
 		room = min(room, max(1, MaxLiveWorkers/(l.waiting+1))-mine)
 	}
 	if memoryShort(pressure) {
-		if l.live+mine > 0 {
+		if mine > 0 {
 			return 0
 		}
 		room = min(room, 1)

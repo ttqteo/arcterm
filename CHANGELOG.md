@@ -44,6 +44,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run no longer waits for hours to start its next task while your computer is short of memory and another run is working: each run now keeps at least one worker going, and Jobs set to Off (or paused) stops runs waiting for memory too, as it already did for builds and tests.
 - Pausing the heavy-job queue now pauses it on this computer only, where the pause synced through the vault and let every heavy job on your other computers start at once too.
 - A canvas board whose page runs longer than its board size is now drawn whole, at its page's full height, where it showed a second scrollbar inside the board beside the canvas's own.
 - A council that was stopped after it wrote its summary reads Done in the Agent tree and its header, where it read Stopped, even right after it answered a follow-up you asked.
