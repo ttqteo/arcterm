@@ -781,6 +781,7 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 	var b strings.Builder
 	writeContext(&b, c, e, "one expert on")
 	writeFiles(&b, c)
+	writeRepeat(&b, c)
 	writeChosenDirection(&b, c)
 	if isBrainstorm(c) {
 		fmt.Fprintf(&b, "\nThis is round 1 of %d: ideas. You have Read, Grep and Glob in the project folder. "+

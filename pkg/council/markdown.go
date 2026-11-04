@@ -679,6 +679,13 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 	if c.Harness != "" {
 		fmt.Fprintf(b, "- Harness: %s\n", c.Harness)
 	}
+	if c.RepeatOf != "" {
+		why := "the council was upgraded since"
+		if c.RepeatWhy == RepeatNewEvidence {
+			why = "new evidence: " + oneLine(c.RepeatEvidence)
+		}
+		fmt.Fprintf(b, "- Repeats: %s, %s\n", c.RepeatOf, why)
+	}
 	for _, s := range c.Skips {
 		fmt.Fprintf(b, "- Skipped: %s in round %d: %s\n", docName(c, s.Expert), s.Round, oneLine(s.Reason))
 	}

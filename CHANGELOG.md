@@ -27,8 +27,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - A saved council report has a Cite check section after the Matrix: arcterm reads every `path:line` the report cites, the coordinator's own sentences included, with no model, and counts how many hold, how many point at a line that says nothing the sentence claims, and how many are wrong or outside the project, listing each with where it was cited. `wsh council cites <report.md>` runs the same check on a report you already have.
+- An agent that starts a council on the same topic as one that ended in the past week is stopped first: it shows you what that council said to do first and whether the council has been upgraded since, and runs again only with what is new (`--new-evidence`) or because you want the upgraded council's answer (`--rerun-upgraded`).
 
 ### Changed
+
+- A council ranks directions by how many experts picked them, counting an expert once across merged proposals, and its report says "3 experts, 1 model" rather than "5 picks": seats on one model are not independent votes. Run facts says when every seat ran on one model.
 
 - An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.
 - Once a council's experts start replying, its long round 1 ideas fold to their first lines (Show more opens one), and an idea whose thread has replies you have not read says `2 new replies` on its reply chip and its Ideas rail row; the rail can show only those ideas.

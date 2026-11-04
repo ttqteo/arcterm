@@ -131,6 +131,10 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 		Rounds:           data.Rounds,
 		SessionId:        data.SessionId,
 		ByAgent:          data.ByAgent,
+		RepeatOf:         data.RepeatOf,
+		RepeatDoc:        data.RepeatDoc,
+		RepeatWhy:        data.RepeatWhy,
+		RepeatEvidence:   data.RepeatEvidence,
 	}
 	if data.NotRun {
 		return councilRunner.Record(c)

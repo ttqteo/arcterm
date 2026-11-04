@@ -69,6 +69,11 @@ type CommandCouncilStartData struct {
 	Rounds      int                     `json:"rounds,omitempty"`
 	Agents      []string                `json:"agents,omitempty"`
 	ByAgent     bool                    `json:"byagent,omitempty"`
+	// the recent council on the same topic this start goes past, and why (Council.RepeatOf and the rest)
+	RepeatOf       string `json:"repeatof,omitempty"`
+	RepeatDoc      string `json:"repeatdoc,omitempty"`
+	RepeatWhy      string `json:"repeatwhy,omitempty"`
+	RepeatEvidence string `json:"repeatevidence,omitempty"`
 }
 
 // CommandCouncilListData lists the councils of one project, newest first; an empty project lists them all.

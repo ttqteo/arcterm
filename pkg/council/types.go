@@ -465,19 +465,23 @@ type Council struct {
 	Files            []string                     `json:"files,omitempty"`
 	Screenshots      []string                     `json:"screenshots,omitempty"`
 	Group            string                       `json:"group,omitempty"`
-	Mode             string                       `json:"mode,omitempty"`        // ModeReview or ModeBrainstorm; empty reads as review
-	ModeWhy          string                       `json:"modewhy,omitempty"`     // why the mode was picked: the suggestion's, the agent's --mode-why, or "picked by hand"
-	QueuedAfter      string                       `json:"queuedafter,omitempty"` // the id of the council this one waits on while queued
-	Harness          string                       `json:"harness,omitempty"`     // HarnessVersion when its run began; empty before it ran, and on a council saved before versions existed
-	Bench            bool                         `json:"bench,omitempty"`       // a council the benchmark started: no document in its project, and the cockpit never lists it
-	DocPath          string                       `json:"docpath,omitempty"`     // the absolute path of the saved document
-	Rating           string                       `json:"rating,omitempty"`      // RatingUseful or RatingNot: the person's latest answer to "Was this useful?"; empty until given
-	RatedAt          int64                        `json:"ratedat,omitempty"`     // when Rating was given, in ms
-	Pinned           int64                        `json:"pinned,omitempty"`      // when the person pinned it, in ms: the tree keeps it at the top of its project; 0 is not pinned. Only the person sets it: a run never touches it (a file's old "closed" is not read)
-	FinalPick        string                       `json:"finalpick,omitempty"`   // the id of the idea (P1) or seat reply (r3) the person pinned to the Report as its Final proposal; empty when none. Display only: no prompt reads it, and a re-summarize keeps it. Not Pinned, which pins the whole council in the tree
-	RanMs            int64                        `json:"ranms,omitempty"`       // how long its runs took altogether, in ms
-	RunStarted       int64                        `json:"runstarted,omitempty"`  // when its current run began, in ms; 0 while it rests
-	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last
+	Mode             string                       `json:"mode,omitempty"`           // ModeReview or ModeBrainstorm; empty reads as review
+	ModeWhy          string                       `json:"modewhy,omitempty"`        // why the mode was picked: the suggestion's, the agent's --mode-why, or "picked by hand"
+	QueuedAfter      string                       `json:"queuedafter,omitempty"`    // the id of the council this one waits on while queued
+	Harness          string                       `json:"harness,omitempty"`        // HarnessVersion when its run began; empty before it ran, and on a council saved before versions existed
+	RepeatOf         string                       `json:"repeatof,omitempty"`       // the recent council on the same topic this one was started over (repeat.go); empty when none resembled it
+	RepeatDoc        string                       `json:"repeatdoc,omitempty"`      // that council's report
+	RepeatWhy        string                       `json:"repeatwhy,omitempty"`      // RepeatNewEvidence or RepeatUpgraded: why it was run again
+	RepeatEvidence   string                       `json:"repeatevidence,omitempty"` // what is new since, in the person's words
+	Bench            bool                         `json:"bench,omitempty"`          // a council the benchmark started: no document in its project, and the cockpit never lists it
+	DocPath          string                       `json:"docpath,omitempty"`        // the absolute path of the saved document
+	Rating           string                       `json:"rating,omitempty"`         // RatingUseful or RatingNot: the person's latest answer to "Was this useful?"; empty until given
+	RatedAt          int64                        `json:"ratedat,omitempty"`        // when Rating was given, in ms
+	Pinned           int64                        `json:"pinned,omitempty"`         // when the person pinned it, in ms: the tree keeps it at the top of its project; 0 is not pinned. Only the person sets it: a run never touches it (a file's old "closed" is not read)
+	FinalPick        string                       `json:"finalpick,omitempty"`      // the id of the idea (P1) or seat reply (r3) the person pinned to the Report as its Final proposal; empty when none. Display only: no prompt reads it, and a re-summarize keeps it. Not Pinned, which pins the whole council in the tree
+	RanMs            int64                        `json:"ranms,omitempty"`          // how long its runs took altogether, in ms
+	RunStarted       int64                        `json:"runstarted,omitempty"`     // when its current run began, in ms; 0 while it rests
+	Experts          []CouncilExpert              `json:"experts"`                  // the coordinator last
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`
 	Rounds           int                          `json:"rounds,omitempty"`    // 1 to 3 seat rounds, the ideas round included; 0 reads as 2 (RoundsOf)
 	SessionId        string                       `json:"sessionid,omitempty"` // the agent session that started it

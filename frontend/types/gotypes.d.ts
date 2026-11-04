@@ -882,6 +882,10 @@ declare global {
         rounds?: number;
         agents?: string[];
         byagent?: boolean;
+        repeatof?: string;
+        repeatdoc?: string;
+        repeatwhy?: string;
+        repeatevidence?: string;
     };
 
     // wshrpc.CommandCouncilSuggestData
@@ -2465,6 +2469,10 @@ declare global {
         modewhy?: string;
         queuedafter?: string;
         harness?: string;
+        repeatof?: string;
+        repeatdoc?: string;
+        repeatwhy?: string;
+        repeatevidence?: string;
         bench?: boolean;
         docpath?: string;
         rating?: string;

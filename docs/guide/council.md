@@ -281,7 +281,8 @@ dòng "See who agrees with which idea in Map" mở nó.
 
 | Lệnh | Làm gì |
 |---|---|
-| `wsh council start "<câu hỏi>"` | Mở một council (qua thẻ Token burn trước; bị từ chối thì được lưu là not run, rồi **Start council** trong app chạy nó). `--model sonnet` cho mọi chuyên gia, `--model skeptic=opus` cho một ghế; `--agent <tab id>` / `--agent self` xếp ghế cho chat |
+| `wsh council start "<câu hỏi>"` | Mở một council (qua thẻ Token burn trước; bị từ chối thì được lưu là not run, rồi **Start council** trong app chạy nó). `--model sonnet` cho mọi chuyên gia, `--model skeptic=opus` cho một ghế; `--agent <tab id>` / `--agent self` xếp ghế cho chat. Cùng chủ đề với một council xong trong 7 ngày qua thì không mở: in báo cáo cũ, hướng 1 và bước đầu của nó, council đã nâng cấp chưa; chạy lại bằng `--new-evidence "<điều mới>"` (chuyên gia được báo báo cáo cũ và điều mới) hoặc `--rerun-upgraded` (chạy lại vì council đã nâng cấp, không cho xem báo cáo cũ) |
+| `wsh council cites <báo cáo.md>` | Kiểm mọi `path:line` của một báo cáo đã lưu, không gọi model (`--root` chọn thư mục) |
 | `wsh council estimate` | In nhóm, model của từng chuyên gia và chi phí, không mở gì |
 | `wsh council list` | Các council của project, mới nhất trước |
 | `wsh council show <id>` / `wait <id>` | In Summary và Matrix dạng markdown; `wait` chờ council dừng rồi mới in |

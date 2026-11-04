@@ -660,7 +660,13 @@ One council runs at a time across all projects: a start while another council ru
 "Queued after <id> (<feature>)" with the new council's own id, and starts by itself when the running one ends (a council
 waiting on the person holds no slot). "wsh council wait <id>" waits through the queue. --queue is still accepted and does
 nothing more: every second start is queued now. --pause stops the council after round 1 so the person can cut proposals
-and ask a question before the next rounds.`,
+and ask a question before the next rounds.
+
+A council on the same topic as one that ended done in this project within the last 7 days does not start: the command
+prints that council's report, its direction 1 and first step, whether the council has been upgraded since, and exits
+non-zero. Tell the person what it said and ask what is new. Start again with --new-evidence "<what is new>" (the panel is
+told the earlier report and what changed) or --rerun-upgraded (the person wants the upgraded council's own answer; the
+panel is not shown the earlier report).`,
 	PreRunE: preRunSetupRpcClient,
 	RunE:    councilStartRun,
 }
@@ -701,6 +707,12 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	data := councilStartData(cmd, plan, feature, screenshots)
+	if refused, err := councilRepeatCheck(cmd, &data); err != nil || refused != "" {
+		if err == nil {
+			err = errors.New(strings.TrimRight(refused, "\n"))
+		}
+		return err
+	}
 	spawn := councilSpawn(plan.experts, plan.est)
 	spawn.Agents += len(plan.agents) // a seated chat is an agent at work too, beside the role experts
 	verdict, gateErr := tokengateDecide(context.Background(), spawn, "", func(hold any) {
@@ -741,6 +753,41 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println(councilStartedLine(c, feature, plan.mode, group, plan.est))
 	return nil
+}
+
+// councilRepeatCheck is the repeat guard of a start: when a council on the same topic ended done in the project within
+// the last week, the start goes on only with --new-evidence or --rerun-upgraded, which it records on data; else it
+// returns the text that says why it did not start (council.RepeatText). A list that fails never blocks a start.
+func councilRepeatCheck(cmd *cobra.Command, data *wshrpc.CommandCouncilStartData) (string, error) {
+	evidence := councilOneLine(mustFlagString(cmd, "new-evidence"))
+	upgraded, _ := cmd.Flags().GetBool("rerun-upgraded")
+	if evidence != "" && upgraded {
+		return "", errors.New("--new-evidence and --rerun-upgraded are two reasons to run again: give one")
+	}
+	list, err := wshclient.CouncilListCommand(RpcClient, wshrpc.CommandCouncilListData{Project: data.Project}, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not list the project's councils (%v); starting without the repeat check\n", err)
+		return "", nil
+	}
+	return councilRepeatDecide(list, data, evidence, upgraded, time.Now().UnixMilli())
+}
+
+// councilRepeatDecide is councilRepeatCheck's choice, with the list and the time given.
+func councilRepeatDecide(list []*council.Council, data *wshrpc.CommandCouncilStartData, evidence string, upgraded bool, now int64) (string, error) {
+	prev := council.RecentLike(list, data.Feature, data.Question, now)
+	if prev == nil {
+		return "", nil
+	}
+	switch {
+	case evidence != "":
+		data.RepeatWhy, data.RepeatEvidence = council.RepeatNewEvidence, evidence
+	case upgraded:
+		data.RepeatWhy = council.RepeatUpgraded
+	default:
+		return council.RepeatText(prev), nil
+	}
+	data.RepeatOf, data.RepeatDoc = prev.Id, prev.DocPath
+	return "", nil
 }
 
 // councilScreenshots reads --screenshot (repeatable) as absolute paths of files that exist: the experts open them
@@ -1276,6 +1323,8 @@ func addCouncilStartFlags(cmd *cobra.Command) {
 	f.Bool("pause", false, "stop after round 1 so the person can cut proposals and ask a question")
 	f.Bool("queue", false, "accepted and ignored: one council runs at a time across all projects, so a start while another runs is always queued")
 	f.String("session", "", "the agent session that starts it; defaults to the session in this terminal")
+	f.String("new-evidence", "", "what is new since a recent council on the same topic, in the person's words: runs it again, told what changed")
+	f.Bool("rerun-upgraded", false, "run again on the topic of a recent council because the council has been upgraded since; the panel is not shown the earlier report")
 }
 
 func init() {

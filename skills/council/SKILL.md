@@ -113,6 +113,11 @@ Say in **one line** what happened, from the line `start` printed:
 - `Queued after <id> (<feature>)` — one council runs at a time across all projects, so this one waits for the running
   council and starts by itself when it ends. Say so, and which council it waits for.
 - `Not run: …` — see below.
+- `A council on this topic ended on …` and `Not started.` (exit 1) — a council on the same topic ended in the last 7
+  days. Nothing was started or spent. Tell the person what it said (its direction 1 and first step, and the report path)
+  and whether the council has been upgraded since, then ask what is new. Start again only on their answer:
+  `--new-evidence "<what is new, in their words>"`, or `--rerun-upgraded` when they want the upgraded council's own
+  answer to the same question. When nothing is new, point them at the earlier first step instead.
 
 Then read it back:
 
