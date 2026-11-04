@@ -9,12 +9,14 @@ import {
     boardUrl,
     buildGoal,
     canvasDir,
+    canvasHeightReport,
     canvasLayout,
     canvasTabs,
     currentTab,
     FIT_GROW_SLACK_PX,
     fitScale,
     isUnseen,
+    MAX_BOARD_H,
     paneState,
     parseCanvasPath,
     prototypePath,
@@ -25,6 +27,7 @@ import {
     stripWindow,
     tabsFitStrip,
     updatedAgo,
+    withContentHeights,
     type CanvasBoard,
 } from "./canvasmodel";
 import type { CanvasState } from "./canvasstore";
@@ -223,6 +226,39 @@ describe("canvasLayout", () => {
     it("lays out the one Main board before any boards are read", () => {
         const layout = canvasLayout([], 2000);
         expect(layout.frames.map((f) => f.board.name)).toEqual(["Main.dc.html"]);
+    });
+});
+
+describe("canvasHeightReport", () => {
+    it("reads the height a board's page posts, and nothing else a page posts", () => {
+        expect(canvasHeightReport({ type: "arc-canvas-height", h: 2400 })).toBe(2400);
+        for (const data of [
+            null,
+            "arc-canvas-height",
+            { type: "arc-html-scroll", h: 2400 },
+            { type: "arc-canvas-height" },
+            { type: "arc-canvas-height", h: "2400" },
+            { type: "arc-canvas-height", h: 0 },
+            { type: "arc-canvas-height", h: Infinity },
+        ]) {
+            expect(canvasHeightReport(data)).toBeNull();
+        }
+    });
+});
+
+describe("withContentHeights", () => {
+    const board = (name: string, h: number): CanvasBoard => ({ name, x: 0, y: 0, w: 1440, h });
+
+    it("grows a board to its page's height, never shrinks one, and leaves unreported boards alone", () => {
+        const boards = [board("A", 900), board("B", 900), board("C", 900)];
+        const drawn = withContentHeights(boards, { A: 2400, B: 600 });
+        expect(drawn.map((b) => b.h)).toEqual([2400, 900, 900]);
+        expect(drawn[1]).toBe(boards[1]);
+        expect(boards[0].h).toBe(900);
+    });
+
+    it("stops a page that keeps growing with its frame", () => {
+        expect(withContentHeights([board("A", 900)], { A: 10 * MAX_BOARD_H })[0].h).toBe(MAX_BOARD_H);
     });
 });
 

@@ -12,11 +12,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/wavetermdev/waveterm/pkg/htmlserve"
 )
 
 // PathPrefix is the route the handler is mounted at.
@@ -104,6 +108,62 @@ func Handler() http.Handler {
 		}
 		// a board is edited between loads, so every load revalidates against the file's Last-Modified
 		w.Header().Set("Cache-Control", "no-cache")
+		rel := strings.TrimPrefix(r.URL.Path, PathPrefix+token)
+		if isHTMLName(rel) {
+			serveBoard(w, r, http.Dir(dir), rel)
+			return
+		}
 		http.StripPrefix(PathPrefix+token, http.FileServer(http.Dir(dir))).ServeHTTP(w, r)
 	})
 }
+
+func isHTMLName(name string) bool {
+	ext := strings.ToLower(path.Ext(name))
+	return ext == ".html" || ext == ".htm"
+}
+
+// serveBoard serves a page with heightScript after it. http.Dir keeps rel inside the folder, as the FileServer
+// every other file goes through does.
+func serveBoard(w http.ResponseWriter, r *http.Request, dir http.Dir, rel string) {
+	f, err := dir.Open(rel)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	ra, ok := f.(io.ReaderAt)
+	if err != nil || info.IsDir() || !ok {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), htmlserve.WithSuffix(ra, info.Size(), heightScript))
+}
+
+// heightScript goes after every board page served, so arcterm can draw the board as tall as its page: the page runs at
+// this listener's origin, which arcterm's window cannot reach into, so it reports its own height to the frame's parent
+// (frontend canvasHeightReport) when it loads and each time it changes size (images, fonts, a section shown). After
+// </html> the parser still runs it, as part of the body. A page whose own Content-Security-Policy refuses inline
+// scripts keeps the height canvas.json gives it.
+const heightScript = `<script>(function () {
+  var p = window.parent;
+  if (p === window) return;
+  var last = 0, raf = 0;
+  function report() {
+    raf = 0;
+    var b = document.body;
+    var h = Math.ceil(Math.max(document.documentElement.scrollHeight, b ? b.scrollHeight : 0));
+    if (h === last) return;
+    last = h;
+    p.postMessage({ type: "arc-canvas-height", h: h }, "*");
+  }
+  function soon() { if (!raf) raf = requestAnimationFrame(report); }
+  addEventListener("load", soon);
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(soon);
+    ro.observe(document.documentElement);
+    if (document.body) ro.observe(document.body);
+  }
+  soon();
+})();</script>
+`

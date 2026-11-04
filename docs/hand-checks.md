@@ -337,6 +337,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   shortens and goes first, then the topic and the board tabs shorten with `…` (the selected tab last), and ‹, `2/8 ▾`,
   ›, Mark, Open in browser and Build this… keep their size. Also with ≤4 boards (plain tabs, no picker). Checked only
   as a static copy of the bar in headless Chrome at 560–1000 px, not in the app. (c39e68038)
+- [ ] (arcterm) Canvas board as tall as its page: open an agent's canvas whose board page is longer than its `h` in
+  `canvas.json` (one that showed a thin scrollbar inside the board, beside the pane's): the board now runs the page's
+  whole length with only the pane's scrollbar, in the Canvas tab, the gallery's viewer and a brainstorm's widened
+  board. Edit the page shorter: after the reload the board shrinks back, never below `h`. Under All a tall board's
+  tile is still cut off. Covered by `canvasserve` and `canvasmodel` unit tests only; not tried in the app.
 - [ ] (arcterm) Copy table: point at a table in a `.md` Preview (Code surface and the Agent File tab) and in an agent's
   reply: a copy icon shows on the table's top-right corner, not the column's; click it (✓), then paste into Google
   Sheets or Numbers: real cells with the header row, right-aligned columns kept; paste into Notes or a terminal:

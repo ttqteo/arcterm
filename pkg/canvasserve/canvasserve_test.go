@@ -27,11 +27,18 @@ func designDir(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(project, "Main.dc.html"), []byte(boardBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "secret.txt"), []byte("secret"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(design, "topic", "canvas.json"), []byte(canvasJSON), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	for _, name := range []string{"secret.txt", "secret.html"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("secret"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return design
 }
+
+const canvasJSON = `{"boards":{}}`
 
 func get(t *testing.T, method, path string) *http.Response {
 	t.Helper()
@@ -84,8 +91,11 @@ func TestHandlerServesARegisteredFolder(t *testing.T) {
 	}
 	res := get(t, http.MethodGet, base+"/topic/project/Main.dc.html")
 	body, _ := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusOK || string(body) != boardBody {
+	if res.StatusCode != http.StatusOK || string(body) != boardBody+heightScript {
 		t.Fatalf("GET board: status %d body %q", res.StatusCode, body)
+	}
+	if res.Header.Get("Cache-Control") != "no-cache" {
+		t.Errorf("Cache-Control %q, want no-cache", res.Header.Get("Cache-Control"))
 	}
 	if res.Header.Get("Last-Modified") == "" {
 		t.Error("no Last-Modified header; the canvas poller reloads boards by it")
@@ -95,6 +105,26 @@ func TestHandlerServesARegisteredFolder(t *testing.T) {
 	}
 	if head := get(t, http.MethodHead, base+"/topic/project/Main.dc.html"); head.StatusCode != http.StatusOK {
 		t.Errorf("HEAD board: status %d", head.StatusCode)
+	}
+}
+
+func TestHandlerAddsTheHeightScriptToPagesOnly(t *testing.T) {
+	base, err := Register(designDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := get(t, http.MethodGet, base+"/topic/canvas.json")
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || string(body) != canvasJSON {
+		t.Errorf("GET canvas.json: status %d body %q", res.StatusCode, body)
+	}
+	// a range of a page still reads the file and the script after it as one
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, base+"/topic/project/Main.dc.html", nil)
+	req.Header.Set("Range", "bytes=0-14")
+	Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != boardBody[:15] {
+		t.Errorf("GET a range: status %d body %q", rec.Code, rec.Body.String())
 	}
 }
 
@@ -123,7 +153,12 @@ func TestHandlerStaysInsideTheFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{base + "/../../secret.txt", base + "/topic/../../../secret.txt"} {
+	for _, path := range []string{
+		base + "/../../secret.txt",
+		base + "/topic/../../../secret.txt",
+		base + "/../../secret.html",
+		base + "/topic/../../../secret.html",
+	} {
 		res := get(t, http.MethodGet, path)
 		body, _ := io.ReadAll(res.Body)
 		if res.StatusCode == http.StatusOK || strings.Contains(string(body), "secret") {

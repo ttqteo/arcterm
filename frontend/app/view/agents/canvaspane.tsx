@@ -12,7 +12,7 @@ import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronLeft, ChevronRight, SquareDashed } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { openLauncher } from "./launcherstore";
@@ -22,6 +22,7 @@ import {
     boardLabel,
     boardUrl,
     buildGoal,
+    canvasHeightReport,
     canvasLayout,
     canvasTabs,
     currentTab,
@@ -34,6 +35,7 @@ import {
     stripWindow,
     tabsFitStrip,
     updatedAgo,
+    withContentHeights,
     type BoardFrame,
     type CanvasBoard,
 } from "./canvasmodel";
@@ -63,6 +65,24 @@ export function useSteadyFitWidth(measured: number): number {
     return fit;
 }
 
+// The heights the boards' pages reported (BoardFrameView's onContentHeight), dropped when resetKey changes: a reloaded
+// page, edited shorter, reports from the h canvas.json gives it again, not from the frame its old self grew
+export function useContentHeights(
+    resetKey: string
+): [Readonly<Record<string, number>>, (board: string, h: number) => void] {
+    const [kept, setKept] = useState<{ key: string; heights: Record<string, number> }>({ key: resetKey, heights: {} });
+    const heights = kept.key === resetKey ? kept.heights : {};
+    const report = useCallback(
+        (board: string, h: number) =>
+            setKept((k) => {
+                const prev = k.key === resetKey ? k.heights : {};
+                return prev[board] === h ? k : { key: resetKey, heights: { ...prev, [board]: h } };
+            }),
+        [resetKey]
+    );
+    return [heights, report];
+}
+
 // the New dialog opens on Orchestrate in the agent's project, with this canvas as the run's prototype
 function openBuildRun(model: AgentsViewModel, agent: AgentVM, s: CanvasState): void {
     openLauncher(model, "run", {
@@ -89,6 +109,7 @@ export function CanvasPane({
     const now = useAtomValue(model.nowAtom);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
+    const [heights, reportHeight] = useContentHeights(`${s?.topic}:${s?.reloadKey}`);
     const selected = s != null ? shownBoard(s).name : null;
     const tab = s != null ? currentTab(s) : null;
     // a tab, [ or ] can pick a board below the fold. Only its top edge is brought into view, label included:
@@ -109,7 +130,7 @@ export function CanvasPane({
     }
     const pane = paneState(s);
     const board = shownBoard(s);
-    const layout = canvasLayout(shownBoards(s), fitWidth);
+    const layout = canvasLayout(withContentHeights(shownBoards(s), heights), fitWidth);
     const scale = (layout.frames.find((f) => f.board.name === board.name) ?? layout.frames[0]).scale;
     const all = layout.frames.length > 1;
     const marking = s.marking && pane === "board";
@@ -226,6 +247,7 @@ export function CanvasPane({
                                     }
                                     reloadKey={s.reloadKey}
                                     onOpen={() => selectCanvasTab(agent.id, f.board.name)}
+                                    onContentHeight={(h) => reportHeight(f.board.name, h)}
                                     // the gallery's preview, taken off the board the user is looking at
                                     onSettled={
                                         pane === "board" && !marking && !all && f.board.name === board.name
@@ -369,6 +391,7 @@ export function BoardFrameView({
     reloadKey,
     onOpen,
     onSettled,
+    onContentHeight,
     children,
 }: {
     frame: BoardFrame;
@@ -377,6 +400,8 @@ export function BoardFrameView({
     src: string | null;
     reloadKey: number;
     onOpen: () => void;
+    // the height the board's page reports of itself, each time it changes (canvasHeightReport)
+    onContentHeight?: (h: number) => void;
     // called with the board's frame THUMB_SETTLE_MS after its page loads, if the caller still wants it by then (the
     // latest prop is read when the time is up, so a board left or marked meanwhile passes undefined)
     onSettled?: (frameEl: HTMLElement) => void;
@@ -385,10 +410,27 @@ export function BoardFrameView({
     const { board, scale } = frame;
     const label = boardLabel(board.name);
     const frameRef = useRef<HTMLDivElement>(null);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
     const settleTimer = useRef<number | undefined>(undefined);
     const latestSettled = useRef(onSettled);
     latestSettled.current = onSettled;
+    const latestHeight = useRef(onContentHeight);
+    latestHeight.current = onContentHeight;
     useEffect(() => () => window.clearTimeout(settleTimer.current), []);
+    useEffect(() => {
+        const onMessage = (e: MessageEvent) => {
+            const iframe = iframeRef.current;
+            if (iframe == null || e.source !== iframe.contentWindow) {
+                return;
+            }
+            const h = canvasHeightReport(e.data);
+            if (h != null) {
+                latestHeight.current?.(h);
+            }
+        };
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
+    }, []);
     const onLoaded = () => {
         window.clearTimeout(settleTimer.current);
         settleTimer.current = window.setTimeout(() => {
@@ -425,6 +467,7 @@ export function BoardFrameView({
             >
                 {src != null ? (
                     <iframe
+                        ref={iframeRef}
                         key={`${reloadKey}:${board.name}`}
                         src={src}
                         title={board.name}

@@ -133,9 +133,7 @@ func Handler() http.Handler {
 			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 			return
 		}
-		// streamed from the file with the script after it, never read whole: an exported deck can run to tens of MB
-		page := withSuffix{f: f, size: info.Size(), suffix: []byte(scrollScript)}
-		http.ServeContent(w, r, info.Name(), info.ModTime(), io.NewSectionReader(page, 0, page.len()))
+		http.ServeContent(w, r, info.Name(), info.ModTime(), WithSuffix(f, info.Size(), scrollScript))
 	})
 }
 
@@ -181,7 +179,13 @@ const scrollScript = `<script>(function () {
 })();</script>
 `
 
-// withSuffix reads as a file followed by a few bytes, for http.ServeContent's ranges and length
+// WithSuffix reads as a file of size bytes with suffix after it, for http.ServeContent's ranges and length. It
+// streams from the file, never reads it whole: an exported deck can run to tens of MB.
+func WithSuffix(f io.ReaderAt, size int64, suffix string) *io.SectionReader {
+	page := withSuffix{f: f, size: size, suffix: []byte(suffix)}
+	return io.NewSectionReader(page, 0, page.len())
+}
+
 type withSuffix struct {
 	f      io.ReaderAt
 	size   int64

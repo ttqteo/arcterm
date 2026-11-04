@@ -247,6 +247,29 @@ export function steadyFitWidth(held: number | null, measured: number): number {
     return held;
 }
 
+// What a board's page reports of its own height: canvasserve adds a script to every board it serves, since the page
+// runs at wavesrv's origin, out of the app's reach. A page taller than the h canvas.json gives it would scroll inside
+// its frame, a second scrollbar beside the pane's; the frame grows to the reported height instead.
+export const CANVAS_HEIGHT_MSG = "arc-canvas-height";
+// a page that sizes itself by its frame (a height in vh) reports taller after every growth; this is where that stops
+export const MAX_BOARD_H = 20000;
+
+export function canvasHeightReport(data: unknown): number | null {
+    if (!isRecord(data) || data.type !== CANVAS_HEIGHT_MSG) {
+        return null;
+    }
+    const h = data.h;
+    return typeof h === "number" && Number.isFinite(h) && h > 0 ? h : null;
+}
+
+// the boards as drawn: each as tall as its page reported, never shorter than canvas.json says
+export function withContentHeights(boards: CanvasBoard[], heights: Readonly<Record<string, number>>): CanvasBoard[] {
+    return boards.map((b) => {
+        const h = Math.min(heights[b.name] ?? 0, MAX_BOARD_H);
+        return h > b.h ? { ...b, h } : b;
+    });
+}
+
 // base is where wavesrv serves the project's design folder (CanvasServeCommand)
 export function boardUrl(base: string, topic: string, board: string): string {
     return `${base}/${encodeURIComponent(topic)}/project/${encodeURIComponent(board)}`;
