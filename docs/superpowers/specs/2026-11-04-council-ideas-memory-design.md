@@ -59,6 +59,9 @@ The grouping is a pure function beside `listOrder` in `councillistmodel.ts`, wit
 
 ## 2. The Memory tab
 
+> The tab's layout and what it holds are replaced by `2026-11-05-council-memory-design.md` (one list of Direction,
+> Agreed, Ruled out and Open entries). The direction's moves, checks and cards below still stand.
+
 ### What it holds
 
 Only the chosen direction: what the council settled on, and the directions it replaced. Ruled-out options, agreed
