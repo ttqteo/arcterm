@@ -41,6 +41,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A background task's Output and a Monitor's Events show the colors the program printed (a build's file names, a test run's ✓ and ✗) instead of raw escape codes like `▯[36m`; a progress line redrawn in place shows its last state.
 - An HTML page previewed in arcterm (the File tab, a design canvas, a brainstorm board) can no longer send what it holds to another site: it loads its own folder's files, common CDNs and Google Fonts, and its fetches, forms and frames go nowhere else. Images and video from other sites still show.
 - A note titled in Vietnamese keeps its words in its id (`wsh note add "Cải tiến"` → `…-cai-tien`, not `…-c-i-ti-n`); so do Jarvis's dossier and decision files, and the id of a tool you add.
 - The old `ideas` skill, which told an agent to run the removed `wsh idea` and got `unknown command`, is cleared from your skills on the next agent launch.

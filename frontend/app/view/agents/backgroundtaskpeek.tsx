@@ -24,9 +24,10 @@ import {
 import { useAtomValue } from "jotai";
 import { Radio, Terminal, X } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { bgTaskStoppable } from "./agentrailsections";
 import type { AgentsViewModel } from "./agents";
+import { parseAnsiLines, runCss } from "./ansitext";
 import {
     backgroundTaskKind,
     backgroundTaskState,
@@ -93,6 +94,24 @@ function useTaskOutput(path: string | undefined, running: boolean): string[] | n
     return lines;
 }
 
+// what an inverse run swaps in for an unset side: this view's own text and background
+const INVERSE_FG = "var(--color-secondary)";
+const INVERSE_BG = "var(--color-surface-code)";
+
+// output lines with the program's ANSI colors drawn (vite, go test, cargo all color theirs), not their raw escapes
+function AnsiLines({ lines }: { lines: string[] }) {
+    const parsed = useMemo(() => parseAnsiLines(lines), [lines]);
+    return parsed.map((runs, i) => (
+        <div key={i} className="whitespace-pre-wrap break-words text-secondary">
+            {runs.map((r, j) => (
+                <span key={j} style={runCss(r.style, INVERSE_FG, INVERSE_BG)}>
+                    {r.text}
+                </span>
+            ))}
+        </div>
+    ));
+}
+
 function OutputBody({ path, running }: { path: string | undefined; running: boolean }) {
     const lines = useTaskOutput(path, running);
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(lines ?? NO_LINES);
@@ -108,11 +127,7 @@ function OutputBody({ path, running }: { path: string | undefined; running: bool
                         No output yet.
                     </div>
                 ) : (
-                    (lines ?? NO_LINES).map((line, i) => (
-                        <div key={i} className="whitespace-pre-wrap break-words text-secondary">
-                            {line}
-                        </div>
-                    ))
+                    <AnsiLines lines={lines ?? NO_LINES} />
                 )}
             </div>
             <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
@@ -147,11 +162,7 @@ function EventsBody({ events }: { events: MonitorEvent[] }) {
                                 {e.ts != null ? clockTime(e.ts) : ""}
                             </span>
                             <div className="min-w-0 flex-1">
-                                {e.lines.map((line, j) => (
-                                    <div key={j} className="whitespace-pre-wrap break-words text-secondary">
-                                        {line}
-                                    </div>
-                                ))}
+                                <AnsiLines lines={e.lines} />
                             </div>
                         </div>
                     ))}
