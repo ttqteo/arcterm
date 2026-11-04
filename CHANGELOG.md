@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Once a council's experts start replying, its long round 1 ideas fold to their first lines (Show more opens one), and an idea whose thread has replies you have not read says `2 new replies` on its reply chip and its Ideas rail row; the rail can show only those ideas.
 - A council's Discussion header wraps a long title onto a second line instead of cutting it short, and its step chip reads shorter (`Round 1/2`, `Round 2/2 · 3 drafts`); the full words are on hover.
 - The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
 
