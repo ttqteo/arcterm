@@ -115,7 +115,7 @@ import {
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
-import { councilList, railMeta, railOrderLabel, type IdeaRow } from "./councillistmodel";
+import { councilList, railMeta, railOrderLabel, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import {
     ANSWERING,
@@ -2391,21 +2391,41 @@ function RailTab({
     );
 }
 
-/** The Ideas rail's first tab, shaped like the brainstorm's Decided so far: per idea its number and author, its title,
- *  and a quiet line with its replies and the stances on it, in the list's fixed order; nothing ranked and no columns.
- *  A click scrolls the channel to the idea and puts the j / k cursor on it; the idea's own replies button opens its
- *  thread. */
+// A group's dot in the header and the bar down its rows, by tone: whole class names, so Tailwind finds them, all from the
+// `@theme` tokens. Waiting on you (`muted`) draws no bar; the two quiet groups draw it at 60%.
+const GROUP_DOT: Record<StanceTone, string> = {
+    muted: "bg-muted ring-muted/35",
+    success: "bg-success ring-success/35",
+    warning: "bg-warning ring-warning/35",
+    error: "bg-error ring-error/35",
+    "ink-faint": "bg-ink-faint ring-ink-faint/35",
+    "edge-strong": "bg-edge-strong ring-edge-strong/60",
+};
+const GROUP_BAR: Record<StanceTone, string> = {
+    muted: "bg-transparent",
+    success: "bg-success",
+    warning: "bg-warning",
+    error: "bg-error",
+    "ink-faint": "bg-ink-faint opacity-60",
+    "edge-strong": "bg-edge-strong opacity-60",
+};
+
+/** The Ideas rail's first tab, shaped like the brainstorm's Decided so far (board Ideas-by-stance in
+ *  .superpowers/design/council-ideas-memory): the ideas in groups by where the seats stand (stanceGroups), each under a
+ *  header with a dot in its colour, its name in words and a count; per idea a bar in its group's colour, its number and
+ *  author, its title, and a quiet line with its replies and the stances on it. The grouping is derived on every render,
+ *  so an idea moves group as a stance changes. A click scrolls the channel to the idea and puts the j / k cursor on it;
+ *  the idea's own replies button opens its thread. */
 function IdeasList({
-    c,
     ideas,
     on,
     onPick,
 }: {
-    c: Council;
     ideas: readonly IdeaRow[];
     on: string | null; // the idea under the cursor or with its thread open
     onPick: (row: IdeaRow) => void;
 }) {
+    const groups = stanceGroups(ideas);
     return (
         <div
             id="council-rail-ideas"
@@ -2414,37 +2434,83 @@ function IdeasList({
             data-council-rail-ideas
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-[22px] pt-[4px] [scrollbar-gutter:stable]"
         >
-            <span className="pb-[8px] text-[12px] text-muted">{railOrderLabel(c)}</span>
+            <span data-council-rail-caption className="pb-[2px] text-[12px] text-muted">
+                {railOrderLabel()}
+            </span>
             {ideas.length === 0 && (
                 <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
                     Each idea lands here as a seat proposes it.
                 </p>
             )}
-            {ideas.map((row) => {
-                const meta = railMeta(row);
+            {groups.map((g) => {
+                // the quiet groups read dimmer: what waits on the person, and what is out of the running
+                const quiet = g.key === "waiting" || g.key === "withdrawn";
                 return (
-                    <button
-                        key={row.id}
-                        type="button"
-                        data-council-rail-idea={row.id}
-                        data-on={row.id === on ? "true" : undefined}
-                        onClick={() => onPick(row)}
-                        className={cn(
-                            "-mx-2 flex flex-none cursor-pointer flex-col gap-[4px] border-0 border-t border-border px-2 py-[11px] text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-                            row.id === on ? "bg-surface-selected" : "bg-transparent"
-                        )}
+                    <div
+                        key={g.key}
+                        role="group"
+                        aria-label={`${g.label}, ${g.rows.length}`}
+                        data-council-rail-group={g.key}
+                        className="flex flex-none flex-col"
                     >
-                        <span className="text-[11px] text-muted">
-                            Idea {row.n} · {row.name}
-                            {row.isNew && <span className="text-accent-soft"> · new</span>}
-                        </span>
-                        <span className="text-[12.5px] leading-[1.45] text-secondary">{row.title}</span>
-                        {meta !== "" && (
-                            <span data-council-rail-meta className="text-[12px] text-muted">
-                                {meta}
+                        <div className="flex items-center gap-2 pb-[6px] pt-[14px] text-[12px] font-semibold text-secondary">
+                            <span
+                                aria-hidden
+                                data-council-rail-dot
+                                className={cn("h-[8px] w-[8px] flex-none rounded-full ring-1", GROUP_DOT[g.tone])}
+                            />
+                            <span data-council-rail-group-name>{g.label}</span>
+                            <span data-council-rail-group-count className="font-normal tabular-nums text-muted">
+                                {g.rows.length}
                             </span>
-                        )}
-                    </button>
+                        </div>
+                        {g.rows.map((row) => {
+                            const meta = railMeta(row);
+                            return (
+                                <button
+                                    key={row.id}
+                                    type="button"
+                                    data-council-rail-idea={row.id}
+                                    data-on={row.id === on ? "true" : undefined}
+                                    onClick={() => onPick(row)}
+                                    className={cn(
+                                        "-mx-2 flex flex-none cursor-pointer gap-[10px] border-0 border-t border-border px-2 py-[10px] text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                                        row.id === on ? "bg-surface-selected" : "bg-transparent"
+                                    )}
+                                >
+                                    <span
+                                        aria-hidden
+                                        data-council-rail-bar={g.tone}
+                                        className={cn(
+                                            "w-[3px] flex-none self-stretch rounded-[2px]",
+                                            GROUP_BAR[g.tone]
+                                        )}
+                                    />
+                                    <span className="flex min-w-0 flex-1 flex-col gap-[4px]">
+                                        <span data-council-rail-who className="text-[11px] text-muted">
+                                            Idea {row.n} · {row.name}
+                                            {row.isNew && <span className="text-accent-soft"> · new</span>}
+                                        </span>
+                                        <span
+                                            data-council-rail-title
+                                            className={cn(
+                                                "text-[12.5px] leading-[1.45]",
+                                                quiet ? "text-muted" : "text-secondary",
+                                                g.key === "withdrawn" && "line-through"
+                                            )}
+                                        >
+                                            {row.title}
+                                        </span>
+                                        {meta !== "" && (
+                                            <span data-council-rail-meta className="text-[12px] text-muted">
+                                                {meta}
+                                            </span>
+                                        )}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
                 );
             })}
         </div>
@@ -2540,7 +2606,7 @@ function CouncilRail({
             {shows === "thread" && thread != null ? (
                 <ThreadPanel c={c} thread={thread} acts={acts} chats={chats} />
             ) : (
-                <IdeasList c={c} ideas={ideas} on={on} onPick={onPick} />
+                <IdeasList ideas={ideas} on={on} onPick={onPick} />
             )}
         </aside>
     );
