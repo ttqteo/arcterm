@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - An agent waiting on your answer now breathes amber over its whole row in the Agent tree, where only its glyph pulsed, so you see it from across the tree.
+- Under critical memory pressure the heavy-job queue still starts one job at a time, where it held every job until you paused the queue, and the pause then let them all start at once.
 - The heavy-job queue runs e2e and smoke checks one at a time even in Auto, where several agents' runs started together and pegged the CPU though the RAM fit; it also catches a check wrapped in `timeout`, `node scripts/smoke.mjs`, `npm run smoke`, `npx playwright test` and npm/pnpm scripts named e2e or smoke.
 - An agent with three or more commands running in the background folds them behind a `3 running` chip on its row in the Agent tree; click it to list them. One or two still show as rows.
 - In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
@@ -40,6 +41,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Pausing the heavy-job queue now pauses it on this computer only, where the pause synced through the vault and let every heavy job on your other computers start at once too.
 - A canvas board whose page runs longer than its board size is now drawn whole, at its page's full height, where it showed a second scrollbar inside the board beside the canvas's own.
 - A council that was stopped after it wrote its summary reads Done in the Agent tree and its header, where it read Stopped, even right after it answered a follow-up you asked.
 - A chat seated in a council whose tab you closed comes back: open its conversation again (Resume, Open asleep, or click the seat's name, avatar or @ chip, which now opens it asleep) and Retry reaches it in its new tab, where Retry used to fail with "is gone" for good. A seat from before this keeps its conversation from its next turn, while its tab is still open.
