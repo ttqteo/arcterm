@@ -349,11 +349,24 @@ const PILL_TONE: Record<PillTone, string> = {
     accept: "bg-success/12 text-success-soft",
     challenge: "bg-askingbg text-warning-soft",
     oppose: "bg-error/12 text-error-soft",
+    out: "border border-edge-strong text-muted",
     neutral: "bg-pill text-secondary",
 };
 
+// an idea its author withdrew: the pill beside its author, and the idea drawn dim
+const WITHDRAWN = "Withdrawn";
+const WITHDRAWN_TITLE = "Its author withdrew it: it is out of the running";
+
 export function CouncilPill({ word, tone }: { word: string; tone: PillTone }) {
     return <span className={cn("rounded-full px-[7px] py-px text-[10px] font-semibold", PILL_TONE[tone])}>{word}</span>;
+}
+
+function WithdrawnPill() {
+    return (
+        <span data-council-withdrawn title={WITHDRAWN_TITLE}>
+            <CouncilPill word={WITHDRAWN} tone="out" />
+        </span>
+    );
 }
 
 const primaryButton =
@@ -585,12 +598,14 @@ function IdeaMessage({
                     ) : (
                         <span className="text-muted">{item.label}</span>
                     )}
+                    {item.withdrawn && <WithdrawnPill />}
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
                 </Byline>
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
+                        item.withdrawn && "opacity-60",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
                         // the open idea wears a light ring over its tone border, so it stands out from its tinted
                         // neighbours; focus alone keeps the faint one
@@ -993,6 +1008,8 @@ function ReplyMessage({
     status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
     const openIdea = inThread ? undefined : onOpenIdea;
+    // a withdrawal that gave no reason says it all in its pill: no empty bubble under it
+    const bare = item.pill === "out" && item.text.trim() === "" && item.claim.evidence.length === 0;
     return (
         <motion.article
             data-council-item
@@ -1022,6 +1039,7 @@ function ReplyMessage({
                 )}
                 <div
                     data-council-bubble
+                    hidden={bare}
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px]",
                         // the ring a quote's press lays on the post it jumps to (QuoteRow), fading out after FLASH_MS
@@ -2216,10 +2234,18 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
     const idea = thread.idea;
     return (
         <article data-council-post={idea.id} className="group/reply flex flex-col gap-[8px]">
-            <h2 className="m-0 text-[15px] font-semibold leading-[1.4] text-primary">{idea.title}</h2>
+            <h2
+                className={cn(
+                    "m-0 text-[15px] font-semibold leading-[1.4]",
+                    idea.withdrawn ? "text-muted line-through" : "text-primary"
+                )}
+            >
+                {idea.title}
+            </h2>
             <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
+                {idea.withdrawn && <WithdrawnPill />}
                 {idea.edited && <span>edited</span>}
                 <HoverEnd>
                     <PostTime at={idea.at} when={idea.when} />

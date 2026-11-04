@@ -375,6 +375,51 @@ describe("councilChannel: an idea", () => {
         expect(byId(items, "P2")).toMatchObject({ label: "wild idea", wild: true });
     });
 
+    it("marks an idea its author withdrew, and its withdrawal reply with a pill and the reason as its words", () => {
+        const c = council({
+            proposals: [prop("P1", "sec", 60, { withdrawn: true }), prop("P2", "sk", 100)],
+            replies: [
+                reply("r1", "sk", 150, { stance: "challenge", text: "Too broad." }),
+                reply("r2", "sec", 160, { revised: true, withdraws: true, text: "Skeptic's idea covers it." }),
+                // a withdrawal with no reason has no words, and is no agreement
+                reply("r3", "sk", 170, { proposalid: "P2", revised: true, withdraws: true, text: "" }),
+                // one from before Go marked it reads Go's old fixed line, which says nothing the pill does not
+                reply("r4", "sec", 180, { proposalid: "P2", revised: true, text: "Withdrawn." }),
+                reply("r5", "sec", 190, { proposalid: "P2", revised: true, text: "Retitled: Smaller." }),
+            ],
+        });
+        expect(byId(councilChannel(c), "P1")).toMatchObject({ withdrawn: true });
+        expect(byId(councilChannel(c), "P2")).toMatchObject({ withdrawn: false, agrees: [] });
+        const p1 = councilThread(c, "P1")!.items;
+        expect(byId(p1, "r1")).toMatchObject({ label: "has doubts", pill: "challenge" });
+        expect(byId(p1, "r2")).toMatchObject({ label: "withdrew it", pill: "out", text: "Skeptic's idea covers it." });
+        const p2 = councilThread(c, "P2")!.items;
+        expect(byId(p2, "r3")).toMatchObject({ kind: "reply", label: "withdrew it", pill: "out", text: "" });
+        expect(byId(p2, "r4")).toMatchObject({ label: "withdrew it", pill: "out", text: "" });
+        expect(byId(p2, "r5")).toMatchObject({ label: "replies", pill: "neutral", text: "Retitled: Smaller." });
+    });
+
+    it("marks a held withdrawal draft with the pill too", () => {
+        const c = council({
+            proposals: [prop("P1", "sec", 60)],
+            replies: [
+                reply("r1", "sec", 160, {
+                    revised: true,
+                    withdraws: true,
+                    text: "Covered elsewhere.",
+                    draft: "held",
+                    revision: { withdraw: true },
+                }),
+            ],
+        });
+        expect(byId(councilThread(c, "P1")!.items, "r1")).toMatchObject({
+            kind: "draft",
+            label: "withdrew it",
+            pill: "out",
+            text: "Covered elsewhere.",
+        });
+    });
+
     it("gives a Review idea no wild pill", () => {
         const c = council({ proposals: [prop("P1", "sec", 60, { wild: true })] });
         expect(byId(councilChannel(c), "P1")).toMatchObject({ label: "proposes", wild: false });

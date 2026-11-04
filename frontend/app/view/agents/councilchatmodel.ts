@@ -41,11 +41,13 @@ import {
     isAgentSeat,
     isMentionablePath,
     isReaction,
+    isWithdrawal,
     mentionsChat,
     panel,
     pickCount,
     readableReplies,
     replyLabel,
+    replyWords,
     roundsOf,
     seatLabel,
     seatMentions,
@@ -160,14 +162,18 @@ function proposalLabel(c: Council, p: CouncilProposal): string {
     return p.wild ? "wild idea" : "idea";
 }
 
-/** The stance pill's colour: `accept` green (builds on it), `challenge` amber, `oppose` red, `neutral` a plain reply. */
-export type PillTone = "accept" | "challenge" | "oppose" | "neutral";
+/** The stance pill's colour: `accept` green (builds on it), `challenge` amber, `oppose` red, `out` grey (an idea taken
+ *  out of the running: its author withdrew it), `neutral` a plain reply. */
+export type PillTone = "accept" | "challenge" | "oppose" | "out" | "neutral";
 
-// the word beside a reply's author: the person's `steers` (the whole council) or `replies`, a seat's `builds on it`,
-// `has doubts`, `is against it`, else `replies`
+// the word beside a reply's author: the person's `steers` (the whole council) or `replies`, a seat's `withdrew it`,
+// `builds on it`, `has doubts`, `is against it`, else `replies`
 function replyPill(r: CouncilReply): { label: string; pill: PillTone } {
     if (r.author === YOU) {
         return { label: r.proposalid || r.parentid ? "replies" : "steers", pill: "neutral" };
+    }
+    if (isWithdrawal(r)) {
+        return { label: "withdrew it", pill: "out" };
     }
     if (r.builds) {
         return { label: "builds on it", pill: "accept" };
@@ -370,7 +376,7 @@ function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): 
         id: r.id,
         ...whoIs(c, r.author),
         ...replyPill(r),
-        text: r.text,
+        text: replyWords(r),
         attachments: r.attachments ?? [],
         claim: claimOf(c, r),
         mine,
@@ -491,7 +497,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
         ...replyPill(r),
         title: "",
         on: (c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? "",
-        text: r.text,
+        text: replyWords(r),
         claim: claimOf(c, r),
         revised: !!r.revised,
         edited: !!r.edited,
@@ -517,6 +523,7 @@ export interface IdeaPost extends Who {
     id: string;
     label: string; // `proposes` (Review), `idea` or `wild idea` (Brainstorm)
     wild: boolean; // a Brainstorm wild idea: it gets a pill
+    withdrawn: boolean; // its author withdrew it: a `Withdrawn` pill, the idea drawn dim
     title: string;
     text: string;
     claim: ClaimEvidence;
@@ -543,6 +550,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         ...whoIs(c, p.author),
         label: proposalLabel(c, p),
         wild: c.mode === "brainstorm" && !!p.wild,
+        withdrawn: !!p.withdrawn,
         title: p.title,
         text: p.argument,
         claim: claimOf(c, p),

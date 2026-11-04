@@ -40,6 +40,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A Vietnamese council's experts have short, everyday names that fit on their cards: UX, Đo RAM, Khách, Tìm bug, Thư ký, Giám khảo A / B, Biên tập, Tổng hợp, Thiết kế, Dev, Phản biện and Điều phối, where every name started with "Người". A council you already ran keeps its names.
 - A council message with a web link (`https://…`) now lets the experts open that page with WebFetch, where they said they could not open it and read the repo instead; the link locks Let them read files on and names the site. A link in the council's question does the same for round 1.
 - In a council's Discussion, the idea whose replies are open on the right wears a bright ring, where only its tint deepened and it barely stood out from its neighbours.
+- In a council, an idea its author withdrew wears a Withdrawn badge and is drawn dim, its title struck in its thread, and the author's reply reads "withdrew it" with the reason it gave, where the thread only showed a bare "Withdrawn." reply.
 - A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed

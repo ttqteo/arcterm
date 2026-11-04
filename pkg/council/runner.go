@@ -1643,7 +1643,8 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, now i
 			text string
 		)
 		if rv.Withdraw {
-			rev.Withdraw, text = true, "Withdrawn."
+			// the reply carries the withdrawal as a mark the chat draws as a pill; its text is the seat's reason
+			rev.Withdraw, text = true, rv.Change
 		} else {
 			// the new argument shows on the proposal itself; the reply says only what changed
 			var parts []string
@@ -1668,7 +1669,7 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, now i
 		}
 		reply := CouncilReply{
 			Id: nextReplyId(c), ProposalId: p.Id, ParentId: challengeTo(c, p.Id, e.Id), Author: e.Id,
-			Revised: true, Text: text, Round: round, Ts: now,
+			Revised: true, Withdraws: rev.Withdraw, Text: text, Round: round, Ts: now,
 		}
 		if hold != "" {
 			reply.Draft, reply.Revision = hold, &rev

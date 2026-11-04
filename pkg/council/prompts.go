@@ -295,7 +295,8 @@ const (
 	// changeRule is in both round 2 prompts: a revision's reply shows its one-line change, and the new argument only
 	// on the proposal itself.
 	changeRule = `With a new title or argument, say in "change" what you changed and why, in one line: the person reads ` +
-		`that line under the proposal, and the new argument only in the proposal itself.`
+		`that line under the proposal, and the new argument only in the proposal itself. With "withdraw", say in ` +
+		`"change" why you drop it, in one line.`
 
 	jsonRule = "End your reply with one JSON object in a ```json fence and nothing after it, in this shape:"
 
@@ -936,6 +937,15 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 	return b.String()
 }
 
+// revisedTag is the tag on a reply where the author changed its own proposal: a withdrawal says so, since its text is
+// only the reason.
+func revisedTag(r CouncilReply) string {
+	if r.Withdraws {
+		return "withdrew its proposal"
+	}
+	return "revised its proposal"
+}
+
 // writeThread writes the replies of one proposal (or, with an empty id, the ones to the whole council), each
 // indented under the reply it answers. A held or dropped reply is not written: it is not out in the room.
 func writeThread(b *strings.Builder, c *Council, proposalId string) {
@@ -952,7 +962,7 @@ func writeThread(b *strings.Builder, c *Council, proposalId string) {
 			tags = append(tags, "builds on it")
 		}
 		if r.Revised {
-			tags = append(tags, "revised its proposal")
+			tags = append(tags, revisedTag(r))
 		}
 		if len(tags) > 0 {
 			fmt.Fprintf(b, " (%s)", strings.Join(tags, ", "))
@@ -1645,7 +1655,7 @@ func saidLine(c *Council, r CouncilReply) string {
 		tags = append(tags, "builds on it")
 	}
 	if r.Revised {
-		tags = append(tags, "revised its proposal")
+		tags = append(tags, revisedTag(r))
 	}
 	if len(tags) > 0 {
 		fmt.Fprintf(&b, " (%s)", strings.Join(tags, ", "))

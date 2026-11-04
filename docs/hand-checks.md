@@ -1689,3 +1689,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Open council idea rings.** In a council's Discussion, click an idea's replies → its bubble wears a
   bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone still draws the faint ring.
   Not tried in the app (`councilchat.tsx` `IdeaMessage` bubble).
+- [ ] (arcterm) **Withdrawn council idea.** Run a council until a seat withdraws its own idea in round 2 → in the
+  Discussion the idea's byline has a grey outlined `Withdrawn` pill and its bubble is dim; its thread's title is struck
+  through with the same pill; the author's reply reads `withdrew it` with a one-line reason, or only the pill when it gave
+  none, and never counts as an "agrees" chip. An older council's "Withdrawn." reply shows as the pill alone. Unit tests
+  and the typecheck only (`councilchat.tsx` `IdeaMessage`, `ThreadIdea`, `ReplyMessage`); no dev app was up.

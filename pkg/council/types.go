@@ -249,8 +249,9 @@ type CouncilReply struct {
 	ParentId   string            `json:"parentid,omitempty"` // a reply id; empty answers the proposal itself
 	Author     string            `json:"author"`             // an expert id, or YouId
 	Stance     CouncilStance     `json:"stance,omitempty"`
-	Revised    bool              `json:"revised,omitempty"` // the author revised its own proposal here
-	Builds     bool              `json:"builds,omitempty"`  // a Brainstorm reply that builds on the idea
+	Revised    bool              `json:"revised,omitempty"`   // the author revised its own proposal here
+	Withdraws  bool              `json:"withdraws,omitempty"` // with Revised: the author withdrew it here, Text its reason or ""
+	Builds     bool              `json:"builds,omitempty"`    // a Brainstorm reply that builds on the idea
 	Text       string            `json:"text"`
 	Evidence   []CouncilEvidence `json:"evidence,omitempty"`
 	To         []string          `json:"to,omitempty"`    // the person's reply: the experts who answer it

@@ -1051,7 +1051,7 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 	h.f.setFn("ram/r2", func(req CallReq) string {
 		return fence(mustJSON(map[string]any{
 			"stances":   stancesFor(req),
-			"revisions": []map[string]any{{"proposalid": ownIds(req)[0], "withdraw": true}},
+			"revisions": []map[string]any{{"proposalid": ownIds(req)[0], "withdraw": true, "change": "UX's idea covers it."}},
 		}))
 	})
 	c := h.run(testCouncil("c1"))
@@ -1084,8 +1084,11 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 	if r := revised(uxP); r == nil || r.Text != "Retitled: A better title. Narrowed it to the Mac." || r.Stance != "" {
 		t.Errorf("ux's revision reply = %+v, want the author's reply saying what changed, not the new argument again", r)
 	}
-	if r := revised(ramP); r == nil || r.Text != "Withdrawn." {
-		t.Errorf("ram's withdrawal reply = %+v", r)
+	if r := revised(ramP); r == nil || !r.Withdraws || r.Text != "UX's idea covers it." {
+		t.Errorf("ram's withdrawal reply = %+v, want it marked a withdrawal with the seat's reason as its text", r)
+	}
+	if r := revised(uxP); r == nil || r.Withdraws {
+		t.Errorf("ux's revision reply = %+v, want it not marked a withdrawal", r)
 	}
 	stances := 0
 	for _, r := range repliesBy(c, "ux") {
@@ -5428,8 +5431,8 @@ func TestWithdrawRidesOnReply(t *testing.T) {
 	// sent: the withdrawal takes effect
 	revises("a", func(pid string) map[string]any { return map[string]any{"proposalid": pid, "withdraw": true} })
 	idea, reply := toRound2("a")
-	if !reply.Revision.Withdraw || reply.Text != "Withdrawn." {
-		t.Errorf("held reply = %+v, want a withdrawal", reply)
+	if !reply.Revision.Withdraw || !reply.Withdraws || reply.Text != "" {
+		t.Errorf("held reply = %+v, want a withdrawal with no reason", reply)
 	}
 	h.settle("a")
 	c := h.wait("a")

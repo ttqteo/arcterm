@@ -2666,6 +2666,7 @@ declare global {
         author: string;
         stance?: string;
         revised?: boolean;
+        withdraws?: boolean;
         builds?: boolean;
         text: string;
         evidence?: CouncilEvidence[];

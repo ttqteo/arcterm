@@ -28,8 +28,8 @@ type Round2Stance struct {
 	Builds     bool
 }
 
-// Round2Revision is an expert's change to one of its own proposals; Withdraw leaves Title, Argument and Change empty.
-// Change is the expert's one line on what it changed and why, and may be empty.
+// Round2Revision is an expert's change to one of its own proposals; Withdraw leaves Title and Argument empty.
+// Change is the expert's one line on what it changed and why (with Withdraw, why it withdrew), and may be empty.
 type Round2Revision struct {
 	ProposalId string
 	Withdraw   bool
@@ -430,9 +430,9 @@ func ParseRound2(reply string) (Round2Result, error) {
 		if strings.TrimSpace(rv.ProposalId) == "" {
 			return Round2Result{}, fmt.Errorf("%s reply: a revision has no proposalid", what)
 		}
-		out := Round2Revision{ProposalId: strings.TrimSpace(rv.ProposalId), Withdraw: rv.Withdraw}
+		out := Round2Revision{ProposalId: strings.TrimSpace(rv.ProposalId), Withdraw: rv.Withdraw, Change: strings.TrimSpace(rv.Change)}
 		if !rv.Withdraw {
-			out.Title, out.Argument, out.Change = strings.TrimSpace(rv.Title), strings.TrimSpace(rv.Argument), strings.TrimSpace(rv.Change)
+			out.Title, out.Argument = strings.TrimSpace(rv.Title), strings.TrimSpace(rv.Argument)
 			if out.Title == "" && out.Argument == "" {
 				return Round2Result{}, fmt.Errorf("%s reply: revision of %s changes nothing and does not withdraw it", what, out.ProposalId)
 			}
