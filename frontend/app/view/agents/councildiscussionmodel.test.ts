@@ -4,6 +4,7 @@ import {
     callBarLabel,
     canContinue,
     coordinatorFailure,
+    councilDetails,
     discussionBody,
     evidenceChip,
     expertCard,
@@ -19,6 +20,7 @@ import {
     listNames,
     modeWord,
     postedAt,
+    railHoldsDetails,
     reactions,
     retriedOut,
     seatInitials,
@@ -277,6 +279,61 @@ describe("headerCost", () => {
         expect(headerCost(c, 441_000)).toBe("7:20 · 1 reply · 0.31M tokens");
         expect(headerCost({ ...c, replies: [] }, 229_000)).toBe("3:48 · 0.31M tokens");
         expect(headerCost({ ...c, replies: undefined, started: undefined }, 0)).toBe("0.31M tokens");
+    });
+});
+
+describe("councilDetails", () => {
+    it("splits the cost line into its clock, replies and tokens, beside the mode and why it was picked", () => {
+        const c = council({
+            started: 1000,
+            tokens: 313_000,
+            replies: [reply("r1", "ram")],
+            modewhy: "A plan to judge",
+        });
+        expect(councilDetails(c, 441_000)).toEqual({
+            mode: "Review",
+            why: "A plan to judge",
+            clock: "7:20",
+            replies: "1 reply",
+            tokens: "0.31M tokens",
+            line: "7:20 · 1 reply · 0.31M tokens",
+        });
+    });
+
+    it("leaves out the replies before any discussion, and the clock before the start", () => {
+        const c = council({ started: undefined, tokens: 313_000, replies: [], mode: "brainstorm" });
+        const d = councilDetails(c, 0);
+        expect([d.mode, d.why, d.clock, d.replies, d.tokens, d.line]).toEqual([
+            "Brainstorm",
+            "",
+            "",
+            "",
+            "0.31M tokens",
+            "0.31M tokens",
+        ]);
+    });
+
+    it("has no figures for a council that has not run or waits in the queue", () => {
+        for (const state of ["not-run", "queued"] as const) {
+            const d = councilDetails(council({ state, started: 1000, tokens: 313_000 }), 441_000);
+            expect([d.mode, d.clock, d.replies, d.tokens, d.line]).toEqual(["Review", "", "", "", ""]);
+        }
+    });
+});
+
+describe("railHoldsDetails", () => {
+    const at = (r: Partial<Parameters<typeof railHoldsDetails>[0]>) =>
+        railHoldsDetails({ chat: true, folded: false, threadOpen: false, sourcesOpen: false, ...r });
+
+    it("holds them while the chat shows its rail, unfolded or with a thread open", () => {
+        expect(at({})).toBe(true);
+        expect(at({ folded: true, threadOpen: true })).toBe(true);
+    });
+
+    it("gives them back to the header with the rail folded, Sources in its place, or no chat", () => {
+        expect(at({ folded: true })).toBe(false);
+        expect(at({ sourcesOpen: true })).toBe(false);
+        expect(at({ chat: false })).toBe(false);
     });
 });
 

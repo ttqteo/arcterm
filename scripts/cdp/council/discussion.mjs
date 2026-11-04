@@ -427,7 +427,19 @@ const headerRow = (h) =>
             cost: !!head.querySelector("[data-council-cost]"),
             details: within("[data-council-details]"),
             actions: within("[data-council-actions]"),
-            // the clock, the replies and the tokens live in the details' tooltip, not in the row
+            // the details at the foot of the Ideas rail while it shows: the mode and the cost line it reads aloud
+            foot: (() => {
+                const f = document.querySelector("[data-council-rail] [data-council-rail-details]");
+                if (!f) return null;
+                const b = f.getBoundingClientRect();
+                return {
+                    shown: b.width > 0 && b.height > 0,
+                    mode: (f.querySelector("[data-council-mode]")?.textContent ?? "").trim(),
+                    cost: (f.querySelector("[data-council-cost]")?.textContent ?? "").trim(),
+                    text: (f.innerText ?? "").replace(/\s+/g, " ").trim(),
+                };
+            })(),
+            // the clock, the replies and the tokens are never in the header's row
             costShown: [...row.children].some((e) => /\\d+ replies/.test(e.innerText ?? "") && e.getBoundingClientRect().width > 2 && !e.querySelector("[data-council-cost]")),
             lastIn: !!lastBox && lastBox.left >= rootBox.left - 1 && lastBox.right <= rootBox.right + 1,
             rootW: Math.round(rootBox.width),
@@ -488,7 +500,7 @@ async function header(h, ctx, rec) {
     );
     const wide = await headerRow(h);
     rec(
-        "header: the header is one 44px row holding the tabs, the title, the details icon (the cost in its tooltip, not in the row), two of the five seats' avatars then +3, and the actions menu",
+        "header: the header is one 44px row holding the tabs, the title, two of the five seats' avatars then +3, and the actions menu; with the Ideas rail open the details sit at its foot (the mode, the clock, the replies and the tokens), not in the header",
         wide != null &&
             Math.abs(wide.height - 44) <= 1 &&
             wide.tab &&
@@ -496,14 +508,37 @@ async function header(h, ctx, rec) {
             wide.seats === 2 &&
             wide.seatsShown === 2 &&
             wide.more === "+3" &&
-            wide.cost &&
-            wide.details === true &&
+            !wide.cost &&
+            wide.details === null &&
             wide.actions === true &&
             !wide.costShown &&
+            wide.foot?.shown === true &&
+            wide.foot.mode === "Review" &&
+            /^\d+:\d\d · \d+ repl(y|ies) · [\d.]+M tokens$/.test(wide.foot.cost) &&
+            /Review .*\d+:\d\d .*repl(y|ies) .*tokens/.test(wide.foot.text) &&
             !wide.oldRow,
         wide
     );
     await h.shot("cdp-shots/council-discussion-header.png");
+
+    // the rail folded: the details go back to the header's details icon, its tooltip the mode and the cost line; unfolded,
+    // they return to the rail's foot
+    await click(h, "[data-council-rail-fold]");
+    await until(h, `!document.querySelector("[data-council-rail]") && !!document.querySelector("[data-council-discussion] header [data-council-details]")`);
+    const folded = await headerRow(h);
+    const tip = await attr(h, "[data-council-discussion] header [data-council-details]", "title");
+    await h.shot("cdp-shots/council-discussion-header-folded.png");
+    await click(h, "[data-council-rail-unfold]");
+    const unfolded = await until(h, `!!document.querySelector("[data-council-rail] [data-council-rail-details]") && !document.querySelector("[data-council-discussion] header [data-council-details]")`);
+    rec(
+        "header: with the Ideas rail folded the header holds a details icon whose tooltip reads the mode and the cost line, and unfolding the rail moves them back to its foot",
+        folded?.details === true &&
+            folded.foot === null &&
+            folded.lastIn &&
+            /^Review\n\d+:\d\d · \d+ repl(y|ies) · [\d.]+M tokens$/.test(tip ?? "") &&
+            unfolded,
+        { folded, tip, unfolded }
+    );
 
     // the actions menu: the round runs, so it holds Summarize, Pin and, past a separator, Stop council
     await openActions(h);
@@ -524,14 +559,14 @@ async function header(h, ctx, rec) {
         await new Promise((r) => setTimeout(r, 400));
         const narrow = await headerRow(h);
         rec(
-            "header: at a 1000px window the row is still 44px, the title truncates and keeps at least 60px, and the seats' stack (two and +3), the details and the actions menu stay whole in the pane",
+            "header: at a 1000px window the row is still 44px, the title truncates and keeps at least 60px, the seats' stack (two and +3) and the actions menu stay whole in the pane, and the details stay at the rail's foot",
             narrow != null &&
                 Math.abs(narrow.height - 44) <= 1 &&
                 narrow.truncated &&
                 narrow.titleW >= 60 &&
                 narrow.seatsIn === true &&
                 narrow.seatsShown === 2 &&
-                narrow.details === true &&
+                narrow.foot?.shown === true &&
                 narrow.actions === true &&
                 narrow.lastIn,
             narrow
@@ -559,12 +594,12 @@ async function header(h, ctx, rec) {
         const viRow = await headerRow(h);
         await h.shot("cdp-shots/council-discussion-header-narrow-vi.png");
         rec(
-            "header: a Vietnamese council at a 1000px window has the same icon tabs (Bản đồ in the title and aria-label of the Map's), a 44px row, the title kept at 60px or more, and the details and the actions in the pane",
+            "header: a Vietnamese council at a 1000px window has the same icon tabs (Bản đồ in the title and aria-label of the Map's), a 44px row, the title kept at 60px or more, the actions in the pane and the details at the rail's foot",
             iconTabs(viTabs, "Bản đồ") &&
                 viRow != null &&
                 Math.abs(viRow.height - 44) <= 1 &&
                 viRow.titleW >= 60 &&
-                viRow.details === true &&
+                viRow.foot?.shown === true &&
                 viRow.lastIn,
             { viTabs, viRow }
         );

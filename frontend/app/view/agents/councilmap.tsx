@@ -134,7 +134,7 @@ function Header({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: strin
             <CouncilHeaderRow
                 c={c}
                 view="map"
-                now={Date.now()}
+                details
                 titleAttr="data-council-map-title"
                 status={<StatusChip c={c} />}
                 onOpenTerminal={onOpenTerminal}

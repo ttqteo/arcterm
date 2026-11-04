@@ -1029,14 +1029,20 @@ export function summaryFacts(c: Council, nowMs: number): { state: string; facts:
     return { state: STATE_WORD[c.state] ?? c.state, facts };
 }
 
+/** Pure: the cost line's three figures apart: the council's clock (`7:20`, empty before it started), its replies
+ *  (`19 replies`; reactions are no replies) and its tokens (`0.55M tokens`). */
+export function costParts(c: Council, nowMs: number): { clock: string; replies: string; tokens: string } {
+    return {
+        clock: c.started ? clock(elapsedMs(c, nowMs)) : "",
+        replies: plural(readableReplies(c).length, "reply", "replies"),
+        tokens: `${countTokens(c.tokens)} tokens`,
+    };
+}
+
 /** Pure: the Discussion header's cost line: `7:20 · 19 replies · 0.55M tokens` (reactions are no replies). */
 export function costLine(c: Council, nowMs: number): string {
-    const parts: string[] = [];
-    if (c.started) {
-        parts.push(clock(elapsedMs(c, nowMs)));
-    }
-    parts.push(plural(readableReplies(c).length, "reply", "replies"), `${countTokens(c.tokens)} tokens`);
-    return parts.join(" · ");
+    const p = costParts(c, nowMs);
+    return [p.clock, p.replies, p.tokens].filter((s) => s !== "").join(" · ");
 }
 
 /** Pure: one expert's time and tokens so far, from `stats`: `1 min 52 s · 84k tokens`; empty before its first call. */

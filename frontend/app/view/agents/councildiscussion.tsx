@@ -22,12 +22,12 @@ import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
 import { Check, ListChecks, Square, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
 import { CouncilAvatar, CouncilChat, CouncilText } from "./councilchat";
-import { chipShort, stepChip } from "./councilchatmodel";
+import { chipShort, councilThread, stepChip } from "./councilchatmodel";
 import {
     avatarTone,
     callBarLabel,
@@ -39,6 +39,7 @@ import {
     failedWhile,
     isQueued,
     keptProposals,
+    railHoldsDetails,
     retriedOut,
     seatInitials,
     summarizeAction,
@@ -66,7 +67,10 @@ import { claimOf } from "./councilsources";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
     continueCouncil,
+    councilIdeasRailFoldedAtom,
+    councilOpenProposalAtom,
     councilSelAtom,
+    councilSourcesAtom,
     councilTimelineAtom,
     retryExpert,
     startSavedCouncil,
@@ -98,20 +102,6 @@ interface PauseDraft {
 const councilPauseAtom = atomFamily(
     (_id: string) => atom<PauseDraft>({ cut: [], question: "" }) as PrimitiveAtom<PauseDraft>
 );
-
-// the clock in the header ticks while the council runs
-function useClock(on: boolean): number {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        if (!on) {
-            return;
-        }
-        setNow(Date.now());
-        const t = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(t);
-    }, [on]);
-    return now;
-}
 
 // ---- the view ----
 
@@ -156,13 +146,12 @@ function useLiveChats(model: AgentsViewModel, project: string): readonly Seatabl
 }
 
 function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
-    const now = useClock(c.state === "running");
     const acts = useActions();
     const chats = useLiveChats(model, c.project);
     const body = discussionBody(c);
     return (
         <div data-council-discussion={c.id} data-council-id={c.id} data-council-state={c.state} className={ROOT}>
-            <Header c={c} body={body} now={now} acts={acts} onOpenTerminal={(tab) => model.openTerminal(tab)} />
+            <Header c={c} body={body} acts={acts} onOpenTerminal={(tab) => model.openTerminal(tab)} />
             {isQueued(c) ? (
                 <QueuedBody c={c} />
             ) : body === "not-run" ? (
@@ -238,13 +227,11 @@ function CallBar({ c }: { c: Council }) {
 function Header({
     c,
     body,
-    now,
     acts,
     onOpenTerminal,
 }: {
     c: Council;
     body: DiscussionBody;
-    now: number;
     acts: Actions;
     onOpenTerminal: (tab: string) => void;
 }) {
@@ -274,6 +261,17 @@ function Header({
           ]
         : [];
     const stopping = acts.busy.has("stop");
+    // the details sit at the foot of the Ideas rail while it shows; the header's icon holds them otherwise
+    const folded = useAtomValue(councilIdeasRailFoldedAtom);
+    const openId = useAtomValue(councilOpenProposalAtom(c.id));
+    const sources = useAtomValue(councilSourcesAtom(c.id));
+    const threadOpen = openId != null && councilThread(c, openId) != null;
+    const inRail = railHoldsDetails({
+        chat: body === "chat",
+        folded,
+        threadOpen,
+        sourcesOpen: !threadOpen && sources != null,
+    });
     const stop: ContextMenuItem | undefined =
         c.state === "running"
             ? {
@@ -292,7 +290,7 @@ function Header({
             <CouncilHeaderRow
                 c={c}
                 view="discussion"
-                now={now}
+                details={!inRail}
                 titleAttr="data-council-title"
                 status={<StatusChip c={c} />}
                 items={items}

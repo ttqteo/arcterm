@@ -92,8 +92,9 @@ và mỗi câu trả lời nằm dưới phần trích của ý mà nó đáp l�
 bạn đặt thành chip.
 
 Đầu Discussion (và Map) là một hàng gọn: ba tab dạng icon (Report, Discussion kèm số ý, Map), tiêu đề, chip trạng thái,
-rồi ba nút ở cuối. Nút **ⓘ** cho xem chế độ (Review hay Brainstorm, và lý do chọn), thời gian, số câu trả lời và số
-token khi rê chuột. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
+rồi chồng avatar và nút **…** ở cuối. Chế độ (Review hay Brainstorm; rê chuột để xem lý do chọn), thời gian, số câu trả
+lời và số token nằm ở một dòng dưới đáy rail Ideas, thấy ở mọi tab của rail. Khi rail gập lại (hay ở vòng 1, lúc dừng chờ
+bạn, và trong Map), chúng vào nút **ⓘ** trên header, đọc khi rê chuột. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
 bấm vào để xem cả danh sách. Nút **…** mở menu: **Summarize** (hay **Summarize again**), **Resume**, **Pin** / **Unpin**,
 và **Stop council** khi council đang chạy.
 

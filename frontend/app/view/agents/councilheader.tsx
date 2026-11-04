@@ -1,11 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What a council's view headers share beside the tabs (counciltabs.tsx). The details icon holds the mode (and why it was
-// picked), the clock, the replies and the tokens in its tooltip and its screen-reader text, so the row keeps none of them.
-// The actions menu (…) holds what the view offers (the Discussion's Summarize), then Resume and Pin, then Stop on its own
+// What a council's view headers share beside the tabs (counciltabs.tsx). The details icon (councildetails.tsx) holds the
+// mode, the clock, the replies and the tokens in its tooltip, where the Ideas rail is not on screen to show them. The
+// actions menu (…) holds what the view offers (the Discussion's Summarize), then Resume and Pin, then Stop on its own
 // past a separator; it is the app's one context menu, opened under the button. CouncilHeaderRow is the Discussion's and the
-// Map's row: tabs, title, step chip, details, the seats' stack, actions, one 44px line that never wraps. Only the title
+// Map's row: tabs, title, step chip, details (unless the rail shows them), the seats' stack, actions, one 44px line that never wraps. Only the title
 // shrinks: it truncates (the whole is its hover) before anything leaves the row. The Report keeps its own tab bar, with the
 // tabs and the actions menu.
 
@@ -13,9 +13,9 @@ import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Ellipsis, Info, Pin, PinOff, Play } from "lucide-react";
+import { Ellipsis, Pin, PinOff, Play } from "lucide-react";
 import { useRef, type ReactNode } from "react";
-import { headerCost, isQueued, modeWord } from "./councildiscussionmodel";
+import { CouncilDetailsIcon } from "./councildetails";
 import { isPinnedCouncil } from "./councilmodel";
 import { resumeCouncil, useCanResumeCouncil } from "./councilresume";
 import { CouncilSeats } from "./councilseats";
@@ -26,33 +26,6 @@ import type { CouncilTabId } from "./counciltabsmodel";
 // a bare icon that takes a fill on hover, as the agent header's
 const ICON_BTN =
     "flex flex-none cursor-pointer items-center justify-center rounded-[6px] border border-transparent p-[5px] text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
-
-/** The details icon: the mode and the cost line, read on hover. The text a screen reader and a CDP scenario read is the
- *  same words, kept in sr-only spans (`data-council-mode`, `data-council-cost`). */
-export function CouncilDetails({ c, now }: { c: Council; now: number }) {
-    const mode = modeWord(c);
-    const cost = c.state !== "not-run" && !isQueued(c) ? headerCost(c, now) : "";
-    const lines = [c.modewhy ? `${mode}: ${c.modewhy}` : mode, cost].filter((line) => line !== "");
-    return (
-        <span
-            data-council-details
-            role="note"
-            tabIndex={0}
-            title={lines.join("\n")}
-            className={cn(ICON_BTN, "relative cursor-default")}
-        >
-            <Info size={15} strokeWidth={1.8} aria-hidden />
-            <span data-council-mode className="sr-only">
-                {mode}
-            </span>
-            {cost !== "" && (
-                <span data-council-cost className="sr-only">
-                    {cost}
-                </span>
-            )}
-        </span>
-    );
-}
 
 /** The actions menu (…): the view's own `items` first, then Resume (when the tree no longer lists the council) and Pin
  *  or Unpin, then `stop` past a separator. Each row carries a data attribute (`data-council-summarize`, …-resume, …-pin,
@@ -120,11 +93,12 @@ export function CouncilActions({
 }
 
 /** The Discussion's and the Map's header row. `titleAttr` is the title's data attribute (each view's scenarios read
- *  their own); `status` is the view's step chip. */
+ *  their own); `status` is the view's step chip; `details` draws the details icon (false while the Ideas rail shows them,
+ *  railHoldsDetails). */
 export function CouncilHeaderRow({
     c,
     view,
-    now,
+    details,
     titleAttr,
     status,
     items,
@@ -133,7 +107,7 @@ export function CouncilHeaderRow({
 }: {
     c: Council;
     view: CouncilTabId;
-    now: number;
+    details: boolean;
     titleAttr: `data-${string}`;
     status: ReactNode;
     items?: ContextMenuItem[];
@@ -154,7 +128,7 @@ export function CouncilHeaderRow({
             </h1>
             {status}
             <div className="min-w-3 flex-1" />
-            <CouncilDetails c={c} now={now} />
+            {details && <CouncilDetailsIcon c={c} />}
             <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
             <CouncilActions c={c} items={items} stop={stop} />
         </div>

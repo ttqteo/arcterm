@@ -121,6 +121,7 @@ import {
     type Who,
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
+import { CouncilDetailsFoot } from "./councildetails";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
 import {
@@ -2918,6 +2919,7 @@ function CouncilRail({
             ) : (
                 <IdeasList ideas={ideas} on={on} freshOnly={freshOnly} onPick={onPick} onFreshOnly={onFreshOnly} />
             )}
+            <CouncilDetailsFoot c={c} />
         </aside>
     );
 }
