@@ -1711,8 +1711,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `[close] confirm … via=enter after=…ms` (or `via=click`), `[close] close … why=close from …`, and wavesrv's
   `CloseTab: tab …`. Unit tests and the typecheck only (`closelog.ts`, `confirmdialog.tsx`, `agentactions.ts`).
 - [ ] (arcterm) **Open council idea rings.** In a council's Discussion, click an idea's replies → its bubble wears a
-  bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone still draws the faint ring.
+  bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone draws the accent ring (below).
   Not tried in the app (`councilchat.tsx` `IdeaMessage` bubble).
+- [ ] (arcterm) **Picked council idea shows in both places.** In a council's Discussion, click an idea on the Ideas tab →
+  the row wears an accent ring and its `Idea N` turns accent; the channel scrolls the same idea to the top, whose bubble
+  wears the same accent ring (wider for ~2 s, then 2px) and whose byline starts with the same accent `Idea N`. Every
+  other idea's byline shows its `Idea N` muted. j/k moves both rings together. Typecheck only (`councilchat.tsx`
+  `IdeaMessage`, `IdeasList`, `pick`); no dev app was up.
 - [ ] (arcterm) **Withdrawn council idea.** Run a council until a seat withdraws its own idea in round 2 → in the
   Discussion the idea's byline has a grey outlined `Withdrawn` pill and its bubble is dim; its thread's title is struck
   through with the same pill; the author's reply reads `withdrew it` with a one-line reason, or only the pill when it gave

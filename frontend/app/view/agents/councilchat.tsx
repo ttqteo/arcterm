@@ -613,6 +613,7 @@ function Chot({ councilId, item, text, acts }: { councilId: string; item: string
 function IdeaMessage({
     councilId,
     item,
+    n,
     open,
     focused,
     onOpen,
@@ -620,6 +621,7 @@ function IdeaMessage({
 }: {
     councilId: string;
     item: IdeaPost;
+    n: number | undefined; // its number on the Ideas rail, so a message and its rail row read as one
     open: boolean;
     focused: boolean;
     onOpen: (id: string) => void;
@@ -634,11 +636,19 @@ function IdeaMessage({
             data-item-label={item.label}
             data-open={open ? "true" : undefined}
             data-focused={focused ? "true" : undefined}
-            className="flex gap-[10px]"
+            className="group/idea flex gap-[10px]"
         >
             <SeatAvatar who={item} large />
             <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-[6px]">
                 <Byline who={item}>
+                    {n != null && (
+                        <span
+                            data-council-idea-n
+                            className={cn("tabular-nums", open || focused ? "font-semibold text-accent" : "text-muted")}
+                        >
+                            Idea {n}
+                        </span>
+                    )}
                     {item.wild ? (
                         <CouncilPill word={item.label} tone="neutral" />
                     ) : (
@@ -650,12 +660,14 @@ function IdeaMessage({
                 </Byline>
                 <div
                     className={cn(
-                        "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
+                        "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3 transition-[box-shadow] duration-300 motion-reduce:transition-none",
                         item.withdrawn && "opacity-60",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
                         // the open idea wears a light ring over its tone border, so it stands out from its tinted
-                        // neighbours; focus alone keeps the faint one
-                        open ? "ring-2 ring-primary/85" : focused && "ring-1 ring-edge-strong"
+                        // neighbours; the idea under the cursor (a rail click, j / k) wears the accent ring its rail
+                        // row wears, and a rail click rings it wider for a moment where it lands (FLASH_MS)
+                        open ? "ring-2 ring-primary/85" : focused && "ring-2 ring-accent",
+                        "group-data-[flash=true]/idea:ring-4 group-data-[flash=true]/idea:ring-accent"
                     )}
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
@@ -2557,7 +2569,10 @@ function IdeasList({
                                     onClick={() => onPick(row)}
                                     className={cn(
                                         "-mx-2 flex flex-none cursor-pointer gap-[10px] border-0 border-t border-border px-2 py-[10px] text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-                                        row.id === on ? "bg-surface-selected" : "bg-transparent"
+                                        // the row under the cursor wears the accent ring its message in the channel wears
+                                        row.id === on
+                                            ? "rounded-[6px] bg-surface-selected ring-2 ring-inset ring-accent"
+                                            : "bg-transparent"
                                     )}
                                 >
                                     <span
@@ -2570,7 +2585,10 @@ function IdeasList({
                                     />
                                     <span className="flex min-w-0 flex-1 flex-col gap-[4px]">
                                         <span data-council-rail-who className="text-[11px] text-muted">
-                                            Idea {row.n} · {row.name}
+                                            <span className={row.id === on ? "font-semibold text-accent" : undefined}>
+                                                Idea {row.n}
+                                            </span>{" "}
+                                            · {row.name}
                                             {row.isNew && <span className="text-accent-soft"> · new</span>}
                                         </span>
                                         <span
@@ -3138,7 +3156,14 @@ export function CouncilChat({
     const pick = useCallback((row: IdeaRow) => {
         setFocusedId(row.id);
         const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
-        revealIn(channel.current, channel.current?.querySelector(at), "start");
+        const post = channel.current?.querySelector<HTMLElement>(at);
+        revealIn(channel.current, post, "start");
+        // the idea rings wider for a moment where it lands, so the eye finds it; a second click restarts the moment
+        if (post != null) {
+            window.clearTimeout(Number(post.dataset.flashTimer));
+            post.dataset.flash = "true";
+            post.dataset.flashTimer = String(window.setTimeout(() => delete post.dataset.flash, FLASH_MS));
+        }
     }, []);
     // the Memory tab's Show the messages: the channel scrolls to the first of them it draws: the message itself (an idea,
     // or a post of the channel), else, for a reply that lives in an idea's thread, that idea; the cursor goes to an idea.
@@ -3326,6 +3351,7 @@ export function CouncilChat({
                                             key={item.id}
                                             councilId={c.id}
                                             item={item}
+                                            n={numbers.get(item.id)}
                                             acts={acts}
                                             open={threadOpen && item.id === openId}
                                             focused={item.id === focusedId}
