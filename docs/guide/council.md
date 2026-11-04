@@ -91,6 +91,12 @@ chữ cái (ĐV, KT) để phân biệt những ghế có tên đầu giống nh
 và mỗi câu trả lời nằm dưới phần trích của ý mà nó đáp lại. Câu hỏi của bạn nằm bên phải, gấp còn ba dòng, các giới hạn
 bạn đặt thành chip.
 
+Đầu Discussion (và Map) là một hàng gọn: ba tab dạng icon (Report, Discussion kèm số ý, Map), tiêu đề, chip trạng thái,
+rồi ba nút ở cuối. Nút **ⓘ** cho xem chế độ (Review hay Brainstorm, và lý do chọn), thời gian, số câu trả lời và số
+token khi rê chuột. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
+bấm vào để xem cả danh sách. Nút **…** mở menu: **Summarize** (hay **Summarize again**), **Resume**, **Pin** / **Unpin**,
+và **Stop council** khi council đang chạy.
+
 - **Rail Ideas**: bên phải kênh, mỗi ý một dòng như Decided so far của brainstorm: số thứ tự, người viết, tiêu đề, và
   một dòng mờ ghi số câu trả lời và lập trường các ghế đã chọn. Bấm một dòng để cuộn kênh tới ý đó. Nút » gấp rail lại,
   nút **Ideas · N** trên kênh mở lại; arcterm nhớ lựa chọn này.
@@ -250,8 +256,8 @@ dòng "See who agrees with which idea in Map" mở nó.
 
 ## Ghim, xóa
 
-- **Pin** ở đầu Discussion và trên thanh tab của báo cáo **ghim** council, ở bất kỳ trạng thái nào, kể cả đang chạy: nút
-  đổi thành **Pinned**, và council nằm trên cùng trong project của nó ở cây Agent. Bấm **Pinned** để bỏ ghim. Ngoài ra
+- **Pin** trong menu **…** ở đầu Discussion, Map và thanh tab của báo cáo **ghim** council, ở bất kỳ trạng thái nào, kể
+  cả đang chạy: council nằm trên cùng trong project của nó ở cây Agent, và mục đó đổi thành **Unpin** để bỏ ghim. Ngoài ra
   chỉ ghim được từ **Councils** và từ History của Overview project (mở một hàng council, hay chuột phải): cây không có
   nút Pin. Chỉ bạn ghim và bỏ ghim:
   Retry, Summarize again hay một câu trả lời mới không đụng tới.

@@ -54,6 +54,13 @@ describe("councilTabs", () => {
         expect(councilTabs({ proposals }).map((t) => t.count)).toEqual(["", "2 ideas", ""]);
     });
 
+    it("draws the count as a bare number beside the Discussion's icon, and none before an idea is sent", () => {
+        expect(councilTabs({}).map((t) => t.badge)).toEqual(["", "", ""]);
+        expect(councilTabs({ proposals: [prop("P1", { draft: "held" })] })[1].badge).toBe("");
+        const proposals = Array.from({ length: 28 }, (_, i) => prop(`P${i + 1}`));
+        expect(councilTabs({ proposals }).map((t) => t.badge)).toEqual(["", "28", ""]);
+    });
+
     it("keeps the Map open whatever state the council is in, with no idea sent yet", () => {
         expect(councilTabs({ proposals: [] }).some((t) => t.id === "map")).toBe(true);
     });

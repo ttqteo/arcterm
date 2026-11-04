@@ -154,8 +154,10 @@ function MenuRow({
     const activeCls = danger ? ITEM_DANGER_ACTIVE : ITEM_ACTIVE;
     return (
         <div
+            {...item.attrs}
             ref={ref}
             data-menu-item={item.label}
+            aria-disabled={disabled || undefined}
             title={item.title}
             className={cn(ITEM, danger && !highlighted && ITEM_DANGER, highlighted && activeCls, disabled && ITEM_DISABLED)}
             onMouseEnter={onEnter}

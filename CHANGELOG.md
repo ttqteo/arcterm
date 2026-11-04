@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's header is one slim row: the Report, Discussion and Map tabs are icons, the title gets the room, the mode, time, replies and tokens sit under an ⓘ you hover, the seats show two avatars and +N (hover for the whole list), and Summarize, Resume, Pin and Stop moved into a … menu.
 - A council ranks directions by how many experts picked them, counting an expert once across merged proposals, and its report says "3 experts, 1 model" rather than "5 picks": seats on one model are not independent votes. Run facts says when every seat ran on one model.
 
 - An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.

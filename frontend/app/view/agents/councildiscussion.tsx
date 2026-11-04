@@ -21,7 +21,7 @@ import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
-import { Check, ListChecks, X } from "lucide-react";
+import { Check, ListChecks, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -37,10 +37,8 @@ import {
     expertCard,
     failedExperts,
     failedWhile,
-    headerCost,
     isQueued,
     keptProposals,
-    modeWord,
     retriedOut,
     seatInitials,
     summarizeAction,
@@ -49,6 +47,7 @@ import {
     type DiscussionBody,
     type FailedExpert,
 } from "./councildiscussionmodel";
+import { CouncilHeaderRow } from "./councilheader";
 import { mapWords } from "./councilmapmodel";
 import {
     callSegments,
@@ -61,10 +60,7 @@ import {
     type SeatableAgent,
     type SegmentState,
 } from "./councilmodel";
-import { CouncilPinButton } from "./councilpin";
-import { CouncilResumeButton } from "./councilresume";
 import { RetryWithButton } from "./councilretrymenu";
-import { CouncilSeats } from "./councilseats";
 import { seatableAgents } from "./councilsetupmodel";
 import { claimOf } from "./councilsources";
 import { EvidenceChips } from "./councilsourcespanel";
@@ -79,7 +75,6 @@ import {
     useCouncil,
     useEstimate,
 } from "./councilstore";
-import { CouncilTabs } from "./counciltabs";
 import { projectsAtom } from "./projectsstore";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
@@ -223,19 +218,6 @@ function StatusChip({ c }: { c: Council }) {
     );
 }
 
-// the mode in a word, in every state; the reason it was picked is its hover
-function ModeChip({ c }: { c: Council }) {
-    return (
-        <span
-            data-council-mode
-            title={c.modewhy || undefined}
-            className="inline-flex flex-none items-center whitespace-nowrap rounded-full border border-edge-mid px-[9px] py-[2px] text-[10.5px] text-secondary @max-[1000px]:hidden"
-        >
-            {modeWord(c)}
-        </span>
-    );
-}
-
 const SEGMENT: Record<SegmentState, string> = {
     done: "bg-success/45",
     running: "bg-working",
@@ -278,74 +260,45 @@ function Header({
     const title = enabled ? "Rank the directions and fill the matrix from the discussion so far" : summarizeHold(c);
     // the call bar is the first step's and the pause's; the chat's seat chips say who is at work
     const showBar = body !== "chat" && ((c.state === "running" && c.round <= 1) || c.state === "awaiting-you");
-    // under 900px the cost keeps its first part (the clock, or the replies before the start); the whole line stays in its title
-    const cost = headerCost(c, now);
-    const costParts = cost.split(" · ");
-    const costFirst = costParts[0];
-    const costRest = costParts.slice(1).join(" · ");
+    // the menu's rows (councilheader.tsx): Summarize while a summary is asked for, Stop while the council runs
+    const items: ContextMenuItem[] = action.call
+        ? [
+              {
+                  label: summarizing ? "Summarizing…" : action.label,
+                  icon: <ListChecks />,
+                  enabled: enabled && !summarizing,
+                  title,
+                  click: () => void summarize(),
+                  attrs: { "data-council-summarize": "" },
+              },
+          ]
+        : [];
+    const stopping = acts.busy.has("stop");
+    const stop: ContextMenuItem | undefined =
+        c.state === "running"
+            ? {
+                  label: stopping ? "Stopping…" : "Stop council",
+                  icon: <Square />,
+                  danger: true,
+                  enabled: !stopping,
+                  click: () => void acts.run("stop", "Stop council", () => stopCouncil(c.id)),
+                  attrs: { "data-council-stop": "" },
+              }
+            : undefined;
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            {/* one 52px row that never wraps: the tabs, the step chip, the seats' stack, the cost and Pin (Pinned once it
-                is) keep their width and the title wraps to two lines, then truncates, before anything leaves the row. Under 1000px of pane the mode chip goes,
-                under 900px Summarize keeps its icon alone and the stack three avatars. The Report tab is where a summary opens. */}
-            <div className="flex h-[52px] min-w-0 items-stretch gap-3 px-6 @max-[900px]:gap-2 @max-[900px]:px-4">
-                <CouncilTabs c={c} view="discussion" className="flex-none @max-[900px]:gap-3" />
-                <div aria-hidden className="h-5 w-px flex-none self-center bg-edge-mid" />
-                <div className="flex min-w-0 flex-1 items-center gap-[10px] @max-[900px]:gap-2">
-                    <ModeChip c={c} />
-                    <h1
-                        data-council-title
-                        title={c.feature}
-                        // shrinks far ahead of everything else in the row: a long title wraps to a second line, then
-                        // ends in an ellipsis (the whole is on hover)
-                        className="m-0 line-clamp-2 min-w-[72px] flex-[0_1000_auto] break-words text-[14px] font-semibold leading-[1.3] tracking-[-0.01em] text-primary"
-                    >
-                        {c.feature}
-                    </h1>
-                    <StatusChip c={c} />
-                    <div className="min-w-6 flex-1 @max-[900px]:hidden" />
-                    {/* in every body, round 1's too: a round-1 expert card asks the Seats popover for its seat's timeline */}
-                    <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
-                    <div aria-hidden className="h-5 w-px flex-none bg-edge-mid @max-[900px]:hidden" />
-                    {c.state !== "not-run" && !isQueued(c) && (
-                        <span
-                            data-council-cost
-                            title={cost}
-                            className="flex-none whitespace-nowrap text-[12.5px] tabular-nums text-muted"
-                        >
-                            {costFirst}
-                            {costRest !== "" && <span className="@max-[900px]:hidden"> · {costRest}</span>}
-                        </span>
-                    )}
-                    {action.call && (
-                        <button
-                            type="button"
-                            data-council-summarize
-                            disabled={!enabled || summarizing}
-                            title={title}
-                            onClick={() => void summarize()}
-                            className="inline-flex h-[28px] flex-none cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-strong bg-surface-raised px-[12px] text-[13px] font-semibold text-primary outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:border-border disabled:bg-surface disabled:text-ink-faint @max-[900px]:px-[8px]"
-                        >
-                            <ListChecks size={13} strokeWidth={2} aria-hidden />
-                            <span className="@max-[900px]:sr-only">{summarizing ? "Summarizing…" : action.label}</span>
-                        </button>
-                    )}
-                    {c.state === "running" && (
-                        <button
-                            type="button"
-                            data-council-stop
-                            disabled={acts.busy.has("stop")}
-                            title="Stop council"
-                            onClick={() => void acts.run("stop", "Stop council", () => stopCouncil(c.id))}
-                            className="h-[28px] flex-none cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
-                        >
-                            {acts.busy.has("stop") ? "Stopping…" : "Stop"}
-                        </button>
-                    )}
-                    <CouncilResumeButton c={c} />
-                    <CouncilPinButton c={c} />
-                </div>
-            </div>
+            {/* in every body, round 1's too: a round-1 expert card asks the Seats popover for its seat's timeline. The
+                Report tab is where a summary opens */}
+            <CouncilHeaderRow
+                c={c}
+                view="discussion"
+                now={now}
+                titleAttr="data-council-title"
+                status={<StatusChip c={c} />}
+                items={items}
+                stop={stop}
+                onOpenTerminal={onOpenTerminal}
+            />
             {(showBar || (c.state === "running" && c.round <= 1) || acts.error != null) && (
                 // pt keeps the call bar clear of the shown tab's underline at the row's bottom edge
                 <div className="flex flex-col gap-2 px-6 pt-[10px] pb-2">

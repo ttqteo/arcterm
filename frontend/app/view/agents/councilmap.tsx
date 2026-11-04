@@ -34,6 +34,7 @@ import { CouncilAvatar, MarkedText } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
 import { CHECK_TONE, CheckIcon, WRONG_CITE_ICON, WRONG_CITE_TONE } from "./councilchecks";
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
+import { CouncilHeaderRow } from "./councilheader";
 import { expertCards, mapWords, type ExpertCard, type MapWords } from "./councilmapmodel";
 import {
     byAgreement,
@@ -44,12 +45,8 @@ import {
     type MatrixRow,
     type StanceLabel,
 } from "./councilmodel";
-import { CouncilPinButton } from "./councilpin";
-import { CouncilResumeButton } from "./councilresume";
-import { CouncilSeats } from "./councilseats";
 import { councilMapOpenAtom, councilSelAtom, councilTimelineAtom, useCouncil } from "./councilstore";
 import { isBrainstorm, outcomeLabel } from "./councilsummarymodel";
-import { CouncilTabs } from "./counciltabs";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
 
@@ -134,25 +131,14 @@ function StatusChip({ c }: { c: Council }) {
 function Header({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: string) => void }) {
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            <div className="flex h-[52px] min-w-0 items-stretch gap-3 px-6 @max-[900px]:gap-2 @max-[900px]:px-4">
-                <CouncilTabs c={c} view="map" className="flex-none @max-[900px]:gap-3" />
-                <div aria-hidden className="h-5 w-px flex-none self-center bg-edge-mid" />
-                <div className="flex min-w-0 flex-1 items-center gap-[10px] @max-[900px]:gap-2">
-                    <h1
-                        data-council-map-title
-                        title={c.feature}
-                        // shrinks far ahead of the status chip, so a long title truncates before the chip's word does
-                        className="m-0 min-w-[72px] flex-[0_1000_auto] truncate text-[14px] font-semibold tracking-[-0.01em] text-primary"
-                    >
-                        {c.feature}
-                    </h1>
-                    <StatusChip c={c} />
-                    <div className="min-w-6 flex-1" />
-                    <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
-                    <CouncilResumeButton c={c} />
-                    <CouncilPinButton c={c} />
-                </div>
-            </div>
+            <CouncilHeaderRow
+                c={c}
+                view="map"
+                now={Date.now()}
+                titleAttr="data-council-map-title"
+                status={<StatusChip c={c} />}
+                onOpenTerminal={onOpenTerminal}
+            />
         </header>
     );
 }

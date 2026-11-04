@@ -63,6 +63,7 @@ import { askChips } from "./councilchatmodel";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import { finalProposal, type FinalProposal } from "./councilfinalmodel";
+import { CouncilActions } from "./councilheader";
 import { mapWords } from "./councilmapmodel";
 import {
     STANCE_WORD,
@@ -77,8 +78,6 @@ import {
     type CouncilLang,
     type StanceLabel,
 } from "./councilmodel";
-import { CouncilPinButton } from "./councilpin";
-import { CouncilResumeButton } from "./councilresume";
 import { RetryWithButton } from "./councilretrymenu";
 import { revealCouncilMessage } from "./councilreveal";
 import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
@@ -1363,16 +1362,10 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     className="@container sticky top-0 z-10 border-b border-border bg-surface"
                 >
                     <div className="mx-auto flex h-[46px] max-w-[1180px] items-stretch gap-6 px-10 @max-[900px]:gap-3 @max-[900px]:px-4">
-                        <CouncilTabs
-                            c={c}
-                            view="summary"
-                            onCurrent={toReport}
-                            className="flex-none @max-[900px]:gap-3"
-                        />
+                        <CouncilTabs c={c} view="summary" onCurrent={toReport} className="self-center" />
                         <span className="flex-1" />
                         <JumpLinks c={c} scroller={scroller} bar={tabBar} />
-                        <CouncilResumeButton c={c} className="self-center" />
-                        <CouncilPinButton c={c} className="self-center" />
+                        <CouncilActions c={c} className="self-center" />
                     </div>
                 </div>
                 {summary != null ? (

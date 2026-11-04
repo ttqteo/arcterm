@@ -723,8 +723,8 @@ export const councilMap = {
             return { ok, detail: JSON.stringify({ before, popoverBefore, opened, asked, sk, second, kept, ram, list, afterBack, inHeader, closed, afterClose }) };
         });
 
-        // Task 11's narrow header: under 900px of pane the tabs are icon-only, the word (Bản đồ here) in title and aria-label
-        await step("at a 1000px window the Map's tabs are icon-only with Bản đồ in the Map tab's title and aria-label, and its header stays one 52px row with the title, the seats and Pin inside the pane", async () => {
+        // the narrow header: the tabs are icons at every width, the word (Bản đồ here) in title and aria-label
+        await step("at a 1000px window the Map's tabs are icons with Bản đồ in the Map tab's title and aria-label, and its header stays one 44px row with the title, the seats and the actions menu inside the pane", async () => {
             try {
                 await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
                 await openMap(h, vi);
@@ -764,7 +764,7 @@ export const councilMap = {
                 await h.shot("cdp-shots/council-map-header-narrow.png");
                 const ok =
                     f.rootW < 900 &&
-                    f.height === 52 &&
+                    f.height === 44 &&
                     f.tabs.map((t) => t.word).join("|") === "Report|Discussion|Bản đồ" &&
                     f.tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
                     f.tabs[2].aria === "Bản đồ" &&

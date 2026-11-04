@@ -474,14 +474,19 @@ export const councilTree = {
             JSON.stringify({ wording, queuedRow, offered, removed, stops })
         );
 
-        // 11a. Pin in the Report's tab bar: an unpinned council's button reads Pin and asks wavesrv to pin it; once the
-        // pin is saved it reads Pinned. Nothing in the Report offers Close or Reopen any more.
+        // 11a. Pin in the Report's actions menu (…): an unpinned council's row reads Pin and asks wavesrv to pin it; once
+        // the pin is saved the menu's button is marked pinned and the row reads Unpin. Nothing in the Report offers Close or
+        // Reopen any more.
         const doneId = councilFixtureId("done");
         await openCouncil(h, doneId, "summary");
-        const pinIn = `document.querySelector("[data-council-tabbar] [data-council-pin]")`;
+        const menuButton = "[data-council-tabbar] [data-council-actions]";
+        const pinIn = `document.querySelector("[data-council-pin]")`;
         const pinText = `(${pinIn}?.textContent ?? "").trim()`;
+        await until(present(menuButton));
+        await h.ev(click(menuButton));
         const unpinnedShown = await until(`${pinIn}?.dataset.councilPin === "pin" && ${pinText} === "Pin"`);
         await stubRpc(h, ["CouncilPinCommand"]);
+        // a click on the row runs it and closes the menu
         await h.ev(`${pinIn}?.click()`);
         await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
         const pins = await rpcCalls(h, "CouncilPinCommand");
@@ -489,13 +494,18 @@ export const councilTree = {
         // what wavesrv saves for that pin
         writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
         await announceCouncil(h, ctx, doneId);
-        const pinnedShown = await until(`${pinIn}?.dataset.councilPin === "pinned" && ${pinText} === "Pinned"`);
+        const markedPinned = await until(`document.querySelector(${JSON.stringify(menuButton)})?.dataset.pinned === "true"`);
+        await h.ev(click(menuButton));
+        const pinnedShown = markedPinned && (await until(`${pinIn}?.dataset.councilPin === "pinned" && ${pinText} === "Unpin"`));
         const noClose = await h.ev(`!document.querySelector("[data-council-close]")`);
         await h.shot("cdp-shots/council-report-pinned.png");
-        // back to the terminal for the steps that follow
+        // the menu holds the focus, so the first Escape closes it; the second goes back to the terminal for the steps that
+        // follow
+        await pressEscape(h);
+        await until(`!document.querySelector("[data-menu-item]")`);
         await pressEscape(h);
         rec(
-            "11a. the Report's tab bar offers Pin, which asks wavesrv to pin the council, and reads Pinned once it is saved",
+            "11a. the Report's actions menu offers Pin, which asks wavesrv to pin the council, and reads Unpin once it is saved",
             unpinnedShown &&
                 pins.length === 1 &&
                 pins[0].data?.id === doneId &&
@@ -777,9 +787,11 @@ export const councilTree = {
         await h.shot("cdp-shots/council-history-resume.png");
         await pressEscape(h);
         await openCouncil(h, oldRead, "summary");
-        const headerResume = await until(present("[data-council-tabbar] [data-council-resume]"));
+        await until(present("[data-council-tabbar] [data-council-actions]"));
+        await h.ev(click("[data-council-tabbar] [data-council-actions]"));
+        const headerResume = await until(present("[data-council-resume]"));
         await stubRpc(h, ["CouncilReplyCommand", "CouncilSummarizeCommand", "CouncilStartCommand"]);
-        await h.ev(click("[data-council-tabbar] [data-council-resume]"));
+        await h.ev(click("[data-council-resume]"));
         const resumedBack = await until(
             `${present(`[data-council-row="${oldRead}"]`)} && ${present("[data-council-discussion]")}`,
             ROWS_WAIT_MS
@@ -790,7 +802,12 @@ export const councilTree = {
         const resumedKept = await h.ev(
             `typeof window.__arcCouncil.opened().resumed?.[${JSON.stringify(oldRead)}] === "number"`
         );
+        // the Discussion's actions menu offers no Resume now that the tree lists it
+        await h.ev(click("[data-council-discussion] header [data-council-actions]"));
+        await until(present("[data-council-pin]"));
         const resumeGone = await h.ev(`!${present("[data-council-resume]")}`);
+        await pressEscape(h);
+        await until(`!document.querySelector("[data-menu-item]")`);
         const resumeCalls = await h.ev(`(window.__arcCouncilStub?.calls ?? []).length`);
         await unstubRpc(h);
         await h.shot("cdp-shots/council-tree-resumed.png");

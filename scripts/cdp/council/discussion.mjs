@@ -59,6 +59,19 @@ const text = (h, s) => h.ev(`(document.querySelector(${sel(s)})?.textContent ?? 
 const attr = (h, s, name) => h.ev(`document.querySelector(${sel(s)})?.getAttribute(${sel(name)}) ?? null`);
 const click = (h, s) =>
     h.ev(`(() => { const e = document.querySelector(${sel(s)}); if (!e) return false; e.click(); return true; })()`);
+// the header's Summarize, Pin and Stop are rows of its actions menu (…), the app's one context menu: open it before
+// reading or clicking one, and close it after a read (the menu takes the focus, so Escape goes to it)
+const openActions = async (h) => {
+    await click(h, "[data-council-discussion] header [data-council-actions]");
+    return until(h, `!!document.querySelector("[data-menu-item]")`);
+};
+const closeActions = async (h) => {
+    await h.ev(`document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    return until(h, `!document.querySelector("[data-menu-item]")`);
+};
+// a menu row is off with aria-disabled, as the menu draws it
+const rowOff = (s) => `document.querySelector(${sel(s)})?.getAttribute("aria-disabled") === "true"`;
+const rowOn = (s) => `(!!document.querySelector(${sel(s)}) && document.querySelector(${sel(s)}).getAttribute("aria-disabled") !== "true")`;
 // a React-controlled field takes the native setter and an input event
 const typeInto = (h, s, value) =>
     h.ev(`(() => {
@@ -197,7 +210,7 @@ async function round2(h, ctx, rec) {
 
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     const mode = await text(h, "[data-council-mode]");
-    rec("round 2: the mode chip reads `Review`", mode === "Review", mode);
+    rec("round 2: the details icon names the mode, `Review`", mode === "Review", mode);
 
     const chips = await seatChips(h);
     const skeptic = chips.find((c) => c.id === "skeptic");
@@ -293,12 +306,14 @@ async function round2(h, ctx, rec) {
     );
 
     // Summarize: the runner refuses a running council (the synthesis comes by itself when the replies end), so it is off
+    await openActions(h);
     const summarize = await h.ev(`(() => {
         const b = document.querySelector("[data-council-summarize]");
-        return b ? { disabled: b.disabled === true, title: b.getAttribute("title") } : null;
+        return b ? { disabled: b.getAttribute("aria-disabled") === "true", title: b.getAttribute("title") } : null;
     })()`);
+    await closeActions(h);
     rec(
-        "round 2: Summarize is disabled, and its title says the summary comes by itself when the experts finish replying",
+        "round 2: the actions menu's Summarize is off, and its title says the summary comes by itself when the experts finish replying",
         summarize?.disabled === true && summarize.title === "The summary comes by itself when the experts finish replying",
         summarize
     );
@@ -379,9 +394,9 @@ async function round2Whole(h, ctx, rec) {
     );
 }
 
-// ---- the header: one 52px row ----
+// ---- the header: one 44px row ----
 
-// the header's first row, measured: its height, what it holds, and whether the title truncates and the strip scrolls
+// the header's first row, measured: its height, what it holds, and whether the title truncates
 const headerRow = (h) =>
     h.ev(`(() => {
         const root = document.querySelector("[data-council-discussion]");
@@ -397,29 +412,32 @@ const headerRow = (h) =>
         };
         const title = head.querySelector("[data-council-title]");
         const stack = [...head.querySelectorAll("[data-council-seat-avatar]")];
-        const last = [...row.querySelectorAll(":scope > div:last-child > *")].pop();
-        const lastBox = last?.getBoundingClientRect();
+        const lastBox = row.lastElementChild?.getBoundingClientRect();
         return {
             height: row.getBoundingClientRect().height,
             tab: !!head.querySelector("[data-council-tab='discussion'][aria-selected='true']"),
             title: !!title,
-            // two lines, then an ellipsis: cut short in either direction
-            truncated: !!title && (title.scrollWidth > title.clientWidth || title.scrollHeight > title.clientHeight + 1),
+            // one line, then an ellipsis
+            truncated: !!title && title.scrollWidth > title.clientWidth,
             titleW: title ? Math.round(title.clientWidth) : 0,
             seats: stack.length,
             seatsShown: stack.filter((e) => e.getBoundingClientRect().width > 0).length,
+            more: (head.querySelector("[data-council-seats-more]")?.textContent ?? "").trim(),
             seatsIn: within("[data-council-seats]"),
             cost: !!head.querySelector("[data-council-cost]"),
-            costIn: within("[data-council-cost]"),
+            details: within("[data-council-details]"),
+            actions: within("[data-council-actions]"),
+            // the clock, the replies and the tokens live in the details' tooltip, not in the row
+            costShown: [...row.children].some((e) => /\\d+ replies/.test(e.innerText ?? "") && e.getBoundingClientRect().width > 2 && !e.querySelector("[data-council-cost]")),
             lastIn: !!lastBox && lastBox.left >= rootBox.left - 1 && lastBox.right <= rootBox.right + 1,
             rootW: Math.round(rootBox.width),
-            parts: [...row.querySelectorAll(":scope > *, :scope > div:last-child > *")].map((e) => Math.round(e.getBoundingClientRect().width)),
+            parts: [...row.children].map((e) => Math.round(e.getBoundingClientRect().width)),
             oldRow: !!document.querySelector("[data-council-experts]"),
         };
     })()`);
 
-// the tab strip of the Discussion's header as drawn: each tab's word (and whether it shows), its title and aria-label, its icon
-// and its count pill. Under 900px of pane the word is for a screen reader only (sr-only: a 1px box)
+// the tab strip of the Discussion's header as drawn: each tab's word (a screen reader's alone: sr-only, a 1px box), its
+// title and aria-label, its icon and its count
 const tabFacts = (h) =>
     h.ev(`[...document.querySelectorAll("[data-council-discussion] header [data-council-tab]")].map((b) => {
         const word = b.querySelector("[data-council-tab-label]");
@@ -439,6 +457,19 @@ const tabFacts = (h) =>
         };
     })`);
 
+// the tabs are icons at every width: the word is each tab's title and aria-label, and the Discussion's number of ideas
+// shows beside its icon, its words in the aria-label
+const iconTabs = (tabs, map) =>
+    tabs.map((t) => t.word).join("|") === `Report|Discussion|${map}` &&
+    tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+    tabs[0].aria === "Report" &&
+    tabs[2].aria === map &&
+    tabs[1].countShown === true &&
+    /^\d+$/.test(tabs[1].count ?? "") &&
+    tabs[1].aria === `Discussion ${tabs[1].count} ${tabs[1].count === "1" ? "idea" : "ideas"}` &&
+    // narrower than the three words would be
+    tabs.reduce((sum, t) => sum + t.width, 0) < 200;
+
 async function header(h, ctx, rec) {
     // a feature longer than the title's floor, so the narrow pane has something to truncate (the fixture's own is 9 letters)
     const LONG_FEATURE = "Which changes to the pinned apps on the nav rail are worth making first, and in what order";
@@ -451,66 +482,70 @@ async function header(h, ctx, rec) {
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     const wideTabs = await tabFacts(h);
     rec(
-        "header: in a wide pane the Report, Discussion and Map tabs show their words beside the icon, each word is also the tab's title, and the Discussion's count shows",
-        wideTabs.map((t) => t.id).join() === "summary,discussion,map" &&
-            wideTabs.map((t) => t.word).join("|") === "Report|Discussion|Map" &&
-            wideTabs.every((t) => t.wordShown && t.icon && t.title === t.word) &&
-            wideTabs[1].countShown === true &&
-            wideTabs[1].aria === `Discussion ${wideTabs[1].count}`,
+        "header: in a wide pane the Report, Discussion and Map tabs are icons in one box, each word the tab's title and aria-label, and the Discussion's number of ideas shows beside its icon",
+        wideTabs.map((t) => t.id).join() === "summary,discussion,map" && iconTabs(wideTabs, "Map"),
         wideTabs
     );
     const wide = await headerRow(h);
     rec(
-        "header: the header is one 52px row holding the tabs, the title, the seats' stack (an avatar for each of the five) and the cost",
+        "header: the header is one 44px row holding the tabs, the title, the details icon (the cost in its tooltip, not in the row), two of the five seats' avatars then +3, and the actions menu",
         wide != null &&
-            Math.abs(wide.height - 52) <= 1 &&
+            Math.abs(wide.height - 44) <= 1 &&
             wide.tab &&
             wide.title &&
-            wide.seats === 5 &&
-            wide.seatsShown === 5 &&
+            wide.seats === 2 &&
+            wide.seatsShown === 2 &&
+            wide.more === "+3" &&
             wide.cost &&
+            wide.details === true &&
+            wide.actions === true &&
+            !wide.costShown &&
             !wide.oldRow,
         wide
     );
     await h.shot("cdp-shots/council-discussion-header.png");
 
-    // a narrow window: the row stays 52px, the title truncates and the strip scrolls; the cost and the last control stay in
-    // the pane (the council runs, so the last one is Stop). verify.mjs re-pins 1600x950 only between scenarios, so the
-    // viewport is put back to that size here, not cleared
+    // the actions menu: the round runs, so it holds Summarize, Pin and, past a separator, Stop council
+    await openActions(h);
+    const menu = await h.ev(`[...document.querySelectorAll("[data-menu-item]")].map((e) => e.getAttribute("data-menu-item"))`);
+    const marked = await h.ev(`["summarize", "pin", "stop"].every((k) => !!document.querySelector("[data-council-" + k + "]"))`);
+    await h.shot("cdp-shots/council-discussion-header-menu.png");
+    await closeActions(h);
+    rec(
+        "header: the actions menu (…) holds Summarize, Pin and Stop council, in that order, each row marked for its action",
+        menu.join("|") === "Summarize|Pin|Stop council" && marked,
+        menu
+    );
+
+    // a narrow window: the row stays 44px and the title truncates; the seats, the details and the actions stay in the pane.
+    // verify.mjs re-pins 1600x950 only between scenarios, so the viewport is put back to that size here, not cleared
     try {
         await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
         await new Promise((r) => setTimeout(r, 400));
         const narrow = await headerRow(h);
         rec(
-            "header: at a 1000px window the row is still 52px, the title truncates and keeps at least 60px, the seats' stack stays whole in the pane (no seat cut in half), and the cost and the last control stay in the pane",
+            "header: at a 1000px window the row is still 44px, the title truncates and keeps at least 60px, and the seats' stack (two and +3), the details and the actions menu stay whole in the pane",
             narrow != null &&
-                Math.abs(narrow.height - 52) <= 1 &&
+                Math.abs(narrow.height - 44) <= 1 &&
                 narrow.truncated &&
                 narrow.titleW >= 60 &&
                 narrow.seatsIn === true &&
-                narrow.seatsShown >= 3 &&
-                narrow.costIn === true &&
+                narrow.seatsShown === 2 &&
+                narrow.details === true &&
+                narrow.actions === true &&
                 narrow.lastIn,
             narrow
         );
         await h.shot("cdp-shots/council-discussion-header-narrow.png");
 
-        // under 900px of pane the three tabs are icon-only: the word moves into the title and the aria-label, the count stays
         const narrowTabs = await tabFacts(h);
         rec(
-            "header: at a 1000px window the Report, Discussion and Map tabs are icon-only (an icon and no visible word), the word is each tab's title and aria-label, and the Discussion's count still shows beside its icon",
-            narrowTabs.map((t) => t.word).join("|") === "Report|Discussion|Map" &&
-                narrowTabs.every((t) => !t.wordShown && t.icon && t.title === t.word && t.height >= 40) &&
-                narrowTabs[0].aria === "Report" &&
-                narrowTabs[2].aria === "Map" &&
-                narrowTabs[1].countShown === true &&
-                narrowTabs[1].aria === `Discussion ${narrowTabs[1].count}` &&
-                // narrower than the three words would be
-                narrowTabs.reduce((sum, t) => sum + t.width, 0) < 200,
+            "header: at a 1000px window the tabs are the same icons, the word in each title and aria-label, the Discussion's number beside its icon",
+            iconTabs(narrowTabs, "Map"),
             narrowTabs
         );
 
-        // the same in a Vietnamese council: the Map's word is Bản đồ, and the row still holds the cost and the last control
+        // the same in a Vietnamese council: the Map's word is Bản đồ, and the row still holds the details and the actions
         await openFixture(h, ctx, "round2", {
             id: `${councilFixtureId("round2")}-header-vi`,
             edit: (c) => {
@@ -524,14 +559,12 @@ async function header(h, ctx, rec) {
         const viRow = await headerRow(h);
         await h.shot("cdp-shots/council-discussion-header-narrow-vi.png");
         rec(
-            "header: a Vietnamese council at a 1000px window has the same icon-only tabs (Bản đồ in the title and aria-label of the Map's), a 52px row, the title kept at 60px or more, and the cost and the last control in the pane",
-            viTabs.map((t) => t.word).join("|") === "Report|Discussion|Bản đồ" &&
-                viTabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
-                viTabs[2].aria === "Bản đồ" &&
+            "header: a Vietnamese council at a 1000px window has the same icon tabs (Bản đồ in the title and aria-label of the Map's), a 44px row, the title kept at 60px or more, and the details and the actions in the pane",
+            iconTabs(viTabs, "Bản đồ") &&
                 viRow != null &&
-                Math.abs(viRow.height - 52) <= 1 &&
+                Math.abs(viRow.height - 44) <= 1 &&
                 viRow.titleW >= 60 &&
-                viRow.costIn === true &&
+                viRow.details === true &&
                 viRow.lastIn,
             { viTabs, viRow }
         );
@@ -663,7 +696,7 @@ async function brainstorm(h, ctx, rec) {
     await until(h, `document.querySelector("[data-council-mode]")?.textContent === "Brainstorm"`);
 
     const mode = await text(h, "[data-council-mode]");
-    rec("brainstorm: the mode chip reads `Brainstorm`", mode === "Brainstorm", mode);
+    rec("brainstorm: the details icon names the mode, `Brainstorm`", mode === "Brainstorm", mode);
 
     const labels = await h.ev(`[...document.querySelectorAll("[data-council-idea]")].map((e) => e.getAttribute("data-item-label"))`);
     rec(
@@ -696,6 +729,8 @@ async function queued(h, ctx, rec) {
     });
     const chip = await settledText(h, "[data-council-chip]", "Queued");
     const line = await text(h, "[data-council-queued-line]");
+    // Stop is a row of the actions menu: open it, so its absence means something
+    await openActions(h);
     const body = await h.ev(`({
         cards: document.querySelectorAll("[data-council-expert-card]").length,
         channel: document.querySelectorAll("[data-council-channel], [data-council-item]").length,
@@ -703,8 +738,9 @@ async function queued(h, ctx, rec) {
         stop: document.querySelectorAll("[data-council-stop]").length,
         mode: (document.querySelector("[data-council-mode]")?.textContent ?? "")${NORM},
     })`);
+    await closeActions(h);
     rec(
-        "queued: the chip reads `Queued` and the body is the one line `Queued`, with no cards, channel or stop",
+        "queued: the chip reads `Queued` and the body is the one line `Queued`, with no cards, channel or Stop in the actions menu",
         chip === "Queued" && line === "Queued" && body.cards === 0 && body.channel === 0 && body.bar === 0 && body.stop === 0 && body.mode === "Review",
         { chip, line, body }
     );
@@ -761,7 +797,9 @@ async function round1(h, ctx, rec) {
     rec("round 1: the call bar has 9 segments, 2 done", bar.all === 9 && bar.done === 2, bar);
 
     const arrived = await h.ev(`[...document.querySelectorAll("[data-council-arrived]")].map((e) => e.getAttribute("data-council-arrived"))`);
-    const summarizeOff = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === true`);
+    await openActions(h);
+    const summarizeOff = await h.ev(rowOff("[data-council-summarize]"));
+    await closeActions(h);
     const arrivedText = await h.ev(`[...document.querySelectorAll("[data-council-arrived]")].map((e) => (e.textContent ?? "")).join(" ")`);
     const heading = await h.ev(`document.body.textContent.includes("Ideas so far")`);
     rec(
@@ -854,15 +892,16 @@ async function stopped(h, ctx, rec) {
         edit: (c) => void (c.state = "stopped"),
     });
     const chip = await settledText(h, "[data-council-chip]", "Stopped");
+    await openActions(h);
     const label = await text(h, "[data-council-summarize]");
-    const on = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === false`);
+    const on = await h.ev(rowOn("[data-council-summarize]"));
     rec(
         "stopped at the pause: the chip reads `Stopped` and Summarize is enabled",
         chip === "Stopped" && label === "Summarize" && on,
         `${chip} | ${label} | enabled: ${on}`
     );
 
-    // no summary yet, so it asks for one (stubbed) and opens the Summary
+    // no summary yet, so it asks for one (stubbed) and opens the Summary: a click on the row, the menu still open
     await stubRpc(h, ["CouncilSummarizeCommand"]);
     await click(h, "[data-council-summarize]");
     const opened = await until(h, `!!document.querySelector("[data-council-summary]")`);
@@ -1104,7 +1143,9 @@ async function done(h, ctx, rec) {
     await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "");
 
     // a follow-up on P2, in its thread
+    await openActions(h);
     const summarize = await text(h, "[data-council-summarize]");
+    await closeActions(h);
     await click(h, '[data-council-thread-open="P2"]');
     await until(h, `!!document.querySelector("[data-council-thread] [data-council-post]")`);
     const post = await attr(h, "[data-council-thread] [data-council-post]", "data-council-post");
@@ -1152,7 +1193,9 @@ async function done(h, ctx, rec) {
         },
     });
     await settledText(h, "[data-council-chip]", "Done");
+    await openActions(h);
     const noButton = !(await exists(h, "[data-council-summarize]"));
+    await closeActions(h);
     await click(h, "[data-council-tab='summary']");
     const opened = await until(h, `!!document.querySelector("[data-council-summary]")`);
     rec(
@@ -1558,7 +1601,9 @@ async function roomAwaiting(h, ctx, rec) {
     await h.shot("cdp-shots/council-discussion-room-awaiting.png");
 
     // a sent idea is something to summarize: the held drafts around it do not switch Summarize off
-    const withSent = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === false`);
+    await openActions(h);
+    const withSent = await h.ev(rowOn("[data-council-summarize]"));
+    await closeActions(h);
     rec("room waiting on drafts: with the sent P1 among the drafts, Summarize is enabled", withSent, `enabled: ${withSent}`);
 
     await stubRpc(h, ["CouncilDraftCommand"]);
@@ -1603,10 +1648,12 @@ async function roomAwaiting(h, ctx, rec) {
         edit: (c) => c.proposals.forEach((p) => void (p.draft = "held")),
     });
     await settledText(h, "[data-council-chip]", "Round 1 of 2 · 3 drafts wait for you");
+    await openActions(h);
     const allHeld = await h.ev(`(() => {
         const b = document.querySelector("[data-council-summarize]");
-        return b ? { disabled: b.disabled === true, title: b.getAttribute("title") } : null;
+        return b ? { disabled: b.getAttribute("aria-disabled") === "true", title: b.getAttribute("title") } : null;
     })()`);
+    await closeActions(h);
     rec(
         "room waiting on drafts, every idea held: Summarize is disabled, and its title says to send or drop the drafts first",
         allHeld?.disabled === true && allHeld.title === "Send or drop the drafts first",

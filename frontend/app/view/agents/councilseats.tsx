@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The seats of a council in the Discussion's header row: one button, the seats' avatars stacked (a dot on each one at
-// work, waiting or failed; the others dimmed while one seat is the filter), at most six of them, three under 900px of
-// pane, then +N. A hover or a click opens the whole list under it: each seat a row with its name, its kind, what it is
+// work, waiting or failed; the others dimmed while one seat is the filter), two of them, the lit ones first
+// (stackSeats), then +N. A hover or a click opens the whole list under it: each seat a row with its name, its kind, what it is
 // doing and its count of messages. A click on a row shows that seat's messages alone in the channel and its ideas alone in
 // the Ideas rail, a click on it again shows everyone; an agent's row holds a button for its terminal and, on every row, a
 // Timeline button that swaps the popover's body for that seat's timeline (counciltimeline.tsx), with Back to the list. The
@@ -31,7 +31,7 @@ import { useAtom } from "jotai";
 import { Bot, ChevronDown, History } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CouncilAvatar } from "./councilchat";
-import { seatChips, type SeatChip } from "./councilchatmodel";
+import { seatChips, stackSeats, type SeatChip } from "./councilchatmodel";
 import { mapWords } from "./councilmapmodel";
 import { councilOnlyAtom, councilTimelineAtom } from "./councilstore";
 import { CouncilTimeline } from "./counciltimeline";
@@ -43,12 +43,11 @@ export const SEAT_DOT: Record<SeatChip["dot"], string> = {
     idle: "bg-ink-faint",
 };
 
-// how many avatars the stack shows before +N: the wide pane's, and the one under 900px
-const STACK_WIDE = 6;
-const STACK_NARROW = 3;
+// how many avatars the stack shows before +N: the whole list is a hover away
+const STACK = 2;
 
 const PLUS =
-    "-ml-[5px] h-[22px] min-w-[22px] items-center justify-center rounded-full bg-surface-raised px-[5px] text-[10px] font-semibold tabular-nums text-muted ring-2 ring-surface";
+    "-ml-[5px] flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-surface-raised px-[5px] text-[10px] font-semibold tabular-nums text-muted ring-2 ring-surface";
 
 function avatarDot(dot: SeatChip["dot"]): "working" | "waiting" | "failed" | null {
     return dot === "idle" ? null : dot;
@@ -123,14 +122,11 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
                 )}
             >
                 <span className="flex items-center pl-[5px]">
-                    {chips.slice(0, STACK_WIDE).map((chip, i) => (
+                    {stackSeats(chips, STACK).map((chip) => (
                         <span
                             key={chip.id}
                             data-council-seat-avatar={chip.id}
-                            className={cn(
-                                "-ml-[5px] flex rounded-full bg-surface ring-2 ring-surface",
-                                i >= STACK_NARROW && "@max-[900px]:hidden"
-                            )}
+                            className="-ml-[5px] flex rounded-full bg-surface ring-2 ring-surface"
                         >
                             <CouncilAvatar
                                 tone={chip.tone}
@@ -142,11 +138,10 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
                             />
                         </span>
                     ))}
-                    {chips.length > STACK_WIDE && (
-                        <span className={cn(PLUS, "flex @max-[900px]:hidden")}>+{chips.length - STACK_WIDE}</span>
-                    )}
-                    {chips.length > STACK_NARROW && (
-                        <span className={cn(PLUS, "hidden @max-[900px]:flex")}>+{chips.length - STACK_NARROW}</span>
+                    {chips.length > STACK && (
+                        <span data-council-seats-more className={PLUS}>
+                            +{chips.length - STACK}
+                        </span>
                     )}
                 </span>
                 <ChevronDown size={12} strokeWidth={2} aria-hidden className="flex-none text-muted" />

@@ -4,12 +4,10 @@
 // Resume a council the Agent tree no longer lists (canResumeCouncil: it ran and ended, a day ago or closed since), as an
 // ended agent session is resumed: it comes back to its project's folder in the tree for a day (councilopened.ts'
 // resumed map, kept per browser) and opens on its Discussion with the channel's box focused. Nothing runs and no model
-// is called: the person's reply there starts the follow-up round with the same panel. One button beside Pin in each of
-// the council's views (the Discussion's header, the Map's, the Report's tab bar); Councils' rows offer the same action.
+// is called: the person's reply there starts the follow-up round with the same panel. A row of the actions menu (…) in
+// each of the council's views (councilheader.tsx); Councils' rows offer the same action.
 
-import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Play } from "lucide-react";
 import { useMemo } from "react";
 import { showCouncil } from "./agentcenter";
 import { canResumeCouncil } from "./agentsidebarmodel";
@@ -40,7 +38,8 @@ export function resumeCouncil(id: string): void {
     requestAnimationFrame(() => focusChannelBox());
 }
 
-export function CouncilResumeButton({ c, className }: { c: Council; className?: string }) {
+/** Whether council `c` offers Resume: the Agent tree no longer lists it and has a folder for its project. */
+export function useCanResumeCouncil(c: Council): boolean {
     const opened = useAtomValue(councilOpenedAtom);
     const registered = useAtomValue(projectsAtom);
     // project name -> root path, as the tree builds it, so Resume shows only where the tree has a folder for it
@@ -53,22 +52,5 @@ export function CouncilResumeButton({ c, className }: { c: Council; className?: 
         }
         return out;
     }, [registered]);
-    if (!canResumeCouncil(c, opened, Date.now(), roots)) {
-        return null;
-    }
-    return (
-        <button
-            type="button"
-            data-council-resume
-            title="Put this council back in the tree and open its Discussion: nothing runs until you reply"
-            onClick={() => resumeCouncil(c.id)}
-            className={cn(
-                "inline-flex h-[28px] flex-none cursor-pointer items-center gap-[6px] rounded-[6px] border border-transparent bg-transparent px-[10px] text-[13px] text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent",
-                className
-            )}
-        >
-            <Play size={13} strokeWidth={2} aria-hidden />
-            <span>Resume</span>
-        </button>
-    );
+    return canResumeCouncil(c, opened, Date.now(), roots);
 }

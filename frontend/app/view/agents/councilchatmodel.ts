@@ -1123,6 +1123,14 @@ export function seatChips(c: Council): SeatChip[] {
     }));
 }
 
+/** Pure: the seats the header's stack draws before its +N, `n` at most: the ones at work, waiting or failed first, so a
+ *  lit dot never hides in the +N, then the rest in their order. */
+export function stackSeats<T extends Pick<SeatChip, "dot">>(chips: T[], n: number): T[] {
+    const lit = chips.filter((chip) => chip.dot !== "idle");
+    const idle = chips.filter((chip) => chip.dot === "idle");
+    return [...lit, ...idle].slice(0, Math.max(0, n));
+}
+
 /** Pure: the line beside the seat filters while one is on: `Only Định vị: 7 ideas and 12 replies`. */
 export function onlyLine(chip: Pick<SeatChip, "short" | "ideas" | "replies">): string {
     const ideas = `${chip.ideas} ${chip.ideas === 1 ? "idea" : "ideas"}`;

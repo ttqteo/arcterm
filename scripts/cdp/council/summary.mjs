@@ -1247,8 +1247,8 @@ export const councilSummary = {
             }
         });
 
-        // Task 11's narrow header: under 900px of pane the Report's tabs are icon-only, the word in title and aria-label
-        await step("at a 1000px window the Report's tabs are icon-only (the word in each title and aria-label, the Discussion's count kept), nothing in the bar is cut off, and a Vietnamese council reads Bản đồ on the Map's", async () => {
+        // the narrow tab bar: the Report's tabs are icons at every width, the word in title and aria-label
+        await step("at a 1000px window the Report's tabs are icons (the word in each title and aria-label, the Discussion's number of ideas beside its icon), nothing in the bar is cut off, and a Vietnamese council reads Bản đồ on the Map's", async () => {
             const tabs = () =>
                 h.ev(`(() => {
                     const bar = document.querySelector("[data-council-tabbar]");
@@ -1294,7 +1294,7 @@ export const councilSummary = {
                     f.tabs.length === 3 &&
                     f.tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
                     f.tabs[1].countShown === true &&
-                    f.tabs[1].aria === `Discussion ${f.tabs[1].count}` &&
+                    f.tabs[1].aria === `Discussion ${f.tabs[1].count} ${f.tabs[1].count === "1" ? "idea" : "ideas"}` &&
                     f.parts.every(Boolean) &&
                     f.navFits &&
                     f.barW < 900;

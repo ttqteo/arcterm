@@ -35,6 +35,7 @@ import {
     routerLine,
     seatChips,
     seatLink,
+    stackSeats,
     stepChip,
     threadAsks,
     toolsOfChoice,
@@ -2522,5 +2523,25 @@ describe("messageSegments with its council: the seats it names are chips", () =>
             { kind: "seat", text: "@UX", who: { author: "ux" } },
         ]);
         expect(parts.map((p) => (p.kind === "file" ? `@${p.path}` : p.text)).join("")).toBe(text);
+    });
+});
+
+describe("stackSeats", () => {
+    const seat = (id: string, dot: "working" | "waiting" | "failed" | "idle" = "idle") => ({ id, dot });
+
+    it("keeps the seats' order when none is lit, and stops at n", () => {
+        const chips = [seat("me"), seat("rw"), seat("cm"), seat("pl")];
+        expect(stackSeats(chips, 2).map((c) => c.id)).toEqual(["me", "rw"]);
+    });
+
+    it("puts the seats at work, waiting or failed first, so a lit dot never hides in the +N", () => {
+        const chips = [seat("me"), seat("rw"), seat("cm", "failed"), seat("pl", "working"), seat("r1")];
+        expect(stackSeats(chips, 2).map((c) => c.id)).toEqual(["cm", "pl"]);
+        expect(stackSeats(chips, 3).map((c) => c.id)).toEqual(["cm", "pl", "me"]);
+    });
+
+    it("draws every seat when there are fewer than n, and none at n 0", () => {
+        expect(stackSeats([seat("me")], 2).map((c) => c.id)).toEqual(["me"]);
+        expect(stackSeats([seat("me")], 0)).toEqual([]);
     });
 });
