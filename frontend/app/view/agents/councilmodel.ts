@@ -888,33 +888,44 @@ function stepWord(c: Council): string {
     return `Round ${Math.max(1, c.round)} of ${roundsOf(c)}`;
 }
 
+// the state a council is worded by: a stopped council that has its summary reads as done. It was stopped after its
+// rounds (in a follow-up, or a retry), and a follow-up asked of it ends back on that state, so a council that just
+// answered would otherwise read `Stopped` as if it broke off mid-round.
+function shownState(c: Council): string {
+    return c.state === "stopped" && c.summary != null ? "done" : c.state;
+}
+
 /** Pure: the chip in the Discussion's header: the step while the council runs (`Round 2 of 2`, `Writing the summary`,
  *  `Follow-up · 2 answering`), else the state (`Waiting on you`, `Done`). While drafts are held the step carries
  *  ` · 2 drafts wait for you`: a council waiting on held drafts reads its step instead of `Waiting on you`, and a done
- *  one with a held follow-up answer reads `Done · 1 draft waits for you`. */
+ *  one with a held follow-up answer reads `Done · 1 draft waits for you`. A stopped council with a summary reads as a
+ *  done one. */
 export function headerChip(c: Council): string {
     const waits = draftsWaitWord(heldDrafts(c).length);
     const tail = waits === "" ? "" : ` · ${waits}`;
-    switch (c.state) {
+    const state = shownState(c);
+    switch (state) {
         case "running":
             return stepWord(c) + tail;
         case "awaiting-you":
-            return waits === "" ? STATE_WORD[c.state] : stepWord(c) + tail;
+            return waits === "" ? STATE_WORD[state] : stepWord(c) + tail;
         case "done":
-            return STATE_WORD[c.state] + tail;
+            return STATE_WORD[state] + tail;
         default:
-            return STATE_WORD[c.state] ?? c.state;
+            return STATE_WORD[state] ?? state;
     }
 }
 
 /** Pure: a council's row in the Agent tree: its state in a word and the tone it is drawn in. A council with held drafts
- *  reads `2 drafts wait for you` in the amber tone (it is the person's move), whether it still runs, waits or is done. */
+ *  reads `2 drafts wait for you` in the amber tone (it is the person's move), whether it still runs, waits or is done.
+ *  A stopped council with a summary reads as a done one. */
 export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
     const waits = draftsWaitWord(heldDrafts(c).length);
-    if (waits !== "" && (c.state === "running" || c.state === "awaiting-you" || c.state === "done")) {
+    const state = shownState(c);
+    if (waits !== "" && (state === "running" || state === "awaiting-you" || state === "done")) {
         return { text: waits, tone: "asking" };
     }
-    switch (c.state) {
+    switch (state) {
         case "running":
             return { text: c.round > synthesisRound(c) ? "Answering" : "Running", tone: "working" };
         case "awaiting-you":
@@ -922,7 +933,7 @@ export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
         case "failed":
             return { text: "Failed", tone: "error" };
         default:
-            return { text: STATE_WORD[c.state] ?? c.state, tone: "muted" };
+            return { text: STATE_WORD[state] ?? state, tone: "muted" };
     }
 }
 

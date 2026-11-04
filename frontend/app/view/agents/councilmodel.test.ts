@@ -1063,6 +1063,17 @@ describe("headerChip and treeMeta", () => {
         expect(treeMeta(council({ state: "failed" }))).toEqual({ text: "Failed", tone: "error" });
     });
 
+    // a follow-up asked of a council stopped after its rounds ends back on stopped: with its summary it reads as done
+    const summary = { text: "", directions: [], outcomes: {}, at: 9 };
+    it("words a stopped council that has its summary as a done one", () => {
+        expect(treeMeta(council({ state: "stopped", round: 3, summary }))).toEqual({ text: "Done", tone: "muted" });
+        expect(headerChip(council({ state: "stopped", round: 3, summary }))).toBe("Done");
+        const held = [reply("r1", "ram", { draft: "held", round: 4 })];
+        expect(headerChip(council({ state: "stopped", round: 3, summary, replies: held }))).toBe(
+            "Done · 1 draft waits for you"
+        );
+    });
+
     it("reads a council with held drafts as the person's move, whether it runs, waits or is done", () => {
         const held = [reply("r1", "ram", { draft: "held" }), reply("r2", "sk", { draft: "held" })];
         const waits = { text: "2 drafts wait for you", tone: "asking" };
@@ -1076,6 +1087,7 @@ describe("headerChip and treeMeta", () => {
         // a stopped or failed council has no one to answer to, and a dropped draft waits for no one
         expect(treeMeta(council({ state: "stopped", replies: held }))).toEqual({ text: "Stopped", tone: "muted" });
         expect(treeMeta(council({ state: "failed", replies: held }))).toEqual({ text: "Failed", tone: "error" });
+        expect(treeMeta(council({ state: "stopped", summary, replies: held }))).toEqual(waits);
         expect(treeMeta(council({ replies: [reply("r3", "ram", { draft: "dropped" })] }))).toEqual({
             text: "Running",
             tone: "working",
