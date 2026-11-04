@@ -539,7 +539,9 @@ func replyLabel(c *Council, r CouncilReply) string {
 		return "steers"
 	case r.Withdraws:
 		return "withdraws it"
-	case r.Author == YouId || r.Revised:
+	case r.Revised && r.Author != YouId:
+		return "revises it"
+	case r.Author == YouId:
 		return "replies"
 	case r.Stance == StanceChallenge:
 		return "has doubts"
@@ -586,7 +588,11 @@ func replyMessage(c *Council, r CouncilReply, crops map[string]string) string {
 	if parent := findReply(c, r.ParentId); parent != nil {
 		about += " (replying to " + docName(c, parent.Author) + ")"
 	}
-	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), r.Text, r.Evidence, docChecks(r.Label, nil), crops)
+	text := r.Text
+	if t := strings.TrimSpace(r.Retitled); t != "" {
+		text = strings.TrimSpace("New title: " + oneLine(t) + ". " + text)
+	}
+	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), text, r.Evidence, docChecks(r.Label, nil), crops)
 	return b.String()
 }
 

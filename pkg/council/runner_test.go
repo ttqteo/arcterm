@@ -1003,24 +1003,29 @@ func TestApplyRound2AnAcceptNeedsNoReasonButADoubtDoes(t *testing.T) {
 // The new argument shows on the proposal; the revision's reply says what changed, never the argument again.
 func TestApplyRound2ARevisionRepliesWithTheChangeNotTheArgument(t *testing.T) {
 	for name, tc := range map[string]struct {
-		rv   Round2Revision
-		want string
+		rv       Round2Revision
+		reply    bool   // a revised reply is posted
+		text     string // its text: the seat's change line only
+		retitled string // its new title, a field of its own
 	}{
-		"a new argument with its change":   {Round2Revision{Argument: "New.", Change: "Dropped the Mac case."}, "Dropped the Mac case."},
-		"a new argument with no change":    {Round2Revision{Argument: "New."}, "Revised the argument."},
-		"a new title and argument":         {Round2Revision{Title: "Uno", Argument: "New."}, "Retitled: Uno. Revised the argument."},
-		"the same argument, a change only": {Round2Revision{Argument: "Old.", Change: "Nothing really."}, ""},
+		"a new argument with its change":   {Round2Revision{Argument: "New.", Change: "Dropped the Mac case."}, true, "Dropped the Mac case.", ""},
+		"a new argument with no change":    {Round2Revision{Argument: "New."}, true, "", ""},
+		"a new title and argument":         {Round2Revision{Title: "Uno", Argument: "New."}, true, "", "Uno"},
+		"a new title with its change":      {Round2Revision{Title: "Uno", Change: "Shorter."}, true, "Shorter.", "Uno"},
+		"the same argument, a change only": {Round2Revision{Argument: "Old.", Change: "Nothing really."}, false, "", ""},
 	} {
 		c := picksCouncil()
 		c.Proposals[0].Argument = "Old."
 		tc.rv.ProposalId = "P1"
 		applyRound2(c, c.Experts[0], Round2Result{Revisions: []Round2Revision{tc.rv}}, 2, 5)
-		got := ""
-		if len(c.Replies) == 1 && c.Replies[0].Revised {
-			got = c.Replies[0].Text
+		if !tc.reply {
+			if len(c.Replies) != 0 {
+				t.Errorf("%s: replies %+v, want none", name, c.Replies)
+			}
+			continue
 		}
-		if got != tc.want || len(c.Replies) > 1 {
-			t.Errorf("%s: replies %+v, want one reading %q", name, c.Replies, tc.want)
+		if len(c.Replies) != 1 || !c.Replies[0].Revised || c.Replies[0].Text != tc.text || c.Replies[0].Retitled != tc.retitled {
+			t.Errorf("%s: replies %+v, want one revised reply reading %q, retitled %q", name, c.Replies, tc.text, tc.retitled)
 		}
 		if tc.rv.Argument != "" && c.Proposals[0].Argument != tc.rv.Argument {
 			t.Errorf("%s: argument %q, want it revised in place", name, c.Proposals[0].Argument)
@@ -1092,7 +1097,7 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 		}
 		return nil
 	}
-	if r := revised(uxP); r == nil || r.Text != "Retitled: A better title. Narrowed it to the Mac." || r.Stance != "" {
+	if r := revised(uxP); r == nil || r.Text != "Narrowed it to the Mac." || r.Retitled != "A better title" || r.Stance != "" {
 		t.Errorf("ux's revision reply = %+v, want the author's reply saying what changed, not the new argument again", r)
 	}
 	if r := revised(ramP); r == nil || !r.Withdraws || r.Text != "UX's idea covers it." {
@@ -5478,8 +5483,8 @@ func TestWithdrawRidesOnReply(t *testing.T) {
 		return map[string]any{"proposalid": pid, "title": "Cache the sleep state", "argument": "A narrower argument.", "change": "Narrowed to the sleep state."}
 	})
 	idea, reply = toRound2("c")
-	if reply.Text != "Retitled: Cache the sleep state. Narrowed to the sleep state." {
-		t.Errorf("held reply text = %q", reply.Text)
+	if reply.Text != "Narrowed to the sleep state." || reply.Retitled != "Cache the sleep state" {
+		t.Errorf("held reply = %+v, want the change line as its text and the new title apart", reply)
 	}
 	h.settle("c")
 	c = h.wait("c")

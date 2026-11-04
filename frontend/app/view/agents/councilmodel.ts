@@ -204,6 +204,39 @@ export function replyWords(r: CouncilReply): string {
     return isWithdrawal(r) && !r.withdraws ? "" : r.text;
 }
 
+// the lines Go used to write into a revision's text before it kept the new title apart (`retitled`)
+const OLD_RETITLED = "Retitled: ";
+const OLD_REVISED = "Revised the argument.";
+
+/** Pure: a revision of its own idea by its author, as the chat draws it: the new title on a line of its own (empty when
+ *  it kept its title) and its words, the seat's change line (empty when it gave none: its pill says it revised). A
+ *  revision from before Go kept the title apart reads `Retitled: <title>. <change>`, cut at `title`, the idea's title
+ *  now; `Revised the argument.`, Go's old line for no change, says nothing the pill does not. Any other reply keeps its
+ *  words (replyWords) and no title. */
+export function revisionParts(r: CouncilReply, title: string): { retitled: string; text: string } {
+    if (!r.revised || isWithdrawal(r) || r.author === YOU) {
+        return { retitled: "", text: replyWords(r) };
+    }
+    if (r.retitled) {
+        return { retitled: r.retitled, text: r.text };
+    }
+    let text = r.text.trim();
+    let retitled = "";
+    if (text.startsWith(OLD_RETITLED)) {
+        const rest = text.slice(OLD_RETITLED.length);
+        // cut at the idea's title when it still reads so; else at the first full stop
+        const end =
+            title !== "" && rest.startsWith(`${title}.`)
+                ? title.length
+                : rest.search(/\.(\s|$)/) < 0
+                  ? rest.length
+                  : rest.search(/\.(\s|$)/);
+        retitled = rest.slice(0, end).trim();
+        text = rest.slice(end + 1).trim();
+    }
+    return { retitled, text: text === OLD_REVISED ? "" : text };
+}
+
 /** The person's like or dislike on a seat's sent idea or reply (Go council.ThumbLike, council.ThumbDislike); the seats'
  *  later prompts and the summary read it as the person's view. Not a reaction: that is a seat's agreement. */
 export type CouncilThumb = "like" | "dislike";

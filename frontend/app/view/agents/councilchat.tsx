@@ -110,6 +110,7 @@ import {
     type ChatThread,
     type DraftPost,
     type FailureLine,
+    type IdeaOut,
     type IdeaPost,
     type PillTone,
     type QuestionFold,
@@ -376,21 +377,29 @@ const PILL_TONE: Record<PillTone, string> = {
     challenge: "bg-askingbg text-warning-soft",
     oppose: "bg-error/12 text-error-soft",
     out: "border border-edge-strong text-muted",
+    revised: "bg-accent/12 text-accent-soft",
     neutral: "bg-pill text-secondary",
 };
 
-// an idea its author withdrew: the pill beside its author, and the idea drawn dim
-const WITHDRAWN = "Withdrawn";
-const WITHDRAWN_TITLE = "Its author withdrew it: it is out of the running";
+// a revision's new title, on a line of its own at the top of the reply: the word, then the title
+function RetitledLine({ title }: { title: string }) {
+    return (
+        <div data-council-retitled className="flex min-w-0 items-baseline gap-[6px] text-[13px] leading-[1.45]">
+            <span className="flex-none text-muted">New title</span>
+            <span className="min-w-0 font-semibold text-primary">{title}</span>
+        </div>
+    );
+}
 
 export function CouncilPill({ word, tone }: { word: string; tone: PillTone }) {
     return <span className={cn("rounded-full px-[7px] py-px text-[10px] font-semibold", PILL_TONE[tone])}>{word}</span>;
 }
 
-function WithdrawnPill() {
+// an idea out of the running (withdrawn by its author, or cut by the person at the pause): the pill beside its author
+function OutPill({ out }: { out: IdeaOut }) {
     return (
-        <span data-council-withdrawn title={WITHDRAWN_TITLE}>
-            <CouncilPill word={WITHDRAWN} tone="out" />
+        <span data-council-out={out.kind} title={out.title}>
+            <CouncilPill word={out.word} tone="out" />
         </span>
     );
 }
@@ -767,7 +776,7 @@ function IdeaMessage({
                     ) : (
                         <span className="text-muted">{item.label}</span>
                     )}
-                    {item.withdrawn && <WithdrawnPill />}
+                    {item.out != null && <OutPill out={item.out} />}
                     {c.finalpick === item.id && <PinnedPill id={item.id} />}
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
@@ -779,7 +788,7 @@ function IdeaMessage({
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3 transition-[box-shadow] duration-300 motion-reduce:transition-none",
-                        item.withdrawn && "opacity-60",
+                        item.out != null && "opacity-60",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
                         // the open idea wears a light ring over its tone border, so it stands out from its tinted
                         // neighbours; the idea under the cursor (a rail click, j / k) wears the accent ring its rail
@@ -1231,8 +1240,12 @@ function ReplyMessage({
 }) {
     const councilId = c.id;
     const openIdea = inThread ? undefined : onOpenIdea;
-    // a withdrawal that gave no reason says it all in its pill: no empty bubble under it
-    const bare = item.pill === "out" && item.text.trim() === "" && item.claim.evidence.length === 0;
+    // a withdrawal or a revision that gave no reason or title says it all in its pill: no empty bubble under it
+    const bare =
+        (item.pill === "out" || item.pill === "revised") &&
+        item.text.trim() === "" &&
+        item.retitled === "" &&
+        item.claim.evidence.length === 0;
     return (
         <motion.article
             data-council-item
@@ -1279,6 +1292,7 @@ function ReplyMessage({
                 >
                     {item.to != null && <ReachRow to={item.to} />}
                     {item.quote != null && <QuoteRow quote={item.quote} />}
+                    {item.retitled !== "" && <RetitledLine title={item.retitled} />}
                     {item.mine ? (
                         <PersonText councilId={councilId} item={item} />
                     ) : (
@@ -1369,6 +1383,7 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                 {item.title !== "" && (
                     <h3 className="m-0 text-[15px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
                 )}
+                {item.retitled !== "" && <RetitledLine title={item.retitled} />}
                 {editing ? (
                     <>
                         <textarea
@@ -2465,7 +2480,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
             <h2
                 className={cn(
                     "m-0 text-[15px] font-semibold leading-[1.4]",
-                    idea.withdrawn ? "text-muted line-through" : "text-primary"
+                    idea.out != null ? "text-muted line-through" : "text-primary"
                 )}
             >
                 {idea.title}
@@ -2473,7 +2488,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
             <div className="relative flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
-                {idea.withdrawn && <WithdrawnPill />}
+                {idea.out != null && <OutPill out={idea.out} />}
                 {c.finalpick === idea.id && <PinnedPill id={idea.id} />}
                 {idea.edited && <span>edited</span>}
                 <HoverEnd>

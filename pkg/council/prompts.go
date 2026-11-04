@@ -1041,11 +1041,14 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 	return b.String()
 }
 
-// revisedTag is the tag on a reply where the author changed its own proposal: a withdrawal says so, since its text is
-// only the reason.
+// revisedTag is the tag on a reply where the author changed its own proposal: a withdrawal says so, and a new title is
+// named, since the reply's text is only the seat's reason or change line.
 func revisedTag(r CouncilReply) string {
 	if r.Withdraws {
 		return "withdrew its proposal"
+	}
+	if t := strings.TrimSpace(r.Retitled); t != "" {
+		return fmt.Sprintf("revised its proposal, new title %q", oneLine(t))
 	}
 	return "revised its proposal"
 }

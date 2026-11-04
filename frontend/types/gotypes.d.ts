@@ -2738,6 +2738,7 @@ declare global {
         stance?: string;
         revised?: boolean;
         withdraws?: boolean;
+        retitled?: string;
         builds?: boolean;
         text: string;
         evidence?: CouncilEvidence[];

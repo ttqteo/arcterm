@@ -391,15 +391,66 @@ describe("councilChannel: an idea", () => {
                 reply("r5", "sec", 190, { proposalid: "P2", revised: true, text: "Retitled: Smaller." }),
             ],
         });
-        expect(byId(councilChannel(c), "P1")).toMatchObject({ withdrawn: true });
-        expect(byId(councilChannel(c), "P2")).toMatchObject({ withdrawn: false, agrees: [] });
+        expect(byId(councilChannel(c), "P1")).toMatchObject({ out: { kind: "withdrawn", word: "Withdrawn" } });
+        expect(byId(councilChannel(c), "P2")).toMatchObject({ out: null, agrees: [] });
         const p1 = councilThread(c, "P1")!.items;
         expect(byId(p1, "r1")).toMatchObject({ label: "has doubts", pill: "challenge" });
         expect(byId(p1, "r2")).toMatchObject({ label: "withdrew it", pill: "out", text: "Skeptic's idea covers it." });
         const p2 = councilThread(c, "P2")!.items;
         expect(byId(p2, "r3")).toMatchObject({ kind: "reply", label: "withdrew it", pill: "out", text: "" });
         expect(byId(p2, "r4")).toMatchObject({ label: "withdrew it", pill: "out", text: "" });
-        expect(byId(p2, "r5")).toMatchObject({ label: "replies", pill: "neutral", text: "Retitled: Smaller." });
+        expect(byId(p2, "r5")).toMatchObject({ label: "revised it", pill: "revised", retitled: "Smaller", text: "" });
+    });
+
+    it("marks its author's revision with a pill, its new title on a line of its own and its change line as its words", () => {
+        const c = council({
+            proposals: [prop("P1", "sec", 60, { title: "Một form duy nhất. Gọn hơn" })],
+            replies: [
+                reply("r1", "sec", 150, { revised: true, retitled: "Một form duy nhất", text: "Bỏ panel hai ô." }),
+                reply("r2", "sec", 160, { revised: true, text: "Narrowed it." }),
+                reply("r3", "sec", 170, { revised: true, text: "" }),
+                // from before Go kept the title apart: cut at the idea's title, even one with a full stop in it
+                reply("r4", "sec", 180, {
+                    revised: true,
+                    text: "Retitled: Một form duy nhất. Gọn hơn. Bỏ panel hai ô.",
+                }),
+                // a title that changed since: cut at the first full stop
+                reply("r5", "sec", 190, { revised: true, text: "Retitled: Old one. Shorter." }),
+                reply("r6", "sec", 200, { revised: true, text: "Retitled: Uno. Revised the argument." }),
+                reply("r7", "sec", 210, { revised: true, text: "Revised the argument." }),
+                // the person's reply is never a revision, whatever its words
+                reply("r8", "you", 220, { revised: true, text: "Retitled: mine." }),
+            ],
+        });
+        const items = councilThread(c, "P1")!.items;
+        expect(byId(items, "r1")).toMatchObject({
+            label: "revised it",
+            pill: "revised",
+            retitled: "Một form duy nhất",
+            text: "Bỏ panel hai ô.",
+        });
+        expect(byId(items, "r2")).toMatchObject({ pill: "revised", retitled: "", text: "Narrowed it." });
+        expect(byId(items, "r3")).toMatchObject({ kind: "reply", pill: "revised", retitled: "", text: "" });
+        expect(byId(items, "r4")).toMatchObject({ retitled: "Một form duy nhất. Gọn hơn", text: "Bỏ panel hai ô." });
+        expect(byId(items, "r5")).toMatchObject({ retitled: "Old one", text: "Shorter." });
+        expect(byId(items, "r6")).toMatchObject({ retitled: "Uno", text: "" });
+        expect(byId(items, "r7")).toMatchObject({ retitled: "", text: "" });
+        expect(byId(items, "r8")).toMatchObject({ pill: "neutral", retitled: "", text: "Retitled: mine." });
+    });
+
+    it("marks an idea the person cut at the pause, and a withdrawal over a cut", () => {
+        const c = council({
+            proposals: [
+                prop("P1", "sec", 60, { cut: true }),
+                prop("P2", "sk", 100, { cut: true, withdrawn: true }),
+                prop("P3", "ux", 130),
+            ],
+        });
+        const items = councilChannel(c);
+        expect(byId(items, "P1")).toMatchObject({ out: { kind: "cut", word: "Cut" } });
+        expect(byId(items, "P2")).toMatchObject({ out: { kind: "withdrawn", word: "Withdrawn" } });
+        expect(byId(items, "P3")).toMatchObject({ out: null });
+        expect(councilThread(c, "P1")).toMatchObject({ idea: { out: { kind: "cut" } } });
     });
 
     it("marks a held withdrawal draft with the pill too", () => {
@@ -550,7 +601,8 @@ describe("councilChannel: held drafts", () => {
             kind: "draft",
             of: "reply",
             author: "ux",
-            label: "replies",
+            label: "revised it",
+            pill: "revised",
             on: "",
             revised: true,
         });
