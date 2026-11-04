@@ -800,9 +800,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
   arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:learn (none twice), ~/.claude/skills no longer
   holds cockpit-runs and the rest, and Setup → Skills shows them in sync; a rule approved through `wsh learn` for
   cockpit-runs now shows under runs. (1cd40ef02) 2026-11-04: the session half holds (each arc: skill listed once,
-  none of the old names in `~/.claude/skills`), except a stale `~/.claude/skills/effort-tracking` copy (dated
-  2026-10-02, the initiatives skill's old name) still lists beside arc:initiatives with the same description. Left:
-  delete that copy if nothing else needs it, then Setup → Skills and the learned-rule half.
+  none of the old names in `~/.claude/skills`); a stale `~/.claude/skills/effort-tracking` copy (2026-10-02, the
+  initiatives skill's old name) went to `~/.arc/trash` on 2026-11-05. Left: Setup → Skills and the learned-rule half.
 - [ ] (arcterm) Background task Stop inside its card: with a running background task, open the Agent rail's Background
   tasks: the red Stop square sits inside the running row's card, right of "running", and hovering the card lights the
   whole card, Stop included; a stopped row looks as before (`agentdetailsrail.tsx` `BackgroundTaskRow`).

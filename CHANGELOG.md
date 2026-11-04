@@ -41,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In a narrow window (about 1000px) the app bar fits again: the usage meters keep their label and percent and drop their bars and countdown (still in the tooltip), so the window's Close button is no longer pushed off the edge and All projects stays on one line.
+- In a council's Discussion with the Ideas rail open, an idea's reply line (replies, new replies, last reply) wraps onto more lines instead of spilling past the narrow message column and cutting off its time.
 - A background task's Output and a Monitor's Events show the colors the program printed (a build's file names, a test run's ✓ and ✗) instead of raw escape codes like `▯[36m`; a progress line redrawn in place shows its last state.
 - An HTML page previewed in arcterm (the File tab, a design canvas, a brainstorm board) can no longer send what it holds to another site: it loads its own folder's files, common CDNs and Google Fonts, and its fetches, forms and frames go nowhere else. Images and video from other sites still show.
 - A note titled in Vietnamese keeps its words in its id (`wsh note add "Cải tiến"` → `…-cai-tien`, not `…-c-i-ti-n`); so do Jarvis's dossier and decision files, and the id of a tool you add.
