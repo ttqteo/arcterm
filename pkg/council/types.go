@@ -251,6 +251,7 @@ type CouncilReply struct {
 	Stance     CouncilStance     `json:"stance,omitempty"`
 	Revised    bool              `json:"revised,omitempty"`   // the author revised its own proposal here
 	Withdraws  bool              `json:"withdraws,omitempty"` // with Revised: the author withdrew it here, Text its reason or ""
+	Retitled   string            `json:"retitled,omitempty"`  // with Revised: the new title the author gave it here; Text is its change line or ""
 	Builds     bool              `json:"builds,omitempty"`    // a Brainstorm reply that builds on the idea
 	Text       string            `json:"text"`
 	Evidence   []CouncilEvidence `json:"evidence,omitempty"`

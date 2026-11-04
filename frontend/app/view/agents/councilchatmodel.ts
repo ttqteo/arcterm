@@ -47,7 +47,7 @@ import {
     pickCount,
     readableReplies,
     replyLabel,
-    replyWords,
+    revisionParts,
     roundsOf,
     seatLabel,
     seatMentions,
@@ -163,17 +163,20 @@ function proposalLabel(c: Council, p: CouncilProposal): string {
 }
 
 /** The stance pill's colour: `accept` green (builds on it), `challenge` amber, `oppose` red, `out` grey (an idea taken
- *  out of the running: its author withdrew it), `neutral` a plain reply. */
-export type PillTone = "accept" | "challenge" | "oppose" | "out" | "neutral";
+ *  out of the running: its author withdrew it), `revised` accent (its author changed it), `neutral` a plain reply. */
+export type PillTone = "accept" | "challenge" | "oppose" | "out" | "revised" | "neutral";
 
 // the word beside a reply's author: the person's `steers` (the whole council) or `replies`, a seat's `withdrew it`,
-// `builds on it`, `has doubts`, `is against it`, else `replies`
+// `revised it`, `builds on it`, `has doubts`, `is against it`, else `replies`
 function replyPill(r: CouncilReply): { label: string; pill: PillTone } {
     if (r.author === YOU) {
         return { label: r.proposalid || r.parentid ? "replies" : "steers", pill: "neutral" };
     }
     if (isWithdrawal(r)) {
         return { label: "withdrew it", pill: "out" };
+    }
+    if (r.revised) {
+        return { label: "revised it", pill: "revised" };
     }
     if (r.builds) {
         return { label: "builds on it", pill: "accept" };
@@ -288,6 +291,7 @@ export interface ReplyPost extends Who {
     proposalid: string; // the idea it replies on; empty for a post to the whole council
     on: string; // that idea's title, the quote the channel shows above a run of replies on it; empty after the first
     revised: boolean;
+    retitled: string; // a revision of its seat's own idea: the new title it gave, on a line of its own; else empty
     edited: boolean;
     at: string; // the time of day it was posted (`14:32`)
     when: string; // its tooltip: the day, and how far into the council (`Oct 31 14:32 · 2:12 into the council`)
@@ -368,6 +372,11 @@ function askTooParts(c: Council, r: CouncilReply): Pick<ReplyPost, "askToo" | "r
     return { askToo, routedReply: askToo.length > 0 ? ask.id : "" };
 }
 
+// the title of the idea a reply is on; empty for one to the whole council or an idea the council no longer holds
+function ideaTitle(c: Council, r: CouncilReply): string {
+    return r.proposalid === "" ? "" : ((c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? "");
+}
+
 // `below`: the seats whose failure line the channel draws under the post, which its label leaves to that line
 function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): ReplyPost {
     const mine = r.author === YOU;
@@ -376,7 +385,7 @@ function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): 
         id: r.id,
         ...whoIs(c, r.author),
         ...replyPill(r),
-        text: replyWords(r),
+        ...revisionParts(r, ideaTitle(c, r)),
         attachments: r.attachments ?? [],
         claim: claimOf(c, r),
         mine,
@@ -389,7 +398,7 @@ function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): 
         pending: mine && !r.routed?.pending ? replyLabel(c, r, below) : "",
         parentid: r.parentid ?? "",
         proposalid: r.proposalid,
-        on: r.proposalid === "" ? "" : ((c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? ""),
+        on: ideaTitle(c, r),
         revised: !!r.revised,
         edited: !!r.edited,
         ...postedAt(c, r.ts),
@@ -462,6 +471,7 @@ export interface DraftPost extends Who {
     text: string;
     claim: ClaimEvidence;
     revised: boolean; // a reply that revises its seat's own idea: its `text` is the change line, and Edit changes only that
+    retitled: string; // with `revised`: the new title, on a line of its own; else empty
     edited: boolean;
     at: string;
     when: string;
@@ -483,6 +493,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
             text: p.argument,
             claim: claimOf(c, p),
             revised: false,
+            retitled: "",
             edited: !!p.edited,
             ...postedAt(c, p.ts),
             actions: DRAFT_ACTIONS,
@@ -496,8 +507,8 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
         ...whoIs(c, r.author),
         ...replyPill(r),
         title: "",
-        on: (c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? "",
-        text: replyWords(r),
+        on: ideaTitle(c, r),
+        ...revisionParts(r, ideaTitle(c, r)),
         claim: claimOf(c, r),
         revised: !!r.revised,
         edited: !!r.edited,

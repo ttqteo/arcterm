@@ -1694,3 +1694,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   through with the same pill; the author's reply reads `withdrew it` with a one-line reason, or only the pill when it gave
   none, and never counts as an "agrees" chip. An older council's "Withdrawn." reply shows as the pill alone. Unit tests
   and the typecheck only (`councilchat.tsx` `IdeaMessage`, `ThreadIdea`, `ReplyMessage`); no dev app was up.
+- [ ] (arcterm) **Revised council idea.** Run a council until a seat retitles its own idea in round 2 → its reply in the
+  thread has an accent `revised it` pill, a `New title` line with the new title, then its one-line reason, and no
+  "Retitled:" in the words; an older council's "Retitled: …" reply splits the same way. Unit tests and the typecheck
+  only (`councilchat.tsx` `ReplyMessage`, `DraftCard`); no dev app was up.

@@ -493,3 +493,18 @@ func TestAWordlessAnswerReadsAsAgreeing(t *testing.T) {
 		t.Errorf("an answer with words reads %q, want replies", got)
 	}
 }
+
+// The author's change to its own idea reads as a revision in the document, its new title named before its change line.
+func TestARevisionReadsAsRevising(t *testing.T) {
+	c := &Council{Experts: []CouncilExpert{{Id: "ram", Name: "RAM"}}}
+	r := CouncilReply{Id: "r9", ProposalId: "P1", Author: "ram", Revised: true, Retitled: "Smaller", Text: "Narrowed it."}
+	if got := replyLabel(c, r); got != "revises it" {
+		t.Errorf("a revision reads %q, want revises it", got)
+	}
+	if got := replyMessage(c, r); !strings.Contains(got, "New title: Smaller. Narrowed it.") {
+		t.Errorf("the revision's message = %q, want its new title before its change line", got)
+	}
+	if got := replyLabel(c, CouncilReply{Id: "r8", ProposalId: "P1", Author: "ram", Revised: true, Withdraws: true}); got != "withdraws it" {
+		t.Errorf("a withdrawal reads %q, want withdraws it", got)
+	}
+}

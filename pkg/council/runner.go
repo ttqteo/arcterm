@@ -1646,30 +1646,22 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, now i
 			// the reply carries the withdrawal as a mark the chat draws as a pill; its text is the seat's reason
 			rev.Withdraw, text = true, rv.Change
 		} else {
-			// the new argument shows on the proposal itself; the reply says only what changed
-			var parts []string
+			// the new argument shows on the proposal itself, and a new title rides on the reply as a field the chat
+			// draws on a line of its own: the reply's text is only the seat's change line, "" when it gave none
 			if rv.Title != "" && rv.Title != p.Title {
 				rev.Title = rv.Title
-				parts = append(parts, "Retitled: "+rv.Title+".")
 			}
-			argued := rv.Argument != "" && rv.Argument != p.Argument
-			if argued {
+			if rv.Argument != "" && rv.Argument != p.Argument {
 				rev.Argument = rv.Argument
 			}
-			if len(parts) == 0 && !argued {
+			if rev.Title == "" && rev.Argument == "" {
 				continue
 			}
-			switch {
-			case rv.Change != "":
-				parts = append(parts, rv.Change)
-			case argued:
-				parts = append(parts, "Revised the argument.")
-			}
-			text = strings.Join(parts, " ")
+			text = rv.Change
 		}
 		reply := CouncilReply{
 			Id: nextReplyId(c), ProposalId: p.Id, ParentId: challengeTo(c, p.Id, e.Id), Author: e.Id,
-			Revised: true, Withdraws: rev.Withdraw, Text: text, Round: round, Ts: now,
+			Revised: true, Withdraws: rev.Withdraw, Retitled: rev.Title, Text: text, Round: round, Ts: now,
 		}
 		if hold != "" {
 			reply.Draft, reply.Revision = hold, &rev

@@ -350,8 +350,19 @@ const PILL_TONE: Record<PillTone, string> = {
     challenge: "bg-askingbg text-warning-soft",
     oppose: "bg-error/12 text-error-soft",
     out: "border border-edge-strong text-muted",
+    revised: "bg-accent/12 text-accent-soft",
     neutral: "bg-pill text-secondary",
 };
+
+// a revision's new title, on a line of its own at the top of the reply: the word, then the title
+function RetitledLine({ title }: { title: string }) {
+    return (
+        <div data-council-retitled className="flex min-w-0 items-baseline gap-[6px] text-[13px] leading-[1.45]">
+            <span className="flex-none text-muted">New title</span>
+            <span className="min-w-0 font-semibold text-primary">{title}</span>
+        </div>
+    );
+}
 
 // an idea its author withdrew: the pill beside its author, and the idea drawn dim
 const WITHDRAWN = "Withdrawn";
@@ -1008,8 +1019,12 @@ function ReplyMessage({
     status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
     const openIdea = inThread ? undefined : onOpenIdea;
-    // a withdrawal that gave no reason says it all in its pill: no empty bubble under it
-    const bare = item.pill === "out" && item.text.trim() === "" && item.claim.evidence.length === 0;
+    // a withdrawal or a revision that gave no reason or title says it all in its pill: no empty bubble under it
+    const bare =
+        (item.pill === "out" || item.pill === "revised") &&
+        item.text.trim() === "" &&
+        item.retitled === "" &&
+        item.claim.evidence.length === 0;
     return (
         <motion.article
             data-council-item
@@ -1051,6 +1066,7 @@ function ReplyMessage({
                 >
                     {item.to != null && <ReachRow to={item.to} />}
                     {item.quote != null && <QuoteRow quote={item.quote} />}
+                    {item.retitled !== "" && <RetitledLine title={item.retitled} />}
                     {item.mine ? (
                         <PersonText councilId={councilId} item={item} />
                     ) : (
@@ -1141,6 +1157,7 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                 {item.title !== "" && (
                     <h3 className="m-0 text-[15px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
                 )}
+                {item.retitled !== "" && <RetitledLine title={item.retitled} />}
                 {editing ? (
                     <>
                         <textarea
