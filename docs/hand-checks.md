@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council seats on opus by responsibility.** After the next launch (the arc mod carries the new skill),
+  ask a Claude session in a live arcterm for a council on a thesis question ("does the method in chapter 3 hold?") →
+  before the Token burn card it says in one line which seats go to opus and why, with the `wsh council estimate`
+  number and that the estimate does not price opus higher, and its `start` carries `--model <seat>=opus`. Then ask for
+  a council on a wording pass → no opus seat, no model line. Skill prose only, never run by an agent
+  (`skills/council/SKILL.md` "Which seats run on opus", "Writing a role").
 - [ ] (arcterm) **Round 1 idea cards draw Markdown.** Start a council whose experts answer with a table or a `==…==`
   sentence → while it is still in Round 1, the cards under Ideas so far in Discussion show a real table and a
   highlighted sentence, not raw `|` and `==` (`councildiscussion.tsx`, 634a18218).

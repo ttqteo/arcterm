@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.
 - A council's Discussion header wraps a long title onto a second line instead of cutting it short, and its step chip reads shorter (`Round 1/2`, `Round 2/2 · 3 drafts`); the full words are on hover.
 - The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
 
