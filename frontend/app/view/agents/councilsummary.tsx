@@ -11,12 +11,15 @@
 // opens the Map tab, where every idea stands against every expert. A finished council opens on it; Summarize on the
 // Discussion opens it too, and the Discussion tab goes back. A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first
 // step and who had and built on it) and keeps the wild ideas aside under them with a count of the rest. A Review's report
-// gives its first three directions a first step each and lists the rest under Also raised. Under the directions a quiet row asks "Was this
+// gives its first three directions a first step each and lists the rest under Also raised. While a seat message is pinned
+// (the Discussion's Pin to Report), the Final proposal section follows the directions and the kept ideas, summary or not.
+// Under the directions a quiet row asks "Was this
 // useful?" (Useful / Not really) and feeds the answer to the council benchmark. What it derives from the council is
 // councilsummarymodel.ts (and councilmodel.ts); what it hands on is a saved doc, an initiative, a Setup draft to run
 // again, the Discussion on one direction's thread, and a new agent started on it.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { useCopyFeedback } from "@/app/element/copyfeedback";
 import { Tooltip } from "@/app/element/tooltip";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -33,11 +36,14 @@ import {
     ChevronUp,
     Code,
     Contrast,
+    Copy,
     CornerDownRight,
     Ellipsis,
     FileText,
     LayoutGrid,
     Loader2,
+    MessageSquare,
+    PinOff,
     TriangleAlert,
 } from "lucide-react";
 import {
@@ -56,6 +62,7 @@ import { CouncilAvatar, CouncilText, useKeptScroll } from "./councilchat";
 import { askChips } from "./councilchatmodel";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
+import { finalProposal, type FinalProposal } from "./councilfinalmodel";
 import { mapWords } from "./councilmapmodel";
 import {
     STANCE_WORD,
@@ -72,11 +79,13 @@ import {
 import { CouncilPinButton } from "./councilpin";
 import { CouncilResumeButton } from "./councilresume";
 import { RetryWithButton } from "./councilretrymenu";
+import { revealCouncilMessage } from "./councilreveal";
 import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
 import {
     councilChatDraftAtom,
     councilOpenProposalAtom,
     councilSelAtom,
+    finalPickCouncil,
     rateCouncil,
     retryExpert,
     saveCouncilDoc,
@@ -961,6 +970,75 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
     );
 }
 
+// The Final proposal (docs/superpowers/specs/2026-11-04-council-final-proposal-design.md): the one seat message the person
+// pinned to the Report, at its end, with or without a summary above it. The header says whose message it is and when, and
+// holds what to do with it: open it in the Discussion where it was said, copy its markdown (the chat's Copy puts the same
+// text there), unpin it. The body is drawn the way the chat draws a message, so a table or a list reads the same in both.
+function FinalProposalSection({
+    councilId,
+    proposal,
+    unpinning,
+    onUnpin,
+}: {
+    councilId: string;
+    proposal: FinalProposal;
+    unpinning: boolean;
+    onUnpin: () => void;
+}) {
+    const { state, copy } = useCopyFeedback();
+    const hasText = proposal.markdown !== "";
+    return (
+        <section data-council-final data-council-section="final" className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-x-[10px] gap-y-2">
+                <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">Final proposal</h2>
+                <span data-council-final-from className="min-w-0 flex-1 truncate text-[13px] text-muted">
+                    {proposal.at !== "" ? `${proposal.seatName} · ${proposal.at}` : proposal.seatName}
+                </span>
+                <span className="flex flex-none items-center gap-2">
+                    <button
+                        type="button"
+                        data-council-final-open
+                        onClick={() => revealCouncilMessage(councilId, proposal.id)}
+                        className={cn(BUTTON, "gap-[6px]")}
+                    >
+                        <MessageSquare size={13} aria-hidden />
+                        Open in Discussion
+                    </button>
+                    <button
+                        type="button"
+                        data-council-final-copy
+                        disabled={!hasText}
+                        onClick={() => copy(proposal.markdown)}
+                        className={cn(BUTTON, "gap-[6px]")}
+                    >
+                        {state === "copied" ? (
+                            <Check size={13} aria-hidden className="text-success" />
+                        ) : (
+                            <Copy size={13} aria-hidden />
+                        )}
+                        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+                    </button>
+                    <button
+                        type="button"
+                        data-council-final-unpin
+                        disabled={unpinning}
+                        onClick={onUnpin}
+                        className={cn(BUTTON, "gap-[6px]")}
+                    >
+                        <PinOff size={13} aria-hidden />
+                        Unpin
+                    </button>
+                </span>
+            </div>
+            {hasText ? (
+                <div data-council-final-body className="max-w-[900px] rounded-lg border border-edge-mid px-5 py-4">
+                    <CouncilText text={proposal.markdown} className="text-[15px] leading-[1.62]" />
+                </div>
+            ) : null}
+        </section>
+    );
+}
+
 function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const projects = useAtomValue(projectListAtom);
     const [open, setOpen] = useAtom(openDirectionAtom(c.id));
@@ -970,6 +1048,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const [error, setError] = useState<string | null>(null);
     const summary = c.summary;
     const directions = useMemo(() => directionRows(c), [c]);
+    const pinned = useMemo(() => finalProposal(c), [c]);
     const changes = outdatedChanges(c);
     const outdated = changes.ideas + changes.revised + changes.stances;
     const coordinator = c.experts.find((e) => e.coordinator);
@@ -1047,6 +1126,14 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
             }
         });
 
+    const unpin = () =>
+        act("unpin", async () => {
+            const r = await finalPickCouncil(c.id, "");
+            if (r.ok === false) {
+                throw new Error(`Could not unpin the Final proposal: ${r.error}`);
+            }
+        });
+
     const brainstorm = (row: DirectionRow) =>
         act(`brainstorm:${row.direction.rank}`, async () => {
             const name =
@@ -1114,6 +1201,15 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
             onPick: () => showCouncilSetup(c.project, draftFromCouncil(c)),
         },
     ];
+    const finalSection =
+        pinned != null ? (
+            <FinalProposalSection
+                councilId={c.id}
+                proposal={pinned}
+                unpinning={busy === "unpin"}
+                onUnpin={() => void unpin()}
+            />
+        ) : null;
     return (
         <>
             {summary != null && c.state === "running" ? (
@@ -1334,6 +1430,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 </div>
                             </section>
                         ) : null}
+                        {finalSection}
                         {asks.length > 0 ? (
                             <section data-council-asks-next className="flex flex-col gap-4">
                                 <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
@@ -1366,6 +1463,10 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         ) : null}
                         <RatingRow key={c.id} c={c} />
                         <MapLink c={c} />
+                    </div>
+                ) : finalSection != null ? (
+                    <div className="mx-auto flex max-w-[1180px] flex-col gap-11 px-10 pb-[72px] pt-9">
+                        {finalSection}
                     </div>
                 ) : null}
             </div>
