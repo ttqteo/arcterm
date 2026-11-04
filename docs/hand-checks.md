@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Ideas rail click keeps the window still.** In a council's Discussion with the Ideas rail open, click
+  an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
+  bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
+  the typecheck only; no dev app was up (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
+
 - [ ] (arcterm) With the machine short of memory (Windows: commit charge past the RAM) and two runs active, let one
   run have a ready task while the other has a worker live → the ready task starts within a tick, and `waveapp.log`
   stops repeating `ready tasks held back while the machine's memory is short` for it; set Jobs to Off and a run with a

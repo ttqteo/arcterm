@@ -146,12 +146,14 @@ import {
     placeOf,
     readingRow,
     returnTop,
+    revealTop,
     sentSince,
     stillLanded,
     topFor,
     type JumpPills,
     type Landing,
     type ReadingPlace,
+    type RevealBlock,
     type RowBox,
     type ScrollPlace,
 } from "./councilscroll";
@@ -906,7 +908,7 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
         }
         // a glide up the channel, so the eye follows it back to the question; a jump with reduced motion
         const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        post.scrollIntoView?.({ block: "center", behavior: smooth ? "smooth" : "auto" });
+        revealIn(scrollerOf(post), post, "center", smooth);
         // and the question's bubble rings for a moment where it lands (FLASH_MS), so it is found at a glance; a second
         // press before it fades starts the moment again
         window.clearTimeout(Number(post.dataset.flashTimer));
@@ -2656,6 +2658,34 @@ function contentBox(row: Element, el: HTMLElement): RowBox {
     return { top: r.top - base, bottom: r.bottom - base };
 }
 
+// Brings `row` into view by moving `box` alone (revealTop): scrollIntoView also scrolls every box around it, up to the
+// window, and pushed the whole app up off its frame
+function revealIn(
+    box: HTMLElement | null | undefined,
+    row: Element | null | undefined,
+    block: RevealBlock,
+    smooth = false
+) {
+    if (box == null || row == null) {
+        return;
+    }
+    const top = revealTop(contentBox(row, box), box, block);
+    if (top != null) {
+        box.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+    }
+}
+
+// the box a row scrolls in: its nearest ancestor that scrolls up and down
+function scrollerOf(row: Element): HTMLElement | null {
+    for (let el = row.parentElement; el != null; el = el.parentElement) {
+        const y = getComputedStyle(el).overflowY;
+        if ((y === "auto" || y === "scroll") && el.scrollHeight > el.clientHeight) {
+            return el;
+        }
+    }
+    return null;
+}
+
 // the place a jump saved: the row the reader was on (kept by node, so rows that grew above it do not move the way back)
 type SavedPlace = ReadingPlace & { row: Element | null };
 
@@ -2967,7 +2997,7 @@ export function CouncilChat({
     const pick = useCallback((row: IdeaRow) => {
         setFocusedId(row.id);
         const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
-        channel.current?.querySelector(at)?.scrollIntoView?.({ block: "start" });
+        revealIn(channel.current, channel.current?.querySelector(at), "start");
     }, []);
     const closeSources = useCallback(() => closeCouncilSources(c.id), [c.id]);
     // Escape closes the sources first, back to the thread they were opened from, then the thread
@@ -2985,9 +3015,7 @@ export function CouncilChat({
     // the cursor stays in view as j and k move it
     useEffect(() => {
         if (focusedId != null) {
-            channel.current
-                ?.querySelector(`[data-council-idea="${focusedId}"]`)
-                ?.scrollIntoView?.({ block: "nearest" });
+            revealIn(channel.current, channel.current?.querySelector(`[data-council-idea="${focusedId}"]`), "nearest");
         }
     }, [focusedId]);
 

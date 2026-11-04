@@ -12,6 +12,7 @@ import {
     placeOf,
     readingRow,
     returnTop,
+    revealTop,
     sentSince,
     stillLanded,
     topFor,
@@ -184,5 +185,27 @@ describe("glideAt", () => {
         expect(glideAt(1000, 0, 1)).toBe(0);
         expect(glideAt(0, 1000, 0.5)).toBeGreaterThan(500);
         expect(glideAt(0, 1000, 2)).toBe(1000);
+    });
+});
+
+describe("revealTop", () => {
+    it("start puts the row's top at the view's top, clamped to the scroller", () => {
+        expect(revealTop({ top: 800, bottom: 900 }, box(0), "start")).toBe(800);
+        expect(revealTop({ top: 1900, bottom: 1990 }, box(0), "start")).toBe(1500);
+    });
+
+    it("center puts the row's middle at the view's middle", () => {
+        expect(revealTop({ top: 1000, bottom: 1100 }, box(0), "center")).toBe(800);
+        expect(revealTop({ top: 50, bottom: 150 }, box(600), "center")).toBe(0);
+    });
+
+    it("nearest leaves a row that shows whole, and moves one outside the least way in", () => {
+        expect(revealTop({ top: 600, bottom: 700 }, box(500), "nearest")).toBeNull();
+        expect(revealTop({ top: 400, bottom: 520 }, box(500), "nearest")).toBe(400);
+        expect(revealTop({ top: 950, bottom: 1100 }, box(500), "nearest")).toBe(600);
+    });
+
+    it("nearest shows the top of a row taller than the view", () => {
+        expect(revealTop({ top: 900, bottom: 1700 }, box(0), "nearest")).toBe(900);
     });
 });
