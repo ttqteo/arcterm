@@ -1098,9 +1098,9 @@ func LangLine(lang string) string {
 	if lang != LangVi {
 		return ""
 	}
-	return `The person writes in Vietnamese, so write each suggested role's "name" in Vietnamese too: two or three ` +
-		`plain words for what the role watches, with no leading "Người" unless the name means nothing without it, the way the stock roles are called "Soi lỗi" (a bug hunter), "Người mới" ` +
-		`(a new user) and "Canh RAM" (a memory watcher).`
+	return `The person writes in Vietnamese, so write each suggested role's "name" in Vietnamese too: one to three ` +
+		`plain everyday words for what the role does, with no leading "Người", the way the stock roles are called ` +
+		`"Tìm bug" (a bug hunter), "Khách" (a new user) and "Đo RAM" (a memory watcher).`
 }
 
 // writeBrainstormSynthesisTask ends a Brainstorm's synthesis prompt: at most 3 ideas worth trying, each with why and a

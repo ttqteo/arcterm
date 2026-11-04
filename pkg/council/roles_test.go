@@ -68,18 +68,18 @@ func roleById(t *testing.T, id string) CouncilExpert {
 // plainNames are the spec's table: each stock role's plain English name and its Tiếng Việt one. The role ids never change,
 // so a saved council still opens.
 var plainNames = []struct{ id, en, vi string }{
-	{"ux", "Ease of use", "Trải nghiệm"},
-	{"ram", "Memory watcher", "Canh RAM"},
-	{"newuser", "New user", "Người mới"},
-	{"skeptic", "Bug hunter", "Soi lỗi"},
-	{"coordinator", "Summarizer", "Tổng hợp"},
-	{"reviewer-a", "Reviewer A", "Phản biện A"},
-	{"reviewer-b", "Reviewer B", "Phản biện B"},
-	{"reader", "Reader", "Người đọc"},
-	{"areachair", "Final judge", "Chốt điểm"},
+	{"ux", "Ease of use", "UX"},
+	{"ram", "Memory watcher", "Đo RAM"},
+	{"newuser", "New user", "Khách"},
+	{"skeptic", "Bug hunter", "Tìm bug"},
+	{"coordinator", "Summarizer", "Thư ký"},
+	{"reviewer-a", "Reviewer A", "Giám khảo A"},
+	{"reviewer-b", "Reviewer B", "Giám khảo B"},
+	{"reader", "Reader", "Biên tập"},
+	{"areachair", "Final judge", "Tổng hợp"},
 	{"designer", "Designer", "Thiết kế"},
-	{"builder", "Builder", "Thợ code"},
-	{"contrarian", "Other side", "Cãi ngược"},
+	{"builder", "Builder", "Dev"},
+	{"contrarian", "Other side", "Phản biện"},
 	{"facilitator", "Host", "Dẫn dắt"},
 }
 
@@ -103,8 +103,8 @@ func TestBuiltInGroups(t *testing.T) {
 		{"ui-feature", "Review a UI feature", "Soi một tính năng giao diện"},
 		{"paper", "Paper review", "Chấm bài báo"},
 		{"product-ideas", "Product ideas", "Ý tưởng sản phẩm"},
-		{"agents", "Chats with a Bug hunter", "Trò chuyện cùng Soi lỗi"},
-		{"agents-ideas", "Chats with the Other side", "Trò chuyện cùng Cãi ngược"},
+		{"agents", "Chats with a Bug hunter", "Trò chuyện cùng Tìm bug"},
+		{"agents-ideas", "Chats with the Other side", "Trò chuyện cùng Phản biện"},
 	} {
 		if g := groupById(t, want.id); g.Name != want.en || g.NameVi != want.vi {
 			t.Errorf("%s = %q / %q, want %q / %q", want.id, g.Name, g.NameVi, want.en, want.vi)
@@ -288,7 +288,7 @@ func TestUserFileOverridesARoleByIdAndAddsAGroup(t *testing.T) {
 	if ux.Model != "haiku" {
 		t.Errorf("ux model = %q, want the user's haiku", ux.Model)
 	}
-	if ux.Name != "Ease of use" || ux.NameVi != "Trải nghiệm" || !strings.HasSuffix(ux.Brief, evidenceSentence) {
+	if ux.Name != "Ease of use" || ux.NameVi != "UX" || !strings.HasSuffix(ux.Brief, evidenceSentence) {
 		t.Errorf("ux lost its name or brief by the override: %+v", ux)
 	}
 	if got := len(Roles()); got != 13 {
@@ -441,22 +441,22 @@ func TestNameFor(t *testing.T) {
 		lang string
 		want string
 	}{
-		{"the new English name in a Vietnamese council", stock("skeptic", "Bug hunter"), LangVi, "Soi lỗi"},
+		{"the new English name in a Vietnamese council", stock("skeptic", "Bug hunter"), LangVi, "Tìm bug"},
 		{"the new English name in an English council", stock("skeptic", "Bug hunter"), LangEn, "Bug hunter"},
 		{"the old English name in an English council", stock("skeptic", "Skeptic"), LangEn, "Bug hunter"},
-		{"the old English name in a Vietnamese council", stock("skeptic", "Skeptic"), LangVi, "Soi lỗi"},
+		{"the old English name in a Vietnamese council", stock("skeptic", "Skeptic"), LangVi, "Tìm bug"},
 		{"the old UX name", stock("ux", "UX"), LangEn, "Ease of use"},
-		{"the old RAM name", stock("ram", "RAM"), LangVi, "Canh RAM"},
+		{"the old RAM name", stock("ram", "RAM"), LangVi, "Đo RAM"},
 		{"the old Area chair name", stock("areachair", "Area chair"), LangEn, "Final judge"},
 		{"the old Coordinator name", stock("coordinator", "Coordinator"), LangEn, "Summarizer"},
 		{"the old Contrarian name", stock("contrarian", "Contrarian"), LangEn, "Other side"},
 		{"the old Facilitator name", stock("facilitator", "Facilitator"), LangVi, "Dẫn dắt"},
-		{"a name that never changed", stock("newuser", "New user"), LangVi, "Người mới"},
-		{"a Vietnamese name in an English council", stock("skeptic", "Soi lỗi"), LangEn, "Bug hunter"},
-		{"a Vietnamese name in a Vietnamese council", stock("skeptic", "Soi lỗi"), LangVi, "Soi lỗi"},
+		{"a name that never changed", stock("newuser", "New user"), LangVi, "Khách"},
+		{"a Vietnamese name in an English council", stock("skeptic", "Tìm bug"), LangEn, "Bug hunter"},
+		{"a Vietnamese name in a Vietnamese council", stock("skeptic", "Tìm bug"), LangVi, "Tìm bug"},
 		{"no language reads as English", stock("skeptic", "Skeptic"), "", "Bug hunter"},
 		{"a language that is not known reads as English", stock("skeptic", "Skeptic"), "fr", "Bug hunter"},
-		{"a seat sent with its own namevi still takes the table's", CouncilExpert{Id: "ux", Name: "UX", NameVi: "old"}, LangVi, "Trải nghiệm"},
+		{"a seat sent with its own namevi still takes the table's", CouncilExpert{Id: "ux", Name: "UX", NameVi: "old"}, LangVi, "UX"},
 		{"a name the person changed", stock("skeptic", "Devil's advocate"), LangVi, "Devil's advocate"},
 		{"a changed name that is a stock name of another role", stock("skeptic", "Builder"), LangVi, "Builder"},
 		{"a built-in id renamed in councilroles.json", stock("ux", "Accessibility"), LangVi, "Accessibility"},
@@ -495,7 +495,7 @@ func TestNameSeats(t *testing.T) {
 
 	vi := &Council{Id: "c1", Lang: LangVi, Experts: seats()}
 	NameSeats(vi)
-	want := []string{"Witness synthesis", "Trải nghiệm", "Canh RAM", "Doubter", "Accessibility", "Tổng hợp"}
+	want := []string{"Witness synthesis", "UX", "Đo RAM", "Doubter", "Accessibility", "Thư ký"}
 	if got := namesOf(vi); !reflect.DeepEqual(got, want) {
 		t.Errorf("Vietnamese council names = %v, want %v", got, want)
 	}
@@ -523,7 +523,7 @@ func TestNameSeats(t *testing.T) {
 	}
 	none.Lang = LangVi
 	NameSeats(none)
-	if got := namesOf(none)[1]; got != "Trải nghiệm" {
+	if got := namesOf(none)[1]; got != "UX" {
 		t.Errorf("an English-named seat of a Vietnamese council = %q", got)
 	}
 
@@ -536,7 +536,7 @@ func TestRenamingABuiltInRoleInTheUserFileDropsItsVietnameseName(t *testing.T) {
 	if ux := roleById(t, "ux"); ux.Name != "Accessibility" || ux.NameVi != "" {
 		t.Errorf("a role the person renamed = %q / %q, want their name and no Vietnamese one", ux.Name, ux.NameVi)
 	}
-	if ram := roleById(t, "ram"); ram.Name != "Memory watcher" || ram.NameVi != "Canh RAM" {
+	if ram := roleById(t, "ram"); ram.Name != "Memory watcher" || ram.NameVi != "Đo RAM" {
 		t.Errorf("a role with only its brief changed = %q / %q, want both stock names", ram.Name, ram.NameVi)
 	}
 }

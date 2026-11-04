@@ -889,7 +889,7 @@ describe("summarizerName", () => {
     it("is the summarizing seat's own name: the stock one, a renamed one, the Vietnamese one", () => {
         expect(summarizerName(council({ experts: withSummarizer("Summarizer") }))).toBe("Summarizer");
         expect(summarizerName(council({ experts: withSummarizer("Chair of the table") }))).toBe("Chair of the table");
-        expect(summarizerName(council({ experts: withSummarizer("Tổng hợp") }))).toBe("Tổng hợp");
+        expect(summarizerName(council({ experts: withSummarizer("Thư ký") }))).toBe("Thư ký");
     });
 
     it("reads the seat with coordinator: true, not the one with the id coordinator", () => {

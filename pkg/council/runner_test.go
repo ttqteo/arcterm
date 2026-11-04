@@ -6671,11 +6671,11 @@ func TestStartLangNamesTheSeatsForTheQuestion(t *testing.T) {
 		names                         []string
 	}{
 		{"a Vietnamese question", "Idle sleep", "Nên làm gì trước?", LangVi,
-			[]string{"Trải nghiệm", "Soi lỗi", "Mac user", "Watch the heap", "Tổng hợp"}},
+			[]string{"UX", "Tìm bug", "Mac user", "Watch the heap", "Thư ký"}},
 		{"an English question", "Idle sleep", "Which first?", LangEn,
 			[]string{"Ease of use", "Bug hunter", "Mac user", "Watch the heap", "Summarizer"}},
 		{"no question, a Vietnamese feature", "Chế độ ngủ của dịch vụ", "  ", LangVi,
-			[]string{"Trải nghiệm", "Soi lỗi", "Mac user", "Watch the heap", "Tổng hợp"}},
+			[]string{"UX", "Tìm bug", "Mac user", "Watch the heap", "Thư ký"}},
 		{"an English question about a Vietnamese feature", "Chế độ ngủ", "Which first?", LangEn,
 			[]string{"Ease of use", "Bug hunter", "Mac user", "Watch the heap", "Summarizer"}},
 	}
@@ -6732,7 +6732,7 @@ func TestStartLangNamesTheSeatsOfASavedCouncilWhenItStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartSaved: %v", err)
 	}
-	if started.Lang != LangVi || started.Experts[0].Name != "Trải nghiệm" || started.Experts[3].Name != "Soi lỗi" {
+	if started.Lang != LangVi || started.Experts[0].Name != "UX" || started.Experts[3].Name != "Tìm bug" {
 		t.Errorf("a started council = lang %q, seats %q and %q, want Vietnamese", started.Lang, started.Experts[0].Name, started.Experts[3].Name)
 	}
 	h.wait("c1")
@@ -6751,7 +6751,7 @@ func TestStartLangSuggestAsksForRoleNamesInTheQuestionsLanguage(t *testing.T) {
 		return reqs[len(reqs)-1].Prompt
 	}
 	mustContain(t, "a Vietnamese question's prompt", ask("Nên làm gì trước?"), LangLine(LangVi))
-	mustNotContain(t, "an English question's prompt", ask("Which first?"), LangLine(LangVi), "Soi lỗi")
+	mustNotContain(t, "an English question's prompt", ask("Which first?"), LangLine(LangVi), "Tìm bug")
 	// with no question the feature decides
 	if _, err := h.r.Suggest(context.Background(), project, "Chế độ ngủ", "", nil); err != nil {
 		t.Fatalf("Suggest: %v", err)

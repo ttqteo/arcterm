@@ -26,57 +26,57 @@ func brief(angle string) string { return angle + " " + briefEvidenceRule }
 // person's question (NameFor). The ids never change, so a saved council still opens.
 var builtInRoles = []CouncilExpert{
 	{
-		Id: "ux", Name: "Ease of use", NameVi: "Trải nghiệm", Model: ModelExpert,
+		Id: "ux", Name: "Ease of use", NameVi: "UX", Model: ModelExpert,
 		Brief: brief("You review the feature as the UX expert. Ask whether someone can find, read and use it without being " +
 			"told how: where its entry point is, what the first screen tells them, whether a label, a state or an error " +
 			"can be understood at a glance, and what the keyboard or a narrow window does to it. Propose concrete " +
 			"changes to what is on screen, not general principles."),
 	},
 	{
-		Id: "ram", Name: "Memory watcher", NameVi: "Canh RAM", Model: ModelExpert,
+		Id: "ram", Name: "Memory watcher", NameVi: "Đo RAM", Model: ModelExpert,
 		Brief: brief("You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in " +
 			"RAM watch (docs/open-issues.md): caches, per-agent or per-terminal state, event subscriptions, timers, " +
 			"retained transcripts, views that stay mounted. Name what owns each allocation and when it is released, and " +
 			"say what you would measure and how."),
 	},
 	{
-		Id: "newuser", Name: "New user", NameVi: "Người mới", Model: ModelExpert,
+		Id: "newuser", Name: "New user", NameVi: "Khách", Model: ModelExpert,
 		Brief: brief("You are on your first day in arcterm and know none of its names, panes or shortcuts. Ask what is " +
 			"confusing and what is missing, and where you would give up. Read the feature's words as you would meet " +
 			"them in the app, and say where a term, an icon or a step assumes something you have not been told."),
 	},
 	{
-		Id: "skeptic", Name: "Bug hunter", NameVi: "Soi lỗi", Model: ModelExpert,
+		Id: "skeptic", Name: "Bug hunter", NameVi: "Tìm bug", Model: ModelExpert,
 		Brief: brief("You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at " +
 			"once, the failure the design leaves unhandled, the claim another expert made without checking it. If you " +
 			"cannot name a break, withdraw your proposal rather than pad it. Make no claim without evidence."),
 	},
 	{
-		Id: "coordinator", Name: "Summarizer", NameVi: "Tổng hợp", Model: ModelCoordinator, Coordinator: true,
+		Id: "coordinator", Name: "Summarizer", NameVi: "Thư ký", Model: ModelCoordinator, Coordinator: true,
 		Brief: brief("You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain " +
 			"by what they are worth for the effort, attach each expert's stance to each direction, and mark the claims " +
 			"that cite nothing as weak. Name any role the panel was missing. Add no proposals of your own."),
 	},
 	{
-		Id: "reviewer-a", Name: "Reviewer A", NameVi: "Phản biện A", Model: ModelExpert,
+		Id: "reviewer-a", Name: "Reviewer A", NameVi: "Giám khảo A", Model: ModelExpert,
 		Brief: brief("You are a reviewer at the venue's security bar (CCS, NDSS). Judge novelty against prior work, whether " +
 			"the threat model is stated and the attacker realistic, and whether each claim is sound given the evidence " +
 			"in the paper. Say what would make you reject it and what would change your mind."),
 	},
 	{
-		Id: "reviewer-b", Name: "Reviewer B", NameVi: "Phản biện B", Model: ModelExpert,
+		Id: "reviewer-b", Name: "Reviewer B", NameVi: "Giám khảo B", Model: ModelExpert,
 		Brief: brief("You are a reviewer who checks baselines and datasets. For every claim, ask whether it is tested on " +
 			"prior work's own data, whether the baselines are the strongest available and run fairly, and whether the " +
 			"numbers in the text match the tables. Name the comparison that is missing."),
 	},
 	{
-		Id: "reader", Name: "Reader", NameVi: "Người đọc", Model: ModelExpert,
+		Id: "reader", Name: "Reader", NameVi: "Biên tập", Model: ModelExpert,
 		Brief: brief(`You read the prose only, not the method. Find terms used before they are defined, dense "not X but Y" ` +
 			"sentences, and sentences that read as machine-written. Quote each, cite the .tex line, and propose a " +
 			"plainer sentence."),
 	},
 	{
-		Id: "areachair", Name: "Final judge", NameVi: "Chốt điểm", Model: ModelCoordinator, Coordinator: true,
+		Id: "areachair", Name: "Final judge", NameVi: "Tổng hợp", Model: ModelCoordinator, Coordinator: true,
 		Brief: brief("You are the area chair, the coordinator of a paper review. Merge the reviews into what to fix before " +
 			"submission, ranked by how likely each point is to sink the paper. Merge duplicate points, mark a claim " +
 			"weak when it cites nothing, and say which concerns the text can answer and which need new work."),
@@ -89,13 +89,13 @@ var builtInRoles = []CouncilExpert{
 			"that removes something instead of adding it.",
 	},
 	{
-		Id: "builder", Name: "Builder", NameVi: "Thợ code", Model: ModelExpert,
+		Id: "builder", Name: "Builder", NameVi: "Dev", Model: ModelExpert,
 		Brief: "You are the builder. Think in what can be built small: the cheapest version that would test the idea, the " +
 			"code that already exists and could be reused, the first step that fits in a day. For every idea you propose or " +
 			"build on, say what that first step is and roughly what it costs.",
 	},
 	{
-		Id: "contrarian", Name: "Other side", NameVi: "Cãi ngược", Model: ModelExpert,
+		Id: "contrarian", Name: "Other side", NameVi: "Phản biện", Model: ModelExpert,
 		Brief: "You are the contrarian. Turn the problem over: what if the goal is the wrong one, what would the opposite " +
 			"approach look like, what is everyone assuming. Propose the ideas nobody else will, and mark the far-fetched ones " +
 			"wild; a wild idea is kept, not thrown away.",
@@ -116,8 +116,8 @@ var builtInGroups = []CouncilGroup{
 	{Id: "ui-feature", Name: "Review a UI feature", NameVi: "Soi một tính năng giao diện", Roles: []string{"ux", "ram", "newuser", "skeptic"}, Coordinator: "coordinator"},
 	{Id: "paper", Name: "Paper review", NameVi: "Chấm bài báo", Roles: []string{"reviewer-a", "reviewer-b", "reader"}, Coordinator: "areachair"},
 	{Id: "product-ideas", Name: "Product ideas", NameVi: "Ý tưởng sản phẩm", Roles: []string{"newuser", "designer", "builder", "contrarian"}, Coordinator: "facilitator"},
-	{Id: AgentsGroupId, Name: "Chats with a Bug hunter", NameVi: "Trò chuyện cùng Soi lỗi", Roles: []string{"skeptic"}, Coordinator: "coordinator"},
-	{Id: AgentsIdeasGroupId, Name: "Chats with the Other side", NameVi: "Trò chuyện cùng Cãi ngược", Roles: []string{"contrarian"}, Coordinator: "facilitator"},
+	{Id: AgentsGroupId, Name: "Chats with a Bug hunter", NameVi: "Trò chuyện cùng Tìm bug", Roles: []string{"skeptic"}, Coordinator: "coordinator"},
+	{Id: AgentsIdeasGroupId, Name: "Chats with the Other side", NameVi: "Trò chuyện cùng Phản biện", Roles: []string{"contrarian"}, Coordinator: "facilitator"},
 }
 
 // The ids of the two groups made for seated chats.
