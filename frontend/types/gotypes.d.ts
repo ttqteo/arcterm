@@ -801,6 +801,12 @@ declare global {
         toolsauto?: boolean;
     };
 
+    // wshrpc.CommandCouncilFinalPickData
+    type CommandCouncilFinalPickData = {
+        id: string;
+        item?: string;
+    };
+
     // wshrpc.CommandCouncilIdData
     type CommandCouncilIdData = {
         id: string;
@@ -2456,6 +2462,7 @@ declare global {
         rating?: string;
         ratedat?: number;
         pinned?: number;
+        finalpick?: string;
         ranms?: number;
         runstarted?: number;
         experts: CouncilExpert[];

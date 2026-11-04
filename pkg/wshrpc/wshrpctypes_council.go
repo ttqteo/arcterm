@@ -35,6 +35,7 @@ type CouncilCommands interface {
 	CouncilSaveGroupCommand(ctx context.Context, data council.CouncilGroup) error
 	CouncilRateCommand(ctx context.Context, data CommandCouncilRateData) error
 	CouncilThumbCommand(ctx context.Context, data CommandCouncilThumbData) error
+	CouncilFinalPickCommand(ctx context.Context, data CommandCouncilFinalPickData) error
 	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
 	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
 	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
@@ -226,6 +227,15 @@ type CommandCouncilThumbData struct {
 	Id    string `json:"id"`
 	Item  string `json:"item"`
 	Thumb string `json:"thumb,omitempty"`
+}
+
+// CommandCouncilFinalPickData pins one of a council's sent ideas or seat replies to its Report as the Final proposal:
+// Item is its id (P1, r3), or empty to unpin. A later pin replaces the earlier one. The person's own reply, a draft and
+// an id the council lacks are refused. It is display only: no prompt reads it, and it is no pin of the council itself
+// (CommandCouncilPinData).
+type CommandCouncilFinalPickData struct {
+	Id   string `json:"id"`
+	Item string `json:"item,omitempty"`
 }
 
 // CommandCouncilBenchData picks a benchmark: the cases (every case not retired when empty), the variants (council and
