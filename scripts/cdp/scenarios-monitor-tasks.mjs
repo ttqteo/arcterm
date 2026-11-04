@@ -376,6 +376,10 @@ export default function (kit) {
                 const tree = await h.ev(`(async () => {
                     ${LIB}
                     const ids = ${JSON.stringify(LIVE_IDS)};
+                    // three running tasks fold behind the agent row's "3 running" chip (tasksShown): open it
+                    const chip = () => document.querySelector('[data-agent-row="${AGENT}"] button[aria-label="Show background tasks"]');
+                    await until(() => chip() != null, 20000);
+                    chip()?.click();
                     await until(() => ids.every((id) => row(id) != null), 20000);
                     await nap(400);
                     const agentRow = document.querySelector('[data-agent-row="${AGENT}"]');

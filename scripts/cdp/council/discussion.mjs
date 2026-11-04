@@ -322,6 +322,12 @@ const bodyHeight = (h, id) =>
     h.ev(`Math.round(document.querySelector('[data-council-idea="${id}"] [data-council-idea-body]')?.getBoundingClientRect().height ?? 0)`);
 
 async function round2Fold(h, ctx, rec) {
+    // the person last left this council now, so only the reply stamped after it is new. Left unset, the opened map's
+    // seededAt (the page's first load) decides, and after an earlier scenario in the same app every fixture reply is new
+    await h.ev(`(() => {
+        const m = window.__arcCouncil.opened();
+        window.__arcCouncil.setOpened({ ...m, opened: { ...m.opened, "council-fold": Date.now() } });
+    })()`);
     // round 2 with P1 made long, and a seat's reply on P2 that lands now, after the person last left the council
     const id = await openFixture(h, ctx, "round2", {
         id: "council-fold",
