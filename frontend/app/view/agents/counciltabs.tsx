@@ -3,7 +3,7 @@
 //
 // The Report / Discussion / Map tab strip of a council, shared by the three views (councilsummary.tsx,
 // councildiscussion.tsx, councilmap.tsx): the tab shown is underlined in the primary colour, a click on another one opens
-// it (showCouncil), and the Discussion tab carries the count of ideas sent (counciltabsmodel.ts). The Map's word follows
+// it (showCouncil), a click on the one shown runs the view's `onCurrent` (the Report glides down to its body), and the Discussion tab carries the count of ideas sent (counciltabsmodel.ts). The Map's word follows
 // the council's language. The parent row sets the height; each tab fills it. Under 900px of pane (the nearest `@container`:
 // each header sets one) the tabs go icon-only: the word is kept for a screen reader beside the icon, and a tab's title and
 // aria-label say it (with the count), so Vietnamese's longer words never crowd the row. The Discussion's count stays, since it
@@ -19,7 +19,18 @@ const TAB =
 
 const ICON: Record<CouncilTabId, LucideIcon> = { summary: FileText, discussion: MessagesSquare, map: LayoutGrid };
 
-export function CouncilTabs({ c, view, className }: { c: Council; view: CouncilTabId; className?: string }) {
+export function CouncilTabs({
+    c,
+    view,
+    onCurrent,
+    className,
+}: {
+    c: Council;
+    view: CouncilTabId;
+    // a click on the tab already shown (the Report scrolls down to its body); without it that tab does nothing
+    onCurrent?: () => void;
+    className?: string;
+}) {
     return (
         <div role="tablist" aria-label="Council view" className={cn("flex items-stretch gap-5", className)}>
             {councilTabs(c).map((tab) => {
@@ -36,12 +47,14 @@ export function CouncilTabs({ c, view, className }: { c: Council; view: CouncilT
                         className={cn(
                             TAB,
                             view === tab.id
-                                ? "border-primary font-semibold text-primary"
+                                ? cn("border-primary font-semibold text-primary", onCurrent != null && "cursor-pointer")
                                 : "cursor-pointer border-transparent font-medium text-secondary hover:text-primary"
                         )}
                         onClick={() => {
                             if (view !== tab.id) {
                                 showCouncil(c.id, tab.id);
+                            } else {
+                                onCurrent?.();
                             }
                         }}
                     >

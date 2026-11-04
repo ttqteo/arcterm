@@ -642,6 +642,13 @@ function sectionOf(box: HTMLElement, id: string): HTMLElement | null {
     }
 }
 
+// Moves the report's scroll box alone (scrollIntoView would also scroll the surfaces around it): a glide, so the eye
+// follows the page down to where it lands, or a jump with reduced motion.
+function glideTo(box: HTMLElement, top: number) {
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    box.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+}
+
 // The tab bar's jump links (board M-report-cover.dc.html): a button per section after the answer, scrolling the box so
 // the section's top lands 12px under the bar (as far as the box can scroll).
 function JumpLinks({
@@ -664,10 +671,7 @@ function JumpLinks({
             return;
         }
         const barHeight = bar.current?.offsetHeight ?? 0;
-        // the scroll box alone moves (scrollIntoView would also scroll the surfaces around it)
-        box.scrollTo({
-            top: box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - barHeight - 12,
-        });
+        glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - barHeight - 12);
     };
     return (
         <nav aria-label="On this page" className="flex min-w-0 items-center gap-1">
@@ -972,6 +976,15 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const scroller = useRef<HTMLDivElement>(null);
     const tabBar = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
+    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself: the tab bar
+    // at the top of the box, where it sticks (the cover is the only thing above it)
+    const toReport = () => {
+        const box = scroller.current;
+        const cover = box?.querySelector<HTMLElement>("[data-council-cover]");
+        if (box != null && cover != null) {
+            glideTo(box, cover.offsetHeight);
+        }
+    };
 
     // one action at a time; a refusal is shown where the person clicked, not thrown
     const act = async (what: string, run: () => Promise<void>) => {
@@ -1252,7 +1265,12 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     className="@container sticky top-0 z-10 border-b border-border bg-surface"
                 >
                     <div className="mx-auto flex h-[46px] max-w-[1180px] items-stretch gap-6 px-10 @max-[900px]:gap-3 @max-[900px]:px-4">
-                        <CouncilTabs c={c} view="summary" className="flex-none @max-[900px]:gap-3" />
+                        <CouncilTabs
+                            c={c}
+                            view="summary"
+                            onCurrent={toReport}
+                            className="flex-none @max-[900px]:gap-3"
+                        />
                         <span className="flex-1" />
                         <JumpLinks c={c} scroller={scroller} bar={tabBar} />
                         <CouncilResumeButton c={c} className="self-center" />
