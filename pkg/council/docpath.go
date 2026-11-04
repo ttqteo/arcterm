@@ -21,14 +21,50 @@ var DocDay = func() time.Time { return time.Now() }
 // docSlugRunes cuts a feature's slug so a long feature does not make a long file name.
 const docSlugRunes = 60
 
-// FeatureSlug is a feature as a file name part: letters and digits, lower case, runs of anything else one dash.
+// latinFold maps a lower-case Latin letter with diacritics to its plain ASCII letters.
+var latinFold = func() map[rune]string {
+	m := map[rune]string{'ß': "ss", 'æ': "ae", 'œ': "oe"}
+	for base, letters := range map[string]string{
+		"a": "àáảãạăằắẳẵặâầấẩẫậäåāą",
+		"c": "çćč",
+		"d": "đď",
+		"e": "èéẻẽẹêềếểễệëēęě",
+		"g": "ğ",
+		"i": "ìíỉĩịïîī",
+		"l": "ł",
+		"n": "ñńň",
+		"o": "òóỏõọôồốổỗộơờớởỡợöøō",
+		"r": "ř",
+		"s": "śšş",
+		"t": "ť",
+		"u": "ùúủũụưừứửữựüûūů",
+		"y": "ỳýỷỹỵÿ",
+		"z": "źżž",
+	} {
+		for _, r := range letters {
+			m[r] = base
+		}
+	}
+	return m
+}()
+
+// FeatureSlug is a feature as a file name part, plain ASCII so a terminal can open the path as a link: letters and
+// digits, lower case, diacritics dropped ("Chế độ" → "che-do"), runs of anything else one dash. A combining mark is
+// dropped with no dash (a decomposed "é" folds like the composed one); a letter with no ASCII form counts as a separator.
 func FeatureSlug(feature string) string {
 	var b strings.Builder
 	runes, dash := 0, false
 	for _, r := range strings.ToLower(feature) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) {
-			b.WriteRune(r)
-			runes++
+		if unicode.IsMark(r) {
+			continue
+		}
+		plain, ok := latinFold[r]
+		if !ok && r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			plain, ok = string(r), true
+		}
+		if ok {
+			b.WriteString(plain)
+			runes += len(plain)
 			dash = false
 		} else if !dash && runes > 0 {
 			b.WriteByte('-')
