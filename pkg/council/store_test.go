@@ -527,3 +527,107 @@ func TestSetThumbRefuses(t *testing.T) {
 		t.Errorf("SetThumb of a missing council = %v, want fs.ErrNotExist", err)
 	}
 }
+
+// finalPickCouncil is a saved council with a sent idea (P1), a held idea (P2), a sent seat reply (r2), a dropped one
+// (r3) and a held one (r4) beside the person's own reply (r1).
+func finalPickCouncil(t *testing.T) {
+	t.Helper()
+	c := sampleCouncil("c1", `D:\p`)
+	c.Proposals = append(c.Proposals, CouncilProposal{Id: "P2", Author: "ux", Title: "Held", Argument: "a", Draft: DraftHeld})
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r2", ProposalId: "P1", Author: "ux", Text: "because", Round: 2, Ts: 7},
+		CouncilReply{Id: "r3", ProposalId: "P1", Author: "ux", Text: "dropped", Round: 2, Ts: 8, Draft: DraftDropped},
+		CouncilReply{Id: "r4", ProposalId: "P1", Author: "ux", Text: "held", Round: 2, Ts: 9, Draft: DraftHeld},
+	)
+	if err := Save(c); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetFinalPickPinsReplacesAndUnpins(t *testing.T) {
+	useTempRoot(t)
+	tickClock(t)
+	finalPickCouncil(t)
+	before, err := Load("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.FinalPick != "" {
+		t.Fatalf("a council with no pin has FinalPick %q", before.FinalPick)
+	}
+
+	// each change reaches the file, returns the saved council and leaves Updated (a no-summary council's ended time) alone
+	for _, step := range []struct{ item, want, what string }{
+		{"P1", "P1", "pinning a sent idea"},
+		{"r2", "r2", "pinning a sent seat reply replaces the idea"},
+		{"P1", "P1", "pinning the idea again replaces the reply"},
+		{"", "", "an empty item unpins"},
+		{"", "", "unpinning when nothing is pinned"},
+	} {
+		got, err := SetFinalPick("c1", step.item)
+		if err != nil {
+			t.Fatalf("%s: SetFinalPick(%q): %v", step.what, step.item, err)
+		}
+		if got.FinalPick != step.want {
+			t.Errorf("%s: returned FinalPick %q, want %q", step.what, got.FinalPick, step.want)
+		}
+		saved, err := Load("c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.FinalPick != step.want {
+			t.Errorf("%s: saved FinalPick %q, want %q", step.what, saved.FinalPick, step.want)
+		}
+		if saved.Updated != before.Updated || got.Updated != before.Updated {
+			t.Errorf("%s moved Updated from %d to %d (returned %d): a pin is no change to the council", step.what, before.Updated, saved.Updated, got.Updated)
+		}
+	}
+
+	// the pin is no thumb, and it touches nothing else of the council
+	saved, _ := Load("c1")
+	if saved.Pinned != 0 || saved.Proposals[0].Thumb != "" || saved.Replies[1].Thumb != "" {
+		t.Errorf("a final pick changed Pinned %d or a thumb (%q, %q)", saved.Pinned, saved.Proposals[0].Thumb, saved.Replies[1].Thumb)
+	}
+	if saved.Feature != before.Feature || saved.Summary == nil || len(saved.Proposals) != 2 || len(saved.Replies) != 4 {
+		t.Errorf("a final pick changed more than itself: %+v", saved)
+	}
+}
+
+func TestSetFinalPickRefuses(t *testing.T) {
+	useTempRoot(t)
+	tickClock(t)
+	finalPickCouncil(t)
+	if _, err := SetFinalPick("c1", "P1"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := Load("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ item, why string }{
+		{"r1", "the person's own reply"},
+		{"P2", "a held idea"},
+		{"r3", "a dropped reply"},
+		{"r4", "a held reply"},
+		{"P9", "an idea the council does not have"},
+		{"r9", "a reply the council does not have"},
+		{"P1 ", "an id with a trailing space"},
+	} {
+		if _, err := SetFinalPick("c1", tc.item); err == nil {
+			t.Errorf("SetFinalPick(%q) = nil, want a refusal for %s", tc.item, tc.why)
+		}
+		saved, err := Load("c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.FinalPick != "P1" {
+			t.Errorf("a refused pick of %s (%s) left FinalPick %q, want the earlier P1", tc.item, tc.why, saved.FinalPick)
+		}
+		if saved.Updated != before.Updated {
+			t.Errorf("a refused pick of %s (%s) moved Updated from %d to %d", tc.item, tc.why, before.Updated, saved.Updated)
+		}
+	}
+	if _, err := SetFinalPick("nope", "P1"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("SetFinalPick of a missing council = %v, want fs.ErrNotExist", err)
+	}
+}

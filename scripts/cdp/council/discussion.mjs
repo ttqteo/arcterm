@@ -3056,7 +3056,15 @@ const thumbFacts = (h, post) =>
             bylineRight: Math.round(byline.getBoundingClientRect().right),
             endAfterName: end.getBoundingClientRect().left >= name.getBoundingClientRect().right,
             inEnd: [...end.children]
-                .map((e) => (e.hasAttribute("data-council-thumbs") ? "thumbs" : e.hasAttribute("data-council-chot") ? "chot" : "time"))
+                .map((e) =>
+                    e.hasAttribute("data-council-thumbs")
+                        ? "thumbs"
+                        : e.hasAttribute("data-council-tools")
+                          ? "tools"
+                          : e.hasAttribute("data-council-chot")
+                            ? "chot"
+                            : "time"
+                )
                 .join(),
             buttons: [...thumbs.querySelectorAll("[data-council-thumb]")].map((b) => b.dataset.councilThumb + "=" + b.getAttribute("aria-pressed")),
             chip: chip
@@ -3130,13 +3138,13 @@ async function thumbsAndLines(h, ctx, rec) {
     // with the pointer away, no thumb button shows in the byline: the time, the buttons and Chốt (beside them) are at its
     // right end, dimmed out
     rec(
-        "thumbs: with the pointer away the byline's time, both thumb buttons and the Chốt button beside them are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
+        "thumbs: with the pointer away the byline's time, its Copy and Pin to Report buttons, both thumb buttons and the Chốt button beside them are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
         [r4, r5, idea].every(
             (f) =>
                 f.endOpacity === "0" &&
                 f.endRight === f.bylineRight &&
                 f.endAfterName &&
-                f.inEnd === "time,thumbs,chot" &&
+                f.inEnd === "time,tools,thumbs,chot" &&
                 f.buttons.length === 2
         ) &&
             r4.buttons.join() === "like=true,dislike=false" &&

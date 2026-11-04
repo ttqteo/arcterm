@@ -876,8 +876,48 @@ describe("outlineOf", () => {
         expect(outlineOf(council({ summary: kept })).find((e) => e.id === "kept")?.label).toBe("Also raised");
     });
 
-    it("is empty before a summary", () => {
+    it("is empty before a summary while nothing is pinned", () => {
         expect(outlineOf(council({ summary: undefined }))).toEqual([]);
+    });
+
+    it("ends with the Final proposal while a message is pinned", () => {
+        const base = council();
+        const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
+        const withKept = outlineOf(council({ summary: kept, finalpick: "P2" }));
+        expect(withKept.map((e) => e.id)).toEqual([
+            "answer",
+            "directions",
+            "direction:1",
+            "direction:2",
+            "kept",
+            "final",
+        ]);
+        expect(withKept[withKept.length - 1]).toEqual({
+            id: "final",
+            label: "Final proposal",
+            count: null,
+            depth: 0,
+            rank: null,
+        });
+        expect(outlineOf(council({ finalpick: "r1" })).map((e) => e.id)).toEqual([
+            "answer",
+            "directions",
+            "direction:1",
+            "direction:2",
+            "final",
+        ]);
+    });
+
+    it("is only the Final proposal when a message is pinned and there is no summary", () => {
+        expect(outlineOf(council({ summary: undefined, finalpick: "P1" }))).toEqual([
+            { id: "final", label: "Final proposal", count: null, depth: 0, rank: null },
+        ]);
+    });
+
+    it("has no Final proposal for a pin that names nothing the council has, or none", () => {
+        expect(outlineOf(council({ finalpick: "P9" })).map((e) => e.id)).not.toContain("final");
+        expect(outlineOf(council({ finalpick: "" })).map((e) => e.id)).not.toContain("final");
+        expect(outlineOf(council({ summary: undefined, finalpick: "P9" }))).toEqual([]);
     });
 });
 
@@ -894,8 +934,23 @@ describe("jumpLinks", () => {
         expect(jumpLinks(council()).map((e) => e.id)).toEqual(["directions"]);
     });
 
-    it("is empty before a summary", () => {
+    it("is empty before a summary while nothing is pinned", () => {
         expect(jumpLinks(council({ summary: undefined }))).toEqual([]);
+    });
+
+    it("ends with the Final proposal while a message is pinned", () => {
+        const base = council();
+        const kept = { ...base.summary!, kept: [direction(3, ["P6"])] };
+        expect(jumpLinks(council({ summary: kept, finalpick: "P2" })).map((e) => e.id)).toEqual([
+            "directions",
+            "kept",
+            "final",
+        ]);
+        expect(jumpLinks(council({ finalpick: "r1" })).map((e) => e.id)).toEqual(["directions", "final"]);
+    });
+
+    it("is only the Final proposal when a message is pinned and there is no summary", () => {
+        expect(jumpLinks(council({ summary: undefined, finalpick: "P1" })).map((e) => e.id)).toEqual(["final"]);
     });
 });
 

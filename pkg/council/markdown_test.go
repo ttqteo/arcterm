@@ -314,6 +314,155 @@ func TestMarkdownWithNoProposalsHasNoMatrix(t *testing.T) {
 	}
 }
 
+// The shared cases of MessageMarkdown: frontend/app/view/agents/councilfinalmodel.test.ts holds the same inputs and the
+// same expected strings, so the Copy button and the Report's Final proposal section write one markdown.
+func messageMarkdownCouncil() *Council {
+	return &Council{
+		Id:      "c1",
+		Feature: "Rail apps",
+		Experts: []CouncilExpert{{Id: "ux", Name: "UX"}, {Id: "ram", Name: "RAM"}},
+		Proposals: []CouncilProposal{
+			{Id: "P1", Author: "ux", Title: "Cache the tree", Argument: "Keep it in memory."},
+			{Id: "P2", Author: "ram", Title: "Pin rail apps", Argument: "Settings, not localStorage.", Evidence: []CouncilEvidence{
+				{Ref: "a.ts:12"},
+				{Ref: "b.go:40", Weak: true, Note: "no test"},
+				{Ref: "c.go:7", Weak: true},
+				{Weak: true, Note: "about 3 s"},
+				{Weak: true},
+			}},
+			{Id: "P3", Author: "ux", Title: "Fix the race", Argument: "Lock the map.", Label: LabelRan,
+				Evidence: []CouncilEvidence{{Ref: "x.go:9", Quote: "m[k] = v", Cite: CiteOK, CiteNote: "line 9", Region: &CouncilRegion{Crop: "/tmp/crop.png"}}},
+				Runs:     []CouncilRun{{Command: "go test ./pkg/x -run TestRace", Expect: RunPass, State: RunPass, Matched: true}}},
+		},
+		Replies: []CouncilReply{
+			{Id: "r3", ProposalId: "P1", Author: "ram", Stance: StanceAccept, Text: "  | A | B |\n|---|---|\n| 1 | 2 |\n"},
+		},
+	}
+}
+
+func TestMessageMarkdown(t *testing.T) {
+	c := messageMarkdownCouncil()
+	for _, tc := range []struct{ name, id, want string }{
+		{"reply", "r3", "| A | B |\n|---|---|\n| 1 | 2 |"},
+		{"idea, no evidence", "P1", "## Cache the tree\n\nKeep it in memory."},
+		{"idea, evidence", "P2", "## Pin rail apps\n\nSettings, not localStorage.\n\n- a.ts:12\n- b.go:40 (weak: no test)\n- c.go:7 (weak)\n- weak: about 3 s\n- weak"},
+		{"Review idea with runs", "P3", "## Fix the race\n\nLock the map.\n\n- x.go:9"},
+	} {
+		got, ok := MessageMarkdown(c, tc.id)
+		if !ok || got != tc.want {
+			t.Errorf("%s: MessageMarkdown(%s) = %q, %v\nwant %q", tc.name, tc.id, got, ok, tc.want)
+		}
+	}
+	if got, ok := MessageMarkdown(c, "P9"); ok || got != "" {
+		t.Errorf("an id the council lacks gave %q, %v; want \"\", false", got, ok)
+	}
+	if got, ok := MessageMarkdown(c, ""); ok || got != "" {
+		t.Errorf("an empty id gave %q, %v; want \"\", false", got, ok)
+	}
+}
+
+// An idea with no argument is its heading alone, and a reply with no words is empty but still found.
+func TestMessageMarkdownOfEmptyWords(t *testing.T) {
+	c := messageMarkdownCouncil()
+	c.Proposals[0].Argument = "  \n"
+	if got, ok := MessageMarkdown(c, "P1"); !ok || got != "## Cache the tree" {
+		t.Errorf("an idea with no argument = %q, %v; want its heading alone", got, ok)
+	}
+	c.Replies[0].Text = ""
+	if got, ok := MessageMarkdown(c, "r3"); !ok || got != "" {
+		t.Errorf("a reply with no words = %q, %v; want \"\", true", got, ok)
+	}
+}
+
+// evidenceText is the one line a prompt and the document list evidence in; the per-item text it joins is what the
+// Final proposal's evidence lines hold too, so its output must not move.
+func TestEvidenceText(t *testing.T) {
+	if got := evidenceText(nil); got != "none" {
+		t.Errorf("evidenceText(nil) = %q, want none", got)
+	}
+	ev := []CouncilEvidence{
+		{Ref: "a.ts:12"},
+		{Ref: "b.go:40", Weak: true, Note: "no test"},
+		{Ref: "c.go:7", Weak: true},
+		{Weak: true, Note: "about 3 s"},
+		{Weak: true},
+	}
+	want := "a.ts:12; b.go:40 (weak: no test); c.go:7 (weak); weak: about 3 s; weak"
+	if got := evidenceText(ev); got != want {
+		t.Errorf("evidenceText = %q\nwant %q", got, want)
+	}
+	for i, w := range []string{"a.ts:12", "b.go:40 (weak: no test)", "c.go:7 (weak)", "weak: about 3 s", "weak"} {
+		if got := evidenceItemText(ev[i]); got != w {
+			t.Errorf("evidenceItemText(%d) = %q, want %q", i, got, w)
+		}
+	}
+}
+
+func TestMarkdownFinalProposal(t *testing.T) {
+	c := markdownCouncil()
+	mustNotContain(t, "markdown with nothing pinned", Markdown(c), "## Final proposal")
+
+	// an idea pinned: the section is the very last thing, after the matrix
+	c.Proposals[0].Argument = "A badge tells people why it is slow."
+	c.FinalPick = "P1"
+	md := Markdown(c)
+	section := "\n## Final proposal\n\n_From UX_\n\n## Show the sleep state\n\nA badge tells people why it is slow."
+	if !strings.HasSuffix(strings.TrimRight(md, "\n"), section) {
+		t.Errorf("the markdown does not end with the Final proposal section\n---\n%s", md)
+	}
+	if m, f := strings.Index(md, "## Matrix"), strings.Index(md, "## Final proposal"); m < 0 || f < m {
+		t.Errorf("the Final proposal must come after the matrix\n%s", md)
+	}
+	if n := strings.Count(md, "## Final proposal"); n != 1 {
+		t.Errorf("the section appears %d times, want 1\n%s", n, md)
+	}
+
+	// a reply pinned: its words, trimmed, under its author's name
+	c.FinalPick = "r1"
+	md = Markdown(c)
+	if want := "\n## Final proposal\n\n_From RAM_\n\nCheap to do.\nAnd clear."; !strings.HasSuffix(strings.TrimRight(md, "\n"), want) {
+		t.Errorf("a pinned reply is not the section's body\n---\n%s", md)
+	}
+
+	// a pin that names nothing the council has writes no section
+	c.FinalPick = "P9"
+	mustNotContain(t, "markdown with a pin that names nothing", Markdown(c), "## Final proposal")
+}
+
+func TestMarkdownFinalProposalWithoutASummaryFollowsTheNote(t *testing.T) {
+	c := markdownCouncil()
+	c.Summary = nil
+	c.FinalPick = "r2"
+	md := Markdown(c)
+	for _, w := range []string{"_No summary yet._", "## Matrix", "## Final proposal"} {
+		mustContain(t, "markdown", md, w)
+	}
+	if n, m, f := strings.Index(md, "_No summary yet._"), strings.Index(md, "## Matrix"), strings.Index(md, "## Final proposal"); !(n < m && m < f) {
+		t.Errorf("want the note, the matrix, then the Final proposal\n%s", md)
+	}
+	if !strings.HasSuffix(md, "_From Skeptic_\n\nCosts a | pipe in a cell\n") {
+		t.Errorf("the section is not the last thing\n%s", md)
+	}
+
+	// with no proposals there is no matrix: the section follows the note directly
+	c.Proposals = nil
+	c.Replies = []CouncilReply{{Id: "r2", Author: "skeptic", Text: "Costs a | pipe in a cell"}}
+	md = Markdown(c)
+	mustContain(t, "markdown", md, "_No summary yet._\n\n## Final proposal\n\n_From Skeptic_\n\nCosts a | pipe in a cell\n")
+	mustNotContain(t, "markdown", md, "## Matrix")
+}
+
+// Document wraps Markdown, so the saved document carries the section before the discussion with no change of its own.
+func TestDocumentCarriesTheFinalProposal(t *testing.T) {
+	c := documentCouncil()
+	c.FinalPick = "P1"
+	doc := Document(c)
+	f, d := strings.Index(doc, "## Final proposal"), strings.Index(doc, "## The discussion")
+	if f < 0 || d < f {
+		t.Errorf("the Final proposal should sit before the discussion\n%s", doc)
+	}
+}
+
 // ---- the saved document ----
 
 // documentCouncil is markdownCouncil with the times, models, evidence and the person's words a document shows.

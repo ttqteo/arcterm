@@ -392,6 +392,12 @@ func CouncilEstimateCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilEstimat
 	return resp, err
 }
 
+// command "councilfinalpick", wshserver.CouncilFinalPickCommand
+func CouncilFinalPickCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilFinalPickData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilfinalpick", data, opts)
+	return err
+}
+
 // command "councilget", wshserver.CouncilGetCommand
 func CouncilGetCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData, opts *wshrpc.RpcOpts) (*council.Council, error) {
 	resp, err := sendRpcRequestCallHelper[*council.Council](w, "councilget", data, opts)

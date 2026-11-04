@@ -474,6 +474,7 @@ type Council struct {
 	Rating           string                       `json:"rating,omitempty"`      // RatingUseful or RatingNot: the person's latest answer to "Was this useful?"; empty until given
 	RatedAt          int64                        `json:"ratedat,omitempty"`     // when Rating was given, in ms
 	Pinned           int64                        `json:"pinned,omitempty"`      // when the person pinned it, in ms: the tree keeps it at the top of its project; 0 is not pinned. Only the person sets it: a run never touches it (a file's old "closed" is not read)
+	FinalPick        string                       `json:"finalpick,omitempty"`   // the id of the idea (P1) or seat reply (r3) the person pinned to the Report as its Final proposal; empty when none. Display only: no prompt reads it, and a re-summarize keeps it. Not Pinned, which pins the whole council in the tree
 	RanMs            int64                        `json:"ranms,omitempty"`       // how long its runs took altogether, in ms
 	RunStarted       int64                        `json:"runstarted,omitempty"`  // when its current run began, in ms; 0 while it rests
 	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last

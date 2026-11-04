@@ -7,7 +7,8 @@
 // the same plan), council-routing (the composer of a
 // whole-council message the router takes, 2026-11-03-council-reply-routing.md), council-summary, council-map
 // (docs/superpowers/plans/2026-11-03-council-stronger.md), council-needs-you and council-regions (the screenshot regions a
-// seat cites, 2026-11-04-council-screenshot-regions-design.md). Each one's
+// seat cites, 2026-11-04-council-screenshot-regions-design.md) and council-final-proposal (Copy and Pin to Report on a
+// message, and the Report's Final proposal section, 2026-11-04-council-final-proposal-design.md). Each one's
 // arrange / assert / teardown live in ./council/<view>.mjs, so the tasks that build a view touch only their own file; the
 // shared fixtures (a temp project, the six rail-apps councils, the RpcApi stand-ins) are ./council/fixtures.mjs.
 //
@@ -17,6 +18,7 @@
 // agent: an action that would call a model has its RpcApi command replaced in the page (fixtures.mjs stubRpc).
 
 import { councilDiscussion } from "./council/discussion.mjs";
+import { councilFinalProposal } from "./council/finalproposal.mjs";
 import { councilIdeas } from "./council/ideas.mjs";
 import { councilMap } from "./council/map.mjs";
 import { councilMemory } from "./council/memory.mjs";
@@ -48,5 +50,6 @@ export function makeCouncilScenarios(fx) {
         scenario("council-map", councilMap),
         scenario("council-needs-you", councilNeedsYou),
         scenario("council-regions", councilRegions),
+        scenario("council-final-proposal", councilFinalProposal),
     ];
 }
