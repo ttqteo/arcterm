@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Click a task node, then the Final verification node, in a run's graph → the peek's Worker / Review /
+  Tokens values, activity lines and Open in Agent read in Inter like the title; only a Verify output tail stays mono
+  (22a9f852e).
 - [ ] (arcterm) Rerun final stage from the Final verification pane: on a run whose final stage failed, focus its Final
   verification row → the pane header shows Rerun final stage; click it → the stage restarts in the same round and the
   button goes. The `final-rerun` scenario's step 4 passed in run aebf7808's first final stage and failed in its second
