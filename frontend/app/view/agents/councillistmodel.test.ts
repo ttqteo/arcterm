@@ -5,8 +5,10 @@ import {
     councilList,
     listNavOrder,
     listOrder,
+    newestReplyOn,
     railMeta,
     railOrderLabel,
+    readFrom,
     stanceGroups,
     type IdeaRow,
     type StanceGroup,
@@ -294,6 +296,8 @@ describe("railMeta and railOrderLabel: the Ideas rail's quiet lines", () => {
         against: 0,
         replies: 0,
         repliesLabel: "no replies",
+        fresh: 0,
+        freshLabel: "",
         draft: false,
         held: false,
         withdrawn: false,
@@ -557,5 +561,54 @@ describe("stanceGroups: the Ideas rail grouped by where the seats stand", () => 
         expect(groups.find((g) => g.key === "against")!.rows.map((r) => railMeta(r))).toEqual([
             "1 reply · 1 is against it",
         ]);
+    });
+});
+
+describe("councilList: fresh replies", () => {
+    const fresh = (extra: Partial<Council> = {}) =>
+        council({
+            proposals: [prop("P1", "ux", 10), prop("P2", "ram", 20)],
+            replies: [
+                reply("r1", "ram", 100),
+                reply("r2", "sk", 200),
+                reply("r3", "you", 250), // the person's own: never fresh
+                reply("r4", "ux", 300, { proposalid: "P2" }),
+            ],
+            ...extra,
+        });
+    const row = (list: ReturnType<typeof councilList>, id: string) => list.ideas.find((r) => r.id === id)!;
+
+    it("counts the seats' replies since the person last left the council", () => {
+        const list = councilList(fresh(), at(150));
+        expect(row(list, "P1").fresh).toBe(1);
+        expect(row(list, "P1").freshLabel).toBe("1 new reply");
+        expect(row(list, "P2").freshLabel).toBe("1 new reply");
+    });
+
+    it("counts none when the person left after every reply (an old council, opened when tracking began)", () => {
+        const list = councilList(fresh(), at(1000));
+        expect(list.ideas.map((r) => [r.fresh, r.freshLabel])).toEqual([
+            [0, ""],
+            [0, ""],
+        ]);
+    });
+
+    it("clears an idea whose thread was read in this visit, up to the newest reply it showed", () => {
+        const list = councilList(fresh(), at(0), undefined, { P1: at(200) });
+        expect(row(list, "P1").fresh).toBe(0);
+        expect(row(list, "P2").freshLabel).toBe("1 new reply");
+        expect(councilList(fresh(), at(0), undefined, { P1: at(100) }).ideas[0].freshLabel).toBe("1 new reply");
+        expect(councilList(fresh(), at(0)).ideas[0].freshLabel).toBe("2 new replies");
+    });
+
+    it("reads from the later of leaving the council and reading the thread", () => {
+        expect(readFrom(at(300), { P1: at(100) }, "P1")).toBe(at(300));
+        expect(readFrom(at(100), { P1: at(300) }, "P1")).toBe(at(300));
+        expect(readFrom(at(100), undefined, "P1")).toBe(at(100));
+    });
+
+    it("finds the newest reply on an idea, the person's own included", () => {
+        expect(newestReplyOn(fresh(), "P1")).toBe(at(250));
+        expect(newestReplyOn(fresh(), "P9")).toBe(0);
     });
 });

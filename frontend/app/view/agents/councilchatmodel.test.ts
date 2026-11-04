@@ -13,6 +13,8 @@ import {
     foldSettle,
     foldToggle,
     foldView,
+    foldableText,
+    foldsIdeas,
     ideaOrder,
     insertAllMention,
     insertChatMention,
@@ -2470,5 +2472,30 @@ describe("messageSegments with its council: the seats it names are chips", () =>
             { kind: "seat", text: "@UX", who: { author: "ux" } },
         ]);
         expect(parts.map((p) => (p.kind === "file" ? `@${p.path}` : p.text)).join("")).toBe(text);
+    });
+});
+
+describe("foldsIdeas and foldableText", () => {
+    it("keeps the ideas whole through the ideas round", () => {
+        expect(foldsIdeas(council({ round: 1, state: "running" }))).toBe(false);
+    });
+
+    it("folds them once round 2 runs", () => {
+        expect(foldsIdeas(council({ round: 2, state: "running" }))).toBe(true);
+    });
+
+    it("folds an ended council's ideas only when a seat replied on one", () => {
+        const ended = { round: 2, state: "done" as const, proposals: [prop("P1", "ux", 10)] };
+        expect(foldsIdeas(council(ended))).toBe(false);
+        expect(foldsIdeas(council({ ...ended, replies: [reply("r1", "you", 20)] }))).toBe(false);
+        expect(foldsIdeas(council({ ...ended, replies: [reply("r1", "sk", 20)] }))).toBe(true);
+    });
+
+    it("folds a long idea, never a short one", () => {
+        expect(foldableText("One line that says the idea.")).toBe(false);
+        expect(foldableText("a\nb\nc")).toBe(false);
+        expect(foldableText("a\nb\nc\nd")).toBe(true);
+        expect(foldableText("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |")).toBe(true);
+        expect(foldableText("x".repeat(261))).toBe(true);
     });
 });

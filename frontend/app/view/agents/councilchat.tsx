@@ -84,6 +84,8 @@ import {
     foldSettle,
     foldToggle,
     foldView,
+    foldableText,
+    foldsIdeas,
     ideaOrder,
     insertAllMention,
     insertChatMention,
@@ -122,7 +124,15 @@ import {
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
-import { councilList, railMeta, railOrderLabel, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
+import {
+    councilList,
+    newestReplyOn,
+    railMeta,
+    railOrderLabel,
+    stanceGroups,
+    type IdeaRow,
+    type StanceTone,
+} from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import { MemoryPanel } from "./councilmemory";
 import { chotLine, memoryDot, type DirectionSource } from "./councilmemorymodel";
@@ -180,6 +190,8 @@ import {
     councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
+    councilThreadReadAtom,
+    councilUnfoldedAtom,
     directionCouncil,
     draftCouncil,
     finalPickCouncil,
@@ -706,7 +718,10 @@ function IdeaMessage({
     n,
     open,
     focused,
+    fold,
+    fresh,
     onOpen,
+    onFold,
     acts,
 }: {
     c: Council;
@@ -714,11 +729,16 @@ function IdeaMessage({
     n: number | undefined; // its number on the Ideas rail, so a message and its rail row read as one
     open: boolean;
     focused: boolean;
+    // past the ideas round a long idea shows its first lines (`folded`) until Show more (`unfolded`); `whole` otherwise
+    fold: "whole" | "folded" | "unfolded";
+    fresh: string; // `2 new replies` since the person last read its thread; empty with none
     onOpen: (id: string) => void;
+    onFold: (id: string, unfold: boolean) => void;
     acts: Actions;
 }) {
     const councilId = c.id;
     const t = item.thread;
+    const folded = fold === "folded";
     return (
         <article
             data-council-item
@@ -727,6 +747,8 @@ function IdeaMessage({
             data-item-label={item.label}
             data-open={open ? "true" : undefined}
             data-focused={focused ? "true" : undefined}
+            data-fold={fold}
+            data-fresh={fresh === "" ? undefined : "true"}
             className="group/idea group/reply flex gap-[10px]"
         >
             <SeatAvatar who={item} large />
@@ -768,7 +790,32 @@ function IdeaMessage({
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
                         it is quoted (a reply's ↳, the thread's header, the report) */}
-                    <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
+                    {/* folded: its first three lines fading out, so the ideas already read stop burying what is new */}
+                    <div
+                        data-council-idea-body
+                        className={cn(
+                            folded &&
+                                "max-h-[70px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_45%,transparent)]"
+                        )}
+                    >
+                        <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
+                    </div>
+                    {fold !== "whole" && (
+                        <button
+                            type="button"
+                            data-council-idea-fold={item.id}
+                            aria-expanded={!folded}
+                            onClick={() => onFold(item.id, folded)}
+                            className="-ml-[6px] inline-flex h-[22px] w-fit cursor-pointer items-center gap-[4px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            {folded ? (
+                                <ChevronDown size={13} strokeWidth={2} aria-hidden />
+                            ) : (
+                                <ChevronUp size={13} strokeWidth={2} aria-hidden />
+                            )}
+                            {folded ? "Show more" : "Show less"}
+                        </button>
+                    )}
                     <EvidenceChips {...item.claim} source={{ councilId, owner: item.id, title: item.title }} />
                     <div className="flex flex-wrap items-center gap-[10px]">
                         <button
@@ -795,6 +842,15 @@ function IdeaMessage({
                                 </span>
                             )}
                             <span className="font-semibold text-accent">{t.label}</span>
+                            {fresh !== "" && (
+                                <span
+                                    data-council-thread-fresh
+                                    className="inline-flex items-center gap-[5px] font-semibold text-accent"
+                                >
+                                    <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-accent" />
+                                    {fresh}
+                                </span>
+                            )}
                             {t.last !== "" && (
                                 <span className="text-muted" title={t.lastWhen}>
                                     {t.last}
@@ -2625,13 +2681,19 @@ const GROUP_BAR: Record<StanceTone, string> = {
 function IdeasList({
     ideas,
     on,
+    freshOnly,
     onPick,
+    onFreshOnly,
 }: {
     ideas: readonly IdeaRow[];
     on: string | null; // the idea under the cursor or with its thread open
+    freshOnly: boolean; // only the ideas with new replies (the caption's toggle); all of them once none has any
     onPick: (row: IdeaRow) => void;
+    onFreshOnly: (only: boolean) => void;
 }) {
-    const groups = stanceGroups(ideas);
+    const withFresh = ideas.filter((r) => r.fresh > 0).length;
+    const filtering = freshOnly && withFresh > 0;
+    const groups = stanceGroups(filtering ? ideas.filter((r) => r.fresh > 0) : ideas);
     return (
         <div
             id="council-rail-ideas"
@@ -2640,9 +2702,29 @@ function IdeasList({
             data-council-rail-ideas
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-[22px] pt-[4px] [scrollbar-gutter:stable]"
         >
-            <span data-council-rail-caption className="pb-[2px] text-[12px] text-muted">
-                {railOrderLabel()}
-            </span>
+            <div className="flex items-center gap-2 pb-[2px]">
+                <span data-council-rail-caption className="min-w-0 flex-1 truncate text-[12px] text-muted">
+                    {railOrderLabel()}
+                </span>
+                {withFresh > 0 && (
+                    <button
+                        type="button"
+                        data-council-rail-fresh={filtering ? "on" : "off"}
+                        aria-pressed={filtering}
+                        onClick={() => onFreshOnly(!filtering)}
+                        title={filtering ? "Show every idea" : "Show only the ideas with new replies"}
+                        className={cn(
+                            "inline-flex h-[22px] flex-none cursor-pointer items-center gap-[5px] rounded-full border px-[8px] text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            filtering
+                                ? "border-accent bg-accentbg font-semibold text-accent"
+                                : "border-edge-mid bg-transparent text-secondary hover:border-edge-strong hover:bg-surface-hover"
+                        )}
+                    >
+                        <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-accent" />
+                        {withFresh} with new replies
+                    </button>
+                )}
+            </div>
             {ideas.length === 0 && (
                 <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
                     Each idea lands here as a seat proposes it.
@@ -2702,6 +2784,12 @@ function IdeasList({
                                             </span>{" "}
                                             · {row.name}
                                             {row.isNew && <span className="text-accent-soft"> · new</span>}
+                                            {row.freshLabel !== "" && (
+                                                <span data-council-rail-fresh-row className="font-semibold text-accent">
+                                                    {" "}
+                                                    · {row.freshLabel}
+                                                </span>
+                                            )}
                                         </span>
                                         <span
                                             data-council-rail-title
@@ -2748,6 +2836,8 @@ function CouncilRail({
     onFold,
     onShow,
     onOpenSource,
+    freshOnly,
+    onFreshOnly,
 }: {
     c: Council;
     ideas: readonly IdeaRow[];
@@ -2757,6 +2847,8 @@ function CouncilRail({
     on: string | null;
     acts: Actions;
     chats: readonly SeatableAgent[];
+    freshOnly: boolean;
+    onFreshOnly: (only: boolean) => void;
     onTab: (tab: RailTabName) => void;
     onPick: (row: IdeaRow) => void;
     onClose: () => void;
@@ -2841,7 +2933,7 @@ function CouncilRail({
             ) : shows === "memory" ? (
                 <MemoryPanel key={c.id} c={c} acts={acts} onShow={onShow} onOpenSource={onOpenSource} />
             ) : (
-                <IdeasList ideas={ideas} on={on} onPick={onPick} />
+                <IdeasList ideas={ideas} on={on} freshOnly={freshOnly} onPick={onPick} onFreshOnly={onFreshOnly} />
             )}
         </aside>
     );
@@ -3261,9 +3353,37 @@ export function CouncilChat({
     const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
     // the rail's rows: New is measured against the time the person last left this council (councilopened.ts)
     const since = openedAt(useAtomValue(councilOpenedAtom), c.id);
-    const list = useMemo(() => councilList(c, since, onlyId ?? undefined), [c, since, onlyId]);
-    // an idea's number is the same whatever the filter: read from the whole list
-    const numbers = useMemo(() => new Map(councilList(c, 0).ideas.map((r) => [r.id, r.n])), [c]);
+    // a thread read in this visit clears its idea's fresh replies up to the newest it showed (councillistmodel.readFrom)
+    const [read, setRead] = useAtom(councilThreadReadAtom(c.id));
+    const list = useMemo(() => councilList(c, since, onlyId ?? undefined, read), [c, since, onlyId, read]);
+    // an idea's number and its fresh replies are the same whatever the filter: read from the whole list
+    const whole = useMemo(() => councilList(c, since, undefined, read), [c, since, read]);
+    const numbers = useMemo(() => new Map(whole.ideas.map((r) => [r.id, r.n])), [whole]);
+    const freshOf = useMemo(() => new Map(whole.ideas.map((r) => [r.id, r.freshLabel])), [whole]);
+    const [freshOnly, setFreshOnly] = useState(false);
+    // past the ideas round a long idea folds to its first lines; Show more keeps it open for this council
+    const folds = foldsIdeas(c);
+    const [unfolded, setUnfolded] = useAtom(councilUnfoldedAtom(c.id));
+    const onFold = useCallback(
+        (id: string, unfold: boolean) =>
+            setUnfolded((s) => {
+                const next = new Set(s);
+                if (unfold) {
+                    next.add(id);
+                } else {
+                    next.delete(id);
+                }
+                return next;
+            }),
+        [setUnfolded]
+    );
+    // the open thread is read up to its newest reply, and stays read as replies land while it is open
+    const readUpTo = openId == null || !threadOpen ? 0 : newestReplyOn(c, openId);
+    useEffect(() => {
+        if (openId != null && readUpTo > 0) {
+            setRead((r) => ((r[openId] ?? 0) >= readUpTo ? r : { ...r, [openId]: readUpTo }));
+        }
+    }, [openId, readUpTo, setRead]);
     const [folded, setFolded] = useAtom(councilIdeasRailFoldedAtom);
     const [railTab, setRailTab] = useState<RailTabName>("thread");
     // a thread opened any way (its replies button, Enter on the cursor, the Summary's link) shows on the rail's second tab
@@ -3544,7 +3664,16 @@ export function CouncilChat({
                                             acts={acts}
                                             open={threadOpen && item.id === openId}
                                             focused={item.id === focusedId}
+                                            fold={
+                                                !folds || !foldableText(item.text)
+                                                    ? "whole"
+                                                    : unfolded.has(item.id)
+                                                      ? "unfolded"
+                                                      : "folded"
+                                            }
+                                            fresh={freshOf.get(item.id) ?? ""}
                                             onOpen={open}
+                                            onFold={onFold}
                                         />
                                     );
                                 case "draft":
@@ -3628,6 +3757,8 @@ export function CouncilChat({
                                     onFold={() => setFolded(true)}
                                     onShow={showMessages}
                                     onOpenSource={openSource}
+                                    freshOnly={freshOnly}
+                                    onFreshOnly={setFreshOnly}
                                 />
                             )}
                         </motion.div>

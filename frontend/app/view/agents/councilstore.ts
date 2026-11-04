@@ -539,6 +539,18 @@ export const councilIdeasRailFoldedAtom = atomWithStorage<boolean>("council.idea
  *  sets it (showCouncil's `only`); every other way into a council clears it. */
 export const councilOnlyAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
 
+/** The newest reply (ms) the person saw with each idea's thread open, by idea id, in this run of the app: what clears
+ *  an idea's fresh replies before they leave the council (councillistmodel.readFrom). In memory only: leaving the
+ *  council moves its opened time (councilopened.ts) past every reply, which keeps them read after a reload. */
+export const councilThreadReadAtom = atomFamily(
+    (_id: string) => atom<Record<string, number>>({}) as PrimitiveAtom<Record<string, number>>
+);
+
+/** The ideas the person unfolded (Show more) in a folded channel (councilchatmodel.foldsIdeas), by idea id. */
+export const councilUnfoldedAtom = atomFamily(
+    (_id: string) => atom<ReadonlySet<string>>(new Set<string>()) as PrimitiveAtom<ReadonlySet<string>>
+);
+
 /** The seat whose timeline a council's Seats popover shows, by expert id; null shows the list of seats. A seat's Timeline
  *  button and an expert card on the Map set it; the popover clears it when it closes. */
 export const councilTimelineAtom = atomFamily(
