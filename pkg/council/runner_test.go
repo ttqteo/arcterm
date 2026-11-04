@@ -63,10 +63,16 @@ var roundLineRe = regexp.MustCompile(`This is round (\d+) of (\d+)`)
 
 // kindOf is what a prompt asks for: r1 (the ideas), r2 (a reply pass), r3 (the synthesis, the last round whatever its
 // number), ans (the person's replies), suggest, autogen or route (the router's pick of the seat for a whole-council
-// message; its call is keyed "router/route").
+// message; its call is keyed "router/route"), precheck (the check before a direction is set) or roundcheck (the check
+// after a pass; both are keyed "check/<kind>").
 func kindOf(prompt string) string {
-	if strings.HasPrefix(prompt, "You route one message the person sent") {
+	switch {
+	case strings.HasPrefix(prompt, "You route one message the person sent"):
 		return "route"
+	case strings.HasPrefix(prompt, "You check one direction the person wants to set"):
+		return "precheck"
+	case strings.HasPrefix(prompt, "You read one round of a council discussion"):
+		return "roundcheck"
 	}
 	if m := roundLineRe.FindStringSubmatch(prompt); m != nil {
 		switch n, _ := strconv.Atoi(m[1]); {
@@ -88,7 +94,7 @@ func kindOf(prompt string) string {
 	return "?"
 }
 
-var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3}
+var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3, "precheck": 6, "roundcheck": 4}
 
 func (f *fakeCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	kind := kindOf(req.Prompt)
@@ -335,6 +341,10 @@ func canned(req CallReq, kind string) string {
 		return answersJSON(req)
 	case "route":
 		return routeJSON(firstSeatIn(req.Prompt))
+	case "roundcheck":
+		return `{"change": false}`
+	case "precheck":
+		return fitsReply
 	}
 	return "no canned reply for " + kind
 }
@@ -585,8 +595,9 @@ func TestStartRunsThreeRounds(t *testing.T) {
 	if c.State != StateDone || c.Round != 3 || c.Error != "" || c.Summary == nil || c.Summary.At == 0 {
 		t.Fatalf("final = %s round %d error %q summary %v, want done in round 3 with a summary", c.State, c.Round, c.Error, c.Summary)
 	}
-	if c.Calls != 9 || c.Tokens != 4*100+4*10+50 {
-		t.Errorf("calls %d tokens %d, want 9 and 490", c.Calls, c.Tokens)
+	// 4 ideas, 4 replies, the round check after the reply pass, and the synthesis
+	if c.Calls != 10 || c.Tokens != 4*100+4*10+callTokens["roundcheck"]+50 {
+		t.Errorf("calls %d tokens %d, want 10 and 494", c.Calls, c.Tokens)
 	}
 	if c.Started == 0 || len(c.Activity) != 0 || len(c.Failed) != 0 {
 		t.Errorf("started %d activity %v failed %v, want it set and the others empty", c.Started, c.Activity, c.Failed)
@@ -705,8 +716,8 @@ func TestRecordAndStartSaved(t *testing.T) {
 	if started.State != StateRunning || started.Round != 1 || started.Started == 0 {
 		t.Fatalf("StartSaved = %s round %d, want running in round 1", started.State, started.Round)
 	}
-	if c := h.wait("c1"); c.State != StateDone || c.Calls != 9 || c.Summary == nil {
-		t.Fatalf("after StartSaved: %s with %d calls, want done with 9", c.State, c.Calls)
+	if c := h.wait("c1"); c.State != StateDone || c.Calls != 10 || c.Summary == nil {
+		t.Fatalf("after StartSaved: %s with %d calls, want done with 10 (9 and the round check)", c.State, c.Calls)
 	}
 	if _, err := h.r.StartSaved(context.Background(), "c1"); err == nil {
 		t.Errorf("StartSaved of a done council worked, want an error")
@@ -1111,8 +1122,8 @@ func TestRoundOneFailureGoesOnAndRetryRerunsIt(t *testing.T) {
 	if f := c.Failed["ram"]; f.Round != 1 || !strings.Contains(f.Error, "boom") {
 		t.Fatalf("Failed[ram] = %+v, want round 1 with the error", f)
 	}
-	if len(c.Failed) != 1 || len(c.Proposals) != 3 || c.Calls != 8 {
-		t.Fatalf("failed %v, %d proposals, %d calls, want only ram failed, 3 proposals and 4+3+1 calls", c.Failed, len(c.Proposals), c.Calls)
+	if len(c.Failed) != 1 || len(c.Proposals) != 3 || c.Calls != 9 {
+		t.Fatalf("failed %v, %d proposals, %d calls, want only ram failed, 3 proposals and 4+3+1 calls and the round check", c.Failed, len(c.Proposals), c.Calls)
 	}
 	if st := c.Stats["ram"]; st.Calls != 1 {
 		t.Errorf("stats[ram] = %+v, want the failed call counted", st)
@@ -1144,8 +1155,8 @@ func TestRoundOneFailureGoesOnAndRetryRerunsIt(t *testing.T) {
 	if len(r1) != before+1 || r1[before].Expert.Id != "ram" || !r1[before].Tools {
 		t.Fatalf("round 1 calls %d, last for %q, want one more, for ram, with tools", len(r1), r1[len(r1)-1].Expert.Id)
 	}
-	if c.State != StateDone || len(c.Failed) != 0 || len(c.Proposals) != 4 || c.Calls != 9 {
-		t.Fatalf("after Retry: %s, failed %v, %d proposals, %d calls", c.State, c.Failed, len(c.Proposals), c.Calls)
+	if c.State != StateDone || len(c.Failed) != 0 || len(c.Proposals) != 4 || c.Calls != 10 {
+		t.Fatalf("after Retry: %s, failed %v, %d proposals, %d calls (want 10: the first run's 9 and the retried idea)", c.State, c.Failed, len(c.Proposals), c.Calls)
 	}
 	if p := proposalOf(t, c, "P4"); p.Author != "ram" || p.Title != "Title from ram" {
 		t.Errorf("P4 = %+v, want ram's proposal added after the others'", p)
@@ -1284,8 +1295,8 @@ func TestSynthesisFailureLeavesTheCouncilFailedAndCanBeRerun(t *testing.T) {
 			if f := c.Failed["lead"]; f.Round != 3 || !strings.Contains(f.Error, "opus overloaded") {
 				t.Fatalf("Failed[lead] = %+v, want the synthesis failure", f)
 			}
-			if st := c.Stats["lead"]; st.Calls != 1 || c.Calls != 9 {
-				t.Errorf("stats[lead] %+v, calls %d, want the failed call counted", st, c.Calls)
+			if st := c.Stats["lead"]; st.Calls != 1 || c.Calls != 10 {
+				t.Errorf("stats[lead] %+v, calls %d, want the failed call counted (10: the round check is one of them)", st, c.Calls)
 			}
 			h.f.setFail("lead/r3", nil)
 			if err := rerun(h); err != nil {
@@ -1745,9 +1756,10 @@ func TestReplyRoutedOneSeat(t *testing.T) {
 	if !answeredBy(c, "r13", "ram") || answeredBy(c, "r13", "ux") {
 		t.Errorf("ram answered %v, ux answered %v, want ram only", answeredBy(c, "r13", "ram"), answeredBy(c, "r13", "ux"))
 	}
-	// the router is no seat: its call and tokens are the council's, and no seat's Stats nor a card of its own
-	if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+3+5 {
-		t.Errorf("calls %d tokens %d, want %d and %d: the router's call and the one answer", c.Calls, c.Tokens, done.Calls+2, done.Tokens+8)
+	// the router is no seat: its call and tokens are the council's, and no seat's Stats nor a card of its own; the round
+	// check after the answer is the council's too
+	if c.Calls != done.Calls+3 || c.Tokens != done.Tokens+3+5+callTokens["roundcheck"] {
+		t.Errorf("calls %d tokens %d, want %d and %d: the router's call, the one answer and the round check", c.Calls, c.Tokens, done.Calls+3, done.Tokens+3+5+callTokens["roundcheck"])
 	}
 	if _, ok := c.Stats["router"]; ok {
 		t.Errorf("Stats has a router entry %+v, want none: it is no seat", c.Stats["router"])
@@ -1972,8 +1984,10 @@ func TestReplyRouterFailsFallsBack(t *testing.T) {
 			if got := answerIds(h.f); !slices.Equal(got, []string{"ux"}) {
 				t.Errorf("answer calls to %v, want the first seat alone and no second pass", got)
 			}
-			if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+tc.routerToks+5 {
-				t.Errorf("calls %d tokens %d, want %d and %d: the failed router call is booked too", c.Calls, c.Tokens, done.Calls+2, done.Tokens+tc.routerToks+5)
+			// the failed router call, the one answer, and the round check after it
+			wantTokens := done.Tokens + tc.routerToks + 5 + callTokens["roundcheck"]
+			if c.Calls != done.Calls+3 || c.Tokens != wantTokens {
+				t.Errorf("calls %d tokens %d, want %d and %d: the failed router call is booked too", c.Calls, c.Tokens, done.Calls+3, wantTokens)
 			}
 		})
 	}
@@ -2509,8 +2523,9 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 			t.Errorf("answer call for %s: tools %v, want Let them read files on", req.Expert.Id, req.Tools)
 		}
 	}
-	if !replyOf(t, c, "r13").Answered || c.Calls != callsBefore+4 {
-		t.Errorf("answered %v, calls %d, want it answered and 4 more calls", replyOf(t, c, "r13").Answered, c.Calls)
+	// four answers, and a round check after each of the two batches (the first answerer, then the other three)
+	if !replyOf(t, c, "r13").Answered || c.Calls != callsBefore+4+2 {
+		t.Errorf("answered %v, calls %d, want it answered and 6 more calls", replyOf(t, c, "r13").Answered, c.Calls)
 	}
 	for _, id := range panelIds() {
 		found := false
@@ -6831,5 +6846,395 @@ func TestStartSnapshotHoldsTheUncommittedWorkAndLeavesTheCheckoutAlone(t *testin
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(plain))
 	if got := h.run(claimCouncil("c2", plain)); got.State != StateDone || got.Snapshot != "" {
 		t.Errorf("a council in a plain folder = %s snapshot %q, want done with none", got.State, got.Snapshot)
+	}
+}
+
+// ---- the direction memory's checks ----
+
+var roundCheckIdRe = regexp.MustCompile(`(?m)^- \[(\w+)\]`)
+
+// roundsMessages are the ids the round check's prompt lists as what the seats said this round.
+func roundsMessages(req CallReq) []string {
+	return idsIn(roundCheckIdRe, sectionText(req.Prompt, "## What the seats said this round, oldest first"))
+}
+
+// suggestRoundCheck makes the fake's round check suggest text, citing the first message it was shown.
+func suggestRoundCheck(h *harness, text string) {
+	h.f.setFn("check/roundcheck", func(req CallReq) string {
+		ids := roundsMessages(req)
+		return mustJSON(map[string]any{"change": true, "direction": text, "reason": "The seats moved.", "messages": ids[:min(1, len(ids))]})
+	})
+}
+
+// acceptAll makes every seat accept every idea of the others in its reply pass: each idea turns all green.
+func acceptAll(h *harness) {
+	for _, seat := range panelIds() {
+		h.f.setFn(seat+"/r2", func(req CallReq) string {
+			stances := []map[string]any{}
+			for _, pid := range idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review")) {
+				stances = append(stances, map[string]any{"proposalid": pid, "stance": "accept", "reason": "Yes on " + pid})
+			}
+			return fence(mustJSON(map[string]any{"stances": stances, "revisions": []any{}, "answers": []any{}, "picks": []string{}}))
+		})
+	}
+}
+
+// checkSuggestion is the round check's waiting suggestion; nil when none waits or the one that waits is all green's. The
+// fake's reply pass has every seat accept the first idea it reviews, so in a default run P1 is all green: a run's
+// Memory is not nil just because its round check changed nothing.
+func checkSuggestion(c *Council) *CouncilMemoryCard {
+	if c.Memory != nil && c.Memory.Suggestion != nil && c.Memory.Suggestion.Source == SourceCheck {
+		return c.Memory.Suggestion
+	}
+	return nil
+}
+
+// makeGreen has every panel seat but the author of idea take the latest stance accept on it.
+func makeGreen(c *Council, idea string) {
+	author := findProposal(c, idea).Author
+	for i, e := range panelOf(c) {
+		if e.Id != author {
+			c.Replies = append(c.Replies, CouncilReply{Id: nextReplyId(c), ProposalId: idea, Author: e.Id, Stance: StanceAccept, Text: "Yes", Round: 2, Ts: int64(1000 + i)})
+		}
+	}
+}
+
+// TestRoundCheckRunsAfterAReplyPass: one no-tools haiku call after the reply pass, before the synthesis, that reads what
+// the pass added; its suggestion waits on the council with the round it follows, and its tokens are in the totals.
+func TestRoundCheckRunsAfterAReplyPass(t *testing.T) {
+	h := newHarness(t)
+	suggestRoundCheck(h, "Show the sleep state first")
+	c := h.run(testCouncil("c1"))
+
+	checks := h.f.calls("roundcheck")
+	if len(checks) != 1 {
+		t.Fatalf("%d round checks, want one for the one reply pass", len(checks))
+	}
+	if req := checks[0]; req.Tools || req.Expert.Model != ModelRouter || req.Cwd != `D:\proj` || req.Expert.Id != "check" {
+		t.Errorf("round check = tools %v model %q cwd %q seat %q, want no tools on haiku in the project", req.Tools, req.Expert.Model, req.Cwd, req.Expert.Id)
+	}
+	mustContain(t, "the round check's prompt", checks[0].Prompt, "Reason from", "(none chosen yet)") // the pass's replies, no direction yet
+	if at, r2, r3 := h.f.indexes("roundcheck")[0], h.f.indexes("r2"), h.f.indexes("r3"); at < r2[len(r2)-1] || at > r3[0] {
+		t.Errorf("the round check ran at call %d, want after the last reply (%d) and before the synthesis (%d)", at, r2[len(r2)-1], r3[0])
+	}
+	if c.Memory == nil || c.Memory.Suggestion == nil {
+		t.Fatalf("memory = %+v, want the round check's suggestion waiting", c.Memory)
+	}
+	s := c.Memory.Suggestion
+	shown := roundsMessages(checks[0])
+	if s.Text != "Show the sleep state first" || s.Reason != "The seats moved." || s.Source != SourceCheck || s.Round != 2 || s.Kind != CardSuggestion ||
+		len(s.Messages) != 1 || s.Messages[0] != shown[0] || s.At == 0 {
+		t.Errorf("suggestion = %+v, want the check's text, reason and the first message %v, after round 2", s, shown)
+	}
+	if c.Memory.Chosen != nil || c.Memory.Held != nil {
+		t.Errorf("chosen %+v held %+v, want a suggestion alone: it needs the person to accept", c.Memory.Chosen, c.Memory.Held)
+	}
+	// 4 ideas, 4 replies, the round check, the synthesis: the check's call and tokens are the council's, no seat's
+	if c.Calls != 10 || c.Tokens != 4*callTokens["r1"]+4*callTokens["r2"]+callTokens["roundcheck"]+callTokens["r3"] {
+		t.Errorf("calls %d tokens %d, want the check counted in both", c.Calls, c.Tokens)
+	}
+	if _, ok := c.Stats["check"]; ok {
+		t.Errorf("Stats has a check entry %+v, want none: it is no seat", c.Stats["check"])
+	}
+}
+
+// TestRoundCheckNoChangeRaisesNothing: "no change" raises nothing of the check's own and sets no direction. What waits is
+// all green's P1 alone (every seat accepts the first idea it reviews).
+func TestRoundCheckNoChangeRaisesNothing(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(testCouncil("c1"))
+	if len(h.f.calls("roundcheck")) != 1 || checkSuggestion(c) != nil {
+		t.Errorf("%d round checks, suggestion %+v, want one check and none from it", len(h.f.calls("roundcheck")), checkSuggestion(c))
+	}
+	if s := c.Memory.Suggestion; s == nil || s.Source != SourceGreen || s.From != "P1" || c.Memory.Chosen != nil || c.Memory.Held != nil {
+		t.Errorf("memory = %+v, want all green's P1 waiting and nothing chosen or held", c.Memory)
+	}
+}
+
+// TestRoundCheckThatFailsIsLoggedRaisesNothingAndNeverFailsTheRound: an error, a reply that is no answer and a timeout
+// each leave a done council with no suggestion; what the call spent is booked; the failure is logged.
+func TestRoundCheckThatFailsIsLoggedRaisesNothingAndNeverFailsTheRound(t *testing.T) {
+	for name, tc := range map[string]struct {
+		set     func(f *fakeCaller)
+		tokens  int64
+		logged  string
+		timeout time.Duration
+	}{
+		"an error":   {func(f *fakeCaller) { f.setFail("check/roundcheck", errors.New("claude is not signed in")) }, 0, "claude is not signed in", time.Minute},
+		"no JSON":    {func(f *fakeCaller) { f.setText("check/roundcheck", "Nothing changed.") }, callTokens["roundcheck"], "no JSON", time.Minute},
+		"no answer":  {func(f *fakeCaller) { f.setText("check/roundcheck", `{"change": true}`) }, callTokens["roundcheck"], "suggests no direction", time.Minute},
+		"a hung one": {func(f *fakeCaller) { f.gate("check/roundcheck") }, 0, "deadline", 50 * time.Millisecond},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			log.SetOutput(&logs)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+			prev := checkTimeout
+			checkTimeout = tc.timeout
+			t.Cleanup(func() { checkTimeout = prev })
+			h := newHarness(t)
+			tc.set(h.f)
+			c := h.run(testCouncil("c1"))
+			if c.State != StateDone || c.Error != "" || c.Summary == nil || len(c.Failed) != 0 {
+				t.Fatalf("council = %s %q failed %v, want a done council: a failed round check never fails the round", c.State, c.Error, c.Failed)
+			}
+			if s := checkSuggestion(c); s != nil {
+				t.Errorf("suggestion = %+v, want none from a check that did not answer", s)
+			}
+			if c.Calls != 10 || c.Tokens != 4*callTokens["r1"]+4*callTokens["r2"]+tc.tokens+callTokens["r3"] {
+				t.Errorf("calls %d tokens %d, want the check's call booked with %d tokens", c.Calls, c.Tokens, tc.tokens)
+			}
+			if got := logs.String(); !strings.Contains(got, "round check failed") || !strings.Contains(got, tc.logged) {
+				t.Errorf("log = %q, want a round check failed line holding %q", got, tc.logged)
+			}
+		})
+	}
+}
+
+// TestRoundCheckRunsAfterAnAnswerBatch: the post-Report chat is the main case. One seat's answer is one batch, so one
+// check, which reads that answer; its call and tokens are the council's.
+func TestRoundCheckRunsAfterAnAnswerBatch(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	suggestRoundCheck(h, "Ask the RAM seat first")
+	if _, err := h.r.Reply("c1", "", "", "@RAM "+wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+
+	checks := h.f.calls("roundcheck")
+	if len(checks) != 2 {
+		t.Fatalf("%d round checks, want the reply pass's and the one batch's", len(checks))
+	}
+	mustContain(t, "the batch's round check", checks[1].Prompt, "Answer from ram")
+	// the reply pass's replies are not this round's: they are in the context section, if anywhere
+	mustNotContain(t, "the batch's round check", sectionText(checks[1].Prompt, "## What the seats said this round, oldest first"), "Reason from")
+	if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+callTokens["ans"]+callTokens["roundcheck"] {
+		t.Errorf("calls %d tokens %d, want %d and %d: the one answer and its round check", c.Calls, c.Tokens, done.Calls+2, done.Tokens+callTokens["ans"]+callTokens["roundcheck"])
+	}
+	// the round is the batch's own: the answers it read carry Round 4, the first follow-up round
+	if s := c.Memory.Suggestion; s == nil || s.Text != "Ask the RAM seat first" || s.Source != SourceCheck || s.Round != FirstFollowRound(c) ||
+		s.Round != replyOf(t, c, "r14").Round {
+		t.Errorf("suggestion = %+v, want the batch's, after round %d like the answer it read", s, FirstFollowRound(c))
+	}
+	if c.State != StateDone {
+		t.Errorf("state = %s, want done as it was", c.State)
+	}
+}
+
+// TestRoundCheckSkipsAPassThatAddedNothing: a seat that fails to answer leaves nothing sent to read, so no call is made.
+func TestRoundCheckSkipsAPassThatAddedNothing(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	h.f.setFail("ram/ans", errors.New("boom"))
+	if _, err := h.r.Reply("c1", "", "", "@RAM "+wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+	if n := len(h.f.calls("roundcheck")); n != 1 {
+		t.Errorf("%d round checks, want only the reply pass's: an answer that failed leaves nothing to read", n)
+	}
+	if c.Calls != done.Calls+1 {
+		t.Errorf("calls %d, want %d: the failed answer alone", c.Calls, done.Calls+1)
+	}
+}
+
+// TestRoundCheckADismissedSuggestionIsNotRaisedAgain: the person turns a suggestion away; the same words from the next
+// round's check, in another case and spacing, wait on nothing.
+func TestRoundCheckADismissedSuggestionIsNotRaisedAgain(t *testing.T) {
+	h := newHarness(t)
+	suggestRoundCheck(h, "Show the sleep state first")
+	c := h.run(testCouncil("c1"))
+	if c.Memory == nil || c.Memory.Suggestion == nil {
+		t.Fatalf("memory = %+v, want the first suggestion", c.Memory)
+	}
+	if _, err := h.r.Direction("c1", DirectionIn{Action: ActionDismiss}); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+	suggestRoundCheck(h, "  show the SLEEP state   first ")
+	if _, err := h.r.Reply("c1", "", "", "@RAM "+wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c = h.wait("c1")
+	if len(h.f.calls("roundcheck")) != 2 {
+		t.Fatalf("%d round checks, want the second to have run", len(h.f.calls("roundcheck")))
+	}
+	if s := checkSuggestion(c); s != nil || len(c.Memory.Dismissed) != 1 {
+		t.Errorf("suggestion %+v dismissed %v, want none from the check and the one key kept", s, c.Memory.Dismissed)
+	}
+	// a different suggestion is raised as usual
+	suggestRoundCheck(h, "Poll less")
+	if _, err := h.r.Reply("c1", "", "", "@RAM and more", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if c = h.wait("c1"); checkSuggestion(c) == nil || checkSuggestion(c).Text != "Poll less" {
+		t.Errorf("suggestion = %+v, want the new one", c.Memory.Suggestion)
+	}
+}
+
+// TestRoundCheckASuggestionThatSaysWhatIsChosenIsNotRaised: a check that suggests the direction already in force raises
+// nothing.
+func TestRoundCheckASuggestionThatSaysWhatIsChosenIsNotRaised(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	c := h.load("c1")
+	MemoryOf(c).Choose(CouncilMemoryDirection{Text: "Poll less", How: DirectionWritten}, "", 5)
+	h.save(c)
+	suggestRoundCheck(h, "poll LESS")
+	if _, err := h.r.Reply("c1", "", "", "@RAM "+wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	got := h.wait("c1")
+	mustContain(t, "the round check's prompt", h.f.calls("roundcheck")[1].Prompt, "Poll less")
+	if s := checkSuggestion(got); s != nil || got.Calls != done.Calls+2 {
+		t.Errorf("suggestion %+v calls %d, want none raised by the check and its call still booked", s, got.Calls)
+	}
+	if got.Memory.Chosen == nil || got.Memory.Chosen.Text != "Poll less" {
+		t.Errorf("chosen = %+v, want the direction as it was", got.Memory.Chosen)
+	}
+}
+
+// TestAllGreenIsRaisedAfterAReplyPassWithNoModelCall: every seat accepts every idea of the others, so the first idea is
+// raised as an all-green suggestion even though the round check fails: it needs no model call.
+func TestAllGreenIsRaisedAfterAReplyPassWithNoModelCall(t *testing.T) {
+	h := newHarness(t)
+	acceptAll(h)
+	h.f.setFail("check/roundcheck", errors.New("down"))
+	c := h.run(testCouncil("c1"))
+	if c.Memory == nil || c.Memory.Suggestion == nil {
+		t.Fatalf("memory = %+v, want the all-green suggestion", c.Memory)
+	}
+	s := c.Memory.Suggestion
+	p1 := proposalOf(t, c, "P1")
+	if s.Source != SourceGreen || s.From != "P1" || s.Text != p1.Title || s.Round != 2 || s.Kind != CardSuggestion || len(s.Messages) != 0 {
+		t.Errorf("suggestion = %+v, want P1's title as an all-green suggestion after round 2", s)
+	}
+	if n := len(h.f.calls("precheck")); n != 0 {
+		t.Errorf("%d pre-set checks, want none: all green needs no check", n)
+	}
+	if c.State != StateDone {
+		t.Errorf("state = %s, want done", c.State)
+	}
+}
+
+// TestAllGreenThenTheRoundChecksSuggestionIsTheOneThatWaits: all green is raised first, and the round check's suggestion
+// after it replaces it, pushed out and not dismissed.
+func TestAllGreenThenTheRoundChecksSuggestionIsTheOneThatWaits(t *testing.T) {
+	h := newHarness(t)
+	acceptAll(h)
+	suggestRoundCheck(h, "Back P3 and drop the rest")
+	c := h.run(testCouncil("c1"))
+	if s := c.Memory.Suggestion; s == nil || s.Source != SourceCheck || s.Text != "Back P3 and drop the rest" {
+		t.Errorf("suggestion = %+v, want the round check's: it follows all green and replaces it", s)
+	}
+	if len(c.Memory.Dismissed) != 0 {
+		t.Errorf("dismissed = %v, want none: a suggestion pushed out is not a dismissed one", c.Memory.Dismissed)
+	}
+}
+
+// TestAllGreenADismissedIdeaIsNotRaisedAgain: dismissing an all-green suggestion keeps the idea out of later passes.
+func TestAllGreenADismissedIdeaIsNotRaisedAgain(t *testing.T) {
+	h := newHarness(t)
+	acceptAll(h)
+	c := h.run(testCouncil("c1"))
+	if c.Memory == nil || c.Memory.Suggestion == nil || c.Memory.Suggestion.From != "P1" {
+		t.Fatalf("memory = %+v, want P1 all green", c.Memory)
+	}
+	if _, err := h.r.Direction("c1", DirectionIn{Action: ActionDismiss}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.r.Reply("c1", "", "", "@RAM "+wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	got := h.wait("c1")
+	// P1 is dismissed, the other ideas are not: the next one takes its place
+	if s := got.Memory.Suggestion; s == nil || s.From == "P1" {
+		t.Errorf("suggestion = %+v, want another idea than the dismissed P1", s)
+	}
+	if !slices.Contains(got.Memory.Dismissed, "idea:P1") {
+		t.Errorf("dismissed = %v, want idea:P1", got.Memory.Dismissed)
+	}
+}
+
+// greenRig saves a done council in the state a pass found it (before) and the state it left (the saved one): P1 turned
+// all green when wasGreen is false, was green already when true. waiting is the suggestion on the council throughout.
+func greenRig(t *testing.T, wasGreen bool, waiting *CouncilMemoryCard) (h *harness, before *Council) {
+	t.Helper()
+	h = newHarness(t)
+	c := fixtureCouncil("c1", StateDone, 2)
+	if wasGreen {
+		makeGreen(c, "P1")
+	}
+	if waiting != nil {
+		MemoryOf(c).Raise(*waiting)
+	}
+	h.save(c)
+	before = h.load("c1")
+	if !wasGreen {
+		makeGreen(c, "P1")
+		h.save(c)
+	}
+	return h, before
+}
+
+// TestAllGreenOnlyANewlyGreenIdeaDisplacesAWaitingSuggestion: a suggestion that waits is replaced by an idea that turned
+// green in this pass (a newer one), not by one that was green already; with nothing waiting an idea that was green already
+// is raised; an idea already waiting is left as raised.
+func TestAllGreenOnlyANewlyGreenIdeaDisplacesAWaitingSuggestion(t *testing.T) {
+	check := CouncilMemoryCard{Text: "Back P2 instead", Source: SourceCheck, Round: 2, At: 5}
+	t.Run("newly green replaces a waiting suggestion", func(t *testing.T) {
+		h, before := greenRig(t, false, &check)
+		h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+		if s := h.load("c1").Memory.Suggestion; s == nil || s.Source != SourceGreen || s.From != "P1" || s.Round != 3 {
+			t.Errorf("suggestion = %+v, want P1 all green after round 3", s)
+		}
+	})
+	t.Run("an idea green before does not displace it", func(t *testing.T) {
+		h, before := greenRig(t, true, &check)
+		h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+		if s := h.load("c1").Memory.Suggestion; s == nil || s.Text != "Back P2 instead" || s.At != 5 {
+			t.Errorf("suggestion = %+v, want the waiting one untouched", s)
+		}
+	})
+	t.Run("an idea green before is raised when nothing waits", func(t *testing.T) {
+		h, before := greenRig(t, true, nil)
+		// the pass added no message: all green still looks at the council, the round check has nothing to read
+		h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+		if s := h.load("c1").Memory.Suggestion; s == nil || s.From != "P1" || s.Source != SourceGreen {
+			t.Errorf("suggestion = %+v, want P1 all green", s)
+		}
+		if n := len(h.f.calls("roundcheck")); n != 0 {
+			t.Errorf("%d round checks, want none: the pass added nothing", n)
+		}
+	})
+	t.Run("an idea already waiting is not raised again", func(t *testing.T) {
+		waiting := CouncilMemoryCard{Kind: CardSuggestion, Text: "Title from ux", Source: SourceGreen, Round: 2, From: "P1", At: 5}
+		h, before := greenRig(t, false, &waiting)
+		h.r.checkMemory(context.Background(), nil, "c1", before, 3)
+		if s := h.load("c1").Memory.Suggestion; s == nil || s.At != 5 || s.Round != 2 {
+			t.Errorf("suggestion = %+v, want the waiting card as it was raised", s)
+		}
+	})
+}
+
+// TestRoundCheckAStoppedRunBooksNothing: a check cut off by its run being stopped is no failure and books nothing, as a
+// router call cut off does not.
+func TestRoundCheckAStoppedRunBooksNothing(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	h.f.gate("check/roundcheck")
+	if _, err := h.r.Reply("c1", "", "", "@RAM "+wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	h.f.entered(t, "check/roundcheck")
+	if _, err := h.r.Stop("c1"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	c := h.wait("c1")
+	if c.Calls != done.Calls+1 || c.Tokens != done.Tokens+callTokens["ans"] {
+		t.Errorf("calls %d tokens %d, want %d and %d: the answer alone, the cut-off check unbooked", c.Calls, c.Tokens, done.Calls+1, done.Tokens+callTokens["ans"])
+	}
+	if s := checkSuggestion(c); s != nil {
+		t.Errorf("suggestion = %+v, want none from a check that was cut off", s)
 	}
 }

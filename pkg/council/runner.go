@@ -1468,6 +1468,7 @@ func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) e
 			return nil
 		})
 	}
+	r.checkMemory(ctx, rn, id, snap, round) // what the pass added may move the direction: all green, then the round check
 	return nil
 }
 
@@ -1893,6 +1894,7 @@ func (r *Runner) answerAll(ctx context.Context, rn *run, id string, snap *Counci
 		byId[a.e.Id] = a
 	}
 	forEachExpert(experts, func(e CouncilExpert) { r.answerCall(ctx, rn, id, snap, e, byId[e.Id].replies, round) })
+	r.checkMemory(ctx, rn, id, snap, round) // the batch's answers may move the direction: all green, then the round check
 }
 
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }

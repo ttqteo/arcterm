@@ -2847,3 +2847,40 @@ func TestCouncilDirectionRefusesWhatItCannotDo(t *testing.T) {
 		t.Errorf("a refused direction left a memory on the council: %+v", c.Memory)
 	}
 }
+
+// TestCouncilDirectionPublishesOncePerMove: the command is the one that announces a direction move. Runner.Direction does
+// not call the runner's own OnChange (publishCouncilChanged), so a move announces exactly one council:changed, and a move
+// that is refused none.
+func TestCouncilDirectionPublishesOncePerMove(t *testing.T) {
+	events := useCouncilRig(t, newCouncilFake())
+	c := &council.Council{Id: "dir-2", Project: `D:\p`, Feature: "x", State: council.StateDone}
+	council.MemoryOf(c).Raise(council.CouncilMemoryCard{Text: "Poll less", Source: council.SourceCheck, Round: 2, At: 5})
+	saveCouncil(t, c)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if err := ws.CouncilDirectionCommand(ctx, wshrpc.CommandCouncilDirectionData{Id: "dir-2", Action: council.ActionAccept}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if got := events.all(); len(got) != 1 || got[0].Id != "dir-2" || got[0].Project != `D:\p` {
+		t.Fatalf("accept published %+v, want exactly one council:changed for dir-2", got)
+	}
+	if got, _ := council.Load("dir-2"); got.Memory == nil || got.Memory.Chosen == nil || got.Memory.Chosen.Text != "Poll less" || got.Memory.Suggestion != nil {
+		t.Errorf("memory after accept = %+v, want the suggestion chosen", got.Memory)
+	}
+
+	if err := ws.CouncilDirectionCommand(ctx, wshrpc.CommandCouncilDirectionData{Id: "dir-2", Action: council.ActionUnpin}); err != nil {
+		t.Fatalf("unpin: %v", err)
+	}
+	if got := events.all(); len(got) != 2 {
+		t.Errorf("after unpin %d events in all, want one more (2)", len(got))
+	}
+
+	err := ws.CouncilDirectionCommand(ctx, wshrpc.CommandCouncilDirectionData{Id: "dir-2", Action: council.ActionDiscard})
+	if err == nil || !strings.Contains(err.Error(), "no direction is held") {
+		t.Errorf("discard with nothing held = %v, want an error saying so", err)
+	}
+	if got := events.all(); len(got) != 2 {
+		t.Errorf("a refused discard published: %d events in all, want still 2", len(got))
+	}
+}
