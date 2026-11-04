@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) With the machine short of memory (Windows: commit charge past the RAM) and two runs active, let one
+  run have a ready task while the other has a worker live → the ready task starts within a tick, and `waveapp.log`
+  stops repeating `ready tasks held back while the machine's memory is short` for it; set Jobs to Off and a run with a
+  worker live starts its other ready tasks too (d561ef671).
 - [ ] (arcterm) Click a task node, then the Final verification node, in a run's graph → the peek's Worker / Review /
   Tokens values, activity lines and Open in Agent read in Inter like the title; only a Verify output tail stays mono
   (22a9f852e).
