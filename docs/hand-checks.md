@@ -110,13 +110,17 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) `wsh jarvis dag retry <task>` and `wsh jarvis dag escalate <task> --model opus` on a task in
   blocked-merge → each is refused naming `dag merge <task> --continue`, and the task and its worker tab stay as they
   were (run aebf7808 Task 6).
-- [ ] (arcterm) A council's Memory tab with the real checks: in a council with a few ideas, click Chốt on an idea → within
-  seconds the Memory tab shows it as the Chosen direction (`Pinned by you`, its time, `from Idea N`); Chốt one that
-  contradicts what the seats agreed → the tab's dot lights and the card reads `Held · this may clash…` with the check's
-  reason, and Set anyway sets it. `p` on the idea under the cursor does the same. After a reply pass the round check may
-  leave a `Suggested after round N` card, and Show the messages scrolls the channel to them. The `council-memory`
-  scenario drives every state with `CouncilDirectionCommand` stubbed; the haiku pre-set and round checks, and the
-  `p` key in the real window, are untried (`councilmemory.tsx`, `councilchat.tsx` `Chot`, `pkg/council/memorycheck.go`).
+- [ ] (arcterm) **A council's memory with the real checks, in the installed app.** In a council past round 1, send a
+  message that settles one point and drops another → after the seats answer, the Memory tab (`Memory · N`, its dot on
+  while you are elsewhere) lists new `Agreed` / `Ruled out` / `Open` rows from the haiku round check, at most three, each
+  badge's tooltip saying what it means. Hover a row (WKWebView, not the headless Chrome the Final used) → Chốt · Edit ·
+  ⓘ · ✕ show on one line with the badge unbroken, and ⓘ's popover reads `Auto · round N` / `rN · time` inside the rail.
+  Chốt a row → it becomes the Direction pinned on top and leaves the list; Chốt one that clashes → the held card, and
+  Discard keeps the row. Ask the seats again → none argues an Agreed row or proposes a Ruled out one. Remove an auto row
+  → the next round does not add it back. Also see what Unpin leaves: the earlier directions then show nowhere until a
+  new direction is set (spec 2026-11-05 hangs Earlier on the direction row only). The `council-memory` scenario drives
+  every state with the commands stubbed; the haiku checks, the seats' prompts in a live council and WebKit hover are
+  untried (`councilmemory.tsx`, `pkg/council/memorycheck.go`, `prompts.go`; 925805200, 04614993b).
 
 - [ ] (arcterm) An asking agent's whole row breathes in the Agent tree: get an agent to ask (a permission prompt or a
   brainstorm question) → its row, selected or not, pulses a faint amber wash and edge every ~2.4s alongside its glyph;
