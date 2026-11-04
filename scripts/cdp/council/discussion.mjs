@@ -750,8 +750,8 @@ async function awaiting(h, ctx, rec) {
     const remaining = await settledText(h, "[data-council-remaining]", /^The rest:/);
     const stopHere = await text(h, "[data-council-stop-here]");
     rec(
-        "paused: the question box takes a question, the line reads `The rest: ≈ 5 calls · ~0.3M tokens`, Stop here is offered",
-        asked === PAUSE_QUESTION && remaining === "The rest: ≈ 5 calls · ~0.3M tokens" && stopHere === "Stop here and keep these ideas",
+        "paused: the question box takes a question, the line reads `The rest: ≈ 6 calls · ~0.3M tokens` (the round check counts: one more call than the seats' five), Stop here is offered",
+        asked === PAUSE_QUESTION && remaining === "The rest: ≈ 6 calls · ~0.3M tokens" && stopHere === "Stop here and keep these ideas",
         `${remaining} | ${stopHere}`
     );
     await h.shot("cdp-shots/council-discussion-paused.png");
@@ -1034,13 +1034,14 @@ async function done(h, ctx, rec) {
     const post = await attr(h, "[data-council-thread] [data-council-post]", "data-council-post");
 
     await typeInto(h, `${THREAD_COMPOSER} [data-council-composer-input]`, FOLLOWUP_TEXT);
-    const plain = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /^1 expert answers · ≈ 1 call · ~\d+k tokens$/);
+    // the live estimate: the seat's answer and the round check after it (Task 5), two calls
+    const plain = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /^1 expert answers · ≈ 2 calls · ~\d+k tokens$/);
 
     await click(h, `${THREAD_COMPOSER} [data-council-tools-option="on"]`);
-    const reading = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /reading files · ≈ 1 call · ~[\d.]+[kM] tokens$/);
+    const reading = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /reading files · ≈ 2 calls · ~[\d.]+[kM] tokens$/);
     const on = await attr(h, `${THREAD_COMPOSER} [data-council-tools]`, "data-council-tools-state");
     rec(
-        "follow-up: Read files On changes the cost label from `≈ 1 call` to one that says `reading files` with more tokens",
+        "follow-up: Read files On changes the cost label from `≈ 2 calls` to one that says `reading files` with more tokens",
         !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "on",
         `${plain}  →  ${reading}`
     );
@@ -1257,10 +1258,10 @@ async function room(h, ctx, rec) {
     const typing = await typingLines(h);
     const failure = await text(h, '[data-council-channel] [data-council-failed="security"]');
     rec(
-        "room: the skipped turn reads `Witness synthesis skipped round 1: still working on its own task after 10 min.` with Open its terminal, the typing rows name UX audit and Witness's wait, and Security's failure line has its error",
-        skip.includes("Witness synthesis skipped round 1: still working on its own task after 10 min.") &&
+        "room: the skipped turn reads `Witness synthesis · fx-room-w skipped round 1: still working on its own task after 10 min.` (a chat seat is its name and its key) with Open its terminal, the typing rows name UX audit and Witness's wait, and Security's failure line has its error",
+        skip.includes("Witness synthesis · fx-room-w skipped round 1: still working on its own task after 10 min.") &&
             skipButton === "Open its terminal" &&
-            typing.includes("UX audit is writing…") &&
+            typing.includes("UX audit · fx-room-u is writing…") &&
             typing.includes("Waiting for Witness synthesis to finish its task") &&
             failure.includes("Security failed while replying") &&
             failure.includes("the reply was not valid JSON"),
@@ -1298,14 +1299,14 @@ async function room(h, ctx, rec) {
         "room: P4's thread holds the person's @ to Witness, Skeptic's held `has doubts` challenge as a draft with its three buttons, the idea highlighted in the channel, and a reply box naming UX audit",
         replies.length === 1 &&
             mine?.mine === true &&
-            mine.text.includes("For Witness synthesis") &&
+            mine.text.includes("Witness synthesis · fx-room-w") &&
             draft.includes("Waiting for you") &&
             draft.includes("has doubts") &&
             (await text(h, '[data-council-thread] [data-council-draft="r4"] [data-council-draft-send]')) === "Send to the others" &&
             (await text(h, '[data-council-thread] [data-council-draft="r4"] [data-council-draft-edit]')) === "Edit" &&
             (await text(h, '[data-council-thread] [data-council-draft="r4"] [data-council-draft-drop]')) === "Drop" &&
             (await attr(h, '[data-council-idea="P4"]', "data-open")) === "true" &&
-            hint === "Answered by: UX audit",
+            hint === "Answered by: UX audit · fx-room-u",
         { replies, draft, hint }
     );
     await click(h, '[data-council-thread-open="P2"]');
@@ -1680,7 +1681,7 @@ async function addChatSend(h, ctx, rec) {
     const hint = await settledText(h, CHAT_HINT, /^Answered by/);
     rec(
         "add-chat-send: before Send the line under the box names the two chats and no other seat: `Answered by: <chat>, <chat>`",
-        hint === `Answered by: ${RECAP.name}, ${CHARTS.name}`,
+        hint === `Answered by: ${RECAP.name} · ${keyOf(RECAP)}, ${CHARTS.name} · ${keyOf(CHARTS)}`,
         hint
     );
 
@@ -1721,8 +1722,8 @@ async function addChatSend(h, ctx, rec) {
             `witness,uxaudit,security,skeptic,agent-${RECAP.tabId},agent-${CHARTS.tabId},coordinator` &&
             byId[`agent-${RECAP.tabId}`].open === RECAP.tabId &&
             byId[`agent-${CHARTS.tabId}`].open === CHARTS.tabId &&
-            byId[`agent-${RECAP.tabId}`].title.includes(`${RECAP.name} · agent · 182k`) &&
-            byId[`agent-${CHARTS.tabId}`].title.includes(`${CHARTS.name} · agent · 21k`),
+            byId[`agent-${RECAP.tabId}`].title.includes(`${RECAP.name} · ${keyOf(RECAP)} · agent · 182k`) &&
+            byId[`agent-${CHARTS.tabId}`].title.includes(`${CHARTS.name} · ${keyOf(CHARTS)} · agent · 21k`),
         chips.map((c) => `${c.id}: ${c.text}`).join(" ; ")
     );
     await h.shot("cdp-shots/council-discussion-add-chat-seated.png");
@@ -1737,7 +1738,7 @@ async function addChatSend(h, ctx, rec) {
     const reached = await settledText(h, CHAT_HINT, /^Answered by/);
     rec(
         "add-chat-send: once seated, @ lists the two chats under Seats with no Add a live chat section, and `@<key>` reaches only its own seat",
-        seats.includes(`agent-${RECAP.tabId}`) && seats.includes(`agent-${CHARTS.tabId}`) && noChats && reached === `Answered by: ${CHARTS.name}`,
+        seats.includes(`agent-${RECAP.tabId}`) && seats.includes(`agent-${CHARTS.tabId}`) && noChats && reached === `Answered by: ${CHARTS.name} · ${keyOf(CHARTS)}`,
         { seats, noChats, reached }
     );
     await typeInto(h, CHAT_INPUT, "");
@@ -2964,7 +2965,9 @@ const thumbFacts = (h, post) =>
             endRight: Math.round(end.getBoundingClientRect().right),
             bylineRight: Math.round(byline.getBoundingClientRect().right),
             endAfterName: end.getBoundingClientRect().left >= name.getBoundingClientRect().right,
-            inEnd: [...end.children].map((e) => (e.hasAttribute("data-council-thumbs") ? "thumbs" : "time")).join(),
+            inEnd: [...end.children]
+                .map((e) => (e.hasAttribute("data-council-thumbs") ? "thumbs" : e.hasAttribute("data-council-chot") ? "chot" : "time"))
+                .join(),
             buttons: [...thumbs.querySelectorAll("[data-council-thumb]")].map((b) => b.dataset.councilThumb + "=" + b.getAttribute("aria-pressed")),
             chip: chip
                 ? {
@@ -3034,15 +3037,16 @@ async function thumbsAndLines(h, ctx, rec) {
         { r4: r4.chip, r5: r5.chip, idea: idea.chip }
     );
 
-    // with the pointer away, no thumb button shows in the byline: the time and the buttons are at its right end, dimmed out
+    // with the pointer away, no thumb button shows in the byline: the time, the buttons and Chốt (beside them) are at its
+    // right end, dimmed out
     rec(
-        "thumbs: with the pointer away the byline's time and both thumb buttons are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
+        "thumbs: with the pointer away the byline's time, both thumb buttons and the Chốt button beside them are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
         [r4, r5, idea].every(
             (f) =>
                 f.endOpacity === "0" &&
                 f.endRight === f.bylineRight &&
                 f.endAfterName &&
-                f.inEnd === "time,thumbs" &&
+                f.inEnd === "time,thumbs,chot" &&
                 f.buttons.length === 2
         ) &&
             r4.buttons.join() === "like=true,dislike=false" &&
@@ -3189,6 +3193,9 @@ const railFacts = (h) =>
                 on: r.getAttribute("data-on") === "true",
                 meta: norm(r.querySelector("[data-council-rail-meta]")),
             })),
+            caption: norm(rail.querySelector("[data-council-rail-caption]")),
+            groups: [...rail.querySelectorAll("[data-council-rail-group]")].map((g) => g.getAttribute("data-council-rail-group")),
+            dot: !!rail.querySelector("[data-council-memory-dot]"),
             width: Math.round(rail.getBoundingClientRect().width),
             fold: !!rail.querySelector("[data-council-rail-fold]"),
             close: !!rail.querySelector("[data-council-thread-close]"),
@@ -3206,16 +3213,27 @@ async function ideasRail(h, ctx, rec) {
     const p2 = first?.rows.find((r) => r.id === "P2");
     await h.shot("cdp-shots/council-discussion-rail.png");
     rec(
-        "rail: beside the channel's six idea messages, the Ideas rail lists the six ideas under one tab `Ideas · 6`, with a fold button, and P2's quiet line names its replies",
+        "rail: beside the channel's six idea messages, the rail lists the six ideas under the tab `Ideas · 6` next to a Memory tab (always there, no dot while nothing waits), with a fold button, and P2's quiet line names its replies",
         first?.tab === "ideas" &&
-            first.tabs.length === 1 &&
+            first.tabs.map((t) => t.id).join() === "ideas,memory" &&
             first.tabs[0].text === "Ideas · 6" &&
+            first.tabs[1].text === "Memory" &&
+            !first.dot &&
             first.rows.length === 6 &&
             channelIdeas === 6 &&
             first.fold &&
             !first.close &&
             p2?.meta.startsWith(`${counts.P2} replies`),
         { first, channelIdeas, counts }
+    );
+    // the Ideas tab is grouped by where the seats stand (council-ideas has the full set of groups): this council's six
+    // ideas fall in Agreed (P3, P5), Has doubts (P1), Someone against it (P2, P4) and Withdrawn (P6), in arrival order
+    rec(
+        "rail: the caption reads `by where the seats stand`, and the six ideas sit under Agreed, Has doubts, Someone against it and Withdrawn in that order, P3 P5, P1, P2 P4, P6",
+        first?.caption === "by where the seats stand" &&
+            first.groups.join() === "agreed,doubts,against,withdrawn" &&
+            first.rows.map((r) => r.id).join() === "P3,P5,P1,P2,P4,P6",
+        { caption: first?.caption, groups: first?.groups, order: first?.rows.map((r) => r.id) }
     );
 
     // a row brings its idea's message to the top of the channel and puts the cursor on it
@@ -3245,11 +3263,11 @@ async function ideasRail(h, ctx, rec) {
     const inRail = await exists(h, `${RAIL} [data-council-thread="P2"] [data-council-post="P2"]`);
     await h.shot("cdp-shots/council-discussion-rail-thread.png");
     rec(
-        "rail: the replies button under P2's message opens its thread on a second tab `Idea 2 · N replies`, with Close in place of Fold, and rings the message in the channel",
+        "rail: the replies button under P2's message opens its thread on a third tab `Idea 2 · N replies`, after Ideas and Memory, with Close in place of Fold, and rings the message in the channel",
         opened?.tab === "thread" &&
-            opened.tabs.map((t) => t.id).join() === "ideas,thread" &&
-            opened.tabs[1].on &&
-            opened.tabs[1].text === `Idea 2 · ${counts.P2} replies` &&
+            opened.tabs.map((t) => t.id).join() === "ideas,memory,thread" &&
+            opened.tabs[2].on &&
+            opened.tabs[2].text === `Idea 2 · ${counts.P2} replies` &&
             opened.close &&
             !opened.fold &&
             inRail &&
@@ -3265,7 +3283,7 @@ async function ideasRail(h, ctx, rec) {
     const again = await until(h, `!!document.querySelector(${sel(`${RAIL} [data-council-thread="P2"]`)})`);
     rec(
         "rail: the Ideas tab shows the list with P2's row marked and its thread's tab kept; that tab brings the thread back",
-        back && kept?.tabs.length === 2 && kept.rows.find((r) => r.id === "P2")?.on && again,
+        back && kept?.tabs.length === 3 && kept.rows.find((r) => r.id === "P2")?.on && again,
         { back, kept, again }
     );
 

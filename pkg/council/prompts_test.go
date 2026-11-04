@@ -1041,3 +1041,153 @@ func TestAgentLaterPromptListsEveryThumb(t *testing.T) {
 	c.Proposals[0].Thumb = ""
 	mustNotContain(t, "thumb taken back", AgentLaterPrompt(c, witness, 3), "## What the person liked and disliked")
 }
+
+// ---- the chosen direction ----
+
+const (
+	directionText    = "Ship the Ideas tab first"
+	directionHeading = "## The chosen direction"
+)
+
+// chooseDirection sets directionText as the council's chosen direction, with stray spaces the prompt must trim.
+func chooseDirection(c *Council) *Council {
+	c.Memory = &CouncilMemory{Chosen: &CouncilMemoryDirection{Text: "  " + directionText + "  ", How: DirectionPin, At: 100}}
+	return c
+}
+
+// nothingChosen is a memory that holds history and cards but no chosen direction: it reads as no direction at all.
+func nothingChosen(c *Council) *Council {
+	c.Memory = &CouncilMemory{
+		Replaced:   []CouncilMemoryDirection{{Text: "Old direction", How: DirectionWritten, At: 50, Replaced: 90, Ended: EndUnpinned}},
+		Suggestion: &CouncilMemoryCard{Kind: CardSuggestion, Text: "A waiting suggestion", Source: SourceCheck},
+		Held:       &CouncilMemoryCard{Kind: CardHeld, Text: "A held direction"},
+	}
+	return c
+}
+
+// directionKinds is every prompt a seat turn is written from: each builds the prompt for a council, so a test can build
+// it with a chosen direction and without one.
+func directionKinds() []struct {
+	name    string
+	council func() *Council
+	prompt  func(c *Council) string
+} {
+	review := func(c *Council) string { return Round1Prompt(c, c.Experts[0]) }
+	return []struct {
+		name    string
+		council func() *Council
+		prompt  func(c *Council) string
+	}{
+		{"round 1", promptCouncil, review},
+		{"round 2", promptCouncil, func(c *Council) string { return Round2Prompt(c, c.Experts[0]) }},
+		{"reply pass 3", promptCouncil, func(c *Council) string { return round2PromptFor(c, c.Experts[0], 3) }},
+		{"answers", promptCouncil, func(c *Council) string { return AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) }},
+		{"brainstorm round 1", brainstormCouncil, review},
+		{"brainstorm round 2", brainstormCouncil, func(c *Council) string { return Round2Prompt(c, c.Experts[0]) }},
+		{"brainstorm answers", brainstormCouncil, func(c *Council) string { return AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) }},
+		{"agent first, round 1", agentPromptCouncil, func(c *Council) string { return AgentFirstPrompt(c, c.Experts[0], 1) }},
+		{"agent first, joining in round 3", agentPromptCouncil, func(c *Council) string { return AgentFirstPrompt(c, c.Experts[1], 3) }},
+		{"agent later, round 2", agentPromptCouncil, func(c *Council) string { return AgentLaterPrompt(c, c.Experts[0], 2) }},
+		{"agent later, round 3", agentPromptCouncil, func(c *Council) string { return AgentLaterPrompt(c, c.Experts[0], 3) }},
+		{"agent follow-up", agentPromptCouncil, func(c *Council) string { return AgentLaterPrompt(c, c.Experts[0], SynthesisRound(c)) }},
+		{"agent first, after the report", func() *Council { c, _ := joiningCouncil(); return c }, func(c *Council) string {
+			return AgentFirstPrompt(c, c.Experts[4], 6) // Newbie, the seat before the coordinator
+		}},
+	}
+}
+
+// Every seat turn's prompt opens with the chosen direction, above any other section, saying it outranks the report; a
+// council with none, or one whose memory holds none, prompts byte for byte as it did before the memory.
+func TestDirectionBlock(t *testing.T) {
+	for _, k := range directionKinds() {
+		t.Run(k.name, func(t *testing.T) {
+			plain := k.prompt(k.council())
+			mustNotContain(t, "a prompt with no memory", plain, directionHeading, directionText)
+
+			got := k.prompt(chooseDirection(k.council()))
+			mustContain(t, "a prompt with a chosen direction", got, directionHeading+"\n\n", "\n"+directionText+"\n\n", outranksReport)
+			mustNotContain(t, "a prompt with a chosen direction", got, "  "+directionText, directionText+"  ") // trimmed
+
+			// it is the first section: nothing else with a heading comes before it
+			at := strings.Index(got, directionHeading)
+			for line := range strings.SplitSeq(got[:at], "\n") {
+				if strings.HasPrefix(line, "## ") {
+					t.Errorf("the section %q comes before the chosen direction\n%s", line, got)
+				}
+			}
+
+			// the direction is all it adds: leave it out and the prompt is as it was
+			if without := strings.Replace(got, got[at-1:strings.Index(got, outranksReport)+len(outranksReport)+1], "", 1); without != plain {
+				t.Errorf("a chosen direction changed more than its own block\n--- with it removed\n%s\n--- plain\n%s", without, plain)
+			}
+
+			if got := k.prompt(nothingChosen(k.council())); got != plain {
+				t.Errorf("a memory with no chosen direction changed the prompt\n--- got\n%s\n--- want\n%s", got, plain)
+			}
+			if got := k.prompt(chooseDirection(k.council())); got != k.prompt(chooseDirection(k.council())) {
+				t.Error("the same council prompts two ways")
+			}
+		})
+	}
+}
+
+// A chosen direction with only spaces for text says nothing, so it opens no block.
+func TestDirectionBlockLeavesOutEmptyText(t *testing.T) {
+	c := promptCouncil()
+	c.Memory = &CouncilMemory{Chosen: &CouncilMemoryDirection{Text: " \n ", How: DirectionPin}}
+	if got, want := Round2Prompt(c, c.Experts[0]), Round2Prompt(promptCouncil(), promptCouncil().Experts[0]); got != want {
+		t.Errorf("an empty chosen direction changed the prompt\n%s", got)
+	}
+}
+
+// The block sits above the report where a prompt carries it, so the seat reads which one wins before it reads the report.
+func TestDirectionBlockComesBeforeTheReport(t *testing.T) {
+	report := &CouncilSummary{Answer: "Show the state first.", Directions: []CouncilDirection{{Title: "Show the state"}}}
+
+	c := chooseDirection(promptCouncil())
+	c.Summary = report
+	p := AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]})
+	if d, r := strings.Index(p, directionHeading), strings.Index(p, "## The council's report"); d < 0 || r < 0 || d > r {
+		t.Errorf("the chosen direction is at %d and the report at %d in the answers prompt\n%s", d, r, p)
+	}
+
+	c, newbie := joiningCouncil()
+	chooseDirection(c)
+	p = AgentFirstPrompt(c, newbie, 6)
+	if d, r := strings.Index(p, directionHeading), strings.Index(p, "## The council's report"); d < 0 || r < 0 || d > r {
+		t.Errorf("the chosen direction is at %d and the report at %d in the joining seat's prompt\n%s", d, r, p)
+	}
+}
+
+// The synthesis takes the chosen direction as settled: the report ranks it as direction 1 and writes the rest around it.
+// A Brainstorm's synthesis does the same, and a council with none is prompted as before.
+func TestSynthesisDirection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		council func() *Council
+	}{
+		{"review", promptCouncil},
+		{"brainstorm", brainstormCouncil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plain := SynthesisPrompt(tc.council())
+			mustNotContain(t, "a synthesis with no direction", plain, directionHeading, directionText, "settled and binding")
+
+			p := SynthesisPrompt(chooseDirection(tc.council()))
+			sec := section(t, p, directionHeading)
+			mustContain(t, "direction section", sec, directionText, "settled and binding", `"directions"`, "as direction 1", "around it")
+			mustNotContain(t, "direction section", sec, "  "+directionText)
+			// it comes before the instructions it overrides, and the instructions are untouched
+			if d, w := strings.Index(p, directionHeading), strings.Index(p, "## What to do"); d < 0 || d > w {
+				t.Errorf("the chosen direction is at %d and What to do at %d\n%s", d, w, p)
+			}
+			if without := strings.Replace(p, directionHeading+"\n"+sec+"\n", "", 1); without != plain {
+				t.Errorf("a chosen direction changed more than its own section\n--- with it removed\n%s\n--- plain\n%s", without, plain)
+			}
+
+			if got := SynthesisPrompt(nothingChosen(tc.council())); got != plain {
+				t.Errorf("a memory with no chosen direction changed the synthesis\n%s", got)
+			}
+		})
+	}
+}

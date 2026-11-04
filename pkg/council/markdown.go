@@ -8,11 +8,13 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 const matrixReasonRunes = 120 // a matrix cell keeps one line of the reason, cut here
 
-// Markdown is the report as a document, what `wsh council wait` and `show` print: the feature, the question and its
+// Markdown is the report as a document, what `wsh council wait` and `show` print: the feature, the question, the
+// direction the person chose with the ones it replaced (writeMemory, none without a memory), the question's
 // one-sentence answer, the coordinator's paragraph, the directions in rank order (a Brainstorm's ideas worth trying),
 // each with its first step and each expert's stance, then one line each for a Brainstorm's wild ideas kept aside or a
 // Review's directions also raised, the questions to ask next, then proposals × experts. Document adds the whole discussion and the run facts to it.
@@ -22,6 +24,7 @@ func Markdown(c *Council) string {
 	if q := oneLine(c.Question); q != "" {
 		fmt.Fprintf(&b, "You asked: %s\n\n", q)
 	}
+	writeMemory(&b, c)
 	if c.Summary == nil {
 		b.WriteString("_No summary yet._\n")
 	} else {
@@ -65,6 +68,84 @@ func Markdown(c *Council) string {
 		writeMatrix(&b, c)
 	}
 	return b.String()
+}
+
+// memoryTime is a time the memory records, in ms, as the document writes it: UTC, to the minute.
+func memoryTime(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04 UTC")
+}
+
+// memoryHow is how a direction was set, in words: "Pinned by you", "Written by you", or "Accepted from the check after
+// round N" / "Accepted from all green" for a suggestion the person accepted.
+func memoryHow(d CouncilMemoryDirection) string {
+	switch d.How {
+	case DirectionPin:
+		return "Pinned by you"
+	case DirectionWritten:
+		return "Written by you"
+	case DirectionSuggested:
+		switch {
+		case d.Source == SourceCheck && d.Round > 0:
+			return fmt.Sprintf("Accepted from the check after round %d", d.Round)
+		case d.Source == SourceCheck:
+			return "Accepted from the check"
+		case d.Source == SourceGreen:
+			return "Accepted from all green"
+		}
+		return "Accepted from a suggestion"
+	}
+	return "Set by you"
+}
+
+// memoryEnded is the word for how a replaced direction left: "replaced", "edited" or "unpinned".
+func memoryEnded(d CouncilMemoryDirection) string {
+	switch d.Ended {
+	case EndEdited, EndUnpinned:
+		return d.Ended
+	}
+	return EndReplaced
+}
+
+// writeMemory is the direction memory as the document carries it, above the report: the chosen direction, then Replaced,
+// newest first, so a reader never takes a direction the person left for the one in force. A council with no chosen
+// direction and none replaced writes nothing; one whose chosen direction was unpinned says none is chosen now, and keeps
+// the history. A waiting suggestion or a held direction is not a direction yet, so it is not here.
+func writeMemory(b *strings.Builder, c *Council) {
+	m := c.Memory
+	if m == nil || (m.Chosen == nil && len(m.Replaced) == 0) {
+		return
+	}
+	b.WriteString("## Chosen direction\n\n")
+	if d := m.Chosen; d != nil {
+		fmt.Fprintf(b, "%s\n\n", strings.TrimSpace(d.Text))
+		meta := []string{memoryHow(*d)}
+		if d.From != "" {
+			meta = append(meta, "from "+d.From)
+		}
+		if d.At > 0 {
+			meta = append(meta, memoryTime(d.At))
+		}
+		fmt.Fprintf(b, "%s\n\n", strings.Join(meta, " · "))
+		b.WriteString("_The person settled on this: it outranks the report below wherever the two differ._\n\n")
+	} else {
+		b.WriteString("None is chosen now.\n\n")
+	}
+	if len(m.Replaced) == 0 {
+		return
+	}
+	b.WriteString("## Replaced\n\n")
+	for _, d := range m.Replaced {
+		fmt.Fprintf(b, "- ~~%s~~ · %s", oneLine(d.Text), memoryHow(d))
+		if d.From != "" {
+			b.WriteString(" · from " + d.From)
+		}
+		fmt.Fprintf(b, " · %s", memoryEnded(d))
+		if d.Replaced > 0 {
+			b.WriteString(" " + memoryTime(d.Replaced))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 }
 
 // askedOf is who a question to ask next goes to: the seat's name, or the whole panel.

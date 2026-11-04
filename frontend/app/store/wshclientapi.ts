@@ -378,6 +378,12 @@ export class RpcApiType {
         return client.wshRpcCall("councildelete", data, opts);
     }
 
+    // command "councildirection" [call]
+    CouncilDirectionCommand(client: WshClient, data: CommandCouncilDirectionData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councildirection", data, opts);
+        return client.wshRpcCall("councildirection", data, opts);
+    }
+
     // command "councildraft" [call]
     CouncilDraftCommand(client: WshClient, data: CommandCouncilDraftData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councildraft", data, opts);

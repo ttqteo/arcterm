@@ -358,7 +358,8 @@ export const councilSummary = {
             await click(h, `${SUMMARY} [data-council-glance] [data-council-expert='ux']`);
             const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
             const only = await h.ev(`({
-                // UX wrote P1 and P2 and replied to the other four, so every idea keeps its rail row, in the Report's order
+                // UX wrote P1 and P2 and replied to the other four, so every idea keeps its rail row, grouped by where the seats
+                // stand (stanceGroups): agreed P3 and P5, doubts P1, against P2 and P4, withdrawn P6; arrival order inside a group
                 ideas: [...document.querySelectorAll("[data-council-rail] [data-council-rail-idea]")].map((e) => e.dataset.councilRailIdea),
                 bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
                 // the button: the Agent tree's council row and Setup's seat list carry data-council-seats too
@@ -378,7 +379,7 @@ export const councilSummary = {
             await openSummary(h, ctx);
             const ok =
                 shown &&
-                only.ideas.join("|") === "P5|P1|P2|P3|P4|P6" &&
+                only.ideas.join("|") === "P3|P5|P1|P2|P4|P6" &&
                 only.bar === "Only UX: 2 ideas and 4 replies" &&
                 only.pressed === "ux" &&
                 thread &&
@@ -763,6 +764,46 @@ export const councilSummary = {
                 calls.length === 1 &&
                 calls[0].data?.id === outdated;
             return { ok, detail: JSON.stringify({ banner, written, clicked, calls }) };
+        });
+
+        // the chosen direction changed after the Report (memory.changed later than summary.at) and nothing else did: the
+        // plain reply r19 stays quiet, so the direction is the banner's only cause. A change made before the Report is in it
+        await step("a change of the chosen direction after the summary shows the banner Outdated · the direction changed, and one made before it shows none", async () => {
+            const changed = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-direction-changed",
+                edit: (c) => {
+                    const at = c.summary.at + 60_000;
+                    c.memory = { chosen: { text: "Pin the apps to the rail first", how: "pin", from: "P3", at }, changed: at };
+                },
+            });
+            await openSummary(h, ctx, changed);
+            const shown = await until(h, `!!document.querySelector("[data-council-banner='outdated']")`);
+            const banner = await textOf(h, "[data-council-banner='outdated']");
+            const written = await textOf(h, `${SUMMARY} [data-council-written]`);
+            const again = await exists(h, "[data-council-action='summarize-again']");
+            await h.shot("cdp-shots/council-summary-direction-changed.png");
+            const earlier = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-direction-before",
+                edit: (c) => {
+                    const at = c.summary.at - 60_000;
+                    c.memory = { chosen: { text: "Pin the apps to the rail first", how: "pin", from: "P3", at }, changed: at };
+                },
+            });
+            await openSummary(h, ctx, earlier);
+            const quiet = await h.ev(`({
+                banner: !!document.querySelector("[data-council-banner='outdated']"),
+                written: document.querySelector(${q(`${SUMMARY} [data-council-written]`)})?.innerText?.replace(/\\s+/g, " ").trim() ?? null,
+            })`);
+            await openSummary(h, ctx);
+            const ok =
+                shown &&
+                banner === "Outdated · the direction changed" &&
+                again &&
+                // the banner speaks for the summary now: the Written by line says nothing about the replies since
+                /from 18 replies$/.test(written ?? "") &&
+                !quiet.banner &&
+                / · 1 reply since$/.test(quiet.written ?? "");
+            return { ok, detail: JSON.stringify({ banner, written, again, quiet }) };
         });
 
         await step("Save as doc (in the ⋯ menu) writes the doc into the project and shows its path", async () => {

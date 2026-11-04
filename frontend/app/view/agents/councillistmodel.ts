@@ -8,8 +8,10 @@
 // count; a row that holds a draft waiting for the person is flagged. The order is fixed, so rows never jump under the
 // j / k cursor or the open thread: arrival until there is a summary, then the Report's (matrixRows), the ideas no
 // direction cites or that came after the summary following in arrival order. With a seat chosen in the Seats chip,
-// only the ideas it wrote or replied to show, and the Chat row counts its lines alone. Pure, no React, no Wave runtime
-// imports (councillistmodel.test.ts).
+// only the ideas it wrote or replied to show, and the Chat row counts its lines alone. The Ideas rail then draws those
+// rows grouped by where the seats stand on each idea (stanceGroups; board Ideas-by-stance in .superpowers/design/
+// council-ideas-memory): derived on every render from the stances, never stored, so an idea moves group as a stance
+// changes. Pure, no React, no Wave runtime imports (councillistmodel.test.ts).
 
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
 import {
@@ -60,6 +62,9 @@ export interface IdeaRow {
     repliesLabel: string; // `no replies`, `1 reply`, `4 replies`
     draft: boolean; // the idea itself, or a reply on it, waits for the person
     held: boolean; // the idea itself is a draft: it has no thread yet, only its Send / Edit / Drop
+    withdrawn: boolean; // its author withdrew it
+    withdrawnRound: number; // the round it was withdrawn in; 0 when it is not withdrawn or the record holds no round
+    cut: boolean; // the person cut it at the pause
 }
 
 export interface CouncilList {
@@ -78,6 +83,17 @@ function ideaLabel(c: Council, p: CouncilProposal): string {
         return "proposes";
     }
     return p.wild ? "wild idea" : "idea";
+}
+
+// the round an idea's author withdrew it in: the round of the author's last sent revising reply on it (a withdrawn idea is
+// revised no more, so the withdrawal is the last); 0 when the idea is not withdrawn or the record holds no such reply
+function withdrawnIn(sent: readonly CouncilReply[], p: CouncilProposal): number {
+    if (!p.withdrawn) {
+        return 0;
+    }
+    return sent
+        .filter((r) => r.proposalid === p.id && r.author === p.author && r.revised)
+        .reduce((round, r) => Math.max(round, r.round), 0);
 }
 
 // the ideas a person can see, in the order they arrived (a tie: the order the record keeps them): the sent ones and
@@ -151,6 +167,7 @@ export function councilList(c: Council, openedAt: number, only?: string): Counci
     const byId = new Map(all.map((p) => [p.id, p]));
     const stances = latestStances(c);
     const readable = readableReplies(c);
+    const sent = sentReplies(c);
     const held = heldDrafts(c);
     const ideas = listOrder(c)
         .map((id) => byId.get(id))
@@ -176,6 +193,9 @@ export function councilList(c: Council, openedAt: number, only?: string): Counci
                 repliesLabel: replies === 0 ? "no replies" : plural(replies, "reply", "replies"),
                 draft: isHeld || held.some((d) => d.kind === "reply" && d.reply.proposalid === p.id),
                 held: isHeld,
+                withdrawn: p.withdrawn === true,
+                withdrawnRound: withdrawnIn(sent, p),
+                cut: p.cut === true,
             };
         });
     return { chat: chatRow(c, openedAt, only), ideas, label: plural(ideas.length, "idea", "ideas") };
@@ -186,22 +206,84 @@ export function listNavOrder(list: CouncilList): string[] {
     return [CHAT_THREAD, ...list.ideas.map((r) => r.id)];
 }
 
-/** Pure: the quiet line under an idea in the Ideas rail: its replies when it has any, the stances taken on it when any
- *  is, and `draft waits` while the idea or a reply on it waits for the person; empty when none applies (an idea nobody
- *  answered says nothing). */
-export function railMeta(row: IdeaRow): string {
-    const parts: string[] = [];
-    if (row.replies > 0) {
-        parts.push(row.repliesLabel);
+/** The groups the Ideas rail draws, in this order. */
+export type StanceGroupKey = "waiting" | "agreed" | "doubts" | "against" | "none" | "withdrawn";
+
+/** The `@theme` colour a group's dot and its rows' bar are drawn in (`--color-<tone>`); `muted` is the one group that
+ *  draws no bar. */
+export type StanceTone = "muted" | "success" | "warning" | "error" | "ink-faint" | "edge-strong";
+
+export interface StanceGroup {
+    key: StanceGroupKey;
+    label: string; // the header's name for it: the status in words, never the colour alone
+    tone: StanceTone;
+    rows: IdeaRow[]; // in arrival order; never empty
+}
+
+const STANCE_GROUPS: readonly Omit<StanceGroup, "rows">[] = [
+    { key: "waiting", label: "Waiting on you", tone: "muted" },
+    { key: "agreed", label: "Agreed", tone: "success" },
+    { key: "doubts", label: "Has doubts", tone: "warning" },
+    { key: "against", label: "Someone against it", tone: "error" },
+    { key: "none", label: "No stance yet", tone: "ink-faint" },
+    { key: "withdrawn", label: "Withdrawn", tone: "edge-strong" },
+];
+
+// the group an idea falls in. A held idea has no stances yet and waits on the person, so it is first. After that, the
+// strongest word wins: withdrawn (or cut by the person), then against, then doubts, then agreed, then no stance at all.
+// The counts are the row's: each seat's latest stance on it (`latestStances`, read by `councilList`).
+function stanceGroupOf(row: IdeaRow): StanceGroupKey {
+    if (row.held) {
+        return "waiting";
     }
-    if (row.agrees > 0) {
-        parts.push(plural(row.agrees, "agrees", "agree"));
-    }
-    if (row.doubts > 0) {
-        parts.push(plural(row.doubts, "has doubts", "have doubts"));
+    if (row.withdrawn || row.cut) {
+        return "withdrawn";
     }
     if (row.against > 0) {
-        parts.push(plural(row.against, "is against it", "are against it"));
+        return "against";
+    }
+    if (row.doubts > 0) {
+        return "doubts";
+    }
+    if (row.agrees > 0) {
+        return "agreed";
+    }
+    return "none";
+}
+
+/** Pure: the Ideas rail's rows (`councilList`'s, so a chosen seat has already narrowed them) in groups by where the seats
+ *  stand, in the order Waiting on you, Agreed, Has doubts, Someone against it, No stance yet, Withdrawn. Inside a group
+ *  the ideas keep the order they arrived in, whatever order the list is in; a group with no idea is left out. Derived on
+ *  every call, never stored. */
+export function stanceGroups(rows: readonly IdeaRow[]): StanceGroup[] {
+    const arrival = [...rows].sort((a, b) => a.n - b.n);
+    return STANCE_GROUPS.map((g) => ({ ...g, rows: arrival.filter((r) => stanceGroupOf(r) === g.key) })).filter(
+        (g) => g.rows.length > 0
+    );
+}
+
+/** Pure: the quiet line under an idea in the Ideas rail: for a withdrawn idea `withdrawn in round N`, for one the person
+ *  cut `cut by you`; otherwise its replies when it has any and the stances taken on it when any is. `draft waits` follows
+ *  while the idea or a reply on it waits for the person. Empty when none applies (an idea nobody answered says nothing). */
+export function railMeta(row: IdeaRow): string {
+    const parts: string[] = [];
+    if (row.cut) {
+        parts.push("cut by you");
+    } else if (row.withdrawn) {
+        parts.push(row.withdrawnRound > 0 ? `withdrawn in round ${row.withdrawnRound}` : "withdrawn");
+    } else {
+        if (row.replies > 0) {
+            parts.push(row.repliesLabel);
+        }
+        if (row.agrees > 0) {
+            parts.push(plural(row.agrees, "agrees", "agree"));
+        }
+        if (row.doubts > 0) {
+            parts.push(plural(row.doubts, "has doubts", "have doubts"));
+        }
+        if (row.against > 0) {
+            parts.push(plural(row.against, "is against it", "are against it"));
+        }
     }
     if (row.draft) {
         parts.push("draft waits");
@@ -209,7 +291,7 @@ export function railMeta(row: IdeaRow): string {
     return parts.join(" · ");
 }
 
-/** Pure: the caption over the Ideas rail, which says the order `listOrder` keeps. */
-export function railOrderLabel(c: Council): string {
-    return c.summary == null ? "in the order they came" : "in the Report's order";
+/** Pure: the caption over the Ideas rail, which says how its groups are ordered. */
+export function railOrderLabel(): string {
+    return "by where the seats stand";
 }

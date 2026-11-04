@@ -632,6 +632,25 @@ describe("writtenLine", () => {
         expect(writtenLine(outdated)).toBe("Written by the coordinator at 11:02 from 1 reply");
     });
 
+    it("leaves the plain replies since to the banner once the direction changed, too", () => {
+        const at = new Date(2026, 9, 21, 11, 2).getTime();
+        const c = council({
+            proposals: [prop("P2", "ux", { ts: at - 9000 })],
+            replies: [reply("r1", "P2", "you", { ts: at + 1 })],
+            summary: { text: "", directions: [], outcomes: {}, at },
+            memory: { changed: at + 2 },
+        });
+        expect(writtenLine(c)).toBe("Written by the coordinator at 11:02 from 0 replies");
+        // a change made before the Report is in it, and the quiet count stays
+        const before = council({
+            proposals: [prop("P2", "ux", { ts: at - 9000 })],
+            replies: [reply("r1", "P2", "you", { ts: at + 1 })],
+            summary: { text: "", directions: [], outcomes: {}, at },
+            memory: { changed: at - 5 },
+        });
+        expect(writtenLine(before)).toBe("Written by the coordinator at 11:02 from 0 replies · 1 reply since");
+    });
+
     it("is singular for one reply and empty before a summary", () => {
         const at = new Date(2026, 9, 21, 9, 5).getTime();
         const c = council({
@@ -644,18 +663,25 @@ describe("writtenLine", () => {
 });
 
 describe("outdatedLabel", () => {
-    const none = { ideas: 0, revised: 0, stances: 0, replies: 0 };
+    const none = { ideas: 0, revised: 0, stances: 0, replies: 0, direction: 0 };
 
     it("names what changed, only the parts that did, singular for one", () => {
         expect(outdatedLabel({ ...none, ideas: 1, stances: 2 })).toBe("Outdated · 1 new idea, 2 changed stances");
         expect(outdatedLabel({ ...none, revised: 1 })).toBe("Outdated · 1 revised idea");
-        expect(outdatedLabel({ ideas: 3, revised: 2, stances: 1, replies: 4 })).toBe(
+        expect(outdatedLabel({ ideas: 3, revised: 2, stances: 1, replies: 4, direction: 0 })).toBe(
             "Outdated · 3 new ideas, 2 revised ideas, 1 changed stance"
         );
     });
 
     it("never counts the plain replies", () => {
         expect(outdatedLabel({ ...none, stances: 1, replies: 5 })).toBe("Outdated · 1 changed stance");
+    });
+
+    it("names the direction changing, alone or joined with the other parts", () => {
+        expect(outdatedLabel({ ...none, direction: 1 })).toBe("Outdated · the direction changed");
+        expect(outdatedLabel({ ideas: 1, revised: 0, stances: 2, replies: 3, direction: 1 })).toBe(
+            "Outdated · the direction changed, 1 new idea, 2 changed stances"
+        );
     });
 });
 

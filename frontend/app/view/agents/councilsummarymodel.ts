@@ -13,6 +13,7 @@ import {
     councilProjectKey,
     isReaction,
     outdatedChanges,
+    outdatedCount,
     panel,
     sentProposals,
     sentReplies,
@@ -394,7 +395,8 @@ export function ratingRow(c: Council, changing = false): RatingRow | null {
 
 // ---- the lines under the header ----
 
-function clockTime(ms: number): string {
+/** Pure: a time of day as `11:02`, in the person's own time zone (the Report's line and the Memory tab use it). */
+export function clockTime(ms: number): string {
     const d = new Date(ms);
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
@@ -409,16 +411,16 @@ export function writtenLine(c: Council): string {
     }
     const read = (c.replies ?? []).filter((r) => r.ts <= at).length;
     const line = `Written by the coordinator at ${clockTime(at)} from ${plural(read, "reply", "replies")}`;
-    const o = outdatedChanges(c);
-    return o.ideas + o.revised + o.stances === 0 && o.replies > 0
-        ? `${line} · ${plural(o.replies, "reply", "replies")} since`
-        : line;
+    const replies = outdatedChanges(c).replies;
+    return outdatedCount(c) === 0 && replies > 0 ? `${line} · ${plural(replies, "reply", "replies")} since` : line;
 }
 
 /** Pure: the banner over a summary a change could have moved past: `Outdated · 1 new idea, 2 changed stances`, only the
- *  parts that are not zero. The plain replies since are never in it. */
+ *  parts that are not zero, the direction first (`Outdated · the direction changed, 1 new idea`). The plain replies
+ *  since are never in it. */
 export function outdatedLabel(o: OutdatedChanges): string {
     const parts = [
+        o.direction > 0 ? "the direction changed" : "",
         o.ideas > 0 ? plural(o.ideas, "new idea", "new ideas") : "",
         o.revised > 0 ? plural(o.revised, "revised idea", "revised ideas") : "",
         o.stances > 0 ? plural(o.stances, "changed stance", "changed stances") : "",

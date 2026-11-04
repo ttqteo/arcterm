@@ -458,3 +458,72 @@ func TestNewFieldsLeaveAnOldCouncilsJSONAlone(t *testing.T) {
 		t.Errorf("a held, edited idea writes %s", b)
 	}
 }
+
+// A council saved before the memory loads with Memory nil and writes no "memory" key back; a memory with a chosen
+// direction, two replaced ones, both cards and a dismissed key survives a save and a load whole.
+func TestMemoryJSON(t *testing.T) {
+	root := useTempRoot(t)
+	dir := filepath.Join(root, "councils")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"id": "old", "project": "/p", "feature": "f", "experts": [], "state": "done", "round": 3,
+	  "tokens": 0, "calls": 0, "created": 1, "updated": 1}`
+	if err := os.WriteFile(filepath.Join(dir, "old.json"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old, err := Load("old")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if old.Memory != nil {
+		t.Errorf("a council saved without memory loads with Memory %+v, want nil", old.Memory)
+	}
+	b, err := json.Marshal(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"memory"`) {
+		t.Errorf("a council with no memory writes the key: %s", b)
+	}
+
+	want := &CouncilMemory{
+		Chosen: &CouncilMemoryDirection{Text: "ship the Ideas tab first", How: DirectionPin, From: "P3", At: 300},
+		Replaced: []CouncilMemoryDirection{
+			{Text: "rewrite the Report", How: DirectionWritten, At: 200, Replaced: 300, Ended: EndReplaced},
+			{Text: "keep the tabs", How: DirectionSuggested, Source: SourceCheck, Round: 2, From: "r7", At: 100, Replaced: 200, Ended: EndEdited},
+		},
+		Suggestion: &CouncilMemoryCard{
+			Kind: CardSuggestion, Text: "all seats lean to P2", Reason: "four of five agree", Source: SourceGreen,
+			From: "P2", Round: 3, Messages: []string{"r4", "r5"}, At: 310,
+		},
+		Held: &CouncilMemoryCard{
+			Kind: CardHeld, Text: "drop the Map", Reason: "r9 pushes back on it", How: DirectionWritten, Edited: true, At: 320,
+		},
+		Dismissed: []string{"green:P1"},
+		Changed:   300,
+	}
+	c := &Council{Id: "mem", Project: "/p", Feature: "f", Experts: []CouncilExpert{}, State: StateDone, Memory: want}
+	if err := Save(c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load("mem")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(got.Memory, want) {
+		t.Errorf("the memory changed on a save and load:\nwant %+v\ngot  %+v", want, got.Memory)
+	}
+	if got.Memory.Chosen == nil || got.Memory.Suggestion == nil || got.Memory.Held == nil || len(got.Memory.Replaced) != 2 {
+		t.Errorf("the memory lost a slot: %+v", got.Memory)
+	}
+
+	// An empty memory writes no empty keys inside it, so a one-field memory stays small.
+	mb, err := json.Marshal(&CouncilMemory{Dismissed: []string{"k"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(mb) != `{"dismissed":["k"]}` {
+		t.Errorf("a memory with only a dismissed key writes %s", mb)
+	}
+}
