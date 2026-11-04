@@ -77,6 +77,9 @@ So:
   council through `wsh council` sees the proposal the person pinned.
 - Pinning or unpinning does **not** rewrite the saved document on disk: the saved file gets the section at its next
   save.
+- The pin is for display only: no seat's prompt and no summary prompt mentions it, unlike a thumb (`writeThumbs`,
+  `pkg/council/prompts.go:1002`). "Summarize again" does not build The answer around it, and pinning does not raise
+  the banner. A re-summarize keeps the pin: it lives on the council, not on the Summary.
 
 ## Out of scope
 
