@@ -2471,6 +2471,7 @@ declare global {
         replies?: CouncilReply[];
         picks?: {[key: string]: string[]};
         summary?: CouncilSummary;
+        memory?: CouncilMemory;
         activity?: {[key: string]: CouncilActivity};
         failed?: {[key: string]: CouncilFailure};
         skips?: CouncilSkip[];
@@ -2638,6 +2639,42 @@ declare global {
         namevi?: string;
         roles: string[];
         coordinator: string;
+    };
+
+    // council.CouncilMemory
+    type CouncilMemory = {
+        chosen?: CouncilMemoryDirection;
+        replaced?: CouncilMemoryDirection[];
+        suggestion?: CouncilMemoryCard;
+        held?: CouncilMemoryCard;
+        dismissed?: string[];
+        changed?: number;
+    };
+
+    // council.CouncilMemoryCard
+    type CouncilMemoryCard = {
+        kind: string;
+        text: string;
+        reason?: string;
+        how?: string;
+        source?: string;
+        round?: number;
+        from?: string;
+        messages?: string[];
+        edited?: boolean;
+        at: number;
+    };
+
+    // council.CouncilMemoryDirection
+    type CouncilMemoryDirection = {
+        text: string;
+        how: string;
+        source?: string;
+        round?: number;
+        from?: string;
+        at: number;
+        replaced?: number;
+        ended?: string;
     };
 
     // council.CouncilProposal
