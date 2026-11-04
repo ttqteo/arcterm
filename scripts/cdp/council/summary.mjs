@@ -282,7 +282,9 @@ export const councilSummary = {
                 return Math.max(0, Math.min(target, box.scrollHeight - box.clientHeight));
             })()`);
             await click(h, `${BAR} [data-council-jump='directions']`);
-            await sleep(600);
+            // the link glides there: a moment after the click the box is on its way, short of where it lands
+            const midway = await h.ev(`new Promise((r) => setTimeout(() => r(document.querySelector(${q(BOX)}).scrollTop), 60))`);
+            await sleep(1000);
             const placed = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
                 const bar = document.querySelector(${q(BAR)});
@@ -311,8 +313,45 @@ export const councilSummary = {
                 sticky === "sticky" &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
                 placed.barTop === placed.boxTop &&
+                midway < expected - 4 &&
                 chevronsOk;
-            return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, chevrons }) };
+            return { ok, detail: JSON.stringify({ entries, sticky, expected, midway, placed, chevrons }) };
+        });
+
+        await step("the Report tab, clicked while shown, glides the box down past the cover to the tab bar", async () => {
+            const BAR = `${SUMMARY} [data-council-tabbar]`;
+            const BOX = `${SUMMARY} [data-council-scroll]`;
+            // direction 1 open gives the box room to scroll the bar to its top, as in the step above
+            await openDirection(h, 1);
+            await sleep(600);
+            await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
+            const expected = await h.ev(`(() => {
+                const box = document.querySelector(${q(BOX)});
+                const cover = box.querySelector("[data-council-cover]");
+                return Math.max(0, Math.min(cover.offsetHeight, box.scrollHeight - box.clientHeight));
+            })()`);
+            const pointer = await h.ev(`getComputedStyle(document.querySelector(${q(`${BAR} [data-council-tab='summary']`)})).cursor`);
+            await click(h, `${BAR} [data-council-tab='summary']`);
+            const midway = await h.ev(`new Promise((r) => setTimeout(() => r(document.querySelector(${q(BOX)}).scrollTop), 60))`);
+            await sleep(1000);
+            const placed = await h.ev(`(() => {
+                const box = document.querySelector(${q(BOX)});
+                const bar = document.querySelector(${q(BAR)});
+                return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
+            })()`);
+            // still the Report: the click scrolled, it opened no other view
+            const stillReport = await exists(h, `${BAR} [data-council-tab='summary'][aria-selected='true']`);
+            await h.shot("cdp-shots/council-summary-report-tab.png");
+            await click(h, `${DIRECTION(1)}[data-council-direction-toggle]`);
+            await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
+            const ok =
+                pointer === "pointer" &&
+                stillReport &&
+                expected > 0 &&
+                Math.abs(placed.scrollTop - expected) <= 4 &&
+                placed.barTop === placed.boxTop &&
+                midway < expected - 4;
+            return { ok, detail: JSON.stringify({ pointer, stillReport, expected, midway, placed }) };
         });
 
         await step("a seat in the glance opens the Discussion on that seat's messages (its filter on) and the Ideas rail on the ideas it wrote or replied to, its reply's link opens that idea's thread with the reply in it, and Everyone brings the rest back", async () => {
