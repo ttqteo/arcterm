@@ -7,7 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,12 +36,13 @@ var workflowScanModel = func(ctx context.Context, spec consult.RuntimeSpec, cwd,
 // workflowScanNow is the scan's clock, the end of its window. A var so tests can place the window.
 var workflowScanNow = time.Now
 
-// runProjectName is the project a run belongs to: its channel's name, else the base name of its project path.
+// runProjectName is the project a run belongs to: its channel's name, else the base name of its project path, split on
+// either separator so a run made on Windows names its project on the Mac too.
 func runProjectName(run *waveobj.Run, channels map[string]*waveobj.Channel) string {
 	if ch := channels[run.ChannelOID]; ch != nil && ch.Name != "" {
 		return ch.Name
 	}
-	return filepath.Base(filepath.Clean(run.ProjectPath))
+	return path.Base(strings.ReplaceAll(run.ProjectPath, `\`, "/"))
 }
 
 func windowDaysOr(days int) int {

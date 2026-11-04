@@ -156,8 +156,12 @@ func nearText(r citeRef) string {
 
 // findCited resolves a ref's path against roots: the file's full path, or "" and why there is none. A relative path is
 // joined to each root in turn, an absolute one must lie under a root, and a root that is itself a file matches only that
-// file. Nothing that leaves its root counts.
+// file. Nothing that leaves its root counts, and a Windows drive or share path read on another OS (a report written on
+// the PC, checked on the Mac) lies outside every root.
 func findCited(path string, roots []string) (full, why string) {
+	if !filepath.IsAbs(path) && windowsAbs(path) {
+		return "", "path is outside the folders this council reads"
+	}
 	inside, sawDir := false, false
 	for _, root := range roots {
 		if root = strings.TrimSpace(root); root == "" {
@@ -189,6 +193,15 @@ func findCited(path string, roots []string) (full, why string) {
 	default:
 		return "", "path is outside the folders this council reads"
 	}
+}
+
+// windowsAbs is a path absolute on Windows: a drive letter then a separator (C:\x, C:/x), or a share (\\host\x).
+func windowsAbs(p string) bool {
+	if strings.HasPrefix(p, `\\`) {
+		return true
+	}
+	return len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') &&
+		('a' <= p[0] && p[0] <= 'z' || 'A' <= p[0] && p[0] <= 'Z')
 }
 
 // readLines streams the file and returns its lines numbered lo to hi (1-based, line ends dropped) without keeping the
