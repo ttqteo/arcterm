@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     agentRuntime,
+    councilCentreProject,
     draftShown,
     filterProjects,
     focusLaunchProject,
@@ -635,5 +636,24 @@ describe("focusLaunchProject", () => {
     });
     it("falls back to the focused agent's project when the Overview's is not registered", () => {
         expect(focusLaunchProject("arcterm", names, "gone")).toBe("arcterm");
+    });
+});
+
+describe("councilCentreProject", () => {
+    const rows = [
+        { name: "arcterm", path: "/Users/me/dev/arcterm" },
+        { name: "notes", path: "C:\\Users\\me\\notes" },
+    ];
+    it("names the project of the council on screen", () => {
+        expect(councilCentreProject("discussion", null, "/Users/me/dev/arcterm", rows)).toBe("arcterm");
+        expect(councilCentreProject("summary", "/elsewhere", "/Users/me/dev/arcterm/", rows)).toBe("arcterm");
+    });
+    it("names Setup's project while Setup shows, whichever council was open before", () => {
+        expect(councilCentreProject("setup", "c:/users/me/notes", "/Users/me/dev/arcterm", rows)).toBe("notes");
+    });
+    it("names none for a council in no registered project, or none shown", () => {
+        expect(councilCentreProject("map", null, "/tmp/scratch", rows)).toBe("");
+        expect(councilCentreProject("discussion", null, undefined, rows)).toBe("");
+        expect(councilCentreProject("setup", null, "/Users/me/dev/arcterm", rows)).toBe("");
     });
 });

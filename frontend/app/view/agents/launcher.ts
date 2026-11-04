@@ -6,6 +6,7 @@
 // the Start rows and their digits, the words the dialog shows for a pick, the project filter, and what a key does where
 // focus is. No React, no Wave runtime imports.
 
+import { councilProjectKey, type CouncilView } from "./councilmodel";
 import { isRuntimeOffered, runtimeLaunchLabel, type Runtime } from "./launch";
 import { SHAPE_CARDS, type RunShape } from "./runconfig";
 
@@ -193,6 +194,22 @@ export function focusLaunchProject(
         }
     }
     return null;
+}
+
+// The project a council in the centre is about, as focusLaunchProject's `overviewProject`: Setup's project while Setup
+// shows, else the shown council's, by the name of the registered row whose root it is; "" when none is.
+export function councilCentreProject(
+    view: CouncilView,
+    setupProject: string | null,
+    councilProject: string | null | undefined,
+    rows: readonly { name: string; path: string }[]
+): string {
+    const path = view === "setup" ? setupProject : councilProject;
+    if (!path) {
+        return "";
+    }
+    const key = councilProjectKey(path);
+    return rows.find((r) => r.path !== "" && councilProjectKey(r.path) === key)?.name ?? "";
 }
 
 // Home: the Project column's last row, which starts Claude Code (ask-only, askStartupCommand) or a terminal in the home

@@ -36,6 +36,7 @@ import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import { launchAccountName, projectLaunchAccount } from "./claudeaccount";
+import { councilAtom, councilListAtom, councilSelAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
     askStartupCommand,
@@ -49,6 +50,7 @@ import {
 } from "./launch";
 import {
     agentRuntime,
+    councilCentreProject,
     filterProjects,
     focusLaunchProject,
     footerLine,
@@ -158,6 +160,16 @@ import { useWorkerCapacity } from "./workercapacitystore";
 // the draft's Clear are tabIndex -1 because they are for the pointer
 const FOCUSABLE =
     'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+
+// the project path of the council the centre shows, read as showCouncil reads it: its own atom, else the list of all
+function shownCouncilProject(): string | undefined {
+    const id = globalStore.get(councilSelAtom);
+    if (id == null) {
+        return undefined;
+    }
+    return (globalStore.get(councilAtom(id)) ?? globalStore.get(councilListAtom(""))?.find((c) => c.id === id))
+        ?.project;
+}
 
 function StartMark({ id }: { id: StartRowId }) {
     if (id === "terminal") {
@@ -431,7 +443,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     }, [open, rows, prefill]);
 
     // Opened without a project of its own, the dialog starts on the project the Agent surface shows: the one whose
-    // Overview is in the centre, else that of the agent or terminal in focus. A prefill names its own, an open given a project (a project's Overview) names it too, and a kept
+    // Overview or council (its Setup too) is in the centre, else that of the agent or terminal in focus. A prefill names its own, an open given a project (a project's Overview) names it too, and a kept
     // draft keeps the project it was written for. Once per open, when the project list is there (it may arrive after the
     // open, with the prefill's effect above).
     const focusPickRef = useRef(false);
@@ -455,7 +467,18 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         const agents = globalStore.get(model.agentsAtom);
         const focused = [...agents, ...globalStore.get(model.terminalsAtom)].find((a) => a.id === id);
         const name = focused ? agentProject(globalStore.get(model.lineageAtom), agents, focused) : "";
-        const overview = globalStore.get(centerModeAtom) === "project" ? globalStore.get(overviewProjectAtom) : "";
+        const center = globalStore.get(centerModeAtom);
+        const overview =
+            center === "project"
+                ? globalStore.get(overviewProjectAtom)
+                : center === "council"
+                  ? councilCentreProject(
+                        globalStore.get(councilViewAtom),
+                        globalStore.get(councilSetupProjectAtom),
+                        shownCouncilProject(),
+                        rows
+                    )
+                  : "";
         const names = rows.map((r) => r.name);
         const pick = focusLaunchProject(name, names, overview);
         if (pick != null) {
