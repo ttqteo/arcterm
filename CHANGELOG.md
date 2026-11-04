@@ -49,6 +49,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - While a council's experts are still on their first ideas, the cards in Discussion draw their tables, lists and highlighted sentences instead of showing raw `|` and `==` marks.
 - Open DAG no longer stalls before the window appears: the window opens at once with a placeholder, and the graph fills in a moment later.
 - A click on an idea in a council's Ideas tab now shows which message it is: the row and its message in the channel both wear an accent ring, the message rings wider for a moment where it lands, and each idea in the channel carries its `Idea N` number, as on the tab.
+- On Windows, heavy jobs (builds, typechecks, test suites) and run workers no longer go one at a time just because the commit charge is past your RAM, which a pagefile allows: they wait only when free RAM drops under a tenth.
+- Dragging a file from the Files tab onto a terminal no longer types a name holding a line break (which a shell would run as Enter) or a double quote (which ends the quoting early): such a path is left out and a warning names it.
 
 ## 1.0.0 — 2026-11-04
 

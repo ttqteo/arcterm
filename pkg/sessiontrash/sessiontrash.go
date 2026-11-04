@@ -237,20 +237,30 @@ func MoveEntry(src, dst string) error {
 }
 
 // copyThenRemove copies a file or a directory tree to dst and then removes src. A copy that fails part way
-// is removed again and leaves src as it was.
+// is removed again and leaves src as it was. A removal that fails part way (a locked file on Windows) has
+// already deleted some of src, so dst then holds the only whole copy: what src lost is copied back and dst
+// is dropped only once src is whole again; if that fails too, dst stays and the error names it.
 func copyThenRemove(src, dst string) error {
-	if err := copyTree(src, dst); err != nil {
+	if err := copyTree(src, dst, false); err != nil {
 		_ = os.RemoveAll(dst)
 		return err
 	}
-	if err := os.RemoveAll(src); err != nil {
+	if err := removeAll(src); err != nil {
+		if rerr := copyTree(dst, src, true); rerr != nil {
+			return fmt.Errorf("removing the original: %w (putting it back failed: %v; the whole copy is kept at %s)", err, rerr, dst)
+		}
 		_ = os.RemoveAll(dst)
 		return fmt.Errorf("removing the original: %w", err)
 	}
 	return nil
 }
 
-func copyTree(src, dst string) error {
+// removeAll is os.RemoveAll; a test swaps it to fail part way.
+var removeAll = os.RemoveAll
+
+// copyTree copies src to dst. With skipExisting, an entry already at dst is left as it is (putting back
+// only what a failed removal deleted); otherwise an existing file is an error.
+func copyTree(src, dst string, skipExisting bool) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -263,6 +273,11 @@ func copyTree(src, dst string) error {
 		info, err := d.Info()
 		if err != nil {
 			return err
+		}
+		if skipExisting && !d.IsDir() {
+			if _, err := os.Lstat(target); err == nil {
+				return nil
+			}
 		}
 		switch {
 		case d.IsDir():
