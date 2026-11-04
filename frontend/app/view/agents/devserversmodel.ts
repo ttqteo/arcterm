@@ -33,6 +33,8 @@ export interface DevServerRow {
 const LABEL_MAX = 60;
 // a first token that only launches the script after it: the label starts at the script
 const INTERPRETERS = new Set(["node", "bun", "deno", "python", "python3", "ruby"]);
+// the flags that hand an interpreter its script inline (node -e / --eval, python -c, ruby -e)
+const INLINE_SCRIPT_FLAGS = new Set(["-e", "--eval", "-c"]);
 // script names that say nothing about the package they sit in: the label names the package's directory instead
 const GENERIC_SCRIPTS = new Set(["cli", "index", "bin", "main", "run"]);
 // directories between such a script and its package's directory
@@ -89,6 +91,10 @@ export function serverLabel(row: DevServerRow): string {
     const first = pathSegments(tokens[0]).pop() ?? tokens[0];
     if (tokens.length > 1 && INTERPRETERS.has(stripExtension(first).toLowerCase())) {
         tokens.shift();
+        // `node -e <script>`: the script is the name, not its flag
+        if (tokens.length > 1 && INLINE_SCRIPT_FLAGS.has(tokens[0])) {
+            tokens.shift();
+        }
     }
     if (isPath(tokens[0])) {
         tokens[0] = shortenPath(tokens[0]);
