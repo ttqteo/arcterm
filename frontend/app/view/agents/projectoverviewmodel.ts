@@ -408,6 +408,12 @@ export function firstRows(rows: readonly HistoryRow[], limit: number): HistoryRo
     return rows.slice(0, end);
 }
 
+// whether rows[i] is the last of its session's nested rows, where History's tree line turns into its └; a session's
+// nested rows follow it together (historyRows, firstRows), so the next row is either a sibling or a new top-level row
+export function isLastChild(rows: readonly HistoryRow[], i: number): boolean {
+    return rows[i].nested && !rows[i + 1]?.nested;
+}
+
 // A History session row's second line: its branch, runtime, model and tokens, each only when known.
 export function historySessionLine(s: Pick<LiveSession, "branch" | "runtime" | "model" | "tokenstotal">): string {
     return [

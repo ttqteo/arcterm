@@ -13,6 +13,7 @@ import {
     firstRows,
     historyRows,
     historySessionLine,
+    isLastChild,
     isQuiet,
     overviewRows,
     projectSessions,
@@ -569,6 +570,21 @@ describe("firstRows", () => {
 
     it("returns every row when the limit is past the end", () => {
         expect(firstRows(ROWS, 50)).toHaveLength(6);
+    });
+});
+
+describe("isLastChild", () => {
+    const top = (key: string) => ({ key, nested: false }) as HistoryRow;
+    const child = (key: string) => ({ key, nested: true }) as HistoryRow;
+    const ROWS = [top("a"), child("a1"), child("a2"), top("b"), top("c"), child("c1")];
+    const last = (rows: HistoryRow[]) => rows.filter((_, i) => isLastChild(rows, i)).map((r) => r.key);
+
+    it("marks the nested row a sibling does not follow, the list's end included", () => {
+        expect(last(ROWS)).toEqual(["a2", "c1"]);
+    });
+
+    it("never marks a top-level row", () => {
+        expect(last([top("a"), top("b")])).toEqual([]);
     });
 });
 

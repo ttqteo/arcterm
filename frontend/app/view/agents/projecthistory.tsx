@@ -25,6 +25,7 @@ import {
     HISTORY_PAGE,
     historyRows,
     historySessionLine,
+    isLastChild,
     projectSessions,
     type CouncilPeek,
     type HistoryItem,
@@ -39,6 +40,9 @@ const ROW =
 // a child row sits 28px in, its divider starting there too
 const NESTED_ROW =
     "relative flex w-full cursor-pointer items-center gap-[10px] py-[9px] pl-10 pr-3 text-left before:absolute before:left-10 before:right-0 before:top-0 before:h-px before:bg-edge-mid hover:bg-surface-hover";
+// the tree line a child row hangs off its session on, in the 40px it sits in: the stem runs on through a row a sibling
+// follows (├, and through that row's open peek), and turns into └ on the last one. Its turn meets the title's first line.
+const STEM = "pointer-events-none absolute left-[21px] top-0 bottom-0 w-[2px] bg-edge-strong";
 const SMALL_BTN =
     "h-[26px] flex-none cursor-pointer rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[12px] text-secondary hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -165,17 +169,40 @@ function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
     );
 }
 
+function TreeLine({ last }: { last: boolean }) {
+    if (last) {
+        return (
+            <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-[21px] top-0 h-[20px] w-[13px] rounded-bl-[6px] border-b-2 border-l-2 border-edge-strong"
+            />
+        );
+    }
+    return (
+        <>
+            <span aria-hidden="true" className={STEM} />
+            <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-[21px] top-[18px] h-[2px] w-[13px] bg-edge-strong"
+            />
+        </>
+    );
+}
+
 // A council row unfolded: what it was asked, its answer or its error, its top directions, then Open council, which is
 // what takes the person to it (the Agent centre and its tree row), and Pin (Pinned on a pinned one), which keeps it at
 // the top of its project in the tree. It lines up under the row's title.
 function CouncilPeekBody({
     peek,
     nested,
+    stem,
     council,
     onOpen,
 }: {
     peek: CouncilPeek;
     nested: boolean;
+    // a sibling follows the row: the tree line runs on through the peek to it
+    stem: boolean;
     council: Council | undefined;
     onOpen: () => void;
 }) {
@@ -183,8 +210,9 @@ function CouncilPeekBody({
     return (
         <div
             data-history-peek
-            className={cn("flex flex-col items-start gap-[10px] pb-3 pr-3", nested ? "pl-10" : "pl-3")}
+            className={cn("relative flex flex-col items-start gap-[10px] pb-3 pr-3", nested ? "pl-10" : "pl-3")}
         >
+            {stem ? <span aria-hidden="true" className={STEM} /> : null}
             {peek.question !== "" ? (
                 <p className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-secondary">
                     {peek.question}
@@ -333,7 +361,7 @@ export function HistoryColumn({
         <div className={PANEL}>
             {h.sessionsError ? <ErrorRow text="Could not read sessions." onRetry={h.retrySessions} /> : null}
             {runsError != null ? <ErrorRow text={`Could not read runs: ${runsError}.`} onRetry={h.retryRuns} /> : null}
-            {shown.map((row) => {
+            {shown.map((row, i) => {
                 if (row.kind === "session") {
                     const s = row.session;
                     return (
@@ -364,6 +392,7 @@ export function HistoryColumn({
                 const councilId = row.kind === "council" ? row.councilId : null;
                 const council = councilId != null ? h.councils?.find((c) => c.id === councilId) : undefined;
                 const pinned = council != null && isPinnedCouncil(council);
+                const last = isLastChild(shown, i);
                 const button = (
                     <button
                         type="button"
@@ -397,6 +426,7 @@ export function HistoryColumn({
                         }
                         className={cn(row.nested ? NESTED_ROW : ROW, open && "hover:bg-transparent")}
                     >
+                        {row.nested ? <TreeLine last={last} /> : null}
                         <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
                             <span className="truncate text-[13px] text-primary">{marked(row.title, q)}</span>
                             <span className="truncate text-[12px] text-muted">
@@ -435,6 +465,7 @@ export function HistoryColumn({
                             <CouncilPeekBody
                                 peek={row.peek}
                                 nested={row.nested}
+                                stem={row.nested && !last}
                                 council={council}
                                 onOpen={() => openItem(row)}
                             />
