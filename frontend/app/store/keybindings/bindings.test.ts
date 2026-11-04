@@ -219,7 +219,11 @@ describe("close-agent chord", () => {
         expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(false);
         vi.mocked(confirmCloseSession).mockClear();
         b.run(ctx("agent"));
-        expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), m);
+        expect(confirmCloseSession).toHaveBeenCalledWith(
+            expect.objectContaining({ id: "a1" }),
+            m,
+            "Mod+Shift+W"
+        );
     });
 });
 
@@ -2469,7 +2473,7 @@ describe("agent:done-close", () => {
     it("closes the focused agent when its header offers Done", () => {
         const model = doneModel({ state: "idle", committed: true });
         expect(press(model)).not.toBe(false);
-        expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), model);
+        expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), model, "Alt+W");
     });
 
     it("passes the key to the terminal when nothing is offered", () => {
