@@ -1,7 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { jobQueueAtom, startJobQueueFeed } from "./jobqueuestore";
 
 const reads: { resolve: (d: JobQueueData) => void }[] = [];
 let handler: ((e: { data: unknown }) => void) | null = null;
@@ -32,9 +34,6 @@ vi.mock("@/app/view/agents/consumersstore", async () => ({ consumersOpenAtom: (a
 vi.mock("@/app/view/agents/machineserversstore", async () => ({
     machineServersOpenAtom: (await import("jotai")).atom(false),
 }));
-
-const { globalStore } = await import("@/app/store/jotaiStore");
-const { jobQueueAtom, startJobQueueFeed } = await import("./jobqueuestore");
 
 const snap = (n: number) => ({ jobs: [], slots: n }) as unknown as JobQueueData;
 const flush = () => new Promise((r) => setTimeout(r, 0));
