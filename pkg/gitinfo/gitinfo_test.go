@@ -2099,11 +2099,6 @@ func TestCompareChangesTipsIncludesBaseSideChanges(t *testing.T) {
 	}
 }
 
-// Roughly 2.8MB of plausible text — the shape of a regenerated lockfile, which is the case the diff
-// cap exists for. Built once for the whole run rather than per test; three of the four tests below
-// write it.
-var hugeBody = strings.Repeat(strings.Repeat("x", 45)+"\n", 60000)
-
 // numbered returns n lines "line1\n".."lineN\n".
 func numbered(n int) string {
 	var b strings.Builder

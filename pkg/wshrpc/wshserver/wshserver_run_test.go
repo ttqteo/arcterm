@@ -22,8 +22,6 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-func bptr(b bool) *bool { return &b }
-
 // captureClient records every event the broker sends, for asserting waveobj broadcasts in tests.
 type captureClient struct {
 	mu     sync.Mutex

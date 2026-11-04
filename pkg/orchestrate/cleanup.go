@@ -49,8 +49,9 @@ func cleanupGivenUp(t *waveobj.TaskNode) bool {
 	return t.CleanupAttempts >= MaxCleanupAttempts
 }
 
-// HasCleanupDebt reports whether any merged task still owns a worktree waiting
-// on cleanup, so digest health can keep terminal DAGs with debt in needs-you.
+// HasCleanupDebt reports whether any task still carries cleanup debt (PendingCleanupTasks: a merged or cancelled
+// task's tree, or an unmerged task's left-behind directories), so digest health can keep terminal DAGs with debt in
+// needs-you.
 func HasCleanupDebt(g *waveobj.TaskGroup) bool {
 	for i := range g.Tasks {
 		if g.Tasks[i].CleanupPending || g.Tasks[i].CleanupError != "" {
@@ -60,7 +61,7 @@ func HasCleanupDebt(g *waveobj.TaskGroup) bool {
 	return false
 }
 
-// CleanupTaskWorktree removes one merged task's worktree idempotently and records the outcome on the
+// CleanupTaskWorktree removes one task's worktree idempotently and records the outcome on the
 // task node; the caller persists the group and publishes. Task state and merge identity are never
 // disturbed: a cleanup failure cannot turn an already-landed merge back into a failed task. The
 // removal half is the same RemoveRunWorktree used elsewhere; the helper only guarantees the state

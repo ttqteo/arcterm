@@ -1,6 +1,7 @@
 # Job queue — design
 
-Status: design settled 2026-10-08.
+Status: superseded. The queue that shipped is `2026-10-09-heavy-job-queue-design.md` (`pkg/jobqueue`); this earlier
+design was not built, and is kept only for the reasoning it records.
 
 ## Problem
 
