@@ -1663,3 +1663,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   giao diện) → the cards read Trải nghiệm, Canh RAM, Người mới, Soi lỗi, untruncated, with initials T, C, M, S; while it
   runs, the green call bar under the header sits ~10px below the Discussion tab's underline, not touching it.
   Unit tests and the typecheck only (`roles.go`, `councildiscussion.tsx`); no dev app was up.
+- [ ] (arcterm) **Council evidence chips don't select.** In a council's Discussion or Report, drag across a claim's
+  evidence row → the file, screenshot, `+N` and label chips ("Đã đọc code") never turn blue; the Weak and Wrong cite
+  chips still select, so their reason can be copied. Not tried in the app (`councilsourcespanel.tsx`,
+  `councilchecks.tsx`).

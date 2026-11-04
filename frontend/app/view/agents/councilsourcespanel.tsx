@@ -33,7 +33,7 @@ const NO_SOURCES = atom<CouncilSourcesView | null>(null);
 
 // a cited file as a small chip (the editor-tab look): its icon, its name cut short in a 260px chip, its lines after it
 const CHIP =
-    "inline-flex h-[24px] min-w-0 max-w-[260px] items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px] text-[12.5px]";
+    "inline-flex h-[24px] min-w-0 max-w-[260px] select-none items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px] text-[12.5px]";
 
 // a chip's file name keeps its width (up to a cap, then it cuts itself) and the cited lines after it are what gives way:
 // a long list (`:41, 110, 423, 449, …`) ends in an ellipsis, and the title holds all of it
@@ -157,7 +157,7 @@ export function EvidenceChips({
                         CHIP,
                         // a weak claim is a sentence, not a file name: it wraps inside the chip instead of
                         // spilling out of CHIP's fixed 24px height onto the row below
-                        "h-auto min-h-[24px] max-w-[520px] py-[3px] leading-[1.4] border-warning/40 text-warning-soft"
+                        "h-auto min-h-[24px] max-w-[520px] select-text py-[3px] leading-[1.4] border-warning/40 text-warning-soft"
                     )}
                 >
                     {weak}

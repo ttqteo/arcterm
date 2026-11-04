@@ -51,7 +51,7 @@ export function ClaimBadgeChip({ badge, className }: { badge: ClaimBadge; classN
             data-check={badge.label}
             title={badge.meaning}
             className={cn(
-                "inline-flex h-[24px] flex-none items-center gap-[5px] whitespace-nowrap rounded-[6px] px-[8px] text-[12.5px] font-semibold",
+                "inline-flex h-[24px] flex-none select-none items-center gap-[5px] whitespace-nowrap rounded-[6px] px-[8px] text-[12.5px] font-semibold",
                 CHECK_TONE[badge.label].badge,
                 className
             )}
