@@ -1729,3 +1729,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   through with the same pill; the author's reply reads `withdrew it` with a one-line reason, or only the pill when it gave
   none, and never counts as an "agrees" chip. An older council's "Withdrawn." reply shows as the pill alone. Unit tests
   and the typecheck only (`councilchat.tsx` `IdeaMessage`, `ThreadIdea`, `ReplyMessage`); no dev app was up.
+- [ ] (arcterm) **Fold button without the pet's name.** The app bar right of + New shows a 26px square with only the
+  pet (Sprout, Minion or Spider-Man), no name beside it; hovering it says `Fold into <name>`, a click folds, a right-click
+  still opens the fold menu. ESLint only (`app-bar.tsx`); no dev app was up.
