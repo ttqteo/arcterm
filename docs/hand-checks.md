@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **HTML previews keep working under the new CSP.** In a live arcterm open a design canvas, a brainstorm
+  board and an HTML file in the File tab → each draws as before (fonts, React boards, images), the canvas reports its
+  height and the File tab keeps its scroll; DevTools shows no `Refused to` line. Checked only in headless Chrome against
+  the 145 boards in `.superpowers/design` with the same header (`pkg/htmlserve` `CSP`).
 - [ ] (arcterm) **Council seats on opus by responsibility.** After the next launch (the arc mod carries the new skill),
   ask a Claude session in a live arcterm for a council on a thesis question ("does the method in chapter 3 hold?") →
   before the Token burn card it says in one line which seats go to opus and why, with the `wsh council estimate`

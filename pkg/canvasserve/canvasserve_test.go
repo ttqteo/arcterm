@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/wavetermdev/waveterm/pkg/htmlserve"
 )
 
 const boardBody = "<!doctype html><p>board</p>"
@@ -105,6 +107,9 @@ func TestHandlerServesARegisteredFolder(t *testing.T) {
 	}
 	if head := get(t, http.MethodHead, base+"/topic/project/Main.dc.html"); head.StatusCode != http.StatusOK {
 		t.Errorf("HEAD board: status %d", head.StatusCode)
+	}
+	if got := res.Header.Get("Content-Security-Policy"); got != htmlserve.CSP {
+		t.Errorf("board Content-Security-Policy %q, want htmlserve.CSP", got)
 	}
 }
 

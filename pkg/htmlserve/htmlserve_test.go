@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -138,6 +139,65 @@ func TestHandlerRefusesWhatWasNotRegistered(t *testing.T) {
 	} {
 		if res := get(t, tc.method, tc.path); res.StatusCode != tc.want {
 			t.Errorf("%s: status %d, want %d", name, res.StatusCode, tc.want)
+		}
+	}
+}
+
+// directive -> its sources, from a Content-Security-Policy header
+func parseCSP(policy string) map[string][]string {
+	out := map[string][]string{}
+	for _, part := range strings.Split(policy, ";") {
+		fields := strings.Fields(part)
+		if len(fields) > 0 {
+			out[fields[0]] = fields[1:]
+		}
+	}
+	return out
+}
+
+var has = slices.Contains[[]string]
+
+func TestPolicyKeepsAPageOffTheNetwork(t *testing.T) {
+	p := parseCSP(CSP)
+	// the channels a page could send what it holds through: none may reach an arbitrary host
+	for _, d := range []string{"default-src", "script-src", "connect-src", "frame-src", "worker-src", "form-action"} {
+		src, ok := p[d]
+		if !ok {
+			t.Errorf("%s missing from %q", d, CSP)
+			continue
+		}
+		for _, wild := range []string{"*", "https:", "http:", "ws:", "wss:"} {
+			if has(src, wild) {
+				t.Errorf("%s allows %s", d, wild)
+			}
+		}
+	}
+	if !has(p["form-action"], "'none'") || !has(p["object-src"], "'none'") {
+		t.Errorf("form-action %v object-src %v, want 'none'", p["form-action"], p["object-src"])
+	}
+	// what pages already rely on: the injected inline scripts, the design runtime's Babel and React from unpkg,
+	// a page's own files, Google Fonts
+	for d, want := range map[string][]string{
+		"script-src":  {"'self'", "'unsafe-inline'", "'unsafe-eval'", "https://unpkg.com"},
+		"connect-src": {"'self'"},
+		"style-src":   {"'self'", "'unsafe-inline'", "https://fonts.googleapis.com"},
+		"font-src":    {"'self'", "data:", "https://fonts.gstatic.com"},
+		"img-src":     {"'self'", "data:", "blob:"},
+	} {
+		for _, s := range want {
+			if !has(p[d], s) {
+				t.Errorf("%s %v lacks %s", d, p[d], s)
+			}
+		}
+	}
+}
+
+func TestHandlerSendsThePolicyWithEveryFile(t *testing.T) {
+	dir := pageDir(t)
+	b := base(t, filepath.Join(dir, "index.html"))
+	for _, rel := range []string{"/index.html", "/img/a.png"} {
+		if got := get(t, http.MethodGet, b+rel).Header.Get("Content-Security-Policy"); got != CSP {
+			t.Errorf("GET %s: Content-Security-Policy %q, want %q", rel, got, CSP)
 		}
 	}
 }
