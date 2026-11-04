@@ -920,11 +920,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after 2 minutes: the beam. The footer pet is
   gone in the Office and back outside it.
 
-**2026-10-16 (initiative `i` keycap dropped)**
-
-- [ ] (arcterm) An agent with an initiative: the header shows `◇ <initiative> ⌄` with no `i` keycap after it; hovering
-  it names `(i)`, and `i` (focus outside the TUI) still opens the popover. `agentheader.tsx`.
-
 **2026-10-16 (skim split out of arc-view)**
 
 - [ ] (arcterm) In a new `claude` session a long explanation draws dimmed around its highlighted sentences, `/skim`
@@ -974,12 +969,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   or channel row lands there. After work hours the slips dim with the office. The CDP scenario
   `office-needs-you-board` ran on a fixture only and pressed no act that calls the server.
 
-**2026-10-16 (Jarvis without the office)**
-
-- [ ] Open Jarvis's Brief: the Runs list's header shows the run-kind toggle and no **office** chip, and no floor draws
-  under the runs. Sprout walks the footer as before; its bubble and its peek open from it (not from a desk). The
-  Cockpit's Office is unchanged. `briefsurface.tsx`, `petview.tsx`; the commit that deleted `view/jarvis/office*`.
-
 **2026-10-16 (kael sync: memory hygiene, autonomous runs, wider plan review, radar kinds)**
 
 - [ ] (arcterm) Setup → Memory: the tab sits between Learned and Project; a project row shows its index size and
@@ -992,8 +981,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   question back; the palette offers **Go autonomous** / **Ask me again** on the run. `briefrunsheet.tsx`.
 - [ ] (arcterm) A run's plan review: five reviewer rows in the Agent tree, each titled `Plan review · <lens>`, and one
   chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
-- [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
-  `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
 - [ ] (arcterm) Agent sidebar → a project's Conversations: an ended orchestrator run whose lead landed in `arc-wt`
   shows as one run entry under that project, not missing (counted in "elsewhere") or under a key like `006c403f`.
   `agentsidebarmodel.ts` `projectKeyResolver`, `sessionruns.go` `fillEngineTreeRoots`.
@@ -1239,8 +1226,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   with the reply in it. `petpeek.tsx`, `peterrand.tsx`.
 - [ ] Full window, Jarvis popup (Sprout in the footer): under the field one muted line `Claude Code ⌄ · <project> ⌄`;
   each part opens its picker and the choice sticks. `peterrand.tsx`, `harnesspicker.tsx` (`bare`).
-- [ ] Folded hover card's pause row: the box reads "Custom…"; clicking in shows "e.g. 2h, 30m, or until 14:30";
-  typing `2h` turns it into "until <time>". `sprout-mini.tsx`.
 
 **2026-10-13 (Spider theme: blue accent)**
 
@@ -1251,12 +1236,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (Don't fold for, on the folded Sprout)**
 
-- [ ] (arcterm) **The folded Sprout's card holds the auto fold off.** Turn on "Fold when you leave arcterm" (right-click
-  the app bar's Sprout), leave for an app that covers arcterm so it folds, and rest the cursor on Sprout: the card ends
-  with "Restore, don't fold for" and `1 hour`, `till 8:00` and a box. Typing `2h` shows "until …" under it; Enter (or a
-  chip) restores the window, and leaving again does not fold. Folded by hand, the card then reads "No fold until …"
-  with Resume. Check the card is not cut off at the top with four agents listed (the folded window grew to 320x336),
-  and that typing keeps the card open when the cursor leaves it. (`sprout-mini.tsx` `FoldPauseRow`, `foldpause.ts`)
+- [ ] (arcterm) **The folded Sprout's card, the parts the fold pause entry (2026-10-14) leaves out.** Folded by hand,
+  the card reads "No fold until …" with Resume; with four agents listed it is not cut off at the top (the folded window
+  grew to 320x336); and typing in the Custom… box keeps the card open when the cursor leaves it. (`sprout-mini.tsx`
+  `FoldPauseRow`, `foldpause.ts`)
 
 **2026-10-13 (Sleeping and background-task rows in the sidebar)**
 
@@ -1325,9 +1308,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 **2026-10-13 (New agent: Claude account)**
 
 - [ ] (arcterm) **The New agent footer names the Claude account.** With a token account added in Settings → Agents →
-  Claude account, open New agent and pick Claude Code: the footer reads "Starts in <path> · on main · Claude: <label>"
-  (or the /login email while Default is active), and a resume adds it after the branch. Pick Codex or Terminal: the
-  account part goes. With only /login it never shows. Not yet seen in the running app.
+  Claude account, open New agent and pick Claude Code: the footer reads `Claude: <label>` (or the /login email while
+  Default is active), for a new session and a resume alike; pick Codex or Terminal and it goes; with only /login it
+  never shows. `launcher.ts` `footerLine` (since rewritten: it no longer names the path and branch).
 
 **2026-10-13 (App bar usage button)**
 
@@ -1367,10 +1350,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   project's divider, in the tree (its terminal stays open); **Open output** shows that terminal, **Try again** runs the
   install once more. `0f8df9836`, `363ed96be`
 - [ ] (arcterm) **A tool in a Mac build (brew).** On Apple silicon: Setup → Tools → **Install** `glow` runs
-  `brew install glow` in an `Install glow` terminal; then open it with `Cmd+Shift+T`. A Finder-launched app has a short
+  `brew install glow` in an `Install glow` terminal; then open it with `Cmd+Shift+O` (`Cmd+Shift+T` now reopens the agent closed last). A Finder-launched app has a short
   PATH: check the library reads `found at …` for a tool brew put in `/opt/homebrew/bin`, or shows the restart hint,
   and that `brew` itself is found by the install terminal. `0f8df9836`
-- [ ] (arcterm) **A tool in the tree and the centre.** With an agent focused, `Ctrl+Shift+T` → lazygit: a lazygit row
+- [ ] (arcterm) **A tool in the tree and the centre.** With an agent focused, `Ctrl+Shift+O` → lazygit: a lazygit row
   sits under the divider of the agent's project and the tool shows in the centre, in the agent's folder (a worktree
   agent gives the folder chip). `Esc` and the arrows work inside it; a quick `Ctrl+Tab` flips to the agent and back
   with lazygit's screen as it was; quit lazygit and the terminal stays at its shell prompt in that folder, its row now
@@ -1480,13 +1463,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   image copied, a thumbnail appears under it. On a run picked from a goal it lands in the Goal. `launcher.ts`
   launcherKey `paste`, `launchermodal.tsx` onKeyDown.
 
-**2026-10-13 (Background tasks: one green dot, with a count)**
-
-- [ ] (arcterm) **The sidebar's background dot and the rail's running row match.** Have an agent start a command with
-  run_in_background: its sidebar row shows a pulsing green dot with the count beside it (`● 1`), and the rail's
-  Background tasks shows that task with the same pulsing green dot, not the accent colour. `agenttree.tsx`
-  BackgroundDot, `agentdetailsrail.tsx` BG_DOT.
-
 **2026-10-13 (Fold when you leave: stricter, on top; Sprout click opens the chat)**
 
 - [ ] (arcterm) **Auto fold only for a maximized or full-screen app, and Sprout on top of it.** Windows, Fold when you
@@ -1529,14 +1505,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-12 (Background tasks on the sidebar glyph)**
 
-- [ ] (arcterm) **An agent's sidebar ✳ carries its state, and a green dot its background tasks; Close waits for
-  them.** Rows: a working agent's ✳ pulses in the accent colour, an asking one's in yellow, an idle or sleeping one's is
-  grey and still, and the second line has no state dot. Have a Claude agent run something long with
-  `run_in_background` (a `sleep 120`), let its turn end and commit: a green dot pulses slowly on its second line,
-  hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key shows. Within ~15 s of the
-  command ending the dot goes and Close appears. `agenttree.tsx` RuntimeGlyph / BackgroundDot, `donesuggest.ts`.
-  The CDP scenario `sidebar-agent-glyph` covers the colours, the dot and Close on fixture rows; what is left to try by
-  hand is a real task ending and its dot going.
+- [ ] (arcterm) **An agent's sidebar ✳ carries its state; Close waits for its background tasks.** Rows: a working
+  agent's ✳ pulses in the accent colour, an asking one's in yellow, an idle or sleeping one's is grey and still, and the
+  second line has no state dot. Have a Claude agent run something long with `run_in_background` (a `sleep 120`), let its
+  turn end and commit: neither the row's ✓ Close, the header's Close nor its key shows until about 15 s after the
+  command ends. The green background dot this entry first named is gone ("calmer agent rows — no background-task mark");
+  running tasks are rows under the agent now. `agenttree.tsx` RuntimeGlyph, `donesuggest.ts`; the `sidebar-agent-glyph`
+  scenario covers the colours and Close on fixture rows.
 
 **2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
 
