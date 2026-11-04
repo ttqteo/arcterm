@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Brainstorm offers a quick run for a small build.** Brainstorm a small change with no mockup to
+  approve, with the agent writing `"runShape": "quick"` beside the spec → the approve bar reads "Approve and start a
+  quick run" and `<project> · quick run · one worker, no plan`, and Approve opens the launcher on Quick run. A
+  brainstorm with a board still offers the orchestrator run. Agent tab → brainstorm pane; commit 2f79224af.
 - [ ] (arcterm) **Ideas rail click keeps the window still.** In a council's Discussion with the Ideas rail open, click
   an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
   bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
