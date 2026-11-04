@@ -667,6 +667,15 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 	if len(experts) > 0 {
 		fmt.Fprintf(b, "- Experts: %s\n", strings.Join(experts, ", "))
 	}
+	var panel []CouncilExpert
+	for _, e := range c.Experts {
+		if !e.Coordinator {
+			panel = append(panel, e)
+		}
+	}
+	if len(panel) > 1 && len(c.Picks) > 0 {
+		fmt.Fprintf(b, "- Picks: %d experts on %s; picks from one model are not independent votes\n", len(panel), modelsWord(panel))
+	}
 	if c.Harness != "" {
 		fmt.Fprintf(b, "- Harness: %s\n", c.Harness)
 	}

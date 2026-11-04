@@ -435,18 +435,71 @@ func writePicks(b *strings.Builder, c *Council) {
 	}
 	for _, p := range sentProposals(c) {
 		var by []string
+		var seats []CouncilExpert
 		for _, e := range c.Experts {
 			if slices.Contains(c.Picks[e.Id], p.Id) {
 				by = append(by, e.Name)
+				seats = append(seats, e)
 			}
 		}
 		line := fmt.Sprintf("- %s (%s): %d", p.Id, p.Title, len(by))
 		if len(by) > 0 {
-			line += " (" + strings.Join(by, ", ") + ")"
+			line += " (" + strings.Join(by, ", ") + ") · " + modelsWord(seats)
 		}
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("\n")
+	b.WriteString("\n" + picksRule(c) + "\n\n")
+}
+
+// seatModel is the model a seat's answers come from, as picks are told apart by: an agent seat's harness, else its
+// model, "default" when the seat names none.
+func seatModel(e CouncilExpert) string {
+	switch {
+	case IsAgent(e):
+		return "agent " + e.Harness
+	case e.Model != "":
+		return e.Model
+	}
+	return "default"
+}
+
+// modelsOf are the distinct models of seats, in the order met.
+func modelsOf(seats []CouncilExpert) []string {
+	var out []string
+	for _, e := range seats {
+		if m := seatModel(e); !slices.Contains(out, m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// modelsWord says how many models the seats ran on: "1 model (sonnet)", "2 models (sonnet, opus)".
+func modelsWord(seats []CouncilExpert) string {
+	ms := modelsOf(seats)
+	word := "models"
+	if len(ms) == 1 {
+		word = "model"
+	}
+	return fmt.Sprintf("%d %s (%s)", len(ms), word, strings.Join(ms, ", "))
+}
+
+// picksRule closes the Picks section: what the counts may be taken for. Seats on one model read the same text with the
+// same weights, so their picks agree more than independent judges would; a count of picks is not a count of votes.
+func picksRule(c *Council) string {
+	var panel []CouncilExpert
+	for _, e := range c.Experts {
+		if !e.Coordinator {
+			panel = append(panel, e)
+		}
+	}
+	rule := "Count the experts behind a direction, not its picks: an expert who picked two of the proposals a direction " +
+		"merges counts once. Picks from experts on one model are not independent votes: when \"reasoning\" or \"text\" " +
+		"cites them, write how many experts and how many models gave them (\"3 experts, 1 model\"), never \"N picks\" alone."
+	if ms := modelsOf(panel); len(ms) == 1 && len(panel) > 1 {
+		rule = fmt.Sprintf("Every expert of this council runs on one model (%s). ", ms[0]) + rule
+	}
+	return rule
 }
 
 func findProposal(c *Council, id string) *CouncilProposal {
@@ -1144,7 +1197,8 @@ func SynthesisPrompt(c *Council) string {
 	}
 	b.WriteString("1. Merge proposals that say the same thing into one direction, and list their ids in \"from\".\n")
 	b.WriteString("2. Rank the directions, best first, from \"rank\" 1. Put the directions no expert challenges or opposes " +
-		"first; rank the rest by their picks (add up the picks of the proposals a direction merges), most picks first.\n")
+		"first; rank the rest by how many experts picked them (an expert who picked any of the proposals a direction merges " +
+		"counts once), most first.\n")
 	fmt.Fprintf(&b, "3. In \"directions\", keep at most %d: the best of that ranking, read in full. A direction that only "+
 		"changes wording, names or formatting takes one of the %d places only when no direction of another kind is left.\n",
 		maxDirections, maxDirections)
@@ -1193,8 +1247,8 @@ func LangLine(lang string) string {
 // first step, the wild ideas kept aside, and the fate of every idea. It returns the whole prompt.
 func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 	b.WriteString("1. Merge ideas that say the same thing into one, and list their ids in \"from\".\n")
-	fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by picks (add up the "+
-		"picks of the ideas an idea merges), then by how many experts built on it. Leave out an idea nobody picked or built on. "+
+	fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by how many experts "+
+		"picked it (an expert who picked any of the ideas it merges counts once), then by how many experts built on it. Leave out an idea nobody picked or built on. "+
 		"A wild idea never takes one of the %d places.\n", maxDirections, maxDirections)
 	b.WriteString("3. For each of them, \"reasoning\" says why it is worth trying, and \"firststep\" is its first step: the one " +
 		"thing to do first, small enough to start this week.\n")

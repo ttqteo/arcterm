@@ -203,7 +203,39 @@ func TestSynthesisPromptListsPicksPerProposal(t *testing.T) {
 	picks := section(t, p, "## Picks")
 	mustContain(t, "picks section", picks, "- P1 (Title-one): 1 (RAM)", "- P2 (Title-two): 1 (UX)", "- P3 (Title-three): 2 (UX, RAM)", "- P4 (Title-four): 0")
 	mustNotContain(t, "picks section", picks, "before picks existed")
-	mustContain(t, "synthesis prompt", p, "rank the rest by their picks")
+	mustContain(t, "synthesis prompt", p, "rank the rest by how many experts picked them", "counts once")
+}
+
+// picks from seats on one model are one model's judgement: the coordinator is told so, and to write experts and models
+func TestSynthesisPromptCountsPicksByExpertAndModel(t *testing.T) {
+	c := promptCouncil()
+	for i := range c.Experts {
+		c.Experts[i].Model = "sonnet"
+	}
+	c.Experts[3].Model = "opus" // the coordinator does not pick
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	picks := section(t, SynthesisPrompt(c), "## Picks")
+	mustContain(t, "picks section", picks, "- P3 (Title-three): 2 (UX, RAM) · 1 model (sonnet)",
+		"Every expert of this council runs on one model (sonnet).", "not independent votes", `"3 experts, 1 model"`)
+
+	c.Experts[1].Model = "opus"
+	picks = section(t, SynthesisPrompt(c), "## Picks")
+	mustContain(t, "picks section", picks, "- P3 (Title-three): 2 (UX, RAM) · 2 models (sonnet, opus)")
+	mustNotContain(t, "picks section", picks, "Every expert of this council runs on one model")
+}
+
+func TestRunFactsSayThePicksModels(t *testing.T) {
+	c := promptCouncil()
+	for i := range c.Experts {
+		c.Experts[i].Model = "sonnet"
+	}
+	var b strings.Builder
+	writeRunFacts(&b, c)
+	mustNotContain(t, "run facts", b.String(), "- Picks:")
+	c.Picks = map[string][]string{"ux": {"P2"}}
+	b.Reset()
+	writeRunFacts(&b, c)
+	mustContain(t, "run facts", b.String(), "- Picks: 3 experts on 1 model (sonnet); picks from one model are not independent votes")
 }
 
 func TestSynthesisPromptSaysWhenNoPicksWereGiven(t *testing.T) {
