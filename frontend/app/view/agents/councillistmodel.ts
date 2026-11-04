@@ -60,6 +60,8 @@ export interface IdeaRow {
     against: number;
     replies: number; // the replies a person reads on it
     repliesLabel: string; // `no replies`, `1 reply`, `4 replies`
+    fresh: number; // the seats' replies on it since the person last read its thread (`readFrom`)
+    freshLabel: string; // `2 new replies`, `1 new reply`; empty with none
     draft: boolean; // the idea itself, or a reply on it, waits for the person
     held: boolean; // the idea itself is a draft: it has no thread yet, only its Send / Edit / Drop
     withdrawn: boolean; // its author withdrew it
@@ -158,10 +160,29 @@ export function chatRow(c: Council, openedAt: number, only?: string): ChatRow {
     };
 }
 
+/** Pure: when the person last read idea `id`'s thread: the later of the time they last left the council (`openedAt`,
+ *  councilopened.ts, which counts a council from before it was tracked as opened when tracking began, so an old council
+ *  never lights up) and the newest reply they saw with its thread open in this visit (`read`, councilThreadReadAtom). */
+export function readFrom(openedAt: number, read: Readonly<Record<string, number>> | undefined, id: string): number {
+    return Math.max(openedAt, read?.[id] ?? 0);
+}
+
+/** Pure: the newest reply on idea `id` (ms), what reading its thread marks as read; 0 with none. */
+export function newestReplyOn(c: Council, id: string): number {
+    return readableReplies(c)
+        .filter((r) => r.proposalid === id)
+        .reduce((ts, r) => Math.max(ts, r.ts), 0);
+}
+
 /** Pure: the Discussion's list: the Chat row, then a row per idea in `listOrder`, only the ideas the seat `only` wrote
  *  or replied to when one is chosen. `openedAt` is when the person last opened the council: an idea that came after it
- *  is New. */
-export function councilList(c: Council, openedAt: number, only?: string): CouncilList {
+ *  is New. A seat's reply on an idea after `readFrom(openedAt, read, idea)` counts as fresh. */
+export function councilList(
+    c: Council,
+    openedAt: number,
+    only?: string,
+    read?: Readonly<Record<string, number>>
+): CouncilList {
     const all = arrived(c);
     const number = new Map(all.map((p, i) => [p.id, i + 1]));
     const byId = new Map(all.map((p) => [p.id, p]));
@@ -174,7 +195,10 @@ export function councilList(c: Council, openedAt: number, only?: string): Counci
         .filter((p) => only == null || touches(c, p, only))
         .map((p): IdeaRow => {
             const of = Object.values(stances[p.id] ?? {});
-            const replies = readable.filter((r) => r.proposalid === p.id).length;
+            const on = readable.filter((r) => r.proposalid === p.id);
+            const replies = on.length;
+            const since = readFrom(openedAt, read, p.id);
+            const fresh = on.filter((r) => r.author !== YOU && r.ts > since).length;
             const isHeld = held.some((d) => d.kind === "idea" && d.id === p.id);
             return {
                 id: p.id,
@@ -191,6 +215,8 @@ export function councilList(c: Council, openedAt: number, only?: string): Counci
                 against: of.filter((s) => s === "oppose").length,
                 replies,
                 repliesLabel: replies === 0 ? "no replies" : plural(replies, "reply", "replies"),
+                fresh,
+                freshLabel: fresh === 0 ? "" : plural(fresh, "new reply", "new replies"),
                 draft: isHeld || held.some((d) => d.kind === "reply" && d.reply.proposalid === p.id),
                 held: isHeld,
                 withdrawn: p.withdrawn === true,

@@ -25,6 +25,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   and a chip under the text, and the chip's × takes it off; the terminal icon opens and folds the command strip. The
   CDP scenario `launcher` was updated but could not run: a fresh dev store's wavesrv exits on "error creating
   starter workspace … transaction has already been committed or rolled back" (`launcheragentfields.tsx`).
+- [ ] (arcterm) **Round 2 folds long ideas and marks new replies.** Open a council in round 2 (or done, with replies)
+  whose ideas are long → each long idea shows its first lines fading out with Show more, Show more opens it whole and
+  Show less folds it; an idea with seat replies since you last left the council says `N new replies` on its reply chip
+  and its Ideas rail row, the rail's `N with new replies` toggle lists only those, and opening the thread clears the
+  mark. An old council you left after it finished lights up nothing. The `round 2 fold` phase of `council-discussion`
+  was written but never run (no dev app up) (`councilchat.tsx`, fd4ca03b6).
 - [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
   a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
   never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`
