@@ -325,6 +325,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   one naming none leaves it off, and the cost line reads about a fifth. In a new council's round 2, no reply calls a
   seat by its role ("Phương pháp ơi"). Unit tests and two CDP steps (discussion `done`, summary Ask next) cover it;
   both passed in the Tauri dev app on 2026-11-03. Left: a real council (the report's questions, round 2's wording).
+- [ ] (arcterm) Council link → WebFetch: in a done council's Discussion type a message with `https://…`: Let them read
+  files turns on, locks, and says `it names <host>`. Send it: the answering seats' timelines show a WebFetch step and
+  their answers say which page they read, not "I can't open it". The next message with no link answers with no
+  WebFetch. A new council whose question holds a link: round 1 opens it. Unit tests (Go and vitest) cover the lock, the
+  tool list and the prompt line; not tried in the app.
 - [ ] (arcterm) Council as a group chat: in a council past round 2 (or a new one), the round 1 ideas alternate between
   the experts, with no bold title in the bubbles; round 2 shows every reply in the chat, a `↳ <idea>` quote over the
   first of each idea's replies, those replies together and in the ideas' order. While a round runs, its messages stay

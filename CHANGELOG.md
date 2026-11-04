@@ -37,6 +37,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent with three or more commands running in the background folds them behind a `3 running` chip on its row in the Agent tree; click it to list them. One or two still show as rows.
 - In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
 - A chat seat's button in a council's Seats list shows the agent mark and reads Go to <name>, where it showed a terminal icon; its name's hover says the same.
+- A council message with a web link (`https://…`) now lets the experts open that page with WebFetch, where they said they could not open it and read the repo instead; the link locks Let them read files on and names the site. A link in the council's question does the same for round 1.
 - A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed

@@ -18,6 +18,7 @@ import {
     insertFileMention,
     insertMention,
     joinableChats,
+    linkIn,
     mentionPicker,
     messageSegments,
     moveIdea,
@@ -1618,6 +1619,28 @@ describe("namedFile and readsFiles: a follow-up reads files when the question na
         expect(readsFiles(null, "see @ux/plan.md and @b.go")).toEqual(first);
         expect(readsFiles(false, "see @ux/plan.md")).toEqual(first);
         expect(readsFiles(false, "@ux/plan.md", 1)).toEqual(first);
+    });
+
+    it("is on and locked for a web address, naming its host, so the seats can open the page", () => {
+        const live = { on: true, why: "blackdiamond.biglabs.net", locked: true };
+        expect(readsFiles(false, "hiện tại các cập nhật đã lên https://blackdiamond.biglabs.net/")).toEqual(live);
+        expect(readsFiles(null, "see https://blackdiamond.biglabs.net/video?t=1", 0, true)).toEqual(live);
+        expect(readsFiles(false, "see @ux/plan.md and https://x.com/a").why).toBe("ux/plan.md");
+        expect(readsFiles(false, "blackdiamond.biglabs.net has no scheme").locked).toBe(false);
+    });
+
+    it("finds a link the way Go's linkMentioned does", () => {
+        // the same table as TestLinkMentioned in pkg/council/runner_test.go
+        expect(linkIn("hiện tại các cập nhật đã lên https://blackdiamond.biglabs.net/")).toBe(
+            "blackdiamond.biglabs.net"
+        );
+        expect(linkIn("see http://localhost:5174/x?y=1.")).toBe("localhost:5174");
+        expect(linkIn("(HTTPS://Example.com)")).toBe("Example.com");
+        expect(linkIn("blackdiamond.biglabs.net with no scheme")).toBe("");
+        expect(linkIn("ftp://files.example.com")).toBe("");
+        expect(linkIn("xhttps://not.one")).toBe("");
+        expect(linkIn("https://")).toBe("");
+        expect(linkIn("")).toBe("");
     });
 
     it("is not locked by an @ that names a seat, or by a file named without an @", () => {

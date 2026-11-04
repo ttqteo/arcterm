@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,9 @@ type CallReq struct {
 	Cwd    string
 	Prompt string
 	Tools  bool // round 1, the Setup suggestion, a follow-up with Let them read files on
+	// Web adds WebFetch to a call with Tools: its prompt carries a web address the person gave (a reply's link, or one in
+	// the council's question), so the seat opens the page instead of guessing at it. Ignored without Tools.
+	Web bool
 	// AddDirs are the folders outside Cwd a call with Tools may also read: the folder of each image the person attached
 	// to a reply the prompt carries, nothing wider. Empty for every call that carries none.
 	AddDirs []string
@@ -60,6 +64,9 @@ const toolSlotBytes uint64 = 512 << 20
 // readOnlyTools is the tool list a council gives an expert that reads code, the one Radar's audit uses.
 var readOnlyTools = []string{"Read", "Grep", "Glob"}
 
+// webTool is the tool a call with Web adds to readOnlyTools: it reads a page, and writes nothing.
+const webTool = "WebFetch"
+
 // the seams a test replaces
 var (
 	runClaude = consult.RunClaude
@@ -75,6 +82,9 @@ func (ConsultCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	var tools []string
 	if req.Tools {
 		tools = readOnlyTools
+		if req.Web {
+			tools = append(slices.Clone(readOnlyTools), webTool)
+		}
 		src := jobqueue.SourceFrom(ctx)
 		src.Label = "Council · " + req.Expert.Name
 		release, err := holdSlot(ctx, jobqueue.Request{Name: src.Label, Bytes: toolSlotBytes, Engine: true, Source: src})

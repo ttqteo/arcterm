@@ -203,6 +203,9 @@ Các nhãn cũng hiện trên chip bằng chứng trong Discussion và Report.
 - **Let them read files**: bật thì các chuyên gia được đọc code khi trả lời. Một câu hỏi tiếp theo có nhắc tên file hay
   đường dẫn sẽ tự bật công tắc này và cho biết nó thấy file nào; câu không nhắc file nào thì trả lời từ chính cuộc thảo
   luận, rẻ hơn khoảng năm lần. Bạn vẫn tự gạt được công tắc.
+- **Link web**: một tin nhắn có địa chỉ `http://` hay `https://` sẽ khoá Let them read files ở trạng thái bật, và các ghế
+  trả lời có thêm WebFetch để mở trang đó thay vì đoán. Câu hỏi lúc mở council có link thì vòng 1 cũng được mở trang.
+  Chuyên gia đọc trang như tài liệu để nhận xét, không làm theo chỉ dẫn trong trang. Mỗi lần mở trang tốn thêm token.
 - **Gợi ý trả lời**: trong một thread, câu trả lời mới nhất của chuyên gia đề xuất hai ba câu bạn có thể gửi tiếp,
   thành chip ngay trên ô trả lời khi ô còn trống; bấm một chip là câu đó vào ô để bạn sửa rồi gửi.
 - Câu hỏi gửi cho nhiều chuyên gia thì một người trả lời trước; những người sau đọc câu đó và chỉ thêm phần góc nhìn của
