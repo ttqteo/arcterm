@@ -84,8 +84,6 @@ import {
     foldSettle,
     foldToggle,
     foldView,
-    foldableText,
-    foldsIdeas,
     ideaOrder,
     insertAllMention,
     insertChatMention,
@@ -192,7 +190,6 @@ import {
     councilOpenProposalAtom,
     councilSourcesAtom,
     councilThreadReadAtom,
-    councilUnfoldedAtom,
     directionCouncil,
     draftCouncil,
     finalPickCouncil,
@@ -727,10 +724,8 @@ function IdeaMessage({
     n,
     open,
     focused,
-    fold,
     fresh,
     onOpen,
-    onFold,
     acts,
 }: {
     c: Council;
@@ -738,16 +733,12 @@ function IdeaMessage({
     n: number | undefined; // its number on the Ideas rail, so a message and its rail row read as one
     open: boolean;
     focused: boolean;
-    // past the ideas round a long idea shows its first lines (`folded`) until Show more (`unfolded`); `whole` otherwise
-    fold: "whole" | "folded" | "unfolded";
     fresh: string; // `2 new replies` since the person last read its thread; empty with none
     onOpen: (id: string) => void;
-    onFold: (id: string, unfold: boolean) => void;
     acts: Actions;
 }) {
     const councilId = c.id;
     const t = item.thread;
-    const folded = fold === "folded";
     return (
         <article
             data-council-item
@@ -756,7 +747,6 @@ function IdeaMessage({
             data-item-label={item.label}
             data-open={open ? "true" : undefined}
             data-focused={focused ? "true" : undefined}
-            data-fold={fold}
             data-fresh={fresh === "" ? undefined : "true"}
             className="group/idea group/reply flex gap-[10px]"
         >
@@ -799,32 +789,10 @@ function IdeaMessage({
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
                         it is quoted (a reply's ↳, the thread's header, the report) */}
-                    {/* folded: its first three lines fading out, so the ideas already read stop burying what is new */}
-                    <div
-                        data-council-idea-body
-                        className={cn(
-                            folded &&
-                                "max-h-[70px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_45%,transparent)]"
-                        )}
-                    >
+                    {/* always whole: a long idea shows all of its text in every round */}
+                    <div data-council-idea-body>
                         <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
                     </div>
-                    {fold !== "whole" && (
-                        <button
-                            type="button"
-                            data-council-idea-fold={item.id}
-                            aria-expanded={!folded}
-                            onClick={() => onFold(item.id, folded)}
-                            className="-ml-[6px] inline-flex h-[22px] w-fit cursor-pointer items-center gap-[4px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            {folded ? (
-                                <ChevronDown size={13} strokeWidth={2} aria-hidden />
-                            ) : (
-                                <ChevronUp size={13} strokeWidth={2} aria-hidden />
-                            )}
-                            {folded ? "Show more" : "Show less"}
-                        </button>
-                    )}
                     <EvidenceChips {...item.claim} source={{ councilId, owner: item.id, title: item.title }} />
                     <div className="flex flex-wrap items-center gap-[10px]">
                         <button
@@ -3376,22 +3344,6 @@ export function CouncilChat({
     const numbers = useMemo(() => new Map(whole.ideas.map((r) => [r.id, r.n])), [whole]);
     const freshOf = useMemo(() => new Map(whole.ideas.map((r) => [r.id, r.freshLabel])), [whole]);
     const [freshOnly, setFreshOnly] = useState(false);
-    // past the ideas round a long idea folds to its first lines; Show more keeps it open for this council
-    const folds = foldsIdeas(c);
-    const [unfolded, setUnfolded] = useAtom(councilUnfoldedAtom(c.id));
-    const onFold = useCallback(
-        (id: string, unfold: boolean) =>
-            setUnfolded((s) => {
-                const next = new Set(s);
-                if (unfold) {
-                    next.add(id);
-                } else {
-                    next.delete(id);
-                }
-                return next;
-            }),
-        [setUnfolded]
-    );
     // the open thread is read up to its newest reply, and stays read as replies land while it is open
     const readUpTo = openId == null || !threadOpen ? 0 : newestReplyOn(c, openId);
     useEffect(() => {
@@ -3679,16 +3631,8 @@ export function CouncilChat({
                                             acts={acts}
                                             open={threadOpen && item.id === openId}
                                             focused={item.id === focusedId}
-                                            fold={
-                                                !folds || !foldableText(item.text)
-                                                    ? "whole"
-                                                    : unfolded.has(item.id)
-                                                      ? "unfolded"
-                                                      : "folded"
-                                            }
                                             fresh={freshOf.get(item.id) ?? ""}
                                             onOpen={open}
-                                            onFold={onFold}
                                         />
                                     );
                                 case "draft":

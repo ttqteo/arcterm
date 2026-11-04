@@ -304,7 +304,7 @@ async function round2(h, ctx, rec) {
     );
 }
 
-// ---- round 2 folds the ideas and marks the new replies ----
+// ---- round 2 keeps the ideas whole and marks the new replies ----
 
 const LONG_IDEA = [
     "Rank the pinned apps by what the person loses when one sleeps:",
@@ -321,47 +321,33 @@ const LONG_IDEA = [
 const bodyHeight = (h, id) =>
     h.ev(`Math.round(document.querySelector('[data-council-idea="${id}"] [data-council-idea-body]')?.getBoundingClientRect().height ?? 0)`);
 
-async function round2Fold(h, ctx, rec) {
+async function round2Whole(h, ctx, rec) {
     // round 2 with P1 made long, and a seat's reply on P2 that lands now, after the person last left the council
     const id = await openFixture(h, ctx, "round2", {
-        id: "council-fold",
+        id: "council-whole",
         edit: (c) => {
             c.proposals.find((p) => p.id === "P1").argument = LONG_IDEA;
-            c.replies.push({ id: "fold-r1", proposalid: "P2", author: "ram", stance: "challenge", text: "Only if the wake is under a second.", round: 2, ts: Date.now() + 60_000 });
+            c.replies.push({ id: "whole-r1", proposalid: "P2", author: "ram", stance: "challenge", text: "Only if the wake is under a second.", round: 2, ts: Date.now() + 60_000 });
         },
     });
     await until(h, `!!document.querySelector('[data-council-idea="P1"]')`);
 
-    const fold = await h.ev(`[...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => [e.getAttribute("data-council-idea"), e.getAttribute("data-fold")])`);
-    const shut = await bodyHeight(h, "P1");
-    rec(
-        "round 2 fold: the long P1 folds to its first lines with Show more, the short ideas stay whole with none",
-        fold.find(([p]) => p === "P1")?.[1] === "folded" &&
-            fold.filter(([p]) => p !== "P1").every(([, f]) => f === "whole") &&
-            shut > 0 && shut <= 72 &&
-            (await text(h, '[data-council-idea-fold="P1"]')) === "Show more" &&
-            (await count(h, "[data-council-idea-fold]")) === 1,
-        { fold, shut }
-    );
-    await h.shot("cdp-shots/council-discussion-round2-fold.png");
-
-    await click(h, '[data-council-idea-fold="P1"]');
-    const opened = await until(h, `document.querySelector('[data-council-idea="P1"]')?.getAttribute("data-fold") === "unfolded"`);
+    // the long P1 shows all of it: its table and its last line, past where three lines would end, and no Show more
     const tall = await bodyHeight(h, "P1");
     const table = await count(h, '[data-council-idea="P1"] table');
-    await h.shot("cdp-shots/council-discussion-round2-unfold.png");
-    await click(h, '[data-council-idea-fold="P1"]');
-    const back = await until(h, `document.querySelector('[data-council-idea="P1"]')?.getAttribute("data-fold") === "folded"`);
+    const last = await text(h, '[data-council-idea="P1"] [data-council-idea-body]');
+    const showMore = await h.ev(`[...document.querySelectorAll("[data-council-channel] [data-council-idea] button")].filter((b) => b.textContent.trim() === "Show more").length`);
+    await h.shot("cdp-shots/council-discussion-round2-whole.png");
     rec(
-        "round 2 fold: Show more opens P1 whole, its table drawn, and Show less folds it again",
-        opened && tall > shut + 40 && table === 1 && back,
-        { opened, tall, table, back }
+        "round 2: the long P1 shows whole, its table and last line drawn, with no Show more on any idea",
+        tall > 112 && table === 1 && last.includes("let the rest sleep") && showMore === 0,
+        { tall, table, showMore }
     );
 
     const freshChip = await text(h, '[data-council-idea="P2"] [data-council-thread-fresh]');
     const freshRow = await text(h, '[data-council-rail-idea="P2"] [data-council-rail-fresh-row]');
     rec(
-        "round 2 fold: the reply that came since the person left marks P2, `1 new reply` on its reply chip and its rail row",
+        "round 2: the reply that came since the person left marks P2, `1 new reply` on its reply chip and its rail row",
         (await attr(h, '[data-council-idea="P2"]', "data-fresh")) === "true" &&
             freshChip === "1 new reply" &&
             freshRow.endsWith("1 new reply"),
@@ -373,7 +359,7 @@ async function round2Fold(h, ctx, rec) {
     const rows = await h.ev(`[...document.querySelectorAll("[data-council-rail-idea]")].map((e) => [e.getAttribute("data-council-rail-idea"), !!e.querySelector("[data-council-rail-fresh-row]")])`);
     await h.shot("cdp-shots/council-discussion-round2-fresh.png");
     rec(
-        "round 2 fold: the rail's `with new replies` toggle shows only the ideas with new replies, P2 among them",
+        "round 2: the rail's `with new replies` toggle shows only the ideas with new replies, P2 among them",
         filtered && rows.length > 0 && rows.every(([, f]) => f) && rows.some(([p]) => p === "P2"),
         rows
     );
@@ -387,7 +373,7 @@ async function round2Fold(h, ctx, rec) {
     await click(h, "[data-council-thread-close]");
     const listed = await until(h, `!!document.querySelector('[data-council-rail-idea="P2"]')`);
     rec(
-        "round 2 fold: opening P2's thread clears its new-reply mark in the channel and the rail",
+        "round 2: opening P2's thread clears its new-reply mark in the channel and the rail",
         cleared && listed && (await count(h, '[data-council-rail-idea="P2"] [data-council-rail-fresh-row]')) === 0,
         { id, cleared, listed }
     );
@@ -3405,7 +3391,7 @@ async function ideasRail(h, ctx, rec) {
 const PHASES = [
     ["ideas rail", ideasRail],
     ["round 2", round2],
-    ["round 2 fold", round2Fold],
+    ["round 2 whole", round2Whole],
     ["header", header],
     ["seat filter", seatFilter],
     ["picks", picks],

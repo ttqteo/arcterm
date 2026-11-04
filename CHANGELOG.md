@@ -34,7 +34,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council ranks directions by how many experts picked them, counting an expert once across merged proposals, and its report says "3 experts, 1 model" rather than "5 picks": seats on one model are not independent votes. Run facts says when every seat ran on one model.
 
 - An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.
-- Once a council's experts start replying, its long round 1 ideas fold to their first lines (Show more opens one), and an idea whose thread has replies you have not read says `2 new replies` on its reply chip and its Ideas rail row; the rail can show only those ideas.
+- In a council's Discussion, an idea whose thread has replies you have not read says `2 new replies` on its reply chip and its Ideas rail row; the rail can show only those ideas.
 - A council's Discussion header wraps a long title onto a second line instead of cutting it short, and its step chip reads shorter (`Round 1/2`, `Round 2/2 · 3 drafts`); the full words are on hover.
 - The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
 - In the New agent dialog, Flag, Worktree and Command are small icons beside the Task box, so its hint shows in full; Worktree lights up when on, and the flags you turned on sit as chips under the text.

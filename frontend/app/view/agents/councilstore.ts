@@ -546,11 +546,6 @@ export const councilThreadReadAtom = atomFamily(
     (_id: string) => atom<Record<string, number>>({}) as PrimitiveAtom<Record<string, number>>
 );
 
-/** The ideas the person unfolded (Show more) in a folded channel (councilchatmodel.foldsIdeas), by idea id. */
-export const councilUnfoldedAtom = atomFamily(
-    (_id: string) => atom<ReadonlySet<string>>(new Set<string>()) as PrimitiveAtom<ReadonlySet<string>>
-);
-
 /** The seat whose timeline a council's Seats popover shows, by expert id; null shows the list of seats. A seat's Timeline
  *  button and an expert card on the Map set it; the popover clears it when it closes. */
 export const councilTimelineAtom = atomFamily(
