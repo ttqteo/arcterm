@@ -48,6 +48,9 @@ var machineLocalKeys = map[string]bool{
 	ConfigKey_TelegramMode:     true,
 	ConfigKey_TelegramSchedule: true,
 	ConfigKey_TelegramOnUntil:  true,
+	// a pause answers this machine's load: synced, a pause pressed on one machine let every heavy job on another
+	// start at once (2026-11-04)
+	ConfigKey_JobsPauseUntil: true,
 }
 
 func IsMachineLocalKey(key string) bool {

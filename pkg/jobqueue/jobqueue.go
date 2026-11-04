@@ -61,7 +61,7 @@ const (
 	PressureUnknown  Pressure = iota // no reading: the free-RAM rule decides
 	PressureNormal                   // a job starts, beside one still ramping up only when the free RAM fits both
 	PressureWarn                     // one at a time: a job starts once none runs
-	PressureCritical                 // nothing starts: the machine is about to stall
+	PressureCritical                 // the machine is about to stall: one at a time, as warn, the head starting once none runs
 )
 
 // the log's word for each Pressure
@@ -250,7 +250,7 @@ func clampSlots(n int) int {
 // plan picks the queued jobs that start now, in queue order: a forced job always, and every job in ModeOff;
 // otherwise the head while fewer than slots run (in ModeSlots) and the RAM allows it. With a pressure reading
 // that is the pressure: normal starts it, beside a job still ramping up only when the free RAM fits both (the
-// pressure has not seen that job's peak yet); warn only once no job runs; critical never. With none it is the free
+// pressure has not seen that job's peak yet); warn and critical only once no job runs. With none it is the free
 // RAM less the peaks of jobs still ramping up, which must fit its peak. It stops at the first job that cannot
 // start, and returns why the rest wait.
 func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
@@ -290,7 +290,9 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 			reason = "slot busy"
 		case soloRunning && memgate.Solo(j.Name):
 			reason = ReasonBrowserRunBusy
-		case pressure == PressureCritical:
+		// critical still starts one once nothing runs: holding every job left agents waiting with no end in sight,
+		// until the person paused the queue and every job started at once (2026-11-04)
+		case pressure == PressureCritical && running > 0:
 			reason = ReasonPressureCritical
 		case pressure == PressureWarn && running > 0:
 			reason = ReasonPressureHigh

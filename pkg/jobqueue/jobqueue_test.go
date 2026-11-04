@@ -122,7 +122,10 @@ func TestPlanPressure(t *testing.T) {
 		// 2026-10-15: on an 8 GB Mac a third typecheck started a minute after the second, under warn, and the
 		// three paged for 15 minutes
 		{"warn waits while a job runs past its ramp-up", []Job{run("r", gb, old), wait("a", gb)}, ModeAuto, PressureWarn, 8 * gb, nil, ReasonPressureHigh},
-		{"critical starts nothing", []Job{wait("a", gb)}, ModeAuto, PressureCritical, low, nil, ReasonPressureCritical},
+		// 2026-11-04: critical starting nothing held every agent's e2e until the person paused the queue, which
+		// then started them all at once
+		{"critical starts one once nothing runs", []Job{wait("a", gb), wait("b", gb)}, ModeAuto, PressureCritical, low, []string{"a"}, ReasonPressureCritical},
+		{"critical waits while a job runs", []Job{run("r", gb, old), wait("a", gb)}, ModeAuto, PressureCritical, 8 * gb, nil, ReasonPressureCritical},
 		{"the slot count still caps", []Job{run("r", gb, old), wait("a", gb)}, ModeSlots, PressureNormal, low, nil, "slot busy"},
 		{"off starts past critical", []Job{wait("a", gb)}, ModeOff, PressureCritical, low, []string{"a"}, ""},
 		{"forced starts past critical", []Job{{Id: "f", Request: Request{Name: "f", Bytes: gb}, Forced: true}}, ModeAuto, PressureCritical, low, []string{"f"}, ""},
