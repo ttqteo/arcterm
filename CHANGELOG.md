@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
+
 ### Fixed
 
 - A click on an idea in a council's Ideas tab now shows which message it is: the row and its message in the channel both wear an accent ring, the message rings wider for a moment where it lands, and each idea in the channel carries its `Idea N` number, as on the tab.
