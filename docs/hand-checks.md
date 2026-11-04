@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **A dragged path with a line break or a double quote is left out.** On a Mac or Linux make a file
+  named `a"b.md` (and one with a newline in its name), drag it from the Agent rail's Files tab onto a terminal → nothing
+  is typed for it and a warning toast names it; an ordinary file dropped beside it is still typed. Unit-tested only
+  (`splitDroppable`, `pathdrop.ts`; toast in `focus-pane.tsx`); commit 605413407.
 - [ ] (arcterm) **HTML previews keep working under the new CSP.** In a live arcterm open a design canvas, a brainstorm
   board and an HTML file in the File tab → each draws as before (fonts, React boards, images), the canvas reports its
   height and the File tab keeps its scroll; DevTools shows no `Refused to` line. Checked only in headless Chrome against
