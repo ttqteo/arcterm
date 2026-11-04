@@ -380,6 +380,8 @@ func replyLabel(c *Council, r CouncilReply) string {
 	switch {
 	case r.Author == YouId && r.ProposalId == "" && r.ParentId == "":
 		return "steers"
+	case r.Withdraws:
+		return "withdraws it"
 	case r.Author == YouId || r.Revised:
 		return "replies"
 	case r.Stance == StanceChallenge:
