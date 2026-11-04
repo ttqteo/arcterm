@@ -76,18 +76,18 @@ const role = (id: string, name: string, extra: Partial<CouncilExpert> = {}): Cou
 // the library as wavesrv answers it: the plain English names, each with its Vietnamese one
 const lib: RoleLibrary = {
     roles: [
-        role("ux", "Ease of use", { namevi: "Người lo trải nghiệm" }),
-        role("ram", "Memory watcher", { namevi: "Người canh RAM" }),
-        role("newuser", "New user", { namevi: "Người dùng mới" }),
-        role("skeptic", "Bug hunter", { namevi: "Người soi lỗi" }),
-        role("coordinator", "Summarizer", { model: "opus", coordinator: true, namevi: "Người tổng hợp" }),
-        role("reviewer-a", "Reviewer A", { namevi: "Người chấm A" }),
+        role("ux", "Ease of use", { namevi: "Trải nghiệm" }),
+        role("ram", "Memory watcher", { namevi: "Canh RAM" }),
+        role("newuser", "New user", { namevi: "Người mới" }),
+        role("skeptic", "Bug hunter", { namevi: "Soi lỗi" }),
+        role("coordinator", "Summarizer", { model: "opus", coordinator: true, namevi: "Tổng hợp" }),
+        role("reviewer-a", "Reviewer A", { namevi: "Phản biện A" }),
         role("reader", "Reader", { namevi: "Người đọc" }),
-        role("areachair", "Final judge", { model: "opus", coordinator: true, namevi: "Người chốt điểm" }),
-        role("designer", "Designer", { namevi: "Người thiết kế" }),
-        role("builder", "Builder", { namevi: "Người làm" }),
-        role("contrarian", "Other side", { namevi: "Người cãi ngược" }),
-        role("facilitator", "Host", { model: "opus", coordinator: true, namevi: "Người dẫn dắt" }),
+        role("areachair", "Final judge", { model: "opus", coordinator: true, namevi: "Chốt điểm" }),
+        role("designer", "Designer", { namevi: "Thiết kế" }),
+        role("builder", "Builder", { namevi: "Thợ code" }),
+        role("contrarian", "Other side", { namevi: "Cãi ngược" }),
+        role("facilitator", "Host", { model: "opus", coordinator: true, namevi: "Dẫn dắt" }),
     ],
     groups: [
         {
@@ -736,7 +736,7 @@ describe("expertsLine", () => {
     it("names them in Vietnamese when the typed question reads Vietnamese", () => {
         const d = initialPanel(draft({ feature: "Ghim ứng dụng", question: "Có đáng ghim không?" }), lib);
         expect(expertsLine(d, lib)).toBe(
-            "Soi một tính năng giao diện: Người lo trải nghiệm, Người canh RAM, Người dùng mới and Người soi lỗi each read the code from their own side; the Người tổng hợp writes the answer."
+            "Soi một tính năng giao diện: Trải nghiệm, Canh RAM, Người mới and Soi lỗi each read the code from their own side; the Tổng hợp writes the answer."
         );
     });
 });
@@ -755,7 +755,7 @@ describe("the language Setup shows names in", () => {
     it("shows a seat's namevi in Vietnamese and its name otherwise", () => {
         const ux = lib.roles[0];
         expect(seatName(ux, "en")).toBe("Ease of use");
-        expect(seatName(ux, "vi")).toBe("Người lo trải nghiệm");
+        expect(seatName(ux, "vi")).toBe("Trải nghiệm");
         // a role with no Vietnamese name (the person's own, a suggestion, an agent seat) keeps the one it has
         expect(seatName(role("mac", "Mac user"), "vi")).toBe("Mac user");
         expect(seatName(role("mac", "Mac user", { namevi: "" }), "vi")).toBe("Mac user");
@@ -788,7 +788,7 @@ describe("the language Setup shows names in", () => {
             "Bug hunter",
             "Summarizer",
         ]);
-        expect(sent[3].namevi).toBe("Người soi lỗi");
+        expect(sent[3].namevi).toBe("Soi lỗi");
     });
 });
 
@@ -831,7 +831,7 @@ describe("rows", () => {
         expect(expertInitial(role("a", ""))).toBe("?");
     });
 
-    it("takes the initial of the shown name, past the Người every Vietnamese role name starts with", () => {
+    it("takes the initial of the shown name, past a leading Người", () => {
         const skeptic = lib.roles[3];
         expect(expertInitial(skeptic)).toBe("B");
         expect(expertInitial(skeptic, "en")).toBe("B");
@@ -1034,11 +1034,11 @@ describe("live agents", () => {
         expect(vi.map((r) => r.name)).toEqual([
             "Witness synthesis",
             "UX audit",
-            "Người lo trải nghiệm",
-            "Người canh RAM",
-            "Người dùng mới",
-            "Người soi lỗi",
-            "Người tổng hợp",
+            "Trải nghiệm",
+            "Canh RAM",
+            "Người mới",
+            "Soi lỗi",
+            "Tổng hợp",
         ]);
         expect(vi[2].expert.name).toBe("Ease of use");
         const en = seatRows({ ...d, question: "Should we pin it?" }, (p) => p);
@@ -1050,7 +1050,7 @@ describe("live agents", () => {
             "Summarizer",
         ]);
         // with no question the feature decides
-        expect(seatRows({ ...d, feature: "Ghim ứng dụng", question: "" }, (p) => p)[5].name).toBe("Người soi lỗi");
+        expect(seatRows({ ...d, feature: "Ghim ứng dụng", question: "" }, (p) => p)[5].name).toBe("Soi lỗi");
     });
 
     it("counts an agent seat as the expert a council needs besides its coordinator", () => {

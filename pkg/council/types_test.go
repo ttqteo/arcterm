@@ -191,7 +191,7 @@ const strongerJSON = `{
   "project": "/p",
   "feature": "f",
   "experts": [
-    {"id": "skeptic", "name": "Bug hunter", "namevi": "Người soi lỗi", "brief": "b", "model": "sonnet"}
+    {"id": "skeptic", "name": "Bug hunter", "namevi": "Soi lỗi", "brief": "b", "model": "sonnet"}
   ],
   "state": "done",
   "round": 3,
@@ -313,7 +313,7 @@ func TestCouncilStrongerRoundTrip(t *testing.T) {
 	if c.Lang != LangVi || c.Snapshot != "0123456789abcdef0123456789abcdef01234567" {
 		t.Errorf("lang %q, snapshot %q", c.Lang, c.Snapshot)
 	}
-	if c.Experts[0].NameVi != "Người soi lỗi" {
+	if c.Experts[0].NameVi != "Soi lỗi" {
 		t.Errorf("expert namevi = %q", c.Experts[0].NameVi)
 	}
 

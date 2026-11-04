@@ -233,8 +233,9 @@ export function pendingRoles(draft: CouncilSetupDraft): CouncilExpert[] {
     return (draft.suggestion?.roles ?? []).filter((r) => !draft.experts.some((x) => x.id === r.id));
 }
 
-/** Pure: the letter in a seat's circle: the first of the name shown in `lang`. Every Vietnamese role name starts with
- *  `Người` (the person who…), which would give every circle an N, so its initial is the next word's. */
+/** Pure: the letter in a seat's circle: the first of the name shown in `lang`. A Vietnamese name that starts with
+ *  `Người` (the person who…: Người mới, Người đọc, or a suggested role) would give its circle an N, so its initial is
+ *  the next word's. */
 export function expertInitial(e: CouncilExpert, lang: CouncilLang = "en"): string {
     const words = seatName(e, lang).trim().split(/\s+/);
     const word = words[0] === "Người" && words.length > 1 ? words[1] : words[0];
