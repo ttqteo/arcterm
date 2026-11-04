@@ -442,7 +442,6 @@ func (ws *WshServer) createRun(ctx context.Context, data wshrpc.CommandCreateRun
 		if data.Goal == "" {
 			data.Goal = planTitle(plan, data.PlanPath)
 		}
-		data.Orchestration = jarvis.Orchestration_Engine
 	}
 	if err := jarvis.ValidateLanding(data.Landing); err != nil {
 		return nil, err

@@ -8,7 +8,6 @@ import {
     TASK_FOLD_AT,
     discussTogetherSeats,
     extendRow,
-    foldCollapsedProjects,
     NO_ROW_SELECTION,
     pickedRowIds,
     seatableOf,
@@ -1076,26 +1075,6 @@ describe("stageSubline", () => {
     });
     it("is just the age while the stage is judging", () => {
         expect(stageSubline(undefined, "2m")).toBe("2m");
-    });
-});
-
-describe("foldCollapsedProjects", () => {
-    // waveterm: a (idle), b (asking); loom: c (idle)
-    const rows = buildAgentTree(
-        [vm("a", "idle", WAVE), vm("b", "asking", WAVE), vm("c", "idle", LOOM)],
-        ["a", "b", "c"]
-    );
-    it("keeps every row when nothing is collapsed", () => {
-        expect(foldCollapsedProjects(rows, new Set())).toEqual(rows);
-    });
-    it("drops a collapsed project's body but keeps its group row and its attention", () => {
-        const out = foldCollapsedProjects(rows, new Set(["waveterm"]));
-        expect(out.map((r) => (r.kind === "group" ? `g:${r.project}` : r.kind))).toEqual([
-            "g:waveterm",
-            "g:loom",
-            "parent",
-        ]);
-        expect(out[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 1 });
     });
 });
 

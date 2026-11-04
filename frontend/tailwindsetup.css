@@ -137,7 +137,6 @@
     --color-office-skin-3: #c68e64;
     --color-office-skin-4: #8d5a3b;
     --color-office-pants: #3a3f4b;
-    --color-office-paper: #e3e3e3;
     --color-office-lead: #c2c0b6; /* the lead's shirt */
 
     /* The cockpit office (docs/superpowers/specs/2026-10-15-cockpit-office-design.md, "Drawing"): shirts by harness
@@ -148,7 +147,6 @@
     --color-office-shirt-pi: #7fbf8f;
     --color-office-shirt-agy: #6f8fe8;
     --color-office-shirt-other: #b39ddb;
-    --color-office-boss: #55657f;
     --color-office-cup: #efe9dc;
     --color-office-night: rgba(10, 14, 32, 0.45); /* the tint over the floors after hours */
     --color-office-dark: rgba(8, 8, 10, 0.5); /* a room with no one at work */

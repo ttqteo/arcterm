@@ -699,25 +699,6 @@ export function agentsInCouncil(councils: readonly Council[] | null | undefined)
     return out;
 }
 
-/** Pure: the tree with each collapsed project's body rows removed. Its group row stays, carrying the count
- *  and attention of what it hides, so a collapsed project still says when an agent in it waits on you. */
-export function foldCollapsedProjects(rows: AgentTreeRow[], collapsed: ReadonlySet<string>): AgentTreeRow[] {
-    if (collapsed.size === 0) {
-        return rows;
-    }
-    const out: AgentTreeRow[] = [];
-    let hiding = false;
-    for (const r of rows) {
-        if (r.kind === "group") {
-            hiding = collapsed.has(r.project);
-            out.push(r);
-        } else if (!hiding) {
-            out.push(r);
-        }
-    }
-    return out;
-}
-
 /** One background task under its agent in the tree: the words of its row and what a click on it does. */
 export interface BackgroundTaskRow {
     key: string; // the task's tool-use id, which is unique per agent

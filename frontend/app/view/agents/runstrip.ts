@@ -4,7 +4,7 @@
 // Pure: the per-task strip a run draws, under its row in the agent tree and as the rail's Run bar. One fill map for
 // both, so the two cannot disagree about a task.
 
-import { finalStageView, type FinalTone } from "./finalstage";
+import type { FinalTone } from "./finalstage";
 import { runProgress } from "./runlineage";
 import { runSegments, type LaneState } from "./runrail";
 import type { PipState } from "./runstage";
@@ -62,24 +62,3 @@ export const FINAL_FILL: Record<FinalTone, string> = {
     fail: SEG_FILL.failed,
     warn: SEG_FILL.asking,
 };
-
-const FINAL_SLOT_WORDS: Record<FinalTone, string> = {
-    wait: "waiting",
-    run: "running",
-    pass: "passed",
-    fail: "failed",
-    warn: "unverified",
-};
-
-/** Pure: the final stage's slot at the end of the tree's strip, or undefined before the stage has a row. */
-export function finalSlot(dag: TaskGroup | undefined): FinalTone | undefined {
-    const view = finalStageView(dag, [], 0);
-    return view.visible ? view.tone : undefined;
-}
-
-/** Pure: the tree strip's label: the tasks, then the final stage once its slot exists. */
-export function treeStripLabel(dag: TaskGroup | undefined, digest: DagStatusDigest | undefined): string {
-    const slot = finalSlot(dag);
-    const tasks = taskStripLabel(dag, digest);
-    return slot == null ? tasks : `${tasks}, final verification ${FINAL_SLOT_WORDS[slot]}`;
-}
