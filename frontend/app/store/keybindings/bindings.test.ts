@@ -2982,6 +2982,7 @@ describe("council chat keys", () => {
         focus: vi.fn(),
         open: vi.fn(),
         close: vi.fn(),
+        chot: vi.fn(() => true),
         ...extra,
     });
     // where focus is: inside the channel or the thread (or not), on a control of the given tag
@@ -3049,6 +3050,29 @@ describe("council chat keys", () => {
         expect(chat.open).toHaveBeenCalledWith("P2");
         focusIn(true, "BUTTON");
         expect(open.when!(council)).toBe(false);
+    });
+
+    it("Chốts the idea under the cursor with p, and lets the key pass when there is none", () => {
+        const chot = find("council:chot");
+        expect(chot.keys).toBe("p");
+        focusIn(true);
+        // no idea under the cursor: not live
+        show(nav());
+        expect(chot.when!(council)).toBe(false);
+        const chat = show(nav({ focusedId: "P2" }))!;
+        expect(chot.when!(council)).toBe(true);
+        expect(chot.run(council)).toBe(true);
+        expect(chat.chot).toHaveBeenCalledWith("P2");
+        // the cursor on something the channel draws no idea for (the Chat's thread): the view answers false, the key passes
+        const none = show(nav({ focusedId: "chat", chot: vi.fn(() => false) }))!;
+        expect(chot.run(council)).toBe(false);
+        expect(none.chot).toHaveBeenCalledWith("chat");
+        // typing in a field, another surface, focus outside the chat: not the chat's key
+        show(nav({ focusedId: "P2" }));
+        expect(chot.when!({ ...council, editable: true })).toBe(false);
+        expect(chot.when!({ ...council, surface: "jarvis" })).toBe(false);
+        focusIn(false);
+        expect(chot.when!(council)).toBe(false);
     });
 
     it("closes an open thread with Escape, and the Agent surface's Escape stands down meanwhile", () => {

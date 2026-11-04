@@ -2047,9 +2047,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
 }
 
 // The council chat's keys (councilchat.tsx publishes its cursor in councilChatNavAtom): j and k move over the ideas of
-// the channel, Enter opens the focused idea's thread, Escape closes it. Active only while the chat is on screen and focus
-// is inside its channel or thread (an input is never inside: it stays editable, and its keys are its own), so elsewhere
-// on the Agent surface nothing here is live and the agent keys keep j and k. Registered by the chat itself.
+// the channel, Enter opens the focused idea's thread, p Chốts it (pins it as the council's direction), Escape closes
+// the thread. Active only while the chat is on screen and focus is inside its channel or thread (an input is never
+// inside: it stays editable, and its keys are its own), so elsewhere on the Agent surface nothing here is live and the
+// agent keys keep j and k. Registered by the chat itself.
 export function buildCouncilBindings(): Binding[] {
     // the nav is read first and unconditionally, so every predicate depends on it however the rest short-circuits
     const keys = (ctx: KeyContext) => {
@@ -2106,6 +2107,21 @@ export function buildCouncilBindings(): Binding[] {
                     return false;
                 }
                 nav.open(nav.focusedId);
+            },
+        },
+        {
+            // p for pin: no council or agent binding takes it, and Telex leaves a bare p alone (its tone and vowel keys
+            // are s f r x j w a e o d, and the brackets that turn into ơ ư)
+            id: "council:chot",
+            keys: "p",
+            group: "Agent",
+            label: "Chốt the focused idea: pin it as the council's direction",
+            when: (ctx) => keys(ctx) && globalStore.get(councilChatNavAtom)?.focusedId != null,
+            paletteHidden: true,
+            run: () => {
+                const nav = globalStore.get(councilChatNavAtom);
+                // no idea under the cursor (a thread of the Chat has none): the key passes
+                return nav?.focusedId == null ? false : nav.chot(nav.focusedId);
             },
         },
         {

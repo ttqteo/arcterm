@@ -154,3 +154,10 @@ export function chotText(item: CouncilProposal | CouncilReply): string {
     }
     return `${line.slice(0, CHOT_MAX - 1).trimEnd()}…`;
 }
+
+/** Pure: what Chốt pins from an item the channel already drew (an `IdeaPost` or a `ReplyPost`, which hold the title or
+ *  the text, not the record): that text on one line, cut as `chotText` cuts a message (an idea's title is one line
+ *  already). Empty for an item with no text, which Chốt does not offer. */
+export function chotLine(text: string): string {
+    return chotText({ text } as CouncilReply);
+}

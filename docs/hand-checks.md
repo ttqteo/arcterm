@@ -20,6 +20,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) `wsh jarvis dag retry <task>` and `wsh jarvis dag escalate <task> --model opus` on a task in
   blocked-merge → each is refused naming `dag merge <task> --continue`, and the task and its worker tab stay as they
   were (run aebf7808 Task 6).
+- [ ] (arcterm) A council's Memory tab with the real checks: in a council with a few ideas, click Chốt on an idea → within
+  seconds the Memory tab shows it as the Chosen direction (`Pinned by you`, its time, `from Idea N`); Chốt one that
+  contradicts what the seats agreed → the tab's dot lights and the card reads `Held · this may clash…` with the check's
+  reason, and Set anyway sets it. `p` on the idea under the cursor does the same. After a reply pass the round check may
+  leave a `Suggested after round N` card, and Show the messages scrolls the channel to them. The `council-memory`
+  scenario drives every state with `CouncilDirectionCommand` stubbed; the haiku pre-set and round checks, and the
+  `p` key in the real window, are untried (`councilmemory.tsx`, `councilchat.tsx` `Chot`, `pkg/council/memorycheck.go`).
 
 - [ ] (arcterm) An asking agent's whole row breathes in the Agent tree: get an agent to ask (a permission prompt or a
   brainstorm question) → its row, selected or not, pulses a faint amber wash and edge every ~2.4s alongside its glyph;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     cardKicker,
     chosenLine,
+    chotLine,
     chotText,
     directionHow,
     memoryDot,
@@ -326,5 +327,16 @@ describe("chotText", () => {
 
     it("is empty for a message with no text, such as an agreement with nothing to add", () => {
         expect(chotText(reply("r1", "ram", { text: "  \n " }))).toBe("");
+    });
+});
+
+describe("chotLine", () => {
+    it("is what chotText gives the same text as a message, for the post the channel already drew", () => {
+        const text = "Ship B first.\n\nIt costs less,\n  and the seats agree.";
+        expect(chotLine(text)).toBe(chotText(reply("r1", "ram", { text })));
+        const long = "word ".repeat(100);
+        expect(chotLine(long)).toBe(chotText(reply("r2", "ram", { text: long })));
+        expect(chotLine("  Pin apps to the rail  ")).toBe("Pin apps to the rail");
+        expect(chotLine(" \n ")).toBe("");
     });
 });
