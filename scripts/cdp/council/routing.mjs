@@ -5,7 +5,7 @@
 // docs/superpowers/specs/2026-11-03-council-reply-routing-design.md): a council whose whole-council messages the router
 // takes. A plain message to the channel is no longer sent to every seat: the router picks the seat or two that answer it.
 // Task 5, the composer: the Read files switch is the three-way Auto · On · Off control (Auto lets the router decide), the
-// line under the box says `Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens` (a range: the router has not chosen
+// line under the box says `Router picks 1–2 seats · ≈ 3–4 calls · ~50k–250k tokens` (a range: the router has not chosen
 // yet), and `@all` asks every seat on purpose (an All seats row, first in the `@` list). Task 6, the Discussion: the
 // person's routed post opens on a chip row naming the seats the router chose (never Everyone), or that it failed or is
 // choosing, its hover the router's line (`Router chose UX: …`, `· reading files`, `Router failed, UX answered`); an answer
@@ -211,10 +211,12 @@ async function openRouting(h, ctx, base, suffix) {
     return id;
 }
 
-// What wavesrv prices (pkg/council estimate.go): a follow-up is 20k tokens a role seat, 110k with files; a routed message
-// is one router call (15k) and one seat (low end) to two seats (high end). In Auto the low end reads no files and the high
-// end does; with Read files On or Off both ends use it. So a range of 2 to 3 calls, 35k to 235k tokens in Auto.
+// What wavesrv prices (pkg/council estimate.go): a follow-up is 20k tokens a role seat, 110k with files, and one round
+// check (15k, one call) on the answers; a routed message is one router call (15k), one seat (low end) to two seats (high
+// end), and the round check. In Auto the low end reads no files and the high end does; with Read files On or Off both
+// ends use it. So a range of 3 to 4 calls, 50k to 250k tokens in Auto (On: 140k to 250k, Off: 50k to 70k).
 const ROUTER_TOKENS = 15_000;
+const ROUND_CHECK_TOKENS = 15_000;
 const TEXT_TOKENS = 20_000;
 const FILES_TOKENS = 110_000;
 
@@ -229,16 +231,18 @@ async function answerEstimates(h) {
             const d = data ?? {};
             if (d.routed) {
                 const files = !!(d.toolsauto || d.tools);
+                // the router, the seat or two (these councils seat three role experts), and the round check on their answers
                 return Promise.resolve({
-                    calls: 2,
-                    callsmax: 3,
-                    tokens: ${ROUTER_TOKENS} + (d.toolsauto || !d.tools ? ${TEXT_TOKENS} : ${FILES_TOKENS}),
-                    tokensmax: ${ROUTER_TOKENS} + 2 * (files ? ${FILES_TOKENS} : ${TEXT_TOKENS}),
+                    calls: 3,
+                    callsmax: 4,
+                    tokens: ${ROUTER_TOKENS} + ${ROUND_CHECK_TOKENS} + (d.toolsauto || !d.tools ? ${TEXT_TOKENS} : ${FILES_TOKENS}),
+                    tokensmax: ${ROUTER_TOKENS} + ${ROUND_CHECK_TOKENS} + 2 * (files ? ${FILES_TOKENS} : ${TEXT_TOKENS}),
                     minutes: files ? 2 : 1,
                 });
             }
+            // a follow-up of n seats: their n answers and the round check
             const n = d.followup ?? 1;
-            return Promise.resolve({ calls: n, tokens: ${TEXT_TOKENS} * n, minutes: 1 });
+            return Promise.resolve({ calls: n + 1, tokens: ${TEXT_TOKENS} * n + ${ROUND_CHECK_TOKENS}, minutes: 1 });
         };
         return true;
     })()`);
@@ -291,8 +295,8 @@ async function composerAuto(h, ctx, rec) {
         reads
     );
     rec(
-        "composer-auto: the line under the box reads `Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens`, from an estimate asked with `routed` and `toolsauto`",
-        hint === "Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens" &&
+        "composer-auto: the line under the box reads `Router picks 1–2 seats · ≈ 3–4 calls · ~50k–250k tokens`, from an estimate asked with `routed` and `toolsauto`",
+        hint === "Router picks 1–2 seats · ≈ 3–4 calls · ~50k–250k tokens" &&
             asked?.routed === true &&
             asked.toolsauto === true &&
             asked.tools === false &&
@@ -331,30 +335,30 @@ async function composerAwaiting(h, ctx, rec) {
 async function composerOnOff(h, ctx, rec) {
     await openRouting(h, ctx, "done", "onoff");
     await typeInto(h, INPUT, "What should we do about the rail first?");
-    await settledText(h, HINT, /^Router picks 1–2 seats · ≈ 2–3 calls · ~35k–235k tokens$/);
+    await settledText(h, HINT, /^Router picks 1–2 seats · ≈ 3–4 calls · ~50k–250k tokens$/);
     const autoHint = await text(h, HINT);
 
     await click(h, `${TOOLS} [data-council-tools-option="on"]`);
-    const onHint = await settledText(h, HINT, /^Router picks 1–2 seats · ≈ 2–3 calls · ~125k–235k tokens$/);
+    const onHint = await settledText(h, HINT, /^Router picks 1–2 seats · ≈ 3–4 calls · ~140k–250k tokens$/);
     const on = await readFiles(h);
     await untilEstimate(h, `d.routed === true && d.tools === true && d.toolsauto === undefined`);
     await h.shot("cdp-shots/council-routing-composer-on.png");
 
     await click(h, `${TOOLS} [data-council-tools-option="off"]`);
-    const offHint = await settledText(h, HINT, /^Router picks 1–2 seats · ≈ 2–3 calls · ~35k–55k tokens$/);
+    const offHint = await settledText(h, HINT, /^Router picks 1–2 seats · ≈ 3–4 calls · ~50k–70k tokens$/);
     const off = await readFiles(h);
     await untilEstimate(h, `d.routed === true && d.tools === false && d.toolsauto === undefined`);
     await h.shot("cdp-shots/council-routing-composer-off.png");
     rec(
-        "composer-on-off: On presses On with no router note and prices both ends with files (`~125k–235k`); Off presses Off and prices both without (`~35k–55k`), against Auto's `~35k–235k`",
-        autoHint.includes("~35k–235k") &&
-            onHint.includes("~125k–235k") &&
+        "composer-on-off: On presses On with no router note and prices both ends with files (`~140k–250k`); Off presses Off and prices both without (`~50k–70k`), against Auto's `~50k–250k`",
+        autoHint.includes("~50k–250k") &&
+            onHint.includes("~140k–250k") &&
             on?.pressed.join(",") === "on" &&
             on.state === "on" &&
             on.on === "true" &&
             on.why === "" &&
             on.note === "" &&
-            offHint.includes("~35k–55k") &&
+            offHint.includes("~50k–70k") &&
             off?.pressed.join(",") === "off" &&
             off.state === "off" &&
             off.on === "false" &&
@@ -374,7 +378,7 @@ async function composerMention(h, ctx, rec) {
     const reads = await readFiles(h);
     rec(
         "composer-mention: `@UX why?` shows `1 expert answers` and no router hint, priced as a follow-up of one seat (not routed), and Read files makes no router note",
-        hint === "1 expert answers · ≈ 1 call · ~20k tokens" &&
+        hint === "1 expert answers · ≈ 2 calls · ~35k tokens" &&
             !hint.includes("Router") &&
             asked?.followup === 1 &&
             asked.routed === undefined &&
@@ -421,7 +425,7 @@ async function pickerAll(h, ctx, rec) {
     rec(
         "picker-all: choosing it puts `@all ` in the box and closes the list, and the line counts all three seats answering (`3 experts answer`), not routed",
         closed &&
-            hint === "3 experts answer · ≈ 3 calls · ~60k tokens" &&
+            hint === "3 experts answer · ≈ 4 calls · ~75k tokens" &&
             asked?.followup === 3 &&
             asked.routed === undefined &&
             reads?.why === "" &&
@@ -651,6 +655,9 @@ const postOf = (h, id) =>
         const p = document.querySelector(${sel(POST(id))});
         if (!p) return null;
         const norm = (e) => (e?.textContent ?? "")${NORM};
+        // the chip row and the quote are flex items with no whitespace between them in the DOM: what the person reads (a
+        // line break between the items, innerText) is the text to match, "Router failed UX", not textContent's "Router failedUX"
+        const shown = (e) => (e?.innerText ?? "")${NORM};
         const router = p.querySelector("[data-council-router]");
         const bubble = p.querySelector("[data-council-bubble]");
         const reach = p.querySelector("[data-council-reach]");
@@ -662,10 +669,10 @@ const postOf = (h, id) =>
         return {
             router: router ? norm(router) : null,
             reach: reach
-                ? { by: reach.getAttribute("data-council-reach"), seats: seatsOf(reach), text: norm(reach), title: reach.getAttribute("title"), top: bubble?.firstElementChild === reach }
+                ? { by: reach.getAttribute("data-council-reach"), seats: seatsOf(reach), text: shown(reach), title: reach.getAttribute("title"), top: bubble?.firstElementChild === reach }
                 : null,
             quote: quote
-                ? { id: quote.getAttribute("data-council-quote"), text: norm(quote), jump: quote.tagName === "BUTTON", top: bubble?.firstElementChild === quote }
+                ? { id: quote.getAttribute("data-council-quote"), text: shown(quote), jump: quote.tagName === "BUTTON", top: bubble?.firstElementChild === quote }
                 : null,
             named: named.map((x) => ({ seat: x.getAttribute("data-council-seat-chip"), text: norm(x) })),
             waits: waits ? norm(waits) : null,

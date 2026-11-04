@@ -32,6 +32,8 @@ export interface RunInfo {
     createdTs?: number;
     // the run's own status, the only truth for a run that has no dag to measure progress against
     status?: string;
+    // "quick" for a run whose one worker does the job: it never plans, so it never has a dag, a final or a land
+    mode?: string;
     // the run's own wave/<runId> tree, when its lanes land there instead of the checkout
     landPath?: string;
     // the branch the run lands back into
@@ -71,6 +73,7 @@ export function runInfoOf(
         originId: leadRun?.origintabid || undefined,
         createdTs: leadRun?.createdts,
         status: leadRun?.status,
+        mode: leadRun?.mode || undefined,
         landPath: leadRun?.landpath,
         base: leadRun?.basebranch || undefined,
         land: leadRun?.land,

@@ -15,7 +15,9 @@
 // person's own message shows its images as thumbnails and each `@file` as a chip. Beside the channel is the Ideas rail
 // (boards A-decided-rail and A2-decided-rail-thread in .superpowers/design/council-discussion), shaped like the
 // brainstorm's Decided so far: each idea's number, author, title and a quiet line of its replies and stances; a row
-// brings its idea to the top of the channel, and the rail folds away (councilIdeasRailFoldedAtom). A click on an idea's
+// brings its idea to the top of the channel, and the rail folds away (councilIdeasRailFoldedAtom). Its Memory tab holds
+// the direction the seats read before the Report (councilmemory.tsx); a Chốt button beside like and dislike on an idea
+// and on a seat's message, and the `p` key on the idea under the cursor, pin one into it. A click on an idea's
 // reply chip, or Enter on the idea the keyboard cursor is on, opens its thread on the rail's second tab: the idea on
 // top, then its replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and k move
 // the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
@@ -120,8 +122,10 @@ import {
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
-import { councilList, railMeta, railOrderLabel, type IdeaRow } from "./councillistmodel";
+import { councilList, railMeta, railOrderLabel, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
+import { MemoryPanel } from "./councilmemory";
+import { chotLine, memoryDot, type DirectionSource } from "./councilmemorymodel";
 import {
     ANSWERING,
     ROUTER_CHOOSING,
@@ -176,6 +180,7 @@ import {
     councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
+    directionCouncil,
     draftCouncil,
     finalPickCouncil,
     openCouncilSources,
@@ -664,9 +669,41 @@ function PinnedPill({ id }: { id: string }) {
     );
 }
 
+// Chốt: pins an idea's title, or a seat's message on one line, as the council's direction (the Memory tab). It sits beside
+// like and dislike in the same row, and on a reply shows with them while it is hovered or focused. A direction is checked
+// before it is set, so the icon turns while the check runs; where it landed (set, or held with a reason) is on the Memory
+// tab. An item with no text offers nothing, since the backend refuses an empty direction.
+function Chot({ councilId, item, text, acts }: { councilId: string; item: string; text: string; acts: Actions }) {
+    const line = chotLine(text);
+    if (line === "") {
+        return null;
+    }
+    const key = `direction:pin:${item}`;
+    const busy = acts.busy.has(key);
+    return (
+        <button
+            type="button"
+            data-council-chot={item}
+            aria-label="Chốt: pin it as the council's direction"
+            title="Chốt: pin it as the direction the seats read (Memory tab)"
+            disabled={busy}
+            onClick={() => void acts.run(key, "Chốt", () => directionCouncil(councilId, "pin", line, item))}
+            className="inline-flex h-[20px] cursor-pointer items-center gap-[4px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
+        >
+            {busy ? (
+                <Loader2 size={11} className="animate-spin" aria-hidden />
+            ) : (
+                <Pin size={11} strokeWidth={2} aria-hidden />
+            )}
+            Chốt
+        </button>
+    );
+}
+
 function IdeaMessage({
     c,
     item,
+    n,
     open,
     focused,
     onOpen,
@@ -674,6 +711,7 @@ function IdeaMessage({
 }: {
     c: Council;
     item: IdeaPost;
+    n: number | undefined; // its number on the Ideas rail, so a message and its rail row read as one
     open: boolean;
     focused: boolean;
     onOpen: (id: string) => void;
@@ -689,11 +727,19 @@ function IdeaMessage({
             data-item-label={item.label}
             data-open={open ? "true" : undefined}
             data-focused={focused ? "true" : undefined}
-            className="group/reply flex gap-[10px]"
+            className="group/idea group/reply flex gap-[10px]"
         >
             <SeatAvatar who={item} large />
             <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-[6px]">
                 <Byline who={item}>
+                    {n != null && (
+                        <span
+                            data-council-idea-n
+                            className={cn("tabular-nums", open || focused ? "font-semibold text-accent" : "text-muted")}
+                        >
+                            Idea {n}
+                        </span>
+                    )}
                     {item.wild ? (
                         <CouncilPill word={item.label} tone="neutral" />
                     ) : (
@@ -710,12 +756,14 @@ function IdeaMessage({
                 </Byline>
                 <div
                     className={cn(
-                        "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
+                        "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3 transition-[box-shadow] duration-300 motion-reduce:transition-none",
                         item.withdrawn && "opacity-60",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
                         // the open idea wears a light ring over its tone border, so it stands out from its tinted
-                        // neighbours; focus alone keeps the faint one
-                        open ? "ring-2 ring-primary/85" : focused && "ring-1 ring-edge-strong"
+                        // neighbours; the idea under the cursor (a rail click, j / k) wears the accent ring its rail
+                        // row wears, and a rail click rings it wider for a moment where it lands (FLASH_MS)
+                        open ? "ring-2 ring-primary/85" : focused && "ring-2 ring-accent",
+                        "group-data-[flash=true]/idea:ring-4 group-data-[flash=true]/idea:ring-accent"
                     )}
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
@@ -758,6 +806,7 @@ function IdeaMessage({
                             <Reaction key={i} text={text} />
                         ))}
                         <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
+                        <Chot councilId={councilId} item={item.id} text={item.title} acts={acts} />
                         {item.picks != null && (
                             <span
                                 data-council-picks
@@ -1152,7 +1201,12 @@ function ReplyMessage({
                         pinned={c.finalpick === item.id}
                         // at the right end of its byline with the time, shown on hover or focus, so a reply is no taller
                         tools={<MessageTools c={c} id={item.id} acts={acts} />}
-                        thumbs={<Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />}
+                        thumbs={
+                            <>
+                                <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
+                                <Chot councilId={councilId} item={item.id} text={item.text} acts={acts} />
+                            </>
+                        }
                     />
                 )}
                 <div
@@ -2370,6 +2424,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
                     <PostTime at={idea.at} when={idea.when} />
                     <MessageTools c={c} id={idea.id} acts={acts} />
                     <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
+                    <Chot councilId={c.id} item={idea.id} text={idea.title} acts={acts} />
                 </HoverEnd>
             </div>
             <CouncilText text={idea.text} className="text-[13.5px] leading-[1.55]" />
@@ -2508,6 +2563,9 @@ function ThreadPanel({
     );
 }
 
+// the rail's tabs, in the order they are drawn: the ideas, the council's Memory, and an open idea's thread
+type RailTabName = "ideas" | "memory" | "thread";
+
 // one of the Ideas rail's tabs: a word underlined while its tab shows
 function RailTab({
     on,
@@ -2539,21 +2597,41 @@ function RailTab({
     );
 }
 
-/** The Ideas rail's first tab, shaped like the brainstorm's Decided so far: per idea its number and author, its title,
- *  and a quiet line with its replies and the stances on it, in the list's fixed order; nothing ranked and no columns.
- *  A click scrolls the channel to the idea and puts the j / k cursor on it; the idea's own replies button opens its
- *  thread. */
+// A group's dot in the header and the bar down its rows, by tone: whole class names, so Tailwind finds them, all from the
+// `@theme` tokens. Waiting on you (`muted`) draws no bar; the two quiet groups draw it at 60%.
+const GROUP_DOT: Record<StanceTone, string> = {
+    muted: "bg-muted ring-muted/35",
+    success: "bg-success ring-success/35",
+    warning: "bg-warning ring-warning/35",
+    error: "bg-error ring-error/35",
+    "ink-faint": "bg-ink-faint ring-ink-faint/35",
+    "edge-strong": "bg-edge-strong ring-edge-strong/60",
+};
+const GROUP_BAR: Record<StanceTone, string> = {
+    muted: "bg-transparent",
+    success: "bg-success",
+    warning: "bg-warning",
+    error: "bg-error",
+    "ink-faint": "bg-ink-faint opacity-60",
+    "edge-strong": "bg-edge-strong opacity-60",
+};
+
+/** The Ideas rail's first tab, shaped like the brainstorm's Decided so far (board Ideas-by-stance in
+ *  .superpowers/design/council-ideas-memory): the ideas in groups by where the seats stand (stanceGroups), each under a
+ *  header with a dot in its colour, its name in words and a count; per idea a bar in its group's colour, its number and
+ *  author, its title, and a quiet line with its replies and the stances on it. The grouping is derived on every render,
+ *  so an idea moves group as a stance changes. A click scrolls the channel to the idea and puts the j / k cursor on it;
+ *  the idea's own replies button opens its thread. */
 function IdeasList({
-    c,
     ideas,
     on,
     onPick,
 }: {
-    c: Council;
     ideas: readonly IdeaRow[];
     on: string | null; // the idea under the cursor or with its thread open
     onPick: (row: IdeaRow) => void;
 }) {
+    const groups = stanceGroups(ideas);
     return (
         <div
             id="council-rail-ideas"
@@ -2562,46 +2640,99 @@ function IdeasList({
             data-council-rail-ideas
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-[22px] pt-[4px] [scrollbar-gutter:stable]"
         >
-            <span className="pb-[8px] text-[12px] text-muted">{railOrderLabel(c)}</span>
+            <span data-council-rail-caption className="pb-[2px] text-[12px] text-muted">
+                {railOrderLabel()}
+            </span>
             {ideas.length === 0 && (
                 <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
                     Each idea lands here as a seat proposes it.
                 </p>
             )}
-            {ideas.map((row) => {
-                const meta = railMeta(row);
+            {groups.map((g) => {
+                // the quiet groups read dimmer: what waits on the person, and what is out of the running
+                const quiet = g.key === "waiting" || g.key === "withdrawn";
                 return (
-                    <button
-                        key={row.id}
-                        type="button"
-                        data-council-rail-idea={row.id}
-                        data-on={row.id === on ? "true" : undefined}
-                        onClick={() => onPick(row)}
-                        className={cn(
-                            "-mx-2 flex flex-none cursor-pointer flex-col gap-[4px] border-0 border-t border-border px-2 py-[11px] text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-                            row.id === on ? "bg-surface-selected" : "bg-transparent"
-                        )}
+                    <div
+                        key={g.key}
+                        role="group"
+                        aria-label={`${g.label}, ${g.rows.length}`}
+                        data-council-rail-group={g.key}
+                        className="flex flex-none flex-col"
                     >
-                        <span className="text-[11px] text-muted">
-                            Idea {row.n} · {row.name}
-                            {row.isNew && <span className="text-accent-soft"> · new</span>}
-                        </span>
-                        <span className="text-[12.5px] leading-[1.45] text-secondary">{row.title}</span>
-                        {meta !== "" && (
-                            <span data-council-rail-meta className="text-[12px] text-muted">
-                                {meta}
+                        <div className="flex items-center gap-2 pb-[6px] pt-[14px] text-[12px] font-semibold text-secondary">
+                            <span
+                                aria-hidden
+                                data-council-rail-dot
+                                className={cn("h-[8px] w-[8px] flex-none rounded-full ring-1", GROUP_DOT[g.tone])}
+                            />
+                            <span data-council-rail-group-name>{g.label}</span>
+                            <span data-council-rail-group-count className="font-normal tabular-nums text-muted">
+                                {g.rows.length}
                             </span>
-                        )}
-                    </button>
+                        </div>
+                        {g.rows.map((row) => {
+                            const meta = railMeta(row);
+                            return (
+                                <button
+                                    key={row.id}
+                                    type="button"
+                                    data-council-rail-idea={row.id}
+                                    data-on={row.id === on ? "true" : undefined}
+                                    onClick={() => onPick(row)}
+                                    className={cn(
+                                        "-mx-2 flex flex-none cursor-pointer gap-[10px] border-0 border-t border-border px-2 py-[10px] text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                                        // the row under the cursor wears the accent ring its message in the channel wears
+                                        row.id === on
+                                            ? "rounded-[6px] bg-surface-selected ring-2 ring-inset ring-accent"
+                                            : "bg-transparent"
+                                    )}
+                                >
+                                    <span
+                                        aria-hidden
+                                        data-council-rail-bar={g.tone}
+                                        className={cn(
+                                            "w-[3px] flex-none self-stretch rounded-[2px]",
+                                            GROUP_BAR[g.tone]
+                                        )}
+                                    />
+                                    <span className="flex min-w-0 flex-1 flex-col gap-[4px]">
+                                        <span data-council-rail-who className="text-[11px] text-muted">
+                                            <span className={row.id === on ? "font-semibold text-accent" : undefined}>
+                                                Idea {row.n}
+                                            </span>{" "}
+                                            · {row.name}
+                                            {row.isNew && <span className="text-accent-soft"> · new</span>}
+                                        </span>
+                                        <span
+                                            data-council-rail-title
+                                            className={cn(
+                                                "text-[12.5px] leading-[1.45]",
+                                                quiet ? "text-muted" : "text-secondary",
+                                                g.key === "withdrawn" && "line-through"
+                                            )}
+                                        >
+                                            {row.title}
+                                        </span>
+                                        {meta !== "" && (
+                                            <span data-council-rail-meta className="text-[12px] text-muted">
+                                                {meta}
+                                            </span>
+                                        )}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
                 );
             })}
         </div>
     );
 }
 
-/** The rail beside the channel (board A-decided-rail): Ideas on its first tab, and once an idea's replies are opened its
- *  thread on a second tab (board A2-decided-rail-thread), so the channel never shares the pane with two columns. The
- *  close button closes the thread; with none open, the rail folds (councilIdeasRailFoldedAtom). */
+/** The rail beside the channel (board A-decided-rail): Ideas on its first tab, the council's Memory on its second (its
+ *  chosen direction, councilmemory.tsx; a small dot marks a card that waits), and once an idea's replies are opened its
+ *  thread on a third (board A2-decided-rail-thread), so the channel never shares the pane with two columns. The close
+ *  button closes the thread; with none open, the rail folds (councilIdeasRailFoldedAtom). */
 function CouncilRail({
     c,
     ideas,
@@ -2615,21 +2746,25 @@ function CouncilRail({
     onPick,
     onClose,
     onFold,
+    onShow,
+    onOpenSource,
 }: {
     c: Council;
     ideas: readonly IdeaRow[];
     thread: ChatThread | null;
     n: number | undefined;
-    tab: "ideas" | "thread";
+    tab: RailTabName;
     on: string | null;
     acts: Actions;
     chats: readonly SeatableAgent[];
-    onTab: (tab: "ideas" | "thread") => void;
+    onTab: (tab: RailTabName) => void;
     onPick: (row: IdeaRow) => void;
     onClose: () => void;
     onFold: () => void;
+    onShow: (ids: readonly string[]) => boolean;
+    onOpenSource: (source: DirectionSource) => void;
 }) {
-    const shows = thread != null && tab === "thread" ? "thread" : "ideas";
+    const shows: RailTabName = tab === "memory" ? "memory" : thread != null && tab === "thread" ? "thread" : "ideas";
     return (
         <aside
             data-council-rail
@@ -2649,6 +2784,22 @@ function CouncilRail({
                     data-council-rail-tab="ideas"
                 >
                     Ideas · {ideas.length}
+                </RailTab>
+                <RailTab
+                    on={shows === "memory"}
+                    controls="council-rail-memory"
+                    onClick={() => onTab("memory")}
+                    data-council-rail-tab="memory"
+                >
+                    Memory
+                    {memoryDot(c) && (
+                        <span
+                            role="img"
+                            aria-label="A suggestion or a held direction waits for you"
+                            data-council-memory-dot
+                            className="ml-[5px] inline-block h-[6px] w-[6px] rounded-full bg-accent-soft align-middle"
+                        />
+                    )}
                 </RailTab>
                 {thread != null && (
                     <RailTab
@@ -2687,8 +2838,10 @@ function CouncilRail({
             </div>
             {shows === "thread" && thread != null ? (
                 <ThreadPanel c={c} thread={thread} acts={acts} chats={chats} />
+            ) : shows === "memory" ? (
+                <MemoryPanel key={c.id} c={c} acts={acts} onShow={onShow} onOpenSource={onOpenSource} />
             ) : (
-                <IdeasList c={c} ideas={ideas} on={on} onPick={onPick} />
+                <IdeasList ideas={ideas} on={on} onPick={onPick} />
             )}
         </aside>
     );
@@ -3112,7 +3265,7 @@ export function CouncilChat({
     // an idea's number is the same whatever the filter: read from the whole list
     const numbers = useMemo(() => new Map(councilList(c, 0).ideas.map((r) => [r.id, r.n])), [c]);
     const [folded, setFolded] = useAtom(councilIdeasRailFoldedAtom);
-    const [railTab, setRailTab] = useState<"ideas" | "thread">("thread");
+    const [railTab, setRailTab] = useState<RailTabName>("thread");
     // a thread opened any way (its replies button, Enter on the cursor, the Summary's link) shows on the rail's second tab
     useEffect(() => {
         if (openId != null) {
@@ -3143,8 +3296,66 @@ export function CouncilChat({
     const pick = useCallback((row: IdeaRow) => {
         setFocusedId(row.id);
         const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
-        revealIn(channel.current, channel.current?.querySelector(at), "start");
+        const post = channel.current?.querySelector<HTMLElement>(at);
+        revealIn(channel.current, post, "start");
+        // the idea rings wider for a moment where it lands, so the eye finds it; a second click restarts the moment
+        if (post != null) {
+            window.clearTimeout(Number(post.dataset.flashTimer));
+            post.dataset.flash = "true";
+            post.dataset.flashTimer = String(window.setTimeout(() => delete post.dataset.flash, FLASH_MS));
+        }
     }, []);
+    // the Memory tab's Show the messages: the channel scrolls to the first of them it draws: the message itself (an idea,
+    // or a post of the channel), else, for a reply that lives in an idea's thread, that idea; the cursor goes to an idea.
+    // False when none of them is in the channel (a dropped idea, a seat the filter leaves out), which the tab says.
+    const showMessages = useCallback(
+        (ids: readonly string[]): boolean => {
+            for (const id of ids) {
+                const parent = c.replies?.find((r) => r.id === id)?.proposalid ?? "";
+                const targets = [
+                    { at: `[data-council-idea="${id}"]`, idea: id },
+                    { at: `[data-council-reply-post="${id}"]`, idea: null },
+                    ...(parent === "" ? [] : [{ at: `[data-council-idea="${parent}"]`, idea: parent }]),
+                ];
+                for (const t of targets) {
+                    const el = channel.current?.querySelector(t.at);
+                    if (el != null) {
+                        if (t.idea != null) {
+                            setFocusedId(t.idea);
+                        }
+                        el.scrollIntoView?.({ block: "center" });
+                        return true;
+                    }
+                }
+            }
+            return false;
+        },
+        [c]
+    );
+    // the chosen direction's source link opens the thread the idea or message lives in (an idea's own, else the Chat's)
+    const openSource = useCallback(
+        (s: DirectionSource) => {
+            setOpenId(s.thread);
+            if (s.kind === "idea") {
+                setFocusedId(s.id);
+            }
+        },
+        [setOpenId]
+    );
+    // p, the key for Chốt: pins the idea under the cursor (false for an id that is no idea the channel shows)
+    const run = acts.run;
+    const chotIdea = useCallback(
+        (id: string): boolean => {
+            const idea = items.find((i): i is IdeaPost => i.kind === "idea" && i.id === id);
+            const text = idea == null ? "" : chotLine(idea.title);
+            if (text === "") {
+                return false;
+            }
+            void run(`direction:pin:${id}`, "Chốt", () => directionCouncil(c.id, "pin", text, id));
+            return true;
+        },
+        [items, run, c.id]
+    );
     const closeSources = useCallback(() => closeCouncilSources(c.id), [c.id]);
     // Escape closes the sources first, back to the thread they were opened from, then the thread
     const close = useCallback(
@@ -3152,8 +3363,17 @@ export function CouncilChat({
         [sourcesOpen, closeSources, setOpenId]
     );
     const nav = useMemo<CouncilChatNav>(
-        () => ({ order, focusedId, openId: threadOpen ? openId : null, sourcesOpen, focus: setFocusedId, open, close }),
-        [order, focusedId, openId, threadOpen, sourcesOpen, open, close]
+        () => ({
+            order,
+            focusedId,
+            openId: threadOpen ? openId : null,
+            sourcesOpen,
+            focus: setFocusedId,
+            open,
+            close,
+            chot: chotIdea,
+        }),
+        [order, focusedId, openId, threadOpen, sourcesOpen, open, close, chotIdea]
     );
     useCouncilChatNav(nav);
     const bindings = useMemo(buildCouncilBindings, []);
@@ -3320,6 +3540,7 @@ export function CouncilChat({
                                             key={item.id}
                                             c={c}
                                             item={item}
+                                            n={numbers.get(item.id)}
                                             acts={acts}
                                             open={threadOpen && item.id === openId}
                                             focused={item.id === focusedId}
@@ -3405,6 +3626,8 @@ export function CouncilChat({
                                     onPick={pick}
                                     onClose={() => setOpenId(null)}
                                     onFold={() => setFolded(true)}
+                                    onShow={showMessages}
+                                    onOpenSource={openSource}
                                 />
                             )}
                         </motion.div>

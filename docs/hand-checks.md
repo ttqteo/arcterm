@@ -6,10 +6,40 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council seats on opus by responsibility.** After the next launch (the arc mod carries the new skill),
+  ask a Claude session in a live arcterm for a council on a thesis question ("does the method in chapter 3 hold?") →
+  before the Token burn card it says in one line which seats go to opus and why, with the `wsh council estimate`
+  number and that the estimate does not price opus higher, and its `start` carries `--model <seat>=opus`. Then ask for
+  a council on a wording pass → no opus seat, no model line. Skill prose only, never run by an agent
+  (`skills/council/SKILL.md` "Which seats run on opus", "Writing a role").
+- [ ] (arcterm) **Round 1 idea cards draw Markdown.** Start a council whose experts answer with a table or a `==…==`
+  sentence → while it is still in Round 1, the cards under Ideas so far in Discussion show a real table and a
+  highlighted sentence, not raw `|` and `==` (`councildiscussion.tsx`, 634a18218).
+- [ ] (arcterm) **Council title on two lines, short step chip.** Open a running council with a long title in
+  Discussion → the title wraps to two lines (then an ellipsis), the row stays 52px, and the chip reads `Round 1/2`
+  whole, never `Round 1 of…`; hovering it shows `Round 1 of 2`. Narrow the window to ~1000px: the chip still whole.
+  Not run in the app (no dev app up); `council-discussion` CDP scenario not run either.
+- [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
+  a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
+  never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`
+  was the suspect (`dagmodal.tsx`).
+- [ ] (arcterm) **A brainstorm handed to a quick run follows it.** Hand a brainstorm's spec to a quick run → its Agent
+  tree line reads `working · run …`, then `done · run …` (never `planning`), and the Run step offers Close the
+  brainstorm once the run is done (`brainstormrunmodel.ts` `quickStepView`).
+- [ ] (arcterm) **Brainstorm offers a quick run for a small build.** Brainstorm a small change with no mockup to
+  approve, with the agent writing `"runShape": "quick"` beside the spec → the approve bar reads "Approve and start a
+  quick run" and `<project> · quick run · one worker, no plan`, and Approve opens the launcher on Quick run. A
+  brainstorm with a board still offers the orchestrator run. Agent tab → brainstorm pane; commit 2f79224af.
 - [ ] (arcterm) **Ideas rail click keeps the window still.** In a council's Discussion with the Ideas rail open, click
   an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
   bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
   the typecheck only; no dev app was up (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
+- [ ] (arcterm) **Council screenshot regions with real seats.** Run a Review council with a screenshot attached (and
+  paste an image into a reply) → the seats cite `screenshot:<file>#<name>@x,y,w,h`, each crop under an idea or reply
+  boxes the element the seat names, and a click opens the whole screenshot in Sources with the box on it. Done → the
+  saved document has a `<doc name>-regions/` folder beside it and shows the crops. The CDP scenario `council-regions`
+  covers a seeded council only; no model ran (`evidenceRule` in `pkg/council/prompts.go`, `regions.go`; commit
+  8b3f34d58).
 
 - [ ] (arcterm) Open a council idea's thread panel (380px) and look at a reply whose seat name and stance pill fill the
   byline ("Người lo trải nghiệm · has doubts") → no empty line between the byline and the bubble; hover it → its time
@@ -40,6 +70,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) `wsh jarvis dag retry <task>` and `wsh jarvis dag escalate <task> --model opus` on a task in
   blocked-merge → each is refused naming `dag merge <task> --continue`, and the task and its worker tab stay as they
   were (run aebf7808 Task 6).
+- [ ] (arcterm) A council's Memory tab with the real checks: in a council with a few ideas, click Chốt on an idea → within
+  seconds the Memory tab shows it as the Chosen direction (`Pinned by you`, its time, `from Idea N`); Chốt one that
+  contradicts what the seats agreed → the tab's dot lights and the card reads `Held · this may clash…` with the check's
+  reason, and Set anyway sets it. `p` on the idea under the cursor does the same. After a reply pass the round check may
+  leave a `Suggested after round N` card, and Show the messages scrolls the channel to them. The `council-memory`
+  scenario drives every state with `CouncilDirectionCommand` stubbed; the haiku pre-set and round checks, and the
+  `p` key in the real window, are untried (`councilmemory.tsx`, `councilchat.tsx` `Chot`, `pkg/council/memorycheck.go`).
 
 - [ ] (arcterm) An asking agent's whole row breathes in the Agent tree: get an agent to ask (a permission prompt or a
   brainstorm question) → its row, selected or not, pulses a faint amber wash and edge every ~2.4s alongside its glyph;
@@ -1697,10 +1734,18 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `[close] confirm … via=enter after=…ms` (or `via=click`), `[close] close … why=close from …`, and wavesrv's
   `CloseTab: tab …`. Unit tests and the typecheck only (`closelog.ts`, `confirmdialog.tsx`, `agentactions.ts`).
 - [ ] (arcterm) **Open council idea rings.** In a council's Discussion, click an idea's replies → its bubble wears a
-  bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone still draws the faint ring.
+  bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone draws the accent ring (below).
   Not tried in the app (`councilchat.tsx` `IdeaMessage` bubble).
+- [ ] (arcterm) **Picked council idea shows in both places.** In a council's Discussion, click an idea on the Ideas tab →
+  the row wears an accent ring and its `Idea N` turns accent; the channel scrolls the same idea to the top, whose bubble
+  wears the same accent ring (wider for ~2 s, then 2px) and whose byline starts with the same accent `Idea N`. Every
+  other idea's byline shows its `Idea N` muted. j/k moves both rings together. Typecheck only (`councilchat.tsx`
+  `IdeaMessage`, `IdeasList`, `pick`); no dev app was up.
 - [ ] (arcterm) **Withdrawn council idea.** Run a council until a seat withdraws its own idea in round 2 → in the
   Discussion the idea's byline has a grey outlined `Withdrawn` pill and its bubble is dim; its thread's title is struck
   through with the same pill; the author's reply reads `withdrew it` with a one-line reason, or only the pill when it gave
   none, and never counts as an "agrees" chip. An older council's "Withdrawn." reply shows as the pill alone. Unit tests
   and the typecheck only (`councilchat.tsx` `IdeaMessage`, `ThreadIdea`, `ReplyMessage`); no dev app was up.
+- [ ] (arcterm) **Fold button without the pet's name.** The app bar right of + New shows a 26px square with only the
+  pet (Sprout, Minion or Spider-Man), no name beside it; hovering it says `Fold into <name>`, a click folds, a right-click
+  still opens the fold menu. ESLint only (`app-bar.tsx`); no dev app was up.

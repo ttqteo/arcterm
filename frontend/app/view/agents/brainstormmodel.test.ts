@@ -83,6 +83,7 @@ import {
     reviewHead,
     runLine,
     runPrefill,
+    runTitle,
     seenMark,
     sendBlocker,
     sendPickedLabel,
@@ -92,6 +93,7 @@ import {
     shownFile,
     spikeUrl,
     stopsJudge,
+    suggestedShape,
     terminalAnswer,
     togglePick,
     treeLine,
@@ -1801,6 +1803,40 @@ describe("summaries", () => {
             "Resume the brainstorm in C:\\p\\brainstorm.json with arc:brainstorm."
         );
         expect(runLine("siem-pipeline")).toBe("siem-pipeline · orchestrator · this design attached");
+        expect(runLine("siem-pipeline", "quick")).toBe("siem-pipeline · quick run · one worker, no plan");
+        expect(runTitle("quick")).toBe("Approve and start a quick run");
+        expect(runTitle("orchestrator")).toBe("Approve and start an orchestrator run");
+    });
+});
+
+describe("suggestedShape", () => {
+    it("reads runShape from the file, and only quick or orchestrator", () => {
+        const parse = (runShape: unknown) => {
+            const r = parseBrainstorm(raw({ runShape }));
+            expect(r.ok).toBe(true);
+            return (r as { file: BrainstormFile }).file.runShape;
+        };
+        expect(parse("quick")).toBe("quick");
+        expect(parse("orchestrator")).toBe("orchestrator");
+        expect(parse("small")).toBeUndefined();
+        expect(parse(undefined)).toBeUndefined();
+    });
+
+    it("offers a quick run only when the agent judged the build quick", () => {
+        expect(suggestedShape(file({ runShape: "quick" }))).toBe("quick");
+        expect(suggestedShape(file({ runShape: "orchestrator" }))).toBe("orchestrator");
+        expect(suggestedShape(file({}))).toBe("orchestrator");
+    });
+
+    it("keeps an orchestrator run when a board would ride it as the prototype", () => {
+        const withBoard = file({
+            runShape: "quick",
+            canvas: "lag",
+            parts: [part("a", "yours", { boards: ["P.dc.html"] })],
+        });
+        expect(suggestedShape(withBoard)).toBe("orchestrator");
+        // a canvas with no listed board attaches nothing, so the quick read stands
+        expect(suggestedShape(file({ runShape: "quick", canvas: "lag", parts: [part("a", "yours")] }))).toBe("quick");
     });
 });
 
@@ -1835,6 +1871,12 @@ describe("runPrefill", () => {
             ],
         });
         expect(runPrefill(f, base).prototype).toBe("C:\\proj\\.superpowers\\design\\lag\\project\\Page.dc.html");
+    });
+
+    it("prefills a quick run when the agent judged the build quick", () => {
+        const p = runPrefill(file({ title: "T", spec: "s.md", runShape: "quick" }), base);
+        expect(p.shape).toBe("quick");
+        expect(p.goal).toBe("Build T as specified in C:\\proj\\s.md.");
     });
 
     it("has no prototype without a listed board or without a canvas", () => {

@@ -368,6 +368,32 @@ export async function finalPickCouncil(id: string, item: string): Promise<Counci
     return r;
 }
 
+/** The words of one move on a council's direction (the Memory tab, Chốt): `set` types a direction, `pin` takes one from
+ *  an idea or message, `edit` rewrites the chosen one, `accept` / `dismiss` settle the waiting suggestion, `setanyway` /
+ *  `discard` the held direction, `unpin` takes the chosen one off. */
+export type CouncilDirectionAction = "set" | "pin" | "edit" | "accept" | "dismiss" | "setanyway" | "discard" | "unpin";
+
+/** One move on the council's direction memory. `text` is the direction of a set, pin or edit, `from` the idea (P3) or
+ *  message (r7) a pin comes from. A set, pin or edit is checked first (a model call, so it takes a moment): it becomes the
+ *  chosen direction, or is held on the Memory tab with the check's reason. The command answers nothing: the new memory
+ *  reaches the council through `council:changed`. wavesrv refuses an action it does not know and a set, pin or edit with
+ *  no text, naming it. */
+export function directionCouncil(
+    id: string,
+    action: CouncilDirectionAction,
+    text?: string,
+    from?: string
+): Promise<CouncilCall<void>> {
+    const data: CommandCouncilDirectionData = { id, action };
+    if (text != null) {
+        data.text = text;
+    }
+    if (from != null && from !== "") {
+        data.from = from;
+    }
+    return call("direction", () => RpcApi.CouncilDirectionCommand(TabRpcClient, data));
+}
+
 /** The role library and the saved groups. */
 export function councilRoles(): Promise<CouncilCall<CouncilRolesRtnData>> {
     return call("roles", () => RpcApi.CouncilRolesCommand(TabRpcClient));

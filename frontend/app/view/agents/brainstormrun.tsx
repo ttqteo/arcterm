@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The brainstorm's Run step: the design handed over and where the run it started stands, read from the run
-// itself. Once the run merged with its final check passed, Close deletes the brainstorm file and ends its agent; the
+// itself. Once the run merged with its final check passed (or a quick run is done), Close deletes the brainstorm file and ends its agent; the
 // canvas stays, in the Canvas gallery.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -46,6 +46,7 @@ const STATE_DOT: Partial<Record<RunStepState, string>> = {
     cancelled: "bg-error",
     missing: "bg-error",
     unverified: "bg-warning",
+    blocked: "bg-warning",
     loading: "bg-muted",
 };
 
@@ -127,7 +128,7 @@ function StateCard({
     view: RunStepView;
 }) {
     const closing = view.canClose;
-    const detail = closing ? closeDetail(s.topic, f.canvas, agent.state === "idle") : view.detail;
+    const detail = closing ? closeDetail(view, s.topic, f.canvas, agent.state === "idle") : view.detail;
     return (
         <div
             data-brainstorm-run-card
@@ -158,10 +159,11 @@ function StateCard({
 }
 
 // an agent at work is left running: the brainstorm is done, but it may have moved on to something else
-function closeDetail(topic: string, canvas: string | undefined, idle: boolean): string {
+function closeDetail(view: RunStepView, topic: string, canvas: string | undefined, idle: boolean): string {
     const kept = canvas ? ` The ${canvas} canvas stays in the Canvas gallery.` : "";
     const agent = idle ? " and ends this agent" : "; this agent is at work, so it keeps running";
-    return `The final check passed. The spec stays in docs/.${kept} Closing deletes .superpowers/brainstorm/${topic}${agent}.`;
+    const why = view.state === "done" ? view.detail : "The final check passed.";
+    return `${why} The spec stays in docs/.${kept} Closing deletes .superpowers/brainstorm/${topic}${agent}.`;
 }
 
 function CloseButton({ agent, s, runId }: { agent: AgentVM; s: BrainstormState; runId: string }) {
@@ -193,7 +195,7 @@ function CloseButton({ agent, s, runId }: { agent: AgentVM; s: BrainstormState; 
 async function closeBrainstorm(agent: AgentVM, runId: string): Promise<void> {
     const read = globalStore.get(runInfoAtom(runId));
     if (!runStepView(runId, read.run, read.loaded).canClose) {
-        throw new Error("The run is no longer merged with its final check passed, so the brainstorm stays.");
+        throw new Error("The run is no longer done with its final check passed, so the brainstorm stays.");
     }
     const s = globalStore.get(brainstormAtom(agent.id));
     if (s == null || shownBrainstormFile(s) == null) {

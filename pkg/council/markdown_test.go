@@ -77,6 +77,116 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
+// memoryCouncil is markdownCouncil with a memory: a chosen direction pinned from an idea, and two it replaced (the newest
+// first), one edited and one set by hand.
+func memoryCouncil() *Council {
+	c := markdownCouncil()
+	c.Question = "Which direction first?"
+	c.Memory = &CouncilMemory{
+		Chosen: &CouncilMemoryDirection{Text: "Show the state first", How: DirectionPin, From: "P1", At: 1_700_000_000_000},
+		Replaced: []CouncilMemoryDirection{
+			{Text: "Show the state\nfirst, quietly", How: DirectionSuggested, Source: SourceCheck, Round: 2, At: 1_699_999_000_000, Replaced: 1_700_000_000_000, Ended: EndEdited},
+			{Text: "Sleep after a minute", How: DirectionWritten, At: 1_699_990_000_000, Replaced: 1_699_999_000_000, Ended: EndReplaced},
+		},
+		Suggestion: &CouncilMemoryCard{Kind: CardSuggestion, Text: "A waiting suggestion is not the direction", Source: SourceCheck},
+		Held:       &CouncilMemoryCard{Kind: CardHeld, Text: "A held direction is not the direction"},
+	}
+	return c
+}
+
+// The document carries the chosen direction above the report, with what it replaced under it, so an agent never reads
+// the report's direction after the person settled on another.
+func TestMarkdownMemory(t *testing.T) {
+	md := Markdown(memoryCouncil())
+	mustContain(t, "markdown", md,
+		"## Chosen direction\n\nShow the state first\n\n",
+		"Pinned by you · from P1 · 2023-11-14 22:13 UTC\n",
+		"outranks the report below",
+		"## Replaced\n\n",
+		"- ~~Show the state first, quietly~~ · Accepted from the check after round 2 · edited 2023-11-14 22:13 UTC\n",
+		"- ~~Sleep after a minute~~ · Written by you · replaced 2023-11-14 21:56 UTC\n")
+	mustNotContain(t, "markdown", md, "A waiting suggestion", "A held direction") // a card is not a direction yet
+
+	// the chosen direction, what it replaced, then the report: its answer, its directions and the matrix
+	last := -1
+	for _, w := range []string{"# Council:", "You asked:", "## Chosen direction", "## Replaced", "The panel prefers", "## Directions", "## Matrix"} {
+		i := strings.Index(md, w)
+		if i < 0 || i < last {
+			t.Errorf("%q is missing or out of order (at %d, after %d) in\n%s", w, i, last, md)
+		}
+		last = max(last, i)
+	}
+	// the newest replaced direction first
+	if a, b := strings.Index(md, "Show the state first, quietly"), strings.Index(md, "Sleep after a minute"); a < 0 || b < a {
+		t.Errorf("Replaced is not newest first\n%s", md)
+	}
+
+	// the saved document has it too, above the discussion
+	doc := Document(memoryCouncil())
+	if d, x := strings.Index(doc, "## Chosen direction"), strings.Index(doc, "## The discussion"); d < 0 || x < d {
+		t.Errorf("the saved document lacks the chosen direction above the discussion\n%s", doc)
+	}
+}
+
+// A council with no memory, or one holding only cards, reads as it did before the memory.
+func TestMarkdownMemoryLeftOutWhenThereIsNone(t *testing.T) {
+	plain := Markdown(markdownCouncil())
+	mustNotContain(t, "markdown", plain, "Chosen direction", "Replaced")
+
+	c := markdownCouncil()
+	c.Memory = &CouncilMemory{
+		Suggestion: &CouncilMemoryCard{Kind: CardSuggestion, Text: "A waiting suggestion", Source: SourceGreen, From: "P3"},
+		Held:       &CouncilMemoryCard{Kind: CardHeld, Text: "A held direction"},
+		Dismissed:  []string{"idea:P2"},
+	}
+	if got := Markdown(c); got != plain {
+		t.Errorf("a memory with no direction changed the document\n%s", got)
+	}
+
+	// a direction with nothing chosen and nothing replaced is not shown, and one with no Replaced shows no Replaced
+	c = markdownCouncil()
+	c.Memory = &CouncilMemory{Chosen: &CouncilMemoryDirection{Text: "Only this", How: DirectionWritten}}
+	md := Markdown(c)
+	mustContain(t, "markdown", md, "## Chosen direction\n\nOnly this\n\nWritten by you\n")
+	mustNotContain(t, "markdown", md, "## Replaced", " UTC") // no time when none was recorded
+}
+
+// After an Unpin nothing is chosen but the history stays: the document says no direction is chosen now, and lists what was
+// taken off, so an agent does not read the old direction as the current one.
+func TestMarkdownMemoryAfterAnUnpin(t *testing.T) {
+	c := markdownCouncil()
+	c.Memory = &CouncilMemory{Replaced: []CouncilMemoryDirection{
+		{Text: "Show the state first", How: DirectionPin, From: "r7", At: 1_699_999_000_000, Replaced: 1_700_000_000_000, Ended: EndUnpinned},
+	}}
+	md := Markdown(c)
+	mustContain(t, "markdown", md, "## Chosen direction\n\nNone is chosen now.\n\n", "## Replaced\n\n",
+		"- ~~Show the state first~~ · Pinned by you · from r7 · unpinned 2023-11-14 22:13 UTC\n")
+	mustNotContain(t, "markdown", md, "outranks")
+	if c, r, s := strings.Index(md, "## Chosen direction"), strings.Index(md, "## Replaced"), strings.Index(md, "## Directions"); c > r || r > s {
+		t.Errorf("sections out of order\n%s", md)
+	}
+}
+
+// How a direction was set reads in words: pinned, written, or accepted from the check or from all green.
+func TestMarkdownMemoryHowWords(t *testing.T) {
+	for _, tc := range []struct {
+		d    CouncilMemoryDirection
+		want string
+	}{
+		{CouncilMemoryDirection{How: DirectionPin}, "Pinned by you"},
+		{CouncilMemoryDirection{How: DirectionWritten}, "Written by you"},
+		{CouncilMemoryDirection{How: DirectionSuggested, Source: SourceCheck, Round: 3}, "Accepted from the check after round 3"},
+		{CouncilMemoryDirection{How: DirectionSuggested, Source: SourceCheck}, "Accepted from the check"},
+		{CouncilMemoryDirection{How: DirectionSuggested, Source: SourceGreen, From: "P3"}, "Accepted from all green"},
+		{CouncilMemoryDirection{How: DirectionSuggested}, "Accepted from a suggestion"},
+		{CouncilMemoryDirection{}, "Set by you"},
+	} {
+		if got := memoryHow(tc.d); got != tc.want {
+			t.Errorf("memoryHow(%+v) = %q, want %q", tc.d, got, tc.want)
+		}
+	}
+}
+
 func TestMarkdownAskNext(t *testing.T) {
 	c := markdownCouncil()
 	c.Summary.Asks = []CouncilAsk{{Text: "Does it hold\non a Mac?", To: "skeptic"}, {Text: "What first?"}, {Text: "Who?", To: "ghost"}}

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council chat's keyboard cursor, published while its channel is on screen and read by the council bindings in
-// bindings.ts (j/k over the ideas, Enter opens one's thread, Esc closes it). The same shape as listnav.ts: the view
-// owns the state and the registry only reads it, so a binding never reaches into the view.
+// bindings.ts (j/k over the ideas, Enter opens one's thread, p Chốts the idea, Esc closes it). The same shape as
+// listnav.ts: the view owns the state and the registry only reads it, so a binding never reaches into the view.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
@@ -17,6 +17,7 @@ export interface CouncilChatNav {
     focus: (id: string) => void;
     open: (id: string) => void;
     close: () => void; // the Sources panel (back to its thread) when it is open, else the thread
+    chot: (id: string) => boolean; // Chốt idea `id`: pin it as the direction; false when the channel shows no such idea
 }
 
 export const councilChatNavAtom = atom<CouncilChatNav | null>(null) as PrimitiveAtom<CouncilChatNav | null>;

@@ -13,9 +13,9 @@ func uiGroup() []CouncilExpert {
 }
 
 func TestEstimateMatchesTheCanvas(t *testing.T) {
-	// board Setup: "≈ 9 calls · ~0.8M tokens · ~6 min"
+	// board Setup: "≈ 9 calls · ~0.8M tokens · ~6 min", and the round check after the one reply pass is a call more
 	got := Estimate(uiGroup(), 0, 0)
-	want := CouncilEstimate{Calls: 9, Tokens: 820_000, Minutes: 6}
+	want := CouncilEstimate{Calls: 10, Tokens: 820_000 + roundCheckTokens, Minutes: 6}
 	if got != want {
 		t.Fatalf("Estimate = %+v, want %+v", got, want)
 	}
@@ -26,10 +26,10 @@ func TestEstimateMatchesTheCanvas(t *testing.T) {
 
 func TestEstimateCountsFileBytesAsAQuarterTokenEachForEveryExpert(t *testing.T) {
 	got := Estimate(uiGroup(), 40_000, 0) // 10k tokens a file read, four experts
-	if want := int64(820_000 + 4*10_000); got.Tokens != want {
+	if want := int64(820_000 + roundCheckTokens + 4*10_000); got.Tokens != want {
 		t.Errorf("tokens = %d, want %d", got.Tokens, want)
 	}
-	if got.Calls != 9 || got.Minutes != 6 {
+	if got.Calls != 10 || got.Minutes != 6 {
 		t.Errorf("files change the tokens only: %+v", got)
 	}
 }
@@ -37,20 +37,20 @@ func TestEstimateCountsFileBytesAsAQuarterTokenEachForEveryExpert(t *testing.T) 
 func TestEstimateGrowsWithThePanel(t *testing.T) {
 	paper := []CouncilExpert{{Id: "a"}, {Id: "b"}, {Id: "c"}, {Id: "chair", Coordinator: true}}
 	got := Estimate(paper, 0, 0)
-	want := CouncilEstimate{Calls: 7, Tokens: 3*(140_000+45_000) + 80_000, Minutes: 6}
+	want := CouncilEstimate{Calls: 8, Tokens: 3*(140_000+45_000) + roundCheckTokens + 80_000, Minutes: 6}
 	if got != want {
 		t.Errorf("Estimate = %+v, want %+v", got, want)
 	}
 	if got := Estimate(nil, 0, 0); got.Calls != 1 || got.Tokens != 80_000 {
-		t.Errorf("no panel is the synthesis alone: %+v", got)
+		t.Errorf("no panel is the synthesis alone, with no reply pass to check: %+v", got)
 	}
 }
 
 func TestEstimateRemainingMatchesPaused(t *testing.T) {
-	// board Paused: "Rounds 2 and 3: ≈ 5 calls · ~0.3M tokens"
+	// board Paused: "Rounds 2 and 3: ≈ 5 calls · ~0.3M tokens", and the round check after the reply pass is a call more
 	c := &Council{Experts: uiGroup()}
 	got := EstimateRemaining(c)
-	if want := (CouncilEstimate{Calls: 5, Tokens: 260_000, Minutes: 3}); got != want {
+	if want := (CouncilEstimate{Calls: 6, Tokens: 260_000 + roundCheckTokens, Minutes: 3}); got != want {
 		t.Fatalf("EstimateRemaining = %+v, want %+v", got, want)
 	}
 	if s := FormatTokens(got.Tokens); s != "0.3M" {
@@ -65,7 +65,7 @@ func TestEstimateRemainingLeavesOutExpertsThatFailedInRound1(t *testing.T) {
 		"coordinator": {Round: 3, Error: "x"},
 	}}
 	got := EstimateRemaining(c)
-	if want := (CouncilEstimate{Calls: 4, Tokens: 3*45_000 + 80_000, Minutes: 3}); got != want {
+	if want := (CouncilEstimate{Calls: 5, Tokens: 3*45_000 + roundCheckTokens + 80_000, Minutes: 3}); got != want {
 		t.Errorf("EstimateRemaining = %+v, want %+v", got, want)
 	}
 }
@@ -82,10 +82,10 @@ func withAgent() []CouncilExpert {
 func TestEstimateAgentSeatCostsItsContextTimesRounds(t *testing.T) {
 	got := Estimate(withAgent(), 0, 2)
 	want := CouncilEstimate{
-		Calls:       7, // three seats, two rounds each, and the synthesis
-		Tokens:      2*(140_000+45_000) + 2*625_000 + 80_000,
+		Calls:       8, // three seats, two rounds each, the round check after the reply pass, and the synthesis
+		Tokens:      2*(140_000+45_000) + 2*625_000 + roundCheckTokens + 80_000,
 		Minutes:     6,
-		AgentTokens: 1_250_000,
+		AgentTokens: 1_250_000, // the check is no agent's turn
 	}
 	if got != want {
 		t.Fatalf("Estimate = %+v, want %+v", got, want)
@@ -106,7 +106,7 @@ func TestEstimateAgentSeatCostsItsContextTimesRounds(t *testing.T) {
 func TestEstimateRounds1DropsTheReplyPass(t *testing.T) {
 	got := Estimate(withAgent(), 0, 1)
 	want := CouncilEstimate{
-		Calls:       4, // three seats, one round each, and the synthesis
+		Calls:       4, // three seats, one round each, and the synthesis: no reply pass, so no round check
 		Tokens:      2*140_000 + 625_000 + 80_000,
 		Minutes:     4,
 		AgentTokens: 625_000,
@@ -119,8 +119,8 @@ func TestEstimateRounds1DropsTheReplyPass(t *testing.T) {
 func TestEstimateRounds3AddsASecondReplyPass(t *testing.T) {
 	got := Estimate(withAgent(), 0, 3)
 	want := CouncilEstimate{
-		Calls:       10, // three seats, three rounds each, and the synthesis
-		Tokens:      2*(140_000+2*45_000) + 3*625_000 + 80_000,
+		Calls:       12, // three seats, three rounds each, a round check after each of the two reply passes, and the synthesis
+		Tokens:      2*(140_000+2*45_000) + 3*625_000 + 2*roundCheckTokens + 80_000,
 		Minutes:     8,
 		AgentTokens: 1_875_000,
 	}
@@ -146,7 +146,7 @@ func TestEstimateAgentsOnlyIsTheirTurnsAndTheSynthesis(t *testing.T) {
 		{Id: "chair", Coordinator: true},
 	}
 	got := Estimate(seats, 0, 2)
-	want := CouncilEstimate{Calls: 5, Tokens: 2*400_000 + 80_000, Minutes: 6, AgentTokens: 800_000}
+	want := CouncilEstimate{Calls: 6, Tokens: 2*400_000 + roundCheckTokens + 80_000, Minutes: 6, AgentTokens: 800_000}
 	if got != want {
 		t.Errorf("Estimate = %+v, want %+v", got, want)
 	}
@@ -172,13 +172,13 @@ func TestEstimateRemainingWithAgentsCountsTheirTurnsLeft(t *testing.T) {
 		want   CouncilEstimate
 	}{
 		{"2 rounds, after round 1", 2, 1,
-			CouncilEstimate{Calls: 4, Tokens: 2*45_000 + 625_000 + 80_000, Minutes: 3, AgentTokens: 625_000}},
+			CouncilEstimate{Calls: 5, Tokens: 2*45_000 + 625_000 + roundCheckTokens + 80_000, Minutes: 3, AgentTokens: 625_000}},
 		{"the default rounds, no round recorded", 0, 0,
-			CouncilEstimate{Calls: 4, Tokens: 2*45_000 + 625_000 + 80_000, Minutes: 3, AgentTokens: 625_000}},
+			CouncilEstimate{Calls: 5, Tokens: 2*45_000 + 625_000 + roundCheckTokens + 80_000, Minutes: 3, AgentTokens: 625_000}},
 		{"3 rounds, after round 1", 3, 1,
-			CouncilEstimate{Calls: 7, Tokens: 2*2*45_000 + 2*625_000 + 80_000, Minutes: 5, AgentTokens: 1_250_000}},
+			CouncilEstimate{Calls: 9, Tokens: 2*2*45_000 + 2*625_000 + 2*roundCheckTokens + 80_000, Minutes: 5, AgentTokens: 1_250_000}},
 		{"3 rounds, after round 2", 3, 2,
-			CouncilEstimate{Calls: 4, Tokens: 2*45_000 + 625_000 + 80_000, Minutes: 3, AgentTokens: 625_000}},
+			CouncilEstimate{Calls: 5, Tokens: 2*45_000 + 625_000 + roundCheckTokens + 80_000, Minutes: 3, AgentTokens: 625_000}},
 		{"3 rounds, after round 3 is the synthesis alone", 3, 3,
 			CouncilEstimate{Calls: 1, Tokens: 80_000, Minutes: 1}},
 		{"1 round is the synthesis alone", 1, 1,
@@ -195,7 +195,7 @@ func TestEstimateRemainingLeavesOutAnAgentThatFailedInRound1(t *testing.T) {
 		"witness": {Round: 1, Error: "gone"},
 	}}
 	got := EstimateRemaining(c)
-	if want := (CouncilEstimate{Calls: 5, Tokens: 2*2*45_000 + 80_000, Minutes: 5}); got != want {
+	if want := (CouncilEstimate{Calls: 7, Tokens: 2*2*45_000 + 2*roundCheckTokens + 80_000, Minutes: 5}); got != want {
 		t.Errorf("EstimateRemaining = %+v, want %+v", got, want)
 	}
 }
@@ -210,14 +210,15 @@ func TestEstimateRemainingExpertOnlyIgnoresRounds(t *testing.T) {
 }
 
 func TestEstimateFollowup(t *testing.T) {
-	if got, want := EstimateFollowup(3, nil, false), (CouncilEstimate{Calls: 3, Tokens: 60_000, Minutes: 1}); got != want {
+	// the message's round check is one call more, whoever answers
+	if got, want := EstimateFollowup(3, nil, false), (CouncilEstimate{Calls: 4, Tokens: 60_000 + roundCheckTokens, Minutes: 1}); got != want {
 		t.Errorf("without tools = %+v, want %+v", got, want)
 	}
-	if got, want := EstimateFollowup(3, nil, true), (CouncilEstimate{Calls: 3, Tokens: 330_000, Minutes: 2}); got != want {
+	if got, want := EstimateFollowup(3, nil, true), (CouncilEstimate{Calls: 4, Tokens: 330_000 + roundCheckTokens, Minutes: 2}); got != want {
 		t.Errorf("with tools = %+v, want %+v", got, want)
 	}
 	if got := EstimateFollowup(0, nil, true); got.Calls != 0 || got.Tokens != 0 {
-		t.Errorf("no experts cost nothing: %+v", got)
+		t.Errorf("no experts cost nothing, the round check included: %+v", got)
 	}
 }
 
@@ -236,19 +237,19 @@ func TestEstimateFollowupPricesChatsAtContext(t *testing.T) {
 		want  CouncilEstimate
 	}{
 		{"two role experts and a chat of 182k", 2, []CouncilExpert{chat("tab-1", 182_000)}, false,
-			CouncilEstimate{Calls: 3, Tokens: 2*20_000 + 182_000, Minutes: 1, AgentTokens: 182_000}},
+			CouncilEstimate{Calls: 4, Tokens: 2*20_000 + 182_000 + roundCheckTokens, Minutes: 1, AgentTokens: 182_000}},
 		{"tools on: the role experts take the tools price, the chat keeps its context", 2, []CouncilExpert{chat("tab-1", 182_000)}, true,
-			CouncilEstimate{Calls: 3, Tokens: 2*110_000 + 182_000, Minutes: 2, AgentTokens: 182_000}},
-		{"two chats and no role expert", 0, []CouncilExpert{chat("tab-1", 100_000), chat("tab-2", 300_000)}, false,
-			CouncilEstimate{Calls: 2, Tokens: 400_000, Minutes: 1, AgentTokens: 400_000}},
+			CouncilEstimate{Calls: 4, Tokens: 2*110_000 + 182_000 + roundCheckTokens, Minutes: 2, AgentTokens: 182_000}},
+		{"two chats and no role expert: still one round check for the message", 0, []CouncilExpert{chat("tab-1", 100_000), chat("tab-2", 300_000)}, false,
+			CouncilEstimate{Calls: 3, Tokens: 400_000 + roundCheckTokens, Minutes: 1, AgentTokens: 400_000}},
 		{"a chat of unknown context takes the flat price", 1, []CouncilExpert{chat("tab-1", 0)}, false,
-			CouncilEstimate{Calls: 2, Tokens: 2 * 20_000, Minutes: 1, AgentTokens: 20_000}},
+			CouncilEstimate{Calls: 3, Tokens: 2*20_000 + roundCheckTokens, Minutes: 1, AgentTokens: 20_000}},
 		{"a chat of unknown context takes the tools price with tools on", 1, []CouncilExpert{chat("tab-1", 0), chat("tab-2", 50_000)}, true,
-			CouncilEstimate{Calls: 3, Tokens: 110_000 + 110_000 + 50_000, Minutes: 2, AgentTokens: 110_000 + 50_000}},
+			CouncilEstimate{Calls: 4, Tokens: 110_000 + 110_000 + 50_000 + roundCheckTokens, Minutes: 2, AgentTokens: 110_000 + 50_000}},
 		{"a pi chat with no context is flat too", 0, []CouncilExpert{{Id: "agent-tab-3", Agent: "tab-3", Harness: "pi"}}, false,
-			CouncilEstimate{Calls: 1, Tokens: 20_000, Minutes: 1, AgentTokens: 20_000}},
+			CouncilEstimate{Calls: 2, Tokens: 20_000 + roundCheckTokens, Minutes: 1, AgentTokens: 20_000}},
 		{"no chats is the role experts alone", 2, nil, false,
-			CouncilEstimate{Calls: 2, Tokens: 40_000, Minutes: 1}},
+			CouncilEstimate{Calls: 3, Tokens: 40_000 + roundCheckTokens, Minutes: 1}},
 	} {
 		if got := EstimateFollowup(tc.k, tc.chats, tc.tools); got != tc.want {
 			t.Errorf("%s: EstimateFollowup = %+v, want %+v", tc.name, got, tc.want)
@@ -257,9 +258,10 @@ func TestEstimateFollowupPricesChatsAtContext(t *testing.T) {
 }
 
 // TestEstimateRouted: a whole-council message the router takes costs one router call and one seat (the low end) up to
-// two seats (the high end). A role seat takes the flat follow-up price, a chat its context, a chat of unknown context the
-// flat price; the low end is the cheapest candidate and the high end the two dearest; with toolsAuto the low end reads no
-// files and the high end does; a seat with a failed call and the coordinator are never priced.
+// two seats (the high end), and the round check on the answers. A role seat takes the flat follow-up price, a chat its
+// context, a chat of unknown context the flat price; the low end is the cheapest candidate and the high end the two
+// dearest; with toolsAuto the low end reads no files and the high end does; a seat with a failed call and the
+// coordinator are never priced.
 func TestEstimateRouted(t *testing.T) {
 	roles := func(ids ...string) []CouncilExpert {
 		out := make([]CouncilExpert, 0, len(ids))
@@ -273,7 +275,7 @@ func TestEstimateRouted(t *testing.T) {
 	}
 	chair := CouncilExpert{Id: "chair", Coordinator: true}
 	panel3 := append(roles("ux", "ram", "skeptic"), chair)
-	r := int64(routerTokens)
+	r := int64(routerTokens + roundCheckTokens) // what every routed message pays besides its seats: the router and the check
 
 	for _, tc := range []struct {
 		name      string
@@ -283,51 +285,51 @@ func TestEstimateRouted(t *testing.T) {
 		want      CouncilEstimate
 	}{
 		{"three role seats, files off", &Council{Experts: panel3}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1}},
 		{"three role seats, files on: both ends at the tools price", &Council{Experts: panel3}, true, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 110_000, TokensMax: r + 220_000, Minutes: 2}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 110_000, TokensMax: r + 220_000, Minutes: 2}},
 		{"Auto: the low end reads no files, the high end does", &Council{Experts: panel3}, false, true,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 220_000, Minutes: 2}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 220_000, Minutes: 2}},
 		{"Auto beats the guess the composer sent in tools", &Council{Experts: panel3}, true, true,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 220_000, Minutes: 2}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 220_000, Minutes: 2}},
 
 		{"a chat of 300k is the dearest at the high end and absent from the low end",
 			&Council{Experts: append(roles("ux", "ram"), chat("tab-1", 300_000), chair)}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 300_000 + 20_000, Minutes: 1, AgentTokens: 300_000}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 300_000 + 20_000, Minutes: 1, AgentTokens: 300_000}},
 		{"with files on a chat keeps its context, and the role seats take the tools price",
 			&Council{Experts: append(roles("ux", "ram"), chat("tab-1", 300_000), chair)}, true, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 110_000, TokensMax: r + 300_000 + 110_000, Minutes: 2, AgentTokens: 300_000}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 110_000, TokensMax: r + 300_000 + 110_000, Minutes: 2, AgentTokens: 300_000}},
 		{"a chat cheaper than the role seats is the low end and absent from the high end",
 			&Council{Experts: append(roles("ux", "ram"), chat("tab-1", 50_000), chair)}, true, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 50_000, TokensMax: r + 220_000, Minutes: 2}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 50_000, TokensMax: r + 220_000, Minutes: 2}},
 		{"Auto with a chat of 300k: the chat is dear at both ends, the cheapest seat is a role seat at the low end",
 			&Council{Experts: append(roles("ux", "ram"), chat("tab-1", 300_000), chair)}, false, true,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 300_000 + 110_000, Minutes: 2, AgentTokens: 300_000}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 300_000 + 110_000, Minutes: 2, AgentTokens: 300_000}},
 		{"a chat of unknown context takes the flat price, and its share is that price",
 			&Council{Experts: []CouncilExpert{{Id: "ux"}, {Id: "agent-tab-3", Agent: "tab-3", Harness: "pi"}, chair}}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1, AgentTokens: 20_000}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1, AgentTokens: 20_000}},
 		{"two chats and no role seat",
 			&Council{Experts: []CouncilExpert{chat("tab-1", 100_000), chat("tab-2", 300_000), chair}}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 100_000, TokensMax: r + 400_000, Minutes: 1, AgentTokens: 400_000}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 100_000, TokensMax: r + 400_000, Minutes: 1, AgentTokens: 400_000}},
 
 		{"one candidate is one seat at both ends", &Council{Experts: append(roles("ux"), chair)}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 2, Tokens: r + 20_000, TokensMax: r + 20_000, Minutes: 1}},
+			CouncilEstimate{Calls: 3, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 20_000, Minutes: 1}},
 		{"one candidate in Auto still spans the files branches", &Council{Experts: append(roles("ux"), chair)}, false, true,
-			CouncilEstimate{Calls: 2, CallsMax: 2, Tokens: r + 20_000, TokensMax: r + 110_000, Minutes: 2}},
+			CouncilEstimate{Calls: 3, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 110_000, Minutes: 2}},
 		{"one chat is one seat at its context", &Council{Experts: []CouncilExpert{chat("tab-1", 182_000), chair}}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 2, Tokens: r + 182_000, TokensMax: r + 182_000, Minutes: 1, AgentTokens: 182_000}},
+			CouncilEstimate{Calls: 3, CallsMax: 3, Tokens: r + 182_000, TokensMax: r + 182_000, Minutes: 1, AgentTokens: 182_000}},
 
 		{"a seat with a failed call is left out",
 			&Council{Experts: append(roles("ux", "ram"), chat("tab-1", 300_000), chair),
 				Failed: map[string]CouncilFailure{"agent-tab-1": {Round: 1, Error: "gone"}}}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1}},
 		{"the failures that leave one candidate leave one seat",
 			&Council{Experts: append(roles("ux", "ram", "skeptic"), chair),
 				Failed: map[string]CouncilFailure{"ram": {Round: 1, Error: "x"}, "skeptic": {Round: 2, Error: "y"}}}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 2, Tokens: r + 20_000, TokensMax: r + 20_000, Minutes: 1}},
+			CouncilEstimate{Calls: 3, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 20_000, Minutes: 1}},
 		{"the coordinator is never priced, whatever it holds",
 			&Council{Experts: append(roles("ux", "ram"), CouncilExpert{Id: "chair", Coordinator: true, Agent: "tab-9", Context: 900_000})}, false, false,
-			CouncilEstimate{Calls: 2, CallsMax: 3, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1}},
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 40_000, Minutes: 1}},
 
 		{"no panel costs nothing", &Council{Experts: []CouncilExpert{chair}}, false, true, CouncilEstimate{}},
 		{"no council experts at all costs nothing", &Council{}, true, false, CouncilEstimate{}},

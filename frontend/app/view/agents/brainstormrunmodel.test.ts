@@ -157,6 +157,32 @@ describe("runStepView", () => {
     });
 });
 
+describe("runStepView of a quick run", () => {
+    const quick = (status: string): RunInfo => ({
+        runId: LANDED_ID,
+        channelId: "ch",
+        title: "Council regions",
+        project: "arcterm",
+        status,
+        mode: "quick",
+        base: "main",
+    });
+
+    it("reads a done quick run, which never has a dag, as done and closable instead of planning", () => {
+        const v = runStepView(LANDED_ID, quick("done"), true);
+        expect(v.state).toBe("done");
+        expect(v.tree).toBe("done");
+        expect(v.canClose).toBe(true);
+        expect(v.merged).toBe(false);
+    });
+
+    it("reads a quick run at work as working, and one waiting on the person as blocked", () => {
+        expect(runStepView(LANDED_ID, quick("executing"), true).tree).toBe("working");
+        expect(runStepView(LANDED_ID, quick("blocked"), true).tree).toBe("blocked");
+        expect(runStepView(LANDED_ID, quick("cancelled"), true).tree).toBe("cancelled");
+    });
+});
+
 describe("runTreeText", () => {
     it("puts the run's state ahead of the short run id", () => {
         expect(runTreeText(BLOCKED_ID, { tree: "final failed" })).toBe("final failed · run 9c6eb723");

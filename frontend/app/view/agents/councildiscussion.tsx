@@ -26,8 +26,8 @@ import { useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
-import { CouncilAvatar, CouncilChat } from "./councilchat";
-import { stepChip } from "./councilchatmodel";
+import { CouncilAvatar, CouncilChat, CouncilText } from "./councilchat";
+import { chipShort, stepChip } from "./councilchatmodel";
 import {
     avatarTone,
     callBarLabel,
@@ -201,22 +201,24 @@ const CHIP_TONE = {
     idle: { box: "bg-pill text-secondary", dot: "bg-ink-faint" },
 };
 
+// the step in its short words (`Round 1/2`), whole: the title wraps before it would shrink. The full words are its hover and
+// what a screen reader hears (and what `data-council-chip` reads)
 function StatusChip({ c }: { c: Council }) {
     const chip = stepChip(c);
     const tone = CHIP_TONE[chip.dot];
     return (
         <span
-            data-council-chip
-            aria-live="polite"
             title={chip.text}
             className={cn(
-                // shrinks with the row (its words end in an ellipsis, the whole is on hover) before the cost leaves it
-                "inline-flex min-w-0 flex-[0_1_auto] items-center gap-[6px] whitespace-nowrap rounded-full px-[9px] py-[3px] text-[10.5px] tabular-nums",
+                "inline-flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-[7px] py-[2px] text-[10.5px] tabular-nums",
                 tone.box
             )}
         >
             <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", tone.dot)} />
-            <span className="min-w-0 truncate">{chip.text}</span>
+            <span aria-hidden>{chipShort(chip.text)}</span>
+            <span data-council-chip aria-live="polite" className="sr-only">
+                {chip.text}
+            </span>
         </span>
     );
 }
@@ -283,8 +285,8 @@ function Header({
     const costRest = costParts.slice(1).join(" · ");
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            {/* one 52px row that never wraps: the tabs, the seats' stack, the cost and Pin (Pinned once it is) keep
-                their width and the title truncates before anything leaves the row. Under 1000px of pane the mode chip goes,
+            {/* one 52px row that never wraps: the tabs, the step chip, the seats' stack, the cost and Pin (Pinned once it
+                is) keep their width and the title wraps to two lines, then truncates, before anything leaves the row. Under 1000px of pane the mode chip goes,
                 under 900px Summarize keeps its icon alone and the stack three avatars. The Report tab is where a summary opens. */}
             <div className="flex h-[52px] min-w-0 items-stretch gap-3 px-6 @max-[900px]:gap-2 @max-[900px]:px-4">
                 <CouncilTabs c={c} view="discussion" className="flex-none @max-[900px]:gap-3" />
@@ -294,8 +296,9 @@ function Header({
                     <h1
                         data-council-title
                         title={c.feature}
-                        // shrinks far ahead of the status chip, so a long title truncates before the chip's word does
-                        className="m-0 min-w-[72px] flex-[0_1000_auto] truncate text-[14px] font-semibold tracking-[-0.01em] text-primary"
+                        // shrinks far ahead of everything else in the row: a long title wraps to a second line, then
+                        // ends in an ellipsis (the whole is on hover)
+                        className="m-0 line-clamp-2 min-w-[72px] flex-[0_1000_auto] break-words text-[14px] font-semibold leading-[1.3] tracking-[-0.01em] text-primary"
                     >
                         {c.feature}
                     </h1>
@@ -604,7 +607,7 @@ function ProposalsSoFar({ c }: { c: Council }) {
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-[14px] font-semibold">{p.title}</span>
-                        <span className="text-[13px] leading-[1.5] text-secondary">{p.argument}</span>
+                        <CouncilText text={p.argument} className="text-[13px] leading-[1.5] text-secondary" />
                         <EvidenceChips {...claimOf(c, p)} />
                     </div>
                 </div>

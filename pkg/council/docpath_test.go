@@ -29,14 +29,18 @@ func TestFeatureSlug(t *testing.T) {
 	for in, want := range map[string]string{
 		"Idle sleep for services!":    "idle-sleep-for-services",
 		"  --Dark   mode / Light--  ": "dark-mode-light",
-		"Chế độ ngủ cho dịch vụ":      "chế-độ-ngủ-cho-dịch-vụ",
+		"Chế độ ngủ cho dịch vụ":      "che-do-ngu-cho-dich-vu",
+		"ĐƯỜNG ĐI Ở Mức Âm":           "duong-di-o-muc-am",
+		"café dè":                   "cafe-de",
+		"日本 roadmap":                  "roadmap",
+		"Straße":                      "strasse",
 		"":                            "council",
 		" ?! ":                        "council",
 		strings.Repeat("ab ", 40):     strings.TrimSuffix(strings.Repeat("ab-", 20), "-"),
 		strings.Repeat("a", 100):      strings.Repeat("a", docSlugRunes),
 		"v2.1 release (draft)":        "v2-1-release-draft",
 		"C:\\Users\\me\\proj /x":      "c-users-me-proj-x",
-		"naïve café":                  "naïve-café",
+		"naïve café":                  "naive-cafe",
 		"under_score":                 "under-score",
 	} {
 		if got := FeatureSlug(in); got != want {

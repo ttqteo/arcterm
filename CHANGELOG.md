@@ -24,15 +24,34 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.
+- A council's Discussion header wraps a long title onto a second line instead of cutting it short, and its step chip reads shorter (`Round 1/2`, `Round 2/2 · 3 drafts`); the full words are on hover.
+- The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
+
+### Fixed
+
+- A council report's file name is plain ASCII (`chot-bai-toan…`, not `chốt-bài-toán…`), so the path it prints opens with a click in the terminal.
+- While a council's experts are still on their first ideas, the cards in Discussion draw their tables, lists and highlighted sentences instead of showing raw `|` and `==` marks.
+- Open DAG no longer stalls before the window appears: the window opens at once with a placeholder, and the graph fills in a moment later.
+- A click on an idea in a council's Ideas tab now shows which message it is: the row and its message in the channel both wear an accent ring, the message rings wider for a moment where it lands, and each idea in the channel carries its `Idea N` number, as on the tab.
+
+## 1.0.0 — 2026-11-04
+
 ### Added
 
 - In a council's Discussion, every idea and reply a seat has sent now has **Copy** (its markdown, a table or list as the seat wrote it) and **Pin to Report** beside the thumbs when you point at it. The pinned message shows as the Report's **Final proposal** at its end, with Open in Discussion, Copy and Unpin, and it closes the saved document; a council with no summary shows it too.
+- **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette --> <!-- big -->
+- **A council has a Memory tab, and a Chốt button to fill it**: the direction the seats read before the Report. Chốt an idea or a seat's message (the button beside like and dislike, or `p` on the idea under the cursor), or write the direction yourself; it is checked against what the seats agreed first, and one that clashes waits on the tab for you to Edit, Set anyway or Discard. After a round the check may suggest a new direction, with Show the messages it rests on. The tab keeps the chosen direction and what it replaced, and a change of direction marks the Report Outdated. <!-- big -->
+- **A council's Ideas tab groups the ideas by where the seats stand**: Waiting on you, Agreed, Has doubts, Someone against it, No stance yet and Withdrawn, each under a header with its colour and a count, in the order they arrived. An idea moves group as a seat changes its stance; a withdrawn one says which round it left in, and one you cut says `cut by you`.
 - **Close project…** in a project folder's right-click menu in the Agent tree closes every agent and terminal in it at once, after a confirm that says how many and how many are still working. Their conversations stay in Conversations, and the folder's councils and services stay.
 - **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
 - In a council, a seat that cites part of a screenshot or a pasted image now marks it with a box, and the boxed part shows as an image with a red rectangle under the idea or reply, in the channel and the thread panel. A click opens the whole screenshot in Sources with the same box on it, and the council's saved document embeds the images. A box that does not fit the image is a Wrong cite, and in a checked claim a screenshot cited with no box counts as no evidence. <!-- big -->
 
 ### Changed
 
+- A brainstorm whose agent judges the build small (a few files, no mockup to match) now offers a quick run at approve, where it always offered an orchestrator run; Change still opens the launcher to pick the other.
 - An agent waiting on your answer now breathes amber over its whole row in the Agent tree, where only its glyph pulsed, so you see it from across the tree.
 - Under critical memory pressure the heavy-job queue still starts one job at a time, where it held every job until you paused the queue, and the pause then let them all start at once.
 - The heavy-job queue runs e2e and smoke checks one at a time even in Auto, where several agents' runs started together and pegged the CPU though the RAM fit; it also catches a check wrapped in `timeout`, `node scripts/smoke.mjs`, `npm run smoke`, `npx playwright test` and npm/pnpm scripts named e2e or smoke.
@@ -43,10 +62,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council message with a web link (`https://…`) now lets the experts open that page with WebFetch, where they said they could not open it and read the repo instead; the link locks Let them read files on and names the site. A link in the council's question does the same for round 1.
 - In a council's Discussion, the idea whose replies are open on the right wears a bright ring, where only its tint deepened and it barely stood out from its neighbours.
 - In a council, an idea its author withdrew wears a Withdrawn badge and is drawn dim, its title struck in its thread, and the author's reply reads "withdrew it" with the reason it gave, where the thread only showed a bare "Withdrawn." reply.
-- A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed
 
+- A brainstorm handed to a quick run now follows that run: the Agent tree and the Run step say it is working, blocked or done instead of "planning" forever, and Close the brainstorm appears once it is done.
 - Clicking an idea in a council's Ideas rail no longer pushes the whole window up off its frame: only the discussion scrolls to the idea. Moving between ideas with j and k, and jumping back to a quoted question, scroll the same way.
 - A run no longer waits for hours to start its next task while your computer is short of memory and another run is working: each run now keeps at least one worker going, and Jobs set to Off (or paused) stops runs waiting for memory too, as it already did for builds and tests.
 - Pausing the heavy-job queue now pauses it on this computer only, where the pause synced through the vault and let every heavy job on your other computers start at once too.
@@ -59,12 +78,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.
 - A run graph's task and Final verification details read in the app's own font: the worker, review, tokens, activity times and the Open in Agent button were drawn in the code font.
 - More labels read in the app's own font instead of the code font: the brainstorm pane (question numbers, the check clock, topic and file names), the background task peek's title, state and tabs, Setup → Memory's line counts and file names, the @ file picker, the roles in the Claude account restart list, and the Brief's plan path, "just now" and field labels.
-
-## 1.0.0 — 2026-11-03
-
-### Added
-
-- **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette --> <!-- big -->
 
 ## 0.15.21 — 2026-11-03
 

@@ -69,15 +69,43 @@ wsh council start --mode <review|brainstorm> --mode-why "<one line: why this mod
   rather than leave the panel to guess.
 - `--agent <tab id>` and `--expert <role id>` (each repeatable) name who sits; they are for a council on chats the
   person named, see Seating chats below. With neither, the council is experts only.
-- `--model` sets the role seats' models for this council only, when the person asks for one: `--model sonnet` for every
-  role seat, `--model skeptic=opus` for one (repeatable; a named seat wins). `estimate` takes it too, so quote the price
-  with the same flags. A seated chat answers on its own session's model.
+- `--model` sets the role seats' models for this council only: `--model skeptic=opus` for one seat (repeatable; a named
+  seat wins), `--model sonnet` for every role seat. You pick it at every start, from the question, as under Which seats
+  run on opus below; a model the person asked for goes in as they said it and wins over your pick. `estimate` takes it
+  too, so quote the price with the same flags. A seated chat answers on its own session's model.
 - `--group` is optional: `brainstorm` takes `product-ideas` and `review` takes `ui-feature` (a UI feature, a spec or a
   plan) when you leave it out; with `--agent`, `brainstorm` takes `agents-ideas` (an Other side and the Host) and
   `review` takes `agents` (a Bug hunter and the Summarizer). Use `--group paper` ("Paper review") for a `.tex` draft. An
   explicit `--group` adds its roles beside the seated chats.
 - Leave `--pause` out unless the person asked for it: a paused council stops after round 1 and only the person can
   continue it. `--queue` is accepted and does nothing more; every second start is queued.
+
+### Which seats run on opus
+
+A seat's model follows what it has to do for this question, not its place on the panel. A role seat runs on sonnet
+unless its role says otherwise (a role the person set to opus stays opus), and the coordinator (the seat that writes the
+report: Summarizer, Final judge, Host, or the one a group of the person's names) keeps its own model: never name it in
+`--model`. Before every `start`, read the question and the seats (`wsh council estimate` with the same `--group`,
+`--expert`, `--agent` and `--mode` lists each seat's name and model; `--model` takes a seat's name or its id), and
+choose:
+
+- **Opus** for the seat or seats that carry the question's hardest part: those whose job, on this question, is to judge
+  whether its central claim, method or result holds. Usually one or two, rarely every seat. Of the stock roles, the
+  judging ones are `reviewer-a`, `reviewer-b`, `skeptic` and `contrarian`. For the person's own roles, read their briefs
+  in `councilroles.json` in arcterm's config dir (`wsh wavepath config` prints it).
+- **Sonnet** (leave the seat out of `--model`) for a seat that gathers, plans, asks or reads for ease of use, and for
+  every seat when the question is a light one: a wording pass, a list of ideas, a UI review. Then no seat goes to opus
+  and you say nothing about models.
+
+When a seat goes to opus, before `start`:
+
+1. Run `wsh council estimate` with the same flags as the start, the `--model` ones included.
+2. Say in one line which seats go to opus and why, with that estimate, and that the estimate counts tokens only: it does
+   not show that opus costs more than sonnet for the same tokens, and the Token burn card shows the same number. E.g.
+   "Bug hunter and Reviewer A on opus (they judge whether the method holds); ~0.9M tokens, counted, not priced: opus
+   costs more per token."
+3. Run `start` with those flags. The person approves on the Token burn card as for any council; do not ask them
+   anything more first.
 
 Say in **one line** what happened, from the line `start` printed:
 
@@ -162,3 +190,29 @@ to wait in. It tells the person so and passes only the other tabs they named, le
 - `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
   `--all [--model <seat>=<model>]...` reruns every failed seat but the summary at once.
 - `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.
+
+## Writing a role
+
+When the person asks for a new role (or a panel of them), it goes into `councilroles.json` in arcterm's config dir
+(`wsh wavepath config` prints it), beside the roles already there: `{"roles": [{"id": "…", "name": "…", "brief":
+"…"}]}`. Never change or drop a role there you were not asked about.
+
+- `id`: an English kebab-case slug (`method-check`), new to the library.
+- `name`: in the language the person is writing to you in (Vietnamese in a Vietnamese conversation). A written name
+  shows as it is in every council; only the stock roles switch language with the question.
+- `brief`: the role's one angle, in the second person like the stock briefs ("You review…").
+- `model`: leave it out, which is sonnet. Opus is chosen per council at the start (Which seats run on opus above), so
+  write `opus` only when the person asks for it.
+
+Vet the draft before you write it, and revise it until it passes:
+
+- it duplicates no role already in the library: the stock ones and the person's own in the file. `wsh council estimate
+  --expert '?'` fails and names the role ids it could add beside the default panel; run it once more with `--group paper`
+  and the two lists name every role but the coordinators;
+- it holds one angle only; two angles are two roles;
+- its brief ends with the evidence rule every stock brief ends with, word for word: "Cite a path:line for every claim,
+  or a region of an attached screenshot; a claim with neither is marked weak."
+- its name is in the person's language.
+
+Then show the person the final name and brief in the conversation, and write the role only once they approve. For a
+council about to start, that is one more turn with them before the start.

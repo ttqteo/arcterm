@@ -18,6 +18,8 @@ import {
     partTitle,
     RAIL_MIN_W_CHECK,
     runLine,
+    runTitle,
+    suggestedShape,
     type AskModel,
     type BrainstormFile,
     type BrainstormQuestion,
@@ -363,6 +365,7 @@ function ApproveBar({
     const act = useAction();
     const working = f.working != null;
     const blocker = approveBlocker(f, s.starting);
+    const shape = suggestedShape(f);
     // @container: the title column (240 at least), the blocker's reason and the two buttons need ~700px in one line, so
     // a narrower bar (the builder rail takes 460px of the pane) stacks them: the run, the reason, the buttons at the end
     return (
@@ -372,11 +375,9 @@ function ApproveBar({
         >
             <div className="flex items-center gap-[14px] @max-[700px]:flex-col @max-[700px]:items-stretch @max-[700px]:gap-[10px]">
                 <div className="flex min-w-[240px] flex-1 flex-col gap-[3px] @max-[700px]:min-w-0 @max-[700px]:flex-none">
-                    <span className="whitespace-nowrap text-[13px] font-semibold text-primary">
-                        Approve and start an orchestrator run
-                    </span>
+                    <span className="whitespace-nowrap text-[13px] font-semibold text-primary">{runTitle(shape)}</span>
                     <span className="truncate text-[11px] text-muted">
-                        {runLine(projectOf(agent))} ·{" "}
+                        {runLine(projectOf(agent), shape)} ·{" "}
                         <button
                             type="button"
                             disabled={s.starting != null}

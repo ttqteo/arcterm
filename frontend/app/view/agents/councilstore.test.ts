@@ -31,6 +31,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilRateCommand: vi.fn(),
         CouncilThumbCommand: vi.fn(),
         CouncilFinalPickCommand: vi.fn(),
+        CouncilDirectionCommand: vi.fn(),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: { client: true } }));
@@ -70,6 +71,7 @@ import {
     councilUnreadAtom,
     councilViewAtom,
     deleteCouncil,
+    directionCouncil,
     draftCouncil,
     estimateCouncil,
     finalPickCouncil,
@@ -519,6 +521,46 @@ describe("the pinned Final proposal", () => {
         const r = await finalPickCouncil("f5", "P1");
         expect(r.ok).toBe(true);
         expect(globalStore.get(councilAtom("f5"))).toBeNull();
+    });
+});
+
+describe("direction", () => {
+    const nullAnswer = null as unknown as void;
+    const command = vi.mocked(RpcApi.CouncilDirectionCommand);
+
+    it("sends the action with the text and the item a pin came from, and only what it was given", async () => {
+        command.mockResolvedValue(nullAnswer);
+        expect(await directionCouncil("d1", "pin", "Keep the cap at three", "P3")).toEqual({ ok: true, value: null });
+        expect(command).toHaveBeenLastCalledWith(TabRpcClient, {
+            id: "d1",
+            action: "pin",
+            text: "Keep the cap at three",
+            from: "P3",
+        });
+        await directionCouncil("d1", "set", "Ship the rail first");
+        expect(command).toHaveBeenLastCalledWith(TabRpcClient, {
+            id: "d1",
+            action: "set",
+            text: "Ship the rail first",
+        });
+        // a move with no text (accept, unpin…) and a written direction with no source send neither
+        await directionCouncil("d1", "accept");
+        expect(command).toHaveBeenLastCalledWith(TabRpcClient, { id: "d1", action: "accept" });
+        await directionCouncil("d1", "edit", "Cap at four", "");
+        expect(command).toHaveBeenLastCalledWith(TabRpcClient, { id: "d1", action: "edit", text: "Cap at four" });
+    });
+
+    it("answers the refusal instead of throwing, and leaves the council's atom alone (council:changed brings the memory)", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        get.mockResolvedValue(council("d2", "/p/d"));
+        await loadCouncil("d2");
+        command.mockRejectedValue(new Error('direction action "set" needs the direction\'s text'));
+        expect(await directionCouncil("d2", "set", "")).toEqual({
+            ok: false,
+            error: 'direction action "set" needs the direction\'s text',
+        });
+        expect(globalStore.get(councilAtom("d2"))?.memory).toBeUndefined();
+        quiet.mockRestore();
     });
 });
 

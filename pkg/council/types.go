@@ -338,6 +338,63 @@ type CouncilSummary struct {
 	At         int64              `json:"at"`
 }
 
+// The council's memory: the one direction the person has chosen for the discussion, the ones it replaced, and the two
+// cards that wait on the person (a suggestion, and a direction held back). How a direction was set, why a card is held,
+// how one ended and where a suggestion came from are these names.
+const (
+	DirectionPin       = "pin"       // Chốt on a message or idea
+	DirectionWritten   = "written"   // typed in Set the direction…
+	DirectionSuggested = "suggested" // accepted from a suggestion
+
+	EndReplaced = "replaced" // another direction was set over it
+	EndEdited   = "edited"   // Edit changed it and the new text was set
+	EndUnpinned = "unpinned" // the person took it off with no replacement
+
+	CardSuggestion = "suggestion"
+	CardHeld       = "held"
+
+	SourceCheck = "check" // a suggestion's source: the check after a round
+	SourceGreen = "green" // or all green: the seats agreed on an idea
+)
+
+// CouncilMemoryDirection is one direction the person chose: the one in force (Chosen) or one it left (Replaced).
+type CouncilMemoryDirection struct {
+	Text     string `json:"text"`
+	How      string `json:"how"`                // DirectionPin / DirectionWritten / DirectionSuggested
+	Source   string `json:"source,omitempty"`   // for How suggested: SourceCheck or SourceGreen
+	Round    int    `json:"round,omitempty"`    // the round a check suggestion came after ("after round N")
+	From     string `json:"from,omitempty"`     // the idea (P3) or message (r7) it came from
+	At       int64  `json:"at"`                 // when it was set, in ms
+	Replaced int64  `json:"replaced,omitempty"` // when it left Chosen, in ms; 0 while chosen
+	Ended    string `json:"ended,omitempty"`    // EndReplaced / EndEdited / EndUnpinned
+}
+
+// CouncilMemoryCard is a direction waiting on the person: a suggestion the check or all green raised, or one held back
+// because it clashes with what the panel said.
+type CouncilMemoryCard struct {
+	Kind     string   `json:"kind"` // CardSuggestion or CardHeld
+	Text     string   `json:"text"`
+	Reason   string   `json:"reason,omitempty"`   // the check's one line; for a held card, why it is held
+	How      string   `json:"how,omitempty"`      // a held card: how the person set it (pin / written), kept when set anyway
+	Source   string   `json:"source,omitempty"`   // a suggestion: SourceCheck or SourceGreen
+	Round    int      `json:"round,omitempty"`    // the round a check suggestion came after
+	From     string   `json:"from,omitempty"`     // an idea id (all green) or the message it was pinned from
+	Messages []string `json:"messages,omitempty"` // a check suggestion: the message ids it rests on (Show the messages)
+	Edited   bool     `json:"edited,omitempty"`   // a held card that came from Edit: setting it ends the old one as EndEdited
+	At       int64    `json:"at"`                 // when it was raised, in ms
+}
+
+// CouncilMemory is a council's direction memory. The memory's directions are named CouncilMemory* so they never meet
+// CouncilDirection, the Report's.
+type CouncilMemory struct {
+	Chosen     *CouncilMemoryDirection  `json:"chosen,omitempty"`
+	Replaced   []CouncilMemoryDirection `json:"replaced,omitempty"`   // newest first
+	Suggestion *CouncilMemoryCard       `json:"suggestion,omitempty"` // one slot
+	Held       *CouncilMemoryCard       `json:"held,omitempty"`       // a second slot: a suggestion never drops it
+	Dismissed  []string                 `json:"dismissed,omitempty"`  // suggestion keys never raised again
+	Changed    int64                    `json:"changed,omitempty"`    // when Chosen last changed (set, edit, unpin): the Report's Outdated cause
+}
+
 // CouncilAsk is a question the coordinator suggests the person ask the panel next: Text as the person would type it, in
 // their language, and To the seat best placed to answer it, empty for the whole panel.
 type CouncilAsk struct {
@@ -433,6 +490,7 @@ type Council struct {
 	Replies          []CouncilReply               `json:"replies,omitempty"`
 	Picks            map[string][]string          `json:"picks,omitempty"` // expert id -> up to 3 proposal ids, in the order the expert gave them
 	Summary          *CouncilSummary              `json:"summary,omitempty"`
+	Memory           *CouncilMemory               `json:"memory,omitempty"`   // the direction the person chose; nil until one is set or suggested
 	Activity         map[string]CouncilActivity   `json:"activity,omitempty"` // expert id -> what it is doing now
 	Failed           map[string]CouncilFailure    `json:"failed,omitempty"`   // expert id -> its failed call
 	Skips            []CouncilSkip                `json:"skips,omitempty"`    // the agent turns that did not happen

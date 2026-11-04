@@ -160,7 +160,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                         className={clsx(HINT_SM, HINT_FIT, "border-background/30 text-background/75")}
                     />
                 </button>
-                {/* one click from the cockpit to Sprout alone, over every app (floatstore.ts foldToSprout) */}
+                {/* one click from the cockpit to Sprout alone, over every app (floatstore.ts foldToSprout); the
+                    creature alone, its name only in the tooltip, since the bar has no room to spare for a word */}
                 <button
                     type="button"
                     data-app-sprout
@@ -168,10 +169,9 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     title={foldTitle}
                     onClick={() => fireAndForget(foldToSprout)}
                     onContextMenu={showFoldMenu}
-                    className="flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised pl-1.5 pr-2 text-[11.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
+                    className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-mid bg-surface-raised hover:bg-surface-hover"
                 >
                     <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
-                    {PET_CHARACTER_NAME[character]}
                 </button>
 
                 {mac ? null : <WindowControls />}

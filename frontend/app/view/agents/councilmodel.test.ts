@@ -1250,11 +1250,11 @@ describe("held and dropped items count for nothing", () => {
     it("counts only the replies sent after the summary, and no held or dropped stance as a change", () => {
         // r1 and r2 are first stances and r6 is the person's: all quiet
         const c = withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 9 } });
-        expect(outdatedChanges(c)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3 });
+        expect(outdatedChanges(c)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3, direction: 0 });
         expect(outdatedCount(c)).toBe(0);
         // ram's dropped oppose after its accept and ux's held one change nothing
         const later = withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 12 } });
-        expect(outdatedChanges(later)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 1 });
+        expect(outdatedChanges(later)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 1, direction: 0 });
     });
 
     it("gives the matrix no row for a held or a dropped idea and no reason from a held or a dropped reply", () => {
@@ -1510,8 +1510,39 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
 
     it("is nothing before a summary", () => {
         const c = council({ proposals: [prop("P2", "ux", { ts: 200 })], replies: [reply("r1", "ram", { ts: 300 })] });
-        expect(outdatedChanges(c)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 0 });
+        expect(outdatedChanges(c)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 0, direction: 0 });
         expect(outdatedCount(c)).toBe(0);
+    });
+
+    it("counts the direction changing after the summary as one cause, and leaves it out before a summary", () => {
+        const before = council({ memory: { changed: 500 }, proposals: [prop("P2", "ux", { ts: 50 })] });
+        expect(outdatedChanges(before)).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 0, direction: 0 });
+        expect(outdatedCount(before)).toBe(0);
+        const c = changes({ memory: { changed: at + 1 } });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 0, direction: 1 });
+        expect(outdatedCount(council({ summary, memory: { changed: at + 1 } }))).toBe(1);
+    });
+
+    it("counts the direction once however often it changed, and adds it to the other causes", () => {
+        const c = council({
+            summary,
+            memory: { changed: 300, replaced: [{ text: "A", how: "pin", at: 150, replaced: 200, ended: "replaced" }] },
+            proposals: [prop("P2", "ux", { ts: 50 }), prop("P3", "ram", { ts: 110 })],
+        });
+        expect(outdatedChanges(c)).toEqual({ ideas: 1, revised: 0, stances: 0, replies: 0, direction: 1 });
+        expect(outdatedCount(c)).toBe(2);
+    });
+
+    it("is cleared by a Report written after the change, and by a change made before the Report", () => {
+        // the rerun's Report is later than the change: nothing is outdated
+        const rerun = council({ summary: { ...summary, at: 400 }, memory: { changed: 300 } });
+        expect(outdatedChanges(rerun).direction).toBe(0);
+        // a change in the same millisecond as the Report is already in it
+        expect(outdatedChanges(council({ summary, memory: { changed: at } })).direction).toBe(0);
+        // a council with no memory, or one whose direction never changed, has no such cause
+        expect(outdatedChanges(council({ summary })).direction).toBe(0);
+        expect(outdatedChanges(council({ summary, memory: {} })).direction).toBe(0);
+        expect(outdatedCount(council({ summary, memory: { changed: 0 } }))).toBe(0);
     });
 
     it("counts a sent idea posted after the summary, and folds the stances on it into the new idea", () => {
@@ -1527,7 +1558,7 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
                 reply("r2", "ux", { proposalid: "P3", stance: "oppose", ts: 140 }),
             ],
         });
-        expect(outdatedChanges(c)).toEqual({ ideas: 1, revised: 0, stances: 0, replies: 0 });
+        expect(outdatedChanges(c)).toEqual({ ideas: 1, revised: 0, stances: 0, replies: 0, direction: 0 });
         expect(outdatedCount(c)).toBe(1);
     });
 
@@ -1540,7 +1571,7 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
                 reply("r3", "ux", { revised: true, text: "v3", ts: 120 }),
             ],
         });
-        expect(c).toEqual({ ideas: 0, revised: 1, stances: 0, replies: 0 });
+        expect(c).toEqual({ ideas: 0, revised: 1, stances: 0, replies: 0, direction: 0 });
     });
 
     it("counts a seat whose latest stance differs from its stance before the summary", () => {
@@ -1554,7 +1585,7 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
                 reply("r4", "sk", { stance: "challenge", ts: 120 }),
             ],
         });
-        expect(c).toEqual({ ideas: 0, revised: 0, stances: 1, replies: 1 });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 1, replies: 1, direction: 0 });
     });
 
     it("keeps a seat's first stance on an idea quiet, and one that comes back to where it was", () => {
@@ -1567,7 +1598,7 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
                 reply("r4", "nu", { stance: "challenge", ts: 130 }),
             ],
         });
-        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3 });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3, direction: 0 });
     });
 
     it("keeps the person's replies quiet, leaves out reactions and drafts, and counts the rest as replies", () => {
@@ -1582,7 +1613,7 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
                 reply("r6", "sk", { text: "an answer to you", ts: 140 }),
             ],
         });
-        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3 });
+        expect(c).toEqual({ ideas: 0, revised: 0, stances: 0, replies: 3, direction: 0 });
     });
 
     it("sums the ideas, revisions and changed stances into outdatedCount", () => {
@@ -1596,7 +1627,7 @@ describe("outdatedChanges, outdatedCount and canSummarize", () => {
                 reply("r4", "you", { ts: 140 }),
             ],
         });
-        expect(outdatedChanges(c)).toEqual({ ideas: 2, revised: 1, stances: 1, replies: 1 });
+        expect(outdatedChanges(c)).toEqual({ ideas: 2, revised: 1, stances: 1, replies: 1, direction: 0 });
         expect(outdatedCount(c)).toBe(4);
     });
 
