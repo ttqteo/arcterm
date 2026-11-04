@@ -1765,3 +1765,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Fold button without the pet's name.** The app bar right of + New shows a 26px square with only the
   pet (Sprout, Minion or Spider-Man), no name beside it; hovering it says `Fold into <name>`, a click folds, a right-click
   still opens the fold menu. ESLint only (`app-bar.tsx`); no dev app was up.
+- [ ] (arcterm) **Colored background task output.** Start a background shell that prints colors (`task tauri:build`, or
+  `npx vitest run <one test>`), then click its row under the agent in the Agent tree → the peek's Output shows vite's
+  `dist/` dim and `assets/…` cyan, vitest's ✓ green, with no `▯[36m`-style codes; switch the theme and the colors follow
+  it. A Monitor's Events tab draws the same way. Unit tests and the typecheck only (`ansitext.ts`,
+  `backgroundtaskpeek.tsx` `AnsiLines`); no dev app was up.
