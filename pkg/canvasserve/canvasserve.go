@@ -108,6 +108,7 @@ func Handler() http.Handler {
 		}
 		// a board is edited between loads, so every load revalidates against the file's Last-Modified
 		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Security-Policy", htmlserve.CSP)
 		rel := strings.TrimPrefix(r.URL.Path, PathPrefix+token)
 		if isHTMLName(rel) {
 			serveBoard(w, r, http.Dir(dir), rel)

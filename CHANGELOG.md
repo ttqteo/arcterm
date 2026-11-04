@@ -38,6 +38,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An HTML page previewed in arcterm (the File tab, a design canvas, a brainstorm board) can no longer send what it holds to another site: it loads its own folder's files, common CDNs and Google Fonts, and its fetches, forms and frames go nowhere else. Images and video from other sites still show.
 - A note titled in Vietnamese keeps its words in its id (`wsh note add "Cải tiến"` → `…-cai-tien`, not `…-c-i-ti-n`); so do Jarvis's dossier and decision files, and the id of a tool you add.
 - The old `ideas` skill, which told an agent to run the removed `wsh idea` and got `unknown command`, is cleared from your skills on the next agent launch.
 - A council report's file name is plain ASCII (`chot-bai-toan…`, not `chốt-bài-toán…`), so the path it prints opens with a click in the terminal.

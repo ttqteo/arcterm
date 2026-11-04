@@ -83,6 +83,31 @@ func Register(path string) (string, error) {
 	return PathPrefix + token + "/" + url.PathEscape(filepath.Base(clean)), nil
 }
 
+// cdns are the hosts a previewed page may load code and styles from: the design runtime's React and Babel come from
+// unpkg, and pages commonly take libraries from the others and fonts from Google Fonts.
+const cdns = "https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://esm.sh " +
+	"https://cdn.tailwindcss.com https://code.jquery.com"
+
+// CSP goes with every file a preview serves (and canvasserve's boards). A page is written by an agent, or by a skill
+// someone else wrote, and runs at wavesrv's origin, so it may not send what it holds to a host of its own: fetch,
+// XHR, WebSocket and beacons reach only its own folder and the CDNs, forms post nowhere, frames and workers load
+// only from the folder. Inline scripts and eval stay allowed, since the scroll and height scripts are inline and
+// the design runtime compiles boards with Babel. Images and media still load from any https host, so a page that
+// shows a remote photo keeps working; that leaves a page able to name a URL it requests, as it can by navigating
+// itself, which no policy blocks.
+const CSP = "default-src 'self' data: blob:; " +
+	"script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: " + cdns + "; " +
+	"style-src 'self' 'unsafe-inline' " + cdns + " https://fonts.googleapis.com; " +
+	"font-src 'self' data: " + cdns + " https://fonts.gstatic.com; " +
+	"img-src 'self' data: blob: https:; " +
+	"media-src 'self' data: blob: https:; " +
+	"connect-src 'self' data: blob: " + cdns + "; " +
+	"frame-src 'self' data: blob:; " +
+	"worker-src 'self' blob:; " +
+	"object-src 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'none'"
+
 func rootFor(token string) (string, bool) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -129,6 +154,7 @@ func Handler() http.Handler {
 		}
 		// a page is edited between loads, so every load revalidates against the file's Last-Modified
 		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Security-Policy", CSP)
 		if !isHTMLName(info.Name()) {
 			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 			return
