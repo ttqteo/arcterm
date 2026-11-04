@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: {} }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -24,6 +24,15 @@ const lsMock = vi.hoisted(() => {
 
 const KEY = "agent.rail.visible";
 
+// the atom reads storage once, when the module creates it (getOnInit), so each case imports a fresh copy of the
+// module; the first fresh import pays the cold transform of the graph `./agentcenter` reaches, which on a loaded
+// machine outlasts a case's timeout. The hook's own timeout covers that transform; vite-node keeps it across
+// vi.resetModules(), so every case after this one only re-evaluates the module.
+beforeAll(async () => {
+    await import("./railstore");
+    lsMock.clear();
+}, 120000);
+
 // the atom reads storage once, when the module creates it (getOnInit), so each case stores first and imports a
 // fresh copy of the module
 async function railVisibleAtStartup(stored?: string): Promise<boolean> {
@@ -40,10 +49,9 @@ async function railVisibleAtStartup(stored?: string): Promise<boolean> {
 describe("railVisibleAtom", () => {
     beforeEach(() => lsMock.clear());
 
-    // the first fresh import of the module, which pays the cold transform of its graph
     it("is on for a profile that never stored a choice", async () => {
         expect(await railVisibleAtStartup()).toBe(true);
-    }, 30000);
+    });
     it("keeps a stored off: anyone who turned the rail off still has it off", async () => {
         expect(await railVisibleAtStartup("false")).toBe(false);
     });

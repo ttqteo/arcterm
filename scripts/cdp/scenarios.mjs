@@ -24452,7 +24452,7 @@ const launcherScenario = {
             );
         }
 
-        // the Task row: the field, then + Flag, the flag chips, Worktree and Command ›, on the field's own line
+        // the Task row: the field, then the Flag, Worktree and Command › icons, on the field's own line
         const taskRow = `(() => {
             const d = ${LAUNCHER};
             const row = d?.querySelector('[data-launcher-task-row]');
@@ -24466,7 +24466,7 @@ const launcherScenario = {
                 flag: offset(row.querySelector('button[title="Add a flag"]')),
                 worktree: offset(row.querySelector('button[role="switch"]')),
                 command: offset(toggle),
-                commandText: (toggle?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+                commandText: toggle?.getAttribute('aria-label') ?? '',
                 expanded: toggle?.getAttribute('aria-expanded') ?? null,
                 chips: [...row.querySelectorAll('[data-launcher-flag-chip]')].map((c) => c.getAttribute('data-launcher-flag-chip')),
                 strip: !!d.querySelector('[data-launcher-command]'),
@@ -24477,7 +24477,7 @@ const launcherScenario = {
         const row = await h.ev(taskRow);
         await h.shot("cdp-shots/launcher-8b-task-row.png");
         rec(
-            "18b. the Task row holds the field, + Flag, Worktree and Command › on one line, the command folded",
+            "18b. the Task row holds the field and the Flag, Worktree and Command › icons on one line, the command folded",
             row != null &&
                 row.field === 0 &&
                 (!hasFlags || onLine(row.flag)) &&
@@ -24490,7 +24490,7 @@ const launcherScenario = {
             JSON.stringify({ hasFlags, ...row })
         );
 
-        // a flag turned on in the menu shows as a chip on the row, while Command stays folded; its ✕ there turns it off
+        // a flag turned on in the menu shows as a chip under the field, while Command stays folded; its ✕ there turns it off
         if (hasFlags) {
             await h.ev(`${FLAG_BUTTON}?.click()`);
             await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('input[type="checkbox"]')`, 3000);
@@ -24509,7 +24509,7 @@ const launcherScenario = {
             await polishNap(250);
             const removed = await h.ev(taskRow);
             rec(
-                "18c. an enabled flag shows as a chip on the Task row with Command folded, and its ✕ takes it off",
+                "18c. an enabled flag shows as a chip under the Task field with Command folded, and its ✕ takes it off",
                 !!flagName &&
                     withFlag?.chips.length === 1 &&
                     withFlag.chips[0] === flagName &&

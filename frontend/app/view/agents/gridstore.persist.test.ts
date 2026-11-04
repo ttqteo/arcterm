@@ -5,7 +5,7 @@
 // the module creates it (getOnInit), so each case stores first and imports a fresh copy of the module, as
 // railstore.test.ts does; gridstore.test.ts runs without localStorage.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const lsMock = vi.hoisted(() => {
     const store = new Map<string, string>();
@@ -22,6 +22,15 @@ const lsMock = vi.hoisted(() => {
 });
 
 const KEY = "agent.grids";
+
+// the atom reads storage once, when the module creates it (getOnInit), so each case imports a fresh copy of the
+// module; the first fresh import pays the cold transform of the graph `./agentcenter` reaches, which on a loaded
+// machine outlasts a case's timeout. The hook's own timeout covers that transform; vite-node keeps it across
+// vi.resetModules(), so every case after this one only re-evaluates the module.
+beforeAll(async () => {
+    await import("./gridstore");
+    lsMock.clear();
+}, 120000);
 
 async function freshStore() {
     vi.resetModules();
@@ -42,10 +51,9 @@ async function gridAtStartup(stored?: string) {
 describe("agentGridAtom storage", () => {
     beforeEach(() => lsMock.clear());
 
-    // the first fresh import of the module, which pays the cold transform of its graph
     it("starts empty for a profile that never stored a grid", async () => {
         expect(await gridAtStartup()).toEqual({ ids: [], focused: null });
-    }, 30000);
+    });
     it("reads back the shown project's stored grid on the first read", async () => {
         const stored = '{"project":"x","grids":{"x":{"ids":["a","b"],"focused":"b"},"y":{"ids":["c"],"focused":"c"}}}';
         expect(await gridAtStartup(stored)).toEqual({ ids: ["a", "b"], focused: "b" });

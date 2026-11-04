@@ -3,11 +3,13 @@
 //
 // What the council report (councilsummary.tsx) draws, derived from a `Council`: the answer line, the ranked directions
 // with their plain tag, one stance chip per expert and the expert positions behind each, the lines under the header,
-// which view a council opens on, and the two things the report hands on: the seed of the initiative Create initiative
+// which view a council opens on, the outline with the Final proposal's entry (councilfinalmodel.ts), and the two things
+// the report hands on: the seed of the initiative Create initiative
 // makes and the first prompt Start an agent on it opens an agent with. Pure, no React, no Wave runtime imports, so every rule here has a test (councilsummarymodel.test.ts). The
 // stances, ranking and matrix of the whole council are in councilmodel.ts.
 
 import { failedWhile, listNames } from "./councildiscussionmodel";
+import { finalProposal } from "./councilfinalmodel";
 import {
     checkLabelOf,
     councilProjectKey,
@@ -582,7 +584,8 @@ export function expertActivity(c: Council): ExpertActivity[] {
 }
 
 /** One entry of the report's outline: a section (`depth` 0) or a direction under its section (`depth` 1). `id` names
- *  the element it scrolls to (`data-council-section`, or `data-council-direction` for `direction:<rank>`). */
+ *  the element it scrolls to (`data-council-section`, or `data-council-direction` for `direction:<rank>`); the Final
+ *  proposal's is `final`. */
 export interface OutlineEntry {
     id: string;
     label: string;
@@ -591,13 +594,16 @@ export interface OutlineEntry {
     rank: number | null;
 }
 
-/** Pure: the report's outline, in page order: the answer, the directions (each one under them) and the kept or
- *  also-raised ideas. Who agrees with which idea is the Map tab's, not a section here. Empty before a summary: then the
- *  column has no outline. */
+/** Pure: the report's outline, in page order: the answer, the directions (each one under them), the kept or
+ *  also-raised ideas, and last the Final proposal while a message is pinned (finalProposal). Who agrees with which idea
+ *  is the Map tab's, not a section here. Empty before a summary unless a message is pinned: then the Final proposal
+ *  alone, which the report shows without one. */
 export function outlineOf(c: Council): OutlineEntry[] {
+    const final: OutlineEntry[] =
+        finalProposal(c) == null ? [] : [{ id: "final", label: "Final proposal", count: null, depth: 0, rank: null }];
     const summary = c.summary;
     if (summary == null) {
-        return [];
+        return final;
     }
     const entries: OutlineEntry[] = [{ id: "answer", label: "The answer", count: null, depth: 0, rank: null }];
     const directions = [...summary.directions].sort((a, b) => a.rank - b.rank);
@@ -618,11 +624,12 @@ export function outlineOf(c: Council): OutlineEntry[] {
     if (kept.length > 0) {
         entries.push({ id: "kept", label: keptHeading(c), count: kept.length, depth: 0, rank: null });
     }
-    return entries;
+    return [...entries, ...final];
 }
 
 /** Pure: the tab bar's jump links: the outline's sections after the answer (the answer is the cover), in page order:
- *  the directions and the kept ideas when there are any. Empty before a summary. */
+ *  the directions and the kept ideas when there are any, then the Final proposal while a message is pinned. Empty
+ *  before a summary unless a message is pinned: then the Final proposal alone. */
 export function jumpLinks(c: Council): OutlineEntry[] {
     return outlineOf(c).filter((e) => e.depth === 0 && e.id !== "answer");
 }

@@ -577,6 +577,27 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
     };
 }
 
+/** Pure: whether the channel folds its ideas to their first lines: once the seats are past the ideas round and replying
+ *  (round 2 runs, or a seat has replied on an idea), so the ideas already read stop burying what is new. A council that
+ *  ended on its ideas alone keeps them whole. */
+export function foldsIdeas(c: Council): boolean {
+    if (c.round < 2) {
+        return false;
+    }
+    return c.state === "running" || readableReplies(c).some((r) => r.proposalid !== "" && r.author !== YOU);
+}
+
+// past this many lines or characters an idea is worth folding; a shorter one shows whole, with no Show more
+const FOLD_LINES = 3;
+const FOLD_CHARS = 260;
+
+/** Pure: whether an idea's text is long enough to fold: more than three lines (a table, a list, a second paragraph)
+ *  or more than about three lines of prose. */
+export function foldableText(text: string): boolean {
+    const t = text.trim();
+    return t.split(/\n/).filter((l) => l.trim() !== "").length > FOLD_LINES || t.length > FOLD_CHARS;
+}
+
 // ---- the channel's other lines ----
 
 export interface QuestionPost extends Who {

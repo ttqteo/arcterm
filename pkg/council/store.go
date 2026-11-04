@@ -327,6 +327,38 @@ func SetThumb(id, item, thumb string) (*Council, error) {
 	})
 }
 
+// SetFinalPick pins one of the council's sent ideas or seat replies, named by its id (P1, r3), to the Report as its
+// Final proposal, replacing an earlier pin; an empty item takes the pin back. The same things SetThumb refuses are
+// refused here (the person's own reply, a held or dropped draft, an id the council does not have), and nothing is saved.
+// It saves through UpdateMark, not Update: a pin is no change to the council, and Update's stamp would move Updated,
+// which is a no-summary council's ended time and so its place in the tree.
+func SetFinalPick(id, item string) (*Council, error) {
+	return UpdateMark(id, func(c *Council) error {
+		if item == "" {
+			c.FinalPick = ""
+			return nil
+		}
+		if p := findProposal(c, item); p != nil {
+			if !Sent(p.Draft) {
+				return fmt.Errorf("idea %s is not sent", item)
+			}
+			c.FinalPick = item
+			return nil
+		}
+		r := findReply(c, item)
+		switch {
+		case r == nil:
+			return fmt.Errorf("council %s has no idea or reply %q", id, item)
+		case r.Author == YouId:
+			return fmt.Errorf("reply %s is the person's own", item)
+		case !Sent(r.Draft):
+			return fmt.Errorf("reply %s is not sent", item)
+		}
+		c.FinalPick = item
+		return nil
+	})
+}
+
 // samePath compares two paths as the OS does: cleaned, and without case on Windows.
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)

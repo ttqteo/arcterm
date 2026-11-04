@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The New launcher's details for an agent row: one Task row (the task field, + Flag, the enabled flags, the worktree
-// switch and a Command › toggle), with the branch row, the command strip and the notes under it. The task field is
+// The New launcher's details for an agent row: one Task row (the task field, then icon buttons for flags, the worktree
+// toggle and Command ›, with the enabled flags as chips under the field), with the branch row, the command strip and the
+// notes under it. The task field is
 // always there (it hid behind "+ Start with a task") so Tab lands in it. The command shows only while Command › is open,
 // which is this component's state, so every opening of the dialog starts folded; a terminal has no task and shows it
 // open. Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes
@@ -20,7 +21,17 @@ import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { autoUpdate, flip, FloatingPortal, size as floatingSize, offset, shift, useFloating } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
+import {
+    ChevronDown,
+    ChevronRight,
+    Flag,
+    GitBranch,
+    Loader2,
+    Lock,
+    SquareTerminal,
+    TriangleAlert,
+    X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
     useEffect,
@@ -491,31 +502,88 @@ export function AgentFields({
                             )}
                         />
                         {/* the buttons are tabIndex -1, for the pointer: Tab goes from the Task box to the Project column */}
-                        <div className="flex min-h-[31px] min-w-0 flex-wrap items-center justify-end gap-1">
+                        {/* icons only, so the hint keeps the row's width: the names are in their titles */}
+                        <div className="flex h-[31px] shrink-0 items-center gap-0.5">
                             {flagCatalog.length > 0 ? (
                                 <button
                                     type="button"
                                     tabIndex={-1}
                                     aria-expanded={flagMenuOpen}
+                                    aria-label={
+                                        enabledFlags.length > 0
+                                            ? `Add a flag (${enabledFlags.length} on)`
+                                            : "Add a flag"
+                                    }
                                     title="Add a flag"
                                     onClick={() => setFlagMenuOpen(!flagMenuOpen)}
                                     className={cn(
-                                        "flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] px-2 text-[11.5px] font-semibold",
+                                        "relative flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px]",
                                         flagMenuOpen
+                                            ? "bg-accentbg text-accent-soft"
+                                            : enabledFlags.length > 0
+                                              ? "text-accent-soft hover:bg-surface-hover"
+                                              : "text-ink-mid hover:bg-surface-hover hover:text-primary"
+                                    )}
+                                >
+                                    <Flag size={14} strokeWidth={2} />
+                                    {enabledFlags.length > 0 ? (
+                                        <span className="absolute right-0 top-px flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-accent-700 px-[3px] text-[9px] font-semibold tabular-nums text-primary">
+                                            {enabledFlags.length}
+                                        </span>
+                                    ) : null}
+                                </button>
+                            ) : null}
+                            {showWorktree ? (
+                                <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    role="switch"
+                                    aria-checked={worktreeOn}
+                                    aria-label="Worktree"
+                                    title="Run in an isolated git worktree"
+                                    onClick={() => globalStore.set(launcherWorktreeAtom, (v) => !v)}
+                                    className={cn(
+                                        "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px]",
+                                        worktreeOn
                                             ? "bg-accentbg text-accent-soft"
                                             : "text-ink-mid hover:bg-surface-hover hover:text-primary"
                                     )}
                                 >
-                                    <Plus size={12} strokeWidth={2.2} />
-                                    <span>Flag</span>
+                                    <GitBranch size={14} strokeWidth={2} />
                                 </button>
                             ) : null}
+                            <button
+                                type="button"
+                                tabIndex={-1}
+                                data-launcher-command-toggle
+                                aria-expanded={commandOpen}
+                                aria-label="Command"
+                                title="Show the command it runs"
+                                onClick={() => setCommandOpen((v) => !v)}
+                                className={cn(
+                                    "flex h-7 shrink-0 cursor-pointer items-center gap-0.5 rounded-[6px] px-1.5",
+                                    commandOpen
+                                        ? "bg-surface-hover text-primary"
+                                        : "text-ink-mid hover:bg-surface-hover hover:text-primary"
+                                )}
+                            >
+                                <SquareTerminal size={14} strokeWidth={2} />
+                                <ChevronRight
+                                    size={10}
+                                    strokeWidth={2.4}
+                                    className={cn("transition-transform", commandOpen && "rotate-90")}
+                                />
+                            </button>
+                        </div>
+                    </div>
+                    {enabledFlags.length > 0 ? (
+                        <div data-launcher-flag-chips className="flex min-w-0 flex-wrap gap-1 pb-1.5 pr-1 pl-[38px]">
                             {enabledFlags.map((f) => (
                                 <span
                                     key={f.id}
                                     data-launcher-flag-chip={f.flag}
                                     title={`${f.flag} · ${f.desc}`}
-                                    className="flex min-w-0 max-w-[200px] items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
+                                    className="flex min-w-0 max-w-[260px] items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
                                 >
                                     <span className="min-w-0 truncate font-mono text-[11px] font-semibold text-accent-soft">
                                         {f.flag}
@@ -531,57 +599,8 @@ export function AgentFields({
                                     </button>
                                 </span>
                             ))}
-                            {showWorktree ? (
-                                <button
-                                    type="button"
-                                    tabIndex={-1}
-                                    role="switch"
-                                    aria-checked={worktreeOn}
-                                    title="Run in an isolated git worktree"
-                                    onClick={() => globalStore.set(launcherWorktreeAtom, (v) => !v)}
-                                    className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] px-2 hover:bg-surface-hover"
-                                >
-                                    <span
-                                        className={cn(
-                                            "relative h-4 w-[26px] shrink-0 rounded-full transition-colors",
-                                            worktreeOn ? "bg-accent" : "bg-edge-strong"
-                                        )}
-                                    >
-                                        <span
-                                            className={cn(
-                                                "absolute top-[3px] h-[10px] w-[10px] rounded-full bg-background transition-all",
-                                                worktreeOn ? "left-[13px]" : "left-[3px]"
-                                            )}
-                                        />
-                                    </span>
-                                    <span className="whitespace-nowrap text-[11.5px] font-semibold text-ink-mid">
-                                        Worktree
-                                    </span>
-                                </button>
-                            ) : null}
-                            <button
-                                type="button"
-                                tabIndex={-1}
-                                data-launcher-command-toggle
-                                aria-expanded={commandOpen}
-                                title="Show the command it runs"
-                                onClick={() => setCommandOpen((v) => !v)}
-                                className={cn(
-                                    "flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] px-2 text-[11.5px] font-semibold",
-                                    commandOpen
-                                        ? "bg-surface-hover text-primary"
-                                        : "text-ink-mid hover:bg-surface-hover hover:text-primary"
-                                )}
-                            >
-                                <span>Command</span>
-                                <ChevronRight
-                                    size={11}
-                                    strokeWidth={2.2}
-                                    className={cn("transition-transform", commandOpen && "rotate-90")}
-                                />
-                            </button>
                         </div>
-                    </div>
+                    ) : null}
                     <TaskImages />
                 </div>
             ) : null}

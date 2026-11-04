@@ -31,8 +31,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.
+- Once a council's experts start replying, its long round 1 ideas fold to their first lines (Show more opens one), and an idea whose thread has replies you have not read says `2 new replies` on its reply chip and its Ideas rail row; the rail can show only those ideas.
 - A council's Discussion header wraps a long title onto a second line instead of cutting it short, and its step chip reads shorter (`Round 1/2`, `Round 2/2 · 3 drafts`); the full words are on hover.
 - The app bar's fold button shows only the pet, without its name; the tooltip still says what it folds into.
+- In the New agent dialog, Flag, Worktree and Command are small icons beside the Task box, so its hint shows in full; Worktree lights up when on, and the flags you turned on sit as chips under the text.
 
 ### Fixed
 
@@ -47,6 +49,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In a council's Discussion, every idea and reply a seat has sent now has **Copy** (its markdown, a table or list as the seat wrote it) and **Pin to Report** beside the thumbs when you point at it. The pinned message shows as the Report's **Final proposal** at its end, with Open in Discussion, Copy and Unpin, and it closes the saved document; a council with no summary shows it too.
 - **Scan workflow**, a Start row in the palette when a project is active, scans the last 14 days of your runs for a correction or failure that came back in three or more of them, and opens an agent that proposes a small fix to the prompt or config behind each pattern, asks you which to apply and commits only those. A fix that belongs to another project is shown as text to copy, never applied. <!-- try: go:palette --> <!-- big -->
 - **A council has a Memory tab, and a Chốt button to fill it**: the direction the seats read before the Report. Chốt an idea or a seat's message (the button beside like and dislike, or `p` on the idea under the cursor), or write the direction yourself; it is checked against what the seats agreed first, and one that clashes waits on the tab for you to Edit, Set anyway or Discard. After a round the check may suggest a new direction, with Show the messages it rests on. The tab keeps the chosen direction and what it replaced, and a change of direction marks the Report Outdated. <!-- big -->
 - **A council's Ideas tab groups the ideas by where the seats stand**: Waiting on you, Agreed, Has doubts, Someone against it, No stance yet and Withdrawn, each under a header with its colour and a count, in the order they arrived. An idea moves group as a seat changes its stance; a withdrawn one says which round it left in, and one you cut says `cut by you`.

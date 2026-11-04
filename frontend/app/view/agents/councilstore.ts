@@ -354,6 +354,20 @@ export async function thumbCouncil(id: string, item: string, thumb: CouncilThumb
     return r;
 }
 
+/** Pins a seat's sent idea or reply (`item`, P1 or r3) to the report as its Final proposal, in place of the one pinned
+ *  before (a council has one), or with "" takes the pin back. wavesrv refuses the person's own reply, an unsent draft and
+ *  an id the council lacks; its words come back as `error`. The command answers nothing, so on success the council's atom
+ *  is patched from what was sent and the buttons do not wait for `council:changed`; a failure leaves the council as it
+ *  was. Not the council's own pin (setCouncilPinned: its place in the tree). */
+export async function finalPickCouncil(id: string, item: string): Promise<CouncilCall<void>> {
+    const r = await call("final pick", () => RpcApi.CouncilFinalPickCommand(TabRpcClient, { id, item }));
+    const picked = globalStore.get(councilAtom(id));
+    if (r.ok && picked != null) {
+        globalStore.set(councilAtom(id), { ...picked, finalpick: item });
+    }
+    return r;
+}
+
 /** The words of one move on a council's direction (the Memory tab, Chốt): `set` types a direction, `pin` takes one from
  *  an idea or message, `edit` rewrites the chosen one, `accept` / `dismiss` settle the waiting suggestion, `setanyway` /
  *  `discard` the held direction, `unpin` takes the chosen one off. */
@@ -524,6 +538,18 @@ export const councilIdeasRailFoldedAtom = atomWithStorage<boolean>("council.idea
 /** The seat whose messages alone a council's Discussion shows, per council; null shows everyone. The Summary's column
  *  sets it (showCouncil's `only`); every other way into a council clears it. */
 export const councilOnlyAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
+
+/** The newest reply (ms) the person saw with each idea's thread open, by idea id, in this run of the app: what clears
+ *  an idea's fresh replies before they leave the council (councillistmodel.readFrom). In memory only: leaving the
+ *  council moves its opened time (councilopened.ts) past every reply, which keeps them read after a reload. */
+export const councilThreadReadAtom = atomFamily(
+    (_id: string) => atom<Record<string, number>>({}) as PrimitiveAtom<Record<string, number>>
+);
+
+/** The ideas the person unfolded (Show more) in a folded channel (councilchatmodel.foldsIdeas), by idea id. */
+export const councilUnfoldedAtom = atomFamily(
+    (_id: string) => atom<ReadonlySet<string>>(new Set<string>()) as PrimitiveAtom<ReadonlySet<string>>
+);
 
 /** The seat whose timeline a council's Seats popover shows, by expert id; null shows the list of seats. A seat's Timeline
  *  button and an expert card on the Map set it; the popover clears it when it closes. */

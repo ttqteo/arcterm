@@ -27,6 +27,7 @@
 // `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the header (the `acts` the
 // discussion shares).
 
+import { useCopyFeedback, type CopyState } from "@/app/element/copyfeedback";
 import { MOTION, computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
@@ -42,10 +43,12 @@ import {
     ChevronsLeft,
     ChevronsRight,
     CircleAlert,
+    Copy,
     CornerDownRight,
     FileText,
     Loader2,
     Pin,
+    PinOff,
     Plus,
     Route,
     SendHorizontal,
@@ -81,6 +84,8 @@ import {
     foldSettle,
     foldToggle,
     foldView,
+    foldableText,
+    foldsIdeas,
     ideaOrder,
     insertAllMention,
     insertChatMention,
@@ -118,7 +123,16 @@ import {
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
-import { councilList, railMeta, railOrderLabel, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
+import { messageMarkdown } from "./councilfinalmodel";
+import {
+    councilList,
+    newestReplyOn,
+    railMeta,
+    railOrderLabel,
+    stanceGroups,
+    type IdeaRow,
+    type StanceTone,
+} from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import { MemoryPanel } from "./councilmemory";
 import { chotLine, memoryDot, type DirectionSource } from "./councilmemorymodel";
@@ -139,6 +153,7 @@ import {
 import { councilOpenedAtom, openedAt } from "./councilopened";
 import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
 import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
+import { councilRevealAtom } from "./councilreveal";
 import {
     NO_PILLS,
     followsEnd,
@@ -175,8 +190,11 @@ import {
     councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
+    councilThreadReadAtom,
+    councilUnfoldedAtom,
     directionCouncil,
     draftCouncil,
+    finalPickCouncil,
     openCouncilSources,
     removeCouncilImage,
     replyCouncil,
@@ -579,6 +597,90 @@ function ThumbChip({
     );
 }
 
+// Copy and Pin to Report on a seat's sent idea or reply, at the right end of its byline beside the thumbs (HoverEnd: shown
+// while the message is hovered or focused). Copy puts the message's markdown on the clipboard, as a seat wrote it, with no
+// name or time (messageMarkdown, the text the Report's Final proposal copies too); the button reads Copied for a moment,
+// or Copy failed. Pin to Report makes it the council's Final proposal, in place of the one pinned before with no confirm;
+// on the pinned message the same button reads Unpin (and the message wears the PinnedPill). A message with no words (a
+// withdrawal with no reason, whose bubble is not drawn) has nothing to copy or pin and gets neither. Never on the
+// person's own posts or a held draft: the callers are the ones that draw the thumbs.
+const COPY_WORD: Record<CopyState, string> = { idle: "Copy", copied: "Copied", failed: "Copy failed" };
+const COPY_TONE: Record<CopyState, string> = {
+    idle: "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary",
+    copied: "bg-success/12 text-success-soft",
+    failed: "bg-error/12 text-error-soft",
+};
+const TOOL_BUTTON =
+    "flex h-[20px] cursor-pointer items-center justify-center gap-[4px] rounded-[6px] border-0 px-[5px] text-[11.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default";
+const PIN_WORD = "Pin to Report";
+const UNPIN_WORD = "Unpin";
+
+function MessageTools({ c, id, acts }: { c: Council; id: string; acts: Actions }) {
+    const { state, copy } = useCopyFeedback();
+    const markdown = messageMarkdown(c, id) ?? "";
+    if (markdown === "") {
+        return null;
+    }
+    const pinned = c.finalpick === id;
+    const key = `finalpick:${id}`;
+    const CopyIcon = state === "copied" ? Check : state === "failed" ? X : Copy;
+    return (
+        <span data-council-tools={id} className="inline-flex gap-[2px]">
+            <button
+                type="button"
+                data-council-copy={id}
+                data-copy-state={state}
+                aria-label={state === "idle" ? "Copy message" : COPY_WORD[state]}
+                title={state === "idle" ? "Copy the message as markdown" : COPY_WORD[state]}
+                onClick={() => copy(markdown)}
+                className={cn(TOOL_BUTTON, COPY_TONE[state])}
+            >
+                <CopyIcon size={12} strokeWidth={2} aria-hidden />
+                {state !== "idle" && <span>{COPY_WORD[state]}</span>}
+            </button>
+            <button
+                type="button"
+                data-council-finalpick={id}
+                data-pinned={pinned ? "true" : undefined}
+                aria-pressed={pinned}
+                aria-label={pinned ? UNPIN_WORD : PIN_WORD}
+                title={pinned ? "Unpin: take it off the Report" : "Pin to Report: show it there as the Final proposal"}
+                disabled={acts.busy.has(key)}
+                onClick={() => void acts.run(key, PIN_WORD, () => finalPickCouncil(c.id, pinned ? "" : id))}
+                className={cn(
+                    TOOL_BUTTON,
+                    "w-[22px] px-0",
+                    pinned ? "text-primary" : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                )}
+            >
+                {pinned ? (
+                    <PinOff size={12} strokeWidth={2} aria-hidden />
+                ) : (
+                    <Pin size={12} strokeWidth={2} aria-hidden />
+                )}
+            </button>
+        </span>
+    );
+}
+
+// the pinned message's pill beside its author, always shown (the Pin button is hover-only); a pinned idea that was later
+// withdrawn wears it beside its Withdrawn pill
+function PinnedPill({ id }: { id: string }) {
+    return (
+        <span
+            data-council-pinned-pill={id}
+            title="Pinned to the Report as its Final proposal"
+            className={cn(
+                "inline-flex items-center gap-[4px] rounded-full px-[7px] py-px text-[10px] font-semibold",
+                PILL_TONE.neutral
+            )}
+        >
+            <Pin size={9} strokeWidth={2.4} aria-hidden />
+            Pinned to Report
+        </span>
+    );
+}
+
 // Chốt: pins an idea's title, or a seat's message on one line, as the council's direction (the Memory tab). It sits beside
 // like and dislike in the same row, and on a reply shows with them while it is hovered or focused. A direction is checked
 // before it is set, so the icon turns while the check runs; where it landed (set, or held with a reason) is on the Memory
@@ -611,23 +713,32 @@ function Chot({ councilId, item, text, acts }: { councilId: string; item: string
 }
 
 function IdeaMessage({
-    councilId,
+    c,
     item,
     n,
     open,
     focused,
+    fold,
+    fresh,
     onOpen,
+    onFold,
     acts,
 }: {
-    councilId: string;
+    c: Council;
     item: IdeaPost;
     n: number | undefined; // its number on the Ideas rail, so a message and its rail row read as one
     open: boolean;
     focused: boolean;
+    // past the ideas round a long idea shows its first lines (`folded`) until Show more (`unfolded`); `whole` otherwise
+    fold: "whole" | "folded" | "unfolded";
+    fresh: string; // `2 new replies` since the person last read its thread; empty with none
     onOpen: (id: string) => void;
+    onFold: (id: string, unfold: boolean) => void;
     acts: Actions;
 }) {
+    const councilId = c.id;
     const t = item.thread;
+    const folded = fold === "folded";
     return (
         <article
             data-council-item
@@ -636,7 +747,9 @@ function IdeaMessage({
             data-item-label={item.label}
             data-open={open ? "true" : undefined}
             data-focused={focused ? "true" : undefined}
-            className="group/idea flex gap-[10px]"
+            data-fold={fold}
+            data-fresh={fresh === "" ? undefined : "true"}
+            className="group/idea group/reply flex gap-[10px]"
         >
             <SeatAvatar who={item} large />
             <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-[6px]">
@@ -655,8 +768,13 @@ function IdeaMessage({
                         <span className="text-muted">{item.label}</span>
                     )}
                     {item.withdrawn && <WithdrawnPill />}
+                    {c.finalpick === item.id && <PinnedPill id={item.id} />}
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
+                    {/* the idea's thumbs sit under its bubble, always shown; Copy and Pin float at the byline's end */}
+                    <HoverEnd>
+                        <MessageTools c={c} id={item.id} acts={acts} />
+                    </HoverEnd>
                 </Byline>
                 <div
                     className={cn(
@@ -672,7 +790,32 @@ function IdeaMessage({
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
                         it is quoted (a reply's ↳, the thread's header, the report) */}
-                    <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
+                    {/* folded: its first three lines fading out, so the ideas already read stop burying what is new */}
+                    <div
+                        data-council-idea-body
+                        className={cn(
+                            folded &&
+                                "max-h-[70px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_45%,transparent)]"
+                        )}
+                    >
+                        <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
+                    </div>
+                    {fold !== "whole" && (
+                        <button
+                            type="button"
+                            data-council-idea-fold={item.id}
+                            aria-expanded={!folded}
+                            onClick={() => onFold(item.id, folded)}
+                            className="-ml-[6px] inline-flex h-[22px] w-fit cursor-pointer items-center gap-[4px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            {folded ? (
+                                <ChevronDown size={13} strokeWidth={2} aria-hidden />
+                            ) : (
+                                <ChevronUp size={13} strokeWidth={2} aria-hidden />
+                            )}
+                            {folded ? "Show more" : "Show less"}
+                        </button>
+                    )}
                     <EvidenceChips {...item.claim} source={{ councilId, owner: item.id, title: item.title }} />
                     <div className="flex flex-wrap items-center gap-[10px]">
                         <button
@@ -699,6 +842,15 @@ function IdeaMessage({
                                 </span>
                             )}
                             <span className="font-semibold text-accent">{t.label}</span>
+                            {fresh !== "" && (
+                                <span
+                                    data-council-thread-fresh
+                                    className="inline-flex items-center gap-[5px] font-semibold text-accent"
+                                >
+                                    <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-accent" />
+                                    {fresh}
+                                </span>
+                            )}
                             {t.last !== "" && (
                                 <span className="text-muted" title={t.lastWhen}>
                                     {t.last}
@@ -750,24 +902,30 @@ function ReplyOn({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: stri
 // shown while its reply is hovered or focused: a post's time, which says little at a glance
 const HOVER_ONLY = "opacity-0 group-hover/reply:opacity-100 group-focus-within/reply:opacity-100";
 
-// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and on hover its time and
-// the thumbs
+// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), the Pinned to Report pill when
+// it is the Final proposal, and on hover its time, Copy and Pin (`tools`) and the thumbs
 function ReplyHeader({
     item,
     onOpenIdea,
+    pinned,
+    tools,
     thumbs,
 }: {
     item: ReplyPost;
     onOpenIdea?: (id: string) => void;
+    pinned?: boolean;
+    tools?: ReactNode;
     thumbs?: ReactNode;
 }) {
     return (
         <Byline who={item}>
             {item.pill !== "neutral" && <CouncilPill word={item.label} tone={item.pill} />}
+            {pinned && <PinnedPill id={item.id} />}
             {item.edited && <span className="text-muted">edited</span>}
             <ReplyOn item={item} onOpenIdea={onOpenIdea} />
             <HoverEnd>
                 <PostTime at={item.at} when={item.when} />
+                {tools}
                 {thumbs}
             </HoverEnd>
         </Byline>
@@ -934,6 +1092,14 @@ function ReachRow({ to }: { to: ReachChips }) {
 // how long the post an answer's quote jumps to keeps its ring
 const FLASH_MS = 2000;
 
+// rings a post for a moment where it landed (FLASH_MS), so it is found at a glance: a quote's press (QuoteRow) and the
+// Report's Open in Discussion lay it; a second one before it fades starts the moment again
+function flashPost(post: HTMLElement) {
+    window.clearTimeout(Number(post.dataset.flashTimer));
+    post.dataset.flash = "true";
+    post.dataset.flashTimer = String(window.setTimeout(() => delete post.dataset.flash, FLASH_MS));
+}
+
 // at the top of a seat's bubble: the person's post it answers, when it is not right under it; a click scrolls to that
 // post, which sits in the same list (a seat's own view leaves the person's posts out: the quote is then only a quote)
 function QuoteRow({ quote }: { quote: AnswerQuote }) {
@@ -966,11 +1132,8 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
         // a glide up the channel, so the eye follows it back to the question; a jump with reduced motion
         const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         revealIn(scrollerOf(post), post, "center", smooth);
-        // and the question's bubble rings for a moment where it lands (FLASH_MS), so it is found at a glance; a second
-        // press before it fades starts the moment again
-        window.clearTimeout(Number(post.dataset.flashTimer));
-        post.dataset.flash = "true";
-        post.dataset.flashTimer = String(window.setTimeout(() => delete post.dataset.flash, FLASH_MS));
+        // and the question's bubble rings for a moment where it lands
+        flashPost(post);
     };
     return (
         <button
@@ -1050,7 +1213,7 @@ function AskTooChips({
 
 // a reply in the thread panel: a seat's on the left under its byline, the person's own on the right
 function ReplyMessage({
-    councilId,
+    c,
     item,
     acts,
     inThread,
@@ -1058,7 +1221,7 @@ function ReplyMessage({
     rise,
     status,
 }: {
-    councilId: string;
+    c: Council;
     item: ReplyPost;
     acts: Actions;
     inThread?: boolean;
@@ -1066,6 +1229,7 @@ function ReplyMessage({
     rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
     status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
+    const councilId = c.id;
     const openIdea = inThread ? undefined : onOpenIdea;
     // a withdrawal that gave no reason says it all in its pill: no empty bubble under it
     const bare = item.pill === "out" && item.text.trim() === "" && item.claim.evidence.length === 0;
@@ -1090,8 +1254,10 @@ function ReplyMessage({
                     <ReplyHeader
                         item={item}
                         onOpenIdea={openIdea}
+                        pinned={c.finalpick === item.id}
+                        // at the right end of its byline with the time, shown on hover or focus, so a reply is no taller
+                        tools={<MessageTools c={c} id={item.id} acts={acts} />}
                         thumbs={
-                            // at the right end of its byline with the time, shown on hover or focus, so a reply is no taller
                             <>
                                 <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
                                 <Chot councilId={councilId} item={item.id} text={item.text} acts={acts} />
@@ -2308,9 +2474,11 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
                 <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
                 {idea.withdrawn && <WithdrawnPill />}
+                {c.finalpick === idea.id && <PinnedPill id={idea.id} />}
                 {idea.edited && <span>edited</span>}
                 <HoverEnd>
                     <PostTime at={idea.at} when={idea.when} />
+                    <MessageTools c={c} id={idea.id} acts={acts} />
                     <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
                     <Chot councilId={c.id} item={idea.id} text={idea.title} acts={acts} />
                 </HoverEnd>
@@ -2416,7 +2584,7 @@ function ThreadPanel({
                     item.kind === "reply" ? (
                         <ReplyMessage
                             key={item.id}
-                            councilId={c.id}
+                            c={c}
                             item={item}
                             acts={acts}
                             rise={item.mine && entering.has(item.id)}
@@ -2513,13 +2681,19 @@ const GROUP_BAR: Record<StanceTone, string> = {
 function IdeasList({
     ideas,
     on,
+    freshOnly,
     onPick,
+    onFreshOnly,
 }: {
     ideas: readonly IdeaRow[];
     on: string | null; // the idea under the cursor or with its thread open
+    freshOnly: boolean; // only the ideas with new replies (the caption's toggle); all of them once none has any
     onPick: (row: IdeaRow) => void;
+    onFreshOnly: (only: boolean) => void;
 }) {
-    const groups = stanceGroups(ideas);
+    const withFresh = ideas.filter((r) => r.fresh > 0).length;
+    const filtering = freshOnly && withFresh > 0;
+    const groups = stanceGroups(filtering ? ideas.filter((r) => r.fresh > 0) : ideas);
     return (
         <div
             id="council-rail-ideas"
@@ -2528,9 +2702,29 @@ function IdeasList({
             data-council-rail-ideas
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-[22px] pt-[4px] [scrollbar-gutter:stable]"
         >
-            <span data-council-rail-caption className="pb-[2px] text-[12px] text-muted">
-                {railOrderLabel()}
-            </span>
+            <div className="flex items-center gap-2 pb-[2px]">
+                <span data-council-rail-caption className="min-w-0 flex-1 truncate text-[12px] text-muted">
+                    {railOrderLabel()}
+                </span>
+                {withFresh > 0 && (
+                    <button
+                        type="button"
+                        data-council-rail-fresh={filtering ? "on" : "off"}
+                        aria-pressed={filtering}
+                        onClick={() => onFreshOnly(!filtering)}
+                        title={filtering ? "Show every idea" : "Show only the ideas with new replies"}
+                        className={cn(
+                            "inline-flex h-[22px] flex-none cursor-pointer items-center gap-[5px] rounded-full border px-[8px] text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            filtering
+                                ? "border-accent bg-accentbg font-semibold text-accent"
+                                : "border-edge-mid bg-transparent text-secondary hover:border-edge-strong hover:bg-surface-hover"
+                        )}
+                    >
+                        <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-accent" />
+                        {withFresh} with new replies
+                    </button>
+                )}
+            </div>
             {ideas.length === 0 && (
                 <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
                     Each idea lands here as a seat proposes it.
@@ -2590,6 +2784,12 @@ function IdeasList({
                                             </span>{" "}
                                             · {row.name}
                                             {row.isNew && <span className="text-accent-soft"> · new</span>}
+                                            {row.freshLabel !== "" && (
+                                                <span data-council-rail-fresh-row className="font-semibold text-accent">
+                                                    {" "}
+                                                    · {row.freshLabel}
+                                                </span>
+                                            )}
                                         </span>
                                         <span
                                             data-council-rail-title
@@ -2636,6 +2836,8 @@ function CouncilRail({
     onFold,
     onShow,
     onOpenSource,
+    freshOnly,
+    onFreshOnly,
 }: {
     c: Council;
     ideas: readonly IdeaRow[];
@@ -2645,6 +2847,8 @@ function CouncilRail({
     on: string | null;
     acts: Actions;
     chats: readonly SeatableAgent[];
+    freshOnly: boolean;
+    onFreshOnly: (only: boolean) => void;
     onTab: (tab: RailTabName) => void;
     onPick: (row: IdeaRow) => void;
     onClose: () => void;
@@ -2729,7 +2933,7 @@ function CouncilRail({
             ) : shows === "memory" ? (
                 <MemoryPanel key={c.id} c={c} acts={acts} onShow={onShow} onOpenSource={onOpenSource} />
             ) : (
-                <IdeasList ideas={ideas} on={on} onPick={onPick} />
+                <IdeasList ideas={ideas} on={on} freshOnly={freshOnly} onPick={onPick} onFreshOnly={onFreshOnly} />
             )}
         </aside>
     );
@@ -2832,6 +3036,34 @@ function revealIn(
     if (top != null) {
         box.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
     }
+}
+
+// where a revealed message lands (revealTarget): the row to find, whether it rings, the idea whose thread to open and the
+// idea to put the keyboard cursor on
+type RevealLanding = { selector: string; ring: boolean; open: string | null; focus: string | null };
+
+// how many frames the find waits for the row to be drawn (a thread's reply, after the thread opened): about a second
+const REVEAL_FRAMES = 60;
+
+// Pure: where to show the idea or reply `id` of `c`, or null for an id it lacks. An idea is in the channel, under the
+// cursor; a reply is in its idea's thread (opened first), or in the channel when it has no idea
+function revealTarget(c: Council, id: string): RevealLanding | null {
+    if ((c.proposals ?? []).some((p) => p.id === id)) {
+        return { selector: `[data-council-channel] [data-council-idea="${id}"]`, ring: false, open: null, focus: id };
+    }
+    const reply = (c.replies ?? []).find((r) => r.id === id);
+    if (reply == null) {
+        return null;
+    }
+    const post = `[data-council-reply-post="${id}"]`;
+    return reply.proposalid === ""
+        ? { selector: `[data-council-channel] ${post}`, ring: true, open: null, focus: null }
+        : {
+              selector: `[data-council-thread="${reply.proposalid}"] ${post}`,
+              ring: true,
+              open: reply.proposalid,
+              focus: null,
+          };
 }
 
 // the box a row scrolls in: its nearest ancestor that scrolls up and down
@@ -3121,9 +3353,37 @@ export function CouncilChat({
     const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
     // the rail's rows: New is measured against the time the person last left this council (councilopened.ts)
     const since = openedAt(useAtomValue(councilOpenedAtom), c.id);
-    const list = useMemo(() => councilList(c, since, onlyId ?? undefined), [c, since, onlyId]);
-    // an idea's number is the same whatever the filter: read from the whole list
-    const numbers = useMemo(() => new Map(councilList(c, 0).ideas.map((r) => [r.id, r.n])), [c]);
+    // a thread read in this visit clears its idea's fresh replies up to the newest it showed (councillistmodel.readFrom)
+    const [read, setRead] = useAtom(councilThreadReadAtom(c.id));
+    const list = useMemo(() => councilList(c, since, onlyId ?? undefined, read), [c, since, onlyId, read]);
+    // an idea's number and its fresh replies are the same whatever the filter: read from the whole list
+    const whole = useMemo(() => councilList(c, since, undefined, read), [c, since, read]);
+    const numbers = useMemo(() => new Map(whole.ideas.map((r) => [r.id, r.n])), [whole]);
+    const freshOf = useMemo(() => new Map(whole.ideas.map((r) => [r.id, r.freshLabel])), [whole]);
+    const [freshOnly, setFreshOnly] = useState(false);
+    // past the ideas round a long idea folds to its first lines; Show more keeps it open for this council
+    const folds = foldsIdeas(c);
+    const [unfolded, setUnfolded] = useAtom(councilUnfoldedAtom(c.id));
+    const onFold = useCallback(
+        (id: string, unfold: boolean) =>
+            setUnfolded((s) => {
+                const next = new Set(s);
+                if (unfold) {
+                    next.add(id);
+                } else {
+                    next.delete(id);
+                }
+                return next;
+            }),
+        [setUnfolded]
+    );
+    // the open thread is read up to its newest reply, and stays read as replies land while it is open
+    const readUpTo = openId == null || !threadOpen ? 0 : newestReplyOn(c, openId);
+    useEffect(() => {
+        if (openId != null && readUpTo > 0) {
+            setRead((r) => ((r[openId] ?? 0) >= readUpTo ? r : { ...r, [openId]: readUpTo }));
+        }
+    }, [openId, readUpTo, setRead]);
     const [folded, setFolded] = useAtom(councilIdeasRailFoldedAtom);
     const [railTab, setRailTab] = useState<RailTabName>("thread");
     // a thread opened any way (its replies button, Enter on the cursor, the Summary's link) shows on the rail's second tab
@@ -3245,6 +3505,55 @@ export function CouncilChat({
         }
     }, [focusedId]);
 
+    // a request to show one message (councilreveal.ts: the Report's Final proposal, Open in Discussion), read once while
+    // this council's chat is on screen and set back to null: an idea takes the keyboard cursor, a reply opens the thread
+    // it sits in (it stays in the channel when it has no idea). The row is then found, centred in its box and, for a
+    // reply, ringed (flashPost); the thread's row exists only after the thread has drawn, so the find waits for it
+    const [revealed, setRevealed] = useAtom(councilRevealAtom);
+    const [landing, setLanding] = useState<RevealLanding | null>(null);
+    const councilNow = useRef(c);
+    councilNow.current = c;
+    useEffect(() => {
+        if (revealed == null || revealed.councilId !== c.id) {
+            return;
+        }
+        setRevealed(null);
+        const target = revealTarget(councilNow.current, revealed.messageId);
+        if (target == null) {
+            return;
+        }
+        if (target.focus != null) {
+            setFocusedId(target.focus);
+        }
+        if (target.open != null) {
+            open(target.open);
+        }
+        setLanding(target);
+    }, [revealed, c.id, setRevealed, open]);
+    useEffect(() => {
+        if (landing == null) {
+            return;
+        }
+        let frame = 0;
+        let tries = 0;
+        const land = () => {
+            const post = document.querySelector<HTMLElement>(landing.selector);
+            if (post == null && ++tries < REVEAL_FRAMES) {
+                frame = requestAnimationFrame(land);
+                return;
+            }
+            if (post != null) {
+                revealIn(scrollerOf(post), post, "center");
+                if (landing.ring) {
+                    flashPost(post);
+                }
+            }
+            setLanding(null);
+        };
+        frame = requestAnimationFrame(land);
+        return () => cancelAnimationFrame(frame);
+    }, [landing]);
+
     const coordinators = new Set(c.experts.filter((e) => e.coordinator).map((e) => e.id));
     // two or more failed seats retry together (Retry all), each on the model picked beside it; the picks belong to
     // this council, so another one opened here starts from its seats' own models
@@ -3349,13 +3658,22 @@ export function CouncilChat({
                                     return (
                                         <IdeaMessage
                                             key={item.id}
-                                            councilId={c.id}
+                                            c={c}
                                             item={item}
                                             n={numbers.get(item.id)}
                                             acts={acts}
                                             open={threadOpen && item.id === openId}
                                             focused={item.id === focusedId}
+                                            fold={
+                                                !folds || !foldableText(item.text)
+                                                    ? "whole"
+                                                    : unfolded.has(item.id)
+                                                      ? "unfolded"
+                                                      : "folded"
+                                            }
+                                            fresh={freshOf.get(item.id) ?? ""}
                                             onOpen={open}
+                                            onFold={onFold}
                                         />
                                     );
                                 case "draft":
@@ -3364,7 +3682,7 @@ export function CouncilChat({
                                     return (
                                         <ReplyMessage
                                             key={item.id}
-                                            councilId={c.id}
+                                            c={c}
                                             item={item}
                                             acts={acts}
                                             onOpenIdea={open}
@@ -3439,6 +3757,8 @@ export function CouncilChat({
                                     onFold={() => setFolded(true)}
                                     onShow={showMessages}
                                     onOpenSource={openSource}
+                                    freshOnly={freshOnly}
+                                    onFreshOnly={setFreshOnly}
                                 />
                             )}
                         </motion.div>

@@ -466,6 +466,20 @@ func (ws *WshServer) CouncilThumbCommand(ctx context.Context, data wshrpc.Comman
 	return nil
 }
 
+// CouncilFinalPickCommand pins an idea or a seat's reply to the council's Report as its Final proposal, or unpins it
+// (an empty item), and announces the change. No round starts and no prompt reads the pin.
+func (ws *WshServer) CouncilFinalPickCommand(ctx context.Context, data wshrpc.CommandCouncilFinalPickData) error {
+	if data.Id == "" {
+		return errors.New("a council id is required")
+	}
+	c, err := council.SetFinalPick(data.Id, data.Item)
+	if err != nil {
+		return err
+	}
+	publishCouncilChanged(c)
+	return nil
+}
+
 // CouncilDirectionCommand applies one move to the council's direction memory (set, pin, edit, accept, dismiss, set
 // anyway, discard or unpin) and announces the change, as CouncilThumbCommand does. A refused move changed nothing and
 // publishes nothing. The command is the one that publishes: Runner.Direction returns the saved council without calling
