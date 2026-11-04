@@ -592,7 +592,9 @@ function IdeaMessage({
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
-                        focused && "ring-1 ring-edge-strong"
+                        // the open idea wears a light ring over its tone border, so it stands out from its tinted
+                        // neighbours; focus alone keeps the faint one
+                        open ? "ring-2 ring-primary/85" : focused && "ring-1 ring-edge-strong"
                     )}
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where

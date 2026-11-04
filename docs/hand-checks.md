@@ -1676,3 +1676,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   Close and a click → `waveapp.log` has, for each, `[fe-log] [close] ask … from=Mod+Shift+W` (or `from=header`), then
   `[close] confirm … via=enter after=…ms` (or `via=click`), `[close] close … why=close from …`, and wavesrv's
   `CloseTab: tab …`. Unit tests and the typecheck only (`closelog.ts`, `confirmdialog.tsx`, `agentactions.ts`).
+- [ ] (arcterm) **Open council idea rings.** In a council's Discussion, click an idea's replies → its bubble wears a
+  bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone still draws the faint ring.
+  Not tried in the app (`councilchat.tsx` `IdeaMessage` bubble).
