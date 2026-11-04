@@ -69,7 +69,8 @@ after round 2`.
   rests on), or **drop** an entry by id. They apply at once, with no card and no approval; the person removes what is
   wrong. It may drop only an entry it added that nobody edited, or an Open the round answered (and may add the answer as
   Agreed).
-- **By hand:** + Add. An entry the person adds or edits is theirs: the check never drops or rewrites it.
+- **By hand:** + Add. An entry the person adds or edits is theirs: the check never drops or rewrites it, except an Open
+  of theirs the round answered, which it may drop (an Open is a question put to the seats).
 - **Chốt on an entry** makes its text the direction through the pre-set check; once set (it fits, or Set anyway), the
   entry leaves the list. Chốt in the channel works as today.
 - **Edit** rewrites an entry's text (and why) in place; it becomes the person's.
@@ -115,7 +116,7 @@ writes nothing.
 ## Testing
 
 - Go: the entry moves (add, edit, remove, the removed key, the cap, dedup); the round check's parse of entry changes
-  (ids it was shown only, three at most, drop refused for a person's entry); a pin from an entry leaving the list once
+  (ids it was shown only, three at most, drop refused for a person's entry other than an Open); a pin from an entry leaving the list once
   set and staying while held; the seat prompt's memory block and the synthesis rules; the document's Memory section.
 - Frontend: pure model tests for the list order, the badge words and tooltips, the details lines, the new dot and the
   tab count, beside `councilmemorymodel.ts`.
