@@ -1660,7 +1660,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   toast; Retry on a failed thesis turn reaches that tab. Unit tests only (`transcriptpath.ts`, `archivedSession`,
   `seatLink`, Go `Holder`).
 - [ ] (arcterm) **Council short names, call bar gap.** Start a council with a Vietnamese question (Soi một tính năng
-  giao diện) → the cards read Trải nghiệm, Canh RAM, Người mới, Soi lỗi, untruncated, with initials T, C, M, S; while it
+  giao diện) → the cards read UX, Đo RAM, Khách, Tìm bug and Thư ký, untruncated, with initials U, Đ, K, T, T; while it
   runs, the green call bar under the header sits ~10px below the Discussion tab's underline, not touching it.
   Unit tests and the typecheck only (`roles.go`, `councildiscussion.tsx`); no dev app was up.
 - [ ] (arcterm) **Council evidence chips don't select.** In a council's Discussion or Report, drag across a claim's

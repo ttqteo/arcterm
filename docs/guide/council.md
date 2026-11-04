@@ -58,17 +58,17 @@ Mã vai không đổi, nên council cũ vẫn mở bình thường.
 
 | Mã | Tiếng Anh | Tiếng Việt |
 |---|---|---|
-| `ux` | Ease of use | Trải nghiệm |
-| `ram` | Memory watcher | Canh RAM |
-| `newuser` | New user | Người mới |
-| `skeptic` | Bug hunter | Soi lỗi |
-| `coordinator` | Summarizer | Tổng hợp |
-| `reviewer-a` / `reviewer-b` | Reviewer A / B | Phản biện A / B |
-| `reader` | Reader | Người đọc |
-| `areachair` | Final judge | Chốt điểm |
+| `ux` | Ease of use | UX |
+| `ram` | Memory watcher | Đo RAM |
+| `newuser` | New user | Khách |
+| `skeptic` | Bug hunter | Tìm bug |
+| `coordinator` | Summarizer | Thư ký |
+| `reviewer-a` / `reviewer-b` | Reviewer A / B | Giám khảo A / B |
+| `reader` | Reader | Biên tập |
+| `areachair` | Final judge | Tổng hợp |
 | `designer` | Designer | Thiết kế |
-| `builder` | Builder | Thợ code |
-| `contrarian` | Other side | Cãi ngược |
+| `builder` | Builder | Dev |
+| `contrarian` | Other side | Phản biện |
 | `facilitator` | Host | Dẫn dắt |
 
 Ngoài các vai, council còn xếp được ghế cho các **chat đang sống** của bạn:

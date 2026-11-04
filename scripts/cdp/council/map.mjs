@@ -9,7 +9,7 @@
 // rail-apps fixture (fixtures.mjs `seedCouncil` with an `edit`), so every field the Map reads (labels, runs, cites, the
 // timeline, the language) is set by hand:
 //   vi          a Vietnamese council still in round 2, four seats: one idea Ran, one Disproved, one Read code (with a wrong
-//               cite), two Guess (one withdrawn), a revised cell, and a verify command running now (Soi lỗi)
+//               cite), two Guess (one withdrawn), a revised cell, and a verify command running now (Tìm bug)
 //   seven       an English council that is done, seven seats, three ideas: the matrix has to scroll sideways
 //   brainstorm  a Brainstorm that is done: Builds on pills, no badge, no evidence bar
 //   round1      a council in round 1 whose seats have sent no idea yet
@@ -49,7 +49,7 @@ const reply = (t0, n, id, proposalid, author, stance, text, extra = {}) => ({
 });
 
 // The Vietnamese council. Arrival order P3, P1, P4, P2, P5; by agreement the Map must order them P1, P2, P3, P4, P5:
-//   P1  Ran        3 agree                       (Soi lỗi's command failed, as it expected)
+//   P1  Ran        3 agree                       (Tìm bug's command failed, as it expected)
 //   P2  Read code  2 agree · 1 doubt             (one cite holds, one is a wrong cite; its author revised after the doubt)
 //   P3  Disproved  1 agree · 1 doubt             (the command passed or failed against what its author expected)
 //   P4  Guess      1 agree · 1 doubt · 1 against
@@ -64,11 +64,11 @@ export function viCouncil(c) {
     c.question = "Services tự dừng sau 1 phút không dùng, như vậy có ổn không?";
     c.lang = "vi";
     c.experts = [
-        seat("newuser", "Người mới"),
-        seat("skeptic", "Soi lỗi"),
-        seat("ram", "Canh RAM"),
-        seat("ux", "Trải nghiệm"),
-        coordinator("Tổng hợp"),
+        seat("newuser", "Khách"),
+        seat("skeptic", "Tìm bug"),
+        seat("ram", "Đo RAM"),
+        seat("ux", "UX"),
+        coordinator("Thư ký"),
     ];
     c.state = "running";
     c.round = 2;
@@ -135,7 +135,7 @@ export function viCouncil(c) {
     };
     c.tokens = 499_000;
     c.calls = 14;
-    // Soi lỗi's second verify command is running now: its last step is a run with no result yet
+    // Tìm bug's second verify command is running now: its last step is a run with no result yet
     c.activity = { skeptic: { text: VI_RUNNING } };
     c.timeline = {
         skeptic: [
@@ -375,16 +375,16 @@ export const councilMap = {
                 f.cardsTitle === "Từng chuyên gia" &&
                 f.cardsHint === "Bấm một người để xem dòng thời gian của họ" &&
                 f.cards.map((c) => c.id).join() === "newuser,skeptic,ram,ux" &&
-                f.cards.map((c) => c.name).join("|") === "Người mới|Soi lỗi|Canh RAM|Trải nghiệm" &&
+                f.cards.map((c) => c.name).join("|") === "Khách|Tìm bug|Đo RAM|UX" &&
                 f.cards.every((c) => c.label === `Mở dòng thời gian của ${c.name}`) &&
-                // Soi lỗi runs its second verify command: the dot works, the command is in mono
+                // Tìm bug runs its second verify command: the dot works, the command is in mono
                 sk.working === "true" &&
                 sk.command === "go test ./pkg/services -run TestIdleStop" &&
                 sk.commandMono === true &&
                 sk.doing.startsWith("Đang chạy go test ./pkg/services -run TestIdleStop") &&
                 // the others are done with round 2 and do not work
                 ["newuser", "ram", "ux"].every((id) => by[id].working === "false" && by[id].doing === "Xong vòng 2" && by[id].command == null) &&
-                // four counts in words, always: 2 claims for Soi lỗi (P1 ran, r5 read), 1 disproved for Canh RAM, ...
+                // four counts in words, always: 2 claims for Tìm bug (P1 ran, r5 read), 1 disproved for Đo RAM, ...
                 sk.claims === "2 nhận định" &&
                 sk.counts.join("|") === "ran=1 đã chạy|disproved=0 bị bác|read=1 đã đọc|guess=0 đoán" &&
                 sk.segments.join() === "ran,read" &&
@@ -416,7 +416,7 @@ export const councilMap = {
                 rowIds(f) === VI_ORDER.join() &&
                 f.heads.length === 7 &&
                 f.heads[0] === "Ý" &&
-                f.heads.slice(1, 5).join("|") === "Người mới|Soi lỗi|Canh RAM|Trải nghiệm" &&
+                f.heads.slice(1, 5).join("|") === "Khách|Tìm bug|Đo RAM|UX" &&
                 f.heads[5] === "Đồng thuận" &&
                 f.heads[6] === "Kết cục" &&
                 f.rows.map((r) => r.consensus).join("|") ===
@@ -467,7 +467,7 @@ export const councilMap = {
             return { ok, detail: JSON.stringify(f.rows.map((r) => [r.id, r.cells])) };
         });
 
-        await step("the cell where the author revised after a doubt says đã sửa ở vòng 2 (under Soi lỗi on P2, and nowhere else), with the footnote; the withdrawn idea is dim and says Đã rút", async () => {
+        await step("the cell where the author revised after a doubt says đã sửa ở vòng 2 (under Tìm bug on P2, and nowhere else), with the footnote; the withdrawn idea is dim and says Đã rút", async () => {
             const f = await h.ev(FACTS);
             const by = Object.fromEntries(f.rows.map((r) => [r.id, r]));
             const revised = f.rows.flatMap((r) => r.cells.filter((c) => c.includes("đã sửa ở vòng")).map((c) => `${r.id}:${c}`));
@@ -638,7 +638,7 @@ export const councilMap = {
         // last: a click on a card opens the Seats popover, which hangs from the Seats button in the Map's header, on that
         // seat's timeline (Task 11). No key is pressed here: Escape in the Agent surface leaves the council, so the popover is
         // closed by the Seats button's own click.
-        await step("a click on an expert card opens the Seats popover on that seat's timeline: Dòng thời gian của Soi lỗi, five rows oldest first, the commands in mono, the one running now marked Đang chạy, and a way back to the list", async () => {
+        await step("a click on an expert card opens the Seats popover on that seat's timeline: Dòng thời gian của Tìm bug, five rows oldest first, the commands in mono, the one running now marked Đang chạy, and a way back to the list", async () => {
             await openMap(h, vi);
             const TL = "[data-council-timeline]";
             const timeline = () => h.ev(`window.__arcCouncil.timeline(${q(vi)})`);
@@ -697,7 +697,7 @@ export const councilMap = {
                 opened &&
                 asked === "skeptic" &&
                 sk.inSeats &&
-                sk.title === "Dòng thời gian của Soi lỗi" &&
+                sk.title === "Dòng thời gian của Tìm bug" &&
                 sk.back === "Quay lại danh sách" &&
                 sk.rows.map((r) => r.kind).join() === "read,search,run,propose,run" &&
                 sk.rows.map((r) => r.word).join("|") === "Đọc|Tìm|Chạy lệnh|Đưa ra ý|Chạy lệnh" &&
