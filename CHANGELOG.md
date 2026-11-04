@@ -36,12 +36,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent with three or more commands running in the background folds them behind a `3 running` chip on its row in the Agent tree; click it to list them. One or two still show as rows.
 - In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
 - A chat seat's button in a council's Seats list shows the agent mark and reads Go to <name>, where it showed a terminal icon; its name's hover says the same.
+- A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed
 
 - A canvas board whose page runs longer than its board size is now drawn whole, at its page's full height, where it showed a second scrollbar inside the board beside the canvas's own.
 - A chat seated in a council whose tab you closed comes back: open its conversation again (Resume, Open asleep, or click the seat's name, avatar or @ chip, which now opens it asleep) and Retry reaches it in its new tab, where Retry used to fail with "is gone" for good. A seat from before this keeps its conversation from its next turn, while its tab is still open.
 - A council synced from your other computer opens a chat seat's conversation again when you click its name, avatar or @ chip, and Retry reaches it, where it said "Couldn't reopen the session: its conversation is no longer in Conversation History" because the seat named the session by the other computer's path.
+- A council's progress bar no longer touches the Discussion tab's underline while the council runs.
 - A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.
 
 ## 1.0.0 — 2026-11-03

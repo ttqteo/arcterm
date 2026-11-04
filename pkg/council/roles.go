@@ -26,45 +26,45 @@ func brief(angle string) string { return angle + " " + briefEvidenceRule }
 // person's question (NameFor). The ids never change, so a saved council still opens.
 var builtInRoles = []CouncilExpert{
 	{
-		Id: "ux", Name: "Ease of use", NameVi: "Người lo trải nghiệm", Model: ModelExpert,
+		Id: "ux", Name: "Ease of use", NameVi: "Trải nghiệm", Model: ModelExpert,
 		Brief: brief("You review the feature as the UX expert. Ask whether someone can find, read and use it without being " +
 			"told how: where its entry point is, what the first screen tells them, whether a label, a state or an error " +
 			"can be understood at a glance, and what the keyboard or a narrow window does to it. Propose concrete " +
 			"changes to what is on screen, not general principles."),
 	},
 	{
-		Id: "ram", Name: "Memory watcher", NameVi: "Người canh RAM", Model: ModelExpert,
+		Id: "ram", Name: "Memory watcher", NameVi: "Canh RAM", Model: ModelExpert,
 		Brief: brief("You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in " +
 			"RAM watch (docs/open-issues.md): caches, per-agent or per-terminal state, event subscriptions, timers, " +
 			"retained transcripts, views that stay mounted. Name what owns each allocation and when it is released, and " +
 			"say what you would measure and how."),
 	},
 	{
-		Id: "newuser", Name: "New user", NameVi: "Người dùng mới", Model: ModelExpert,
+		Id: "newuser", Name: "New user", NameVi: "Người mới", Model: ModelExpert,
 		Brief: brief("You are on your first day in arcterm and know none of its names, panes or shortcuts. Ask what is " +
 			"confusing and what is missing, and where you would give up. Read the feature's words as you would meet " +
 			"them in the app, and say where a term, an icon or a step assumes something you have not been told."),
 	},
 	{
-		Id: "skeptic", Name: "Bug hunter", NameVi: "Người soi lỗi", Model: ModelExpert,
+		Id: "skeptic", Name: "Bug hunter", NameVi: "Soi lỗi", Model: ModelExpert,
 		Brief: brief("You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at " +
 			"once, the failure the design leaves unhandled, the claim another expert made without checking it. If you " +
 			"cannot name a break, withdraw your proposal rather than pad it. Make no claim without evidence."),
 	},
 	{
-		Id: "coordinator", Name: "Summarizer", NameVi: "Người tổng hợp", Model: ModelCoordinator, Coordinator: true,
+		Id: "coordinator", Name: "Summarizer", NameVi: "Tổng hợp", Model: ModelCoordinator, Coordinator: true,
 		Brief: brief("You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain " +
 			"by what they are worth for the effort, attach each expert's stance to each direction, and mark the claims " +
 			"that cite nothing as weak. Name any role the panel was missing. Add no proposals of your own."),
 	},
 	{
-		Id: "reviewer-a", Name: "Reviewer A", NameVi: "Người chấm A", Model: ModelExpert,
+		Id: "reviewer-a", Name: "Reviewer A", NameVi: "Phản biện A", Model: ModelExpert,
 		Brief: brief("You are a reviewer at the venue's security bar (CCS, NDSS). Judge novelty against prior work, whether " +
 			"the threat model is stated and the attacker realistic, and whether each claim is sound given the evidence " +
 			"in the paper. Say what would make you reject it and what would change your mind."),
 	},
 	{
-		Id: "reviewer-b", Name: "Reviewer B", NameVi: "Người chấm B", Model: ModelExpert,
+		Id: "reviewer-b", Name: "Reviewer B", NameVi: "Phản biện B", Model: ModelExpert,
 		Brief: brief("You are a reviewer who checks baselines and datasets. For every claim, ask whether it is tested on " +
 			"prior work's own data, whether the baselines are the strongest available and run fairly, and whether the " +
 			"numbers in the text match the tables. Name the comparison that is missing."),
@@ -76,32 +76,32 @@ var builtInRoles = []CouncilExpert{
 			"plainer sentence."),
 	},
 	{
-		Id: "areachair", Name: "Final judge", NameVi: "Người chốt điểm", Model: ModelCoordinator, Coordinator: true,
+		Id: "areachair", Name: "Final judge", NameVi: "Chốt điểm", Model: ModelCoordinator, Coordinator: true,
 		Brief: brief("You are the area chair, the coordinator of a paper review. Merge the reviews into what to fix before " +
 			"submission, ranked by how likely each point is to sink the paper. Merge duplicate points, mark a claim " +
 			"weak when it cites nothing, and say which concerns the text can answer and which need new work."),
 	},
 	// The Brainstorm's roles. A Brainstorm asks for no evidence, so their briefs carry no evidence rule.
 	{
-		Id: "designer", Name: "Designer", NameVi: "Người thiết kế", Model: ModelExpert,
+		Id: "designer", Name: "Designer", NameVi: "Thiết kế", Model: ModelExpert,
 		Brief: "You are the designer. Think in what a person sees and does: the screen, the flow, the first minute. Propose " +
 			"ideas you can describe in a sentence or two and picture on a screen, not general principles, and include one " +
 			"that removes something instead of adding it.",
 	},
 	{
-		Id: "builder", Name: "Builder", NameVi: "Người làm", Model: ModelExpert,
+		Id: "builder", Name: "Builder", NameVi: "Thợ code", Model: ModelExpert,
 		Brief: "You are the builder. Think in what can be built small: the cheapest version that would test the idea, the " +
 			"code that already exists and could be reused, the first step that fits in a day. For every idea you propose or " +
 			"build on, say what that first step is and roughly what it costs.",
 	},
 	{
-		Id: "contrarian", Name: "Other side", NameVi: "Người cãi ngược", Model: ModelExpert,
+		Id: "contrarian", Name: "Other side", NameVi: "Cãi ngược", Model: ModelExpert,
 		Brief: "You are the contrarian. Turn the problem over: what if the goal is the wrong one, what would the opposite " +
 			"approach look like, what is everyone assuming. Propose the ideas nobody else will, and mark the far-fetched ones " +
 			"wild; a wild idea is kept, not thrown away.",
 	},
 	{
-		Id: "facilitator", Name: "Host", NameVi: "Người dẫn dắt", Model: ModelCoordinator, Coordinator: true,
+		Id: "facilitator", Name: "Host", NameVi: "Dẫn dắt", Model: ModelCoordinator, Coordinator: true,
 		Brief: "You are the facilitator, the coordinator of a brainstorm. Merge the ideas that say the same thing, rank them " +
 			"by the picks and builds they earned, and choose at most three worth trying, each with why and a first step. Keep " +
 			"the wild ideas aside rather than dropping them, and name any viewpoint the panel was missing. Add no ideas of " +
@@ -116,8 +116,8 @@ var builtInGroups = []CouncilGroup{
 	{Id: "ui-feature", Name: "Review a UI feature", NameVi: "Soi một tính năng giao diện", Roles: []string{"ux", "ram", "newuser", "skeptic"}, Coordinator: "coordinator"},
 	{Id: "paper", Name: "Paper review", NameVi: "Chấm bài báo", Roles: []string{"reviewer-a", "reviewer-b", "reader"}, Coordinator: "areachair"},
 	{Id: "product-ideas", Name: "Product ideas", NameVi: "Ý tưởng sản phẩm", Roles: []string{"newuser", "designer", "builder", "contrarian"}, Coordinator: "facilitator"},
-	{Id: AgentsGroupId, Name: "Chats with a Bug hunter", NameVi: "Trò chuyện cùng Người soi lỗi", Roles: []string{"skeptic"}, Coordinator: "coordinator"},
-	{Id: AgentsIdeasGroupId, Name: "Chats with the Other side", NameVi: "Trò chuyện cùng Người cãi ngược", Roles: []string{"contrarian"}, Coordinator: "facilitator"},
+	{Id: AgentsGroupId, Name: "Chats with a Bug hunter", NameVi: "Trò chuyện cùng Soi lỗi", Roles: []string{"skeptic"}, Coordinator: "coordinator"},
+	{Id: AgentsIdeasGroupId, Name: "Chats with the Other side", NameVi: "Trò chuyện cùng Cãi ngược", Roles: []string{"contrarian"}, Coordinator: "facilitator"},
 }
 
 // The ids of the two groups made for seated chats.

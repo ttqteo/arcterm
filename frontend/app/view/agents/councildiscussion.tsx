@@ -344,7 +344,8 @@ function Header({
                 </div>
             </div>
             {(showBar || (c.state === "running" && c.round <= 1) || acts.error != null) && (
-                <div className="flex flex-col gap-2 px-6 pb-2">
+                // pt keeps the call bar clear of the shown tab's underline at the row's bottom edge
+                <div className="flex flex-col gap-2 px-6 pt-[10px] pb-2">
                     {showBar && <CallBar c={c} />}
                     {c.state === "running" && c.round <= 1 && (
                         <span className="self-start text-[12.5px] text-muted">
