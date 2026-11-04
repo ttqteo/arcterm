@@ -94,7 +94,7 @@ func (m *CouncilMemory) Hold(card CouncilMemoryCard) {
 }
 
 // SetAnyway sets the held card as the chosen direction. The old one ends as EndEdited when the card came from Edit,
-// else as EndReplaced.
+// else as EndReplaced. A card made from an entry takes that entry off the list, if it is still there.
 func (m *CouncilMemory) SetAnyway(now int64) error {
 	if m.Held == nil {
 		return errNoHeld
@@ -112,6 +112,9 @@ func (m *CouncilMemory) SetAnyway(now int64) error {
 		From:   card.From,
 		At:     now,
 	}, ended, now)
+	if card.Entry != "" {
+		m.takeEntry(card.Entry)
+	}
 	return nil
 }
 

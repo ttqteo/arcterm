@@ -786,6 +786,7 @@ declare global {
         action: string;
         text?: string;
         from?: string;
+        entry?: string;
     };
 
     // wshrpc.CommandCouncilDraftData
@@ -824,6 +825,16 @@ declare global {
     // wshrpc.CommandCouncilListData
     type CommandCouncilListData = {
         project?: string;
+    };
+
+    // wshrpc.CommandCouncilMemoryData
+    type CommandCouncilMemoryData = {
+        id: string;
+        action: string;
+        entry?: string;
+        kind?: string;
+        text?: string;
+        why?: string;
     };
 
     // wshrpc.CommandCouncilPinData

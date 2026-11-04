@@ -410,6 +410,12 @@ func CouncilListCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilListData, o
 	return resp, err
 }
 
+// command "councilmemory", wshserver.CouncilMemoryCommand
+func CouncilMemoryCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilMemoryData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilmemory", data, opts)
+	return err
+}
+
 // command "councilpin", wshserver.CouncilPinCommand
 func CouncilPinCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilPinData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "councilpin", data, opts)

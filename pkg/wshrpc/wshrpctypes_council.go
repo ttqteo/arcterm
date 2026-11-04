@@ -37,6 +37,7 @@ type CouncilCommands interface {
 	CouncilThumbCommand(ctx context.Context, data CommandCouncilThumbData) error
 	CouncilFinalPickCommand(ctx context.Context, data CommandCouncilFinalPickData) error
 	CouncilDirectionCommand(ctx context.Context, data CommandCouncilDirectionData) error
+	CouncilMemoryCommand(ctx context.Context, data CommandCouncilMemoryData) error
 	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
 	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
 	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
@@ -248,12 +249,27 @@ type CommandCouncilFinalPickData struct {
 // ActionPin, ActionEdit, ActionAccept, ActionDismiss, ActionSetAnyway, ActionDiscard and ActionUnpin; any other word is
 // refused. Text is the direction for set, pin and edit, and From the idea (P3) or message (r7) a pin comes from. A set,
 // pin or edit is checked against what the seats said before it is set: it is set, or held for the person to set anyway
-// or discard.
+// or discard. Entry is the memory entry (m3) a pin is made from: the pin takes its text, and the entry leaves the list
+// once the direction is set.
 type CommandCouncilDirectionData struct {
 	Id     string `json:"id"`
 	Action string `json:"action"`
 	Text   string `json:"text,omitempty"`
 	From   string `json:"from,omitempty"`
+	Entry  string `json:"entry,omitempty"`
+}
+
+// CommandCouncilMemoryData is one move on a council's memory entries. Action is one of council.EntryActionAdd,
+// EntryActionEdit and EntryActionRemove; any other word is refused. Kind (agreed, ruledout, open) and Text are the new
+// entry's for add; Entry names the entry an edit or remove acts on, with Text (and Why, kept for Ruled out only) the
+// rewrite for edit. An entry the person adds or edits is theirs.
+type CommandCouncilMemoryData struct {
+	Id     string `json:"id"`
+	Action string `json:"action"`
+	Entry  string `json:"entry,omitempty"`
+	Kind   string `json:"kind,omitempty"`
+	Text   string `json:"text,omitempty"`
+	Why    string `json:"why,omitempty"`
 }
 
 // CommandCouncilBenchData picks a benchmark: the cases (every case not retired when empty), the variants (council and
