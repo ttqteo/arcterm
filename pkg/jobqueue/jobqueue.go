@@ -71,6 +71,8 @@ var pressureNames = [...]string{PressureUnknown: "unknown", PressureNormal: "nor
 const (
 	ReasonPressureHigh     = "memory pressure high, one at a time"
 	ReasonPressureCritical = "memory pressure critical"
+	// an e2e or smoke run waits on another (memgate.Solo): two at once saturate the CPU while the RAM still fits
+	ReasonBrowserRunBusy = "an e2e or smoke run is running"
 )
 
 // PressureFromLevel reads macOS's kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical.
@@ -253,10 +255,12 @@ func clampSlots(n int) int {
 // start, and returns why the rest wait.
 func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
 	running, rampingJobs := 0, 0
+	soloRunning := false
 	var ramping uint64
 	for _, j := range jobs {
 		if j.Running {
 			running++
+			soloRunning = soloRunning || memgate.Solo(j.Name)
 			if now.Sub(j.StartedAt) < RampUp {
 				ramping += j.Bytes
 				rampingJobs++
@@ -275,6 +279,7 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 			running++
 			rampingJobs++
 			free = sub(free, j.Bytes)
+			soloRunning = soloRunning || memgate.Solo(j.Name)
 			continue
 		}
 		if reason != "" {
@@ -283,6 +288,8 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 		switch {
 		case mode == ModeSlots && running >= slots:
 			reason = "slot busy"
+		case soloRunning && memgate.Solo(j.Name):
+			reason = ReasonBrowserRunBusy
 		case pressure == PressureCritical:
 			reason = ReasonPressureCritical
 		case pressure == PressureWarn && running > 0:
@@ -295,6 +302,7 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 			running++
 			rampingJobs++
 			free = sub(free, j.Bytes)
+			soloRunning = soloRunning || memgate.Solo(j.Name)
 		}
 	}
 	return start, reason
