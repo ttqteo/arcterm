@@ -3316,8 +3316,6 @@ export function CouncilChat({
         [chats, onOpenTerminal, onReopenSession]
     );
     const channel = useRef<HTMLDivElement>(null);
-    // the idea a rail click is gliding to: the cursor's own reveal skips it once, or its instant scroll would cut the glide
-    const picked = useRef<string | null>(null);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;
     const sourcesOpen = !threadOpen && sources != null;
@@ -3383,15 +3381,12 @@ export function CouncilChat({
         },
         [setOpenId]
     );
-    // a rail row brings its idea, or a held idea's draft, to the top of the channel under the cursor: a glide, so the eye
-    // follows the channel to where it lands, or a jump with reduced motion
+    // a rail row brings its idea, or a held idea's draft, to the top of the channel under the cursor
     const pick = useCallback((row: IdeaRow) => {
-        picked.current = row.id;
         setFocusedId(row.id);
         const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
         const post = channel.current?.querySelector<HTMLElement>(at);
-        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        revealIn(channel.current, post, "start", smooth);
+        revealIn(channel.current, post, "start");
         // the idea rings wider for a moment where it lands, so the eye finds it; a second click restarts the moment
         if (post != null) {
             window.clearTimeout(Number(post.dataset.flashTimer));
@@ -3472,11 +3467,9 @@ export function CouncilChat({
     useCouncilChatNav(nav);
     const bindings = useMemo(buildCouncilBindings, []);
     useKeybindings(bindings);
-    // the cursor stays in view as j and k move it (a rail click already glides its idea in)
+    // the cursor stays in view as j and k move it
     useEffect(() => {
-        const fromRail = picked.current === focusedId;
-        picked.current = null;
-        if (focusedId != null && !fromRail) {
+        if (focusedId != null) {
             revealIn(channel.current, channel.current?.querySelector(`[data-council-idea="${focusedId}"]`), "nearest");
         }
     }, [focusedId]);
