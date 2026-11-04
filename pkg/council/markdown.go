@@ -219,11 +219,16 @@ func matrixOutcome(c *Council, p CouncilProposal) string {
 
 // Document is what a finished council saves into its project: the report (Markdown), then "The discussion", every
 // proposal and reply in the order it was said, then the run facts.
-func Document(c *Council) string {
+func Document(c *Council) string { return documentWith(c, nil) }
+
+// documentWith is Document with each message's screenshot regions embedded under its evidence line: crops maps a region's
+// crop PNG to the relative link the document reaches its copy by (WriteDocument copies them). A region it does not map
+// stays the text ref alone.
+func documentWith(c *Council, crops map[string]string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimRight(Markdown(c), "\n") + "\n\n")
 	b.WriteString("## The discussion\n\n")
-	writeDiscussion(&b, c)
+	writeDiscussion(&b, c, crops)
 	b.WriteString("\n## Run facts\n\n")
 	writeRunFacts(&b, c)
 	return b.String()
@@ -343,8 +348,9 @@ func docChecks(label string, runs []CouncilRun) string {
 }
 
 // writeMessage is one message of the discussion: who, the label in plain words, what it is about, its words, its
-// evidence, and the check of its claim (docChecks), which is empty for a message that makes none.
-func writeMessage(b *strings.Builder, who, label, about, body string, evidence []CouncilEvidence, checks string) {
+// evidence with the image of each screenshot region crops maps, and the check of its claim (docChecks), which is empty
+// for a message that makes none.
+func writeMessage(b *strings.Builder, who, label, about, body string, evidence []CouncilEvidence, checks string, crops map[string]string) {
 	fmt.Fprintf(b, "- **%s** %s", who, label)
 	if about != "" {
 		b.WriteString(" · " + about)
@@ -355,6 +361,14 @@ func writeMessage(b *strings.Builder, who, label, about, body string, evidence [
 	}
 	if len(evidence) > 0 {
 		fmt.Fprintf(b, "  Evidence: %s\n", docEvidenceText(evidence))
+	}
+	for _, e := range evidence {
+		if e.Region == nil || e.Cite == CiteWrong {
+			continue
+		}
+		if link, ok := crops[e.Region.Crop]; ok {
+			fmt.Fprintf(b, "  ![%s](%s)\n", regionAlt(e.Ref), link)
+		}
 	}
 	if strings.TrimSpace(checks) != "" {
 		b.WriteString(indent(checks, "  ") + "\n")
@@ -404,7 +418,7 @@ func proposalRef(c *Council, id string) string {
 	return id
 }
 
-func proposalMessage(c *Council, p CouncilProposal) string {
+func proposalMessage(c *Council, p CouncilProposal, crops map[string]string) string {
 	var b strings.Builder
 	about := proposalRef(c, p.Id)
 	switch {
@@ -413,11 +427,11 @@ func proposalMessage(c *Council, p CouncilProposal) string {
 	case p.Withdrawn:
 		about += " (withdrawn)"
 	}
-	writeMessage(&b, docName(c, p.Author), proposalLabel(c, p), about, p.Argument, p.Evidence, docChecks(p.Label, p.Runs))
+	writeMessage(&b, docName(c, p.Author), proposalLabel(c, p), about, p.Argument, p.Evidence, docChecks(p.Label, p.Runs), crops)
 	return b.String()
 }
 
-func replyMessage(c *Council, r CouncilReply) string {
+func replyMessage(c *Council, r CouncilReply, crops map[string]string) string {
 	var b strings.Builder
 	about := ""
 	switch {
@@ -429,30 +443,30 @@ func replyMessage(c *Council, r CouncilReply) string {
 	if parent := findReply(c, r.ParentId); parent != nil {
 		about += " (replying to " + docName(c, parent.Author) + ")"
 	}
-	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), r.Text, r.Evidence, docChecks(r.Label, nil))
+	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), r.Text, r.Evidence, docChecks(r.Label, nil), crops)
 	return b.String()
 }
 
 // writeDiscussion lists the person's question as the goal, then every proposal and reply in time order. Proposals
 // come before replies of the same instant, and the order they were saved in breaks the rest.
-func writeDiscussion(b *strings.Builder, c *Council) {
+func writeDiscussion(b *strings.Builder, c *Council, crops map[string]string) {
 	type message struct {
 		ts   int64
 		text string
 	}
 	var msgs []message
 	for _, p := range sentProposals(c) { // a held or dropped draft is not in the room, so not in the document
-		msgs = append(msgs, message{p.Ts, proposalMessage(c, p)})
+		msgs = append(msgs, message{p.Ts, proposalMessage(c, p, crops)})
 	}
 	for _, r := range c.Replies {
 		if Sent(r.Draft) {
-			msgs = append(msgs, message{r.Ts, replyMessage(c, r)})
+			msgs = append(msgs, message{r.Ts, replyMessage(c, r, crops)})
 		}
 	}
 	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].ts < msgs[j].ts })
 	q := oneLine(c.Question)
 	if q != "" {
-		writeMessage(b, "You", "sets the goal", "", q, nil, "")
+		writeMessage(b, "You", "sets the goal", "", q, nil, "", nil)
 	}
 	for _, m := range msgs {
 		b.WriteString(m.text)

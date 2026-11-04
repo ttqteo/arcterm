@@ -224,10 +224,14 @@ const (
 var brainstormSynthesisShapeNoQuestion = strings.Replace(brainstormSynthesisShape, answerLine, "", 1)
 
 const (
-	// evidenceRule is in every prompt: a claim without evidence is drawn weak.
-	evidenceRule = "Evidence is a path:line in the project, or a region of an attached screenshot written " +
-		"screenshot:<file>#<region>. Cite it for every claim: a claim that cites nothing is drawn weak, and the " +
-		"coordinator marks it as such."
+	// evidenceRule is in every prompt: a claim without evidence is drawn weak. A screenshot region carries its box
+	// (regions.go), fractions of the image so a scaled-down copy seen through Read still places it; Go draws it.
+	evidenceRule = "Evidence is a path:line in the project, or a region of a screenshot or an image the person gave, " +
+		"written screenshot:<file>#<name>@x,y,w,h. The box is x,y (its top-left corner) and w,h (its size), each a " +
+		"fraction from 0 to 1 of the image's width or height, so screenshot:home.png#save-button@0.72,0.08,0.12,0.05 " +
+		"boxes a button near the top right. Go draws each box on the image for the person, so box the exact thing you " +
+		"mean; a screenshot cite with no box counts as no evidence. Cite evidence for every claim: a claim that cites " +
+		"nothing is drawn weak, and the coordinator marks it as such."
 
 	// quoteRule follows evidenceRule in round 1 of a Review, and in an agent seat's: Go checks each cite against the files,
 	// and the quote is what it looks for at the line. A file outside the project folder, one the person attached, is only

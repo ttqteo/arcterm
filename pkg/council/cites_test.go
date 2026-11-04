@@ -112,7 +112,7 @@ func TestCheckEvidence(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := CheckEvidence([]CouncilEvidence{c.ev}, c.roots)
+			got := CheckEvidence([]CouncilEvidence{c.ev}, c.roots, nil)
 			if len(got) != 1 {
 				t.Fatalf("CheckEvidence returned %d items, want 1", len(got))
 			}
@@ -148,7 +148,7 @@ func TestCheckEvidenceKeepsOrderAndDoesNotTouchItsInput(t *testing.T) {
 		{Weak: true, Note: "cites no evidence"},
 	}
 	before := append([]CouncilEvidence(nil), in...)
-	got := CheckEvidence(in, []string{project})
+	got := CheckEvidence(in, []string{project}, nil)
 	if !reflect.DeepEqual(in, before) {
 		t.Errorf("CheckEvidence wrote to its input: %+v, was %+v", in, before)
 	}
@@ -161,10 +161,10 @@ func TestCheckEvidenceKeepsOrderAndDoesNotTouchItsInput(t *testing.T) {
 			t.Errorf("item %d = %+v, want ref %q and cite %q", i, got[i], in[i].Ref, w)
 		}
 	}
-	if out := CheckEvidence(nil, []string{project}); out != nil {
+	if out := CheckEvidence(nil, []string{project}, nil); out != nil {
 		t.Errorf("CheckEvidence(nil) = %+v, want nil", out)
 	}
-	if out := CheckEvidence([]CouncilEvidence{}, []string{project}); len(out) != 0 {
+	if out := CheckEvidence([]CouncilEvidence{}, []string{project}, nil); len(out) != 0 {
 		t.Errorf("CheckEvidence(empty) = %+v, want empty", out)
 	}
 }
@@ -173,7 +173,7 @@ func TestCheckEvidenceKeepsOrderAndDoesNotTouchItsInput(t *testing.T) {
 // wrong cite ok, and a cite whose ref cannot be checked loses a mark an earlier run left on it
 func TestCheckEvidenceRunsAgainFromScratch(t *testing.T) {
 	project := t.TempDir()
-	first := CheckEvidence([]CouncilEvidence{{Ref: "late.go:1"}, {Ref: "screenshot:s.png#x", Cite: CiteOK, CiteNote: "stale"}}, []string{project})
+	first := CheckEvidence([]CouncilEvidence{{Ref: "late.go:1"}, {Ref: "screenshot:s.png#x", Cite: CiteOK, CiteNote: "stale"}}, []string{project}, nil)
 	if first[0].Cite != CiteWrong {
 		t.Fatalf("before the file exists, Cite = %q, want %q", first[0].Cite, CiteWrong)
 	}
@@ -181,7 +181,7 @@ func TestCheckEvidenceRunsAgainFromScratch(t *testing.T) {
 		t.Errorf("a screenshot kept an earlier mark: %+v", first[1])
 	}
 	writeCiteFile(t, project, "late.go", "x\n")
-	second := CheckEvidence(first, []string{project})
+	second := CheckEvidence(first, []string{project}, nil)
 	if second[0].Cite != CiteOK || second[0].CiteNote != "" {
 		t.Errorf("after the file exists, got %+v, want ok with no note", second[0])
 	}

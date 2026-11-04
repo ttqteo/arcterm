@@ -2601,6 +2601,7 @@ declare global {
         quote?: string;
         cite?: string;
         citenote?: string;
+        region?: CouncilRegion;
     };
 
     // council.CouncilExpert
@@ -2656,6 +2657,16 @@ declare global {
         thumb?: string;
         runs?: CouncilRun[];
         label?: string;
+    };
+
+    // council.CouncilRegion
+    type CouncilRegion = {
+        image: string;
+        crop: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
     };
 
     // council.CouncilReply

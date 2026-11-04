@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { mapWords } from "./councilmapmodel";
+import { NO_BOX } from "./councilshots";
 import {
     claimChips,
     claimOf,
@@ -12,6 +13,7 @@ import {
     MAX_HUNK_ROWS,
     parseSourceRef,
     pastEndWords,
+    regionBoxStyle,
     sourceDir,
     sourceExcerpt,
     sourceFilePath,
@@ -90,9 +92,7 @@ describe("groupSources", () => {
 
 describe("sourceFilePath and sourceDir", () => {
     it("puts a relative path under the project and leaves an absolute one", () => {
-        expect(sourceFilePath("/Users/me/project/", "notes_app/a.md")).toBe(
-            "/Users/me/project/notes_app/a.md"
-        );
+        expect(sourceFilePath("/Users/me/project/", "notes_app/a.md")).toBe("/Users/me/project/notes_app/a.md");
         expect(sourceFilePath("/Users/me/thesis", "/etc/hosts")).toBe("/etc/hosts");
         expect(sourceFilePath("D:\\code\\x", "C:/y/a.ts")).toBe("C:/y/a.ts");
     });
@@ -187,14 +187,14 @@ describe("claimChips", () => {
                 { ref: "pkg/a.go:12", cite: "ok" },
                 { ref: "pkg/b.go:900", cite: "wrong", citenote: wrongNote },
                 { ref: "", weak: true, note: "no measurement" },
-                { ref: "screenshot:s.png#top" },
+                { ref: "screenshot:s.png#top@0,0,0.5,0.2" },
                 { ref: "c.ts:3" },
             ],
             "read",
             "en"
         );
         // a wrong cite is not a file link: it is its own chip, and does not count as a source
-        expect(chips.refs).toEqual(["pkg/a.go:12", "screenshot:s.png#top", "c.ts:3"]);
+        expect(chips.refs).toEqual(["pkg/a.go:12", "screenshot:s.png#top@0,0,0.5,0.2", "c.ts:3"]);
         expect(chips.weak).toBe("Weak · no measurement");
         expect(chips.wrong).toEqual([
             { ref: "pkg/b.go:900", name: "b.go", label: ":900", word: "Wrong cite", note: wrongNote },
@@ -260,7 +260,7 @@ describe("claimChips", () => {
     });
 
     it("is empty for no evidence and no label, and a Guess with no evidence is only its badge", () => {
-        expect(claimChips(undefined, "", "en")).toEqual({ badge: null, refs: [], weak: "", wrong: [] });
+        expect(claimChips(undefined, "", "en")).toEqual({ badge: null, refs: [], weak: "", wrong: [], crops: [] });
         const guess = claimChips([], "guess", "en");
         expect(guess.badge?.word).toBe("Guess");
         expect(guess.refs).toEqual([]);
@@ -290,5 +290,96 @@ describe("foldSources", () => {
     it("folds nothing at two files or fewer", () => {
         expect(foldSources(["a", "b"])).toEqual({ shown: ["a", "b"], more: "" });
         expect(foldSources([])).toEqual({ shown: [], more: "" });
+    });
+});
+
+describe("claimChips: screenshot regions", () => {
+    const region: CouncilRegion = {
+        image: "C:/shots/home.png",
+        crop: "C:/data/councils/c1/regions/ab.png",
+        x: 0.7,
+        y: 0.1,
+        w: 0.1,
+        h: 0.05,
+    };
+
+    it("shows a boxed cite Go drew as a crop, and still names it among the refs", () => {
+        const ref = "screenshot:home.png#save@0.7,0.1,0.1,0.05";
+        const chips = claimChips([{ ref, cite: "ok", region }], "read", "en");
+        expect(chips.crops).toEqual([{ ref, name: "home.png#save", region }]);
+        expect(chips.refs).toEqual([ref]);
+        expect(chips.weak).toBe("");
+        expect(chips.wrong).toEqual([]);
+    });
+
+    it("shows a crop whatever the claim's label: a plain reply's and a Brainstorm's too", () => {
+        const chips = claimChips([{ ref: "screenshot:home.png#save@0.7,0.1,0.1,0.05", region }], "", "en");
+        expect(chips.crops).toHaveLength(1);
+        expect(chips.badge).toBeNull();
+    });
+
+    it("shows one crop for each region, and the same region cited twice once", () => {
+        const other = { ...region, crop: "C:/data/councils/c1/regions/cd.png" };
+        const chips = claimChips(
+            [
+                { ref: "screenshot:home.png#save@0.7,0.1,0.1,0.05", cite: "ok", region },
+                { ref: "screenshot:home.png#menu@0,0,0.1,0.1", cite: "ok", region: other },
+                { ref: "screenshot:home.png#save@0.7,0.1,0.1,0.05", cite: "ok", region },
+            ],
+            "read",
+            "en"
+        );
+        expect(chips.crops.map((c) => c.region.crop)).toEqual([region.crop, other.crop]);
+    });
+
+    it("draws a wrong boxed cite as the Wrong cite chip, with no image", () => {
+        const chips = claimChips(
+            [
+                {
+                    ref: "screenshot:other.png#save@0.1,0.1,0.1,0.1",
+                    cite: "wrong",
+                    citenote: "no image named other.png was given to this council",
+                },
+            ],
+            "guess",
+            "en"
+        );
+        expect(chips.crops).toEqual([]);
+        expect(chips.refs).toEqual([]);
+        expect(chips.wrong).toEqual([
+            {
+                ref: "screenshot:other.png#save@0.1,0.1,0.1,0.1",
+                name: "other.png#save",
+                label: "",
+                word: "Wrong cite",
+                note: "no image named other.png was given to this council",
+            },
+        ]);
+    });
+
+    it("draws a name-only cite weak in a checked claim, saying the region has no box", () => {
+        const chips = claimChips([{ ref: "screenshot:home.png#save" }], "guess", "en");
+        expect(chips.refs).toEqual([]);
+        expect(chips.weak).toBe(`Weak · home.png#save: ${NO_BOX}`);
+        expect(chips.crops).toEqual([]);
+    });
+
+    it("keeps a name-only cite the plain chip where nothing is checked (a Brainstorm, a plain reply)", () => {
+        const chips = claimChips([{ ref: "screenshot:home.png#save" }], "", "en");
+        expect(chips.refs).toEqual(["screenshot:home.png#save"]);
+        expect(chips.weak).toBe("");
+    });
+});
+
+describe("regionBoxStyle", () => {
+    it("is the box as percentages of the image, clamped into it", () => {
+        expect(regionBoxStyle({ x: 0.725, y: 0.08, w: 0.12, h: 0.05 })).toEqual({
+            left: "72.5%",
+            top: "8%",
+            width: "12%",
+            height: "5%",
+        });
+        expect(regionBoxStyle({ x: -0.1, y: 0, w: 1.2, h: 1 }).left).toBe("0%");
+        expect(regionBoxStyle({ x: -0.1, y: 0, w: 1.2, h: 1 }).width).toBe("100%");
     });
 });

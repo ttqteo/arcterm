@@ -93,7 +93,8 @@ func DocPath(c *Council, asked string) (string, error) {
 	}
 }
 
-// WriteDocument writes Document(c) at DocPath(c, asked), making the folders, and returns the path. It writes the file
+// WriteDocument writes Document(c) at DocPath(c, asked), making the folders, and returns the path; the crops of its
+// screenshot regions are copied into `<doc name>-regions/` beside it and embedded (copyRegions). It writes those files
 // and nothing else: it never stages or commits, and it works in a folder that is not a git repository.
 func WriteDocument(c *Council, asked string) (string, error) {
 	path, err := DocPath(c, asked)
@@ -103,7 +104,7 @@ func WriteDocument(c *Council, asked string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(Document(c)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(documentWith(c, copyRegions(c, path))), 0o644); err != nil {
 		return "", fmt.Errorf("writing %s: %w", path, err)
 	}
 	return path, nil
