@@ -30,6 +30,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilSaveGroupCommand: vi.fn(),
         CouncilRateCommand: vi.fn(),
         CouncilThumbCommand: vi.fn(),
+        CouncilFinalPickCommand: vi.fn(),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: { client: true } }));
@@ -71,6 +72,7 @@ import {
     deleteCouncil,
     draftCouncil,
     estimateCouncil,
+    finalPickCouncil,
     loadCouncil,
     loadCouncils,
     openCouncilSources,
@@ -465,6 +467,58 @@ describe("thumbs", () => {
         expect(await thumbCouncil("t2", "P1", "like")).toEqual({ ok: false, error: "reply r1 is the person's own" });
         expect(globalStore.get(councilAtom("t2"))?.proposals?.[0].thumb).toBeUndefined();
         quiet.mockRestore();
+    });
+});
+
+describe("the pinned Final proposal", () => {
+    const nullAnswer = null as unknown as void;
+    const withIdea = (id: string, extra: Partial<Council> = {}) =>
+        council(id, "/p/f", { proposals: [{ id: "P1", author: "ux", title: "t", argument: "a", ts: 1 }], ...extra });
+
+    it("sends the pin and puts it on the council's atom at once", async () => {
+        get.mockResolvedValue(withIdea("f1"));
+        await loadCouncil("f1");
+        vi.mocked(RpcApi.CouncilFinalPickCommand).mockResolvedValue(nullAnswer);
+        expect(await finalPickCouncil("f1", "P1")).toEqual({ ok: true, value: null });
+        expect(RpcApi.CouncilFinalPickCommand).toHaveBeenCalledWith(TabRpcClient, { id: "f1", item: "P1" });
+        expect(globalStore.get(councilAtom("f1"))?.finalpick).toBe("P1");
+    });
+
+    it("moves the pin to another message, and an empty item takes it back", async () => {
+        get.mockResolvedValue(withIdea("f2", { finalpick: "P1" }));
+        await loadCouncil("f2");
+        vi.mocked(RpcApi.CouncilFinalPickCommand).mockResolvedValue(nullAnswer);
+        await finalPickCouncil("f2", "r3");
+        expect(globalStore.get(councilAtom("f2"))?.finalpick).toBe("r3");
+        await finalPickCouncil("f2", "");
+        expect(RpcApi.CouncilFinalPickCommand).toHaveBeenLastCalledWith(TabRpcClient, { id: "f2", item: "" });
+        expect(globalStore.get(councilAtom("f2"))?.finalpick).toBe("");
+    });
+
+    it("keeps the rest of the council as it was", async () => {
+        const loaded = withIdea("f3", { summary: { text: "x", directions: [], outcomes: {}, at: 5 } });
+        get.mockResolvedValue(loaded);
+        await loadCouncil("f3");
+        vi.mocked(RpcApi.CouncilFinalPickCommand).mockResolvedValue(nullAnswer);
+        await finalPickCouncil("f3", "P1");
+        expect(globalStore.get(councilAtom("f3"))).toEqual({ ...loaded, finalpick: "P1" });
+    });
+
+    it("leaves the atom as it was when the call fails, with wavesrv's words", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        get.mockResolvedValue(withIdea("f4", { finalpick: "P1" }));
+        await loadCouncil("f4");
+        vi.mocked(RpcApi.CouncilFinalPickCommand).mockRejectedValue(new Error("reply r1 is the person's own"));
+        expect(await finalPickCouncil("f4", "r1")).toEqual({ ok: false, error: "reply r1 is the person's own" });
+        expect(globalStore.get(councilAtom("f4"))?.finalpick).toBe("P1");
+        quiet.mockRestore();
+    });
+
+    it("pins a council that is not loaded without making an atom value out of nothing", async () => {
+        vi.mocked(RpcApi.CouncilFinalPickCommand).mockResolvedValue(nullAnswer);
+        const r = await finalPickCouncil("f5", "P1");
+        expect(r.ok).toBe(true);
+        expect(globalStore.get(councilAtom("f5"))).toBeNull();
     });
 });
 

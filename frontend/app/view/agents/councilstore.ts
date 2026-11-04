@@ -354,6 +354,20 @@ export async function thumbCouncil(id: string, item: string, thumb: CouncilThumb
     return r;
 }
 
+/** Pins a seat's sent idea or reply (`item`, P1 or r3) to the report as its Final proposal, in place of the one pinned
+ *  before (a council has one), or with "" takes the pin back. wavesrv refuses the person's own reply, an unsent draft and
+ *  an id the council lacks; its words come back as `error`. The command answers nothing, so on success the council's atom
+ *  is patched from what was sent and the buttons do not wait for `council:changed`; a failure leaves the council as it
+ *  was. Not the council's own pin (setCouncilPinned: its place in the tree). */
+export async function finalPickCouncil(id: string, item: string): Promise<CouncilCall<void>> {
+    const r = await call("final pick", () => RpcApi.CouncilFinalPickCommand(TabRpcClient, { id, item }));
+    const picked = globalStore.get(councilAtom(id));
+    if (r.ok && picked != null) {
+        globalStore.set(councilAtom(id), { ...picked, finalpick: item });
+    }
+    return r;
+}
+
 /** The role library and the saved groups. */
 export function councilRoles(): Promise<CouncilCall<CouncilRolesRtnData>> {
     return call("roles", () => RpcApi.CouncilRolesCommand(TabRpcClient));
