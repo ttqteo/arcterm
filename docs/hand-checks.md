@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Ship chip in the agent header.** After the next launch (wsh carries the hook's new `edited`), have a
+  Claude agent edit a file and end its turn → its header shows an accent **Ship** before ✓ Close, its tooltip names the
+  file count and the upstream; an agent beside it in the same checkout that did no git work shows none. Click it (or
+  `Alt`+`S` from inside the terminal) → the agent gets the Ship prompt as its own turn and the chip leaves at once; it
+  commits only its files, pulls, pushes without asking "push?" again. The header's … menu lists Ship and Commit only.
+  Then in Diff on that agent, a Pull refused as diverged → the notice shows `Ask <name> to merge` before Open a
+  terminal here. Unit tests and the typecheck only; no dev app was run (`shipmodel.ts`, `agentheader.tsx`,
+  `syncbar.tsx`, 3020b6b51).
 - [ ] (arcterm) **HTML previews keep working under the new CSP.** In a live arcterm open a design canvas, a brainstorm
   board and an HTML file in the File tab → each draws as before (fonts, React boards, images), the canvas reports its
   height and the File tab keeps its scroll; DevTools shows no `Refused to` line. Checked only in headless Chrome against
