@@ -514,7 +514,7 @@ function agentRowMenuItems(
             danger: true,
             // not while a wake relaunches it (confirmCloseSession refuses then too)
             enabled: !isWaking(agent.id),
-            click: () => confirmCloseSession(agent, model),
+            click: () => confirmCloseSession(agent, model, "tree menu"),
         },
     ];
 }
@@ -526,7 +526,7 @@ function taskRowMenuItems(model: AgentsViewModel, agent: AgentVM, ended = false)
     return [
         ...split,
         ...(split.length > 0 ? [{ type: "separator" as const }] : []),
-        { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
+        { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent, undefined, "tree menu") },
     ];
 }
 
@@ -1316,7 +1316,7 @@ function ParentRow({
                             data-agent-done={agent.id}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                confirmCloseSession(agent, model);
+                                confirmCloseSession(agent, model, "tree Done chip");
                             }}
                             title={DONE_TITLE}
                             aria-label="Close"
@@ -1826,7 +1826,7 @@ function FinalRow({ model, run, agent }: { model: AgentsViewModel; run: RunInfo;
             return;
         }
         const items: ContextMenuItem[] = [
-            { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
+            { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent, undefined, "tree menu") },
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };

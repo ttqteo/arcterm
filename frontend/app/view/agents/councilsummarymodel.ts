@@ -22,6 +22,7 @@ import {
     type OutdatedChanges,
     type StanceLabel,
 } from "./councilmodel";
+import { isUnboxedShot, parseShotRef, shotName, unboxedWords } from "./councilshots";
 
 function asStance(s: string | undefined): Exclude<StanceLabel, "proposed"> | undefined {
     return s === "accept" || s === "challenge" || s === "oppose" ? s : undefined;
@@ -171,7 +172,7 @@ export function positionsOf(c: Council, d: CouncilDirection): Position[] {
 
 // the folder part of a `path:line` ref; a screenshot region is not a file of the project
 function fileOf(e: CouncilEvidence): string {
-    if (e.weak || e.ref === "" || e.ref.startsWith("screenshot:")) {
+    if (e.weak || e.ref === "" || parseShotRef(e.ref) != null) {
         return "";
     }
     return e.ref.replace(/:\d+(-\d+)?$/, "");
@@ -252,7 +253,8 @@ export function directionRows(c: Council): DirectionRow[] {
         const positions = positionsOf(c, direction);
         const evidence = positions.flatMap((p) => p.evidence);
         const files = new Set(evidence.map(fileOf).filter((f) => f !== ""));
-        const weak = evidence.filter((e) => e.weak).length;
+        // a region named with no box in a checked claim is no evidence, so it counts as a weak claim
+        const weak = positions.flatMap((p) => p.evidence.filter((e) => isWeakEvidence(e, p.label !== ""))).length;
         const meta = [
             brainstorm ? hadLine(c, direction.from) : fromLine(c, direction.from),
             files.size > 0 ? plural(files.size, "file", "files") : "",
@@ -330,12 +332,22 @@ export function docAction(c: Council): { id: "open-doc" | "save-doc"; label: str
         : { id: "save-doc", label: "Save as doc" };
 }
 
-/** Pure: how a piece of evidence reads on its chip: the ref, or for a weak one why it is weak. */
-export function evidenceLabel(e: CouncilEvidence): string {
+/** Pure: whether a piece of evidence draws weak: a claim marked weak, or, in a claim Go checked (`checked`), a
+ *  screenshot region named with no box, which marks no place on the image. */
+export function isWeakEvidence(e: CouncilEvidence, checked: boolean): boolean {
+    return e.weak === true || isUnboxedShot(e, checked);
+}
+
+/** Pure: how a piece of evidence reads on its chip: the ref (a screenshot region by its name, without its box), or for a
+ *  weak one why it is weak. `checked` is whether Go checked the claim it backs (isWeakEvidence). */
+export function evidenceLabel(e: CouncilEvidence, checked = false): string {
     if (e.weak) {
         return `Weak · ${e.note || e.ref || "cites no evidence"}`;
     }
-    return e.ref.startsWith("screenshot:") ? `Screenshot ${e.ref.slice("screenshot:".length)}` : e.ref;
+    if (isUnboxedShot(e, checked)) {
+        return unboxedWords(e.ref);
+    }
+    return parseShotRef(e.ref) != null ? `Screenshot ${shotName(e.ref)}` : e.ref;
 }
 
 /** Pure: whether the Summary's Summarize and Summarize again can run: what the runner accepts (a council that is done,
@@ -512,7 +524,7 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
 // ---- the seat that writes the summary ----
 
 /** Pure: the name of the seat that writes the summary (the expert with `coordinator: true`), by its own `name`, so a
- *  renamed seat and a Vietnamese council's "Tổng hợp" carry through. "Summarizer" when the council has no such
+ *  renamed seat and a Vietnamese council's "Thư ký" carry through. "Summarizer" when the council has no such
  *  seat, or its name is blank. */
 export function summarizerName(c: Council): string {
     const name = c.experts.find((e) => e.coordinator)?.name.trim() ?? "";

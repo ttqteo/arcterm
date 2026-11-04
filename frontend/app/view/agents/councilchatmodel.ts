@@ -41,11 +41,13 @@ import {
     isAgentSeat,
     isMentionablePath,
     isReaction,
+    isWithdrawal,
     mentionsChat,
     panel,
     pickCount,
     readableReplies,
     replyLabel,
+    replyWords,
     roundsOf,
     seatLabel,
     seatMentions,
@@ -160,14 +162,18 @@ function proposalLabel(c: Council, p: CouncilProposal): string {
     return p.wild ? "wild idea" : "idea";
 }
 
-/** The stance pill's colour: `accept` green (builds on it), `challenge` amber, `oppose` red, `neutral` a plain reply. */
-export type PillTone = "accept" | "challenge" | "oppose" | "neutral";
+/** The stance pill's colour: `accept` green (builds on it), `challenge` amber, `oppose` red, `out` grey (an idea taken
+ *  out of the running: its author withdrew it), `neutral` a plain reply. */
+export type PillTone = "accept" | "challenge" | "oppose" | "out" | "neutral";
 
-// the word beside a reply's author: the person's `steers` (the whole council) or `replies`, a seat's `builds on it`,
-// `has doubts`, `is against it`, else `replies`
+// the word beside a reply's author: the person's `steers` (the whole council) or `replies`, a seat's `withdrew it`,
+// `builds on it`, `has doubts`, `is against it`, else `replies`
 function replyPill(r: CouncilReply): { label: string; pill: PillTone } {
     if (r.author === YOU) {
         return { label: r.proposalid || r.parentid ? "replies" : "steers", pill: "neutral" };
+    }
+    if (isWithdrawal(r)) {
+        return { label: "withdrew it", pill: "out" };
     }
     if (r.builds) {
         return { label: "builds on it", pill: "accept" };
@@ -370,7 +376,7 @@ function replyPost(c: Council, r: CouncilReply, below: readonly string[] = []): 
         id: r.id,
         ...whoIs(c, r.author),
         ...replyPill(r),
-        text: r.text,
+        text: replyWords(r),
         attachments: r.attachments ?? [],
         claim: claimOf(c, r),
         mine,
@@ -491,7 +497,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
         ...replyPill(r),
         title: "",
         on: (c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? "",
-        text: r.text,
+        text: replyWords(r),
         claim: claimOf(c, r),
         revised: !!r.revised,
         edited: !!r.edited,
@@ -517,6 +523,7 @@ export interface IdeaPost extends Who {
     id: string;
     label: string; // `proposes` (Review), `idea` or `wild idea` (Brainstorm)
     wild: boolean; // a Brainstorm wild idea: it gets a pill
+    withdrawn: boolean; // its author withdrew it: a `Withdrawn` pill, the idea drawn dim
     title: string;
     text: string;
     claim: ClaimEvidence;
@@ -543,6 +550,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         ...whoIs(c, p.author),
         label: proposalLabel(c, p),
         wild: c.mode === "brainstorm" && !!p.wild,
+        withdrawn: !!p.withdrawn,
         title: p.title,
         text: p.argument,
         claim: claimOf(c, p),
@@ -1314,6 +1322,19 @@ const NAMED_FILE = new RegExp(`(?:^|[\\s(\`"'])([\\w~./-]*[\\w-]\\.(?:${FILE_EXT
 const NAMED_PATH = /(?:^|[\s(`"'])((?:\.{1,2}\/|~\/|\/)[\w.-]+(?:\/[\w.-]+)*|[\w.-]+(?:\/[\w.-]+){2,})/u;
 const NAMED_SPAN = /`([^`\s]*[./][^`\s]*)`/u;
 
+// a web address: http:// or https:// and the run after it up to a space, a quote or a bracket (Go's linkRe, same rule)
+const LINK = /\bhttps?:\/\/[^\s<>"'`()[\]]+/iu;
+
+/** Pure: the host of the first web address a message holds ("blackdiamond.biglabs.net"), "" when it holds none. A
+ *  link locks Read files on: the seats answer it with WebFetch beside Read, Grep and Glob. */
+export function linkIn(text: string): string {
+    const m = LINK.exec(text);
+    if (m == null) {
+        return "";
+    }
+    return m[0].replace(/^https?:\/\//iu, "").split(/[/?#]/u)[0];
+}
+
 /** Pure: the first file or path a question names, "" when it names none. */
 export function namedFile(text: string): string {
     for (const re of [NAMED_FILE, NAMED_PATH, NAMED_SPAN]) {
@@ -1330,8 +1351,8 @@ export function namedFile(text: string): string {
 export const ROUTER_DECIDES = "the router decides";
 
 /** Pure: whether a message lets the seats read files, `why` and `locked` with it. It is on, and `locked` (the person
- *  cannot turn it off), when `attached` images go with it or its text has an `@file` (the first one is `why`, else
- *  "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they set
+ *  cannot turn it off), when `attached` images go with it or its text has an `@file` or a web address (the first
+ *  `@file` is `why`, else the link's host, else "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they set
  *  Read files to On or Off (`choice`; null is Auto), else on exactly when the question names a file or a path, `why`
  *  naming it. In Auto, for a `routed` message (the router picks its seats, `routedMessage`), the router decides it:
  *  `why` is `ROUTER_DECIDES` and `on` stays the file-naming guess, which is what Send sends as `tools` and the
@@ -1343,8 +1364,9 @@ export function readsFiles(
     routed = false
 ): { on: boolean; why: string; locked: boolean } {
     const mention = fileMentions(text)[0];
-    if (attached > 0 || mention != null) {
-        return { on: true, why: mention?.path ?? "an image", locked: true };
+    const link = linkIn(text);
+    if (attached > 0 || mention != null || link !== "") {
+        return { on: true, why: mention?.path ?? (link || "an image"), locked: true };
     }
     if (choice != null) {
         return { on: choice, why: "", locked: false };

@@ -6,6 +6,7 @@
 
 import { ConfirmDialog } from "@/app/modals/confirmdialog";
 import { modalsModel } from "@/app/store/modalmodel";
+import type { ConfirmHow } from "@/app/view/agents/closelog";
 
 interface ConfirmModalProps {
     title?: string;
@@ -15,7 +16,7 @@ interface ConfirmModalProps {
     destructive?: boolean;
     altLabel?: string;
     onAlt?: () => void;
-    onConfirm: () => void;
+    onConfirm: (how: ConfirmHow) => void;
 }
 
 const ConfirmModal = ({
@@ -29,9 +30,9 @@ const ConfirmModal = ({
     onConfirm,
 }: ConfirmModalProps) => {
     const close = () => modalsModel.popModal();
-    const confirm = () => {
+    const confirm = (how: ConfirmHow) => {
         close();
-        onConfirm();
+        onConfirm(how);
     };
     const alt = () => {
         close();

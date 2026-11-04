@@ -1062,7 +1062,7 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 	h.f.setFn("ram/r2", func(req CallReq) string {
 		return fence(mustJSON(map[string]any{
 			"stances":   stancesFor(req),
-			"revisions": []map[string]any{{"proposalid": ownIds(req)[0], "withdraw": true}},
+			"revisions": []map[string]any{{"proposalid": ownIds(req)[0], "withdraw": true, "change": "UX's idea covers it."}},
 		}))
 	})
 	c := h.run(testCouncil("c1"))
@@ -1095,8 +1095,11 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 	if r := revised(uxP); r == nil || r.Text != "Retitled: A better title. Narrowed it to the Mac." || r.Stance != "" {
 		t.Errorf("ux's revision reply = %+v, want the author's reply saying what changed, not the new argument again", r)
 	}
-	if r := revised(ramP); r == nil || r.Text != "Withdrawn." {
-		t.Errorf("ram's withdrawal reply = %+v", r)
+	if r := revised(ramP); r == nil || !r.Withdraws || r.Text != "UX's idea covers it." {
+		t.Errorf("ram's withdrawal reply = %+v, want it marked a withdrawal with the seat's reason as its text", r)
+	}
+	if r := revised(uxP); r == nil || r.Withdraws {
+		t.Errorf("ux's revision reply = %+v, want it not marked a withdrawal", r)
 	}
 	stances := 0
 	for _, r := range repliesBy(c, "ux") {
@@ -4738,6 +4741,103 @@ func TestReplyForcesToolsForAttachments(t *testing.T) {
 }
 
 // An @ file in the text forces Tools too, by the same rule the seat matcher uses to leave it out.
+// A web address in a message is found whole, http or https, and a bare host or a word with :// inside is not one. The
+// frontend's linkIn test holds the same table.
+func TestLinkMentioned(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want bool
+	}{
+		{"hiện tại các cập nhật đã lên https://blackdiamond.biglabs.net/", true},
+		{"see http://localhost:5174/x?y=1.", true},
+		{"(HTTPS://Example.com)", true},
+		{"blackdiamond.biglabs.net with no scheme", false},
+		{"ftp://files.example.com", false},
+		{"xhttps://not.one", false},
+		{"https://", false},
+		{"", false},
+	} {
+		if got := linkMentioned(tc.text); got != tc.want {
+			t.Errorf("linkMentioned(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+// A message with a link is stored with tools on whatever the composer sent, its router leaves them alone, and the calls
+// that answer it have WebFetch and are told so; the next message with no link has neither.
+func TestReplyWithLinkGetsWebFetch(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	if _, err := h.r.Reply("c1", "", "", "@all The update is live at https://blackdiamond.biglabs.net/", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+	if posted := repliesBy(c, YouId)[0]; !posted.Tools {
+		t.Errorf("a reply with a link stored Tools false, want it on")
+	}
+	ans := h.f.calls("ans")
+	if len(ans) == 0 {
+		t.Fatal("no answer calls")
+	}
+	for _, req := range ans {
+		if !req.Tools || !req.Web {
+			t.Errorf("answer call for %s: tools %v, web %v, want both", req.Expert.Id, req.Tools, req.Web)
+		}
+		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, readWhenNeeded+"\n"+webNote+"\n\n")
+	}
+
+	if _, err := h.r.Reply("c1", "", "", "@all And without the page?", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	h.wait("c1")
+	for _, req := range h.f.calls("ans")[len(ans):] {
+		if req.Web {
+			t.Errorf("a follow-up with no link ran %s with WebFetch", req.Expert.Id)
+		}
+		mustNotContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, webNote)
+	}
+}
+
+// A link locks the tools on, so a routed message with one in Auto keeps AutoTools off: the router cannot turn them off.
+func TestRoutedLinkLocksTools(t *testing.T) {
+	c := fixtureCouncil("c1", StateDone, 2)
+	if err := appendPersonReply(c, "", "", "What do you make of https://example.com/v5?", false, true, nil, nil, 1); err != nil {
+		t.Fatalf("appendPersonReply: %v", err)
+	}
+	pr := c.Replies[len(c.Replies)-1]
+	if !pr.Tools {
+		t.Errorf("stored Tools false, want the link to lock it on")
+	}
+	if pr.Routed != nil && pr.Routed.AutoTools {
+		t.Errorf("Routed.AutoTools true, want false: a link locks the tools")
+	}
+}
+
+// Round 1 calls have WebFetch when the council's question holds a link, and not otherwise.
+func TestRound1WebFetchFromQuestion(t *testing.T) {
+	for _, tc := range []struct {
+		question string
+		want     bool
+	}{
+		{"Review the live build at https://blackdiamond.biglabs.net/", true},
+		{"Which direction first?", false},
+	} {
+		h := newHarness(t)
+		c := testCouncil("c1")
+		c.Question = tc.question
+		h.run(c)
+		r1 := h.f.calls("r1")
+		if len(r1) == 0 {
+			t.Fatalf("%q: no round 1 calls", tc.question)
+		}
+		for _, req := range r1 {
+			if req.Web != tc.want || strings.Contains(req.Prompt, webNote) != tc.want {
+				t.Errorf("%q: round 1 call for %s has web %v, want %v (and the WebFetch line with it)", tc.question, req.Expert.Id, req.Web, tc.want)
+			}
+		}
+	}
+}
+
 func TestReplyForcesToolsForFileMention(t *testing.T) {
 	for _, tc := range []struct {
 		name, text string
@@ -5002,6 +5102,23 @@ func TestConsultCallerPassesAddDirs(t *testing.T) {
 	}
 	if len(opts.AddDirs) != 0 {
 		t.Errorf("a request with no folders ran claude with --add-dir %v", opts.AddDirs)
+	}
+
+	// Web adds WebFetch to the read-only tools, without changing the shared list; without Tools it adds nothing
+	if _, err := (ConsultCaller{}).Call(context.Background(), CallReq{Expert: e, Cwd: `D:\proj`, Prompt: "p", Tools: true, Web: true}); err != nil {
+		t.Fatalf("Call with web: %v", err)
+	}
+	if !reflect.DeepEqual(opts.Tools, []string{"Read", "Grep", "Glob", "WebFetch"}) {
+		t.Errorf("a request with Web ran claude with tools %v, want Read, Grep, Glob and WebFetch", opts.Tools)
+	}
+	if !reflect.DeepEqual(readOnlyTools, []string{"Read", "Grep", "Glob"}) {
+		t.Errorf("readOnlyTools became %v", readOnlyTools)
+	}
+	if _, err := (ConsultCaller{}).Call(context.Background(), CallReq{Expert: e, Cwd: `D:\proj`, Prompt: "p", Web: true}); err != nil {
+		t.Fatalf("Call with web and no tools: %v", err)
+	}
+	if len(opts.Tools) != 0 {
+		t.Errorf("a request with Web and no Tools ran claude with tools %v, want none", opts.Tools)
 	}
 }
 
@@ -5329,8 +5446,8 @@ func TestWithdrawRidesOnReply(t *testing.T) {
 	// sent: the withdrawal takes effect
 	revises("a", func(pid string) map[string]any { return map[string]any{"proposalid": pid, "withdraw": true} })
 	idea, reply := toRound2("a")
-	if !reply.Revision.Withdraw || reply.Text != "Withdrawn." {
-		t.Errorf("held reply = %+v, want a withdrawal", reply)
+	if !reply.Revision.Withdraw || !reply.Withdraws || reply.Text != "" {
+		t.Errorf("held reply = %+v, want a withdrawal with no reason", reply)
 	}
 	h.settle("a")
 	c := h.wait("a")
@@ -6686,11 +6803,11 @@ func TestStartLangNamesTheSeatsForTheQuestion(t *testing.T) {
 		names                         []string
 	}{
 		{"a Vietnamese question", "Idle sleep", "Nên làm gì trước?", LangVi,
-			[]string{"Trải nghiệm", "Soi lỗi", "Mac user", "Watch the heap", "Tổng hợp"}},
+			[]string{"UX", "Tìm bug", "Mac user", "Watch the heap", "Thư ký"}},
 		{"an English question", "Idle sleep", "Which first?", LangEn,
 			[]string{"Ease of use", "Bug hunter", "Mac user", "Watch the heap", "Summarizer"}},
 		{"no question, a Vietnamese feature", "Chế độ ngủ của dịch vụ", "  ", LangVi,
-			[]string{"Trải nghiệm", "Soi lỗi", "Mac user", "Watch the heap", "Tổng hợp"}},
+			[]string{"UX", "Tìm bug", "Mac user", "Watch the heap", "Thư ký"}},
 		{"an English question about a Vietnamese feature", "Chế độ ngủ", "Which first?", LangEn,
 			[]string{"Ease of use", "Bug hunter", "Mac user", "Watch the heap", "Summarizer"}},
 	}
@@ -6747,7 +6864,7 @@ func TestStartLangNamesTheSeatsOfASavedCouncilWhenItStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartSaved: %v", err)
 	}
-	if started.Lang != LangVi || started.Experts[0].Name != "Trải nghiệm" || started.Experts[3].Name != "Soi lỗi" {
+	if started.Lang != LangVi || started.Experts[0].Name != "UX" || started.Experts[3].Name != "Tìm bug" {
 		t.Errorf("a started council = lang %q, seats %q and %q, want Vietnamese", started.Lang, started.Experts[0].Name, started.Experts[3].Name)
 	}
 	h.wait("c1")
@@ -6766,7 +6883,7 @@ func TestStartLangSuggestAsksForRoleNamesInTheQuestionsLanguage(t *testing.T) {
 		return reqs[len(reqs)-1].Prompt
 	}
 	mustContain(t, "a Vietnamese question's prompt", ask("Nên làm gì trước?"), LangLine(LangVi))
-	mustNotContain(t, "an English question's prompt", ask("Which first?"), LangLine(LangVi), "Soi lỗi")
+	mustNotContain(t, "an English question's prompt", ask("Which first?"), LangLine(LangVi), "Tìm bug")
 	// with no question the feature decides
 	if _, err := h.r.Suggest(context.Background(), project, "Chế độ ngủ", "", nil); err != nil {
 		t.Fatalf("Suggest: %v", err)

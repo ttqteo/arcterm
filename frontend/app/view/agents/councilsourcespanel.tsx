@@ -10,30 +10,35 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { useBlobSrc } from "@/app/view/jarvis/localimage";
 import { base64ToString, cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
 import { FileText, Image as ImageIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import type { CouncilLang } from "./councilmodel";
+import { parseShotRef, shotName } from "./councilshots";
 import {
     claimChips,
     foldSources,
     groupSources,
     hunkLabel,
     pastEndWords,
+    regionBoxStyle,
     sourceDir,
     sourceExcerpt,
     sourceFilePath,
+    type RegionCrop,
     type SourceGroup,
 } from "./councilsources";
 import { councilSourcesAtom, openCouncilSources, type CouncilSourcesView } from "./councilstore";
+import { streamFileUrl } from "./pdfframe";
 
 const NO_SOURCES = atom<CouncilSourcesView | null>(null);
 
 // a cited file as a small chip (the editor-tab look): its icon, its name cut short in a 260px chip, its lines after it
 const CHIP =
-    "inline-flex h-[24px] min-w-0 max-w-[260px] items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px] text-[12.5px]";
+    "inline-flex h-[24px] min-w-0 max-w-[260px] select-none items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px] text-[12.5px]";
 
 // a chip's file name keeps its width (up to a cap, then it cuts itself) and the cited lines after it are what gives way:
 // a long list (`:41, 110, 423, 449, …`) ends in an ellipsis, and the title holds all of it
@@ -73,21 +78,32 @@ export function EvidenceChips({
     const view = useMemo(() => groupSources(chips.refs), [chips.refs]);
     const shown = useAtomValue(source != null ? councilSourcesAtom(source.councilId) : NO_SOURCES);
     const weak = chips.weak;
-    if (
-        view.groups.length === 0 &&
-        view.others.length === 0 &&
-        weak === "" &&
-        chips.wrong.length === 0 &&
-        chips.badge == null
-    ) {
+    const crops = chips.crops;
+    const row =
+        view.groups.length > 0 ||
+        view.others.length > 0 ||
+        weak !== "" ||
+        chips.wrong.length > 0 ||
+        chips.badge != null;
+    if (!row && crops.length === 0) {
         return null;
     }
-    const picked = source != null && shown != null && shown.owner === source.owner ? shown.pick : -1;
+    const mine = source != null && shown != null && shown.owner === source.owner;
+    const picked = mine && shown.region == null ? shown.pick : -1;
     const fold = foldSources(view.groups);
     const open = (pick: number) =>
         source != null &&
         openCouncilSources(source.councilId, { owner: source.owner, title: source.title, refs: chips.refs, pick });
-    return (
+    const openRegion = (region: RegionCrop) =>
+        source != null &&
+        openCouncilSources(source.councilId, {
+            owner: source.owner,
+            title: source.title,
+            refs: chips.refs,
+            pick: 0,
+            region,
+        });
+    const chipRow = (
         <div className="flex flex-wrap items-center gap-[6px]">
             {chips.badge != null && <ClaimBadgeChip badge={chips.badge} />}
             {fold.shown.map((g, i) =>
@@ -132,7 +148,7 @@ export function EvidenceChips({
                 ))}
             {view.others.map((ref, i) => {
                 // a screenshot ref or another non-file citation: one line, cut short like a file chip, whole on hover
-                const shot = ref.startsWith("screenshot:");
+                const shot = parseShotRef(ref) != null;
                 const Icon = shot ? ImageIcon : FileText;
                 return (
                     <span
@@ -142,7 +158,7 @@ export function EvidenceChips({
                         className={cn(CHIP, "text-secondary")}
                     >
                         <Icon size={12} className="flex-none text-muted" aria-hidden />
-                        <span className="min-w-0 truncate">{shot ? ref.slice("screenshot:".length) : ref}</span>
+                        <span className="min-w-0 truncate">{shot ? shotName(ref) : ref}</span>
                     </span>
                 );
             })}
@@ -157,13 +173,81 @@ export function EvidenceChips({
                         CHIP,
                         // a weak claim is a sentence, not a file name: it wraps inside the chip instead of
                         // spilling out of CHIP's fixed 24px height onto the row below
-                        "h-auto min-h-[24px] max-w-[520px] py-[3px] leading-[1.4] border-warning/40 text-warning-soft"
+                        "h-auto min-h-[24px] max-w-[520px] select-text py-[3px] leading-[1.4] border-warning/40 text-warning-soft"
                     )}
                 >
                     {weak}
                 </span>
             )}
         </div>
+    );
+    if (crops.length === 0) {
+        return chipRow;
+    }
+    // each region Go drew shows under the words, before the chips, so the person sees which button without a click
+    return (
+        <div className="flex min-w-0 flex-col gap-[8px]">
+            <div data-council-crops className="flex flex-wrap gap-[8px]">
+                {crops.map((crop) => (
+                    <RegionCropImage
+                        key={crop.region.crop}
+                        crop={crop}
+                        picked={mine && shown.region?.region.crop === crop.region.crop}
+                        onOpen={source != null ? () => openRegion(crop) : undefined}
+                    />
+                ))}
+            </div>
+            {row && chipRow}
+        </div>
+    );
+}
+
+// the width a region's crop is drawn at under a message: wide enough to see the button, narrow enough for the 380px
+// thread panel
+const CROP_W = "w-[240px]";
+
+/** A region Go drew, as the message shows it: the crop PNG with its red box, a click opening the whole screenshot in
+ *  the Sources panel. A crop that will not load draws nothing: the cite's chip still names it. */
+function RegionCropImage({ crop, picked, onOpen }: { crop: RegionCrop; picked: boolean; onOpen?: () => void }) {
+    const blob = useBlobSrc(streamFileUrl(crop.region.crop));
+    if (blob.failed) {
+        return null;
+    }
+    const img =
+        blob.src == null ? (
+            <span className={cn("block aspect-[3/2]", CROP_W)} />
+        ) : (
+            <img
+                src={blob.src}
+                alt={`Screenshot ${crop.name}`}
+                draggable={false}
+                className={cn("block h-auto max-w-full", CROP_W)}
+            />
+        );
+    const frame = "max-w-full overflow-hidden rounded-[6px] border bg-surface-code";
+    if (onOpen == null) {
+        return (
+            <span data-council-crop={crop.region.crop} title={crop.name} className={cn(frame, "border-edge-mid")}>
+                {img}
+            </span>
+        );
+    }
+    return (
+        <button
+            type="button"
+            data-council-crop={crop.region.crop}
+            data-picked={picked ? "true" : undefined}
+            title={`${crop.name}: open the whole screenshot`}
+            aria-label={`Open ${crop.name} in the whole screenshot`}
+            onClick={onOpen}
+            className={cn(
+                frame,
+                "cursor-zoom-in p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                picked ? "border-edge-strong ring-1 ring-edge-strong" : "border-edge-mid hover:border-edge-strong"
+            )}
+        >
+            {img}
+        </button>
     );
 }
 
@@ -255,7 +339,127 @@ function useSourceText(path: string): SourceText {
 }
 
 /** The Sources panel: the message's files, then the picked one's cited lines. */
-export function CouncilSourcesPanel({
+export function CouncilSourcesPanel(props: {
+    c: Council;
+    view: CouncilSourcesView;
+    onClose: () => void;
+    onOpenFile?: (path: string, line?: number) => void;
+}) {
+    // a clicked region shows its screenshot; anything else the message's files. Two components, so each keeps its own hooks
+    return props.view.region != null ? (
+        <RegionSources view={props.view} region={props.view.region} onClose={props.onClose} />
+    ) : (
+        <FileSources {...props} />
+    );
+}
+
+const PANEL = "flex min-h-0 w-[440px] flex-none flex-col border-l border-edge-faint bg-surface outline-none";
+
+// the panel's header: Sources, what the message is, and the close button (back to the thread it was opened from)
+function SourcesHeader({ view, onClose }: { view: CouncilSourcesView; onClose: () => void }) {
+    const closeLabel = view.thread != null ? "Back to the thread (Esc)" : "Close the sources (Esc)";
+    return (
+        <div className="flex flex-none items-center gap-[8px] border-b border-edge-faint py-[12px] pl-4 pr-3">
+            <span className="text-[14px] font-semibold">Sources</span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{view.title}</span>
+            <button
+                type="button"
+                data-council-sources-close
+                aria-label={closeLabel}
+                title={closeLabel}
+                onClick={onClose}
+                className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                <X size={14} strokeWidth={2} aria-hidden />
+            </button>
+        </div>
+    );
+}
+
+// a screenshot region in the panel: the whole image with the box outlined on it, at the box Go checked; when the image is
+// no longer on disk, the crop Go drew stands in for it, with a line that says so
+function RegionSources({
+    view,
+    region,
+    onClose,
+}: {
+    view: CouncilSourcesView;
+    region: RegionCrop;
+    onClose: () => void;
+}) {
+    const full = useBlobSrc(streamFileUrl(region.region.image));
+    const crop = useBlobSrc(full.failed ? streamFileUrl(region.region.crop) : null);
+    const [copied, setCopied] = useState(false);
+    useEffect(() => setCopied(false), [region.region.crop]);
+    const state = full.failed ? "crop-only" : full.src == null ? "loading" : "full";
+    const copy = () =>
+        fireAndForget(async () => {
+            await navigator.clipboard.writeText(region.region.crop);
+            setCopied(true);
+        });
+    return (
+        <aside data-council-sources tabIndex={-1} aria-label="Sources" className={PANEL}>
+            <SourcesHeader view={view} onClose={onClose} />
+            <div
+                data-council-sources-body
+                data-council-sources-region={region.region.crop}
+                data-state={state}
+                className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-[14px]"
+            >
+                <div className="flex items-center gap-[6px] break-all text-[16px] font-semibold leading-[1.35] text-primary">
+                    <ImageIcon size={14} className="flex-none text-muted" aria-hidden />
+                    {region.name}
+                </div>
+                <div className="mt-[2px] break-all text-[12.5px] text-muted">{region.region.image}</div>
+                {state === "loading" && <div className="mt-[14px] text-[13px] text-muted">Reading the image…</div>}
+                {state === "full" && (
+                    <div className="relative mt-[14px] w-fit max-w-full overflow-hidden rounded-[8px] border border-edge-faint">
+                        <img
+                            src={full.src}
+                            alt={`Screenshot ${region.name}`}
+                            draggable={false}
+                            className="block h-auto max-w-full"
+                        />
+                        <span
+                            data-council-region-box
+                            aria-hidden
+                            style={regionBoxStyle(region.region)}
+                            className="pointer-events-none absolute rounded-[2px] border-2 border-error"
+                        />
+                    </div>
+                )}
+                {state === "crop-only" && (
+                    <>
+                        <div data-council-sources-error className="mt-[14px] text-[13px] leading-[1.5] text-secondary">
+                            The full screenshot is no longer on disk; this is the region as it was drawn.
+                        </div>
+                        {crop.src != null && (
+                            <img
+                                src={crop.src}
+                                alt={`Screenshot ${region.name}`}
+                                draggable={false}
+                                className="mt-[10px] block h-auto max-w-full rounded-[8px] border border-edge-faint"
+                            />
+                        )}
+                    </>
+                )}
+            </div>
+            <div className="flex flex-none gap-2 border-t border-edge-faint px-4 py-3">
+                <button
+                    type="button"
+                    data-council-sources-copy
+                    title={region.region.crop}
+                    onClick={copy}
+                    className={ghostButton}
+                >
+                    {copied ? "Copied" : "Copy the region's path"}
+                </button>
+            </div>
+        </aside>
+    );
+}
+
+function FileSources({
     c,
     view,
     onClose,
@@ -280,7 +484,6 @@ export function CouncilSourcesPanel({
     if (group == null) {
         return null;
     }
-    const closeLabel = view.thread != null ? "Back to the thread (Esc)" : "Close the sources (Esc)";
     const dir = sourceDir(group.path);
     const past = excerpt == null ? "" : pastEndWords(excerpt);
     const copy = () =>
@@ -289,26 +492,8 @@ export function CouncilSourcesPanel({
             setCopied(true);
         });
     return (
-        <aside
-            data-council-sources
-            tabIndex={-1}
-            aria-label="Sources"
-            className="flex min-h-0 w-[440px] flex-none flex-col border-l border-edge-faint bg-surface outline-none"
-        >
-            <div className="flex flex-none items-center gap-[8px] border-b border-edge-faint py-[12px] pl-4 pr-3">
-                <span className="text-[14px] font-semibold">Sources</span>
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{view.title}</span>
-                <button
-                    type="button"
-                    data-council-sources-close
-                    aria-label={closeLabel}
-                    title={closeLabel}
-                    onClick={onClose}
-                    className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <X size={14} strokeWidth={2} aria-hidden />
-                </button>
-            </div>
+        <aside data-council-sources tabIndex={-1} aria-label="Sources" className={PANEL}>
+            <SourcesHeader view={view} onClose={onClose} />
             {groups.length > 1 && (
                 <div role="list" aria-label="Files" className="flex flex-none flex-col gap-[2px] p-2">
                     {groups.map((g, i) => {

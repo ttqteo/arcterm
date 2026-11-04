@@ -14,6 +14,7 @@ import {
     evidenceLabel,
     expertActivity,
     initiativeSeed,
+    isWeakEvidence,
     jumpLinks,
     keptHeading,
     keptRows,
@@ -494,6 +495,29 @@ describe("evidenceLabel", () => {
     it("names a screenshot region", () => {
         expect(evidenceLabel({ ref: "screenshot:rail.png#top-left" })).toBe("Screenshot rail.png#top-left");
     });
+
+    it("names a boxed region without its box", () => {
+        expect(evidenceLabel({ ref: "screenshot:rail.png#save@0.7,0.1,0.1,0.05", cite: "ok" }, true)).toBe(
+            "Screenshot rail.png#save"
+        );
+    });
+
+    it("says a region with no box is weak in a checked claim, and nowhere else", () => {
+        expect(evidenceLabel({ ref: "screenshot:rail.png#top-left" }, true)).toBe(
+            "Weak · rail.png#top-left: the region has no box, so it shows nothing"
+        );
+        expect(evidenceLabel({ ref: "screenshot:rail.png#top-left" }, false)).toBe("Screenshot rail.png#top-left");
+    });
+});
+
+describe("isWeakEvidence", () => {
+    it("is a weak claim, or a region named with no box in a checked claim", () => {
+        expect(isWeakEvidence({ ref: "", weak: true }, false)).toBe(true);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top" }, true)).toBe(true);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top" }, false)).toBe(false);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top@0,0,0.5,0.5", cite: "ok" }, true)).toBe(false);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top@0,0,2,2", cite: "wrong" }, true)).toBe(false);
+    });
 });
 
 describe("canRunSummary", () => {
@@ -915,7 +939,7 @@ describe("summarizerName", () => {
     it("is the summarizing seat's own name: the stock one, a renamed one, the Vietnamese one", () => {
         expect(summarizerName(council({ experts: withSummarizer("Summarizer") }))).toBe("Summarizer");
         expect(summarizerName(council({ experts: withSummarizer("Chair of the table") }))).toBe("Chair of the table");
-        expect(summarizerName(council({ experts: withSummarizer("Tổng hợp") }))).toBe("Tổng hợp");
+        expect(summarizerName(council({ experts: withSummarizer("Thư ký") }))).toBe("Thư ký");
     });
 
     it("reads the seat with coordinator: true, not the one with the id coordinator", () => {

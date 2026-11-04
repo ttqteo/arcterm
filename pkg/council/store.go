@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -159,6 +160,9 @@ func writeLocked(c *Council, stamp bool) error {
 	if stamp {
 		c.Updated = now().UnixMilli()
 	}
+	// every message enters the council through a save, whatever its mode or path, so the boxed screenshot cites are
+	// drawn here; a region drawn on an earlier save is kept
+	drawRegions(c)
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode council %s: %w", path, err)
@@ -266,7 +270,19 @@ func Remove(id string) error {
 		_ = os.RemoveAll(entry)
 		return fmt.Errorf("remove council %s: moving it to the trash: %w", id, err)
 	}
+	// its folder (the drawn screenshot regions) goes with it, into the same entry; the council is gone either way, so a
+	// folder that will not move is logged, not an error
+	if own := filepath.Join(Dir(), id); dirExists(own) {
+		if err := sessiontrash.MoveEntry(own, filepath.Join(entry, id)); err != nil {
+			log.Printf("[council] %s: its folder %s stayed behind: %v", id, own, err)
+		}
+	}
 	return nil
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // SetRating keeps the person's "Was this useful?" answer on the council: RatingUseful or RatingNot, given at `at` (ms).

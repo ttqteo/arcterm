@@ -30,6 +30,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **A council's Ideas tab groups the ideas by where the seats stand**: Waiting on you, Agreed, Has doubts, Someone against it, No stance yet and Withdrawn, each under a header with its colour and a count, in the order they arrived. An idea moves group as a seat changes its stance; a withdrawn one says which round it left in, and one you cut says `cut by you`.
 - **Close project…** in a project folder's right-click menu in the Agent tree closes every agent and terminal in it at once, after a confirm that says how many and how many are still working. Their conversations stay in Conversations, and the folder's councils and services stay.
 - **Open asleep** in the right-click menu of a session in a project Overview's History and in the Agent tree's Conversations: the session comes back on the roster with its transcript and a box to wake it, and costs nothing until you Wake it or send a message. A codex session, which cannot sleep, still only resumes.
+- In a council, a seat that cites part of a screenshot or a pasted image now marks it with a box, and the boxed part shows as an image with a red rectangle under the idea or reply, in the channel and the thread panel. A click opens the whole screenshot in Sources with the same box on it, and the council's saved document embeds the images. A box that does not fit the image is a Wrong cite, and in a checked claim a screenshot cited with no box counts as no evidence. <!-- big -->
 
 ### Changed
 
@@ -39,10 +40,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent with three or more commands running in the background folds them behind a `3 running` chip on its row in the Agent tree; click it to list them. One or two still show as rows.
 - In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
 - A chat seat's button in a council's Seats list shows the agent mark and reads Go to <name>, where it showed a terminal icon; its name's hover says the same.
+- A Vietnamese council's experts have short, everyday names that fit on their cards: UX, Đo RAM, Khách, Tìm bug, Thư ký, Giám khảo A / B, Biên tập, Tổng hợp, Thiết kế, Dev, Phản biện and Điều phối, where every name started with "Người". A council you already ran keeps its names.
+- A council message with a web link (`https://…`) now lets the experts open that page with WebFetch, where they said they could not open it and read the repo instead; the link locks Let them read files on and names the site. A link in the council's question does the same for round 1.
+- In a council's Discussion, the idea whose replies are open on the right wears a bright ring, where only its tint deepened and it barely stood out from its neighbours.
+- In a council, an idea its author withdrew wears a Withdrawn badge and is drawn dim, its title struck in its thread, and the author's reply reads "withdrew it" with the reason it gave, where the thread only showed a bare "Withdrawn." reply.
 - A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed
 
+- Clicking an idea in a council's Ideas rail no longer pushes the whole window up off its frame: only the discussion scrolls to the idea. Moving between ideas with j and k, and jumping back to a quoted question, scroll the same way.
+- A run no longer waits for hours to start its next task while your computer is short of memory and another run is working: each run now keeps at least one worker going, and Jobs set to Off (or paused) stops runs waiting for memory too, as it already did for builds and tests.
 - Pausing the heavy-job queue now pauses it on this computer only, where the pause synced through the vault and let every heavy job on your other computers start at once too.
 - A canvas board whose page runs longer than its board size is now drawn whole, at its page's full height, where it showed a second scrollbar inside the board beside the canvas's own.
 - A council that was stopped after it wrote its summary reads Done in the Agent tree and its header, where it read Stopped, even right after it answered a follow-up you asked.
@@ -51,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's progress bar no longer touches the Discussion tab's underline while the council runs.
 - On a council's report, clicking Report scrolls down past the answer to the report itself, where it did nothing, and the Directions and Also raised links glide down to their section instead of jumping there.
 - A council message long enough to wrap grows its box line by line, where the box stayed one line tall and cut off the first line as you typed.
+- A run graph's task and Final verification details read in the app's own font: the worker, review, tokens, activity times and the Open in Agent button were drawn in the code font.
+- More labels read in the app's own font instead of the code font: the brainstorm pane (question numbers, the check clock, topic and file names), the background task peek's title, state and tabs, Setup → Memory's line counts and file names, the @ file picker, the roles in the Claude account restart list, and the Brief's plan path, "just now" and field labels.
 
 ## 1.0.0 — 2026-11-03
 

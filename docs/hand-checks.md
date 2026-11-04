@@ -6,6 +6,26 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Ideas rail click keeps the window still.** In a council's Discussion with the Ideas rail open, click
+  an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
+  bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
+  the typecheck only; no dev app was up (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
+
+- [ ] (arcterm) Open a council idea's thread panel (380px) and look at a reply whose seat name and stance pill fill the
+  byline ("Người lo trải nghiệm · has doubts") → no empty line between the byline and the bubble; hover it → its time
+  and thumbs appear over the byline's right end on the panel background, and nothing below moves. Same on the idea at
+  the top of the thread. No dev app was up; prettier only (`HoverEnd` in `councilchat.tsx`).
+
+- [ ] (arcterm) With the machine short of memory (Windows: commit charge past the RAM) and two runs active, let one
+  run have a ready task while the other has a worker live → the ready task starts within a tick, and `waveapp.log`
+  stops repeating `ready tasks held back while the machine's memory is short` for it; set Jobs to Off and a run with a
+  worker live starts its other ready tasks too (d561ef671).
+- [ ] (arcterm) Click a task node, then the Final verification node, in a run's graph → the peek's Worker / Review /
+  Tokens values, activity lines and Open in Agent read in Inter like the title; only a Verify output tail stays mono
+  (22a9f852e).
+- [ ] (arcterm) Open a brainstorm (question card, check clock, run sheet), a background task peek, Setup → Memory and
+  the @ file picker in the New dialog → labels, counts, file names and times read in Inter; only commands, output,
+  keycaps and hashes stay mono.
 - [ ] (arcterm) Rerun final stage from the Final verification pane: on a run whose final stage failed, focus its Final
   verification row → the pane header shows Rerun final stage; click it → the stage restarts in the same round and the
   button goes. The `final-rerun` scenario's step 4 passed in run aebf7808's first final stage and failed in its second
@@ -332,6 +352,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   one naming none leaves it off, and the cost line reads about a fifth. In a new council's round 2, no reply calls a
   seat by its role ("Phương pháp ơi"). Unit tests and two CDP steps (discussion `done`, summary Ask next) cover it;
   both passed in the Tauri dev app on 2026-11-03. Left: a real council (the report's questions, round 2's wording).
+- [ ] (arcterm) Council link → WebFetch: in a done council's Discussion type a message with `https://…`: Let them read
+  files turns on, locks, and says `it names <host>`. Send it: the answering seats' timelines show a WebFetch step and
+  their answers say which page they read, not "I can't open it". The next message with no link answers with no
+  WebFetch. A new council whose question holds a link: round 1 opens it. Unit tests (Go and vitest) cover the lock, the
+  tool list and the prompt line; not tried in the app.
 - [ ] (arcterm) Council as a group chat: in a council past round 2 (or a new one), the round 1 ideas alternate between
   the experts, with no bold title in the bubbles; round 2 shows every reply in the chat, a `↳ <idea>` quote over the
   first of each idea's replies, those replies together and in the ideas' order. While a round runs, its messages stay
@@ -1667,6 +1692,22 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   toast; Retry on a failed thesis turn reaches that tab. Unit tests only (`transcriptpath.ts`, `archivedSession`,
   `seatLink`, Go `Holder`).
 - [ ] (arcterm) **Council short names, call bar gap.** Start a council with a Vietnamese question (Soi một tính năng
-  giao diện) → the cards read Trải nghiệm, Canh RAM, Người mới, Soi lỗi, untruncated, with initials T, C, M, S; while it
+  giao diện) → the cards read UX, Đo RAM, Khách, Tìm bug and Thư ký, untruncated, with initials U, Đ, K, T, T; while it
   runs, the green call bar under the header sits ~10px below the Discussion tab's underline, not touching it.
   Unit tests and the typecheck only (`roles.go`, `councildiscussion.tsx`); no dev app was up.
+- [ ] (arcterm) **Council evidence chips don't select.** In a council's Discussion or Report, drag across a claim's
+  evidence row → the file, screenshot, `+N` and label chips ("Đã đọc code") never turn blue; the Weak and Wrong cite
+  chips still select, so their reason can be copied. Not tried in the app (`councilsourcespanel.tsx`,
+  `councilchecks.tsx`).
+- [ ] (arcterm) **Tab closes are logged.** Close an agent with Ctrl+Shift+W then Enter, and another with the header's
+  Close and a click → `waveapp.log` has, for each, `[fe-log] [close] ask … from=Mod+Shift+W` (or `from=header`), then
+  `[close] confirm … via=enter after=…ms` (or `via=click`), `[close] close … why=close from …`, and wavesrv's
+  `CloseTab: tab …`. Unit tests and the typecheck only (`closelog.ts`, `confirmdialog.tsx`, `agentactions.ts`).
+- [ ] (arcterm) **Open council idea rings.** In a council's Discussion, click an idea's replies → its bubble wears a
+  bright 2px ring over its tint, plainly the one the right panel shows; j/k focus alone still draws the faint ring.
+  Not tried in the app (`councilchat.tsx` `IdeaMessage` bubble).
+- [ ] (arcterm) **Withdrawn council idea.** Run a council until a seat withdraws its own idea in round 2 → in the
+  Discussion the idea's byline has a grey outlined `Withdrawn` pill and its bubble is dim; its thread's title is struck
+  through with the same pill; the author's reply reads `withdrew it` with a one-line reason, or only the pill when it gave
+  none, and never counts as an "agrees" chip. An older council's "Withdrawn." reply shows as the pill alone. Unit tests
+  and the typecheck only (`councilchat.tsx` `IdeaMessage`, `ThreadIdea`, `ReplyMessage`); no dev app was up.

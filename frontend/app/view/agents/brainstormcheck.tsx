@@ -201,7 +201,7 @@ function BuilderAsk({
                         data-brainstorm-builder-head
                         className="flex items-center gap-[10px] text-[13px] text-warning"
                     >
-                        <span className="font-mono font-semibold">
+                        <span className="font-semibold">
                             Builder {ask.index} of {ask.total}
                         </span>
                         {open.part ? (
@@ -375,7 +375,7 @@ function ApproveBar({
                     <span className="whitespace-nowrap text-[13px] font-semibold text-primary">
                         Approve and start an orchestrator run
                     </span>
-                    <span className="truncate font-mono text-[11px] text-muted">
+                    <span className="truncate text-[11px] text-muted">
                         {runLine(projectOf(agent))} ·{" "}
                         <button
                             type="button"

@@ -43,7 +43,7 @@ import { openTaskWorker, resolveTaskWorker, type TaskWorkerView } from "./taskco
 const HINT = "double-click opens its worker · Esc closes";
 
 const DT = "text-[11px] leading-4 text-ink-mid";
-const DD = "m-0 min-w-0 font-mono text-[11px] leading-4";
+const DD = "m-0 min-w-0 text-[11px] leading-4 tabular-nums";
 const DD_SUB = "truncate text-muted";
 
 export function DagTaskPeek({
@@ -159,7 +159,7 @@ export function DagTaskPeek({
                         <div
                             key={i}
                             className={cn(
-                                "font-mono text-[10.5px] leading-[14px]",
+                                "text-[10.5px] leading-[14px] tabular-nums",
                                 row.tone === "warning" ? "text-warning" : "text-muted"
                             )}
                         >
@@ -305,7 +305,7 @@ function EscalatePanel({
 }
 
 const SESSION_BOX = "flex min-w-0 items-center gap-2 rounded-[8px] border border-edge-mid px-[9px] py-[7px]";
-const SESSION_BTN = "flex-none cursor-pointer rounded-[6px] border px-2 py-[3px] font-mono text-[10.5px]";
+const SESSION_BTN = "flex-none cursor-pointer rounded-[6px] border px-2 py-[3px] text-[10.5px]";
 
 // WorkerSession is the task's worker treatment: the shared status line when dispatched, with Open in Agent,
 // and the explicit pending and worker-unavailable states. A double-click or Enter on the node opens the same
@@ -317,7 +317,7 @@ function WorkerSession({ worker, model }: { worker: TaskWorkerView; model: Agent
     };
     if (worker.state === "pending") {
         return (
-            <div className={cn(SESSION_BOX, "border-dashed font-mono text-[11px] text-ink-mid")}>
+            <div className={cn(SESSION_BOX, "border-dashed text-[11px] text-ink-mid")}>
                 <span className="h-1.5 w-1.5 flex-none rounded-full bg-edge-strong" />
                 Not dispatched yet
             </div>
@@ -339,7 +339,7 @@ function WorkerSession({ worker, model }: { worker: TaskWorkerView; model: Agent
     }
     return (
         <SessionBox>
-            <span className="flex-1 font-mono text-[11px] text-ink-mid">Worker session unavailable</span>
+            <span className="flex-1 text-[11px] text-ink-mid">Worker session unavailable</span>
             <button
                 type="button"
                 onClick={open}

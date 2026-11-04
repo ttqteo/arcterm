@@ -172,7 +172,7 @@ export function ClaudeAccountRestartModal({
                         onChange={(e) => setChecked((prev) => ({ ...prev, [c.tabId]: e.target.checked }))}
                         className="shrink-0 accent-accent"
                     />
-                    {c.role ? <span className="shrink-0 font-mono text-[11px] text-ink-faint">{c.role}</span> : null}
+                    {c.role ? <span className="shrink-0 text-[11px] text-ink-faint">{c.role}</span> : null}
                     <span className="min-w-0 flex-1 truncate text-[13px] text-primary">{c.name}</span>
                     {isDone ? (
                         <span className="shrink-0 text-[11.5px] text-success-soft">resumed</span>

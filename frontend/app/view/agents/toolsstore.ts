@@ -8,7 +8,6 @@
 import { createTermTab, launchAgent } from "@/app/cockpit/cockpit-actions";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
-import { WorkspaceService } from "@/app/store/services";
 import * as WOS from "@/app/store/wos";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -19,6 +18,7 @@ import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { isAppTool } from "./appmodel";
 import { setAppView } from "./appstore";
+import { closeTabLogged } from "./closetab";
 import { HOME_NAME, HOME_PICK } from "./launcher";
 import { closeLauncher, type LauncherModel } from "./launcherstore";
 import { dockedTerminalAtom, railCwdsAtom } from "./railstore";
@@ -406,7 +406,7 @@ export async function installTool(model: AgentsViewModel, tool: ToolStatus, proj
         globalStore.set(installingAtom, without(globalStore.get(installingAtom), tool.id, tabId));
         const ws = globalStore.get(atoms.workspace);
         if (ws?.oid != null) {
-            void WorkspaceService.CloseTab(ws.oid, tabId).catch(() => {});
+            void closeTabLogged(ws.oid, tabId, `tool install failed to start: ${tool.id}`).catch(() => {});
         }
         throw e;
     }
@@ -420,7 +420,7 @@ export async function retryInstall(model: AgentsViewModel, tool: ToolStatus): Pr
         globalStore.set(failedAtom, without(globalStore.get(failedAtom), tool.id, failedTab));
         const ws = globalStore.get(atoms.workspace);
         if (ws?.oid != null) {
-            await WorkspaceService.CloseTab(ws.oid, failedTab);
+            await closeTabLogged(ws.oid, failedTab, `tool install retry: ${tool.id}`);
         }
     }
     return installTool(model, tool, installProjects.get(tool.id));

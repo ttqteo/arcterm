@@ -86,7 +86,7 @@ export function SleepingCard({ agent }: { agent: AgentVM }) {
                         type="button"
                         data-sleeping-close
                         disabled={busy}
-                        onClick={() => confirmCloseSession(agent)}
+                        onClick={() => confirmCloseSession(agent, undefined, "sleeping card")}
                         className={BTN_QUIET}
                     >
                         Close

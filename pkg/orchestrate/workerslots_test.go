@@ -32,10 +32,11 @@ func TestWorkerGrant(t *testing.T) {
 		{"a share is never under one worker", 2, 0, workerLoad{live: 1, waiting: 20}, jobqueue.PressureNormal, 1},
 		{"no reading from the OS holds nothing", 3, 1, workerLoad{live: 1}, jobqueue.PressureUnknown, 3},
 		{"a normal reading holds nothing", 3, 1, workerLoad{live: 1}, jobqueue.PressureNormal, 3},
-		{"a warn reading holds new workers while others are live", 3, 1, workerLoad{}, jobqueue.PressureWarn, 0},
-		{"a critical reading holds new workers while others are live", 3, 1, workerLoad{}, jobqueue.PressureCritical, 0},
-		{"another run's worker counts as live under warn", 3, 0, workerLoad{live: 1}, jobqueue.PressureWarn, 0},
-		{"another run's claim counts as live under critical", 3, 0, workerLoad{live: 1}, jobqueue.PressureCritical, 0},
+		{"a warn reading holds new workers while the run's own are live", 3, 1, workerLoad{}, jobqueue.PressureWarn, 0},
+		{"a critical reading holds new workers while the run's own are live", 3, 1, workerLoad{}, jobqueue.PressureCritical, 0},
+		{"another run's live worker does not starve a run with none under warn", 3, 0, workerLoad{live: 1}, jobqueue.PressureWarn, 1},
+		{"another run's live worker does not starve a run with none under critical", 3, 0, workerLoad{live: 2, waiting: 1}, jobqueue.PressureCritical, 1},
+		{"a full cap still grants nothing under pressure", 3, 0, workerLoad{live: MaxLiveWorkers}, jobqueue.PressureWarn, 0},
 		{"warn with nothing live anywhere still starts one worker", 3, 0, workerLoad{}, jobqueue.PressureWarn, 1},
 		{"critical with nothing live anywhere still starts one worker", 3, 0, workerLoad{}, jobqueue.PressureCritical, 1},
 		{"the one worker never exceeds what was asked", 1, 0, workerLoad{}, jobqueue.PressureWarn, 1},
@@ -217,8 +218,8 @@ func TestScheduleRefillsOnlyToItsShareWhileAnotherRunWaits(t *testing.T) {
 	requireClaimReleased(t, g)
 }
 
-// Warn and critical hold new dispatch while any worker is live; unknown (no reading: the job queue still gates each
-// heavy command) and normal hold nothing.
+// Warn and critical hold a run to one worker; unknown (no reading: the job queue still gates each heavy command) and
+// normal hold nothing.
 func TestScheduleHoldsDispatchUnderMemoryPressure(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -233,7 +234,7 @@ func TestScheduleHoldsDispatchUnderMemoryPressure(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctx, g, spawns := workerSlotsFixture(t, "worker-pressure-"+c.name, 2, 2)
-			// one worker is live in another run, so the task cannot rely on the nothing-live floor
+			// one worker is live in another run
 			others := []*waveobj.TaskGroup{slotDag(t, "other-run", 1, 1)}
 			pressure := c.pressure
 			standInMachine(t, &others, &pressure)
@@ -241,8 +242,8 @@ func TestScheduleHoldsDispatchUnderMemoryPressure(t *testing.T) {
 			if err := ScheduleOnce(ctx, g); err != nil {
 				t.Fatal(err)
 			}
-			if c.held && (*spawns != 0 || g.Tasks[0].State != TaskState_Pending) {
-				t.Fatalf("pressure %s with a worker live must hold dispatch: %d spawns, state %s", c.name, *spawns, g.Tasks[0].State)
+			if c.held && (*spawns != 1 || g.Tasks[1].State != TaskState_Pending) {
+				t.Fatalf("pressure %s must hold the run to one worker: %d spawns, second task %s", c.name, *spawns, g.Tasks[1].State)
 			}
 			if !c.held && *spawns != 2 {
 				t.Fatalf("pressure %s must hold nothing, started %d of 2", c.name, *spawns)
@@ -289,5 +290,22 @@ func TestScheduleStartsOneWorkerUnderPressureWhenNothingIsLive(t *testing.T) {
 			}
 			requireClaimReleased(t, g)
 		})
+	}
+}
+
+// jobs:mode off (or a pause) is the person's "don't wait for memory": the worker gate reads no pressure then, as the
+// job queue starts every job at once.
+func TestWorkerPressureObeysJobsModeOff(t *testing.T) {
+	oldDefault, oldRead := jobqueue.Default, readPressure
+	defer func() { jobqueue.Default, readPressure = oldDefault, oldRead }()
+	readPressure = func(context.Context) jobqueue.Pressure { return jobqueue.PressureCritical }
+	mode := jobqueue.ModeAuto
+	jobqueue.Default = jobqueue.New(jobqueue.Config{Mode: func() string { return mode }})
+	if got := machinePressure(context.Background()); got != jobqueue.PressureCritical {
+		t.Fatalf("jobs:mode auto reads the machine, got %v", got)
+	}
+	mode = jobqueue.ModeOff
+	if got := machinePressure(context.Background()); got != jobqueue.PressureUnknown {
+		t.Fatalf("jobs:mode off holds nothing, got %v", got)
 	}
 }

@@ -574,7 +574,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                 const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
                 const target = closeTarget(items, globalStore.get(model.focusIdAtom), paneId);
                 if (target != null) {
-                    confirmCloseSession(target, model);
+                    confirmCloseSession(target, model, "Mod+Shift+W");
                 }
             },
         },
@@ -1884,7 +1884,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 if (agent == null) {
                     return false;
                 }
-                confirmCloseSession(agent, model);
+                confirmCloseSession(agent, model, "Alt+W");
             },
         },
         {

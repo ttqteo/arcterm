@@ -128,6 +128,32 @@ export function glideAt(from: number, to: number, t: number): number {
     return from + (to - from) * (1 - Math.pow(1 - k, 3));
 }
 
+// ---- bringing one row into view ----
+
+export type RevealBlock = "start" | "center" | "nearest";
+
+/** The scrollTop that brings `row` (in the scroller's content) into view of that scroller alone: scrollIntoView also
+ *  scrolls every box around it, up to the window, and a click on an Ideas rail row pushed the whole app up off its
+ *  frame. `start` puts its top at the view's top, `center` its middle at the view's middle, `nearest` moves it the least
+ *  way in, or not at all (null) when it already shows whole. Clamped to the scroller. */
+export function revealTop(row: RowBox, el: Scroller, block: RevealBlock): number | null {
+    const end = Math.max(0, el.scrollHeight - el.clientHeight);
+    let top: number;
+    if (block === "start") {
+        top = row.top;
+    } else if (block === "center") {
+        top = (row.top + row.bottom - el.clientHeight) / 2;
+    } else if (row.top < el.scrollTop) {
+        top = row.top;
+    } else if (row.bottom > el.scrollTop + el.clientHeight) {
+        // a row taller than the view shows its top
+        top = Math.min(row.top, row.bottom - el.clientHeight);
+    } else {
+        return null;
+    }
+    return Math.round(Math.min(Math.max(0, top), end));
+}
+
 export interface JumpPills {
     top: boolean;
     latest: boolean;

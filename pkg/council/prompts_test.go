@@ -100,7 +100,7 @@ func TestRound1PromptAsksForAQuoteAndVerifyRequests(t *testing.T) {
 
 func TestLangLine(t *testing.T) {
 	vi := LangLine(LangVi)
-	mustContain(t, "vi line", vi, "Vietnamese", `"name"`, "Soi lỗi")
+	mustContain(t, "vi line", vi, "Vietnamese", `"name"`, "Tìm bug")
 	if got := LangLine(LangEn); got != "" {
 		t.Errorf("LangLine(en) = %q, want none: an English council needs no line", got)
 	}

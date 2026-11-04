@@ -420,3 +420,36 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// Off is the person's "don't wait" switch, which the engine's worker gate obeys too: jobs:mode off, or a pause still
+// ahead. With no default queue nothing is switched off.
+func TestOff(t *testing.T) {
+	old := Default
+	defer func() { Default = old }()
+	Default = nil
+	if Off() {
+		t.Fatal("no default queue must not read as off")
+	}
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	mode, until := ModeAuto, time.Time{}
+	Default = New(Config{
+		Mode:        func() string { return mode },
+		PausedUntil: func() time.Time { return until },
+		Now:         func() time.Time { return now },
+	})
+	if Off() {
+		t.Fatal("auto with no pause is not off")
+	}
+	mode = ModeOff
+	if !Off() {
+		t.Fatal("jobs:mode off is off")
+	}
+	mode, until = ModeSlots, now.Add(time.Minute)
+	if !Off() {
+		t.Fatal("a pause still ahead is off")
+	}
+	until = now.Add(-time.Minute)
+	if Off() {
+		t.Fatal("a past pause is not off")
+	}
+}

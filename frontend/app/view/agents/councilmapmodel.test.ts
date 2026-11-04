@@ -333,7 +333,7 @@ describe("mapWords", () => {
         const w = mapWords(council({ lang: "vi" }));
         expect(w.tab).toBe("Bản đồ");
         expect(w.noIdeas).toBe("Chưa có ý nào");
-        expect(w.openTimeline("Soi lỗi")).toBe("Mở dòng thời gian của Soi lỗi");
+        expect(w.openTimeline("Tìm bug")).toBe("Mở dòng thời gian của Tìm bug");
     });
 
     it("has a legend line for each of the four labels, and the wrong cite", () => {

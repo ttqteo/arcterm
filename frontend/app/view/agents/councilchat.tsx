@@ -151,12 +151,14 @@ import {
     placeOf,
     readingRow,
     returnTop,
+    revealTop,
     sentSince,
     stillLanded,
     topFor,
     type JumpPills,
     type Landing,
     type ReadingPlace,
+    type RevealBlock,
     type RowBox,
     type ScrollPlace,
 } from "./councilscroll";
@@ -355,11 +357,24 @@ const PILL_TONE: Record<PillTone, string> = {
     accept: "bg-success/12 text-success-soft",
     challenge: "bg-askingbg text-warning-soft",
     oppose: "bg-error/12 text-error-soft",
+    out: "border border-edge-strong text-muted",
     neutral: "bg-pill text-secondary",
 };
 
+// an idea its author withdrew: the pill beside its author, and the idea drawn dim
+const WITHDRAWN = "Withdrawn";
+const WITHDRAWN_TITLE = "Its author withdrew it: it is out of the running";
+
 export function CouncilPill({ word, tone }: { word: string; tone: PillTone }) {
     return <span className={cn("rounded-full px-[7px] py-px text-[10px] font-semibold", PILL_TONE[tone])}>{word}</span>;
+}
+
+function WithdrawnPill() {
+    return (
+        <span data-council-withdrawn title={WITHDRAWN_TITLE}>
+            <CouncilPill word={WITHDRAWN} tone="out" />
+        </span>
+    );
 }
 
 const primaryButton =
@@ -395,7 +410,7 @@ function useSeatLink(who: Who | null): { title: string; open: () => void } | nul
 function Byline({ who, children }: { who: Who; children?: ReactNode }) {
     const link = useSeatLink(who);
     return (
-        <div className="flex flex-wrap items-center gap-[7px] text-[12.5px]">
+        <div className="relative flex flex-wrap items-center gap-[7px] text-[12.5px]">
             {link == null ? (
                 <span className={cn("font-semibold", TONE_TEXT[who.tone])}>{who.name}</span>
             ) : (
@@ -465,10 +480,17 @@ const THUMBS: { thumb: CouncilThumb; Icon: typeof ThumbsUp; word: string; done: 
     { thumb: "dislike", Icon: ThumbsDown, word: "Dislike", done: "Disliked", on: "bg-error/12 text-error-soft" },
 ];
 
-// a byline's right end: its time and the thumbs, seen while the message is hovered or focused. They are only dimmed out,
-// so they keep their width and nothing moves when the pointer comes
+// a byline's right end: its time and the thumbs, seen while the message is hovered or focused. They float over the
+// byline's right end instead of taking room in it: in a narrow column (the thread panel) room for them wrapped them onto
+// a line of their own, an empty line while nothing is hovered. On hover they cover what is under them, and nothing moves
 function HoverEnd({ children }: { children: ReactNode }) {
-    return <span className={cn("ml-auto flex flex-none items-center gap-[7px]", HOVER_ONLY)}>{children}</span>;
+    return (
+        <span
+            className={cn("absolute inset-y-0 right-0 flex items-center gap-[7px] bg-background pl-[8px]", HOVER_ONLY)}
+        >
+            {children}
+        </span>
+    );
 }
 
 function Thumbs({
@@ -622,14 +644,18 @@ function IdeaMessage({
                     ) : (
                         <span className="text-muted">{item.label}</span>
                     )}
+                    {item.withdrawn && <WithdrawnPill />}
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
                 </Byline>
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
+                        item.withdrawn && "opacity-60",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
-                        focused && "ring-1 ring-edge-strong"
+                        // the open idea wears a light ring over its tone border, so it stands out from its tinted
+                        // neighbours; focus alone keeps the faint one
+                        open ? "ring-2 ring-primary/85" : focused && "ring-1 ring-edge-strong"
                     )}
                 >
                     {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
@@ -927,7 +953,7 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
         }
         // a glide up the channel, so the eye follows it back to the question; a jump with reduced motion
         const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        post.scrollIntoView?.({ block: "center", behavior: smooth ? "smooth" : "auto" });
+        revealIn(scrollerOf(post), post, "center", smooth);
         // and the question's bubble rings for a moment where it lands (FLASH_MS), so it is found at a glance; a second
         // press before it fades starts the moment again
         window.clearTimeout(Number(post.dataset.flashTimer));
@@ -1029,6 +1055,8 @@ function ReplyMessage({
     status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
     const openIdea = inThread ? undefined : onOpenIdea;
+    // a withdrawal that gave no reason says it all in its pill: no empty bubble under it
+    const bare = item.pill === "out" && item.text.trim() === "" && item.claim.evidence.length === 0;
     return (
         <motion.article
             data-council-item
@@ -1061,6 +1089,7 @@ function ReplyMessage({
                 )}
                 <div
                     data-council-bubble
+                    hidden={bare}
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px]",
                         // the ring a quote's press lays on the post it jumps to (QuoteRow), fading out after FLASH_MS
@@ -2255,10 +2284,18 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
     const idea = thread.idea;
     return (
         <article data-council-post={idea.id} className="group/reply flex flex-col gap-[8px]">
-            <h2 className="m-0 text-[15px] font-semibold leading-[1.4] text-primary">{idea.title}</h2>
-            <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
+            <h2
+                className={cn(
+                    "m-0 text-[15px] font-semibold leading-[1.4]",
+                    idea.withdrawn ? "text-muted line-through" : "text-primary"
+                )}
+            >
+                {idea.title}
+            </h2>
+            <div className="relative flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
+                {idea.withdrawn && <WithdrawnPill />}
                 {idea.edited && <span>edited</span>}
                 <HoverEnd>
                     <PostTime at={idea.at} when={idea.when} />
@@ -2762,6 +2799,34 @@ function contentBox(row: Element, el: HTMLElement): RowBox {
     return { top: r.top - base, bottom: r.bottom - base };
 }
 
+// Brings `row` into view by moving `box` alone (revealTop): scrollIntoView also scrolls every box around it, up to the
+// window, and pushed the whole app up off its frame
+function revealIn(
+    box: HTMLElement | null | undefined,
+    row: Element | null | undefined,
+    block: RevealBlock,
+    smooth = false
+) {
+    if (box == null || row == null) {
+        return;
+    }
+    const top = revealTop(contentBox(row, box), box, block);
+    if (top != null) {
+        box.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+    }
+}
+
+// the box a row scrolls in: its nearest ancestor that scrolls up and down
+function scrollerOf(row: Element): HTMLElement | null {
+    for (let el = row.parentElement; el != null; el = el.parentElement) {
+        const y = getComputedStyle(el).overflowY;
+        if ((y === "auto" || y === "scroll") && el.scrollHeight > el.clientHeight) {
+            return el;
+        }
+    }
+    return null;
+}
+
 // the place a jump saved: the row the reader was on (kept by node, so rows that grew above it do not move the way back)
 type SavedPlace = ReadingPlace & { row: Element | null };
 
@@ -3073,7 +3138,7 @@ export function CouncilChat({
     const pick = useCallback((row: IdeaRow) => {
         setFocusedId(row.id);
         const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
-        channel.current?.querySelector(at)?.scrollIntoView?.({ block: "start" });
+        revealIn(channel.current, channel.current?.querySelector(at), "start");
     }, []);
     // the Memory tab's Show the messages: the channel scrolls to the first of them it draws: the message itself (an idea,
     // or a post of the channel), else, for a reply that lives in an idea's thread, that idea; the cursor goes to an idea.
@@ -3151,9 +3216,7 @@ export function CouncilChat({
     // the cursor stays in view as j and k move it
     useEffect(() => {
         if (focusedId != null) {
-            channel.current
-                ?.querySelector(`[data-council-idea="${focusedId}"]`)
-                ?.scrollIntoView?.({ block: "nearest" });
+            revealIn(channel.current, channel.current?.querySelector(`[data-council-idea="${focusedId}"]`), "nearest");
         }
     }, [focusedId]);
 

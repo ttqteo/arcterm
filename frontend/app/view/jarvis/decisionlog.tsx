@@ -14,7 +14,7 @@ import { decisionHeading, validateDecisionDraft } from "./tasksderive";
 // how long the anchored card stays lit after a volunteered utterance navigated here
 const FLASH_MS = 2_000;
 
-const FIELD_LABEL = "mb-1 block font-mono text-[10.5px] font-semibold uppercase tracking-[.1em] text-muted";
+const FIELD_LABEL = "mb-1 block text-[10.5px] font-semibold uppercase tracking-[.1em] text-muted";
 const FIELD =
     "w-full rounded border border-edge-mid bg-background px-2.5 py-1.5 text-[13px] text-primary outline-none placeholder:text-muted focus:border-accent-700";
 

@@ -372,18 +372,18 @@ export const councilSetup = {
             // on the rows, in the experts line and on the group chip; the draft keeps its own (English) names, so typing the
             // English question again brings them back. Nothing here is asked of wavesrv: no files, so no suggestion
             await h.ev(setText('[data-council-input="ask"]', "Ghim ứng dụng\nCó đáng ghim vào thanh ray không?"));
-            await until(`(document.querySelector('[data-council-expert="skeptic"] [data-council-expert-name]')?.textContent ?? "").trim() === "Soi lỗi"`);
+            await until(`(document.querySelector('[data-council-expert="skeptic"] [data-council-expert-name]')?.textContent ?? "").trim() === "Tìm bug"`);
             const viSetup = await view();
             await h.shot("cdp-shots/council-setup-vietnamese.png");
             await h.ev(setText('[data-council-input="ask"]', "Rail apps\nIs the pin worth it?"));
             await until(`(document.querySelector('[data-council-expert="skeptic"] [data-council-expert-name]')?.textContent ?? "").trim() === "Bug hunter"`);
             const enSetup = await view();
             rec(
-                "3b. a Vietnamese question shows Trải nghiệm, Canh RAM, Soi lỗi and Tổng hợp on the rows, the experts line in Vietnamese names and the group chip Soi một tính năng giao diện; the English question brings Ease of use, Memory watcher, Bug hunter and Summarizer back",
-                sameList(viSetup?.experts.map((e) => e.name), ["Trải nghiệm", "Canh RAM", "Soi lỗi", "Tổng hợp"]) &&
+                "3b. a Vietnamese question shows UX, Đo RAM, Tìm bug and Thư ký on the rows, the experts line in Vietnamese names and the group chip Soi một tính năng giao diện; the English question brings Ease of use, Memory watcher, Bug hunter and Summarizer back",
+                sameList(viSetup?.experts.map((e) => e.name), ["UX", "Đo RAM", "Tìm bug", "Thư ký"]) &&
                     viSetup.group === "Soi một tính năng giao diện" &&
                     viSetup.inComposer.group === "Soi một tính năng giao diện" &&
-                    /^Soi một tính năng giao diện: Trải nghiệm, Canh RAM and Soi lỗi each read the code from their own side; the Tổng hợp writes the answer\.$/.test(viSetup.expertsLine ?? "") &&
+                    /^Soi một tính năng giao diện: UX, Đo RAM and Tìm bug each read the code from their own side; the Thư ký writes the answer\.$/.test(viSetup.expertsLine ?? "") &&
                     sameList(enSetup?.experts.map((e) => e.name), ["Ease of use", "Memory watcher", "Bug hunter", "Summarizer"]) &&
                     enSetup.group === "Review a UI feature" &&
                     /^Review a UI feature: Ease of use, Memory watcher and Bug hunter each read the code/.test(enSetup.expertsLine ?? "") &&
@@ -882,15 +882,15 @@ export const councilSetup = {
             // 18b. the Seats list follows the question's language too: a Vietnamese question names the five experts in
             // Vietnamese and leaves the two agents under the names they have; an English one gives the English names back
             await h.ev(setText('[data-council-input="ask"]', "Ghim ứng dụng\nCó đáng ghim không?"));
-            await until(`(document.querySelector('[data-council-seat="skeptic"] [data-council-seat-name]')?.textContent ?? "").trim() === "Soi lỗi"`);
+            await until(`(document.querySelector('[data-council-seat="skeptic"] [data-council-seat-name]')?.textContent ?? "").trim() === "Tìm bug"`);
             const viSeats = await view();
             await h.shot("cdp-shots/council-setup-vietnamese-seats.png");
             await h.ev(setText('[data-council-input="ask"]', "Is the pin worth it?"));
             await until(`(document.querySelector('[data-council-seat="skeptic"] [data-council-seat-name]')?.textContent ?? "").trim() === "Bug hunter"`);
             const enSeats = await view();
             rec(
-                "18b. with both agents seated a Vietnamese question lists Witness synthesis and UX audit under their own names, then Trải nghiệm, Canh RAM, Người mới, Soi lỗi and Tổng hợp; an English question gives Ease of use, Memory watcher, New user, Bug hunter and Summarizer back",
-                sameList(viSeats?.seats.map((s) => s.name), ["Witness synthesis", "UX audit", "Trải nghiệm", "Canh RAM", "Người mới", "Soi lỗi", "Tổng hợp"]) &&
+                "18b. with both agents seated a Vietnamese question lists Witness synthesis and UX audit under their own names, then UX, Đo RAM, Khách, Tìm bug and Thư ký; an English question gives Ease of use, Memory watcher, New user, Bug hunter and Summarizer back",
+                sameList(viSeats?.seats.map((s) => s.name), ["Witness synthesis", "UX audit", "UX", "Đo RAM", "Khách", "Tìm bug", "Thư ký"]) &&
                     sameList(enSeats?.seats.map((s) => s.name), ["Witness synthesis", "UX audit", "Ease of use", "Memory watcher", "New user", "Bug hunter", "Summarizer"]),
                 { vi: viSeats?.seats.map((s) => s.name), en: enSeats?.seats.map((s) => s.name) }
             );

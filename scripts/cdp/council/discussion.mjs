@@ -1851,7 +1851,7 @@ function pngChunk(type, data) {
     out.writeUInt32BE(crc32(body), 8 + data.length);
     return out;
 }
-function makePng(w, h, [r, g, b]) {
+export function makePng(w, h, [r, g, b]) {
     const ihdr = Buffer.alloc(13);
     ihdr.writeUInt32BE(w, 0);
     ihdr.writeUInt32BE(h, 4);

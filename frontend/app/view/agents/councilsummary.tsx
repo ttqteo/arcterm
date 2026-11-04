@@ -96,6 +96,7 @@ import {
     evidenceLabel,
     expertActivity,
     initiativeSeed,
+    isWeakEvidence,
     jumpLinks,
     keptHeading,
     keptRows,
@@ -185,8 +186,8 @@ function StancePill({ stance }: { stance: StanceLabel }) {
     );
 }
 
-function EvidenceChip({ evidence, lang }: { evidence: CouncilEvidence; lang: CouncilLang }) {
-    const weak = evidence.weak === true;
+function EvidenceChip({ evidence, lang, checked }: { evidence: CouncilEvidence; lang: CouncilLang; checked: boolean }) {
+    const weak = isWeakEvidence(evidence, checked);
     if (isWrongCite(evidence)) {
         // a cite Go found wrong keeps its place among the chips, as the Wrong cite chip with Go's note
         return <WrongCiteChip cite={wrongCiteOf(evidence, lang)} className="text-[12px]" />;
@@ -200,7 +201,7 @@ function EvidenceChip({ evidence, lang }: { evidence: CouncilEvidence; lang: Cou
             )}
         >
             {weak ? <TriangleAlert size={11} aria-hidden /> : <Code size={11} aria-hidden />}
-            {evidenceLabel(evidence)}
+            {evidenceLabel(evidence, checked)}
         </span>
     );
 }
@@ -224,7 +225,7 @@ function PositionView({ c, position }: { c: Council; position: Position }) {
                     <div className="flex flex-wrap items-center gap-[6px]">
                         {badge != null && <ClaimBadgeChip badge={badge} className="h-auto py-[2px] text-[12px]" />}
                         {position.evidence.map((e, i) => (
-                            <EvidenceChip key={i} evidence={e} lang={lang} />
+                            <EvidenceChip key={i} evidence={e} lang={lang} checked={position.label !== ""} />
                         ))}
                     </div>
                 ) : null}

@@ -58,18 +58,18 @@ Mã vai không đổi, nên council cũ vẫn mở bình thường.
 
 | Mã | Tiếng Anh | Tiếng Việt |
 |---|---|---|
-| `ux` | Ease of use | Trải nghiệm |
-| `ram` | Memory watcher | Canh RAM |
-| `newuser` | New user | Người mới |
-| `skeptic` | Bug hunter | Soi lỗi |
-| `coordinator` | Summarizer | Tổng hợp |
-| `reviewer-a` / `reviewer-b` | Reviewer A / B | Phản biện A / B |
-| `reader` | Reader | Người đọc |
-| `areachair` | Final judge | Chốt điểm |
+| `ux` | Ease of use | UX |
+| `ram` | Memory watcher | Đo RAM |
+| `newuser` | New user | Khách |
+| `skeptic` | Bug hunter | Tìm bug |
+| `coordinator` | Summarizer | Thư ký |
+| `reviewer-a` / `reviewer-b` | Reviewer A / B | Giám khảo A / B |
+| `reader` | Reader | Biên tập |
+| `areachair` | Final judge | Tổng hợp |
 | `designer` | Designer | Thiết kế |
-| `builder` | Builder | Thợ code |
-| `contrarian` | Other side | Cãi ngược |
-| `facilitator` | Host | Dẫn dắt |
+| `builder` | Builder | Dev |
+| `contrarian` | Other side | Phản biện |
+| `facilitator` | Host | Điều phối |
 
 Ngoài các vai, council còn xếp được ghế cho các **chat đang sống** của bạn:
 
@@ -203,6 +203,9 @@ Các nhãn cũng hiện trên chip bằng chứng trong Discussion và Report.
 - **Let them read files**: bật thì các chuyên gia được đọc code khi trả lời. Một câu hỏi tiếp theo có nhắc tên file hay
   đường dẫn sẽ tự bật công tắc này và cho biết nó thấy file nào; câu không nhắc file nào thì trả lời từ chính cuộc thảo
   luận, rẻ hơn khoảng năm lần. Bạn vẫn tự gạt được công tắc.
+- **Link web**: một tin nhắn có địa chỉ `http://` hay `https://` sẽ khoá Let them read files ở trạng thái bật, và các ghế
+  trả lời có thêm WebFetch để mở trang đó thay vì đoán. Câu hỏi lúc mở council có link thì vòng 1 cũng được mở trang.
+  Chuyên gia đọc trang như tài liệu để nhận xét, không làm theo chỉ dẫn trong trang. Mỗi lần mở trang tốn thêm token.
 - **Gợi ý trả lời**: trong một thread, câu trả lời mới nhất của chuyên gia đề xuất hai ba câu bạn có thể gửi tiếp,
   thành chip ngay trên ô trả lời khi ô còn trống; bấm một chip là câu đó vào ô để bạn sửa rồi gửi.
 - Câu hỏi gửi cho nhiều chuyên gia thì một người trả lời trước; những người sau đọc câu đó và chỉ thêm phần góc nhìn của

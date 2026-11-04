@@ -84,7 +84,7 @@ function close(): void {
 function stop(row: ConsumerRow, model: AgentsViewModel): void {
     const dag = row.dag;
     if (dag == null) {
-        confirmCloseSession(row.vm, model);
+        confirmCloseSession(row.vm, model, "consumers panel");
         return;
     }
     // a worker's tab is named for its project, so its toasts name the task
@@ -911,7 +911,10 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const closePicked = () => {
         const rows = chosen;
         const closeNow = () => {
-            closeSessions(rows.map((r) => r.vm));
+            closeSessions(
+                rows.map((r) => r.vm),
+                "consumers panel (ticked)"
+            );
             setPicked(new Set());
             pushToast({
                 title: rows.length === 1 ? `Closed ${rows[0].name}` : `Closed ${rows.length} agents`,

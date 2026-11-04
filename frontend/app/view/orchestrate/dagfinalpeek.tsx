@@ -126,14 +126,14 @@ export function DagFinalPeek({
             {verifier != null && agentsCtx != null ? (
                 <VerifierSession agent={verifier} model={agentsCtx.model} group={group} owner={owner} />
             ) : (
-                <div className="flex items-center gap-2 rounded-[8px] border border-dashed border-edge-mid px-[9px] py-[7px] font-mono text-[11px] text-ink-mid">
+                <div className="flex items-center gap-2 rounded-[8px] border border-dashed border-edge-mid px-[9px] py-[7px] text-[11px] text-ink-mid">
                     <span aria-hidden className="size-1.5 flex-none rounded-full bg-edge-strong" />
                     {verifierLine(group, view)}
                 </div>
             )}
             <dl className="m-0 grid grid-cols-[54px_minmax(0,1fr)] gap-x-2.5">
                 <dt className="text-[11px] leading-4 text-ink-mid">Verifier</dt>
-                <dd className="m-0 min-w-0 font-mono text-[11px] leading-4">
+                <dd className="m-0 min-w-0 text-[11px] leading-4">
                     <div className="truncate text-secondary">
                         {route.runtime} / {route.model || "default"}
                     </div>
@@ -145,7 +145,7 @@ export function DagFinalPeek({
             </div>
             {view.output !== "" && running != null ? (
                 <div className="flex flex-col gap-1">
-                    <span className="font-mono text-[10.5px] text-ink-mid">{running.label} output · live</span>
+                    <span className="text-[10.5px] text-ink-mid">{running.label} output · live</span>
                     <FinalOutput output={view.output} lines={OUTPUT_LINES} />
                 </div>
             ) : null}
@@ -174,7 +174,7 @@ function VerifierSession({
                 <button
                     type="button"
                     onClick={() => openFinalFromGraph(group, owner)}
-                    className="flex-none cursor-pointer rounded-[6px] border border-accent/50 px-2 py-[3px] font-mono text-[10.5px] font-bold text-accent-soft hover:border-accent"
+                    className="flex-none cursor-pointer rounded-[6px] border border-accent/50 px-2 py-[3px] text-[10.5px] font-bold text-accent-soft hover:border-accent"
                 >
                     Open in Agent ↗
                 </button>

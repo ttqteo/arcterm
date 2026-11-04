@@ -2610,6 +2610,7 @@ declare global {
         quote?: string;
         cite?: string;
         citenote?: string;
+        region?: CouncilRegion;
     };
 
     // council.CouncilExpert
@@ -2703,6 +2704,16 @@ declare global {
         label?: string;
     };
 
+    // council.CouncilRegion
+    type CouncilRegion = {
+        image: string;
+        crop: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+    };
+
     // council.CouncilReply
     type CouncilReply = {
         id: string;
@@ -2711,6 +2722,7 @@ declare global {
         author: string;
         stance?: string;
         revised?: boolean;
+        withdraws?: boolean;
         builds?: boolean;
         text: string;
         evidence?: CouncilEvidence[];

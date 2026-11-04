@@ -254,7 +254,8 @@ function clearCouncilFiles(dataDir, ids = []) {
             if (f.startsWith(COUNCIL_ID_PREFIX)) names.add(f);
         }
     }
-    for (const f of names) rmSync(join(dir, f), { force: true });
+    // a fixture council's own folder (councils/<id>/, its drawn screenshot regions) goes too
+    for (const f of names) rmSync(join(dir, f), { force: true, recursive: true });
 }
 
 /** Makes the fixture project(s), each a temp git repo registered with createproject and holding one terminal, then

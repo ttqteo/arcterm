@@ -6,7 +6,8 @@
 // grouped by where the seats stand, 2026-11-04-council-ideas-memory.md), council-memory (the rail's Memory tab and Chốt,
 // the same plan), council-routing (the composer of a
 // whole-council message the router takes, 2026-11-03-council-reply-routing.md), council-summary, council-map
-// (docs/superpowers/plans/2026-11-03-council-stronger.md) and council-needs-you. Each one's
+// (docs/superpowers/plans/2026-11-03-council-stronger.md), council-needs-you and council-regions (the screenshot regions a
+// seat cites, 2026-11-04-council-screenshot-regions-design.md). Each one's
 // arrange / assert / teardown live in ./council/<view>.mjs, so the tasks that build a view touch only their own file; the
 // shared fixtures (a temp project, the six rail-apps councils, the RpcApi stand-ins) are ./council/fixtures.mjs.
 //
@@ -20,6 +21,7 @@ import { councilIdeas } from "./council/ideas.mjs";
 import { councilMap } from "./council/map.mjs";
 import { councilMemory } from "./council/memory.mjs";
 import { councilNeedsYou } from "./council/needsyou.mjs";
+import { councilRegions } from "./council/regions.mjs";
 import { councilRouting } from "./council/routing.mjs";
 import { councilAsk, councilSetup } from "./council/setup.mjs";
 import { councilSummary } from "./council/summary.mjs";
@@ -45,5 +47,6 @@ export function makeCouncilScenarios(fx) {
         scenario("council-summary", councilSummary),
         scenario("council-map", councilMap),
         scenario("council-needs-you", councilNeedsYou),
+        scenario("council-regions", councilRegions),
     ];
 }

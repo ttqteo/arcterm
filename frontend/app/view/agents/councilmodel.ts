@@ -189,7 +189,19 @@ const ROUTER = "router";
  *  with no text and no stance (it agrees with the answer another seat gave first). It is drawn as a reaction, never as
  *  a reply, and counts in no reply total; an accept still counts in the vote and the synthesis reads it. */
 export function isReaction(r: CouncilReply): boolean {
-    return r.author !== YOU && (r.stance === "accept" || !r.stance) && r.text.trim() === "";
+    // a withdrawal with no reason has no words either, but it is no agreement
+    return r.author !== YOU && (r.stance === "accept" || !r.stance) && r.text.trim() === "" && !r.revised;
+}
+
+/** Pure: whether a reply is its author withdrawing its own idea. A reply from before Go marked it (`withdraws`) is the
+ *  revised reply whose text is Go's old fixed "Withdrawn.". */
+export function isWithdrawal(r: CouncilReply): boolean {
+    return !!r.withdraws || (!!r.revised && r.text.trim() === "Withdrawn.");
+}
+
+/** Pure: the words a reply shows: a withdrawal's reason, empty when it gave none (its pill says it withdrew). */
+export function replyWords(r: CouncilReply): string {
+    return isWithdrawal(r) && !r.withdraws ? "" : r.text;
 }
 
 /** The person's like or dislike on a seat's sent idea or reply (Go council.ThumbLike, council.ThumbDislike); the seats'

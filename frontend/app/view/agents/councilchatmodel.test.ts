@@ -18,6 +18,7 @@ import {
     insertFileMention,
     insertMention,
     joinableChats,
+    linkIn,
     mentionPicker,
     messageSegments,
     moveIdea,
@@ -372,6 +373,51 @@ describe("councilChannel: an idea", () => {
         const items = councilChannel(c);
         expect(byId(items, "P1")).toMatchObject({ label: "idea", wild: false });
         expect(byId(items, "P2")).toMatchObject({ label: "wild idea", wild: true });
+    });
+
+    it("marks an idea its author withdrew, and its withdrawal reply with a pill and the reason as its words", () => {
+        const c = council({
+            proposals: [prop("P1", "sec", 60, { withdrawn: true }), prop("P2", "sk", 100)],
+            replies: [
+                reply("r1", "sk", 150, { stance: "challenge", text: "Too broad." }),
+                reply("r2", "sec", 160, { revised: true, withdraws: true, text: "Skeptic's idea covers it." }),
+                // a withdrawal with no reason has no words, and is no agreement
+                reply("r3", "sk", 170, { proposalid: "P2", revised: true, withdraws: true, text: "" }),
+                // one from before Go marked it reads Go's old fixed line, which says nothing the pill does not
+                reply("r4", "sec", 180, { proposalid: "P2", revised: true, text: "Withdrawn." }),
+                reply("r5", "sec", 190, { proposalid: "P2", revised: true, text: "Retitled: Smaller." }),
+            ],
+        });
+        expect(byId(councilChannel(c), "P1")).toMatchObject({ withdrawn: true });
+        expect(byId(councilChannel(c), "P2")).toMatchObject({ withdrawn: false, agrees: [] });
+        const p1 = councilThread(c, "P1")!.items;
+        expect(byId(p1, "r1")).toMatchObject({ label: "has doubts", pill: "challenge" });
+        expect(byId(p1, "r2")).toMatchObject({ label: "withdrew it", pill: "out", text: "Skeptic's idea covers it." });
+        const p2 = councilThread(c, "P2")!.items;
+        expect(byId(p2, "r3")).toMatchObject({ kind: "reply", label: "withdrew it", pill: "out", text: "" });
+        expect(byId(p2, "r4")).toMatchObject({ label: "withdrew it", pill: "out", text: "" });
+        expect(byId(p2, "r5")).toMatchObject({ label: "replies", pill: "neutral", text: "Retitled: Smaller." });
+    });
+
+    it("marks a held withdrawal draft with the pill too", () => {
+        const c = council({
+            proposals: [prop("P1", "sec", 60)],
+            replies: [
+                reply("r1", "sec", 160, {
+                    revised: true,
+                    withdraws: true,
+                    text: "Covered elsewhere.",
+                    draft: "held",
+                    revision: { withdraw: true },
+                }),
+            ],
+        });
+        expect(byId(councilThread(c, "P1")!.items, "r1")).toMatchObject({
+            kind: "draft",
+            label: "withdrew it",
+            pill: "out",
+            text: "Covered elsewhere.",
+        });
     });
 
     it("gives a Review idea no wild pill", () => {
@@ -1618,6 +1664,28 @@ describe("namedFile and readsFiles: a follow-up reads files when the question na
         expect(readsFiles(null, "see @ux/plan.md and @b.go")).toEqual(first);
         expect(readsFiles(false, "see @ux/plan.md")).toEqual(first);
         expect(readsFiles(false, "@ux/plan.md", 1)).toEqual(first);
+    });
+
+    it("is on and locked for a web address, naming its host, so the seats can open the page", () => {
+        const live = { on: true, why: "blackdiamond.biglabs.net", locked: true };
+        expect(readsFiles(false, "hiện tại các cập nhật đã lên https://blackdiamond.biglabs.net/")).toEqual(live);
+        expect(readsFiles(null, "see https://blackdiamond.biglabs.net/video?t=1", 0, true)).toEqual(live);
+        expect(readsFiles(false, "see @ux/plan.md and https://x.com/a").why).toBe("ux/plan.md");
+        expect(readsFiles(false, "blackdiamond.biglabs.net has no scheme").locked).toBe(false);
+    });
+
+    it("finds a link the way Go's linkMentioned does", () => {
+        // the same table as TestLinkMentioned in pkg/council/runner_test.go
+        expect(linkIn("hiện tại các cập nhật đã lên https://blackdiamond.biglabs.net/")).toBe(
+            "blackdiamond.biglabs.net"
+        );
+        expect(linkIn("see http://localhost:5174/x?y=1.")).toBe("localhost:5174");
+        expect(linkIn("(HTTPS://Example.com)")).toBe("Example.com");
+        expect(linkIn("blackdiamond.biglabs.net with no scheme")).toBe("");
+        expect(linkIn("ftp://files.example.com")).toBe("");
+        expect(linkIn("xhttps://not.one")).toBe("");
+        expect(linkIn("https://")).toBe("");
+        expect(linkIn("")).toBe("");
     });
 
     it("is not locked by an @ that names a seat, or by a file named without an @", () => {
