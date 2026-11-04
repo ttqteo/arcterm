@@ -64,6 +64,7 @@ import {
     draftFromCouncil,
     glanceFigures,
     outdatedChanges,
+    outdatedCount,
     summaryFacts,
     synthesisRound,
     type CouncilLang,
@@ -970,7 +971,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const summary = c.summary;
     const directions = useMemo(() => directionRows(c), [c]);
     const changes = outdatedChanges(c);
-    const outdated = changes.ideas + changes.revised + changes.stances;
+    const outdated = outdatedCount(c);
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
     const scroller = useRef<HTMLDivElement>(null);

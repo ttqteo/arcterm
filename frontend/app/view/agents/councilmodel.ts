@@ -1022,24 +1022,28 @@ export function callSegments(c: Council): SegmentState[] {
 
 /** What came after a council's summary: the sent ideas posted since (`ideas`), the ideas their authors revised since
  *  (`revised`), the seats whose latest stance on an idea differs from their stance on it before the summary
- *  (`stances`), and every other reply sent since, the person's included and reactions left out (`replies`). */
+ *  (`stances`), every other reply sent since, the person's included and reactions left out (`replies`), and whether
+ *  the council's chosen direction changed since (`direction`: 1 or 0). */
 export interface OutdatedChanges {
     ideas: number;
     revised: number;
     stances: number;
     replies: number;
+    direction: number;
 }
 
-/** Pure: what changed after the summary (`summary.at`), by plain comparison. Only a new idea, a revision or a changed
- *  stance could change the answer; a seat's first stance on an idea is no change, and the stances and replies on an
- *  idea posted after the summary fold into that new idea. A held or a dropped idea or reply reached no seat and counts
- *  for nothing. All zero before a summary. */
+/** Pure: what changed after the summary (`summary.at`), by plain comparison. Only a new idea, a revision, a changed
+ *  stance or a change of the chosen direction could change the answer; a seat's first stance on an idea is no change,
+ *  and the stances and replies on an idea posted after the summary fold into that new idea. A held or a dropped idea
+ *  or reply reached no seat and counts for nothing. The direction counts once however often it changed, and a rerun
+ *  clears it: the new Report is later than the change. All zero before a summary. */
 export function outdatedChanges(c: Council): OutdatedChanges {
-    const out: OutdatedChanges = { ideas: 0, revised: 0, stances: 0, replies: 0 };
+    const out: OutdatedChanges = { ideas: 0, revised: 0, stances: 0, replies: 0, direction: 0 };
     const at = c.summary?.at;
     if (at == null) {
         return out;
     }
+    out.direction = (c.memory?.changed ?? 0) > at ? 1 : 0;
     const fresh = new Set(
         sentProposals(c)
             .filter((p) => p.ts > at)
@@ -1077,11 +1081,11 @@ export function outdatedChanges(c: Council): OutdatedChanges {
     return out;
 }
 
-/** Pure: how many changes make the summary `Outdated` (outdatedChanges' ideas, revisions and changed stances); the
- *  plain replies since do not. */
+/** Pure: how many changes make the summary `Outdated` (outdatedChanges' ideas, revisions, changed stances and the
+ *  direction); the plain replies since do not. The one place that sum is made. */
 export function outdatedCount(c: Council): number {
     const o = outdatedChanges(c);
-    return o.ideas + o.revised + o.stances;
+    return o.ideas + o.revised + o.stances + o.direction;
 }
 
 /** Pure: whether Summarize is on: exactly when Runner.summarizeLocked takes it. It refuses a council the runner is
