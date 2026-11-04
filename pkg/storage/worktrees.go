@@ -166,16 +166,35 @@ func (runWorktrees) judge(ctx context.Context, env *Env, wt string, it *StorageI
 // hasChanges reports uncommitted changes in a worktree. A directory that is not a worktree root of its own (git
 // unregistered it and then failed to delete it) holds no tracked work; asking git there would answer for the
 // project's main tree.
+// An untracked link is not a change: a run's Setup links node_modules, src-tauri/target and dist/bin into its tree,
+// and a .gitignore's `node_modules/` matches only a directory, so git lists the link as untracked. Removal unlinks
+// it without following it (removeWorktreeDir), so its target loses nothing. -uall lists a link inside a new
+// directory by its own path, not as the directory.
 func hasChanges(ctx context.Context, wt string) (bool, error) {
 	top, err := gitOut(ctx, wt, "rev-parse", "--show-toplevel")
 	if err != nil || !SamePath(evalOrClean(strings.TrimSpace(top)), evalOrClean(wt)) {
 		return false, nil
 	}
-	out, err := gitOut(ctx, wt, "status", "--porcelain")
+	out, err := gitOut(ctx, wt, "status", "--porcelain", "-z", "--untracked-files=all")
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(out) != "", nil
+	for _, entry := range strings.Split(out, "\x00") {
+		if entry == "" {
+			continue
+		}
+		path, untracked := strings.CutPrefix(entry, "?? ")
+		if !untracked || !isLink(filepath.Join(wt, filepath.FromSlash(path))) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// isLink reports a symlink, or on Windows a junction (which Lstat reports as irregular).
+func isLink(p string) bool {
+	fi, err := os.Lstat(p)
+	return err == nil && fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0
 }
 
 // ownerProject is the project whose .waveterm/worktrees holds wt directly, "" when none does.

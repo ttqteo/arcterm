@@ -97,6 +97,38 @@ func TestRunWorktreesJudgeEachTree(t *testing.T) {
 	}
 }
 
+// a run's Setup links node_modules and src-tauri/target into its tree, and a .gitignore's `node_modules/` matches
+// only a directory, so git lists each link as untracked: a link holds no work and must not guard the tree
+func TestUntrackedLinksAreNotUncommittedChanges(t *testing.T) {
+	repo := newRepo(t)
+	linked := addTree(t, repo, runDone)
+	mixed := addTree(t, repo, runDirtyID)
+	deps := t.TempDir()
+	for _, wt := range []string{linked, mixed} {
+		if err := os.Symlink(deps, filepath.Join(wt, "node_modules")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(wt, "src-tauri"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(deps, filepath.Join(wt, "src-tauri", "target")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(mixed, "uncommitted.txt"), 10)
+	env := worktreeEnv(repo, map[string]RunState{
+		runDone:    {Found: true, Finished: true, Status: "cancelled"},
+		runDirtyID: {Found: true, Finished: true, Status: "cancelled"},
+	})
+	rep := runWorktrees{}.measure(context.Background(), env)
+	if it := itemByID(rep.Items, linked); !it.Cleanable || it.Guarded {
+		t.Fatalf("a tree whose only untracked entries are links must be cleanable: %+v", it)
+	}
+	if it := itemByID(rep.Items, mixed); it.Cleanable || !it.Guarded || it.Reason != "has uncommitted changes" {
+		t.Fatalf("a real untracked file beside the links must still guard the tree: %+v", it)
+	}
+}
+
 func TestCleanRemovesFinishedTreesAndKeepsTheirBranches(t *testing.T) {
 	repo := newRepo(t)
 	done := addTree(t, repo, runDone)
