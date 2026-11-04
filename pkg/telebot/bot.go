@@ -370,6 +370,7 @@ func (sv *supervisor) step(poked bool) {
 	}
 	if sv.cur != nil && sv.cur.ended() {
 		sv.cur = nil
+		sv.recheckAfterPollError()
 	}
 	wasRejected := false
 	if poked && sv.rejectedTok != "" {
@@ -444,6 +445,20 @@ func (sv *supervisor) wind(allowed, pairing bool, next, wall time.Time) {
 	recentPairing := !sv.lastPairing.IsZero() && wall.Sub(sv.lastPairing) < idleLinger
 	if (!allowed && !recentPairing) || wall.Sub(sv.lastWanted) >= idleLinger {
 		sv.stop()
+		sv.recheckAfterPollError()
+	}
+}
+
+// recheckAfterPollError forgets the token a session that just ended was failing to poll with (a network error, a
+// 409), so the idle bot makes its one getMe again: otherwise the session's last error stays on the row for good, since
+// start marked the token known and nothing else re-validates it. A 401 is settled by rejectedTok instead.
+func (sv *supervisor) recheckAfterPollError() {
+	b := sv.b
+	b.smu.Lock()
+	failing := b.pollErr != "" && b.pollErr != errTokenRejected
+	b.smu.Unlock()
+	if failing {
+		sv.knownTok = ""
 	}
 }
 
