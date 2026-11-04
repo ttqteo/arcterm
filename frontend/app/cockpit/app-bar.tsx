@@ -107,7 +107,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}
         >
-            <div data-tauri-drag-region className="flex items-center gap-[9px]">
+            {/* shrink-0: the search in the middle gives way first; this group shrinking wrapped "All projects" */}
+            <div data-tauri-drag-region className="flex shrink-0 items-center gap-[9px]">
                 <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}>
                     {spider ? <SpiderMark /> : <ArctermMark />}
                 </span>

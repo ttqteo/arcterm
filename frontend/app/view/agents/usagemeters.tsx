@@ -211,7 +211,9 @@ function UsageMeters({ items }: { items: MeterItem[] }) {
                             />
                         ) : null}
                         <span className="text-[10.5px] text-muted">{m.short}</span>
-                        <span className="relative">
+                        {/* below 1200px the bars and the countdown go (the tooltip keeps both): at 1000px they pushed
+                            the window's close button off the bar */}
+                        <span data-usage-bar className="relative max-[1199px]:hidden">
                             <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={5} radius={3} className="w-11" />
                             {m.elapsed != null ? (
                                 <span
@@ -225,7 +227,7 @@ function UsageMeters({ items }: { items: MeterItem[] }) {
                             {Math.round(m.pct)}%
                         </span>
                         {m.countdown != null ? (
-                            <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
+                            <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted max-[1199px]:hidden">
                                 {m.countdown}
                             </span>
                         ) : null}
