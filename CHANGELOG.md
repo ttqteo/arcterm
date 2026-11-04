@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A saved council report has a Cite check section after the Matrix: arcterm reads every `path:line` the report cites, the coordinator's own sentences included, with no model, and counts how many hold, how many point at a line that says nothing the sentence claims, and how many are wrong or outside the project, listing each with where it was cited. `wsh council cites <report.md>` runs the same check on a report you already have.
+
 ### Changed
 
 - An agent that starts a council now puts the seats that must judge whether your question's claim, method or result holds on opus, and tells you which and the token estimate before you approve; a light question stays all sonnet. A council role an agent writes for you is named in your language, checked against the library first, and saved only once you approve it.
@@ -32,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A note titled in Vietnamese keeps its words in its id (`wsh note add "Cải tiến"` → `…-cai-tien`, not `…-c-i-ti-n`); so do Jarvis's dossier and decision files, and the id of a tool you add.
+- The old `ideas` skill, which told an agent to run the removed `wsh idea` and got `unknown command`, is cleared from your skills on the next agent launch.
 - A council report's file name is plain ASCII (`chot-bai-toan…`, not `chốt-bài-toán…`), so the path it prints opens with a click in the terminal.
 - While a council's experts are still on their first ideas, the cards in Discussion draw their tables, lists and highlighted sentences instead of showing raw `|` and `==` marks.
 - Open DAG no longer stalls before the window appears: the window opens at once with a placeholder, and the graph fills in a moment later.

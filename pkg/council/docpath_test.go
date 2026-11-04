@@ -124,8 +124,8 @@ func TestDocPathNotGit(t *testing.T) {
 		t.Fatalf("WriteDocument in a plain folder: %v", err)
 	}
 	body, err := os.ReadFile(path)
-	if err != nil || string(body) != Document(c) {
-		t.Fatalf("the file = %q, %v, want the document", body, err)
+	if err != nil || string(body) != documentWith(c, nil, citeRoots(c)) {
+		t.Fatalf("the file = %q, %v, want the document with its cite check", body, err)
 	}
 	if _, err := os.Stat(filepath.Join(project, ".git")); err == nil {
 		t.Error("writing the document made a .git")

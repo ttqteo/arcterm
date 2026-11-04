@@ -227,6 +227,15 @@ dòng "See who agrees with which idea in Map" mở nó.
 - **Was this useful?** với **Useful** và **Not really**; đổi được về sau.
 - **Tài liệu đã lưu**: mỗi council xong được lưu trong project thành `docs/council/<ngày>-<tính năng>.md`, gồm cả cuộc
   thảo luận. Báo cáo hiện đường dẫn và mở được file.
+- **Cite check** trong tài liệu đã lưu, ngay sau Matrix: Go đọc lại mọi `path:line` mà báo cáo trích, cả câu của
+  coordinator (phần nhãn ở trên chỉ kiểm bằng chứng chuyên gia tự khai), không gọi model. Mỗi chỗ được trích là **hold**
+  (file có, dòng nằm trong file, và một từ khóa của câu trích nó có ở dòng đó hoặc trong ba dòng quanh), **no keyword**
+  (dòng có thật nhưng không chứa từ nào của câu trích: đọc tay), **wrong** (không có file, hay dòng vượt cuối file) hoặc
+  **outside** (ngoài các thư mục council đọc, không kiểm). Từ khóa là định danh (`n_paired`, `curve.json`), số từ hai chữ
+  số, và từ từ năm chữ cái, đã bỏ dấu; từ có mặt ở hơn một phần mười số mục của báo cáo (tên đề tài, tên benchmark) không
+  được tính, vì gần dòng nào của project cũng có. Đây là sàng lọc, không phải bằng chứng: hold chỉ nói dòng đó có nói tới
+  điều câu trích nói. `wsh council cites <báo cáo.md>` chạy cùng bước kiểm trên một báo cáo đã có (`--root` để chọn thư
+  mục); với báo cáo cũ nó đọc file của hôm nay, nên một file đổi tên sau đó hiện là wrong.
 
 ![Báo cáo của council: dải "Outdated · 1 reply since" với Summarize again, câu bạn hỏi, câu trả lời in đậm, các hướng đi đánh số kèm chip lập trường của từng chuyên gia, một hướng mở ra lý lẽ của từng người; cột thông tin bên phải với mục lục và các chuyên gia](images/council-report.png)
 

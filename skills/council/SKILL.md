@@ -124,7 +124,9 @@ wsh council wait <id>
 first). `wait` polls until the council stops running (a queued one included), then prints the report and the matrix as
 markdown. Sum it up in the conversation in a few lines: for a review, the top direction, why it ranked there, its first
 step and where the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
-changes the choice. Then carry on from there with the spec, the plan, the draft or the problem.
+changes the choice. Then carry on from there with the spec, the plan, the draft or the problem. `wait` prints no cite
+check: before you repeat a `path:line` of the report as fact, read the saved document's Cite check section (or run
+`wsh council cites <document>`), and say so when the place is listed wrong or with no keyword near the line.
 
 A council's directions are only in its report. Its document is saved under the project's `docs/council/` when it ends
 (done or stopped); `wsh council show <id> --json` carries its path as `docpath`.

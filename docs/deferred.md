@@ -10,6 +10,20 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Council: measure stance changes, and keep predictions to score later (ideas, 2026-11-04)
+
+Two ideas from reading the thesis council of 2026-11-04 (5 sonnet seats, opus coordinator, 7.1M tokens), kept as
+ideas only, not designed or built.
+
+- **Count how many seats change their stance after round 2.** The reply pass shows each seat every other proposal
+  (`round2PromptFor`, `pkg/council/prompts.go`), and in that council four seats raised the same doubt on P7. Count, per
+  council, the stances a seat later revised or withdrew and how many seats converged on one reason. If the share is
+  high, add a control seat that only scores after round 1 and never reads the others, to tell agreement from echo.
+- **Keep the council's predictions and score them when the outcome lands.** A council predicts things with a date
+  (one said AAMAS submission 2397 would be rejected; the decision is due 2026-12-21). Save each such prediction with its
+  date, ask the person for the outcome on that day (an initiative chunk with `--due`), and feed the scored pairs to
+  `wsh council bench` as cases with a known answer.
+
 ## (arcterm) Translate's starred words sent to Lingua (deferred 2026-10-31)
 
 Translate's history (`translatestore.ts`, commit "feat(translate): a history with stars, and listen buttons") lets

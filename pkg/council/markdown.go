@@ -300,16 +300,23 @@ func matrixOutcome(c *Council, p CouncilProposal) string {
 
 // Document is what a finished council saves into its project: the report (Markdown), then "The discussion", every
 // proposal and reply in the order it was said, then the run facts.
-func Document(c *Council) string { return documentWith(c, nil) }
+func Document(c *Council) string { return documentWith(c, nil, nil) }
 
 // documentWith is Document with each message's screenshot regions embedded under its evidence line: crops maps a region's
 // crop PNG to the relative link the document reaches its copy by (WriteDocument copies them). A region it does not map
-// stays the text ref alone.
-func documentWith(c *Council, crops map[string]string) string {
+// stays the text ref alone. With roots it also checks every `path:line` the report and the discussion cite against them
+// (AuditReportCites) and puts the "Cite check" section between the matrix and the discussion; with none it reads no file.
+func documentWith(c *Council, crops map[string]string, roots []string) string {
+	head := strings.TrimRight(Markdown(c), "\n") + "\n\n"
+	var disc strings.Builder
+	writeDiscussion(&disc, c, crops)
 	var b strings.Builder
-	b.WriteString(strings.TrimRight(Markdown(c), "\n") + "\n\n")
+	b.WriteString(head)
+	if len(roots) > 0 && !isBrainstorm(c) {
+		writeCiteCheck(&b, AuditReportCites(head+"## The discussion\n\n"+disc.String(), roots))
+	}
 	b.WriteString("## The discussion\n\n")
-	writeDiscussion(&b, c, crops)
+	b.WriteString(disc.String())
 	b.WriteString("\n## Run facts\n\n")
 	writeRunFacts(&b, c)
 	return b.String()
