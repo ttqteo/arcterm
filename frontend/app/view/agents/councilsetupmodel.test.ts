@@ -87,7 +87,7 @@ const lib: RoleLibrary = {
         role("designer", "Designer", { namevi: "Thiết kế" }),
         role("builder", "Builder", { namevi: "Dev" }),
         role("contrarian", "Other side", { namevi: "Phản biện" }),
-        role("facilitator", "Host", { model: "opus", coordinator: true, namevi: "Dẫn dắt" }),
+        role("facilitator", "Host", { model: "opus", coordinator: true, namevi: "Điều phối" }),
     ],
     groups: [
         {

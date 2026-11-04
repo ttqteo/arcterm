@@ -101,7 +101,7 @@ var builtInRoles = []CouncilExpert{
 			"wild; a wild idea is kept, not thrown away.",
 	},
 	{
-		Id: "facilitator", Name: "Host", NameVi: "Dẫn dắt", Model: ModelCoordinator, Coordinator: true,
+		Id: "facilitator", Name: "Host", NameVi: "Điều phối", Model: ModelCoordinator, Coordinator: true,
 		Brief: "You are the facilitator, the coordinator of a brainstorm. Merge the ideas that say the same thing, rank them " +
 			"by the picks and builds they earned, and choose at most three worth trying, each with why and a first step. Keep " +
 			"the wild ideas aside rather than dropping them, and name any viewpoint the panel was missing. Add no ideas of " +

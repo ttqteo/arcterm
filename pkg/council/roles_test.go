@@ -80,7 +80,7 @@ var plainNames = []struct{ id, en, vi string }{
 	{"designer", "Designer", "Thiết kế"},
 	{"builder", "Builder", "Dev"},
 	{"contrarian", "Other side", "Phản biện"},
-	{"facilitator", "Host", "Dẫn dắt"},
+	{"facilitator", "Host", "Điều phối"},
 }
 
 func TestBuiltInRolesHavePlainNames(t *testing.T) {
@@ -450,7 +450,7 @@ func TestNameFor(t *testing.T) {
 		{"the old Area chair name", stock("areachair", "Area chair"), LangEn, "Final judge"},
 		{"the old Coordinator name", stock("coordinator", "Coordinator"), LangEn, "Summarizer"},
 		{"the old Contrarian name", stock("contrarian", "Contrarian"), LangEn, "Other side"},
-		{"the old Facilitator name", stock("facilitator", "Facilitator"), LangVi, "Dẫn dắt"},
+		{"the old Facilitator name", stock("facilitator", "Facilitator"), LangVi, "Điều phối"},
 		{"a name that never changed", stock("newuser", "New user"), LangVi, "Khách"},
 		{"a Vietnamese name in an English council", stock("skeptic", "Tìm bug"), LangEn, "Bug hunter"},
 		{"a Vietnamese name in a Vietnamese council", stock("skeptic", "Tìm bug"), LangVi, "Tìm bug"},
