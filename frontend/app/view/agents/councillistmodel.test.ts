@@ -7,7 +7,6 @@ import {
     listOrder,
     newestReplyOn,
     railMeta,
-    railOrderLabel,
     readFrom,
     stanceGroups,
     type IdeaRow,
@@ -280,7 +279,7 @@ describe("listNavOrder", () => {
     });
 });
 
-describe("railMeta and railOrderLabel: the Ideas rail's quiet lines", () => {
+describe("railMeta: the Ideas rail's quiet line", () => {
     const row = (extra: Partial<IdeaRow> = {}): IdeaRow => ({
         id: "P1",
         n: 1,
@@ -332,8 +331,11 @@ describe("railMeta and railOrderLabel: the Ideas rail's quiet lines", () => {
         expect(railMeta(row({ agrees: 1, doubts: 2, against: 1 }))).toBe("1 agrees · 2 have doubts · 1 is against it");
     });
 
-    it("captions the grouping: by where the seats stand, with or without a summary", () => {
-        expect(railOrderLabel()).toBe("by where the seats stand");
+    it("leaves the agrees unsaid under the Agreed header, which says it, and keeps the rest of the line", () => {
+        const agreed = row({ replies: 3, repliesLabel: "3 replies", agrees: 4 });
+        expect(railMeta(agreed, "agreed")).toBe("3 replies");
+        expect(railMeta(row({ agrees: 4 }), "agreed")).toBe("");
+        expect(railMeta(row({ agrees: 2, doubts: 1 }), "doubts")).toBe("2 agree · 1 has doubts");
     });
 });
 

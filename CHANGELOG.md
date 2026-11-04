@@ -33,6 +33,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - The council's Memory tab is now the council's memory: one list of what the seats agreed on, ruled out and left open, kept up after each round, with the direction pinned on top. Every seat reads it before it answers.
+- A council idea is quieter: its bubble holds only what the seat wrote, and one line under it carries the replies, who agreed, a weak or wrong claim, like and dislike, Chốt (now just a pin), its files as an icon with a count, and Copy and Pin to Report under a … menu; hover any of them for the details (the last reply's time, the names, the claim's note, the file list). The Ideas rail drops its caption and the agree count under Agreed, and the Read files switch and the cost estimate under the message box wait until you type.
 - Switching a council between Report, Discussion and Map fades the new view in instead of cutting to it, and between Discussion and Map the grey mark slides to the tab you clicked.
 - A council's header is one slim row: the Report, Discussion and Map tabs are icons, the title gets the room, the mode, time, replies and tokens sit at the foot of the Ideas rail (under an ⓘ in the header when the rail is folded), the seats show two avatars and +N (hover for the whole list), and Summarize, Resume, Pin and Stop moved into a … menu.
 - A council ranks directions by how many experts picked them, counting an expert once across merged proposals, and its report says "3 experts, 1 model" rather than "5 picks": seats on one model are not independent votes. Run facts says when every seat ran on one model.
@@ -47,6 +48,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - On Windows, Float and the fold into Sprout take a maximized window out of maximized first and size and place it right on a scaled display (125%, 150%), and coming back to arcterm grows a folded Sprout back to Full, maximized: they had followed macOS's rules.
+- On Windows, Sprout's card names Ctrl+M (not ⌘M) for Restore window, and dragging an agent over a grid cell says "hold Alt to mention" (not ⌥).
+- A click on an idea in a council's Ideas rail glides the Discussion to it instead of jumping there (still a jump with reduced motion on).
 - Settings → Storage no longer marks a finished run's tree "has uncommitted changes" when all it holds are the links its Setup made (`node_modules`, `src-tauri/target`), so Clean all and the automatic cleanup now remove it.
 - A background task's Output and a Monitor's Events show the colors the program printed (a build's file names, a test run's ✓ and ✗) instead of raw escape codes like `▯[36m`; a progress line redrawn in place shows its last state.
 - An HTML page previewed in arcterm (the File tab, a design canvas, a brainstorm board) can no longer send what it holds to another site: it loads its own folder's files, common CDNs and Google Fonts, and its fetches, forms and frames go nowhere else. Images and video from other sites still show.

@@ -45,6 +45,7 @@ import {
     CircleAlert,
     Copy,
     CornerDownRight,
+    Ellipsis,
     FileText,
     Loader2,
     Pin,
@@ -124,15 +125,7 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { CouncilDetailsFoot } from "./councildetails";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
-import {
-    councilList,
-    newestReplyOn,
-    railMeta,
-    railOrderLabel,
-    stanceGroups,
-    type IdeaRow,
-    type StanceTone,
-} from "./councillistmodel";
+import { councilList, newestReplyOn, railMeta, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import { MemoryPanel, type AddDraft } from "./councilmemory";
 import { chotLine, memoryDotOn, memoryTabLabel, type DirectionSource } from "./councilmemorymodel";
@@ -180,7 +173,13 @@ import {
 } from "./councilscroll";
 import { sendState, shownItems, type SendState, type SendStatus } from "./councilseen";
 import { basename } from "./councilsetupmodel";
-import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
+import {
+    ClaimSignalWords,
+    CouncilSourcesPanel,
+    EvidenceChips,
+    EvidenceCrops,
+    EvidenceFiles,
+} from "./councilsourcespanel";
 import {
     addCouncilImages,
     askCouncilSeatToo,
@@ -690,7 +689,8 @@ function PinnedPill({ id }: { id: string }) {
 }
 
 // Chốt: pins an idea's title, or a seat's message on one line, as the council's direction (the Memory tab). It sits beside
-// like and dislike in the same row, and on a reply shows with them while it is hovered or focused. A direction is checked
+// like and dislike in the same row, a pin with no word (its name is its tooltip), and on a reply shows with them while it
+// is hovered or focused. A direction is checked
 // before it is set, so the icon turns while the check runs; where it landed (set, or held with a reason) is on the Memory
 // tab. An item with no text offers nothing, since the backend refuses an empty direction.
 function Chot({ councilId, item, text, acts }: { councilId: string; item: string; text: string; acts: Actions }) {
@@ -708,15 +708,187 @@ function Chot({ councilId, item, text, acts }: { councilId: string; item: string
             title="Chốt: pin it as the direction the seats read (Memory tab)"
             disabled={busy}
             onClick={() => void acts.run(key, "Chốt", () => directionCouncil(councilId, "pin", line, item))}
-            className="inline-flex h-[20px] cursor-pointer items-center gap-[4px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
+            className="flex h-[24px] w-[24px] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
         >
             {busy ? (
-                <Loader2 size={11} className="animate-spin" aria-hidden />
+                <Loader2 size={13} className="animate-spin" aria-hidden />
             ) : (
-                <Pin size={11} strokeWidth={2} aria-hidden />
+                <Pin size={13} strokeWidth={2} aria-hidden />
             )}
-            Chốt
         </button>
+    );
+}
+
+// an idea's less-used actions behind the `⋯` at the end of its signal line: Copy and Pin to Report (Unpin on the pinned
+// one), the hover end's two buttons with words. The menu stays mounted, hidden while closed, so its buttons keep the
+// hooks the hover end's had. Copy keeps it open to read Copied; Pin closes it. Arrow keys move through it, Escape closes it
+// and gives the focus back, a click outside closes it. Nothing for an idea with no words to copy.
+const COPY_MENU_WORD: Record<CopyState, string> = { idle: "Copy as markdown", copied: "Copied", failed: "Copy failed" };
+const MENU_ITEM =
+    "flex h-[28px] w-full cursor-pointer items-center gap-[8px] rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[13px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:text-muted";
+// the room the menu wants under the button; with less before the window's foot it opens above
+const MENU_ROOM = 110;
+
+function IdeaMore({ c, id, acts }: { c: Council; id: string; acts: Actions }) {
+    const [open, setOpen] = useState(false);
+    const [up, setUp] = useState(false);
+    const wrap = useRef<HTMLSpanElement>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    const { state, copy } = useCopyFeedback();
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const onDown = (e: globalThis.MouseEvent) => {
+            if (!wrap.current?.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", onDown, true);
+        wrap.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+        return () => document.removeEventListener("mousedown", onDown, true);
+    }, [open]);
+    const markdown = messageMarkdown(c, id) ?? "";
+    if (markdown === "") {
+        return null;
+    }
+    const pinned = c.finalpick === id;
+    const key = `finalpick:${id}`;
+    const CopyIcon = state === "copied" ? Check : state === "failed" ? X : Copy;
+    const close = () => {
+        setOpen(false);
+        trigger.current?.focus();
+    };
+    const onKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {
+        if (!open) {
+            return;
+        }
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const els = Array.from(
+                wrap.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []
+            );
+            if (els.length > 0) {
+                const at = els.indexOf(document.activeElement as HTMLElement);
+                els[(at + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length].focus();
+            }
+        }
+    };
+    return (
+        <span ref={wrap} onKeyDown={onKeyDown} className="relative inline-flex">
+            <button
+                ref={trigger}
+                type="button"
+                data-council-more={id}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label="More: copy, pin to Report"
+                title="Copy, Pin to Report"
+                onClick={() => {
+                    const r = trigger.current?.getBoundingClientRect();
+                    setUp(r != null && r.bottom + MENU_ROOM > window.innerHeight);
+                    setOpen((o) => !o);
+                }}
+                className={cn(
+                    "flex h-[24px] w-[24px] cursor-pointer items-center justify-center rounded-[6px] border-0 outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    open
+                        ? "bg-surface-selected text-primary"
+                        : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                )}
+            >
+                <Ellipsis size={14} aria-hidden />
+            </button>
+            <span
+                role="menu"
+                aria-label="More"
+                data-council-tools={id}
+                className={cn(
+                    "absolute right-0 z-30 min-w-[190px] flex-col rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md",
+                    up ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
+                    open ? "flex" : "hidden"
+                )}
+            >
+                <button
+                    type="button"
+                    role="menuitem"
+                    data-council-copy={id}
+                    data-copy-state={state}
+                    title={state === "idle" ? "Copy the message as markdown" : COPY_WORD[state]}
+                    onClick={() => copy(markdown)}
+                    className={MENU_ITEM}
+                >
+                    <CopyIcon size={13} strokeWidth={2} aria-hidden className="flex-none text-muted" />
+                    {COPY_MENU_WORD[state]}
+                </button>
+                <button
+                    type="button"
+                    role="menuitem"
+                    data-council-finalpick={id}
+                    data-pinned={pinned ? "true" : undefined}
+                    aria-label={pinned ? UNPIN_WORD : PIN_WORD}
+                    title={
+                        pinned ? "Unpin: take it off the Report" : "Pin to Report: show it there as the Final proposal"
+                    }
+                    disabled={acts.busy.has(key)}
+                    onClick={() => {
+                        close();
+                        void acts.run(key, PIN_WORD, () => finalPickCouncil(c.id, pinned ? "" : id));
+                    }}
+                    className={MENU_ITEM}
+                >
+                    {pinned ? (
+                        <PinOff size={13} strokeWidth={2} aria-hidden className="flex-none text-muted" />
+                    ) : (
+                        <Pin size={13} strokeWidth={2} aria-hidden className="flex-none text-muted" />
+                    )}
+                    {pinned ? UNPIN_WORD : PIN_WORD}
+                </button>
+            </span>
+        </span>
+    );
+}
+
+// an idea's one line under its words (board A-details-line in .superpowers/design/council-card-calm): what came of it on
+// the left (its replies, who agreed, how many picked it, what in its claim needs a second look), each with its details in
+// its hover, then what the person does to it on the right: like, dislike, Chốt, its sources, ⋯. `replies` is the button
+// that opens its thread; the thread panel's heading has none, the thread being open.
+function IdeaSignals({ c, idea, acts, replies }: { c: Council; idea: IdeaPost; acts: Actions; replies?: ReactNode }) {
+    const agreed = idea.agreed;
+    return (
+        <div
+            data-council-idea-signals={idea.id}
+            className="flex min-w-0 flex-wrap items-center gap-x-[12px] gap-y-[4px] text-[12.5px]"
+        >
+            {replies}
+            {agreed != null && (
+                <span
+                    data-council-reaction
+                    tabIndex={0}
+                    title={agreed.title === "" ? undefined : agreed.title}
+                    aria-label={agreed.title === "" ? agreed.word : `${agreed.word}: ${agreed.title}`}
+                    className="inline-flex items-center gap-[4px] rounded-[4px] font-semibold text-success-soft outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <Check size={11} strokeWidth={3} aria-hidden />
+                    {agreed.word}
+                </span>
+            )}
+            {idea.picks != null && (
+                <span data-council-picks title={idea.picks.title} className="text-secondary">
+                    {idea.picks.label}
+                </span>
+            )}
+            <ClaimSignalWords {...idea.claim} />
+            <span className="ml-auto flex items-center gap-[2px]">
+                <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
+                <Chot councilId={c.id} item={idea.id} text={idea.title} acts={acts} />
+                <EvidenceFiles {...idea.claim} source={{ councilId: c.id, owner: idea.id, title: idea.title }} />
+                <IdeaMore c={c} id={idea.id} acts={acts} />
+            </span>
+        </div>
     );
 }
 
@@ -763,19 +935,12 @@ function IdeaMessage({
                             Idea {n}
                         </span>
                     )}
-                    {item.wild ? (
-                        <CouncilPill word={item.label} tone="neutral" />
-                    ) : (
-                        <span className="text-muted">{item.label}</span>
-                    )}
+                    {/* `proposes` and a Brainstorm's `idea` say what `Idea N` says; a wild idea keeps its pill */}
+                    {item.wild && <CouncilPill word={item.label} tone="neutral" />}
                     {item.out != null && <OutPill out={item.out} />}
                     {c.finalpick === item.id && <PinnedPill id={item.id} />}
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
-                    {/* the idea's thumbs sit under its bubble, always shown; Copy and Pin float at the byline's end */}
-                    <HoverEnd>
-                        <MessageTools c={c} id={item.id} acts={acts} />
-                    </HoverEnd>
                 </Byline>
                 <div
                     className={cn(
@@ -795,13 +960,20 @@ function IdeaMessage({
                     <div data-council-idea-body>
                         <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
                     </div>
-                    <EvidenceChips {...item.claim} source={{ councilId, owner: item.id, title: item.title }} />
-                    <div className="flex flex-wrap items-center gap-[10px]">
+                    <EvidenceCrops {...item.claim} source={{ councilId, owner: item.id, title: item.title }} />
+                </div>
+                {/* the bubble holds what the seat wrote; the one line under it holds everything else (IdeaSignals) */}
+                <IdeaSignals
+                    c={c}
+                    idea={item}
+                    acts={acts}
+                    replies={
                         <button
                             type="button"
                             data-council-thread-open={item.id}
                             data-replies={t.count}
-                            aria-label={`Open the thread: ${t.label}`}
+                            aria-label={`Open the thread: ${t.label}${t.last === "" ? "" : `, ${t.last}`}`}
+                            title={t.last === "" ? undefined : t.last}
                             onClick={() => onOpen(item.id)}
                             className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
                         >
@@ -830,29 +1002,10 @@ function IdeaMessage({
                                     {fresh}
                                 </span>
                             )}
-                            {t.last !== "" && (
-                                <span className="text-muted" title={t.lastWhen}>
-                                    {t.last}
-                                </span>
-                            )}
                             {t.drafts > 0 && <span className="text-warning-soft">{draftsWaitWord(t.drafts)}</span>}
                         </button>
-                        {item.agrees.map((text, i) => (
-                            <Reaction key={i} text={text} />
-                        ))}
-                        <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
-                        <Chot councilId={councilId} item={item.id} text={item.title} acts={acts} />
-                        {item.picks != null && (
-                            <span
-                                data-council-picks
-                                title={item.picks.title}
-                                className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
-                            >
-                                {item.picks.label}
-                            </span>
-                        )}
-                    </div>
-                </div>
+                    }
+                />
             </div>
         </article>
     );
@@ -2268,8 +2421,14 @@ function Composer({
                 </div>
             </div>
             {/* the switch and the cost line share one row under the box; the cost line wraps under the switch when
-                the thread panel is too narrow for both */}
-            <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[2px]">
+                the thread panel is too narrow for both. Both are about a message, so the row waits for one: hidden
+                (still in the page) while the box holds no words and no image */}
+            <div
+                className={cn(
+                    "flex-wrap items-center gap-x-[14px] gap-y-[2px]",
+                    text.trim() === "" && images.length === 0 ? "hidden" : "flex"
+                )}
+            >
                 {followUp && (
                     <div
                         role="group"
@@ -2455,38 +2614,17 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
             >
                 {idea.title}
             </h2>
-            <div className="relative flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
+            <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 <span className="text-secondary">{idea.name}</span>
-                {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
+                {idea.wild && <CouncilPill word={idea.label} tone="neutral" />}
                 {idea.out != null && <OutPill out={idea.out} />}
                 {c.finalpick === idea.id && <PinnedPill id={idea.id} />}
+                <PostTime at={idea.at} when={idea.when} />
                 {idea.edited && <span>edited</span>}
-                <HoverEnd>
-                    <PostTime at={idea.at} when={idea.when} />
-                    <MessageTools c={c} id={idea.id} acts={acts} />
-                    <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
-                    <Chot councilId={c.id} item={idea.id} text={idea.title} acts={acts} />
-                </HoverEnd>
             </div>
             <CouncilText text={idea.text} className="text-[13.5px] leading-[1.55]" />
-            <EvidenceChips {...idea.claim} source={{ councilId: c.id, owner: idea.id, title: idea.title }} />
-            {(idea.agrees.length > 0 || idea.thumb !== "" || idea.picks != null) && (
-                <div className="flex flex-wrap items-center gap-[6px]">
-                    {idea.agrees.map((text, i) => (
-                        <Reaction key={i} text={text} />
-                    ))}
-                    <ThumbChip councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
-                    {idea.picks != null && (
-                        <span
-                            data-council-picks
-                            title={idea.picks.title}
-                            className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
-                        >
-                            {idea.picks.label}
-                        </span>
-                    )}
-                </div>
-            )}
+            <EvidenceCrops {...idea.claim} source={{ councilId: c.id, owner: idea.id, title: idea.title }} />
+            <IdeaSignals c={c} idea={idea} acts={acts} />
         </article>
     );
 }
@@ -2687,11 +2825,8 @@ function IdeasList({
             data-council-rail-ideas
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-[22px] pt-[4px] [scrollbar-gutter:stable]"
         >
-            <div className="flex items-center gap-2 pb-[2px]">
-                <span data-council-rail-caption className="min-w-0 flex-1 truncate text-[12px] text-muted">
-                    {railOrderLabel()}
-                </span>
-                {withFresh > 0 && (
+            {withFresh > 0 && (
+                <div className="flex items-center gap-2 pb-[2px] pt-[6px]">
                     <button
                         type="button"
                         data-council-rail-fresh={filtering ? "on" : "off"}
@@ -2708,8 +2843,8 @@ function IdeasList({
                         <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-accent" />
                         {withFresh} with new replies
                     </button>
-                )}
-            </div>
+                </div>
+            )}
             {ideas.length === 0 && (
                 <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
                     Each idea lands here as a seat proposes it.
@@ -2738,7 +2873,7 @@ function IdeasList({
                             </span>
                         </div>
                         {g.rows.map((row) => {
-                            const meta = railMeta(row);
+                            const meta = railMeta(row, g.key);
                             return (
                                 <button
                                     key={row.id}
@@ -3708,7 +3843,7 @@ export function CouncilChat({
                                 c={c}
                                 scope="channel"
                                 proposalId=""
-                                placeholder="Message everyone · @ to ask one seat · paste an image · @ for a file"
+                                placeholder="Message everyone · @ a seat or a file · paste an image"
                                 sendLabel="Send"
                                 labelledBy="council-channel-label"
                                 returnTo={() => channel.current}

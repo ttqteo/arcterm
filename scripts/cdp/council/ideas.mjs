@@ -158,11 +158,11 @@ export const councilIdeas = {
         const one = await readRail(h);
         await h.shot("cdp-shots/council-ideas-groups.png");
         rec(
-            "1. the Ideas tab groups the nine ideas under six headers in the order Waiting on you, Agreed, Has doubts, Someone against it, No stance yet, Withdrawn, each header's name in words with its count, the caption `by where the seats stand`, and an idea keeping its arrival order inside its group",
+            "1. the Ideas tab groups the nine ideas under six headers in the order Waiting on you, Agreed, Has doubts, Someone against it, No stance yet, Withdrawn, each header's name in words with its count, no caption over them (the headers say it), and an idea keeping its arrival order inside its group",
             drawn &&
                 one?.tab === "ideas" &&
                 one.tabLabel === "Ideas · 9" &&
-                one.caption === "by where the seats stand" &&
+                one.caption === "" &&
                 one.groups.map((g) => g.key).join() === GROUPS.map((g) => g.key).join() &&
                 one.groups.map((g) => g.name).join("|") === GROUPS.map((g) => g.name).join("|") &&
                 one.groups.map((g) => g.count).join() === "1,2,1,1,2,2" &&

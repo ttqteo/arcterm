@@ -34,7 +34,8 @@ interface OverlayProps {
     mentionTo: string | null; // the cell's terminal block when its prompt takes an @mention (griddrop.ts mentionTarget)
 }
 
-const MENTION_KEY = isMacOS() ? "⌥" : "Alt";
+// read per render: at module load setPlatform has not run yet, so the platform still reads as macOS
+const mentionKey = () => (isMacOS() ? "⌥" : "Alt");
 
 const FOCUS_DELAY_MS = 120; // let the xterm become visible
 
@@ -143,7 +144,7 @@ function ActiveOverlay({ model, id, grid, mentionTo, dragId }: OverlayProps & { 
                     <span className="flex flex-col items-center gap-[2px] text-[12px] font-semibold text-accent-soft">
                         {mention ? `Mention ${mentionToken(dragId)}` : zoneLabel(zone, moving)}
                         {mentionTo != null && !mention ? (
-                            <span className="text-[10.5px] font-medium text-muted">hold {MENTION_KEY} to mention</span>
+                            <span className="text-[10.5px] font-medium text-muted">hold {mentionKey()} to mention</span>
                         ) : null}
                     </span>
                 </div>

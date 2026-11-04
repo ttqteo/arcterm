@@ -3,6 +3,7 @@ import {
     DRAFT_ACTIONS,
     DRAFT_WAIT,
     ROUTER_DECIDES,
+    agreeSignal,
     askChips,
     askTooSeats,
     chatMentionKeys,
@@ -363,8 +364,11 @@ describe("councilChannel: an idea", () => {
     it("lists the seats that agreed with nothing to add, and not one whose last word was a held reply", () => {
         const items = councilChannel(room());
         // r2: Skeptic agreed with P1; its later opposition (r6) is held, so it has not reached anyone
-        expect(byId(items, "P1")).toMatchObject({ agrees: ["Skeptic agrees"] });
-        expect(byId(items, "P2")).toMatchObject({ agrees: [] });
+        expect(byId(items, "P1")).toMatchObject({
+            agrees: ["Skeptic agrees"],
+            agreed: { word: "Skeptic agrees", title: "" },
+        });
+        expect(byId(items, "P2")).toMatchObject({ agrees: [], agreed: null });
     });
 
     it("words a Brainstorm idea `idea`, and a wild one `wild idea` with a pill", () => {
@@ -2543,5 +2547,17 @@ describe("stackSeats", () => {
     it("draws every seat when there are fewer than n, and none at n 0", () => {
         expect(stackSeats([seat("me")], 2).map((c) => c.id)).toEqual(["me"]);
         expect(stackSeats([seat("me")], 0)).toEqual([]);
+    });
+});
+
+describe("agreeSignal: the agree word on an idea's signal line", () => {
+    it("names one seat, counts more with their names in the hover, and says nothing with none", () => {
+        expect(agreeSignal([])).toBeNull();
+        expect(agreeSignal(["Skeptic"])).toEqual({ word: "Skeptic agrees", title: "" });
+        expect(agreeSignal(["Committee member", "Methodologist"])).toEqual({
+            word: "2 agree",
+            title: "Committee member and Methodologist",
+        });
+        expect(agreeSignal(["UX", "RAM", "Skeptic"])).toEqual({ word: "3 agree", title: "UX, RAM and Skeptic" });
     });
 });
