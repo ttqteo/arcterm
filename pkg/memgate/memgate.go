@@ -47,10 +47,18 @@ var (
 	jobVerify        = Job{"scripts/verify.mjs", 2560 * mib}
 	jobGoOrchestrate = Job{"go test pkg/orchestrate", 2 * gib}
 	// other projects': an e2e script starts the app's servers, builds the frontend and drives Chromium
-	jobE2E        = Job{"e2e script", 4 * gib}
+	jobE2E = Job{"e2e script", 4 * gib}
+	// a browser check against an app already running: Chromium and its pages, not the servers
+	jobSmoke      = Job{"smoke script", 1536 * mib}
 	jobPytest     = Job{"pytest (all)", 1 * gib}
 	jobAstroBuild = Job{"astro build", 2 * gib}
 )
+
+// Solo says a job of this name runs alone among its kind even where the RAM would fit another: an e2e or smoke run
+// drives Chromium and often starts servers and builds too, so two at once saturate the CPU long before the RAM.
+func Solo(name string) bool {
+	return name == jobE2E.Name || name == jobSmoke.Name
+}
 
 // Classify names the heaviest step of a shell command line, and false when no step is heavy.
 func Classify(command string) (Job, bool) {
@@ -85,8 +93,25 @@ func program(words []string) []string {
 		switch {
 		case isAssignment(w), w == "env", w == "time", w == "nice", w == "command", w == "exec":
 			words = words[1:]
+		case w == "timeout":
+			words = pastTimeout(words[1:])
 		default:
 			return words
+		}
+	}
+	return nil
+}
+
+// pastTimeout is timeout's command: past its flags (-s and -k take a value) and the duration
+func pastTimeout(args []string) []string {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-s" || a == "-k" || a == "--signal" || a == "--kill-after":
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			return args[i+1:]
 		}
 	}
 	return nil
@@ -216,6 +241,20 @@ func classifyNpm(args []string) (Job, bool) {
 			case "test":
 				return vitest(args[2:])
 			}
+			return browserScript(ops[1])
+		}
+	}
+	return Job{}, false
+}
+
+// a package.json script by name: one named e2e or smoke (test:e2e, e2e:ui, smoke) drives a browser
+func browserScript(name string) (Job, bool) {
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == ':' || r == '-' || r == '_' }) {
+		switch part {
+		case "e2e":
+			return jobE2E, true
+		case "smoke":
+			return jobSmoke, true
 		}
 	}
 	return Job{}, false
@@ -240,8 +279,14 @@ func classifyTool(name string, args []string) (Job, bool) {
 		if has(operands(args), "build") {
 			return jobAstroBuild, true
 		}
-	case "e2e.sh":
-		return jobE2E, true
+	case "playwright":
+		if has(operands(args), "test") {
+			return jobE2E, true
+		}
+	}
+	// a shell script run by name: scripts/e2e.sh, run-smoke.sh
+	if stem, ok := strings.CutSuffix(name, ".sh"); ok {
+		return browserScript(stem)
 	}
 	return Job{}, false
 }
@@ -270,6 +315,7 @@ func classifyPnpm(args []string) (Job, bool) {
 			case "build":
 				return jobViteBuild, true
 			}
+			return browserScript(rest[0])
 		}
 		return Job{}, false
 	case "exec", "dlx":
@@ -278,7 +324,11 @@ func classifyPnpm(args []string) (Job, bool) {
 		}
 		return Job{}, false
 	}
-	return classifyTool(ops[0], rest)
+	if job, ok := classifyTool(ops[0], rest); ok {
+		return job, true
+	}
+	// pnpm runs a package.json script by its bare name: pnpm smoke
+	return browserScript(ops[0])
 }
 
 // uv run's flags that take a value, so the command it runs is found past them
@@ -357,6 +407,11 @@ func classifyNode(args []string) (Job, bool) {
 			return vitest(args[i+1:])
 		case strings.HasSuffix(a, "astro/bin/astro.mjs"):
 			return classifyTool("astro", args[i+1:])
+		}
+		// the script node runs, and none after it: scripts/smoke.mjs, e2e.js drive a browser
+		switch ext := path.Ext(a); ext {
+		case ".mjs", ".js", ".cjs", ".ts", ".mts":
+			return browserScript(strings.TrimSuffix(path.Base(a), ext))
 		}
 	}
 	return Job{}, false

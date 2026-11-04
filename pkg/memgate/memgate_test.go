@@ -71,6 +71,24 @@ func TestClassify(t *testing.T) {
 		{"cd apps/portal && bash scripts/e2e.sh 2>&1 | tail -n 40", true, "e2e script", 4 * gib},
 		{"./scripts/e2e.sh", true, "e2e script", 4 * gib},
 		{`bash -c "echo scripts/e2e.sh"`, false, "", 0},
+		{"timeout 1500 sh scripts/e2e.sh 2>&1", true, "e2e script", 4 * gib},
+		{"cd apps/portal && SMOKE_ONLY=45-crosslinks timeout 1500 sh scripts/e2e.sh > e2e.log 2>&1", true, "e2e script", 4 * gib},
+		{"timeout -k 10 -s KILL 30m npm run test:e2e", true, "e2e script", 4 * gib},
+		{"timeout 5 curl -s localhost:4310", false, "", 0},
+		{"timeout --preserve-status 600 task check:ts", true, "task check:ts", 3 * gib},
+		{"node scripts/smoke.mjs", true, "smoke script", 1536 * mib},
+		{"PORTAL_URL=http://127.0.0.1:4310 node scripts/smoke.mjs", true, "smoke script", 1536 * mib},
+		{"node scripts/handbook.mjs --if-stale", false, "", 0},
+		{"node scripts/report.mjs --out e2e.json", false, "", 0},
+		{"npm run smoke", true, "smoke script", 1536 * mib},
+		{"pnpm smoke", true, "smoke script", 1536 * mib},
+		{"pnpm -C web run test:e2e", true, "e2e script", 4 * gib},
+		{"pnpm -C web dev", false, "", 0},
+		{"npm run lint", false, "", 0},
+		{"npx playwright test", true, "e2e script", 4 * gib},
+		{"npx playwright install chromium", false, "", 0},
+		{"sh scripts/smoke-api.sh", true, "smoke script", 1536 * mib},
+		{"sh scripts/deploy.sh", false, "", 0},
 		{"pytest -q", true, "pytest (all)", 1 * gib},
 		{"uv run --env-file ../web/.env pytest -q", true, "pytest (all)", 1 * gib},
 		{"cd api; uv run --env-file ../web/.env pytest", true, "pytest (all)", 1 * gib},
@@ -126,6 +144,23 @@ func TestLongRunningIsTheDevServer(t *testing.T) {
 	}
 	if DevBytes != 3*gib {
 		t.Fatalf("DevBytes = %d, want 3 GB", DevBytes)
+	}
+}
+
+func TestSoloIsTheBrowserRuns(t *testing.T) {
+	cases := map[string]bool{
+		"sh scripts/e2e.sh":      true,
+		"node scripts/smoke.mjs": true,
+		"npx playwright test":    true,
+		"task check:ts":          false,
+		"npx vitest run":         false,
+		"pytest -q":              false,
+	}
+	for command, want := range cases {
+		job, heavy := Classify(command)
+		if !heavy || Solo(job.Name) != want {
+			t.Fatalf("Classify(%q) = %+v, %v; want heavy, Solo %v", command, job, heavy, want)
+		}
 	}
 }
 

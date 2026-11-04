@@ -74,6 +74,10 @@ func TestPlanModes(t *testing.T) {
 		{"auto still waits on RAM", []Job{run("r", gb, old), wait("a", 3*gb)}, ModeAuto, 2 * gb, nil, "needs 3 GB, 2 GB free"},
 		{"auto counts a ramping job's peak", []Job{run("r", 3*gb, t0), wait("a", 3*gb)}, ModeAuto, 6 * gb, nil, "needs 3 GB, 3 GB free"},
 		{"off starts every job, whatever runs and whatever RAM is free", []Job{run("r", gb, old), wait("a", 9*gb), wait("b", gb)}, ModeOff, gb, []string{"a", "b"}, ""},
+		{"auto runs one e2e at a time though the RAM fits two", []Job{run("e2e script", 4*gb, old), wait("smoke script", gb)}, ModeAuto, 24 * gb, nil, ReasonBrowserRunBusy},
+		{"auto starts one of two queued e2e runs, and the rest wait behind", []Job{wait("e2e script", 4*gb), wait("e2e script", 4*gb), wait("b", gb)}, ModeAuto, 24 * gb, []string{"e2e script"}, ReasonBrowserRunBusy},
+		{"auto starts other work beside an e2e run", []Job{run("e2e script", 4*gb, old), wait("vitest (all)", 2*gb)}, ModeAuto, 24 * gb, []string{"vitest (all)"}, ""},
+		{"off starts e2e runs side by side", []Job{run("e2e script", 4*gb, old), wait("smoke script", gb)}, ModeOff, gb, []string{"smoke script"}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
