@@ -57,6 +57,7 @@ import {
     Moon,
     Pencil,
     PenTool,
+    PinOff,
     Play,
     Plus,
     Radio,
@@ -185,6 +186,7 @@ import {
     councilSelAtom,
     councilUnreadAtom,
     councilViewAtom,
+    setCouncilPinned,
     stopCouncil,
     useCouncils,
 } from "./councilstore";
@@ -2914,9 +2916,10 @@ export function CouncilSeatPair({
 // the queued run's row does. An ended, unpinned one offers Close the same way: it leaves the tree at once
 // (councilopened.ts' closed map, kept per browser) and stays in Councils; it comes back if it runs again or the person
 // resumes it (Resume, councilresume.tsx, in Councils and the council's own header). A running or
-// pinned one offers no hover button. The tree offers no Pin: a council is pinned (and unpinned) from Councils (the
-// button at the sidebar's top), the project Overview's History and the council's own header, and a pinned one stays at
-// the top of its project here. An ended one's menu also offers Remove, behind a confirm, which moves the council's file
+// pinned one offers no hover button. The tree offers no Pin: a council is pinned from Councils (the button at the
+// sidebar's top), the project Overview's History and the council's own header, and a pinned one stays at the top of its
+// project here. A pinned one's menu offers Unpin, as a pinned row has no Close and would otherwise stay in the tree with
+// no way out of it here. An ended one's menu also offers Remove, behind a confirm, which moves the council's file
 // to ~/.arc/trash. The button cannot hold the action, so the row sits in a wrapper beside it. Every row's menu starts
 // with Copy id, the full id `wsh council show|wait|stop|rm` take.
 function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM }) {
@@ -2937,6 +2940,7 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     // an ended council that is not pinned can be closed: off the tree now, still in Councils
     const closable = row.removable === true && !row.pinned;
     const close = () => closeCouncil(row.id);
+    const unpin = () => fireAndForget(() => setCouncilPinned(row.id, false));
     // the hover button: a queued council leaves the queue, an ended unpinned one closes, any other has none
     const hoverAct = queued
         ? { key: "remove", label: "Remove from queue", title: "Remove from queue", run: leaveQueue }
@@ -2957,7 +2961,8 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
                       { label: "Remove from queue", icon: <X size={15} />, danger: true, click: leaveQueue },
                   ]
                 : []),
-            ...(closable || row.removable === true ? [{ type: "separator" } as const] : []),
+            ...(closable || row.pinned || row.removable === true ? [{ type: "separator" } as const] : []),
+            ...(row.pinned ? [{ label: "Unpin", icon: <PinOff size={15} />, click: unpin }] : []),
             ...(closable ? [{ label: "Close", sublabel: "Councils keeps it", icon: <X size={15} />, click: close }] : []),
             ...(row.removable === true
                 ? [{ label: "Remove council…", icon: <Trash2 size={15} />, danger: true, click: removeForGood }]

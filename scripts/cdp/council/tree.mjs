@@ -11,7 +11,8 @@
 // tree, and Unpin from the Report taking the pinned one off too. Step 11g
 // (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md) does the same for a pinned, stopped council with no summary,
 // whose ended time is its `updated`: Unpin from its Councils row takes it off the tree. Step 11b checks the tree
-// offers no Pin, 11h that Close takes an ended council off the tree, and 11i that Resume (on a council the tree no
+// offers no Pin and that a pinned council's menu offers Unpin, 11h that Close takes an ended council off the tree, and
+// 11i that Resume (on a council the tree no
 // longer lists) puts it back in the tree and opens its Discussion with the box focused. A project's councils carry no
 // label: they are peers of its agents.
 //
@@ -522,7 +523,30 @@ export const councilTree = {
         await hoverUntil(h, `[data-council-row="${runningId}"] [data-council-feature]`, "true");
         const runningBare = await h.ev(`!${anyActOf(runningId)}`);
         const noPinInTree = await h.ev(`!document.querySelector('[data-council-act="pin"], [data-council-act="unpin"]')`);
-        // what wavesrv saves for an unpin made in Councils: the fixture as it was, for the steps that follow
+        // the pinned council's right-click menu offers Unpin (and no Pin), which asks wavesrv to unpin it: a pinned row
+        // has no Close, so without it the tree would keep the council with no way out of it here
+        await mouseOn(h, `[data-council-row="${doneId}"]`, { button: "right" });
+        const unpinListed = await until(`${MENU_ITEMS}.includes("Unpin")`);
+        const pinnedItems = await h.ev(MENU_ITEMS);
+        await h.shot("cdp-shots/council-tree-pinned-menu.png");
+        await stubRpc(h, ["CouncilPinCommand"]);
+        const unpinChosen = await h.ev(`(() => {
+            const row = [...document.querySelectorAll("[data-menu-item]")].find((r) => r.dataset.menuItem === "Unpin");
+            if (!row) return false;
+            row.click();
+            return true;
+        })()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilPinCommand").length >= 1`);
+        const unpins = await rpcCalls(h, "CouncilPinCommand");
+        await unstubRpc(h);
+        const menuUnpins =
+            unpinListed &&
+            !pinnedItems.includes("Pin") &&
+            unpinChosen &&
+            unpins.length === 1 &&
+            unpins[0].data?.id === doneId &&
+            unpins[0].data?.pinned === false;
+        // what wavesrv saves for that unpin: the fixture as it was, for the steps that follow
         writeCouncil(ctx, "done");
         await announceCouncil(h, ctx, doneId);
         const closeOnUnpinned = await hoverUntil(
@@ -531,9 +555,9 @@ export const councilTree = {
             actShown(doneId, "close")
         );
         rec(
-            "11b. the tree offers no Pin: a pinned council and a running one have no hover button, and an ended one once unpinned offers Close",
-            stays && pinnedBare && runningBare && noPinInTree && closeOnUnpinned,
-            JSON.stringify({ stays, pinnedBare, runningBare, noPinInTree, closeOnUnpinned })
+            "11b. the tree offers no Pin: a pinned council and a running one have no hover button, the pinned one's menu offers Unpin, which asks wavesrv to unpin it, and an ended one once unpinned offers Close",
+            stays && pinnedBare && runningBare && noPinInTree && menuUnpins && closeOnUnpinned,
+            JSON.stringify({ stays, pinnedBare, runningBare, noPinInTree, pinnedItems, unpins, closeOnUnpinned })
         );
 
         // 11c. Councils (the button at the sidebar's top) marks the pinned council's row with a pin, and the row's hover
