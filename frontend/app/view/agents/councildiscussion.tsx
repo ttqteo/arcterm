@@ -26,7 +26,7 @@ import { useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
-import { CouncilAvatar, CouncilChat } from "./councilchat";
+import { CouncilAvatar, CouncilChat, CouncilText } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
 import {
     avatarTone,
@@ -604,7 +604,7 @@ function ProposalsSoFar({ c }: { c: Council }) {
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-[14px] font-semibold">{p.title}</span>
-                        <span className="text-[13px] leading-[1.5] text-secondary">{p.argument}</span>
+                        <CouncilText text={p.argument} className="text-[13px] leading-[1.5] text-secondary" />
                         <EvidenceChips {...claimOf(c, p)} />
                     </div>
                 </div>
