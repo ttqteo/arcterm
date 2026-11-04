@@ -29,6 +29,7 @@ import {
     KIND_LABEL,
     KIND_MEANING,
     kindTakesWhy,
+    latestEntryAt,
     memoryEntries,
     memoryIsEmpty,
     newEntryIds,
@@ -124,6 +125,7 @@ export function MemoryPanel({
     const replaced = replacedRows(c);
     const entries = useMemo(() => memoryEntries(c), [c]);
     const fresh = useMemo(() => newEntryIds(c, since), [c, since]);
+    const latest = latestEntryAt(c); // moves with every arrival, also a drop plus an add that keeps the count
     const held = card?.kind === "held";
     const busy = [...acts.busy].some((k) => k.startsWith(DIRECTION) || k.startsWith(MEMORY));
     const checking = (action: CouncilDirectionAction) => acts.busy.has(`${DIRECTION}${action}`);
@@ -131,7 +133,7 @@ export function MemoryPanel({
     // the tab is being looked at: what is in it now is seen, and what comes in while it shows is too
     useEffect(() => {
         setSeen((m) => ({ ...m, [c.id]: Date.now() }));
-    }, [c.id, entries.length, setSeen]);
+    }, [c.id, latest, setSeen]);
 
     // one move: the shared actions run it one at a time, and a refusal is kept here as well, under the form or editor
     const go = (key: string, what: string, fn: () => Promise<CouncilCall<void>>): Promise<boolean> => {
@@ -232,7 +234,7 @@ export function MemoryPanel({
 
             {card != null && (
                 <section
-                    aria-label={held ? "Held by the check" : "Suggested change"}
+                    aria-label={held ? "Held direction" : "Suggested change"}
                     data-council-memory-card={card.kind}
                     className="flex flex-none flex-col gap-2 rounded-[8px] border border-edge-mid bg-surface px-[14px] py-3"
                 >

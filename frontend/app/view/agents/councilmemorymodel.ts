@@ -122,6 +122,12 @@ export function newEntryIds(c: Council, seenAt: number | undefined): Set<string>
     );
 }
 
+/** Pure: when the newest entry came in (0 with none). It moves with every arrival, also when one round drops an entry
+ *  and adds one, which leaves the count as it was: the open tab keys its seen time on this. */
+export function latestEntryAt(c: Council): number {
+    return memoryEntries(c).reduce((at, e) => Math.max(at, e.at), 0);
+}
+
 /** Pure: whether the tab's dot is on: a card waits for the person, or an entry came in since `seenAt`. */
 export function memoryDotOn(c: Council, seenAt: number | undefined): boolean {
     return shownCard(c) != null || newEntryIds(c, seenAt).size > 0;

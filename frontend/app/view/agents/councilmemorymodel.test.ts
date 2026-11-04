@@ -12,6 +12,7 @@ import {
     KIND_LABEL,
     KIND_MEANING,
     kindTakesWhy,
+    latestEntryAt,
     memoryCount,
     memoryDotOn,
     memoryEntries,
@@ -539,5 +540,33 @@ describe("directionSource", () => {
         expect(directionSource(c, "")).toBeNull();
         expect(directionSource(c, undefined)).toBeNull();
         expect(directionSource(c, "r99")).toBeNull();
+    });
+});
+
+describe("latestEntryAt", () => {
+    it("is 0 with no entry", () => {
+        expect(latestEntryAt(council())).toBe(0);
+    });
+
+    it("moves when a round drops one entry and adds one, though the count stays", () => {
+        const before = council({
+            memory: {
+                entries: [entry("m1", "open", { at: clock(10, 0) }), entry("m2", "agreed", { at: clock(10, 5) })],
+            },
+        });
+        const after = council({
+            memory: {
+                entries: [
+                    entry("m2", "agreed", { at: clock(10, 5) }),
+                    entry("m3", "agreed", { by: "auto", at: clock(10, 9) }),
+                ],
+            },
+        });
+        expect(memoryEntries(after)).toHaveLength(memoryEntries(before).length);
+        expect(latestEntryAt(after)).toBe(clock(10, 9));
+        expect(latestEntryAt(after)).not.toBe(latestEntryAt(before));
+        // seen written at the newest arrival leaves the dot off, as the open tab does
+        expect(memoryDotOn(after, latestEntryAt(after))).toBe(false);
+        expect(memoryDotOn(after, latestEntryAt(before))).toBe(true);
     });
 });
