@@ -7,6 +7,8 @@ import { NO_BOX } from "./councilshots";
 import {
     claimChips,
     claimOf,
+    claimSignals,
+    filesSignal,
     foldSources,
     groupSources,
     hunkLabel,
@@ -278,6 +280,52 @@ describe("claimOf", () => {
         });
         expect(claimOf({}, { evidence: undefined, label: undefined })).toEqual({ evidence: [], label: "", lang: "en" });
         expect(claimOf({ lang: "vi" }, { label: "certain" }).label).toBe("");
+    });
+});
+
+describe("claimSignals and filesSignal: an idea's signal line", () => {
+    const wrongNote = "line 900 is past the end (412 lines)";
+
+    it("words what needs a second look: a warning label, the wrong cites, the weak claims, each with its hover", () => {
+        const chips = claimChips(
+            [
+                { ref: "pkg/a.go:12", cite: "ok" },
+                { ref: "pkg/b.go:900", cite: "wrong", citenote: wrongNote },
+                { ref: "", weak: true, note: "no measurement" },
+            ],
+            "guess",
+            "en"
+        );
+        expect(claimSignals(chips, "en")).toEqual([
+            { kind: "badge", word: "Guess", title: chips.badge!.meaning, check: "guess" },
+            { kind: "wrong", word: "Wrong cite", title: `b.go:900: ${wrongNote}`, check: "" },
+            { kind: "weak", word: "Weak claim", title: "Weak · no measurement", check: "" },
+        ]);
+    });
+
+    it("says nothing for Ran or Read code, counts several wrong cites, and words a Vietnamese council in Vietnamese", () => {
+        expect(claimSignals(claimChips([{ ref: "a.go:1" }], "read", "en"), "en")).toEqual([]);
+        expect(claimSignals(claimChips([{ ref: "a.go:1" }], "ran", "en"), "en")).toEqual([]);
+        const vi = claimChips(
+            [
+                { ref: "a.go:900", cite: "wrong" },
+                { ref: "b.go:7", cite: "wrong", citenote: "no such line" },
+                { ref: "", weak: true, note: "chưa đo" },
+            ],
+            "disproved",
+            "vi"
+        );
+        expect(claimSignals(vi, "vi").map((s) => s.word)).toEqual(["Bị bác", "Trích sai ×2", "Chứng cứ yếu"]);
+        expect(claimSignals(vi, "vi")[1].title).toBe("a.go:900\nb.go:7: no such line");
+    });
+
+    it("counts the sources the files icon lists, its label first for a screen reader, and draws none with no source", () => {
+        const chips = claimChips([{ ref: "pkg/a.go:12" }, { ref: "pkg/a.go:40" }, { ref: "c.ts:3" }], "read", "en");
+        expect(filesSignal(groupSources(chips.refs), chips.badge)).toEqual({ count: 2, label: "Read code: 2 sources" });
+        expect(filesSignal(groupSources(["x.md"]), null)).toEqual({ count: 1, label: "1 source" });
+        expect(filesSignal(groupSources([]), null)).toBeNull();
+        const vi = claimChips([{ ref: "a.go:1" }], "read", "vi");
+        expect(filesSignal(groupSources(vi.refs), vi.badge, "vi")).toEqual({ count: 1, label: "Đã đọc code: 1 nguồn" });
     });
 });
 

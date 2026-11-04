@@ -1296,14 +1296,21 @@ async function sources(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-sources.png");
 
-    await focusOn(h, P2);
+    // a pick hands the focus back to the idea's files icon, in the channel, as it stayed on the chip
+    const focusBack = await h.ev(`document.activeElement?.matches('[data-council-idea="P2"] [data-council-files-open]') ?? false`);
     await pressEscape(h);
     // the panel slides out before it leaves the page
-    rec("sources: Escape closes Sources opened from the channel", await until(h, `!document.querySelector("[data-council-sources]")`));
+    rec(
+        "sources: a pick leaves the focus on the idea's files icon, and Escape there closes Sources opened from the channel",
+        focusBack && (await until(h, `!document.querySelector("[data-council-sources]")`)),
+        { focusBack }
+    );
 
-    // from a thread, and back to it
-    await click(h, '[data-council-thread-open="P2"]');
+    // from a thread, and back to it: the idea's files list in the thread heading, opened by its icon
+    const threadBefore = await exists(h, '[data-council-thread="P2"]');
+    if (!threadBefore) await click(h, '[data-council-thread-open="P2"]');
     await until(h, `!!document.querySelector("[data-council-thread] [data-council-source]")`);
+    await click(h, "[data-council-thread] [data-council-files-open]");
     await click(h, "[data-council-thread] [data-council-source]");
     await until(h, `!!document.querySelector("[data-council-sources]")`);
     const label = await attr(h, "[data-council-sources-close]", "aria-label");
@@ -1313,11 +1320,12 @@ async function sources(h, ctx, rec) {
     rec(
         "sources: opened from a thread they take its place, and closing goes back to the thread",
         threadGone && label === "Back to the thread (Esc)" && back,
-        { label, threadGone, back }
+        { threadBefore, label, threadGone, back }
     );
     await click(h, "[data-council-thread-close]");
 
-    // a file that is not in the project
+    // a file that is not in the project, from the idea's files list in the channel
+    await click(h, '[data-council-idea="P5"] [data-council-files-open]');
     await click(h, '[data-council-idea="P5"] [data-council-source]');
     const missing = await until(h, `!!document.querySelector("[data-council-sources-error]")`);
     rec("sources: a cited file that is not in the project says so in place of its lines", missing);
@@ -1376,7 +1384,8 @@ async function room(h, ctx, rec) {
     // the reply chips: P2's one reply (Skeptic builds on it), P1 only a reaction, P4's reply and its held draft
     const p2 = await h.ev(`(() => {
         const b = document.querySelector('[data-council-thread-open="P2"]');
-        return b && { replies: b.getAttribute("data-replies"), repliers: [...b.querySelectorAll("[data-council-replier]")].map((a) => a.getAttribute("data-council-replier")), text: (b.textContent ?? "")${NORM} };
+        // the last reply's time is the chip's hover, not its words
+        return b && { replies: b.getAttribute("data-replies"), repliers: [...b.querySelectorAll("[data-council-replier]")].map((a) => a.getAttribute("data-council-replier")), text: (b.textContent ?? "")${NORM}, last: b.getAttribute("title") ?? "" };
     })()`);
     const p1 = await h.ev(`(() => {
         const b = document.querySelector('[data-council-thread-open="P1"]');
@@ -1392,10 +1401,11 @@ async function room(h, ctx, rec) {
         return d && { of: d.getAttribute("data-draft-of"), text: (d.textContent ?? "")${NORM} };
     })()`);
     rec(
-        "room: P2's chip reads `1 reply` with Skeptic's avatar and its last time, P1's `No replies yet` with a `Skeptic agrees` reaction, P4's names its waiting draft, which sits in the channel as a draft reply quoting P4",
+        "room: P2's chip reads `1 reply` with Skeptic's avatar and its last time in the hover, P1's `No replies yet` with a `Skeptic agrees` reaction, P4's names its waiting draft, which sits in the channel as a draft reply quoting P4",
         p2?.replies === "1" &&
             p2.text.includes("1 reply") &&
-            /Last reply \d+:\d\d/.test(p2.text) &&
+            /^Last reply \d+:\d\d$/.test(p2.last) &&
+            !/Last reply/.test(p2.text) &&
             JSON.stringify(p2.repliers) === '["skeptic"]' &&
             p1?.replies === "0" &&
             p1.text.includes("No replies yet") &&
@@ -2148,7 +2158,7 @@ async function attachPaste(h, ctx, rec) {
         return !!box && !!input && box.bottom <= input.top + 1;
     })()`);
     rec(
-        "attach-paste: a pasted image waits above the text as a thumbnail chip that reaches ready, its upload (stubbed) is kept (`keep`), and the placeholder says `paste an image · @ for a file`",
+        "attach-paste: a pasted image waits above the text as a thumbnail chip that reaches ready, its upload (stubbed) is kept (`keep`), and the placeholder says `@ a seat or a file · paste an image`",
         pasted?.notPrevented === false &&
             chips.length === 1 &&
             chips[0].state === "ready" &&
@@ -2157,7 +2167,7 @@ async function attachPaste(h, ctx, rec) {
             writes.length === 1 &&
             writes[0].data?.keep === true &&
             /^waveterm_paste_/.test(writes[0].data?.filename ?? "") &&
-            (placeholder ?? "").includes("paste an image · @ for a file"),
+            (placeholder ?? "").includes("@ a seat or a file · paste an image"),
         { pasted, chips, above, writes: writes.map((w) => w.data?.filename), keep: writes[0]?.data?.keep, placeholder }
     );
     await h.shot("cdp-shots/council-discussion-attach-paste.png");
@@ -2791,7 +2801,11 @@ const evidenceRow = (h, scope) =>
             wrong: wrong.map((e) => words(e)),
             wrongIcon: wrong.map((e) => !!e.querySelector("svg")),
             wrongRef: wrong.map((e) => e.getAttribute("data-wrong-ref")),
+            wrongTitle: wrong.map((e) => e.getAttribute("title")),
             weak: [...root.querySelectorAll('[data-council-evidence="weak"]')].map((e) => t(e)),
+            weakTitle: [...root.querySelectorAll('[data-council-evidence="weak"]')].map((e) => e.getAttribute("title")),
+            // an idea's files icon, its label first for a screen reader (Read code: 1 source)
+            files: root.querySelector("[data-council-files-open]")?.getAttribute("aria-label") ?? null,
         };
     })()`);
 
@@ -2861,19 +2875,18 @@ async function claimBadges(h, ctx, rec) {
     const plainReply = await evidenceRow(h, '[data-council-reply-post="r6"]');
     await h.shot("cdp-shots/council-discussion-badges-thread.png");
     rec(
-        "badges: in an idea's thread the idea says Read code; its cite that does not hold is a Wrong cite chip with Go's note (the file, the line and why), not a link; the weak claim keeps its amber chip",
-        idea?.badge === "Read code" &&
-            idea.check === "read" &&
-            idea.badgeFirst &&
-            idea.icon &&
+        "badges: in an idea's thread Read code is the files icon's label, not a word on the line; its cite that does not hold is a `Wrong cite` word whose hover holds Go's note (the file, the line and why), not a link; the weak claim is the amber `Weak claim` word",
+        idea?.badge === null &&
+            idea.files === "Read code: 1 source" &&
             idea.links.length === 1 &&
             idea.links[0] === "model.go:38" &&
             idea.wrong.length === 1 &&
-            idea.wrong[0] === `Wrong cite model.go:900 · ${WRONG_NOTE}` &&
+            idea.wrong[0] === "Wrong cite" &&
+            idea.wrongTitle[0] === `model.go:900: ${WRONG_NOTE}` &&
             idea.wrongIcon[0] &&
-            idea.wrongRef[0] === WRONG_REF &&
             idea.weak.length === 1 &&
-            idea.weak[0].startsWith("Weak"),
+            idea.weak[0] === "Weak claim" &&
+            (idea.weakTitle[0] ?? "").startsWith("Weak"),
         idea
     );
     rec(
@@ -2916,9 +2929,12 @@ async function claimBadges(h, ctx, rec) {
     const viGuess = await evidenceRow(h, '[data-council-reply-post="r5"]');
     await h.shot("cdp-shots/council-discussion-badges-vi.png");
     rec(
-        "badges: in a Vietnamese council the words are Đã đọc code, Trích sai, Đã chạy and Chỉ đoán",
-        viIdea?.badge === "Đã đọc code" &&
-            viIdea.wrong[0] === `Trích sai model.go:900 · ${WRONG_NOTE}` &&
+        "badges: in a Vietnamese council the words are Đã đọc code (the files icon's label), Trích sai, Chứng cứ yếu, Đã chạy and Chỉ đoán",
+        viIdea?.badge === null &&
+            viIdea.files === "Đã đọc code: 1 nguồn" &&
+            viIdea.wrong[0] === "Trích sai" &&
+            viIdea.wrongTitle[0] === `model.go:900: ${WRONG_NOTE}` &&
+            viIdea.weak[0] === "Chứng cứ yếu" &&
             viRan?.badge === "Đã chạy" &&
             viGuess?.badge === "Chỉ đoán",
         { viIdea, viRan, viGuess }
@@ -3184,7 +3200,7 @@ async function thumbsAndLines(h, ctx, rec) {
     const idea = await thumbFacts(h, IDEA);
     await h.shot("cdp-shots/council-discussion-thumbs.png");
     rec(
-        "thumbs: a reply with a like shows a `Liked` chip (a thumb up, the success colours) under its bubble, a disliked one `Disliked` (a thumb down, the error colours), and the idea's own `Liked` sits under its evidence; each is a pressed button that names what it takes back",
+        "thumbs: a reply with a like shows a `Liked` chip (a thumb up, the success colours) under its bubble, a disliked one `Disliked` (a thumb down, the error colours), each a pressed button that names what it takes back; the idea's like is its pressed thumb on its signal line, with no chip",
         r4.chip?.kind === "like" &&
             r4.chip.text === "Liked" &&
             r4.chip.icon &&
@@ -3198,16 +3214,16 @@ async function thumbsAndLines(h, ctx, rec) {
             r5.chip.tone === "error" &&
             r5.chip.below === true &&
             r5.chip.title === "Take back your dislike" &&
-            idea.chip?.kind === "like" &&
-            idea.chip.text === "Liked",
-        { r4: r4.chip, r5: r5.chip, idea: idea.chip }
+            idea.chip === null &&
+            idea.buttons.join() === "like=true,dislike=false",
+        { r4: r4.chip, r5: r5.chip, idea: idea.chip, ideaButtons: idea.buttons }
     );
 
     // with the pointer away, no thumb button shows in the byline: the time, the buttons and Chốt (beside them) are at its
     // right end, dimmed out
     rec(
-        "thumbs: with the pointer away the byline's time, its Copy and Pin to Report buttons, both thumb buttons and the Chốt button beside them are dimmed out, together at its right end after the name, a reply's and the idea's alike, though the like is on",
-        [r4, r5, idea].every(
+        "thumbs: with the pointer away a reply's byline time, its Copy and Pin to Report buttons, both thumb buttons and the Chốt button beside them are dimmed out, together at its right end after the name, though the like is on; the idea's thumbs stay shown on its signal line, the like pressed",
+        [r4, r5].every(
             (f) =>
                 f.endOpacity === "0" &&
                 f.endRight === f.bylineRight &&
@@ -3216,7 +3232,9 @@ async function thumbsAndLines(h, ctx, rec) {
                 f.buttons.length === 2
         ) &&
             r4.buttons.join() === "like=true,dislike=false" &&
-            r5.buttons.join() === "like=false,dislike=true",
+            r5.buttons.join() === "like=false,dislike=true" &&
+            idea.endOpacity === "1" &&
+            idea.buttons.join() === "like=true,dislike=false",
         { r4, r5, idea }
     );
 
@@ -3260,7 +3278,10 @@ async function thumbsAndLines(h, ctx, rec) {
     await unstubRpc(h);
     await movePointer(h, 2, 2);
 
-    // an evidence chip with many cited lines keeps its file name; the line list is what is cut, and the title holds all of it
+    // an idea's files sit in the list its files icon opens (a click keeps it open): a row with many cited lines keeps its
+    // file name; the line list is what is cut, and the title holds all of it
+    await click(h, `${IDEA} [data-council-files-open]`);
+    const listOpen = await until(h, `document.querySelector('${IDEA} [data-council-files-list]')?.dataset.open === "true"`);
     const chips = await h.ev(`[...document.querySelectorAll('${IDEA} [data-council-evidence="ref"]')].map((chip) => {
         const name = chip.querySelector("[data-council-source-name]");
         const lines = chip.querySelector("[data-council-source-lines]");
@@ -3274,21 +3295,23 @@ async function thumbsAndLines(h, ctx, rec) {
         };
     })`);
     await h.shot("cdp-shots/council-discussion-lines-chip.png");
+    await click(h, `${IDEA} [data-council-files-open]`);
     const many = chips.find((c) => c.name === "idle_sleep_manager.go");
     const short = chips.find((c) => c.name === "model.go");
     rec(
-        "evidence: a chip citing eight lines of idle_sleep_manager.go still shows the whole file name, cuts the line list with an ellipsis inside the 260px chip, and holds the full list in its title; a chip with one line shows both whole",
-        many != null &&
+        "evidence: in the files list a row citing eight lines of idle_sleep_manager.go still shows the whole file name, cuts the line list with an ellipsis inside the 300px list, and holds the full list in its title; a row with one line shows both whole",
+        listOpen &&
+            many != null &&
             many.nameShown &&
             many.linesCut === true &&
             many.lines === MANY_LABEL &&
-            many.width <= 261 &&
+            many.width <= 300 &&
             many.title === `${IDLE_FILE}${MANY_LABEL}` &&
             short != null &&
             short.nameShown &&
             short.lines === ":38" &&
             short.linesCut === false,
-        { many, short }
+        { listOpen, many, short }
     );
 }
 
@@ -3395,8 +3418,8 @@ async function ideasRail(h, ctx, rec) {
     // the Ideas tab is grouped by where the seats stand (council-ideas has the full set of groups): this council's six
     // ideas fall in Agreed (P3, P5), Has doubts (P1), Someone against it (P2, P4) and Withdrawn (P6), in arrival order
     rec(
-        "rail: the caption reads `by where the seats stand`, and the six ideas sit under Agreed, Has doubts, Someone against it and Withdrawn in that order, P3 P5, P1, P2 P4, P6",
-        first?.caption === "by where the seats stand" &&
+        "rail: no caption over the groups, and the six ideas sit under Agreed, Has doubts, Someone against it and Withdrawn in that order, P3 P5, P1, P2 P4, P6",
+        first?.caption === "" &&
             first.groups.join() === "agreed,doubts,against,withdrawn" &&
             first.rows.map((r) => r.id).join() === "P3,P5,P1,P2,P4,P6",
         { caption: first?.caption, groups: first?.groups, order: first?.rows.map((r) => r.id) }

@@ -13,13 +13,22 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useBlobSrc } from "@/app/view/jarvis/localimage";
 import { base64ToString, cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
-import { FileText, Image as ImageIcon, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
+import { FileText, Image as ImageIcon, TriangleAlert, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+    CHECK_TONE,
+    CheckIcon,
+    ClaimBadgeChip,
+    WRONG_CITE_ICON,
+    WRONG_CITE_TONE,
+    WrongCiteChip,
+} from "./councilchecks";
 import type { CouncilLang } from "./councilmodel";
 import { parseShotRef, shotName } from "./councilshots";
 import {
     claimChips,
+    claimSignals,
+    filesSignal,
     foldSources,
     groupSources,
     hunkLabel,
@@ -28,6 +37,7 @@ import {
     sourceDir,
     sourceExcerpt,
     sourceFilePath,
+    type ClaimSignal,
     type RegionCrop,
     type SourceGroup,
 } from "./councilsources";
@@ -202,6 +212,242 @@ export function EvidenceChips({
     );
 }
 
+type EvidenceProps = { evidence?: CouncilEvidence[]; label?: string; lang?: CouncilLang; source?: SourceOwner };
+
+/** The regions Go drew for a claim, as an idea shows them under its words; its signal line carries the rest of its
+ *  evidence (ClaimSignalWords, EvidenceFiles). Nothing when Go drew none. */
+export function EvidenceCrops({ evidence, label = "", lang = "en", source }: EvidenceProps) {
+    const chips = useMemo(() => claimChips(evidence, label, lang), [evidence, label, lang]);
+    const shown = useAtomValue(source != null ? councilSourcesAtom(source.councilId) : NO_SOURCES);
+    if (chips.crops.length === 0) {
+        return null;
+    }
+    const mine = source != null && shown != null && shown.owner === source.owner;
+    return (
+        <div data-council-crops className="flex flex-wrap gap-[8px]">
+            {chips.crops.map((crop) => (
+                <RegionCropImage
+                    key={crop.region.crop}
+                    crop={crop}
+                    picked={mine && shown.region?.region.crop === crop.region.crop}
+                    onOpen={
+                        source == null
+                            ? undefined
+                            : () =>
+                                  openCouncilSources(source.councilId, {
+                                      owner: source.owner,
+                                      title: source.title,
+                                      refs: chips.refs,
+                                      pick: 0,
+                                      region: crop,
+                                  })
+                    }
+                />
+            ))}
+        </div>
+    );
+}
+
+const SIGNAL_TONE: Record<ClaimSignal["kind"], string> = {
+    badge: "",
+    wrong: WRONG_CITE_TONE.text,
+    weak: "text-warning-soft",
+};
+
+/** The words on an idea's signal line that say its claim needs a second look (claimSignals): a label that warns, the
+ *  wrong cites, the weak claims, each an icon and a word with the details in its hover. */
+export function ClaimSignalWords({ evidence, label = "", lang = "en" }: Omit<EvidenceProps, "source">) {
+    const signals = useMemo(() => claimSignals(claimChips(evidence, label, lang), lang), [evidence, label, lang]);
+    return (
+        <>
+            {signals.map((s) => {
+                const Icon = s.kind === "wrong" ? WRONG_CITE_ICON : TriangleAlert;
+                return (
+                    <span
+                        key={s.kind}
+                        tabIndex={0}
+                        data-council-evidence={s.kind}
+                        data-check={s.check === "" ? undefined : s.check}
+                        title={s.title}
+                        aria-label={s.title === "" ? s.word : `${s.word}: ${s.title}`}
+                        className={cn(
+                            "inline-flex min-w-0 items-center gap-[4px] rounded-[4px] text-[12.5px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            s.check === "" ? SIGNAL_TONE[s.kind] : CHECK_TONE[s.check].text
+                        )}
+                    >
+                        {s.check === "" ? (
+                            <Icon size={12} strokeWidth={2} aria-hidden className="flex-none" />
+                        ) : (
+                            <CheckIcon label={s.check} />
+                        )}
+                        {s.word}
+                    </span>
+                );
+            })}
+        </>
+    );
+}
+
+// how long the pointer rests on the files icon before its list opens, and how long the list outlasts the pointer leaving,
+// so a pointer passing over the line opens nothing and one crossing the gap to the list does not close it
+const FILES_OPEN_MS = 200;
+const FILES_CLOSE_MS = 180;
+// the room the list wants under the icon; with less before the window's foot it opens above
+const FILES_LIST_ROOM = 240;
+
+/** The files icon at the end of an idea's signal line: a page and how many sources the claim cites. Resting on it (or
+ *  focusing it) opens their list, a link per file that opens the Sources panel; a click keeps the list open until a
+ *  click outside or Escape. The list stays mounted, hidden while closed, so the links are in the page as the chips
+ *  were. Nothing when the claim cites no source. */
+export function EvidenceFiles({ evidence, label = "", lang = "en", source }: EvidenceProps) {
+    const chips = useMemo(() => claimChips(evidence, label, lang), [evidence, label, lang]);
+    const view = useMemo(() => groupSources(chips.refs), [chips.refs]);
+    const shown = useAtomValue(source != null ? councilSourcesAtom(source.councilId) : NO_SOURCES);
+    const [open, setOpen] = useState<"" | "peek" | "kept">("");
+    const [up, setUp] = useState(false);
+    const wrap = useRef<HTMLSpanElement>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    const timer = useRef<number | undefined>(undefined);
+    // set while a pick hands the focus back to the icon, so that focus does not open the list again
+    const quiet = useRef(false);
+    useEffect(() => () => window.clearTimeout(timer.current), []);
+    useEffect(() => {
+        if (open !== "kept") {
+            return;
+        }
+        const onDown = (e: MouseEvent) => {
+            if (!wrap.current?.contains(e.target as Node)) {
+                setOpen("");
+            }
+        };
+        document.addEventListener("mousedown", onDown, true);
+        return () => document.removeEventListener("mousedown", onDown, true);
+    }, [open]);
+    const files = filesSignal(view, chips.badge, lang);
+    if (files == null) {
+        return null;
+    }
+    const later = (run: () => void, ms: number) => {
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(run, ms);
+    };
+    const place = () => {
+        const r = trigger.current?.getBoundingClientRect();
+        setUp(r != null && r.bottom + FILES_LIST_ROOM > window.innerHeight);
+    };
+    const peek = () =>
+        later(() => {
+            place();
+            setOpen((o) => (o === "" ? "peek" : o));
+        }, FILES_OPEN_MS);
+    const unpeek = () => later(() => setOpen((o) => (o === "peek" ? "" : o)), FILES_CLOSE_MS);
+    const onKeyDown = (e: ReactKeyboardEvent<HTMLSpanElement>) => {
+        if (e.key === "Escape" && open !== "") {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen("");
+            trigger.current?.focus();
+        }
+    };
+    const mine = source != null && shown != null && shown.owner === source.owner;
+    const picked = mine && shown.region == null ? shown.pick : -1;
+    // a picked row hides with the list, so the focus goes back to the icon (as it stayed on a chip), where Escape still
+    // reaches the Sources panel the pick opened
+    const pick = (i: number) => {
+        setOpen("");
+        quiet.current = true;
+        trigger.current?.focus();
+        quiet.current = false;
+        if (source != null) {
+            openCouncilSources(source.councilId, {
+                owner: source.owner,
+                title: source.title,
+                refs: chips.refs,
+                pick: i,
+            });
+        }
+    };
+    const isOpen = open !== "";
+    return (
+        <span
+            ref={wrap}
+            data-council-files={source?.owner}
+            onMouseEnter={peek}
+            onMouseLeave={unpeek}
+            onKeyDown={onKeyDown}
+            onBlur={(e) => {
+                if (!wrap.current?.contains(e.relatedTarget as Node | null)) {
+                    setOpen((o) => (o === "peek" ? "" : o));
+                }
+            }}
+            className="relative inline-flex"
+        >
+            <button
+                ref={trigger}
+                type="button"
+                data-council-files-open
+                aria-label={files.label}
+                aria-expanded={isOpen}
+                aria-haspopup="dialog"
+                onFocus={() => {
+                    if (quiet.current) {
+                        return;
+                    }
+                    place();
+                    setOpen((o) => (o === "" ? "peek" : o));
+                }}
+                onClick={() => {
+                    place();
+                    setOpen((o) => (o === "kept" ? "" : "kept"));
+                }}
+                className={cn(
+                    "inline-flex h-[24px] cursor-pointer items-center gap-[4px] rounded-[6px] border-0 px-[6px] text-[12px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    isOpen
+                        ? "bg-surface-selected text-primary"
+                        : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                )}
+            >
+                <FileText size={13} strokeWidth={2} aria-hidden />
+                {files.count}
+            </button>
+            <div
+                role="dialog"
+                aria-label={files.label}
+                data-council-files-list
+                data-open={isOpen ? "true" : undefined}
+                className={cn(
+                    "absolute right-0 z-30 w-[300px] max-w-[80vw] flex-col gap-[2px] rounded-[8px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover-sm",
+                    up ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
+                    isOpen ? "flex" : "hidden"
+                )}
+            >
+                {view.groups.map((g, i) =>
+                    source == null ? (
+                        <SourceName key={g.path} group={g} row />
+                    ) : (
+                        <SourceLink key={g.path} group={g} picked={i === picked} onOpen={() => pick(i)} row />
+                    )
+                )}
+                {view.others.map((ref, i) => {
+                    const shot = parseShotRef(ref) != null;
+                    const Icon = shot ? ImageIcon : FileText;
+                    return (
+                        <span
+                            key={`other-${i}`}
+                            data-council-evidence="other"
+                            title={ref}
+                            className={cn(ROW, "text-secondary")}
+                        >
+                            <Icon size={12} className="flex-none text-muted" aria-hidden />
+                            <span className="min-w-0 truncate">{shot ? shotName(ref) : ref}</span>
+                        </span>
+                    );
+                })}
+            </div>
+        </span>
+    );
+}
+
 // the width a region's crop is drawn at under a message: wide enough to see the button, narrow enough for the 380px
 // thread panel
 const CROP_W = "w-[240px]";
@@ -251,7 +497,21 @@ function RegionCropImage({ crop, picked, onOpen }: { crop: RegionCrop; picked: b
     );
 }
 
-function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boolean; onOpen: () => void }) {
+// a cited file as a row of the files list an idea's signal line opens (EvidenceFiles), the chip's parts with no box
+const ROW =
+    "flex h-[26px] w-full min-w-0 select-none items-center gap-[6px] rounded-[6px] border border-transparent bg-transparent px-[6px] text-left text-[12.5px]";
+
+function SourceLink({
+    group,
+    picked,
+    onOpen,
+    row,
+}: {
+    group: SourceGroup;
+    picked: boolean;
+    onOpen: () => void;
+    row?: boolean;
+}) {
     return (
         <button
             type="button"
@@ -261,7 +521,7 @@ function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boo
             title={`${group.path}${group.label}`}
             onClick={onOpen}
             className={cn(
-                CHIP,
+                row ? ROW : CHIP,
                 "group cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 picked ? "border-edge-strong bg-surface-selected" : "hover:bg-surface-hover"
             )}
@@ -282,9 +542,9 @@ function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boo
     );
 }
 
-function SourceName({ group }: { group: SourceGroup }) {
+function SourceName({ group, row }: { group: SourceGroup; row?: boolean }) {
     return (
-        <span data-council-evidence="ref" title={`${group.path}${group.label}`} className={CHIP}>
+        <span data-council-evidence="ref" title={`${group.path}${group.label}`} className={row ? ROW : CHIP}>
             <FileText size={12} className="flex-none text-muted" aria-hidden />
             <span data-council-source-name className={cn(NAME, "font-medium text-secondary")}>
                 {group.name}

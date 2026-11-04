@@ -326,6 +326,11 @@ export function evidenceChip(e: CouncilEvidence): { text: string; weak: boolean 
 /** Pure: the reactions under a post, `Reader agrees` one per expert whose latest word on it is an accept with no text
  *  (an expert that agreed and then spoke up is not one), in the order they came. */
 export function reactions(c: Council, proposalId: string): string[] {
+    return agreeNames(c, proposalId).map((name) => `${name} agrees`);
+}
+
+/** Pure: the names `reactions` words, `Reader` for `Reader agrees`, in the same order. */
+export function agreeNames(c: Council, proposalId: string): string[] {
     const latest = new Map<string, CouncilReply>();
     (c.replies ?? [])
         .map((r, i) => ({ r, i }))
@@ -336,7 +341,7 @@ export function reactions(c: Council, proposalId: string): string[] {
                 latest.set(r.author, r);
             }
         });
-    return [...latest.values()].filter(isReaction).map((r) => `${authorName(c, r.author)} agrees`);
+    return [...latest.values()].filter(isReaction).map((r) => authorName(c, r.author));
 }
 
 // ---- the composer ----

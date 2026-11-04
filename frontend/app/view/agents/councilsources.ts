@@ -242,6 +242,61 @@ export function wrongCiteOf(e: CouncilEvidence, lang: CouncilLang): WrongCite {
     };
 }
 
+// ---- an idea's signal line: its evidence as a few quiet words and a counted files icon ----
+
+/** One word on an idea's signal line (board A-details-line in .superpowers/design/council-card-calm) that says its claim
+ *  needs a second look, its details in the hover (`title`): a label that warns (Disproved, Guess), the cites Go found
+ *  wrong, the weak claims. */
+export interface ClaimSignal {
+    kind: "badge" | "wrong" | "weak";
+    word: string;
+    title: string;
+    check: CheckLabel | ""; // the badge's label; "" for the others
+}
+
+// the labels that say something the files icon does not: Ran and Read code only say how the files were used
+const WARNING_CHECKS: readonly CheckLabel[] = ["disproved", "guess"];
+
+const WEAK_CLAIM_WORD: Record<CouncilLang, string> = { en: "Weak claim", vi: "Chứng cứ yếu" };
+
+/** Pure: the warning words an idea's signal line shows for its claim, in this order: the badge when it warns, the wrong
+ *  cites (one word, counted past one), the weak claims. Empty for a claim with nothing to look at again. */
+export function claimSignals(chips: ClaimChips, lang: CouncilLang): ClaimSignal[] {
+    const out: ClaimSignal[] = [];
+    if (chips.badge != null && WARNING_CHECKS.includes(chips.badge.label)) {
+        out.push({ kind: "badge", word: chips.badge.word, title: chips.badge.meaning, check: chips.badge.label });
+    }
+    if (chips.wrong.length > 0) {
+        const word = wrongCiteWord(lang);
+        out.push({
+            kind: "wrong",
+            word: chips.wrong.length === 1 ? word : `${word} ×${chips.wrong.length}`,
+            title: chips.wrong.map((w) => `${w.name}${w.label}${w.note === "" ? "" : `: ${w.note}`}`).join("\n"),
+            check: "",
+        });
+    }
+    if (chips.weak !== "") {
+        out.push({ kind: "weak", word: WEAK_CLAIM_WORD[lang], title: chips.weak, check: "" });
+    }
+    return out;
+}
+
+/** Pure: the files icon on an idea's signal line: how many sources it cites (the files, then any other cite), and the
+ *  name a screen reader gives the icon, its label first (`Read code: 3 sources`, `Đã đọc code: 3 nguồn`). Null when it
+ *  cites none. */
+export function filesSignal(
+    view: EvidenceView,
+    badge: ClaimBadge | null,
+    lang: CouncilLang = "en"
+): { count: number; label: string } | null {
+    const count = view.groups.length + view.others.length;
+    if (count === 0) {
+        return null;
+    }
+    const n = lang === "vi" ? `${count} nguồn` : `${count} ${count === 1 ? "source" : "sources"}`;
+    return { count, label: badge == null ? n : `${badge.word}: ${n}` };
+}
+
 /** How many of a message's files show as chips; the rest fold into one `+N files` that opens the Sources panel, which
  *  lists them all. */
 export const SHOWN_SOURCES = 2;

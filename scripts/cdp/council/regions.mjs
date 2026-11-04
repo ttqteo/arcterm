@@ -111,13 +111,14 @@ export const councilRegions = {
             card
         );
 
-        // 3. P2's region named with no box is the weak chip, saying the region has no box, and shows no image
+        // 3. P2's region named with no box is the weak word on its signal line, its hover saying the region has no box,
+        // and shows no image
         const weak = await h.ev(
-            `(document.querySelector('[data-council-idea="P2"] [data-council-evidence="weak"]')?.textContent ?? "").replace(/\\s+/g, " ").trim()`
+            `(document.querySelector('[data-council-idea="P2"] [data-council-evidence="weak"]')?.getAttribute("title") ?? "").replace(/\\s+/g, " ").trim()`
         );
         const p2Crops = await h.ev(`document.querySelectorAll('[data-council-idea="P2"] [data-council-crop]').length`);
         rec(
-            "3. a region cited with no box is drawn weak, the chip saying the region has no box, with no image",
+            "3. a region cited with no box is drawn weak, its hover saying the region has no box, with no image",
             weak.includes("rail-home.png#header") && weak.includes("no box") && p2Crops === 0,
             { weak, p2Crops }
         );

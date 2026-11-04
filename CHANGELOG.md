@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council idea is quieter: its bubble holds only what the seat wrote, and one line under it carries the replies, who agreed, a weak or wrong claim, like and dislike, Chốt (now just a pin), its files as an icon with a count, and Copy and Pin to Report under a … menu; hover any of them for the details (the last reply's time, the names, the claim's note, the file list). The Ideas rail drops its caption and the agree count under Agreed, and the Read files switch and the cost estimate under the message box wait until you type.
 - Switching a council between Report, Discussion and Map fades the new view in instead of cutting to it, and between Discussion and Map the grey mark slides to the tab you clicked.
 - A council's header is one slim row: the Report, Discussion and Map tabs are icons, the title gets the room, the mode, time, replies and tokens sit at the foot of the Ideas rail (under an ⓘ in the header when the rail is folded), the seats show two avatars and +N (hover for the whole list), and Summarize, Resume, Pin and Stop moved into a … menu.
 - A council ranks directions by how many experts picked them, counting an expert once across merged proposals, and its report says "3 experts, 1 model" rather than "5 picks": seats on one model are not independent votes. Run facts says when every seat ran on one model.

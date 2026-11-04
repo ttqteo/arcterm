@@ -289,9 +289,11 @@ export function stanceGroups(rows: readonly IdeaRow[]): StanceGroup[] {
 }
 
 /** Pure: the quiet line under an idea in the Ideas rail: for a withdrawn idea `withdrawn in round N`, for one the person
- *  cut `cut by you`; otherwise its replies when it has any and the stances taken on it when any is. `draft waits` follows
- *  while the idea or a reply on it waits for the person. Empty when none applies (an idea nobody answered says nothing). */
-export function railMeta(row: IdeaRow): string {
+ *  cut `cut by you`; otherwise its replies when it has any and the stances taken on it when any is. Under the Agreed
+ *  header the agrees go unsaid: the header says it, and the idea's own line in the channel counts them. `draft waits`
+ *  follows while the idea or a reply on it waits for the person. Empty when none applies (an idea nobody answered says
+ *  nothing). `group` is the group the row is drawn in (stanceGroups). */
+export function railMeta(row: IdeaRow, group?: StanceGroupKey): string {
     const parts: string[] = [];
     if (row.cut) {
         parts.push("cut by you");
@@ -301,7 +303,7 @@ export function railMeta(row: IdeaRow): string {
         if (row.replies > 0) {
             parts.push(row.repliesLabel);
         }
-        if (row.agrees > 0) {
+        if (row.agrees > 0 && group !== "agreed") {
             parts.push(plural(row.agrees, "agrees", "agree"));
         }
         if (row.doubts > 0) {
@@ -315,9 +317,4 @@ export function railMeta(row: IdeaRow): string {
         parts.push("draft waits");
     }
     return parts.join(" · ");
-}
-
-/** Pure: the caption over the Ideas rail, which says how its groups are ordered. */
-export function railOrderLabel(): string {
-    return "by where the seats stand";
 }

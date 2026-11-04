@@ -15,6 +15,7 @@
 // `rounds`, no drafts, no agents) reads as today's two rounds and a summary.
 
 import {
+    agreeNames,
     avatarTone,
     expertDoing,
     failedWhile as failedWhileWords,
@@ -559,12 +560,31 @@ export interface IdeaPost extends Who {
     text: string;
     claim: ClaimEvidence;
     agrees: string[]; // `Skeptic agrees`: the seats that agreed with nothing to add
+    agreed: AgreeSignal | null; // the same seats as the one word its signal line shows; null with none
     thumb: CouncilThumb | ""; // the person's like or dislike
     picks: { count: number; label: string; title: string } | null; // `Picked by 2`; null when no seat picked it
     edited: boolean;
     at: string;
     when: string;
     thread: IdeaThread;
+}
+
+/** The seats that agreed with an idea and had nothing to add, as its signal line words them: one seat by name
+ *  (`Skeptic agrees`), more as a count (`2 agree`) with their names in the hover. */
+export interface AgreeSignal {
+    word: string;
+    title: string; // "" when the word already names the seat
+}
+
+/** Pure: the agree word for the seats `agreeNames` lists; null when none agreed. */
+export function agreeSignal(names: readonly string[]): AgreeSignal | null {
+    if (names.length === 0) {
+        return null;
+    }
+    if (names.length === 1) {
+        return { word: `${names[0]} agrees`, title: "" };
+    }
+    return { word: `${names.length} agree`, title: listNames([...names]) };
 }
 
 function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
@@ -586,6 +606,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         text: p.argument,
         claim: claimOf(c, p),
         agrees: reactions(view, p.id),
+        agreed: agreeSignal(agreeNames(view, p.id)),
         thumb: thumbOf(p),
         picks:
             picked != null && picked > 0
