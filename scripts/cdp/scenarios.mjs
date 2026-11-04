@@ -38985,7 +38985,7 @@ const consumersPopover = {
         const first = await h.ev(`({
             cpu: ${consumersCells("[data-consumer-cpu]")},
             command: ${consumersCells("[data-consumer-command]")},
-            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
+            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
             own: document.querySelectorAll("[data-consumers-own]").length,
             agents: !!document.querySelector("[data-consumers-agents]"),
             hoverButtons: document.querySelectorAll("[data-consumer-sonnet], [data-consumer-sleep], [data-consumer-stop]").length,
@@ -39004,7 +39004,7 @@ const consumersPopover = {
         const filled = await polishWaitFor(h, `${consumersCells("[data-consumer-cpu]")}["fx-consumers-mine"] === "4.1%"`, 3000);
         const ready = await h.ev(`({
             cpu: ${consumersCells("[data-consumer-cpu]")},
-            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
+            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
         })`);
         await h.shot("cdp-shots/consumers-compact.png");
         rec(
@@ -39696,7 +39696,11 @@ const agentSleep = {
         await removeAgentSleepMock(h);
         await removeConsumersMock(h);
         if (ctx.wroteFixture) {
-            ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true });
+            if (ctx.prevFixture != null) {
+                writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture);
+            } else {
+                rmSync(TREE_RAIL_FIXTURE, { force: true });
+            }
         }
         if (!(await ahReload(h))) console.error("agent-sleep teardown: the page did not come back after the reload");
         await h.goto("cockpit");

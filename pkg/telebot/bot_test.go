@@ -1547,6 +1547,32 @@ func TestStatusReportsAllowedTime(t *testing.T) {
 	}
 }
 
+// A session that winds down while its poll is failing (here a 409, another poller) must not leave that error on the
+// row for good: the idle bot checks the token once more, and a good getMe clears it.
+func TestSessionThatEndsOnAPollErrorDoesNotKeepTheError(t *testing.T) {
+	withLinger(t, 150*time.Millisecond)
+	r := newRig(t)
+	r.tg.mu.Lock()
+	r.tg.updatesCode = func(n int) int {
+		if n >= 2 {
+			return 409
+		}
+		return 0
+	}
+	r.tg.mu.Unlock()
+	r.add("block:a", old("a1", single("Which?", "x", "y")))
+	r.start()
+	r.waitSent(1)
+	r.waitFor("the poll error", func() bool { return r.bot.Status().LastError == errAnotherPoller })
+
+	r.remove("block:a")
+	r.waitFor("the disconnect", func() bool { return !r.bot.Status().Connected })
+	r.waitFor("the error to clear once the bot is idle", func() bool { return r.bot.Status().LastError == "" })
+	if st := r.bot.Status(); st.BotName == "" {
+		t.Errorf("BotName empty after the idle check")
+	}
+}
+
 func TestPairCodeConnectsOutsideAllowedTime(t *testing.T) {
 	withLinger(t, 150*time.Millisecond)
 	r := newRig(t)

@@ -376,7 +376,7 @@ describe("testSharded", () => {
         const { writes, out } = await runAll(pkgs, SHARDS + 2, fakeProcs());
         expect(writes).toHaveLength(pkgs.length);
         for (const w of writes) {
-            const [, tag] = w.match(/^ok  \tm\/pkg\/(\w)\t/m);
+            const [, tag] = w.match(/^ok {2}\tm\/pkg\/(\w)\t/m);
             expect(w.trimEnd().split("\n").at(-1)).toMatch(new RegExp(`^ok  \tm/pkg/${tag}\t`));
             expect(w.match(/^=== (\w) ran /gm).every((l) => l === `=== ${tag} ran `)).toBe(true);
             expect(w.match(/^=== \w ran /gm)).toHaveLength(6);

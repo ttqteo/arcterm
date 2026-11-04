@@ -57,7 +57,8 @@ func NoteWorkerSession(ctx context.Context, ev *wps.WaveEvent) {
 		return
 	}
 	run, err := wstore.GetRun(ctx, channelORef.OID, runORef.OID)
-	if err != nil || run == nil || !assignsOwnSession(run.Runtime) || run.SessionId == data.SessionID {
+	// the report must come from the worker's own runtime: a nested agy inside a codex worker names its session too
+	if err != nil || run == nil || run.Runtime != data.Agent || !assignsOwnSession(run.Runtime) || run.SessionId == data.SessionID {
 		return
 	}
 	err = wstore.UpdateRun(ctx, channelORef.OID, runORef.OID, func(r *waveobj.Run) error {

@@ -215,7 +215,7 @@ function main(argv) {
     const casesPath = join(dataDir, "council-bench", "cases.json");
     let existing;
     try {
-        existing = JSON.parse(readFileSync(casesPath, "utf8").replace(/^﻿/, ""));
+        existing = JSON.parse(readFileSync(casesPath, "utf8").replace(/^\uFEFF/, ""));
     } catch (err) {
         throw new Error(`cannot read the cases list ${casesPath} (is --data-dir the app's data dir?): ${err.message}`);
     }

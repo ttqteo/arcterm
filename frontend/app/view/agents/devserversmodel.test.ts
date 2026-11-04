@@ -48,6 +48,15 @@ describe("serverLabel", () => {
         );
     });
 
+    it("drops an inline-script flag after an interpreter, leaving the script", () => {
+        expect(serverLabel(row({ cmdline: `node -e "require('http').createServer().listen(4321)"` }))).toBe(
+            "require('http').createServer().listen(4321)"
+        );
+        expect(serverLabel(row({ cmdline: "node --eval serve()" }))).toBe("serve()");
+        expect(serverLabel(row({ cmdline: `python -c "import http.server"` }))).toBe("import http.server");
+        expect(serverLabel(row({ cmdline: "node -e" }))).toBe("-e");
+    });
+
     it("leaves a non-path token after an interpreter alone", () => {
         expect(serverLabel(row({ cmdline: "python -m http.server 8000" }))).toBe("-m http.server 8000");
     });

@@ -77,7 +77,7 @@ export function slugifyPath(path) {
 export function indexStats(path) {
     if (!existsSync(path)) return { exists: false, lines: 0, bytes: 0 };
     const buf = readFileSync(path);
-    const lines = buf.toString("utf8").replace(/^﻿/, "").split(/\r?\n/);
+    const lines = buf.toString("utf8").replace(/^\uFEFF/, "").split(/\r?\n/);
     if (lines.at(-1) === "") lines.pop();
     return { exists: true, lines: lines.length, bytes: buf.length };
 }
