@@ -595,7 +595,7 @@ function GroupDetail({
                                 <div
                                     key={r.lens}
                                     data-plan-review-reviewer={r.lens}
-                                    className="truncate font-mono text-[10.5px] text-ink-mid"
+                                    className="truncate text-[10.5px] text-ink-mid"
                                 >
                                     {`${planReviewLensTitle(r.lens)} · ${r.state}`}
                                 </div>
