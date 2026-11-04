@@ -458,7 +458,7 @@ func TestCouncilEstimateLine(t *testing.T) {
 	}
 	est := council.Estimate(experts, 0, 0)
 	rtn := &wshrpc.CouncilEstimateRtnData{Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes}
-	want := `group "Review a UI feature": UX, RAM, New user, Skeptic on sonnet, Coordinator on opus · ≈ 9 calls · ~0.8M tokens · ~6 min`
+	want := `group "Review a UI feature": UX, RAM, New user, Skeptic on sonnet, Coordinator on opus · ≈ 10 calls · ~0.8M tokens · ~6 min`
 	if got := councilEstimateLine(group, experts, rtn); got != want {
 		t.Fatalf("estimate line\n got %s\nwant %s", got, want)
 	}
@@ -503,14 +503,14 @@ func TestTokengateCappedLeavesACouncil(t *testing.T) {
 }
 
 func TestCouncilStartedLine(t *testing.T) {
-	est := &wshrpc.CouncilEstimateRtnData{Calls: 9, Tokens: 820_000, Minutes: 6}
+	est := &wshrpc.CouncilEstimateRtnData{Calls: 10, Tokens: 820_000, Minutes: 6}
 	_, experts, err := councilPanel(councilTestRoles(), "ui-feature")
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := &council.Council{Id: "abc123", Experts: experts}
 	got := councilStartedLine(c, "Council\n  for the cockpit", council.ModeReview, "Review a UI feature", est)
-	want := "council abc123 started: Council for the cockpit · review · Review a UI feature · 4 experts · ≈ 9 calls · ~0.8M tokens"
+	want := "council abc123 started: Council for the cockpit · review · Review a UI feature · 4 experts · ≈ 10 calls · ~0.8M tokens"
 	if got != want {
 		t.Fatalf("started line\n got %s\nwant %s", got, want)
 	}
@@ -529,13 +529,13 @@ func TestCouncilStartedLineWithChats(t *testing.T) {
 	chat := func(tab string) council.CouncilExpert {
 		return council.CouncilExpert{Id: "agent-" + tab, Name: "Chat " + tab, Agent: tab, Harness: "claude"}
 	}
-	est := &wshrpc.CouncilEstimateRtnData{Calls: 7, Tokens: 1_400_000, Minutes: 9}
+	est := &wshrpc.CouncilEstimateRtnData{Calls: 8, Tokens: 1_400_000, Minutes: 9}
 	line := func(experts ...council.CouncilExpert) string {
 		return councilStartedLine(&council.Council{Id: "abc123", Experts: experts}, "Council\n  for the cockpit", council.ModeReview, "Chats with a Skeptic", est)
 	}
 
 	if got, want := line(chat("t1"), chat("t2"), skeptic, coordinator),
-		"council abc123 started: Council for the cockpit · review · Chats with a Skeptic · 2 chats + Skeptic · ≈ 7 calls · ~1.4M tokens"; got != want {
+		"council abc123 started: Council for the cockpit · review · Chats with a Skeptic · 2 chats + Skeptic · ≈ 8 calls · ~1.4M tokens"; got != want {
 		t.Errorf("two chats\n got %s\nwant %s", got, want)
 	}
 	if got := line(chat("t1"), skeptic, coordinator); !strings.Contains(got, " · 1 chat + Skeptic · ") {
@@ -547,12 +547,12 @@ func TestCouncilStartedLineWithChats(t *testing.T) {
 	}
 	// no chat seated: the line is the one a council had before chats could sit
 	if got, want := line(panel...),
-		"council abc123 started: Council for the cockpit · review · Chats with a Skeptic · 4 experts · ≈ 7 calls · ~1.4M tokens"; got != want {
+		"council abc123 started: Council for the cockpit · review · Chats with a Skeptic · 4 experts · ≈ 8 calls · ~1.4M tokens"; got != want {
 		t.Errorf("no chat\n got %s\nwant %s", got, want)
 	}
 	// N and X are the estimate's, not a constant
-	other := &wshrpc.CouncilEstimateRtnData{Calls: 11, Tokens: 2_600_000, Minutes: 15}
-	if got := councilStartedLine(&council.Council{Id: "x", Experts: []council.CouncilExpert{chat("t1"), skeptic, coordinator}}, "f", council.ModeReview, "g", other); !strings.HasSuffix(got, "≈ 11 calls · ~2.6M tokens") {
+	other := &wshrpc.CouncilEstimateRtnData{Calls: 12, Tokens: 2_600_000, Minutes: 15}
+	if got := councilStartedLine(&council.Council{Id: "x", Experts: []council.CouncilExpert{chat("t1"), skeptic, coordinator}}, "f", council.ModeReview, "g", other); !strings.HasSuffix(got, "≈ 12 calls · ~2.6M tokens") {
 		t.Errorf("the estimate passed is not the one printed: %s", got)
 	}
 }

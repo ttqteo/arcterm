@@ -156,7 +156,8 @@ func TestCouncilEstimateWholeCouncil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CouncilEstimateCommand: %v", err)
 	}
-	if want := (wshrpc.CouncilEstimateRtnData{Calls: 9, Tokens: 820_000, Minutes: 6}); *est != want {
+	// four seats and the coordinator: the round 1 and reply pass calls, the round check, and the summary
+	if want := (wshrpc.CouncilEstimateRtnData{Calls: 10, Tokens: 820_000 + 15_000, Minutes: 6}); *est != want {
 		t.Errorf("UI group with no files = %+v, want %+v", *est, want)
 	}
 
@@ -177,7 +178,7 @@ func TestCouncilEstimateWholeCouncil(t *testing.T) {
 		t.Fatalf("estimate with files: %v", err)
 	}
 	// 4800 bytes are 1200 tokens read by each of the four experts
-	if want := (wshrpc.CouncilEstimateRtnData{Calls: 9, Tokens: 820_000 + 4*1200, Minutes: 6}); *est != want {
+	if want := (wshrpc.CouncilEstimateRtnData{Calls: 10, Tokens: 820_000 + 15_000 + 4*1200, Minutes: 6}); *est != want {
 		t.Errorf("with files = %+v, want %+v", *est, want)
 	}
 }
@@ -203,9 +204,10 @@ func TestCouncilEstimatePricesAgentSeats(t *testing.T) {
 		rounds int
 		want   wshrpc.CouncilEstimateRtnData
 	}{
-		// the Skeptic's 140k and 45k, two chats' 135,020 a round, the summary's 80k; 3 calls a round and the summary
-		{"two rounds, the default", 0, wshrpc.CouncilEstimateRtnData{Calls: 7, Tokens: 140_000 + 45_000 + 2*135_020 + 80_000, Minutes: 6, AgentTokens: 2 * 135_020}},
-		{"three rounds", 3, wshrpc.CouncilEstimateRtnData{Calls: 10, Tokens: 140_000 + 2*45_000 + 3*135_020 + 80_000, Minutes: 8, AgentTokens: 3 * 135_020}},
+		// the Skeptic's 140k and 45k, two chats' 135,020 a round, a 15k round check after each reply pass, the summary's
+		// 80k; 3 calls a round, a check a reply pass, and the summary
+		{"two rounds, the default", 0, wshrpc.CouncilEstimateRtnData{Calls: 8, Tokens: 140_000 + 45_000 + 2*135_020 + 15_000 + 80_000, Minutes: 6, AgentTokens: 2 * 135_020}},
+		{"three rounds", 3, wshrpc.CouncilEstimateRtnData{Calls: 12, Tokens: 140_000 + 2*45_000 + 3*135_020 + 2*15_000 + 80_000, Minutes: 8, AgentTokens: 3 * 135_020}},
 	} {
 		got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{
 			Experts: panel, Agents: []string{agentsTabA, agentsTabB}, Rounds: tc.rounds,
@@ -220,7 +222,7 @@ func TestCouncilEstimatePricesAgentSeats(t *testing.T) {
 
 	// the same panel with no tabs named is priced as it always was: the Skeptic and the summary
 	got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Experts: panel})
-	if want := (wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 140_000 + 45_000 + 80_000, Minutes: 6}); err != nil || *got != want {
+	if want := (wshrpc.CouncilEstimateRtnData{Calls: 4, Tokens: 140_000 + 45_000 + 15_000 + 80_000, Minutes: 6}); err != nil || *got != want {
 		t.Errorf("no tabs named = %+v, %v, want %+v", got, err, want)
 	}
 
@@ -249,11 +251,11 @@ func TestCouncilEstimateOfASavedCouncil(t *testing.T) {
 		want wshrpc.CouncilEstimateRtnData
 	}{
 		{"remaining skips the expert whose round 1 failed", wshrpc.CommandCouncilEstimateData{Id: "c1"},
-			wshrpc.CouncilEstimateRtnData{Calls: 4, Tokens: 3*45_000 + 80_000, Minutes: 3}},
+			wshrpc.CouncilEstimateRtnData{Calls: 5, Tokens: 3*45_000 + 15_000 + 80_000, Minutes: 3}},
 		{"a follow-up of two experts", wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 40_000 + 15_000, Minutes: 1}},
 		{"a follow-up that reads code", wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Tools: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 220_000, Minutes: 2}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 220_000 + 15_000, Minutes: 2}},
 	} {
 		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
 		if err != nil {
@@ -292,19 +294,19 @@ func TestCouncilEstimateFollowupWithChats(t *testing.T) {
 	}{
 		{"two role experts and a chat",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Agents: []string{agentsTabA}},
-			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 2*20_000 + 95_010, Minutes: 1, AgentTokens: 95_010}},
+			wshrpc.CouncilEstimateRtnData{Calls: 4, Tokens: 2*20_000 + 95_010 + 15_000, Minutes: 1, AgentTokens: 95_010}},
 		{"a chat named by a prefix, with the experts reading code",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Tools: true, Agents: []string{"bbbb2"}},
-			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 2*110_000 + 40_010, Minutes: 2, AgentTokens: 40_010}},
+			wshrpc.CouncilEstimateRtnData{Calls: 4, Tokens: 2*110_000 + 40_010 + 15_000, Minutes: 2, AgentTokens: 40_010}},
 		{"chats alone, a tab named twice sits once",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Agents: []string{agentsTabA, agentsTabB, agentsTabA}},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 95_010 + 40_010, Minutes: 1, AgentTokens: 95_010 + 40_010}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 95_010 + 40_010 + 15_000, Minutes: 1, AgentTokens: 95_010 + 40_010}},
 		{"a pi chat is flat",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 1, Agents: []string{agentsTabC}},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 2 * 20_000, Minutes: 1, AgentTokens: 20_000}},
-		{"no chats is as it was",
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 2*20_000 + 15_000, Minutes: 1, AgentTokens: 20_000}},
+		{"no chats is as it was, and the message's round check",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 40_000 + 15_000, Minutes: 1}},
 	} {
 		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
 		if err != nil {
@@ -322,7 +324,8 @@ func TestCouncilEstimateFollowupWithChats(t *testing.T) {
 
 // TestCouncilEstimateRouted: Routed with an Id prices a whole-council message the router would take, from the saved
 // council's own seats, and sends the range (callsmax, tokensmax) on the wire; the router's call is the 15k of
-// council.routerTokens. Without Routed the old cases answer as they did, with no range.
+// council.routerTokens and the round check on the answers another 15k (council.roundCheckTokens). Without Routed the
+// old cases answer as they did, with no range.
 func TestCouncilEstimateRouted(t *testing.T) {
 	useCouncilStore(t)
 	ws := &WshServer{}
@@ -336,34 +339,36 @@ func TestCouncilEstimateRouted(t *testing.T) {
 	saveCouncil(t, &council.Council{Id: "c2", Project: t.TempDir(), Feature: "Idle sleep", Experts: withChat, State: council.StateDone, Round: 2,
 		Failed: map[string]council.CouncilFailure{experts[0].Id: {Round: 1, Error: "timeout"}}})
 
+	const routerAndCheck = 15_000 + 15_000 // the router's call and the round check's, which a routed message pays besides its seats
 	for _, tc := range []struct {
 		name string
 		data wshrpc.CommandCouncilEstimateData
 		want wshrpc.CouncilEstimateRtnData
 	}{
-		{"files off: router and one seat to router and two",
+		{"files off: router, one seat and the check to router, two seats and the check",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 40_000, Minutes: 1}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, CallsMax: 4, Tokens: routerAndCheck + 20_000, TokensMax: routerAndCheck + 40_000, Minutes: 1}},
 		{"files on",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, Tools: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 110_000, TokensMax: 15_000 + 220_000, Minutes: 2}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, CallsMax: 4, Tokens: routerAndCheck + 110_000, TokensMax: routerAndCheck + 220_000, Minutes: 2}},
 		{"Auto spans both branches",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, ToolsAuto: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 220_000, Minutes: 2}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, CallsMax: 4, Tokens: routerAndCheck + 20_000, TokensMax: routerAndCheck + 220_000, Minutes: 2}},
 		{"the council's own chat is priced at its context, and the seat whose call failed is left out",
 			wshrpc.CommandCouncilEstimateData{Id: "c2", Routed: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 300_000 + 20_000, Minutes: 1, AgentTokens: 300_000}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, CallsMax: 4, Tokens: routerAndCheck + 20_000, TokensMax: routerAndCheck + 300_000 + 20_000, Minutes: 1, AgentTokens: 300_000}},
 		{"Routed is read before a follow-up count",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Routed: true, Followup: 2},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, CallsMax: 3, Tokens: 15_000 + 20_000, TokensMax: 15_000 + 40_000, Minutes: 1}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, CallsMax: 4, Tokens: routerAndCheck + 20_000, TokensMax: routerAndCheck + 40_000, Minutes: 1}},
 
-		// no Routed: the follow-up and remaining cases answer as before, with no range, and ToolsAuto changes nothing
+		// no Routed: the follow-up and remaining cases answer as before (each with its round check), with no range, and
+		// ToolsAuto changes nothing
 		{"a follow-up of two experts, no range",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, ToolsAuto: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 40_000 + 15_000, Minutes: 1}},
 		{"what the council has left, no range",
 			wshrpc.CommandCouncilEstimateData{Id: "c1", ToolsAuto: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 5, Tokens: 4*45_000 + 80_000, Minutes: 3}},
+			wshrpc.CouncilEstimateRtnData{Calls: 6, Tokens: 4*45_000 + 15_000 + 80_000, Minutes: 3}},
 	} {
 		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
 		if err != nil {
@@ -383,7 +388,7 @@ func TestCouncilEstimateRouted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(raw), `"callsmax":3`) || !strings.Contains(string(raw), `"tokensmax":55000`) {
+	if !strings.Contains(string(raw), `"callsmax":4`) || !strings.Contains(string(raw), `"tokensmax":70000`) {
 		t.Errorf("the routed estimate on the wire = %s, want callsmax and tokensmax", raw)
 	}
 	got, err = ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2})

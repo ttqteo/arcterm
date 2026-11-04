@@ -341,13 +341,13 @@ export const councilSetup = {
             await until(`/≈ \\d+ calls · ~[\\d.]+M tokens · ~\\d+ min/.test(document.querySelector("[data-council-composer-bar] [data-council-estimate]")?.textContent ?? "")`);
             v = await view();
             rec(
-                "2. a feature on the first line and a question under it enable Start council, and the estimate in the composer's bar reads ≈ N calls · ~X.XM tokens · ~N min (≈ 9 calls for four experts)",
+                "2. a feature on the first line and a question under it enable Start council, and the estimate in the composer's bar reads ≈ N calls · ~X.XM tokens · ~N min (≈ 10 calls for four experts, the round check after the reply pass included)",
                 blockedBefore &&
                     v?.ask === "Rail apps\nIs the pin worth it?" &&
                     v.start?.disabled === false &&
                     v.inComposer.start === true &&
                     ESTIMATE_RE.test(v.inComposer.estimate) &&
-                    v.inComposer.estimate.startsWith("≈ 9 calls") &&
+                    v.inComposer.estimate.startsWith("≈ 10 calls") &&
                     v.estimate === v.inComposer.estimate &&
                     v.footnote === "4 sonnet experts read the code first; then they argue over text only",
                 { blockedBefore, ask: v?.ask, start: v?.start, inComposer: v?.inComposer, footnote: v?.footnote }
@@ -356,12 +356,12 @@ export const councilSetup = {
 
             // 3. removing a row lowers the calls; the coordinator has nothing to remove
             await h.ev(click('[data-council-expert-remove="newuser"]'));
-            await until(`(document.querySelector("[data-council-estimate]")?.textContent ?? "").startsWith("≈ 7 calls")`);
+            await until(`(document.querySelector("[data-council-estimate]")?.textContent ?? "").startsWith("≈ 8 calls")`);
             v = await view();
             rec(
-                "3. removing the New user row leaves four rows and lowers the estimate to ≈ 7 calls; the coordinator row still has no remove",
+                "3. removing the New user row leaves four rows and lowers the estimate to ≈ 8 calls; the coordinator row still has no remove",
                 sameList(v?.experts.map((e) => e.id), ["ux", "ram", "skeptic", "coordinator"]) &&
-                    (v?.estimate ?? "").startsWith("≈ 7 calls") &&
+                    (v?.estimate ?? "").startsWith("≈ 8 calls") &&
                     v.experts.find((e) => e.coordinator)?.remove === false &&
                     v.footnote === "3 sonnet experts read the code first; then they argue over text only" &&
                     /^Review a UI feature: Ease of use, Memory watcher and Bug hunter each read the code/.test(v.expertsLine ?? ""),
