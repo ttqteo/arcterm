@@ -528,13 +528,33 @@ export interface IdeaThread {
     drafts: number;
 }
 
+/** Why an idea is out of the running, as the pill beside its author: its author withdrew it, or the person left it out
+ *  at the pause (`cut`). `title` is the pill's hover. */
+export interface IdeaOut {
+    kind: "withdrawn" | "cut";
+    word: string;
+    title: string;
+}
+
+/** Pure: why an idea is out of the running, or null while it is in it. A withdrawal wins over a cut: the idea's author
+ *  spoke last. */
+export function ideaOut(p: CouncilProposal): IdeaOut | null {
+    if (p.withdrawn) {
+        return { kind: "withdrawn", word: "Withdrawn", title: "Its author withdrew it: it is out of the running" };
+    }
+    if (p.cut) {
+        return { kind: "cut", word: "Cut", title: "You left it out at the pause: the seats no longer weigh it" };
+    }
+    return null;
+}
+
 /** An idea as a channel message. */
 export interface IdeaPost extends Who {
     kind: "idea";
     id: string;
     label: string; // `proposes` (Review), `idea` or `wild idea` (Brainstorm)
     wild: boolean; // a Brainstorm wild idea: it gets a pill
-    withdrawn: boolean; // its author withdrew it: a `Withdrawn` pill, the idea drawn dim
+    out: IdeaOut | null; // out of the running (ideaOut): a pill beside its author, the idea drawn dim; null while in it
     title: string;
     text: string;
     claim: ClaimEvidence;
@@ -561,7 +581,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         ...whoIs(c, p.author),
         label: proposalLabel(c, p),
         wild: c.mode === "brainstorm" && !!p.wild,
-        withdrawn: !!p.withdrawn,
+        out: ideaOut(p),
         title: p.title,
         text: p.argument,
         claim: claimOf(c, p),

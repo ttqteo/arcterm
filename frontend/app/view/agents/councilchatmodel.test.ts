@@ -388,8 +388,8 @@ describe("councilChannel: an idea", () => {
                 reply("r5", "sec", 190, { proposalid: "P2", revised: true, text: "Retitled: Smaller." }),
             ],
         });
-        expect(byId(councilChannel(c), "P1")).toMatchObject({ withdrawn: true });
-        expect(byId(councilChannel(c), "P2")).toMatchObject({ withdrawn: false, agrees: [] });
+        expect(byId(councilChannel(c), "P1")).toMatchObject({ out: { kind: "withdrawn", word: "Withdrawn" } });
+        expect(byId(councilChannel(c), "P2")).toMatchObject({ out: null, agrees: [] });
         const p1 = councilThread(c, "P1")!.items;
         expect(byId(p1, "r1")).toMatchObject({ label: "has doubts", pill: "challenge" });
         expect(byId(p1, "r2")).toMatchObject({ label: "withdrew it", pill: "out", text: "Skeptic's idea covers it." });
@@ -433,6 +433,21 @@ describe("councilChannel: an idea", () => {
         expect(byId(items, "r6")).toMatchObject({ retitled: "Uno", text: "" });
         expect(byId(items, "r7")).toMatchObject({ retitled: "", text: "" });
         expect(byId(items, "r8")).toMatchObject({ pill: "neutral", retitled: "", text: "Retitled: mine." });
+    });
+
+    it("marks an idea the person cut at the pause, and a withdrawal over a cut", () => {
+        const c = council({
+            proposals: [
+                prop("P1", "sec", 60, { cut: true }),
+                prop("P2", "sk", 100, { cut: true, withdrawn: true }),
+                prop("P3", "ux", 130),
+            ],
+        });
+        const items = councilChannel(c);
+        expect(byId(items, "P1")).toMatchObject({ out: { kind: "cut", word: "Cut" } });
+        expect(byId(items, "P2")).toMatchObject({ out: { kind: "withdrawn", word: "Withdrawn" } });
+        expect(byId(items, "P3")).toMatchObject({ out: null });
+        expect(councilThread(c, "P1")).toMatchObject({ idea: { out: { kind: "cut" } } });
     });
 
     it("marks a held withdrawal draft with the pill too", () => {

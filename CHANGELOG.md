@@ -42,6 +42,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a council's Discussion, the idea whose replies are open on the right wears a bright ring, where only its tint deepened and it barely stood out from its neighbours.
 - In a council, an idea its author withdrew wears a Withdrawn badge and is drawn dim, its title struck in its thread, and the author's reply reads "withdrew it" with the reason it gave, where the thread only showed a bare "Withdrawn." reply.
 - In a council, an author's change to its own idea reads "revised it", with the new title on a line of its own above its reason, where the reply ran "Retitled: <title>." into the reason as one English-prefixed paragraph.
+- In a council's Discussion, an idea you unticked at the pause wears a Cut badge and is drawn dim, its title struck in its thread, as the Map already showed it; it looked like any other idea.
 - A Vietnamese council's experts have short names that fit on their cards: Trải nghiệm, Canh RAM, Soi lỗi, Tổng hợp, Phản biện A, Thợ code, Cãi ngược and so on, where every name started with "Người". A council you already ran keeps its names.
 
 ### Fixed

@@ -102,6 +102,7 @@ import {
     type ChatThread,
     type DraftPost,
     type FailureLine,
+    type IdeaOut,
     type IdeaPost,
     type PillTone,
     type QuestionFold,
@@ -364,18 +365,15 @@ function RetitledLine({ title }: { title: string }) {
     );
 }
 
-// an idea its author withdrew: the pill beside its author, and the idea drawn dim
-const WITHDRAWN = "Withdrawn";
-const WITHDRAWN_TITLE = "Its author withdrew it: it is out of the running";
-
 export function CouncilPill({ word, tone }: { word: string; tone: PillTone }) {
     return <span className={cn("rounded-full px-[7px] py-px text-[10px] font-semibold", PILL_TONE[tone])}>{word}</span>;
 }
 
-function WithdrawnPill() {
+// an idea out of the running (withdrawn by its author, or cut by the person at the pause): the pill beside its author
+function OutPill({ out }: { out: IdeaOut }) {
     return (
-        <span data-council-withdrawn title={WITHDRAWN_TITLE}>
-            <CouncilPill word={WITHDRAWN} tone="out" />
+        <span data-council-out={out.kind} title={out.title}>
+            <CouncilPill word={out.word} tone="out" />
         </span>
     );
 }
@@ -609,14 +607,14 @@ function IdeaMessage({
                     ) : (
                         <span className="text-muted">{item.label}</span>
                     )}
-                    {item.withdrawn && <WithdrawnPill />}
+                    {item.out != null && <OutPill out={item.out} />}
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
                 </Byline>
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
-                        item.withdrawn && "opacity-60",
+                        item.out != null && "opacity-60",
                         open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
                         // the open idea wears a light ring over its tone border, so it stands out from its tinted
                         // neighbours; focus alone keeps the faint one
@@ -2254,7 +2252,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
             <h2
                 className={cn(
                     "m-0 text-[15px] font-semibold leading-[1.4]",
-                    idea.withdrawn ? "text-muted line-through" : "text-primary"
+                    idea.out != null ? "text-muted line-through" : "text-primary"
                 )}
             >
                 {idea.title}
@@ -2262,7 +2260,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
             <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
-                {idea.withdrawn && <WithdrawnPill />}
+                {idea.out != null && <OutPill out={idea.out} />}
                 {idea.edited && <span>edited</span>}
                 <HoverEnd>
                     <PostTime at={idea.at} when={idea.when} />

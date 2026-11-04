@@ -1698,3 +1698,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   thread has an accent `revised it` pill, a `New title` line with the new title, then its one-line reason, and no
   "Retitled:" in the words; an older council's "Retitled: …" reply splits the same way. Unit tests and the typecheck
   only (`councilchat.tsx` `ReplyMessage`, `DraftCard`); no dev app was up.
+- [ ] (arcterm) **Cut council idea.** In a council with a pause, untick an idea and continue → in the Discussion that
+  idea has a grey outlined `Cut` pill (hover: "You left it out at the pause…") and a dim bubble; its thread's title is
+  struck through. Unit tests and the typecheck only (`councilchat.tsx` `OutPill`); no dev app was up.
