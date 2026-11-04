@@ -577,9 +577,17 @@ func ListBranches(ctx context.Context, repoPath string, includeRemotes bool) ([]
 // runErr is like run but captures stderr into the error (for write operations where the cause matters).
 func runErr(ctx context.Context, cwd string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cwd}, args...)...)
-	out, err := cmd.CombinedOutput()
+	// stdout alone is the result, since callers parse it (a patch, ls-files -z); stderr (an autocrlf warning, a
+	// fatal) goes only into the error
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(string(out))
+		}
+		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, msg)
 	}
 	return string(out), nil
 }

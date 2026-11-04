@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    availableRanges,
     defaultRangeFor,
     historyKey,
     historyOptsFor,
@@ -13,7 +12,6 @@ import {
     rangeKey,
     scopeKey,
     scopeProjectName,
-    summaryLine,
     type DiffRange,
     type DiffScope,
 } from "./diffscope";
@@ -39,49 +37,6 @@ const worktreeScope: DiffScope = {
     },
     range: { kind: "working" },
 };
-
-const kinds = (s: DiffScope, ctx = { sessionStartTs: 1719000000, sessionRef: "a3f9c21" }) =>
-    availableRanges(s, ctx).map((o) => o.range.kind);
-
-describe("availableRanges", () => {
-    // The whole point of the refactor: a chip is drawn only when it has something to switch to, so
-    // no permanently-inert control can exist in the bar.
-    it("offers working tree, session and compare for an agent", () => {
-        expect(kinds(agentScope)).toEqual(["working", "session", "compare"]);
-        expect(
-            availableRanges(agentScope, { sessionStartTs: 1719000000, sessionRef: "a3f9c21" }).every((o) => o.available)
-        ).toBe(true);
-    });
-
-    it("omits the session range entirely for a project — there is no session to anchor on", () => {
-        expect(kinds(projectScope)).toEqual(["working", "compare"]);
-    });
-
-    it("offers the run range only when the repository came from a run", () => {
-        expect(kinds(runScope)).toEqual(["working", "run", "compare"]);
-        expect(kinds(agentScope)).not.toContain("run");
-        expect(kinds(projectScope)).not.toContain("run");
-    });
-
-    // Temporary unavailability is drawn, not hidden: the chip becomes live on its own once the
-    // transcript lands, and hiding it would report a passing state as an impossible one.
-    it("keeps the session chip but disables it with a reason when no session start has resolved", () => {
-        const opts = availableRanges(agentScope, { sessionStartTs: null, sessionRef: "" });
-        const session = opts.find((o) => o.range.kind === "session");
-        expect(session?.available).toBe(false);
-        expect(session?.reason).toBe("no session-start commit recorded yet");
-    });
-
-    it("shows the resolved commit beside the session chip only once it is the active range", () => {
-        const active = availableRanges(agentScope, { sessionStartTs: 1719000000, sessionRef: "a3f9c21" });
-        expect(active.find((o) => o.range.kind === "session")?.detail).toBe("a3f9c21");
-        const inactive = availableRanges(
-            { ...agentScope, range: { kind: "working" } },
-            { sessionStartTs: 1719000000, sessionRef: "" }
-        );
-        expect(inactive.find((o) => o.range.kind === "session")?.detail).toBe("");
-    });
-});
 
 describe("scopeKey", () => {
     // Load-bearing: githistorystore compares this against the previous load to tell a remount from a
@@ -193,59 +148,6 @@ describe("defaultRangeFor", () => {
     });
 });
 
-const ch = (n: number, adds = 10, dels = 2) =>
-    ({
-        files: Array.from({ length: n }, (_, i) => ({ path: `f${i}`, status: "M", adds: 1, dels: 0 })),
-        adds,
-        dels,
-    }) as any;
-const base = { branch: "main", ref: "", mergeBase: "", commit: null as string | null };
-
-describe("summaryLine follows what the panes show", () => {
-    it("counts uncommitted files on the branch, against HEAD", () => {
-        expect(summaryLine({ ...base, range: { kind: "working" }, changes: ch(15, 661, 403) })).toBe(
-            "15 uncommitted files on main · +661 −403"
-        );
-    });
-    it("says against HEAD when detached", () => {
-        expect(summaryLine({ ...base, branch: "", range: { kind: "working" }, changes: ch(1) })).toBe(
-            "1 uncommitted file against HEAD · +10 −2"
-        );
-        expect(summaryLine({ ...base, branch: "HEAD", range: { kind: "working" }, changes: ch(1) })).toBe(
-            "1 uncommitted file against HEAD · +10 −2"
-        );
-    });
-    it("describes a selected commit, not the range", () => {
-        expect(summaryLine({ ...base, commit: "3eaffac99", range: { kind: "working" }, changes: ch(1, 2, 2) })).toBe(
-            "3eaffac · 1 file · +2 −2"
-        );
-    });
-    it("reads the merge-base comparison from the head's side", () => {
-        const range = {
-            kind: "compare",
-            base: "main",
-            head: "exp-native",
-            form: "mergebase",
-            from: { kind: "working" },
-        } as const;
-        expect(summaryLine({ ...base, mergeBase: "7a4155cff", range, changes: ch(31, 764, 88) })).toBe(
-            "exp-native since 7a4155c · 31 files · +764 −88"
-        );
-    });
-    it("reads tip to tip as both refs", () => {
-        const range = { kind: "compare", base: "main", head: "x", form: "tips", from: { kind: "working" } } as const;
-        expect(summaryLine({ ...base, range, changes: ch(2) })).toBe("main .. x tip to tip · 2 files · +10 −2");
-    });
-    it("keeps the run and session phrasing for their top rows", () => {
-        expect(
-            summaryLine({ ...base, range: { kind: "run", runId: "r", baseCommit: "b41d000aa" }, changes: ch(3) })
-        ).toBe("b41d000 … HEAD · 3 files · +10 −2");
-        expect(
-            summaryLine({ ...base, ref: "9f2c1de00", range: { kind: "session", agentId: "a" }, changes: ch(3) })
-        ).toBe("worktree against 9f2c1de · 3 files · +10 −2");
-    });
-});
-
 describe("compare range form", () => {
     const mergebase: DiffRange = {
         kind: "compare",
@@ -258,18 +160,6 @@ describe("compare range form", () => {
     // the key is what drops stale reads, so two forms of the same pair must not share one
     it("distinguishes the two forms in rangeKey", () => {
         expect(rangeKey(mergebase)).not.toBe(rangeKey({ ...mergebase, form: "tips" }));
-    });
-
-    it("names the active form in the summary line", () => {
-        const input = { branch: "feature", ref: "", mergeBase: "7a4155cff", commit: null, changes: null };
-        expect(summaryLine({ ...input, range: mergebase })).toContain("since 7a4155c");
-        expect(summaryLine({ ...input, range: { ...mergebase, form: "tips" } })).toContain("tip to tip");
-    });
-
-    // unrelated histories have no merge base: no "since" with an empty hash
-    it("names both refs when there is no merge base", () => {
-        const input = { branch: "feature", ref: "", mergeBase: "", commit: null, changes: null };
-        expect(summaryLine({ ...input, range: mergebase })).toBe("main … feature · 0 files · +0 −0");
     });
 });
 
@@ -286,12 +176,6 @@ describe("worktree origin", () => {
     it("answers its directory synchronously and opens on the working tree", () => {
         expect(originCwd(worktreeScope.repo.origin)).toBe("D:\\repo\\.worktrees\\feat");
         expect(defaultRangeFor(worktreeScope.repo.origin)).toEqual({ kind: "working" });
-    });
-
-    it("offers what a project offers", () => {
-        expect(availableRanges(worktreeScope, { sessionStartTs: null, sessionRef: "" })).toEqual(
-            availableRanges(projectScope, { sessionStartTs: null, sessionRef: "" })
-        );
     });
 });
 

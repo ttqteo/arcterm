@@ -328,6 +328,67 @@ func TestCopyThenRemoveMovesATreeAcrossVolumes(t *testing.T) {
 	}
 }
 
+// A removal that fails part way (a locked file on Windows) has already deleted some of the original, so
+// the copy in the trash is the only whole one: it must not be thrown away with the error.
+func TestCopyThenRemoveKeepsTheDataWhenRemovingTheOriginalFailsPartWay(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	writeFile(t, filepath.Join(src, "a.txt"), "a", testNow)
+	writeFile(t, filepath.Join(src, "deep", "b.txt"), "b", testNow)
+	dst := filepath.Join(root, "dst")
+	orig := removeAll
+	t.Cleanup(func() { removeAll = orig })
+	removeAll = func(path string) error {
+		if err := os.Remove(filepath.Join(path, "a.txt")); err != nil {
+			t.Fatal(err)
+		}
+		return errors.New("locked: deep/b.txt")
+	}
+	if err := copyThenRemove(src, dst); err == nil {
+		t.Fatal("a failed removal reported success")
+	}
+	for _, rel := range []string{"a.txt", filepath.Join("deep", "b.txt")} {
+		if !exists(filepath.Join(src, rel)) && !exists(filepath.Join(dst, rel)) {
+			t.Fatalf("%s is gone from both the original and the trash", rel)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(src, "a.txt")); err != nil || string(b) != "a" {
+		t.Fatalf("the original was not put back: %q, %v", b, err)
+	}
+	if exists(dst) {
+		t.Fatal("the copy stayed in the trash after the original was whole again")
+	}
+}
+
+func TestCopyThenRemoveKeepsTheCopyWhenTheOriginalCannotBePutBack(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	writeFile(t, filepath.Join(src, "a.txt"), "a", testNow)
+	dst := filepath.Join(root, "dst")
+	orig := removeAll
+	t.Cleanup(func() { removeAll = orig })
+	removeAll = func(path string) error {
+		if err := os.RemoveAll(path); err != nil {
+			t.Fatal(err)
+		}
+		// a file where the directory was makes putting it back fail
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return errors.New("removal failed")
+	}
+	err := copyThenRemove(src, dst)
+	if err == nil {
+		t.Fatal("a failed removal reported success")
+	}
+	if b, rerr := os.ReadFile(filepath.Join(dst, "a.txt")); rerr != nil || string(b) != "a" {
+		t.Fatalf("the only whole copy was deleted: %q, %v", b, rerr)
+	}
+	if !strings.Contains(err.Error(), dst) {
+		t.Fatalf("the error does not say where the copy is: %v", err)
+	}
+}
+
 func TestPurgeRemovesEntriesOlderThanTheRetention(t *testing.T) {
 	trash := t.TempDir()
 	day := 24 * time.Hour

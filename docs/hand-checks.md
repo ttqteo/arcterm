@@ -21,6 +21,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Then in Diff on that agent, a Pull refused as diverged → the notice shows `Ask <name> to merge` before Open a
   terminal here. Unit tests and the typecheck only; no dev app was run (`shipmodel.ts`, `agentheader.tsx`,
   `syncbar.tsx`, 3020b6b51).
+- [ ] (arcterm) **A dragged path with a line break or a double quote is left out.** On a Mac or Linux make a file
+  named `a"b.md` (and one with a newline in its name), drag it from the Agent rail's Files tab onto a terminal → nothing
+  is typed for it and a warning toast names it; an ordinary file dropped beside it is still typed. Unit-tested only
+  (`splitDroppable`, `pathdrop.ts`; toast in `focus-pane.tsx`); commit 605413407.
 - [ ] (arcterm) **HTML previews keep working under the new CSP.** In a live arcterm open a design canvas, a brainstorm
   board and an HTML file in the File tab → each draws as before (fonts, React boards, images), the canvas reports its
   height and the File tab keeps its scroll; DevTools shows no `Refused to` line. Checked only in headless Chrome against
@@ -50,6 +54,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
   only those, and opening the thread clears the mark. An old council you left after it finished lights up nothing. The
   `round 2 whole` phase of `council-discussion` was written but never run (no dev app up) (`councilchat.tsx`; the
   fold from fd4ca03b6 was removed).
+- [ ] (arcterm) **New agent's Task row icons.** New agent → a Claude row in a git project → the branch icon lights clay
+  when clicked on and the branch row opens under the box; the terminal icon opens the command strip and folds it
+  again. The rest holds: the `launcher` scenario passed in the Tauri dev app on 2026-11-05 (steps 18b, 18c: the three
+  icons on one line, the flag chip and its ✕) (`launcheragentfields.tsx`).
+- [ ] (arcterm) **Round 2 marks no new replies on an old council.** Open a council you left after it finished → no idea
+  says `N new replies`, and the rail has no `with new replies` toggle. The rest holds: the `round 2 fold` phase of
+  `council-discussion` (fold, Show more / less, `1 new reply` on the chip and the rail row, the toggle, the thread
+  clearing the mark) passed in the Tauri dev app on 2026-11-05, once the scenario set its last-opened time
+  (`councilchat.tsx`, fd4ca03b6).
 - [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
   a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
   never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`
@@ -62,9 +75,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   quick run" and `<project> · quick run · one worker, no plan`, and Approve opens the launcher on Quick run. A
   brainstorm with a board still offers the orchestrator run. Agent tab → brainstorm pane; commit 2f79224af.
 - [ ] (arcterm) **Ideas rail click keeps the window still.** In a council's Discussion with the Ideas rail open, click
-  an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
-  bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
-  the typecheck only; no dev app was up (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
+  an idea far down the rail → the app's frame (nav rail labels, title bar, footer) stays put with no black band at the
+  bottom; j / k and a reply's quote jump do the same. The scroll itself holds: `council-discussion`'s rail step (P5's
+  row scrolls its message to the top) passed in the Tauri dev app on 2026-11-05; no step reads the frame
+  (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
 - [ ] (arcterm) **Council screenshot regions with real seats.** Run a Review council with a screenshot attached (and
   paste an image into a reply) → the seats cite `screenshot:<file>#<name>@x,y,w,h`, each crop under an idea or reply
   boxes the element the seat names, and a click opens the whole screenshot in Sources with the box on it. Done → the
@@ -87,11 +101,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Open a brainstorm (question card, check clock, run sheet), a background task peek, Setup → Memory and
   the @ file picker in the New dialog → labels, counts, file names and times read in Inter; only commands, output,
   keycaps and hashes stay mono.
-- [ ] (arcterm) Rerun final stage from the Final verification pane: on a run whose final stage failed, focus its Final
-  verification row → the pane header shows Rerun final stage; click it → the stage restarts in the same round and the
-  button goes. The `final-rerun` scenario's step 4 passed in run aebf7808's first final stage and failed in its second
-  when the scenario's reseed lost a race with the engine's tick; the sheet (steps 1–3) and palette (step 5) passed both
-  times (`finalstageviews.tsx`, run aebf7808 Task 1).
 - [ ] (arcterm) Close a quick run's agent tab → the run goes blocked with the tab-closed reason, and Resume opens it in a
   new tab (run aebf7808 Task 4).
 - [ ] (arcterm) Hold a lane tree's folder (a shell cd'd into it), then `wsh jarvis dag retry <task>` → the task runs at
@@ -115,18 +124,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   pulse unit tests only (`.pulse-tint` in `tailwindsetup.css`, `pulse.ts`, `agenttree.tsx`).
 - [ ] (arcterm) Running background tasks fold in the Agent tree: get an agent to leave three or more commands running
   in the background → its row shows a `3 running` chip and no task rows under it; click it → the rows list, click
-  again → they fold. With one or two running, the rows show and no chip appears. No dev app was up; unit tests and the
-  typecheck only (`tasksShown` in `agenttreemodel.ts`, `agenttree.tsx`, 701fef533).
+  again → they fold. With one or two running, the rows show and no chip appears (`tasksShown` in `agenttreemodel.ts`,
+  `agenttree.tsx`, 701fef533). 2026-11-05: on the `monitor-tasks` fixture (three running) the chip shows, the rows are
+  hidden until it is clicked, and clicking it lists them; left: a real agent, the second click, and one or two tasks.
 - [ ] (arcterm) A council stopped after its summary reads Done: in the Agent tree, the HarnessX council in mit-thesis
   (stopped, has a summary) reads `Done`, not `Stopped`, and its Discussion header chip reads `Done`; ask it a follow-up →
   once answered it still reads `Done`. A council stopped mid-round (no summary) still reads `Stopped`. No dev app was
   up; unit tests and the typecheck only (`shownState` in `councilmodel.ts`).
-- [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
-  that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
-  Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
-  unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
-  steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
-  (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
 - [ ] (arcterm, Mac) A zoomed-in app shows no scrollbars on a sleeping agent's message box: with the zoom at 1.1
   (⌘+ once from 1), put an agent to sleep and open it → the box under its conversation shows its placeholder on one
   line with no sideways or up-down scrollbar; type two or three lines with Shift+Enter → it grows with no scrollbar.
@@ -193,7 +197,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
   3520d3a3f); no live run yet. Run 40deb36e already reads "failed, then accepted by the lead" with no answered ask, but
   it started (~15:00) before 3520d3a3f, so it does not count: the next run started from a spec on the c7523d59a build
-  or later decides it.
+  or later decides it. 2026-11-04: run 88032140 (from a spec, started after 3520d3a3f) reads "failed, then accepted by
+  the lead", but `wsh runs show` prints that for any accepted review and the run lists 2 answered asks; left: its
+  lead's transcript, to see whether either ask was a Plan review.
 
 - [ ] (arcterm) A done run's closed dag reads done, not cancelled: `wsh runs show 40deb36e` and `c06ba9cb` print
   `status=closed (the run ended done)`; in Conversations, run 40deb36e's group head and a brainstorm whose Run step
@@ -616,7 +622,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
   run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and
   `wsh getmeta -b 027015dd-4da4-4a42-ae96-bda746661586` has no `agent:sleeping`. Then let a run land while its origin
   sleeps: the origin wakes, gets the `[arc] Run …` message and reads awake. `wshserver_agentsleep.go`, commit
-  "fix(agents): a slow wake clears its sleep marks".
+  "fix(agents): a slow wake clears its sleep marks". 2026-11-04: block `027015dd` is gone (`wsh getmeta` finds no
+  such block), so the first half can no longer be tried on it; only the run-lands-while-its-origin-sleeps half is left.
 - [ ] (arcterm) A shorter council: on the next council you start with a question in Vietnamese, the bold answer is one
   plain sentence in Vietnamese with no `path:line`, the summary under it at most three sentences in Vietnamese that
   do not retell the directions, the directions' titles in English, each proposal a few sentences, and a "Revised"
@@ -737,9 +744,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   B shows alone (or B's own split), with nothing of A beside it; choose an agent of A again and A's split is back as
   it was. A row of B has Open in split greyed out while A is shown, and the header's Split menu lists only A's agents and
   terminals. `agentgrid.ts` `reconcileProjectGrids`, `gridstore.ts`.
-- [ ] (arcterm) Stable wsh updates past a held copy: after the next `task install`, `~/.arc/bin/wsh.exe detach --help`
-  prints the detach help even while an old `wsh agentctl` (PID 163912 today) still runs; a `wsh.exe.old.1` may sit
-  beside it until that process exits, and the following launch removes it. 498b85887
 - [ ] (arcterm) Mouse Back/Forward in an app's page (Windows): open a pinned app, follow a link or two in it, then
   press the mouse's Back and Forward buttons over the page and over the cockpit; nothing moves, no app shows an error
   page, and the header's Back still goes back a page.
@@ -826,7 +830,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Kael sync: after an agent launch, a new Claude session lists the skills as arc:runs, arc:cockpit,
   arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:learn (none twice), ~/.claude/skills no longer
   holds cockpit-runs and the rest, and Setup → Skills shows them in sync; a rule approved through `wsh learn` for
-  cockpit-runs now shows under runs. (1cd40ef02)
+  cockpit-runs now shows under runs. (1cd40ef02) 2026-11-04: the session half holds (each arc: skill listed once,
+  none of the old names in `~/.claude/skills`); a stale `~/.claude/skills/effort-tracking` copy (2026-10-02, the
+  initiatives skill's old name) went to `~/.arc/trash` on 2026-11-05. Left: Setup → Skills and the learned-rule half.
 - [ ] (arcterm) Background task Stop inside its card: with a running background task, open the Agent rail's Background
   tasks: the red Stop square sits inside the running row's card, right of "running", and hovering the card lights the
   whole card, Stop included; a stopped row looks as before (`agentdetailsrail.tsx` `BackgroundTaskRow`).
@@ -945,17 +951,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   to Cards and back within 2 minutes: no entrance. Pick Sprout, reopen after 2 minutes: the beam. The footer pet is
   gone in the Office and back outside it.
 
-**2026-10-16 (initiative `i` keycap dropped)**
-
-- [ ] (arcterm) An agent with an initiative: the header shows `◇ <initiative> ⌄` with no `i` keycap after it; hovering
-  it names `(i)`, and `i` (focus outside the TUI) still opens the popover. `agentheader.tsx`.
-
 **2026-10-16 (skim split out of arc-view)**
 
-- [ ] (arcterm) After a dev build relaunches arcterm: `~/.arc/claude-skim-mod` exists, `~/.arc/claude-view-mod/hooks`
-  holds only `register.ts`, `wake-core.ts`, `wake-row.tsx`, and `env.CLAUDE_CODE_PLUGIN_DIRS` lists all three mods.
-  In a new `claude` session a long explanation draws dimmed around its highlighted sentences, `/skim` toggles it with
-  "skim off" in the status area, and a lead's wake row still draws as its events.
+- [ ] (arcterm) In a new `claude` session a long explanation draws dimmed around its highlighted sentences, `/skim`
+  toggles it with "skim off" in the status area, and a lead's wake row still draws as its events. The install half
+  holds (2026-11-04): `~/.arc/claude-skim-mod` exists, `~/.arc/claude-view-mod/hooks` holds `register.ts`,
+  `wake-core.ts`, `wake-row.tsx` and its `hooks.json`, and `env.CLAUDE_CODE_PLUGIN_DIRS` lists all three mods.
 - [ ] (arcterm) Published copy: in a Claude Code profile without arcterm's mods, `/plugin marketplace add
   ttqteo/claude-skim` then `/plugin install skim@claude-skim` loads it and highlights a long reply.
 
@@ -999,12 +1000,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   or channel row lands there. After work hours the slips dim with the office. The CDP scenario
   `office-needs-you-board` ran on a fixture only and pressed no act that calls the server.
 
-**2026-10-16 (Jarvis without the office)**
-
-- [ ] Open Jarvis's Brief: the Runs list's header shows the run-kind toggle and no **office** chip, and no floor draws
-  under the runs. Sprout walks the footer as before; its bubble and its peek open from it (not from a desk). The
-  Cockpit's Office is unchanged. `briefsurface.tsx`, `petview.tsx`; the commit that deleted `view/jarvis/office*`.
-
 **2026-10-16 (kael sync: memory hygiene, autonomous runs, wider plan review, radar kinds)**
 
 - [ ] (arcterm) Setup → Memory: the tab sits between Learned and Project; a project row shows its index size and
@@ -1017,8 +1012,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   question back; the palette offers **Go autonomous** / **Ask me again** on the run. `briefrunsheet.tsx`.
 - [ ] (arcterm) A run's plan review: five reviewer rows in the Agent tree, each titled `Plan review · <lens>`, and one
   chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
-- [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
-  `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
 - [ ] (arcterm) Agent sidebar → a project's Conversations: an ended orchestrator run whose lead landed in `arc-wt`
   shows as one run entry under that project, not missing (counted in "elsewhere") or under a key like `006c403f`.
   `agentsidebarmodel.ts` `projectKeyResolver`, `sessionruns.go` `fillEngineTreeRoots`.
@@ -1069,8 +1062,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `macwindow::free_when_destroyed` releases the two a second after the popover's destroy (2026-10-16). Check that
   `heap <arcterm pid> | grep TaoWindow` stays at 1 after a few opens, that `waveapp.log` says "freed the closed
   popover's window", and that switching light and dark mode afterwards crashes nothing. Report the leak to tao.
-- [ ] (arcterm) The cold open: `[tray] popover ready N ms after the click` in `waveapp.log` stays under 500 ms. Past
-  it, the popover needs a hidden window made at launch.
 - [ ] (arcterm) A click outside closes the popover; a second click on the icon closes it and does not reopen it.
 - [ ] (arcterm) Free up: run `sleep 600` in an agent's terminal; it shows as that agent's heaviest command, and Stop
   ends it and leaves the agent running.
@@ -1266,8 +1257,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   with the reply in it. `petpeek.tsx`, `peterrand.tsx`.
 - [ ] Full window, Jarvis popup (Sprout in the footer): under the field one muted line `Claude Code ⌄ · <project> ⌄`;
   each part opens its picker and the choice sticks. `peterrand.tsx`, `harnesspicker.tsx` (`bare`).
-- [ ] Folded hover card's pause row: the box reads "Custom…"; clicking in shows "e.g. 2h, 30m, or until 14:30";
-  typing `2h` turns it into "until <time>". `sprout-mini.tsx`.
 
 **2026-10-13 (Spider theme: blue accent)**
 
@@ -1278,12 +1267,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (Don't fold for, on the folded Sprout)**
 
-- [ ] (arcterm) **The folded Sprout's card holds the auto fold off.** Turn on "Fold when you leave arcterm" (right-click
-  the app bar's Sprout), leave for an app that covers arcterm so it folds, and rest the cursor on Sprout: the card ends
-  with "Restore, don't fold for" and `1 hour`, `till 8:00` and a box. Typing `2h` shows "until …" under it; Enter (or a
-  chip) restores the window, and leaving again does not fold. Folded by hand, the card then reads "No fold until …"
-  with Resume. Check the card is not cut off at the top with four agents listed (the folded window grew to 320x336),
-  and that typing keeps the card open when the cursor leaves it. (`sprout-mini.tsx` `FoldPauseRow`, `foldpause.ts`)
+- [ ] (arcterm) **The folded Sprout's card, the parts the fold pause entry (2026-10-14) leaves out.** Folded by hand,
+  the card reads "No fold until …" with Resume; with four agents listed it is not cut off at the top (the folded window
+  grew to 320x336); and typing in the Custom… box keeps the card open when the cursor leaves it. (`sprout-mini.tsx`
+  `FoldPauseRow`, `foldpause.ts`)
 
 **2026-10-13 (Sleeping and background-task rows in the sidebar)**
 
@@ -1352,9 +1339,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 **2026-10-13 (New agent: Claude account)**
 
 - [ ] (arcterm) **The New agent footer names the Claude account.** With a token account added in Settings → Agents →
-  Claude account, open New agent and pick Claude Code: the footer reads "Starts in <path> · on main · Claude: <label>"
-  (or the /login email while Default is active), and a resume adds it after the branch. Pick Codex or Terminal: the
-  account part goes. With only /login it never shows. Not yet seen in the running app.
+  Claude account, open New agent and pick Claude Code: the footer reads `Claude: <label>` (or the /login email while
+  Default is active), for a new session and a resume alike; pick Codex or Terminal and it goes; with only /login it
+  never shows. `launcher.ts` `footerLine` (since rewritten: it no longer names the path and branch).
 
 **2026-10-13 (App bar usage button)**
 
@@ -1394,10 +1381,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   project's divider, in the tree (its terminal stays open); **Open output** shows that terminal, **Try again** runs the
   install once more. `0f8df9836`, `363ed96be`
 - [ ] (arcterm) **A tool in a Mac build (brew).** On Apple silicon: Setup → Tools → **Install** `glow` runs
-  `brew install glow` in an `Install glow` terminal; then open it with `Cmd+Shift+T`. A Finder-launched app has a short
+  `brew install glow` in an `Install glow` terminal; then open it with `Cmd+Shift+O` (`Cmd+Shift+T` now reopens the agent closed last). A Finder-launched app has a short
   PATH: check the library reads `found at …` for a tool brew put in `/opt/homebrew/bin`, or shows the restart hint,
   and that `brew` itself is found by the install terminal. `0f8df9836`
-- [ ] (arcterm) **A tool in the tree and the centre.** With an agent focused, `Ctrl+Shift+T` → lazygit: a lazygit row
+- [ ] (arcterm) **A tool in the tree and the centre.** With an agent focused, `Ctrl+Shift+O` → lazygit: a lazygit row
   sits under the divider of the agent's project and the tool shows in the centre, in the agent's folder (a worktree
   agent gives the folder chip). `Esc` and the arrows work inside it; a quick `Ctrl+Tab` flips to the agent and back
   with lazygit's screen as it was; quit lazygit and the terminal stays at its shell prompt in that folder, its row now
@@ -1507,13 +1494,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   image copied, a thumbnail appears under it. On a run picked from a goal it lands in the Goal. `launcher.ts`
   launcherKey `paste`, `launchermodal.tsx` onKeyDown.
 
-**2026-10-13 (Background tasks: one green dot, with a count)**
-
-- [ ] (arcterm) **The sidebar's background dot and the rail's running row match.** Have an agent start a command with
-  run_in_background: its sidebar row shows a pulsing green dot with the count beside it (`● 1`), and the rail's
-  Background tasks shows that task with the same pulsing green dot, not the accent colour. `agenttree.tsx`
-  BackgroundDot, `agentdetailsrail.tsx` BG_DOT.
-
 **2026-10-13 (Fold when you leave: stricter, on top; Sprout click opens the chat)**
 
 - [ ] (arcterm) **Auto fold only for a maximized or full-screen app, and Sprout on top of it.** Windows, Fold when you
@@ -1556,14 +1536,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-12 (Background tasks on the sidebar glyph)**
 
-- [ ] (arcterm) **An agent's sidebar ✳ carries its state, and a green dot its background tasks; Close waits for
-  them.** Rows: a working agent's ✳ pulses in the accent colour, an asking one's in yellow, an idle or sleeping one's is
-  grey and still, and the second line has no state dot. Have a Claude agent run something long with
-  `run_in_background` (a `sleep 120`), let its turn end and commit: a green dot pulses slowly on its second line,
-  hovering it lists the task, and neither the row's ✓ Close, the header's Close nor its key shows. Within ~15 s of the
-  command ending the dot goes and Close appears. `agenttree.tsx` RuntimeGlyph / BackgroundDot, `donesuggest.ts`.
-  The CDP scenario `sidebar-agent-glyph` covers the colours, the dot and Close on fixture rows; what is left to try by
-  hand is a real task ending and its dot going.
+- [ ] (arcterm) **An agent's sidebar ✳ carries its state; Close waits for its background tasks.** Rows: a working
+  agent's ✳ pulses in the accent colour, an asking one's in yellow, an idle or sleeping one's is grey and still, and the
+  second line has no state dot. Have a Claude agent run something long with `run_in_background` (a `sleep 120`), let its
+  turn end and commit: neither the row's ✓ Close, the header's Close nor its key shows until about 15 s after the
+  command ends. The green background dot this entry first named is gone ("calmer agent rows — no background-task mark");
+  running tasks are rows under the agent now. `agenttree.tsx` RuntimeGlyph, `donesuggest.ts`; the `sidebar-agent-glyph`
+  scenario covers the colours and Close on fixture rows.
 
 **2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
 
@@ -1693,9 +1672,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   the file is still unknown.
 - [ ] (arcterm) **Council Map's table header sticks.** On a council with ~20 ideas, open Map and scroll down: the head
   row (Idea, each seat, Agreement, Outcome) stays flush at the top of the pane, with no strip of rows showing above
-  it. With 7 seats in a narrow pane, scroll the table sideways: the head follows the columns and its Idea cell stays
-  put. `frontend/app/view/agents/councilmap.tsx` (`Matrix`); no dev app was running to try it, and the
-  `council-map` CDP scenario was not rerun.
+  it; scrolled sideways, the head follows the columns. `frontend/app/view/agents/councilmap.tsx` (`Matrix`). The
+  sideways half holds: `council-map` passed 12/12 in the Tauri dev app on 2026-11-05 (seven seats: the matrix scrolls
+  inside its box with the Idea column in place); no step scrolls it down.
 - [ ] (arcterm) **A council seat's failure sits under the message it failed on.** In a council where a seat failed on
   one of your messages (a usage limit), send another message to a different seat: the seat's failure line (with Retry
   and Retry with…) stays right under the first message, the first message no longer repeats the error, and nothing
@@ -1706,15 +1685,12 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   avatar on a message: the tooltip is the chat's session title; click either: the Agent surface opens on that chat's
   terminal. Close the chat's tab: the name and avatar stop being buttons. `frontend/app/view/agents/councilchat.tsx`
   (`Byline`, `SeatAvatar`), commit 3bdede464; no dev app was running to try it.
-- [ ] (arcterm) **Whom a council message goes to is chips in its bubble; an answer quotes its message.** In a done
-  council, send three plain questions in a row, one of them `@RAM …`: each routed one opens on a row of seat chips
-  behind the router mark, and hovering the row shows `Router chose …: <reason>` cut with "…" at a word; the `@RAM` one
-  has no row and `@RAM` is RAM's chip in its text; no "For …" line under any, and no "Router chose" line above any
-  answer. An answer that is not right under its question opens on `↳ You · <question>`; click it → the channel glides
-  up to that question (a jump with reduced motion) and its bubble rings in the accent for about 2 s. In a council
-  with a chat seat, the `@<key>` chip in your message opens that chat's terminal, as its name does. Type one long line in the
-  council's message box: it grows a line each time the text wraps, up to five, then scrolls; no line is cut off. `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits
-  bf8c79a0c and 2e2e65fdf; the `council-routing` scenario (its new `quote-stacked` step) has not run: no dev app was up.
+- [ ] (arcterm) **Whom a council message goes to: the parts no scenario reaches.** With real routed messages, the
+  chip row's hover cuts a long reason with "…" at a word; in a council with a chat seat, the `@<key>` chip in your
+  message opens that chat's terminal, as its name does; type one long line in the council's message box: it grows a
+  line each time the text wraps, up to five, then scrolls, and no line is cut off. The chips, the `@RAM` chip, the
+  quote, its glide and its 2 s ring hold: `council-routing` passed in the Tauri dev app on 2026-11-05, `quote-stacked`
+  included. `councilchat.tsx` (`ReachRow`, `QuoteRow`, `SeatChip`), commits bf8c79a0c and 2e2e65fdf.
 - [ ] (arcterm) **A closed chat seat comes back.** Seat a live chat in a council and let it answer once; close its tab
   and send it a message: its failure line reads `… is gone: its tab closed. Click its name to open its session again,
   then Retry`. Click its name (or avatar, or its @ chip in your message) → its session opens asleep in a new tab; press

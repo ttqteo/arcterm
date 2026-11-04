@@ -7,6 +7,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
+import { addWSReconnectHandler, removeWSReconnectHandler } from "@/app/store/ws";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
@@ -33,31 +34,40 @@ export function toggleJobQueue(opener: Element | null = null): void {
     globalStore.set(jobQueueOpenAtom, true);
 }
 
-/** Feeds jobQueueAtom: one read, then every `jobqueue` event. The event is subscribed first, and a read that lands after
- * an event is dropped, so a slow read never puts back a queue the event already moved on from. */
-export function useJobQueueFeed(): void {
-    useEffect(() => {
-        let live = true;
-        let heard = false;
-        const unsub = waveEventSubscribeSingle({
-            eventType: "jobqueue",
-            handler: (e) => {
-                heard = true;
-                globalStore.set(jobQueueAtom, e.data as JobQueueData);
-            },
-        });
+/** Feeds jobQueueAtom: one read, then every `jobqueue` event, and a read again each time the websocket reconnects, since
+ * an event published while it was down is never heard. The event is subscribed first, and a read that lands after an
+ * event is dropped, so a slow read never puts back a queue the event already moved on from. Returns the stop. */
+export function startJobQueueFeed(): () => void {
+    let live = true;
+    let events = 0; // events heard so far: a read applies only if none came while it was out
+    const unsub = waveEventSubscribeSingle({
+        eventType: "jobqueue",
+        handler: (e) => {
+            events++;
+            globalStore.set(jobQueueAtom, e.data as JobQueueData);
+        },
+    });
+    const read = () => {
+        const at = events;
         RpcApi.GetJobQueueCommand(TabRpcClient)
             .then((data) => {
-                if (live && !heard) {
+                if (live && events === at) {
                     globalStore.set(jobQueueAtom, data);
                 }
             })
             .catch(() => {});
-        return () => {
-            live = false;
-            unsub();
-        };
-    }, []);
+    };
+    read();
+    addWSReconnectHandler(read);
+    return () => {
+        live = false;
+        unsub();
+        removeWSReconnectHandler(read);
+    };
+}
+
+export function useJobQueueFeed(): void {
+    useEffect(() => startJobQueueFeed(), []);
 }
 
 declare global {

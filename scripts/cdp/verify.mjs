@@ -40,6 +40,18 @@ while (verdict === "wait") {
     verdict = renderWait({ now, start: waitStart, startedAt, rendered: !!state.nav, error });
     if (verdict === "wait") await new Promise((r) => setTimeout(r, RENDER_POLL_MS));
 }
+// wavesrv slower than the host's endpoint wait (a cold store on a loaded machine) leaves the page on "did not report
+// its ports"; the host fills them in when wavesrv does report, so one reload boots the app (a 2026-11-05 Final lost its
+// first two scenarios to it)
+if (verdict === "boot-error" && /did not report its ports/.test(state.overlay ?? state.boot?.error ?? "")) {
+    console.log(`boot error: ${state.overlay ?? state.boot?.error}; reloading once`);
+    try {
+        await h.reload();
+        verdict = "rendered";
+    } catch (e) {
+        console.log(`still not rendered after the reload: ${e?.message ?? e}`);
+    }
+}
 const waited = Math.round((Date.now() - waitStart) / 1000);
 if (verdict === "not-loaded") {
     h.close();
@@ -80,6 +92,8 @@ for (const scenario of chosen) {
     const firstShot = h.shots.length;
     let ctx;
     try {
+        // the last scenario's teardown may have reloaded the page: start once it can be driven again
+        if (!(await h.ready())) console.log(`${scenario.name}: the page was not ready after 30s; running it anyway`);
         ctx = await scenario.arrange(h);
         await h.goto(scenario.surface);
         // gotoShot: false is a scenario whose surface opens on a state its own shots replace (Settings reopens the page

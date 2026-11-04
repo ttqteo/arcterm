@@ -159,8 +159,10 @@ func TestPressureFromCommit(t *testing.T) {
 		want                    Pressure
 	}{
 		{"commit under the RAM: the free-RAM rule decides", 20 * gb, 32 * gb, 12 * gb, PressureUnknown},
-		{"commit at the RAM: the machine starts to page", 32 * gb, 32 * gb, 8 * gb, PressureWarn},
-		{"well past the RAM but RAM still free", 46 * gb, 32 * gb, 10 * gb, PressureWarn},
+		// a pagefile lets Windows commit past the RAM without paging: only RAM running out is pressure
+		{"commit at the RAM, a quarter free", 32 * gb, 32 * gb, 8 * gb, PressureUnknown},
+		{"well past the RAM but RAM still free", 46 * gb, 32 * gb, 10 * gb, PressureUnknown},
+		{"past the RAM and under a tenth free: the machine pages", 36 * gb, 32 * gb, 3 * gb, PressureWarn},
 		// 2026-10-14: 46 GB committed on 32 GB, 5.2 GB free, paging to a hard disk until Postgres stalled
 		{"well past the RAM and little left", 46 * gb, 32 * gb, 5 * gb, PressureCritical},
 		{"little RAM left but commit under 130%", 40 * gb, 32 * gb, 2 * gb, PressureWarn},

@@ -48,6 +48,21 @@ function dropPathText(path: string, cwd: string | null): string {
     return isDir ? text + "/" : text;
 }
 
+// eslint-disable-next-line no-control-regex
+const UNDROPPABLE = /[\x00-\x1f\x7f"]/;
+
+// The paths a drop can type as they are. A control character is refused: a newline typed into a shell without
+// bracketed paste is an Enter, so the line would run before the person sees it. So is a double quote: inside @"..."
+// or "..." it ends the quoting early and the terminal is given another path (Windows names cannot hold one).
+export function splitDroppable(paths: string[]): { ok: string[]; refused: string[] } {
+    const ok: string[] = [];
+    const refused: string[] = [];
+    for (const path of paths) {
+        (UNDROPPABLE.test(path) ? refused : ok).push(path);
+    }
+    return { ok, refused };
+}
+
 // Several paths are joined by single spaces and the text ends with a space, so typing can continue.
 export function formatDroppedPaths(paths: string[], target: DropTarget): string {
     return paths

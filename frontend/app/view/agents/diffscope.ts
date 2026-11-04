@@ -9,7 +9,6 @@
 
 import { normalizeRepoPath, sameRepoPath } from "@/util/paths";
 import type { CompareForm } from "./diffcontent";
-import type { GitChanges } from "./gitstatus";
 import type { HistoryFilters } from "./historyquery";
 
 // A project's path comes from the config registry and a run's directory and base commit were captured
@@ -42,16 +41,6 @@ export type DiffRange =
 export interface DiffScope {
     repo: DiffRepo;
     range: DiffRange;
-}
-
-// What the range strip draws. `available: false` means the chip is rendered disabled and explains
-// itself; a range that can never apply is absent from the list entirely.
-export interface RangeOption {
-    range: DiffRange;
-    label: string;
-    detail: string;
-    available: boolean;
-    reason?: string;
 }
 
 // The history pane's divider label and the name of what its synthetic top row counts. Owned here
@@ -125,51 +114,6 @@ export function defaultRangeFor(o: DiffOrigin): DiffRange {
     }
 }
 
-export interface RangeCtx {
-    // null when the agent's transcript has not yielded a session start yet
-    sessionStartTs: number | null;
-    // the commit the backend resolved for the active session range; "" when that range is not active
-    sessionRef: string;
-}
-
-export function availableRanges(scope: DiffScope, ctx: RangeCtx): RangeOption[] {
-    const out: RangeOption[] = [{ range: { kind: "working" }, label: "Working tree", detail: "", available: true }];
-    const origin = scope.repo.origin;
-    if (origin.kind === "agent") {
-        out.push({
-            range: { kind: "session", agentId: origin.id },
-            label: "Since session start",
-            detail: scope.range.kind === "session" ? shortSha(ctx.sessionRef) : "",
-            available: ctx.sessionStartTs != null,
-            reason: ctx.sessionStartTs == null ? "no session-start commit recorded yet" : undefined,
-        });
-    }
-    if (origin.kind === "run") {
-        out.push({
-            range: { kind: "run", runId: origin.runId, baseCommit: origin.baseCommit },
-            label: "This run",
-            detail: shortSha(origin.baseCommit),
-            available: true,
-        });
-    }
-    out.push({
-        range: currentCompareRange(scope.range),
-        label: "Compare",
-        detail: "",
-        available: true,
-    });
-    return out;
-}
-
-// Re-entering comparison offers the pair last used, and never nests: comparing while comparing keeps
-// the range that comparison originally interrupted.
-function currentCompareRange(active: DiffRange): DiffRange {
-    if (active.kind === "compare") {
-        return active;
-    }
-    return { kind: "compare", base: "", head: "", form: "mergebase", from: active };
-}
-
 export function historyOptsFor(range: DiffRange, resolvedRef: string): LoadHistoryOpts {
     switch (range.kind) {
         case "session":
@@ -186,49 +130,7 @@ export function historyOptsFor(range: DiffRange, resolvedRef: string): LoadHisto
     }
 }
 
-// What the surface has on hand when it captions the panes. `changes` is the list pane 2 is showing
-// (history's or compare's), and `commit` is the selected commit's hash — null when the scope's own
-// row (the working tree, or compare's All changes) is selected.
-export interface SummaryInput {
-    range: DiffRange;
-    branch: string;
-    ref: string;
-    mergeBase: string;
-    commit: string | null;
-    changes: GitChanges | null;
-}
-
-// The subject row's right-hand caption. It follows the selection: a caption that kept describing the
-// range while a commit's panes showed one file is the contradiction this replaced.
-export function summaryLine(i: SummaryInput): string {
-    const n = i.changes?.files.length ?? 0;
-    const files = `${n} ${n === 1 ? "file" : "files"}`;
-    const delta = `+${i.changes?.adds ?? 0} −${i.changes?.dels ?? 0}`;
-    const counts = `${files} · ${delta}`;
-    if (i.commit != null) {
-        return `${shortSha(i.commit)} · ${counts}`;
-    }
-    switch (i.range.kind) {
-        case "compare":
-            if (i.range.form === "tips") {
-                return `${i.range.base} .. ${i.range.head} tip to tip · ${counts}`;
-            }
-            return i.mergeBase
-                ? `${i.range.head} since ${shortSha(i.mergeBase)} · ${counts}`
-                : `${i.range.base} … ${i.range.head} · ${counts}`;
-        case "run":
-            return `${shortSha(i.range.baseCommit)} … HEAD · ${counts}`;
-        case "session":
-            return `worktree against ${shortSha(i.ref)} · ${counts}`;
-        case "working": {
-            // measured against HEAD, whatever branch that is — never "against main"
-            const where = i.branch && i.branch !== "HEAD" ? `on ${i.branch}` : "against HEAD";
-            return `${n} uncommitted ${n === 1 ? "file" : "files"} ${where} · ${delta}`;
-        }
-    }
-}
-
-// The diff header's "measured against" words, which follow the selection like summaryLine does: a commit is "in
+// The diff header's "measured against" words, which follow the selection: a commit is "in
 // <hash>", otherwise the range says what the file is compared with.
 export function measuredAgainst(i: { range: DiffRange; commit: string | null }): string {
     if (i.commit != null) {

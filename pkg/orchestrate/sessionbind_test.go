@@ -124,6 +124,17 @@ func TestNoteWorkerSessionIgnoresACodexReportFromAClaudeWorker(t *testing.T) {
 	}
 }
 
+// both agy and codex name their own session, so the runtime check alone lets a nested `agy -p` inside a codex
+// worker's block rebind that worker to agy's conversation
+func TestNoteWorkerSessionIgnoresAReportFromAnotherSessionNamingRuntime(t *testing.T) {
+	block, channelID, runID := seedBoundWorker(t, "codex")
+	NoteWorkerSession(context.Background(), statusEvent(block, "codex", liveSession))
+	NoteWorkerSession(context.Background(), statusEvent(block, "agy", "nested-agy"))
+	if got := boundSession(t, channelID, runID); got != liveSession {
+		t.Fatalf("an agy status inside a codex worker's block must not rebind it, got %q", got)
+	}
+}
+
 func TestNoteWorkerSessionIgnoresWhatIsNotAnAgyWorker(t *testing.T) {
 	ctx := context.Background()
 	t.Run("a block that is no worker", func(t *testing.T) {

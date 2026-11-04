@@ -38985,7 +38985,7 @@ const consumersPopover = {
         const first = await h.ev(`({
             cpu: ${consumersCells("[data-consumer-cpu]")},
             command: ${consumersCells("[data-consumer-command]")},
-            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
+            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
             own: document.querySelectorAll("[data-consumers-own]").length,
             agents: !!document.querySelector("[data-consumers-agents]"),
             hoverButtons: document.querySelectorAll("[data-consumer-sonnet], [data-consumer-sleep], [data-consumer-stop]").length,
@@ -39004,7 +39004,7 @@ const consumersPopover = {
         const filled = await polishWaitFor(h, `${consumersCells("[data-consumer-cpu]")}["fx-consumers-mine"] === "4.1%"`, 3000);
         const ready = await h.ev(`({
             cpu: ${consumersCells("[data-consumer-cpu]")},
-            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\s+/g, " ").trim() ?? null,
+            arc: document.querySelector("[data-consumers-arc]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
         })`);
         await h.shot("cdp-shots/consumers-compact.png");
         rec(
@@ -39696,7 +39696,11 @@ const agentSleep = {
         await removeAgentSleepMock(h);
         await removeConsumersMock(h);
         if (ctx.wroteFixture) {
-            ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true });
+            if (ctx.prevFixture != null) {
+                writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture);
+            } else {
+                rmSync(TREE_RAIL_FIXTURE, { force: true });
+            }
         }
         if (!(await ahReload(h))) console.error("agent-sleep teardown: the page did not come back after the reload");
         await h.goto("cockpit");
@@ -40814,6 +40818,60 @@ const capacityWarn = {
 // --- Settings → About: harness versions and the Update button ------------------------------------
 // The update check reads the npm registry and Update runs the real updater, which a scenario must not depend on: the
 // dev hooks in harnessupdatestore.ts stand in a newer release for claude, each update state, and an empty install list.
+// The app bar at a 1000px window: every part fits inside it, so the window's own buttons stay on screen. On 2026-11-05
+// the usage meters (5h and wk bars, the countdown) pushed Close past the right edge and "All projects" wrapped onto two
+// lines. Below 1200px the meters keep their label and percent only (usagemeters.tsx).
+const APP_BAR_NARROW = { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false };
+const appBarNarrow = {
+    name: "app-bar-narrow",
+    surface: "agent",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", APP_BAR_NARROW);
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        // the goto after arrange may have re-laid the bar: let it settle at the narrow width
+        await h.ev(`new Promise((r) => setTimeout(r, 600))`);
+        const bar = await h.ev(`(() => {
+            const bar = document.querySelector("[data-app-bar]");
+            if (!bar) return null;
+            const right = (el) => Math.round(el.getBoundingClientRect().right);
+            const left = bar.firstElementChild;
+            const close = bar.querySelector('button[aria-label="Close"]');
+            const meters = bar.querySelector("[data-usage-meters]");
+            return {
+                width: window.innerWidth,
+                overflow: bar.scrollWidth - bar.clientWidth,
+                lastRight: Math.max(...[...bar.querySelectorAll("button")].map(right)),
+                closeRight: close ? right(close) : null,
+                leftH: Math.round(left.getBoundingClientRect().height),
+                leftText: left.textContent.replace(/\\s+/g, " ").trim(),
+                meters: meters ? meters.textContent.replace(/\\s+/g, " ").trim() : null,
+                bars: meters ? [...meters.querySelectorAll("[data-usage-bar]")].filter((e) => e.offsetParent != null).length : null,
+            };
+        })()`);
+        await h.shot("cdp-shots/app-bar-narrow.png");
+        steps.push({
+            step: "at a 1000px window no part of the app bar spills past it: every button, Close included where the bar draws it, ends inside the window",
+            ok: bar != null && bar.overflow <= 0 && bar.lastRight <= bar.width && (bar.closeRight == null || bar.closeRight <= bar.width),
+            detail: JSON.stringify(bar),
+        });
+        steps.push({
+            // one line is the switcher's 28px button; wrapped onto two it was past 40
+            step: "the wordmark and the project switcher stay on one line",
+            ok: bar != null && bar.leftH <= 32,
+            detail: JSON.stringify({ leftH: bar?.leftH, leftText: bar?.leftText }),
+        });
+        steps.push({
+            step: "the usage meters, when there are any, show no bar at this width (label and percent only)",
+            ok: bar != null && (bar.meters == null || bar.bars === 0),
+            detail: JSON.stringify({ meters: bar?.meters, bars: bar?.bars }),
+        });
+        return steps;
+    },
+};
+
 const harnessUpdate = {
     name: "harness-update",
     surface: "settings",
@@ -59916,6 +59974,7 @@ export const SCENARIOS = [
     briefRestore,
     briefComposerSteerOnly,
     terminalTheme,
+    appBarNarrow,
     harnessUpdate,
     settingsClaudeAccount,
     tuiLeader,

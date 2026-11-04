@@ -2099,11 +2099,6 @@ func TestCompareChangesTipsIncludesBaseSideChanges(t *testing.T) {
 	}
 }
 
-// Roughly 2.8MB of plausible text — the shape of a regenerated lockfile, which is the case the diff
-// cap exists for. Built once for the whole run rather than per test; three of the four tests below
-// write it.
-var hugeBody = strings.Repeat(strings.Repeat("x", 45)+"\n", 60000)
-
 // numbered returns n lines "line1\n".."lineN\n".
 func numbered(n int) string {
 	var b strings.Builder
@@ -2210,6 +2205,54 @@ func TestReviewPatchWorkingTree(t *testing.T) {
 		if f.TooLarge {
 			t.Errorf("%s TooLarge with no cap", f.Path)
 		}
+	}
+}
+
+// git prints autocrlf's "LF will be replaced by CRLF" warning on stderr as it reads each file; it must not end up
+// in a file's patch. a.txt's patch is past git's stdout buffer, so z.txt's warning lands after a.txt's text began.
+func TestReviewPatchLeavesGitWarningsOutOfThePatch(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", strings.Repeat("one\n", 20000))
+	writeFile(t, dir, "z.txt", "last\n")
+	commitAll(t, dir)
+	gitRun(t, dir, "config", "core.autocrlf", "true")
+	writeFile(t, dir, "a.txt", strings.Repeat("two\n", 20000))
+	writeFile(t, dir, "z.txt", "last\nmore\n")
+	res, err := ReviewPatch(context.Background(), dir, "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 2 {
+		t.Fatalf("files = %v, want a.txt and z.txt", reviewPaths(res))
+	}
+	for _, f := range res.Files {
+		if strings.Contains(f.Diff, "warning:") || strings.Contains(f.Diff, "CRLF") {
+			t.Errorf("%s patch carries git's stderr:\n%s", f.Path, f.Diff)
+		}
+		if !strings.HasPrefix(f.Diff, "diff --git ") {
+			t.Errorf("%s patch does not start at its header:\n%s", f.Path, f.Diff)
+		}
+	}
+}
+
+// runErr's output is what the command printed on stdout: ReviewPatch and ls-files parse it, so stderr (a warning)
+// must stay out of it and go only into the error.
+func TestRunErrReturnsStdoutAlone(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", "one\n")
+	commitAll(t, dir)
+	gitRun(t, dir, "config", "core.autocrlf", "true")
+	writeFile(t, dir, "a.txt", "one\ntwo\n")
+	out, err := runErr(context.Background(), dir, "diff", "--no-color", "HEAD", "--")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "diff --git ") || strings.Contains(out, "warning:") {
+		t.Fatalf("runErr output carries stderr:\n%s", out)
+	}
+	_, err = runErr(context.Background(), dir, "rev-parse", "--verify", "no-such-ref")
+	if err == nil || !strings.Contains(err.Error(), "fatal:") {
+		t.Fatalf("a failure's error does not carry git's stderr: %v", err)
 	}
 }
 

@@ -51,6 +51,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - On Windows, Sprout's card names Ctrl+M (not ⌘M) for Restore window, and dragging an agent over a grid cell says "hold Alt to mention" (not ⌥).
 - A click on an idea in a council's Ideas rail glides the Discussion to it instead of jumping there (still a jump with reduced motion on).
 - Settings → Storage no longer marks a finished run's tree "has uncommitted changes" when all it holds are the links its Setup made (`node_modules`, `src-tauri/target`), so Clean all and the automatic cleanup now remove it.
+- The Jobs chip reads the queue again when the app reconnects to its backend, so a job that started or ended while the connection was down no longer leaves it showing the old queue.
+- In a council's message box, the `@` list no longer offers a live chat the message already mentions, so picking it again cannot write the mention twice.
+- In a narrow window (about 1000px) the app bar fits again: the usage meters keep their label and percent and drop their bars and countdown (still in the tooltip), so the window's Close button is no longer pushed off the edge and All projects stays on one line.
+- In a council's Discussion with the Ideas rail open, an idea's reply line (replies, new replies, last reply) wraps onto more lines instead of spilling past the narrow message column and cutting off its time.
 - A background task's Output and a Monitor's Events show the colors the program printed (a build's file names, a test run's ✓ and ✗) instead of raw escape codes like `▯[36m`; a progress line redrawn in place shows its last state.
 - An HTML page previewed in arcterm (the File tab, a design canvas, a brainstorm board) can no longer send what it holds to another site: it loads its own folder's files, common CDNs and Google Fonts, and its fetches, forms and frames go nowhere else. Images and video from other sites still show.
 - A note titled in Vietnamese keeps its words in its id (`wsh note add "Cải tiến"` → `…-cai-tien`, not `…-c-i-ti-n`); so do Jarvis's dossier and decision files, and the id of a tool you add.
@@ -61,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A click on an idea in a council's Ideas tab now shows which message it is: the row and its message in the channel both wear an accent ring, the message rings wider for a moment where it lands, and each idea in the channel carries its `Idea N` number, as on the tab.
 - A pinned council's right-click menu in the Agent tree offers Unpin again; before, it had neither Unpin nor Close, so a pinned council could not be taken out of the tree from there.
 - New opened while a council (or a council's Setup) is in the centre starts on that council's project, as it does from a project's Overview, instead of the project of whichever agent was last in focus.
+- On Windows, heavy jobs (builds, typechecks, test suites) and run workers no longer go one at a time just because the commit charge is past your RAM, which a pagefile allows: they wait only when free RAM drops under a tenth.
+- Dragging a file from the Files tab onto a terminal no longer types a name holding a line break (which a shell would run as Enter) or a double quote (which ends the quoting early): such a path is left out and a warning names it.
 
 ## 1.0.0 — 2026-11-04
 
@@ -194,6 +200,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's Report has the Close and Reopen button too, at the end of its tab bar: a closed council opened from Councils lands on its Report, where you could only reopen it from the Discussion tab.
 
 ## 0.15.20 — 2026-11-02
+
 ### Changed
 
 - A council's chat reads more like a messenger. Your own messages have no name line above them (the time shows on
@@ -922,8 +929,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - With the menu bar icon on (the tray icon on Windows), closing arcterm's window hides it instead of quitting: your
   agents keep running and the icon keeps showing the memory free. The popover's Open arcterm, or the Dock icon, brings
   the window back; Quit (`⌘Q`) still quits.
-- The Resume list and Conversation History load older sessions as you scroll, instead of stopping at the newest 50 or
-  100. <!-- try: go:history -->
+- The Resume list and Conversation History load older sessions as you scroll, instead of stopping at the newest 50 or 100. <!-- try: go:history -->
 - Typing in the Resume list finds any session of that project still on disk. <!-- try: new-agent -->
 - Claude Code now keeps conversations 90 days instead of 30, unless you set `cleanupPeriodDays` yourself.
 
@@ -1379,7 +1385,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   for a popover of every process arcterm and its agents started, grouped by agent, with `x` to kill a runaway process
   and its children (asks first, never the agent itself). <!-- big -->
 - **Mark files reviewed in the Diff surface's log**: a check at each file's right end, `v` or **Mark reviewed** in the
-  diff header to mark the open file and step to the next unreviewed one, and an *n/m reviewed* bar over the list. <!-- try: go:files --> <!-- big -->
+  diff header to mark the open file and step to the next unreviewed one, and an _n/m reviewed_ bar over the list. <!-- try: go:files --> <!-- big -->
 - **Notes in the palette**: the palette's Notes scope lists, previews, copies, edits and deletes your notes, and
   `wsh note add` lets an agent write one. <!-- try: go:palette -->
 - **A run's final stage has its own row**: a Final verification row under the run in the agent list, with the step
@@ -1774,8 +1780,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Jarvis can be a one-eyed Minion instead of Sprout: pick it in **Settings → Appearance → Jarvis → Character**. It
   walks, rests and plays like Sprout, wears the same marks, and the flag shirt turns its overalls red.
 
-- Message another live agent from any Claude prompt: start it with `@` and the agent's tab id (`@3f2a91bc review
-  this diff`) and it goes straight to that agent's session, not the one you typed in; a line under the prompt says it
+- Message another live agent from any Claude prompt: start it with `@` and the agent's tab id
+  (`@3f2a91bc review this diff`) and it goes straight to that agent's session, not the one you typed in; a line under the prompt says it
   was sent, and a message that could not go comes back to the box with the reason. Right-click an agent card and
   **Copy @mention** copies the id.
 
@@ -1975,8 +1981,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   off.
 - An orchestrator lead no longer collects an unread count once its plan is running: the turns the engine wakes it
   for (a task done, a merge, a handoff) are not news for you, and what it needs from you still arrives as a question.
-- A run held because its final stage failed names the step that failed in Needs you, and says `wsh runs land
-  <run> --force` is the way to land it, instead of advising to clear a reason that Land again can never clear.
+- A run held because its final stage failed names the step that failed in Needs you, and says
+  `wsh runs land <run> --force` is the way to land it, instead of advising to clear a reason that Land again can never clear.
 - A run held because the checkout has uncommitted edits to a file it changes now says so and names the files,
   instead of quoting git's whole merge command and error.
 - The Cockpit's nav badge (and the Dock badge on a Mac) counts an agent at a permission prompt or a question asked in

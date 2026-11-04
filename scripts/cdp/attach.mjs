@@ -28,6 +28,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const NAV_WAIT_MS = 30_000;
 const NAV_POLL_MS = 250;
 const NAV_RENDERED = `!!document.querySelector("nav button")`;
+// a page a scenario can drive: its nav drawn and the RPC client h.rpc calls in place. Right after a teardown's reload
+// the next scenario's arrange read `window.TabRpcClient` as undefined (2026-11-03, 2026-11-05)
+const PAGE_READY = `${NAV_RENDERED} && typeof window.TabRpcClient?.wshRpcCall === "function"`;
 
 // polls expr until it is truthy, false past ms. An evaluate that throws counts as not yet: a reload destroys the
 // execution context mid-boot.
@@ -165,9 +168,11 @@ export async function attach(port = 9222) {
         // the nav has rendered. Polling the nav alone could read the old page before the reload commits.
         async reload() {
             await ev("window.__cdpReloading = true; location.reload()");
-            const booted = await waitFor(ev, `!window.__cdpReloading && ${NAV_RENDERED}`, NAV_WAIT_MS);
+            const booted = await waitFor(ev, `!window.__cdpReloading && ${PAGE_READY}`, NAV_WAIT_MS);
             if (!booted) throw new Error(`the page did not render its nav within ${NAV_WAIT_MS / 1000}s of a reload`);
         },
+        // true once the page can be driven (PAGE_READY), false past ms: a scenario that starts before then fails on it
+        ready: (ms = NAV_WAIT_MS) => waitFor(ev, PAGE_READY, ms),
         async goto(surface) {
             const label = SURFACE_LABEL[surface];
             if (!label) throw new Error(`unknown surface "${surface}"`);

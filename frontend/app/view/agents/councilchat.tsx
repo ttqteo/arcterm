@@ -975,7 +975,9 @@ function IdeaMessage({
                             aria-label={`Open the thread: ${t.label}${t.last === "" ? "" : `, ${t.last}`}`}
                             title={t.last === "" ? undefined : t.last}
                             onClick={() => onOpen(item.id)}
-                            className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                            // in a narrow channel (the Ideas rail open at ~1000px) its parts wrap as whole words onto
+                            // more lines, rather than each breaking inside a fixed 26px row and spilling past the column
+                            className="-ml-[6px] inline-flex min-h-[26px] max-w-full cursor-pointer flex-wrap items-center gap-x-[8px] gap-y-[2px] rounded-[6px] border border-transparent bg-transparent py-[2px] pl-[6px] pr-[8px] text-left text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent [&>span]:whitespace-nowrap"
                         >
                             {t.repliers.length > 0 && (
                                 <span className="flex">

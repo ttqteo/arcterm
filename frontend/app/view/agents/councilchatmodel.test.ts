@@ -1269,6 +1269,14 @@ describe("joinableChats and contextLabel", () => {
 describe("mentionPicker: the live chats under the seats", () => {
     const seated = chat("t-w", "Witness synthesis");
 
+    it("leaves out a chat whose @key the message already holds, so a second pick does not write it twice", () => {
+        const text = "@82faafca look at this, and @";
+        const picker = mentionPicker(room(), text, text.length, [far, nearA])!;
+        expect(picker.chats).toEqual([{ chat: nearA, key: "3e19c0d2" }]);
+        // the @ being typed is not a mention yet: a chat it already names whole stays listed until a space follows
+        expect(mentionPicker(room(), "@82faafca", 9, [far])!.chats).toEqual([{ chat: far, key: "82faafca" }]);
+    });
+
     it("lists the seats, then the chats no seat holds, each with its key", () => {
         const picker = mentionPicker(room(), "@", 1, [seated, far, nearA])!;
         expect(picker.start).toBe(0);

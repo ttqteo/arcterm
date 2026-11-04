@@ -26,10 +26,12 @@ import {
     formatDroppedPaths,
     isPathsDrag,
     RAIL_PATHS_MIME,
+    splitDroppable,
     type DropTarget,
 } from "@/app/view/agents/pathdrop";
 import { collectDroppedFiles, isFileDrag } from "@/app/view/agents/uploadfile";
 import { ingestFiles } from "@/app/view/agents/uploadsingest";
+import { baseName } from "@/app/view/agents/uploadsstore";
 import { focusTerm, pasteIntoTerm } from "@/app/view/term/termpaste";
 import { useWaveEnv } from "@/app/waveenv/waveenv";
 import { fireAndForget } from "@/util/util";
@@ -66,11 +68,19 @@ async function insertDroppedPaths(blockId: string, data: string): Promise<void> 
         pushToast({ title: "Could not read the dragged paths", message: "", level: "warn" });
         return;
     }
-    if (paths.length === 0) {
+    const { ok, refused } = splitDroppable(paths);
+    if (refused.length > 0) {
+        pushToast({
+            title: refused.length === 1 ? "A path was left out" : `${refused.length} paths were left out`,
+            message: `A name holding a line break, a control character or a double quote would be typed as another path: ${refused.map(baseName).join(", ")}`,
+            level: "warn",
+        });
+    }
+    if (ok.length === 0) {
         return;
     }
     try {
-        const text = formatDroppedPaths(paths, await dropTargetOf(blockId));
+        const text = formatDroppedPaths(ok, await dropTargetOf(blockId));
         if (!pasteIntoTerm(blockId, text)) {
             pushToast({ title: "The terminal is not ready for input", message: "", level: "warn" });
             return;

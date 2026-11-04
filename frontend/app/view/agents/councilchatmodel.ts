@@ -1283,13 +1283,18 @@ export function mentionPicker(
     const matching = isPath ? [] : seats.filter((e) => query === "" || wordsOf(e).some(holds));
     // a path ends at whitespace: once a space follows it the `@` is done
     const named = query === "" || /\s/.test(query) ? [] : fileMentionMatches(found[2], files.filter(isMentionablePath));
+    // a chat the rest of the message already mentions is picked (pickedChats): listing it again writes it twice
+    const start = caret - found[2].length - 1;
+    const rest = text.slice(0, start) + text.slice(caret);
+    const tabs = [...chatSeatTabs(c), ...joinable.map((a) => a.id)];
     const listed = isPath
         ? []
         : joinable
+              .filter((a) => !mentionsChat(rest, a.id, tabs))
               .filter((a) => query === "" || [keys.get(a.id) ?? "", a.name, a.project].some(holds))
               .map((a) => ({ chat: a, key: keys.get(a.id) ?? "" }));
     return matching.length > 0 || named.length > 0 || listed.length > 0 || all
-        ? { start: caret - found[2].length - 1, all, seats: matching, files: named, chats: listed }
+        ? { start, all, seats: matching, files: named, chats: listed }
         : null;
 }
 
