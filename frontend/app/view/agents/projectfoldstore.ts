@@ -11,8 +11,6 @@ export type SidebarSection = "active" | "terminals" | "conversations";
 
 // the Active section's project folders
 export const collapsedProjectsAtom = atomWithStorage<string[]>("agent.tree.collapsed", []);
-// the Terminals section's project folders
-export const collapsedTerminalProjectsAtom = atomWithStorage<string[]>("agent.tree.terminals.collapsed", []);
 // the Conversations section's project folders
 export const collapsedConversationProjectsAtom = atomWithStorage<string[]>("agent.tree.conversations.collapsed", []);
 // the sections themselves (SidebarSection)
