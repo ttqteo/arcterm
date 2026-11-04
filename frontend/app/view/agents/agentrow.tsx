@@ -295,7 +295,7 @@ export const AgentRow = memo(function AgentRow({
             mute: () => muteAction?.(),
             copy: () => void navigator.clipboard.writeText(agent.name),
             id: () => void navigator.clipboard.writeText(shortTabId(agent.id)),
-            close: () => confirmCloseSession(agent),
+            close: () => confirmCloseSession(agent, undefined, "row menu"),
         };
         const items: ContextMenuItem[] = agentRowMenuItems({ hasDiff: !!diff, hasMute: !!muteAction }).map(
             (it: AgentRowMenuItem) =>

@@ -470,7 +470,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
 
     // Close the whole session (a tab, per launchAgent) — shared with the double-Ctrl+C handler. The
     // header also fronts background terminals, so the noun follows what is actually focused.
-    const closeTerminal = () => confirmCloseSession(agent, model);
+    const closeTerminal = () => confirmCloseSession(agent, model, "header");
     // a wake relaunching it: Close would kill the process it waits on, and the More menu's Interrupt and Redraw type
     // into the resuming TUI, so both are off until it is back (or the wake fails)
     const waking = useWaking(agent.id);

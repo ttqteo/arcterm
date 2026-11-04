@@ -10,8 +10,9 @@
 // Both listeners are window/bubble, which only reaches them because ModalShell pulls focus into the
 // panel — with focus left in an xterm, xterm's handler stops the keydown before it ever bubbles.
 
+import type { ConfirmHow } from "@/app/view/agents/closelog";
 import { cn, makeIconClass } from "@/util/util";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { DialogButton } from "./dialogbutton";
 import { ModalShell } from "./modalshell";
 
@@ -34,7 +35,8 @@ interface ConfirmDialogProps {
     confirmDisabled?: boolean;
     altLabel?: string; // a lesser second action beside the CTA; mouse only, Enter stays the CTA's
     onAlt?: () => void;
-    onConfirm: () => void;
+    // how: Enter or a click, and the ms since the dialog opened (a destructive caller logs it)
+    onConfirm: (how: ConfirmHow) => void;
     onClose: () => void;
 }
 
@@ -52,6 +54,12 @@ export function ConfirmDialog({
     onConfirm,
     onClose,
 }: ConfirmDialogProps) {
+    const openedAt = useRef(Date.now());
+    useEffect(() => {
+        if (open) {
+            openedAt.current = Date.now();
+        }
+    }, [open]);
     useEffect(() => {
         if (!open) {
             return;
@@ -59,7 +67,7 @@ export function ConfirmDialog({
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !confirmDisabled) {
                 e.preventDefault();
-                onConfirm();
+                onConfirm({ via: "enter", afterMs: Date.now() - openedAt.current });
             }
         };
         window.addEventListener("keydown", onKey);
@@ -107,7 +115,7 @@ export function ConfirmDialog({
                         variant={tone === "danger" ? "danger" : "primary"}
                         hint="⏎"
                         disabled={confirmDisabled}
-                        onClick={onConfirm}
+                        onClick={() => onConfirm({ via: "click", afterMs: Date.now() - openedAt.current })}
                     >
                         {confirmLabel}
                     </DialogButton>

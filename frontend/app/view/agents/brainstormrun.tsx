@@ -212,7 +212,7 @@ async function closeBrainstorm(agent: AgentVM, runId: string): Promise<void> {
         }
     }
     if (agent.state === "idle") {
-        closeSessions([agent]);
+        closeSessions([agent], "brainstorm closed after its run landed");
     }
 }
 

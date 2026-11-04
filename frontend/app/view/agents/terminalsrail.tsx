@@ -115,7 +115,7 @@ export function terminalMenuItems(
             label: "Close terminal",
             icon: <X size={15} />,
             danger: true,
-            click: () => confirmCloseSession(terminal),
+            click: () => confirmCloseSession(terminal, undefined, "terminals rail"),
         },
     ];
 }

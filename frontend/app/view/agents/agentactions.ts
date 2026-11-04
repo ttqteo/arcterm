@@ -4,13 +4,14 @@
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
-import { WorkspaceService } from "@/app/store/services";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget, stringToBase64 } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
 import { projectCloseMessage, type ProjectClose } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
+import type { ConfirmHow } from "./closelog";
+import { closeTabLogged, logClose } from "./closetab";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
 import { noteClosed } from "./recentlyclosed";
 import { leadRunTabIds } from "./runlineage";
@@ -25,10 +26,10 @@ export function closeAgentChord(): string {
 // a tab being closed: its transcript, when it has one, is what the reopen stack keeps
 type ClosingVM = Pick<AgentVM, "id" | "name" | "kind"> & Partial<Pick<AgentVM, "transcriptPath">>;
 
-function closeTabs(workspaceId: string, tabIds: string[]): void {
+function closeTabs(workspaceId: string, tabIds: string[], why: string): void {
     fireAndForget(async () => {
         for (const id of tabIds) {
-            await WorkspaceService.CloseTab(workspaceId, id);
+            await closeTabLogged(workspaceId, id, why);
         }
     });
 }
@@ -40,7 +41,13 @@ function closeTabs(workspaceId: string, tabIds: string[]): void {
 // conversation goes on the reopen stack (recentlyclosed.ts, Mod+Shift+T); a closed run puts back only its lead.
 // Given the model, a lead whose run still holds other tabs is offered its whole run: closing the lead
 // alone leaves those tabs under a lead-less run row, which read as a close that did nothing.
-export function confirmCloseSession(vm: ClosingVM, model?: Pick<AgentsViewModel, "lineageAtom" | "agentsAtom">) {
+// `from` names the route that asked (a key, a button, a menu): it goes into the `[close]` lines (closelog.ts), with how
+// the dialog was accepted, so a close nobody remembers can be traced.
+export function confirmCloseSession(
+    vm: ClosingVM,
+    model?: Pick<AgentsViewModel, "lineageAtom" | "agentsAtom">,
+    from = ""
+) {
     const ws = globalStore.get(atoms.workspace);
     // not while a wake relaunches it: the close would kill the process the wake waits on (every route lands here, the
     // chord and the row menus included)
@@ -49,6 +56,10 @@ export function confirmCloseSession(vm: ClosingVM, model?: Pick<AgentsViewModel,
     }
     const runTabIds =
         model && leadRunTabIds(globalStore.get(model.lineageAtom), globalStore.get(model.agentsAtom), vm.id);
+    logClose({ kind: "ask", tabId: vm.id, name: vm.name, from });
+    const confirmed = (how: ConfirmHow | undefined, what: string) => {
+        logClose({ kind: "confirm", tabId: vm.id, name: vm.name, from: what ? `${from} ${what}` : from, how });
+    };
     if (runTabIds) {
         const others = runTabIds.length - 1;
         modalsModel.pushModal("ConfirmModal", {
@@ -57,13 +68,15 @@ export function confirmCloseSession(vm: ClosingVM, model?: Pick<AgentsViewModel,
             confirmLabel: "Close run",
             altLabel: "Close lead only",
             destructive: true,
-            onConfirm: () => {
+            onConfirm: (how: ConfirmHow) => {
+                confirmed(how, "(run)");
                 noteClosed([vm]);
-                closeTabs(ws.oid, runTabIds);
+                closeTabs(ws.oid, runTabIds, `close run from ${from || "?"}`);
             },
             onAlt: () => {
+                confirmed(undefined, "(lead only)");
                 noteClosed([vm]);
-                closeTabs(ws.oid, [vm.id]);
+                closeTabs(ws.oid, [vm.id], `close lead from ${from || "?"}`);
             },
         });
         return;
@@ -77,9 +90,10 @@ export function confirmCloseSession(vm: ClosingVM, model?: Pick<AgentsViewModel,
             : `End the session for "${vm.name}"? This stops the agent and can't be undone.`,
         confirmLabel: label,
         destructive: true,
-        onConfirm: () => {
+        onConfirm: (how: ConfirmHow) => {
+            confirmed(how, "");
             noteClosed([vm]);
-            fireAndForget(() => WorkspaceService.CloseTab(ws.oid, vm.id));
+            fireAndForget(() => closeTabLogged(ws.oid, vm.id, `close from ${from || "?"}`));
         },
     });
 }
@@ -97,7 +111,7 @@ export function confirmCloseRun(title: string, tabIds: string[]) {
         message: `Close "${title}" and ${sessions}? This stops those agents and can't be undone.`,
         confirmLabel: "Close run",
         destructive: true,
-        onConfirm: () => closeTabs(ws.oid, tabIds),
+        onConfirm: () => closeTabs(ws.oid, tabIds, "close run (run row)"),
     });
 }
 
@@ -114,13 +128,13 @@ export function confirmCloseProject(project: string, close: ProjectClose): void 
         message,
         confirmLabel: "Close project",
         destructive: true,
-        onConfirm: () => closeSessions([...close.agents, ...close.terminals]),
+        onConfirm: () => closeSessions([...close.agents, ...close.terminals], `close project ${project}`),
     });
 }
 
 // Close several sessions at once, with no confirm of its own: the caller asked (the Consumers panel's ticked rows).
 // They go on the reopen stack too, the first given on top.
-export function closeSessions(vms: ClosingVM[]): void {
+export function closeSessions(vms: ClosingVM[], why: string): void {
     const ws = globalStore.get(atoms.workspace);
     if (ws?.oid == null || vms.length === 0) {
         return;
@@ -128,7 +142,8 @@ export function closeSessions(vms: ClosingVM[]): void {
     noteClosed(vms);
     closeTabs(
         ws.oid,
-        vms.map((vm) => vm.id)
+        vms.map((vm) => vm.id),
+        why
     );
 }
 

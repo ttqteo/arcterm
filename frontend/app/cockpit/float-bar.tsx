@@ -162,7 +162,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                             ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
                             : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
                     }
-                    onClick={() => confirmCloseSession(agent, model)}
+                    onClick={() => confirmCloseSession(agent, model, "float bar")}
                     className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error")}
                 >
                     <X size={15} strokeWidth={1.9} />

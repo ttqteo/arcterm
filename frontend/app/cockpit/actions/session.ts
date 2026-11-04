@@ -48,7 +48,7 @@ export const SESSION_KIND: ThingKindDef<SessionThing> = {
             group: "stop",
             destructive: true,
             applies: (t) => t.agent != null,
-            run: (t, { model }) => confirmCloseSession(t.agent, model),
+            run: (t, { model }) => confirmCloseSession(t.agent, model, "palette"),
         },
         {
             // an ended Claude session only: its transcript moves to ~/.arc/trash, kept 7 days
