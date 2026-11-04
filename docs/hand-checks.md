@@ -9,6 +9,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Round 1 idea cards draw Markdown.** Start a council whose experts answer with a table or a `==…==`
   sentence → while it is still in Round 1, the cards under Ideas so far in Discussion show a real table and a
   highlighted sentence, not raw `|` and `==` (`councildiscussion.tsx`, 634a18218).
+- [ ] (arcterm) **Council title on two lines, short step chip.** Open a running council with a long title in
+  Discussion → the title wraps to two lines (then an ellipsis), the row stays 52px, and the chip reads `Round 1/2`
+  whole, never `Round 1 of…`; hovering it shows `Round 1 of 2`. Narrow the window to ~1000px: the chip still whole.
+  Not run in the app (no dev app up); `council-discussion` CDP scenario not run either.
 - [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
   a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
   never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`

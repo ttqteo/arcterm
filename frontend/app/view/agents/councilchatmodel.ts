@@ -1114,6 +1114,16 @@ export function stepChip(c: Council): StepChip {
     return { text: headerChip(c), dot };
 }
 
+/** Pure: the step chip's words as the header draws them, short enough to sit beside a long title: `Round 1 of 2` reads
+ *  `Round 1/2`, `Writing the summary` reads `Summarizing`, and a drafts tail keeps its count (`· 2 drafts`), its amber
+ *  tone saying they wait for you. The full words stay the chip's hover and what a screen reader hears. */
+export function chipShort(text: string): string {
+    return text
+        .replace(/Round (\d+) of (\d+)/, "Round $1/$2")
+        .replace("Writing the summary", "Summarizing")
+        .replace(/ waits? for you$/, "");
+}
+
 // ---- who a message reaches ----
 
 /** Pure: who answers a message of the person's, for the line under a composer: the seats it @-mentions (a chat seat by

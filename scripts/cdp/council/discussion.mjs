@@ -328,7 +328,8 @@ const headerRow = (h) =>
             height: row.getBoundingClientRect().height,
             tab: !!head.querySelector("[data-council-tab='discussion'][aria-selected='true']"),
             title: !!title,
-            truncated: !!title && title.scrollWidth > title.clientWidth,
+            // two lines, then an ellipsis: cut short in either direction
+            truncated: !!title && (title.scrollWidth > title.clientWidth || title.scrollHeight > title.clientHeight + 1),
             titleW: title ? Math.round(title.clientWidth) : 0,
             seats: stack.length,
             seatsShown: stack.filter((e) => e.getBoundingClientRect().width > 0).length,

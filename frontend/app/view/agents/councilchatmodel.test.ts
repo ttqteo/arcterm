@@ -6,6 +6,7 @@ import {
     askChips,
     askTooSeats,
     chatMentionKeys,
+    chipShort,
     contextLabel,
     councilChannel,
     councilThread,
@@ -1045,6 +1046,24 @@ describe("stepChip", () => {
             replies: [reply("r1", "sk", 300, { round: 4, draft: "held" })],
         });
         expect(stepChip(c)).toEqual({ text: "Done · 1 draft waits for you", dot: "waiting" });
+    });
+});
+
+describe("chipShort", () => {
+    it("draws the round as N/M and the summary step in a word", () => {
+        expect(chipShort("Round 1 of 2")).toBe("Round 1/2");
+        expect(chipShort("Writing the summary")).toBe("Summarizing");
+    });
+
+    it("keeps the drafts' count and drops the words the amber tone already says", () => {
+        expect(chipShort("Round 2 of 2 · 3 drafts wait for you")).toBe("Round 2/2 · 3 drafts");
+        expect(chipShort("Done · 1 draft waits for you")).toBe("Done · 1 draft");
+    });
+
+    it("leaves the other states as they are", () => {
+        for (const t of ["Waiting on you", "Done", "Failed", "Queued", "Follow-up · 2 answering"]) {
+            expect(chipShort(t)).toBe(t);
+        }
     });
 });
 
