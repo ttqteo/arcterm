@@ -30,6 +30,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Open DAG no longer stalls before the window appears: the window opens at once with a placeholder, and the graph fills in a moment later.
 - A click on an idea in a council's Ideas tab now shows which message it is: the row and its message in the channel both wear an accent ring, the message rings wider for a moment where it lands, and each idea in the channel carries its `Idea N` number, as on the tab.
 
 ## 1.0.0 — 2026-11-04

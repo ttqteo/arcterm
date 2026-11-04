@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
+  a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
+  never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`
+  was the suspect (`dagmodal.tsx`).
 - [ ] (arcterm) **A brainstorm handed to a quick run follows it.** Hand a brainstorm's spec to a quick run → its Agent
   tree line reads `working · run …`, then `done · run …` (never `planning`), and the Run step offers Close the
   brainstorm once the run is done (`brainstormrunmodel.ts` `quickStepView`).

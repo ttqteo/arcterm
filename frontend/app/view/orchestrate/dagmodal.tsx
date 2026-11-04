@@ -26,6 +26,12 @@ export function DagModal() {
     const panelRef = useRef<HTMLDivElement>(null);
     const open = state != null;
     const layout = useTimelineLayout();
+    // the panel arrives on a skeleton and the graph mounts once it has: mounting ReactFlow in the click's frame
+    // held the modal off screen, and mounting it mid-entrance dropped the animation's frames
+    const [entered, setEntered] = useState(false);
+    useEffect(() => {
+        if (!open) setEntered(false);
+    }, [open]);
 
     useEffect(() => {
         if (!open) return;
@@ -65,7 +71,9 @@ export function DagModal() {
                         animate="animate"
                         exit="exit"
                         data-dag-modal-kind={state.kind}
-                        className="absolute inset-0 z-30 flex items-center justify-center bg-background/95 p-4 backdrop-blur-sm"
+                        // no backdrop-blur: under a 95% scrim it shows nothing, and WebView2 re-blurs the whole
+                        // window every frame anything under it moves, which stuttered the open
+                        className="absolute inset-0 z-30 flex items-center justify-center bg-background/95 p-4"
                         onMouseDown={(event) => {
                             if (event.target === event.currentTarget) closeDagModal();
                         }}
@@ -77,6 +85,9 @@ export function DagModal() {
                             aria-modal="true"
                             aria-labelledby={DAG_MODAL_HEADING_ID}
                             tabIndex={-1}
+                            onAnimationComplete={(definition) => {
+                                if (definition === "animate") setEntered(true);
+                            }}
                             onMouseDown={(event) => event.stopPropagation()}
                             className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-edge-strong bg-modalbg shadow-popover outline-none"
                         >
@@ -100,7 +111,7 @@ export function DagModal() {
                                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                                     <ModelPicksBanner dagOref={state.dagOref} runId={state.runId} />
                                     <div className="min-h-0 flex-1">
-                                        <LiveDagModal state={state} />
+                                        <LiveDagModal state={state} entered={entered} />
                                     </div>
                                 </div>
                                 <TimelineRail channelId={state.channelId} runId={state.runId} layout={layout} />
@@ -138,10 +149,24 @@ function useTimelineLayout(): TimelineLayout {
     return layout;
 }
 
-function LiveDagModal({ state }: { state: Extract<DagModalState, { kind: "live" }> }): JSX.Element {
+// a panel whose entrance never reports done (an interrupted animation) still gets its graph
+const ENTER_FALLBACK_MS = 600;
+
+function LiveDagModal({
+    state,
+    entered,
+}: {
+    state: Extract<DagModalState, { kind: "live" }>;
+    entered: boolean;
+}): JSX.Element {
     const [owner, loading] = useWaveObjectValue<Run>(`run:${state.runId}`);
     const harnesses = useAtomValue(harnessesAtom);
-    if (loading || owner == null) {
+    const [late, setLate] = useState(false);
+    useEffect(() => {
+        const t = window.setTimeout(() => setLate(true), ENTER_FALLBACK_MS);
+        return () => window.clearTimeout(t);
+    }, []);
+    if (!(entered || late) || loading || owner == null) {
         return <GraphSkeleton />;
     }
     return <DagGraphView oref={state.dagOref} owner={owner} harnesses={harnesses} />;
