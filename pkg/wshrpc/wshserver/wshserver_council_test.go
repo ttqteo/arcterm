@@ -558,8 +558,8 @@ func TestCouncilRolesAndSaveGroup(t *testing.T) {
 // ---- the runner ----
 
 // councilFake is the council.Caller of these tests. It answers every call with canned JSON for its round and records
-// the requests. A call is keyed "<expert id>/<kind>", kind being r1, r2, r3, ans or suggest: a test can make a key
-// fail, or hold it until the council is stopped.
+// the requests. A call is keyed "<expert id>/<kind>", kind being r1, r2, r3, ans, suggest, precheck or roundcheck: a
+// test can make a key fail, or hold it until the council is stopped.
 type councilFake struct {
 	mu      sync.Mutex
 	reqs    []council.CallReq
@@ -573,6 +573,12 @@ func newCouncilFake() *councilFake {
 
 func councilCallKind(prompt string) string {
 	switch {
+	// the two checks first, as kindOf in pkg/council/runner_test.go does: they quote the discussion, so no phrase below
+	// may be read out of their body
+	case strings.HasPrefix(prompt, "You check one direction the person wants to set"):
+		return "precheck"
+	case strings.HasPrefix(prompt, "You read one round of a council discussion"):
+		return "roundcheck"
 	case strings.Contains(prompt, "This is round 1 of 3"):
 		return "r1"
 	case strings.Contains(prompt, "This is round 2 of 3"):
@@ -658,6 +664,10 @@ func councilCanned(req council.CallReq, kind string) string {
 		return councilFenced(map[string]any{"answers": councilAnswers(req.Expert.Id, councilIdsIn(councilReplyHead, req.Prompt))})
 	case "suggest":
 		return councilFenced(map[string]any{"files": []string{"pkg/a.go", "pkg/a.go", " "}, "roles": []any{}, "group": "ui-feature"})
+	case "precheck": // the check before a direction is set: it fits
+		return councilFenced(map[string]any{"verdict": "fits", "reason": ""})
+	case "roundcheck": // the check after a pass: nothing to change
+		return councilFenced(map[string]any{"change": false})
 	}
 	return "no canned reply for " + kind
 }
