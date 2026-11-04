@@ -14,7 +14,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-04.1"
+const HarnessVersion = "2026-11-05.1"
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -596,30 +596,79 @@ func chosenDirectionOf(c *Council) string {
 	return strings.TrimSpace(c.Memory.Chosen.Text)
 }
 
-// writeChosenDirection opens a seat's prompt with the direction the person chose, above the report and every other
-// section, and says it outranks the report. It starts and ends with a line break so it fits between a prompt's context
-// lines and the line that follows them, which starts with its own. A council with no chosen direction writes nothing, so
-// its prompts read as they did without a memory.
-func writeChosenDirection(b *strings.Builder, c *Council) {
-	text := chosenDirectionOf(c)
-	if text == "" {
-		return
-	}
-	fmt.Fprintf(b, "\n## The chosen direction\n\nThe person settled on this direction for the council:\n\n%s\n\n%s\n", text, outranksReport)
+// Memory entry rule lines: how a seat treats each kind, the tooltip's meaning said to the seat.
+const (
+	agreedRule   = "Settled as true: do not argue it again unless you bring new evidence."
+	ruledOutRule = "Dropped: do not propose it again unless you say what is new."
+	openRule     = "Still to settle: work on these first."
+)
+
+// memoryHasEntries tells whether the council's memory holds any entry.
+func memoryHasEntries(c *Council) bool {
+	return c.Memory != nil && len(c.Memory.Entries) > 0
 }
 
-// writeSettledDirection tells the coordinator the chosen direction is settled and binding on the report, a Review's or a
-// Brainstorm's: it takes the first place and the rest are written around it. It sits above "What to do", the ranking
-// rules it overrides, and ends with a blank line. A council with no chosen direction writes nothing.
-func writeSettledDirection(b *strings.Builder, c *Council) {
-	text := chosenDirectionOf(c)
-	if text == "" {
+// writeEntryBlocks writes the entries of each kind that has some, as `### Agreed`, `### Ruled out` and `### Open`, each
+// after a blank line: the kind's rule line, then one line per entry. The rule lines are passed in because the synthesis
+// says them differently from a seat.
+func writeEntryBlocks(b *strings.Builder, c *Council, agreed, ruledOut, open string) {
+	if c.Memory == nil {
 		return
 	}
-	fmt.Fprintf(b, "## The chosen direction\n\nThe person settled on this direction for the council:\n\n%s\n\n"+
-		"It is settled and binding. In \"directions\", rank it as direction 1 whatever the picks and the stances say, and write "+
-		"the other directions around it: what each adds to it, changes in it or leaves aside. Do not weigh it against the "+
-		"proposals above.\n\n", text)
+	for _, k := range []struct{ kind, title, rule string }{
+		{EntryAgreed, "Agreed", agreed},
+		{EntryRuledOut, "Ruled out", ruledOut},
+		{EntryOpen, "Open", open},
+	} {
+		entries := c.Memory.EntriesOf(k.kind)
+		if len(entries) == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "\n### %s\n%s\n", k.title, k.rule)
+		for _, e := range entries {
+			b.WriteString(entryLine(e) + "\n")
+		}
+	}
+}
+
+// writeCouncilMemory opens a seat's prompt with the council's memory, above the report and every other section: the
+// direction the person chose, saying it outranks the report, then Agreed, Ruled out and Open, one line each with a rule
+// line per kind. It starts with a line break and ends with a line break so it fits between a prompt's context lines and
+// the line that follows them, which starts with its own. A council whose memory holds no direction and no entry writes
+// nothing, so its prompts read as they did without a memory.
+func writeCouncilMemory(b *strings.Builder, c *Council) {
+	text := chosenDirectionOf(c)
+	if text == "" && !memoryHasEntries(c) {
+		return
+	}
+	b.WriteString("\n## The council's memory\n")
+	if text != "" {
+		fmt.Fprintf(b, "\nThe person settled on this direction for the council:\n\n%s\n\n%s\n", text, outranksReport)
+	}
+	writeEntryBlocks(b, c, agreedRule, ruledOutRule, openRule)
+}
+
+// writeSettledMemory tells the coordinator what the memory settles for the report, a Review's or a Brainstorm's: the
+// chosen direction is binding and takes the first place, the rest are written around it; Agreed is taken as settled,
+// and a Ruled out option is not ranked as a direction. It sits above "What to do", the ranking rules it overrides, and
+// ends with a blank line. A council whose memory holds no direction and no entry writes nothing.
+func writeSettledMemory(b *strings.Builder, c *Council) {
+	text := chosenDirectionOf(c)
+	if text == "" && !memoryHasEntries(c) {
+		return
+	}
+	b.WriteString("## The council's memory\n")
+	if text != "" {
+		fmt.Fprintf(b, "\nThe person settled on this direction for the council:\n\n%s\n\n"+
+			"It is settled and binding. In \"directions\", rank it as direction 1 whatever the picks and the stances say, and write "+
+			"the other directions around it: what each adds to it, changes in it or leaves aside. Do not weigh it against the "+
+			"proposals above.\n", text)
+	}
+	writeEntryBlocks(b, c,
+		"Take these as settled: build the directions on them and do not re-open them.",
+		"Do not rank an option listed here as a direction: it was dropped. Mention it only as left aside, and only if it matters.",
+		"These are still to settle: say in the report which of them the directions leave open.")
+	b.WriteString("\n")
 }
 
 // writeProposal writes one proposal under a heading of the given level. A Brainstorm's wild idea says so, and its
@@ -782,7 +831,7 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 	writeContext(&b, c, e, "one expert on")
 	writeFiles(&b, c)
 	writeRepeat(&b, c)
-	writeChosenDirection(&b, c)
+	writeCouncilMemory(&b, c)
 	if isBrainstorm(c) {
 		fmt.Fprintf(&b, "\nThis is round 1 of %d: ideas. You have Read, Grep and Glob in the project folder. "+
 			"You brainstorm; you never edit anything.\n\n", SynthesisRound(c))
@@ -985,7 +1034,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 		}
 	}
 	writeContext(&b, c, e, "one expert on")
-	writeChosenDirection(&b, c)
+	writeCouncilMemory(&b, c)
 	if isBrainstorm(c) {
 		fmt.Fprintf(&b, "\nThis is round %d of %d: build on each other. %s\n\n", round, SynthesisRound(c), toolsLine)
 	} else {
@@ -1194,7 +1243,7 @@ func SynthesisPrompt(c *Council) string {
 	}
 	writeThumbs(&b, c)
 
-	writeSettledDirection(&b, c) // above the ranking rules it overrides, a Brainstorm's too
+	writeSettledMemory(&b, c) // above the ranking rules it overrides, a Brainstorm's too
 	b.WriteString("## What to do\n\n")
 	if isBrainstorm(c) {
 		return writeBrainstormSynthesisTask(&b, c)
@@ -1306,7 +1355,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		others bool // a seat answered one of the replies before this one: say not to repeat it
 	)
 	writeContext(&b, c, e, "one expert on")
-	writeChosenDirection(&b, c) // above the report
+	writeCouncilMemory(&b, c) // above the report
 	b.WriteString("\nThe council has already met. The person replied in the discussion, and you answer from your own " +
 		"angle, as yourself.\n")
 	if tools {
@@ -1560,7 +1609,7 @@ func AgentFirstPrompt(c *Council, e CouncilExpert, round int) string {
 	}
 	fmt.Fprintf(&b, "Project folder: %s\n", c.Project)
 	writeFiles(&b, c)
-	writeChosenDirection(&b, c)
+	writeCouncilMemory(&b, c)
 
 	b.WriteString("\n## Who sits in the council\n\n")
 	for _, s := range c.Experts {
@@ -1595,7 +1644,7 @@ func AgentLaterPrompt(c *Council, e CouncilExpert, round int) string {
 		fmt.Fprintf(&b, "You are back in the council as %s. Below is what was sent since your last turn; the others answer a "+
 			"round at the same time as you, so none of this round's answers is here.\n", e.Name)
 	}
-	writeChosenDirection(&b, c)
+	writeCouncilMemory(&b, c)
 	b.WriteString("\n")
 	writeAgentTurn(&b, c, e, round, false)
 	return b.String()

@@ -161,46 +161,65 @@ func memoryEnded(d CouncilMemoryDirection) string {
 	return EndReplaced
 }
 
-// writeMemory is the direction memory as the document carries it, above the report: the chosen direction, then Replaced,
-// newest first, so a reader never takes a direction the person left for the one in force. A council with no chosen
-// direction and none replaced writes nothing; one whose chosen direction was unpinned says none is chosen now, and keeps
-// the history. A waiting suggestion or a held direction is not a direction yet, so it is not here.
+// writeMemory is the council's memory as the document carries it, above the report: under `## Memory` the direction the
+// person chose, then Earlier directions (newest first, each ending with how it left and when), so a reader never takes a
+// direction the person left for the one in force, then the Agreed, Ruled out (with why) and Open entries. A council whose
+// memory holds no direction, no earlier direction and no entry writes nothing; one whose chosen direction was unpinned
+// says none is chosen now, and keeps the history. A waiting suggestion or a held direction is not a direction yet, so it
+// is not here.
 func writeMemory(b *strings.Builder, c *Council) {
 	m := c.Memory
-	if m == nil || (m.Chosen == nil && len(m.Replaced) == 0) {
+	if m == nil || (m.Chosen == nil && len(m.Replaced) == 0 && len(m.Entries) == 0) {
 		return
 	}
-	b.WriteString("## Chosen direction\n\n")
-	if d := m.Chosen; d != nil {
-		fmt.Fprintf(b, "%s\n\n", strings.TrimSpace(d.Text))
-		meta := []string{memoryHow(*d)}
-		if d.From != "" {
-			meta = append(meta, "from "+d.From)
+	b.WriteString("## Memory\n\n")
+	if m.Chosen != nil || len(m.Replaced) > 0 {
+		b.WriteString("### Direction\n\n")
+		if d := m.Chosen; d != nil {
+			fmt.Fprintf(b, "%s\n\n", strings.TrimSpace(d.Text))
+			meta := []string{memoryHow(*d)}
+			if d.From != "" {
+				meta = append(meta, "from "+d.From)
+			}
+			if d.At > 0 {
+				meta = append(meta, memoryTime(d.At))
+			}
+			fmt.Fprintf(b, "%s\n\n", strings.Join(meta, " · "))
+			b.WriteString("_The person settled on this: it outranks the report below wherever the two differ._\n\n")
+		} else {
+			b.WriteString("None is chosen now.\n\n")
 		}
-		if d.At > 0 {
-			meta = append(meta, memoryTime(d.At))
-		}
-		fmt.Fprintf(b, "%s\n\n", strings.Join(meta, " · "))
-		b.WriteString("_The person settled on this: it outranks the report below wherever the two differ._\n\n")
-	} else {
-		b.WriteString("None is chosen now.\n\n")
 	}
-	if len(m.Replaced) == 0 {
-		return
-	}
-	b.WriteString("## Replaced\n\n")
-	for _, d := range m.Replaced {
-		fmt.Fprintf(b, "- ~~%s~~ · %s", oneLine(d.Text), memoryHow(d))
-		if d.From != "" {
-			b.WriteString(" · from " + d.From)
-		}
-		fmt.Fprintf(b, " · %s", memoryEnded(d))
-		if d.Replaced > 0 {
-			b.WriteString(" " + memoryTime(d.Replaced))
+	if len(m.Replaced) > 0 {
+		b.WriteString("### Earlier directions\n\n")
+		for _, d := range m.Replaced {
+			fmt.Fprintf(b, "- %s · %s", oneLine(d.Text), memoryHow(d))
+			if d.From != "" {
+				b.WriteString(" · from " + d.From)
+			}
+			fmt.Fprintf(b, " · %s", memoryEnded(d))
+			if d.Replaced > 0 {
+				b.WriteString(" " + memoryTime(d.Replaced))
+			}
+			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\n")
+	for _, k := range []struct{ kind, title string }{{EntryAgreed, "Agreed"}, {EntryRuledOut, "Ruled out"}, {EntryOpen, "Open"}} {
+		entries := m.EntriesOf(k.kind)
+		if len(entries) == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "### %s\n\n", k.title)
+		for _, e := range entries {
+			fmt.Fprintf(b, "- %s", oneLine(e.Text))
+			if e.Why != "" {
+				fmt.Fprintf(b, " (why: %s)", oneLine(e.Why))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
 }
 
 // askedOf is who a question to ask next goes to: the seat's name, or the whole panel.

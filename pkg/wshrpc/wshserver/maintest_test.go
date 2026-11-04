@@ -112,7 +112,13 @@ func useTestWorktreeRoot(t *testing.T) {
 	}
 	prev := testRootOwner
 	testRootOwner = t
-	restore := orchestrate.UseWorktreeRootForTest(t.TempDir())
+	// resolved: on a Mac the temp dir is under /var, a symlink git lists as /private/var, and the engine compares the
+	// trees it makes to git's list by text
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := orchestrate.UseWorktreeRootForTest(root)
 	t.Cleanup(func() {
 		restore()
 		testRootOwner = prev

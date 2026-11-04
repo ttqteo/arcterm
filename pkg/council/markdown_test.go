@@ -99,17 +99,17 @@ func memoryCouncil() *Council {
 func TestMarkdownMemory(t *testing.T) {
 	md := Markdown(memoryCouncil())
 	mustContain(t, "markdown", md,
-		"## Chosen direction\n\nShow the state first\n\n",
+		"## Memory\n\n### Direction\n\nShow the state first\n\n",
 		"Pinned by you · from P1 · 2023-11-14 22:13 UTC\n",
 		"outranks the report below",
-		"## Replaced\n\n",
-		"- ~~Show the state first, quietly~~ · Accepted from the check after round 2 · edited 2023-11-14 22:13 UTC\n",
-		"- ~~Sleep after a minute~~ · Written by you · replaced 2023-11-14 21:56 UTC\n")
+		"### Earlier directions\n\n",
+		"- Show the state first, quietly · Accepted from the check after round 2 · edited 2023-11-14 22:13 UTC\n",
+		"- Sleep after a minute · Written by you · replaced 2023-11-14 21:56 UTC\n")
 	mustNotContain(t, "markdown", md, "A waiting suggestion", "A held direction") // a card is not a direction yet
 
 	// the chosen direction, what it replaced, then the report: its answer, its directions and the matrix
 	last := -1
-	for _, w := range []string{"# Council:", "You asked:", "## Chosen direction", "## Replaced", "The panel prefers", "## Directions", "## Matrix"} {
+	for _, w := range []string{"# Council:", "You asked:", "## Memory", "### Earlier directions", "The panel prefers", "## Directions", "## Matrix"} {
 		i := strings.Index(md, w)
 		if i < 0 || i < last {
 			t.Errorf("%q is missing or out of order (at %d, after %d) in\n%s", w, i, last, md)
@@ -123,15 +123,15 @@ func TestMarkdownMemory(t *testing.T) {
 
 	// the saved document has it too, above the discussion
 	doc := Document(memoryCouncil())
-	if d, x := strings.Index(doc, "## Chosen direction"), strings.Index(doc, "## The discussion"); d < 0 || x < d {
-		t.Errorf("the saved document lacks the chosen direction above the discussion\n%s", doc)
+	if d, x := strings.Index(doc, "## Memory"), strings.Index(doc, "## The discussion"); d < 0 || x < d {
+		t.Errorf("the saved document lacks the memory above the discussion\n%s", doc)
 	}
 }
 
 // A council with no memory, or one holding only cards, reads as it did before the memory.
 func TestMarkdownMemoryLeftOutWhenThereIsNone(t *testing.T) {
 	plain := Markdown(markdownCouncil())
-	mustNotContain(t, "markdown", plain, "Chosen direction", "Replaced")
+	mustNotContain(t, "markdown", plain, "## Memory", "Earlier directions")
 
 	c := markdownCouncil()
 	c.Memory = &CouncilMemory{
@@ -147,8 +147,8 @@ func TestMarkdownMemoryLeftOutWhenThereIsNone(t *testing.T) {
 	c = markdownCouncil()
 	c.Memory = &CouncilMemory{Chosen: &CouncilMemoryDirection{Text: "Only this", How: DirectionWritten}}
 	md := Markdown(c)
-	mustContain(t, "markdown", md, "## Chosen direction\n\nOnly this\n\nWritten by you\n")
-	mustNotContain(t, "markdown", md, "## Replaced", " UTC") // no time when none was recorded
+	mustContain(t, "markdown", md, "## Memory\n\n### Direction\n\nOnly this\n\nWritten by you\n")
+	mustNotContain(t, "markdown", md, "Earlier directions", " UTC") // no time when none was recorded
 }
 
 // After an Unpin nothing is chosen but the history stays: the document says no direction is chosen now, and lists what was
@@ -159,10 +159,10 @@ func TestMarkdownMemoryAfterAnUnpin(t *testing.T) {
 		{Text: "Show the state first", How: DirectionPin, From: "r7", At: 1_699_999_000_000, Replaced: 1_700_000_000_000, Ended: EndUnpinned},
 	}}
 	md := Markdown(c)
-	mustContain(t, "markdown", md, "## Chosen direction\n\nNone is chosen now.\n\n", "## Replaced\n\n",
-		"- ~~Show the state first~~ · Pinned by you · from r7 · unpinned 2023-11-14 22:13 UTC\n")
+	mustContain(t, "markdown", md, "### Direction\n\nNone is chosen now.\n\n", "### Earlier directions\n\n",
+		"- Show the state first · Pinned by you · from r7 · unpinned 2023-11-14 22:13 UTC\n")
 	mustNotContain(t, "markdown", md, "outranks")
-	if c, r, s := strings.Index(md, "## Chosen direction"), strings.Index(md, "## Replaced"), strings.Index(md, "## Directions"); c > r || r > s {
+	if c, r, s := strings.Index(md, "### Direction"), strings.Index(md, "### Earlier directions"), strings.Index(md, "## Directions"); c > r || r > s {
 		t.Errorf("sections out of order\n%s", md)
 	}
 }
@@ -766,4 +766,53 @@ func TestARevisionReadsAsRevising(t *testing.T) {
 	if got := replyLabel(c, CouncilReply{Id: "r8", ProposalId: "P1", Author: "ram", Revised: true, Withdraws: true}); got != "withdraws it" {
 		t.Errorf("a withdrawal reads %q, want withdraws it", got)
 	}
+}
+
+// With entries the document's Memory section lists them after the direction: Agreed, Ruled out with its why, then Open,
+// each only when it has some; the earlier directions each end with their own end word and time.
+func TestMarkdownMemorySection(t *testing.T) {
+	c := memoryCouncil()
+	c.Memory.Replaced = []CouncilMemoryDirection{
+		{Text: "Third", How: DirectionPin, At: 1_699_999_000_000, Replaced: 1_700_000_000_000, Ended: EndUnpinned},
+		{Text: "Second", How: DirectionWritten, At: 1_699_998_000_000, Replaced: 1_699_999_000_000, Ended: EndEdited},
+		{Text: "First", How: DirectionWritten, At: 1_699_990_000_000, Replaced: 1_699_998_000_000, Ended: EndReplaced},
+	}
+	c.Memory.Entries = []CouncilMemoryEntry{
+		entry(EntryOpen, "Does the badge need a count", EntryByAuto),
+		entry(EntryAgreed, "The list reads top to bottom", EntryByYou),
+		{Kind: EntryRuledOut, Text: "A second window", Why: "costs 100 MB", By: EntryByAuto},
+	}
+	md := Markdown(c)
+	mustContain(t, "markdown", md,
+		"- Third · Pinned by you · unpinned 2023-11-14 22:13 UTC\n",
+		"- Second · Written by you · edited 2023-11-14 21:56 UTC\n",
+		"- First · Written by you · replaced 2023-11-14 21:40 UTC\n",
+		"### Agreed\n\n- The list reads top to bottom\n\n",
+		"### Ruled out\n\n- A second window (why: costs 100 MB)\n\n",
+		"### Open\n\n- Does the badge need a count\n\n")
+	last := -1
+	for _, w := range []string{"## Memory", "### Direction", "### Earlier directions", "### Agreed", "### Ruled out", "### Open", "The panel prefers"} {
+		i := strings.Index(md, w)
+		if i < 0 || i < last {
+			t.Errorf("%q is missing or out of order (at %d, after %d) in\n%s", w, i, last, md)
+		}
+		last = max(last, i)
+	}
+
+	// entries alone: no direction heading, and only the kinds that have some
+	c = markdownCouncil()
+	c.Memory = &CouncilMemory{Entries: []CouncilMemoryEntry{entry(EntryOpen, "Which first", EntryByAuto)}}
+	md = Markdown(c)
+	mustContain(t, "markdown", md, "## Memory\n\n### Open\n\n- Which first\n\n")
+	mustNotContain(t, "markdown", md, "### Direction", "### Agreed", "### Ruled out", "None is chosen")
+}
+
+func TestMarkdownNoMemory(t *testing.T) {
+	plain := Markdown(markdownCouncil())
+	c := markdownCouncil()
+	c.Memory = &CouncilMemory{Removed: []string{"open:x"}, NextEntry: 3}
+	if got := Markdown(c); got != plain {
+		t.Errorf("an empty memory changed the document\n%s", got)
+	}
+	mustNotContain(t, "markdown", plain, "## Memory")
 }

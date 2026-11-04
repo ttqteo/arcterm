@@ -9,7 +9,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -76,7 +76,9 @@ export const CASES = [
 
 // a case's cases.json entry, in the field order the file's other entries use; paths are absolute with forward slashes
 export function caseEntry(c, dataDir) {
-    const base = resolve(dataDir).replaceAll("\\", "/");
+    // a Windows absolute path (drive letter or share) stays as given: a Mac's resolve would prefix the current folder
+    const abs = win32.isAbsolute(dataDir) && /^([A-Za-z]:[\\/]|[\\/]{2})/.test(dataDir) ? dataDir : resolve(dataDir);
+    const base = abs.replaceAll("\\", "/");
     return {
         id: c.id,
         mode: "review",

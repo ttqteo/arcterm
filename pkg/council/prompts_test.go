@@ -1078,7 +1078,7 @@ func TestAgentLaterPromptListsEveryThumb(t *testing.T) {
 
 const (
 	directionText    = "Ship the Ideas tab first"
-	directionHeading = "## The chosen direction"
+	directionHeading = "## The council's memory"
 )
 
 // chooseDirection sets directionText as the council's chosen direction, with stray spaces the prompt must trim.
@@ -1220,6 +1220,97 @@ func TestSynthesisDirection(t *testing.T) {
 			if got := SynthesisPrompt(nothingChosen(tc.council())); got != plain {
 				t.Errorf("a memory with no chosen direction changed the synthesis\n%s", got)
 			}
+		})
+	}
+}
+
+// ---- the whole memory ----
+
+// remember gives the council a memory with the direction and one entry of each kind.
+func remember(c *Council) *Council {
+	chooseDirection(c)
+	c.Memory.Entries = []CouncilMemoryEntry{
+		{Id: "m1", Kind: EntryAgreed, Text: "The list reads top to bottom", By: EntryByYou},
+		{Id: "m2", Kind: EntryRuledOut, Text: "A second window", Why: "costs 100 MB", By: EntryByAuto},
+		{Id: "m3", Kind: EntryOpen, Text: "Does the badge need a count", By: EntryByAuto},
+	}
+	return c
+}
+
+// Every seat prompt carries the whole memory right after its context lines: the direction saying it outranks the report,
+// then each kind that has entries with its rule line, and only those kinds.
+func TestSeatPromptCarriesMemory(t *testing.T) {
+	for _, k := range directionKinds() {
+		t.Run(k.name, func(t *testing.T) {
+			got := k.prompt(remember(k.council()))
+			mustContain(t, "a prompt with a memory", got, directionHeading+"\n\nThe person settled", "\n"+directionText+"\n\n", outranksReport,
+				"### Agreed\n"+agreedRule+"\n- [m1] The list reads top to bottom\n",
+				"### Ruled out\n"+ruledOutRule+"\n- [m2] A second window (why: costs 100 MB)\n",
+				"### Open\n"+openRule+"\n- [m3] Does the badge need a count\n")
+			if a, r, o := strings.Index(got, "### Agreed"), strings.Index(got, "### Ruled out"), strings.Index(got, "### Open"); a > r || r > o {
+				t.Errorf("the kinds are out of order\n%s", got)
+			}
+			// it is the first section
+			at := strings.Index(got, directionHeading)
+			for line := range strings.SplitSeq(got[:at], "\n") {
+				if strings.HasPrefix(line, "## ") {
+					t.Errorf("the section %q comes before the memory\n%s", line, got)
+				}
+			}
+
+			c := k.council()
+			c.Memory = &CouncilMemory{Entries: []CouncilMemoryEntry{{Id: "m4", Kind: EntryOpen, Text: "Only this", By: EntryByAuto}}}
+			only := k.prompt(c)
+			mustContain(t, "entries alone", only, directionHeading+"\n\n### Open\n"+openRule+"\n- [m4] Only this\n")
+			mustNotContain(t, "entries alone", only, "The person settled", outranksReport, "### Agreed", "### Ruled out")
+		})
+	}
+}
+
+// A council with no direction and no entry prompts byte for byte as before the memory, held cards and history included.
+func TestSeatPromptNoMemoryAsBefore(t *testing.T) {
+	for _, k := range directionKinds() {
+		t.Run(k.name, func(t *testing.T) {
+			plain := k.prompt(k.council())
+			c := k.council()
+			c.Memory = &CouncilMemory{Removed: []string{"open:x"}, NextEntry: 2}
+			if got := k.prompt(c); got != plain {
+				t.Errorf("an empty memory changed the prompt\n%s", got)
+			}
+		})
+	}
+}
+
+// The synthesis keeps the direction binding as direction 1, takes Agreed as settled and does not rank a Ruled out
+// option as a direction; entries alone still reach it.
+func TestSynthesisRulesForMemory(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		council func() *Council
+	}{
+		{"review", promptCouncil},
+		{"brainstorm", brainstormCouncil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := SynthesisPrompt(remember(tc.council()))
+			sec := section(t, p, directionHeading)
+			mustContain(t, "memory section", sec, directionText, "settled and binding", "as direction 1",
+				"### Agreed\nTake these as settled", "- [m1] The list reads top to bottom\n",
+				"### Ruled out\nDo not rank an option listed here as a direction", "- [m2] A second window (why: costs 100 MB)\n",
+				"### Open\nThese are still to settle", "- [m3] Does the badge need a count\n")
+			if d, w := strings.Index(p, directionHeading), strings.Index(p, "## What to do"); d < 0 || d > w {
+				t.Errorf("the memory is at %d and What to do at %d\n%s", d, w, p)
+			}
+			plain := SynthesisPrompt(tc.council())
+			if without := strings.Replace(p, directionHeading+"\n"+sec+"\n", "", 1); without != plain {
+				t.Errorf("the memory changed more than its own section\n--- with it removed\n%s\n--- plain\n%s", without, plain)
+			}
+
+			c := tc.council()
+			c.Memory = &CouncilMemory{Entries: []CouncilMemoryEntry{{Id: "m1", Kind: EntryAgreed, Text: "Only this", By: EntryByYou}}}
+			only := SynthesisPrompt(c)
+			mustContain(t, "entries alone", section(t, only, directionHeading), "### Agreed", "- [m1] Only this")
+			mustNotContain(t, "entries alone", only, "settled and binding")
 		})
 	}
 }

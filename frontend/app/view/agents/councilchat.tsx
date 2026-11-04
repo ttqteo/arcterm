@@ -127,8 +127,9 @@ import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel
 import { messageMarkdown } from "./councilfinalmodel";
 import { councilList, newestReplyOn, railMeta, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
-import { MemoryPanel } from "./councilmemory";
-import { chotLine, memoryDot, type DirectionSource } from "./councilmemorymodel";
+import { MemoryPanel, type AddDraft } from "./councilmemory";
+import { chotLine, memoryDotOn, memoryTabLabel, type DirectionSource } from "./councilmemorymodel";
+import { memorySeenAtom } from "./councilmemoryseen";
 import {
     ANSWERING,
     ROUTER_CHOOSING,
@@ -2936,8 +2937,9 @@ function IdeasList({
     );
 }
 
-/** The rail beside the channel (board A-decided-rail): Ideas on its first tab, the council's Memory on its second (its
- *  chosen direction, councilmemory.tsx; a small dot marks a card that waits), and once an idea's replies are opened its
+/** The rail beside the channel (board A-decided-rail): Ideas on its first tab, the council's Memory on its second (what
+ *  the discussion has reached, councilmemory.tsx; a small dot marks a card that waits or an entry new since it was last open,
+ *  and + Add opens its form), and once an idea's replies are opened its
  *  thread on a third (board A2-decided-rail-thread), so the channel never shares the pane with two columns. The close
  *  button closes the thread; with none open, the rail folds (councilIdeasRailFoldedAtom). */
 function CouncilRail({
@@ -2976,6 +2978,10 @@ function CouncilRail({
     onOpenSource: (source: DirectionSource) => void;
 }) {
     const shows: RailTabName = tab === "memory" ? "memory" : thread != null && tab === "thread" ? "thread" : "ideas";
+    // the Memory tab's Add form: opened here (+ Add, beside the fold button) or by the held card's Edit inside the tab
+    const [adding, setAdding] = useState<AddDraft | null>(null);
+    const seen = useAtomValue(memorySeenAtom)[c.id];
+    useEffect(() => setAdding(null), [c.id]);
     return (
         <aside
             data-council-rail
@@ -3002,11 +3008,11 @@ function CouncilRail({
                     onClick={() => onTab("memory")}
                     data-council-rail-tab="memory"
                 >
-                    Memory
-                    {memoryDot(c) && (
+                    {memoryTabLabel(c)}
+                    {memoryDotOn(c, seen) && (
                         <span
                             role="img"
-                            aria-label="A suggestion or a held direction waits for you"
+                            aria-label="Something new in memory, or a suggestion or a held direction waits for you"
                             data-council-memory-dot
                             className="ml-[5px] inline-block h-[6px] w-[6px] rounded-full bg-accent-soft align-middle"
                         />
@@ -3023,6 +3029,26 @@ function CouncilRail({
                     </RailTab>
                 )}
                 <span className="flex-1" />
+                {shows === "memory" && (
+                    <button
+                        type="button"
+                        data-council-memory-open-add
+                        aria-expanded={adding != null}
+                        title="Add to memory"
+                        onClick={() =>
+                            setAdding((a) => (a != null ? null : { kind: "agreed", text: "", seq: Date.now() }))
+                        }
+                        className={cn(
+                            "flex h-[28px] flex-none cursor-pointer items-center gap-[3px] self-center rounded-[6px] border-0 px-[6px] text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            adding != null
+                                ? "bg-surface-raised text-primary"
+                                : "bg-transparent text-muted hover:text-secondary"
+                        )}
+                    >
+                        <Plus size={12} strokeWidth={2} aria-hidden />
+                        Add
+                    </button>
+                )}
                 {thread != null ? (
                     <button
                         type="button"
@@ -3050,7 +3076,15 @@ function CouncilRail({
             {shows === "thread" && thread != null ? (
                 <ThreadPanel c={c} thread={thread} acts={acts} chats={chats} />
             ) : shows === "memory" ? (
-                <MemoryPanel key={c.id} c={c} acts={acts} onShow={onShow} onOpenSource={onOpenSource} />
+                <MemoryPanel
+                    key={c.id}
+                    c={c}
+                    acts={acts}
+                    onShow={onShow}
+                    onOpenSource={onOpenSource}
+                    adding={adding}
+                    onAdding={setAdding}
+                />
             ) : (
                 <IdeasList ideas={ideas} on={on} freshOnly={freshOnly} onPick={onPick} onFreshOnly={onFreshOnly} />
             )}
@@ -3451,8 +3485,6 @@ export function CouncilChat({
         [chats, onOpenTerminal, onReopenSession]
     );
     const channel = useRef<HTMLDivElement>(null);
-    // the idea a rail click is gliding to: the cursor's own reveal skips it once, or its instant scroll would cut the glide
-    const picked = useRef<string | null>(null);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;
     const sourcesOpen = !threadOpen && sources != null;
@@ -3518,15 +3550,12 @@ export function CouncilChat({
         },
         [setOpenId]
     );
-    // a rail row brings its idea, or a held idea's draft, to the top of the channel under the cursor: a glide, so the eye
-    // follows the channel to where it lands, or a jump with reduced motion
+    // a rail row brings its idea, or a held idea's draft, to the top of the channel under the cursor
     const pick = useCallback((row: IdeaRow) => {
-        picked.current = row.id;
         setFocusedId(row.id);
         const at = row.held ? `[data-council-draft="${row.id}"]` : `[data-council-idea="${row.id}"]`;
         const post = channel.current?.querySelector<HTMLElement>(at);
-        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        revealIn(channel.current, post, "start", smooth);
+        revealIn(channel.current, post, "start");
         // the idea rings wider for a moment where it lands, so the eye finds it; a second click restarts the moment
         if (post != null) {
             window.clearTimeout(Number(post.dataset.flashTimer));
@@ -3607,11 +3636,9 @@ export function CouncilChat({
     useCouncilChatNav(nav);
     const bindings = useMemo(buildCouncilBindings, []);
     useKeybindings(bindings);
-    // the cursor stays in view as j and k move it (a rail click already glides its idea in)
+    // the cursor stays in view as j and k move it
     useEffect(() => {
-        const fromRail = picked.current === focusedId;
-        picked.current = null;
-        if (focusedId != null && !fromRail) {
+        if (focusedId != null) {
             revealIn(channel.current, channel.current?.querySelector(`[data-council-idea="${focusedId}"]`), "nearest");
         }
     }, [focusedId]);

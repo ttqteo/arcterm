@@ -492,7 +492,22 @@ func (ws *WshServer) CouncilDirectionCommand(ctx context.Context, data wshrpc.Co
 	if data.Id == "" {
 		return errors.New("a council id is required")
 	}
-	c, err := councilRunner.Direction(data.Id, council.DirectionIn{Action: data.Action, Text: data.Text, From: data.From})
+	c, err := councilRunner.Direction(data.Id, council.DirectionIn{Action: data.Action, Text: data.Text, From: data.From, Entry: data.Entry})
+	if err != nil {
+		return err
+	}
+	publishCouncilChanged(c)
+	return nil
+}
+
+// CouncilMemoryCommand applies one move to the council's memory entries (add, edit or remove) and announces the change.
+// A refused move changed nothing and publishes nothing. The command is the one that publishes: Runner.MemoryEntry
+// returns the saved council without calling the runner's own changed, which would announce it twice.
+func (ws *WshServer) CouncilMemoryCommand(ctx context.Context, data wshrpc.CommandCouncilMemoryData) error {
+	if data.Id == "" {
+		return errors.New("a council id is required")
+	}
+	c, err := councilRunner.MemoryEntry(data.Id, council.EntryIn{Action: data.Action, Entry: data.Entry, Kind: data.Kind, Text: data.Text, Why: data.Why})
 	if err != nil {
 		return err
 	}

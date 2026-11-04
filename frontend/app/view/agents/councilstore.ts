@@ -374,7 +374,8 @@ export async function finalPickCouncil(id: string, item: string): Promise<Counci
 export type CouncilDirectionAction = "set" | "pin" | "edit" | "accept" | "dismiss" | "setanyway" | "discard" | "unpin";
 
 /** One move on the council's direction memory. `text` is the direction of a set, pin or edit, `from` the idea (P3) or
- *  message (r7) a pin comes from. A set, pin or edit is checked first (a model call, so it takes a moment): it becomes the
+ *  message (r7) a pin comes from, `entry` the memory entry (m3) a pin makes the direction: it leaves the list once the
+ *  direction is set, and stays while the pin is held. A set, pin or edit is checked first (a model call, so it takes a moment): it becomes the
  *  chosen direction, or is held on the Memory tab with the check's reason. The command answers nothing: the new memory
  *  reaches the council through `council:changed`. wavesrv refuses an action it does not know and a set, pin or edit with
  *  no text, naming it. */
@@ -382,7 +383,8 @@ export function directionCouncil(
     id: string,
     action: CouncilDirectionAction,
     text?: string,
-    from?: string
+    from?: string,
+    entry?: string
 ): Promise<CouncilCall<void>> {
     const data: CommandCouncilDirectionData = { id, action };
     if (text != null) {
@@ -391,7 +393,33 @@ export function directionCouncil(
     if (from != null && from !== "") {
         data.from = from;
     }
+    if (entry != null && entry !== "") {
+        data.entry = entry;
+    }
     return call("direction", () => RpcApi.CouncilDirectionCommand(TabRpcClient, data));
+}
+
+/** The moves on a memory entry (the Memory tab): `add` an Agreed, Ruled out or Open one, `edit` an entry's text (and why),
+ *  `remove` one. */
+export type CouncilMemoryAction = "add" | "edit" | "remove";
+
+/** One move on a council's memory entries. `entry` is the entry's id (m3) for an edit or remove, `kind` (`agreed`,
+ *  `ruledout`, `open`), `text` and `why` (Ruled out only) the entry of an add; an edit sends the text and why it should
+ *  now have. The command answers nothing: the new memory reaches the council through `council:changed`. wavesrv refuses
+ *  an action it does not know, naming them. */
+export function memoryCouncil(
+    id: string,
+    action: CouncilMemoryAction,
+    fields: { entry?: string; kind?: string; text?: string; why?: string }
+): Promise<CouncilCall<void>> {
+    const data: CommandCouncilMemoryData = { id, action };
+    for (const k of ["entry", "kind", "text", "why"] as const) {
+        const v = fields[k];
+        if (v != null && v !== "") {
+            data[k] = v;
+        }
+    }
+    return call("memory", () => RpcApi.CouncilMemoryCommand(TabRpcClient, data));
 }
 
 /** The role library and the saved groups. */

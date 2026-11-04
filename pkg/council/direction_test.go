@@ -168,7 +168,7 @@ func TestDirectionPinThatClashesIsHeldAsAPin(t *testing.T) {
 }
 
 // TestDirectionACheckThatFailsHoldsAndNeverSets: an error, an empty reply, a reply that is no JSON and a runner with no
-// caller each hold the direction with `The check did not answer: <error>`.
+// caller each hold the direction with `Could not check it: <error>`.
 func TestDirectionACheckThatFailsHoldsAndNeverSets(t *testing.T) {
 	boom := errors.New("claude is not signed in")
 	for name, tc := range map[string]struct {
@@ -194,8 +194,8 @@ func TestDirectionACheckThatFailsHoldsAndNeverSets(t *testing.T) {
 				t.Fatalf("chosen = %+v, want the old direction: a failed check never sets one", m.Chosen)
 			}
 			h := m.Held
-			if h == nil || h.Text != "Poll more" || !strings.HasPrefix(h.Reason, "The check did not answer: ") || !strings.Contains(h.Reason, tc.wantInMsg) {
-				t.Errorf("held = %+v, want The check did not answer: …%s…", h, tc.wantInMsg)
+			if h == nil || h.Text != "Poll more" || !strings.HasPrefix(h.Reason, "Could not check it: ") || !strings.Contains(h.Reason, tc.wantInMsg) {
+				t.Errorf("held = %+v, want Could not check it: …%s…", h, tc.wantInMsg)
 			}
 			if int(c.Calls) != tc.calls {
 				t.Errorf("calls = %d, want %d: a call that was made is booked, one never made is not", c.Calls, tc.calls)
@@ -233,7 +233,7 @@ func TestDirectionACheckThatHangsTimesOutAndHolds(t *testing.T) {
 	}()
 	select {
 	case c := <-done:
-		if c == nil || c.Memory.Held == nil || !strings.HasPrefix(c.Memory.Held.Reason, "The check did not answer: ") {
+		if c == nil || c.Memory.Held == nil || !strings.HasPrefix(c.Memory.Held.Reason, "Could not check it: ") {
 			t.Fatalf("held = %+v, want a held direction after the timeout", c)
 		}
 		if c.Memory.Chosen == nil || c.Memory.Chosen.Text != "Poll less" {
@@ -571,5 +571,185 @@ func TestDirectionActionWordsAreTheEightTheWireNames(t *testing.T) {
 	}
 	if len(want) != 8 {
 		t.Errorf("%d distinct action words, want 8", len(want))
+	}
+}
+
+// entryCouncil is the fixture council with a direction chosen and two entries in its memory: m1 an Agreed of the
+// person's resting on the message r1, m2 an Open of the check's.
+func entryCouncil() *Council {
+	c := chosenCouncil()
+	m := MemoryOf(c)
+	a := entry(EntryAgreed, "Poll only when a seat is idle", EntryByYou)
+	a.Messages = []string{"r1", "r2"}
+	m.AddEntry(a, 10)
+	m.AddEntry(entry(EntryOpen, "Who owns the poll interval?", EntryByAuto), 11)
+	return c
+}
+
+func entryIds(m *CouncilMemory) []string {
+	var ids []string
+	for _, e := range m.Entries {
+		ids = append(ids, e.Id)
+	}
+	return ids
+}
+
+// TestPinFromEntryLeavesListWhenSet: a Chốt on an entry takes its text, keeps its first message as the source, and the
+// entry leaves the list once the direction is set.
+func TestPinFromEntryLeavesListWhenSet(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), fitsReply)
+	c, err := g.r.Direction("c1", DirectionIn{Action: ActionPin, Entry: "m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := c.Memory
+	if d := m.Chosen; d == nil || d.Text != "Poll only when a seat is idle" || d.How != DirectionPin || d.From != "r1" {
+		t.Errorf("chosen = %+v, want the entry's text as a pin from its first message r1", d)
+	}
+	if ids := entryIds(m); len(ids) != 1 || ids[0] != "m2" {
+		t.Errorf("entries = %v, want only m2 left", ids)
+	}
+	if len(m.Removed) != 0 {
+		t.Errorf("removed = %v, want none: a promoted entry leaves no key", m.Removed)
+	}
+	if len(g.f.reqs) != 1 {
+		t.Errorf("%d model calls, want the one check", len(g.f.reqs))
+	}
+}
+
+func TestPinFromEntryHeldThenDiscardKeepsIt(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), clashReply)
+	c, err := g.r.Direction("c1", DirectionIn{Action: ActionPin, Entry: "m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := c.Memory.Held; h == nil || h.Entry != "m1" || h.Text != "Poll only when a seat is idle" || h.From != "r1" {
+		t.Fatalf("held = %+v, want a card for m1", h)
+	}
+	if len(c.Memory.Entries) != 2 || c.Memory.Chosen.Text != "Poll less" {
+		t.Errorf("a held pin changed entries %v chosen %+v, want both untouched", entryIds(c.Memory), c.Memory.Chosen)
+	}
+	c, err = g.r.Direction("c1", DirectionIn{Action: ActionDiscard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Memory.Held != nil || len(c.Memory.Entries) != 2 {
+		t.Errorf("after discard: held %+v entries %v, want the entry kept", c.Memory.Held, entryIds(c.Memory))
+	}
+}
+
+func TestPinFromEntryHeldThenSetAnywayTakesIt(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), clashReply)
+	if _, err := g.r.Direction("c1", DirectionIn{Action: ActionPin, Entry: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := g.r.Direction("c1", DirectionIn{Action: ActionSetAnyway})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := c.Memory.Chosen; d == nil || d.Text != "Poll only when a seat is idle" || d.From != "r1" {
+		t.Errorf("chosen = %+v, want the entry's text", d)
+	}
+	if ids := entryIds(c.Memory); len(ids) != 1 || ids[0] != "m2" {
+		t.Errorf("entries = %v, want m1 taken", ids)
+	}
+	if c.Memory.Held != nil {
+		t.Errorf("held = %+v, want it settled", c.Memory.Held)
+	}
+}
+
+// TestSetAnywayAfterTheEntryWentIsStillSet: the held card's entry was removed meanwhile; setting anyway still sets.
+func TestSetAnywayAfterTheEntryWentIsStillSet(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), clashReply)
+	if _, err := g.r.Direction("c1", DirectionIn{Action: ActionPin, Entry: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.r.MemoryEntry("c1", EntryIn{Action: EntryActionRemove, Entry: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := g.r.Direction("c1", DirectionIn{Action: ActionSetAnyway})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Memory.Chosen == nil || c.Memory.Chosen.Text != "Poll only when a seat is idle" || len(c.Memory.Entries) != 1 {
+		t.Errorf("chosen %+v entries %v, want the direction set and m2 alone left", c.Memory.Chosen, entryIds(c.Memory))
+	}
+}
+
+// TestHeldPinFromEntryThenSetKeepsEntry: the held card's Edit is a new set with no entry, so the entry stays.
+func TestHeldPinFromEntryThenSetKeepsEntry(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), clashReply)
+	if _, err := g.r.Direction("c1", DirectionIn{Action: ActionPin, Entry: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	g.f.res.Text = fitsReply
+	c, err := g.r.Direction("c1", DirectionIn{Action: ActionSet, Text: "Poll only when idle for a minute"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Memory.Held != nil || c.Memory.Chosen == nil || c.Memory.Chosen.Text != "Poll only when idle for a minute" {
+		t.Errorf("held %+v chosen %+v, want the rewritten direction set and no held card", c.Memory.Held, c.Memory.Chosen)
+	}
+	if len(c.Memory.Entries) != 2 {
+		t.Errorf("entries = %v, want m1 and m2 still listed", entryIds(c.Memory))
+	}
+}
+
+func TestPinUnknownEntryRefused(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), fitsReply)
+	_, err := g.r.Direction("c1", DirectionIn{Action: ActionPin, Entry: "m9"})
+	if err == nil || !strings.Contains(err.Error(), "m9") {
+		t.Fatalf("err = %v, want one naming m9", err)
+	}
+	if got := g.saved(t); len(got.Memory.Entries) != 2 || got.Calls != 0 || len(g.f.reqs) != 0 {
+		t.Errorf("a refused pin left entries %v, calls %d, %d model calls", entryIds(got.Memory), got.Calls, len(g.f.reqs))
+	}
+}
+
+func TestMemoryEntryMoves(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), fitsReply)
+	c, err := g.r.MemoryEntry("c1", EntryIn{Action: EntryActionAdd, Kind: EntryRuledOut, Text: " Poll every second ", Why: "Too heavy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var added CouncilMemoryEntry
+	for _, e := range c.Memory.Entries {
+		if e.Text == "Poll every second" {
+			added = e
+		}
+	}
+	if added.Id != "m3" || added.By != EntryByYou || added.At != 5000 || added.Why != "Too heavy" || added.Kind != EntryRuledOut {
+		t.Errorf("added = %+v, want m3 ruled out, by you, at now, with its why", added)
+	}
+	c, err = g.r.MemoryEntry("c1", EntryIn{Action: EntryActionEdit, Entry: "m2", Text: "Who owns the poll interval, and why?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := c.Memory.Entries[1]; e.Id != "m2" || e.Text != "Who owns the poll interval, and why?" || e.By != EntryByYou {
+		t.Errorf("edited = %+v, want the new text, now the person's", e)
+	}
+	c, err = g.r.MemoryEntry("c1", EntryIn{Action: EntryActionRemove, Entry: "m2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := entryIds(c.Memory); len(ids) != 2 || ids[0] != "m1" || ids[1] != "m3" {
+		t.Errorf("entries = %v, want m1 and m3", ids)
+	}
+	if got := g.saved(t); len(got.Memory.Entries) != 2 {
+		t.Errorf("saved entries = %v, want what MemoryEntry returned", entryIds(got.Memory))
+	}
+	if _, err := g.r.MemoryEntry("c1", EntryIn{Action: EntryActionRemove, Entry: "m77"}); err == nil || !strings.Contains(err.Error(), "no such entry") {
+		t.Errorf("remove of an unknown entry = %v, want no such entry", err)
+	}
+	if len(g.f.reqs) != 0 || g.events != 0 {
+		t.Errorf("%d model calls, %d announcements, want none: entry moves call no model and announce nothing", len(g.f.reqs), g.events)
+	}
+}
+
+func TestMemoryEntryRefusesUnknownAction(t *testing.T) {
+	g := newDirectionRig(t, entryCouncil(), fitsReply)
+	_, err := g.r.MemoryEntry("nope-no-such-council", EntryIn{Action: "chot"})
+	if err == nil || !strings.Contains(err.Error(), `"chot"`) || !strings.Contains(err.Error(), "add, edit, remove") {
+		t.Fatalf("err = %v, want one naming chot and the known actions, before any load", err)
 	}
 }
