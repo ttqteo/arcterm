@@ -11,6 +11,7 @@
 import { evidenceChip } from "./councildiscussionmodel";
 import { mapWords } from "./councilmapmodel";
 import { checkLabelOf, checkWord, councilLang, wrongCiteWord, type CheckLabel, type CouncilLang } from "./councilmodel";
+import { isUnboxedShot, shotName, unboxedWords } from "./councilshots";
 
 /** A run of cited lines, 1-based and inclusive. */
 export interface CitedLines {
@@ -149,31 +150,65 @@ export interface WrongCite {
     note: string; // Go's `citenote`, "" when it gave none
 }
 
+/** A boxed screenshot region Go drew (`CouncilEvidence.region`): the crop the message shows under its words, and what a
+ *  click opens in the Sources panel, the whole image with the same box. */
+export interface RegionCrop {
+    ref: string;
+    name: string; // `home.png#save`, the cite without its box
+    region: CouncilRegion;
+}
+
 export interface ClaimChips {
     badge: ClaimBadge | null;
     refs: string[]; // what the file links fold (groupSources): every cite that is neither weak nor wrong
     weak: string; // the weak claims, as the amber chip reads them
     wrong: WrongCite[];
+    crops: RegionCrop[]; // the regions Go drew, in the order they are cited, each once
 }
 
 /** Pure: what a claim's evidence row draws. A cite Go found wrong (`cite: "wrong"`) leaves the file links, so it does not
- *  look like a source, and is a Wrong cite chip instead; a cite nobody checked (a screenshot, a Brainstorm's) stays a
- *  link; a weak claim is the amber chip. A labelled claim wears its badge, even with no evidence at all (a Guess). */
+ *  look like a source, and is a Wrong cite chip instead; a cite nobody checked (a Brainstorm's, a plain reply's) stays a
+ *  link; a weak claim is the amber chip. A labelled claim wears its badge, even with no evidence at all (a Guess), and a
+ *  screenshot it cites with no box is no evidence: it joins the amber chip, saying the region has no box. Every region Go
+ *  drew is a crop, whatever the claim's label. */
 export function claimChips(
     evidence: readonly CouncilEvidence[] | undefined,
     label: string | undefined,
     lang: CouncilLang
 ): ClaimChips {
     const items = evidence ?? [];
+    const badge = claimBadge(label, lang);
+    // a checked claim asked for evidence, so a region named with no box is drawn weak; elsewhere it is the plain chip
+    const unboxed = (e: CouncilEvidence) => isUnboxedShot(e, badge != null);
+    const crops: RegionCrop[] = [];
+    for (const e of items) {
+        if (e.region != null && !e.weak && !isWrongCite(e) && !crops.some((c) => c.region.crop === e.region.crop)) {
+            crops.push({ ref: e.ref, name: shotName(e.ref), region: e.region });
+        }
+    }
     return {
-        badge: claimBadge(label, lang),
-        refs: items.filter((e) => !e.weak && !isWrongCite(e) && e.ref !== "").map((e) => e.ref),
-        weak: items
-            .filter((e) => e.weak)
-            .map((e) => evidenceChip(e).text)
-            .join("; "),
+        badge,
+        refs: items.filter((e) => !e.weak && !isWrongCite(e) && e.ref !== "" && !unboxed(e)).map((e) => e.ref),
+        weak: [
+            ...items.filter((e) => e.weak).map((e) => evidenceChip(e).text),
+            ...items.filter(unboxed).map((e) => unboxedWords(e.ref)),
+        ].join("; "),
         wrong: items.filter(isWrongCite).map((e) => wrongCiteOf(e, lang)),
+        crops,
     };
+}
+
+// ---- screenshot regions ----
+
+/** Pure: the box as CSS percentages of the image it lies on, for an outline drawn over the whole screenshot. */
+export function regionBoxStyle(r: Pick<CouncilRegion, "x" | "y" | "w" | "h">): {
+    left: string;
+    top: string;
+    width: string;
+    height: string;
+} {
+    const pct = (n: number) => `${Math.round(Math.min(1, Math.max(0, n)) * 10000) / 100}%`;
+    return { left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) };
 }
 
 /** Pure: the badge of a claim's label in the council's language; null for a claim Go did not label (or a word it does not
@@ -200,7 +235,7 @@ export function wrongCiteOf(e: CouncilEvidence, lang: CouncilLang): WrongCite {
     const ref = parseSourceRef(e.ref);
     return {
         ref: e.ref,
-        name: ref?.path.split("/").pop() || e.ref,
+        name: ref?.path.split("/").pop() || shotName(e.ref),
         label: ref?.lines == null ? "" : linesLabel([ref.lines]),
         word: wrongCiteWord(lang),
         note: e.citenote ?? "",

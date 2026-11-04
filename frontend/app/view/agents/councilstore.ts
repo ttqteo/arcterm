@@ -23,6 +23,7 @@ import {
     type CouncilThumb,
     type CouncilView,
 } from "./councilmodel";
+import type { RegionCrop } from "./councilsources";
 import type { CouncilRating, KeptCouncilView } from "./councilsummarymodel";
 import { imageRoom, type TaskImage } from "./launcherimages";
 
@@ -519,6 +520,8 @@ export interface CouncilSourcesView {
     refs: string[];
     pick: number; // the group of groupSources(refs) shown
     thread: string | null;
+    // a screenshot region the person clicked: the panel shows the whole image with its box in place of the files
+    region?: RegionCrop;
 }
 
 /** Each council's Sources panel, or null while it is closed. It shares the right of the chat with the thread panel. */

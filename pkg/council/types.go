@@ -130,14 +130,18 @@ type CouncilGroup struct {
 }
 
 // The checked state of a cite (CouncilEvidence.Cite). Go sets it, never a model; empty is a cite nothing checked: a
-// screenshot, or anything in a Brainstorm.
+// screenshot named with no box, a link, or anything in a Brainstorm.
 const (
-	CiteOK    = "ok"    // the file exists, the line is in range, and a quoted text was found at or near the line
-	CiteWrong = "wrong" // a missing file, a line past the end, or a quote not found near the line (CiteNote says which)
+	// the file exists, the line is in range, and a quoted text was found at or near the line; for a screenshot cite, the
+	// image is one the council was given and the box lies inside it
+	CiteOK = "ok"
+	// a missing file, a line past the end, a quote not found near the line, or a screenshot box Go cannot place
+	// (CiteNote says which)
+	CiteWrong = "wrong"
 )
 
 type CouncilEvidence struct {
-	Ref  string `json:"ref"`            // "path:line", or "screenshot:<file>#<region>"
+	Ref  string `json:"ref"`            // "path:line", or "screenshot:<file>#<name>@x,y,w,h"
 	Weak bool   `json:"weak,omitempty"` // a claim that cites nothing
 	Note string `json:"note,omitempty"` // why it is weak: `"about 3 s" has no measurement`
 	// Quote is the exact text the expert says the cited line holds, which the citation check looks for at or near the line.
@@ -146,6 +150,21 @@ type CouncilEvidence struct {
 	Cite string `json:"cite,omitempty"`
 	// CiteNote says why a cite is wrong: "line 900 is past the end (412 lines)", "quote not found near line 42".
 	CiteNote string `json:"citenote,omitempty"`
+	// Region is the boxed part of a screenshot a `screenshot:<file>#<name>@x,y,w,h` cite names, once Go has found the
+	// image and drawn the crop (regions.go); nil for every other cite, and for a boxed one Go could not draw.
+	Region *CouncilRegion `json:"region,omitempty"`
+}
+
+// CouncilRegion is a screenshot cite Go located: the image it boxes, the box as fractions (0..1) of that image's width
+// and height (clamped into it), and the PNG Go drew of the box with a red rectangle on it and a margin around it. Once
+// drawn, the PNG stands: Image may since have left the disk.
+type CouncilRegion struct {
+	Image string  `json:"image"` // the absolute path of the screenshot or the pasted image
+	Crop  string  `json:"crop"`  // the absolute path of the drawn PNG, under the council's regions folder
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	W     float64 `json:"w"`
+	H     float64 `json:"h"`
 }
 
 // The label Go gives a claim, a proposal or a reply that takes a stance (CouncilProposal.Label, CouncilReply.Label). It

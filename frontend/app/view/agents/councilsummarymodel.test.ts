@@ -14,6 +14,7 @@ import {
     evidenceLabel,
     expertActivity,
     initiativeSeed,
+    isWeakEvidence,
     jumpLinks,
     keptHeading,
     keptRows,
@@ -493,6 +494,29 @@ describe("evidenceLabel", () => {
 
     it("names a screenshot region", () => {
         expect(evidenceLabel({ ref: "screenshot:rail.png#top-left" })).toBe("Screenshot rail.png#top-left");
+    });
+
+    it("names a boxed region without its box", () => {
+        expect(evidenceLabel({ ref: "screenshot:rail.png#save@0.7,0.1,0.1,0.05", cite: "ok" }, true)).toBe(
+            "Screenshot rail.png#save"
+        );
+    });
+
+    it("says a region with no box is weak in a checked claim, and nowhere else", () => {
+        expect(evidenceLabel({ ref: "screenshot:rail.png#top-left" }, true)).toBe(
+            "Weak · rail.png#top-left: the region has no box, so it shows nothing"
+        );
+        expect(evidenceLabel({ ref: "screenshot:rail.png#top-left" }, false)).toBe("Screenshot rail.png#top-left");
+    });
+});
+
+describe("isWeakEvidence", () => {
+    it("is a weak claim, or a region named with no box in a checked claim", () => {
+        expect(isWeakEvidence({ ref: "", weak: true }, false)).toBe(true);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top" }, true)).toBe(true);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top" }, false)).toBe(false);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top@0,0,0.5,0.5", cite: "ok" }, true)).toBe(false);
+        expect(isWeakEvidence({ ref: "screenshot:rail.png#top@0,0,2,2", cite: "wrong" }, true)).toBe(false);
     });
 });
 

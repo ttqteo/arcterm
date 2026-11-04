@@ -104,7 +104,7 @@ func TestParseRound1(t *testing.T) {
 	reply := jsonFence(`{
 	  "overview": "  It works, but it is slow. ",
 	  "proposals": [
-	    {"title": "Sleep sooner", "argument": "Saves RAM", "evidence": [{"ref": "pkg/services/idle.go:12"}, "screenshot:a.png#top", {"ref": "  "}]},
+	    {"title": "Sleep sooner", "argument": "Saves RAM", "evidence": [{"ref": "pkg/services/idle.go:12"}, "screenshot:a.png#top", {"ref": "screenshot:a.png#save@0.72,0.08,0.12,0.05"}, {"ref": "  "}]},
 	    {"title": "Show the sleep state", "argument": "People wonder", "evidence": []}
 	  ]
 	}`)
@@ -116,7 +116,7 @@ func TestParseRound1(t *testing.T) {
 		t.Errorf("overview = %q", overview)
 	}
 	want := []CouncilProposal{
-		{Title: "Sleep sooner", Argument: "Saves RAM", Evidence: []CouncilEvidence{{Ref: "pkg/services/idle.go:12"}, {Ref: "screenshot:a.png#top"}}},
+		{Title: "Sleep sooner", Argument: "Saves RAM", Evidence: []CouncilEvidence{{Ref: "pkg/services/idle.go:12"}, {Ref: "screenshot:a.png#top"}, {Ref: "screenshot:a.png#save@0.72,0.08,0.12,0.05"}}},
 		{Title: "Show the sleep state", Argument: "People wonder", Evidence: []CouncilEvidence{{Weak: true, Note: "cites no evidence"}}},
 	}
 	if !reflect.DeepEqual(props, want) {

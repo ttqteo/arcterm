@@ -63,33 +63,48 @@ func atoiCapped(s string) int {
 	return n
 }
 
-// checkable says a ref names a place in a file. A screenshot ("screenshot:<file>#<region>"), a link and an empty ref
-// name none: they are neither read nor counted.
+// checkable says a ref names a place in a file of the tree. A link and an empty ref name none: they are neither read
+// nor counted. A screenshot cite is not one either: CheckEvidence reads it against the council's images instead.
 func checkable(ref string) bool {
 	if ref == "" || strings.Contains(ref, "://") {
 		return false
 	}
-	return !strings.HasPrefix(strings.ToLower(ref), "screenshot:")
+	_, shot := parseShotRef(ref)
+	return !shot
 }
 
 // CheckEvidence marks each `path:line` (or `path:a-b`, or a bare path) in ev ok or wrong. A cite is ok when the file
 // exists under one of roots, the line (or both ends of the range) is in the file, and a Quote, with its whitespace
 // collapsed, is found in the cited lines or within quoteSlack lines of them, case counting. Otherwise it is wrong, and
-// CiteNote says why. A screenshot ref, a link and an empty ref are left unchecked, and so is everything when roots is
-// empty (there is no tree to check against).
+// CiteNote says why. A link and an empty ref are left unchecked, and so is every path cite when roots is empty (there is
+// no tree to check against).
+//
+// A screenshot cite with a box (`screenshot:<file>#<name>@x,y,w,h`) is read against shots instead: it is ok when the
+// file names one of the council's images, the box lies inside it and Go has drawn its crop (Region); else it is wrong,
+// with why. A region drawn earlier stands while its PNG is there, even once the image has gone. A screenshot cite with
+// no box, and every screenshot cite when shots is nil, is left unchecked.
 //
 // roots are absolute folders or files: the project first, then the attached folders and files, or an agent seat's own
 // working directory. A relative ref is read against each folder in turn; an absolute one must lie under a root. It
 // returns a new slice and starts every item from scratch (an earlier Cite and CiteNote are dropped), so it can run
 // again after each reply pass.
-func CheckEvidence(ev []CouncilEvidence, roots []string) []CouncilEvidence {
+func CheckEvidence(ev []CouncilEvidence, roots []string, shots *Shots) []CouncilEvidence {
 	if len(ev) == 0 {
 		return ev
 	}
 	out := make([]CouncilEvidence, len(ev))
 	for i, e := range ev {
 		e.Cite, e.CiteNote = "", ""
-		if ref := strings.TrimSpace(e.Ref); len(roots) > 0 && checkable(ref) {
+		ref := strings.TrimSpace(e.Ref)
+		if s, shot := parseShotRef(ref); shot {
+			if shots != nil && s.HasBox {
+				reg, err := regionOf(e, s, shots)
+				e.Region, e.Cite = reg, CiteOK
+				if err != nil {
+					e.Cite, e.CiteNote = CiteWrong, err.Error()
+				}
+			}
+		} else if len(roots) > 0 && checkable(ref) {
 			e.Cite, e.CiteNote = checkCite(splitCiteRef(ref), e.Quote, roots)
 		}
 		out[i] = e
@@ -253,12 +268,13 @@ func ApplyChecks(c *Council, rootsFor func(expertId string) []string) {
 		}
 		return rootsFor(id)
 	}
+	shots := shotsOf(c)
 	for i := range c.Proposals {
 		p := &c.Proposals[i]
 		if !Sent(p.Draft) {
 			continue
 		}
-		p.Evidence = CheckEvidence(p.Evidence, roots(p.Author))
+		p.Evidence = CheckEvidence(p.Evidence, roots(p.Author), shots)
 		p.Label = LabelOf(p.Evidence, p.Runs)
 	}
 	for i := range c.Replies {
@@ -266,7 +282,7 @@ func ApplyChecks(c *Council, rootsFor func(expertId string) []string) {
 		if r.Stance == "" {
 			continue
 		}
-		r.Evidence = CheckEvidence(r.Evidence, roots(r.Author))
+		r.Evidence = CheckEvidence(r.Evidence, roots(r.Author), shots)
 		r.Label = LabelOf(r.Evidence, nil)
 	}
 }
