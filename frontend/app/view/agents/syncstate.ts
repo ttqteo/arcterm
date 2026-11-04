@@ -121,20 +121,24 @@ export function syncToast(
         : { title: "Nothing to push", message: upstream ? `${upstream} already has ${branch}` : branch };
 }
 
+const PULL_DIVERGED = /not possible to fast-forward|diverging branches/i;
+const PUSH_BEHIND = /\[rejected\]|\(fetch first\)|non-fast-forward|tip of your current branch is behind/i;
+
 // A sentence for the two failures a user can act on; "" for anything else, which the GitFailure panel
 // shows in git's own words (an authentication error, a hook, a network drop).
 export function explainSyncFailure(kind: SyncKind, failure: GitFailure, branch: string, upstream: string): string {
-    const err = failure.stderr;
-    if (kind === "pull" && /not possible to fast-forward|diverging branches/i.test(err)) {
-        return `${branch} and ${upstream} have diverged. Pull here only fast-forwards; merge or rebase in a terminal.`;
+    if (!diverged(kind, failure)) {
+        return "";
     }
-    if (
-        kind === "push" &&
-        /\[rejected\]|\(fetch first\)|non-fast-forward|tip of your current branch is behind/i.test(err)
-    ) {
-        return `${upstream} has commits you lack. Pull first, then push.`;
-    }
-    return "";
+    return kind === "pull"
+        ? `${branch} and ${upstream} have diverged. Pull here only fast-forwards; merge or rebase in a terminal.`
+        : `${upstream} has commits you lack. Pull first, then push.`;
+}
+
+/** Pure: git refused the Pull or Push because the branch and its upstream each hold commits the other lacks: what a
+ *  merge settles, so the Diff's failure strip can hand it to the agent working there (SyncFailure). */
+export function diverged(kind: SyncKind, failure: GitFailure): boolean {
+    return kind === "pull" ? PULL_DIVERGED.test(failure.stderr) : kind === "push" && PUSH_BEHIND.test(failure.stderr);
 }
 
 // The names of the agents a Pull into `cwd` would change files under: those whose own directory is the

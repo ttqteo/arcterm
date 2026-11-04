@@ -812,10 +812,12 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 	// a turn that stops on part 1/3 of something waits on a reply, and the cockpit row shows the step until it gets
 	// one. Every idle event carries it: the step is transient, so an idle_prompt without it would clear it. A turn that
 	// asks "Phần 1/4 ổn chưa?" through AskUserQuestion waits the same way, so the ask carries it too
-	// a turn that ended on a git commit is likely the end of the work, so the cockpit offers to close the agent
+	// a turn that ended on a git commit is likely the end of the work, so the cockpit offers to close the agent; one that
+	// left edits no commit took, or a commit, has work the cockpit offers to ship
 	if em.State == baseds.AgentState_Idle && agentHookShadow == "" && transcriptPath != "" {
 		data.Step = readLastStep(transcriptPath)
-		data.Committed = readTurnCommitted(transcriptPath)
+		turn := readTurnOutcome(transcriptPath)
+		data.Committed, data.Edited = turn.Committed, turn.Edited
 	} else if em.State == baseds.AgentState_Asking && agentHookShadow == "" {
 		data.Step = askStep(ev.ToolInput, transcriptPath)
 	}

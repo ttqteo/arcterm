@@ -85,6 +85,7 @@ declare global {
         title?: string;
         step?: string;
         committed?: boolean;
+        edited?: boolean;
         transcriptpath?: string;
         ts: number;
         usage?: AgentUsage;

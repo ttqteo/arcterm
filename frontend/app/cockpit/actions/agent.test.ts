@@ -46,6 +46,14 @@ describe("agent actions", () => {
         expect(applies("agent:close", t)).toBe(false);
         expect(applies("agent:interrupt", thing())).toBe(true);
     });
+    it("offers Ship and Commit to an idle agent with a terminal, never to a terminal or a run's agent", () => {
+        expect(applies("agent:ship", thing({ state: "idle" }))).toBe(true);
+        expect(applies("agent:commit", thing({ state: "idle" }))).toBe(true);
+        expect(applies("agent:ship", thing({ state: "working" }))).toBe(false);
+        expect(applies("agent:ship", thing({ state: "idle", kind: "terminal" }))).toBe(false);
+        expect(applies("agent:ship", thing({ state: "idle", runId: "r1" }))).toBe(false);
+        expect(applies("agent:commit", thing({ state: "idle", blockId: undefined }))).toBe(false);
+    });
     it("nudges only an idle agent, as the rail's Resume", () => {
         expect(applies("agent:nudge", thing({ state: "idle" }))).toBe(true);
         expect(applies("agent:nudge", thing({ state: "working" }))).toBe(false);

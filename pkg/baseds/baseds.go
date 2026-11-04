@@ -78,6 +78,7 @@ type AgentStatusData struct {
 	Title          string      `json:"title,omitempty"`     // agent's ai-title (task summary), used as the sidebar label
 	Step           string      `json:"step,omitempty"`      // idle: the "n/m" part its last message stopped on, e.g. "1/3"
 	Committed      bool        `json:"committed,omitempty"` // idle: its last turn ended on a git commit (offers Close)
+	Edited         bool        `json:"edited,omitempty"`    // idle: its last turn changed files no later commit took (offers Ship)
 	TranscriptPath string      `json:"transcriptpath,omitempty"`
 	Ts             int64       `json:"ts"`
 	Usage          *AgentUsage `json:"usage,omitempty"`

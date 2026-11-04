@@ -19,7 +19,16 @@ import { fetchStateOf, fetchStatesAtom } from "./comparestore";
 import type { DiffScope } from "./diffscope";
 import type { FilesState } from "./filesstore";
 import { SyncFailureNotice } from "./gitstatepanels";
-import { syncView, terminalProjectName, type SyncButton, type SyncKind, type SyncViewModel } from "./syncstate";
+import { canShip, mergeLabel, mergePrompt } from "./shipmodel";
+import { promptAgent } from "./shipstore";
+import {
+    diverged,
+    syncView,
+    terminalProjectName,
+    type SyncButton,
+    type SyncKind,
+    type SyncViewModel,
+} from "./syncstate";
 import { dismissSyncFailure, fetchNow, runPull, runPush, syncRunAtom, syncRunOf } from "./syncstore";
 import { agentCwdsAtom } from "./worktreesidebarstore";
 
@@ -256,12 +265,29 @@ export function SyncFailure({
     }
     const origin = scope?.repo.origin;
     const agent = origin?.kind === "agent" ? agents.find((a) => a.id === origin.id) : undefined;
+    const branch = state?.branch ?? "";
+    const upstream = state?.upstream ?? "";
+    // the branches diverged and the Diff shows an agent's work that can take a prompt: that agent does the merge
+    const mergeBy = agent != null && canShip(agent) && diverged(failure.kind, failure.failure) ? agent : undefined;
     return (
         <SyncFailureNotice
             kind={failure.kind}
             failure={failure.failure}
-            branch={state?.branch ?? ""}
-            upstream={state?.upstream ?? ""}
+            branch={branch}
+            upstream={upstream}
+            askAgent={
+                mergeBy != null
+                    ? {
+                          label: mergeLabel(failure.kind, mergeBy.name),
+                          onClick: () => {
+                              dismissSyncFailure(cwd);
+                              fireAndForget(() =>
+                                  promptAgent(mergeBy, mergePrompt(failure.kind, cwd, branch, upstream))
+                              );
+                          },
+                      }
+                    : undefined
+            }
             onOpenTerminal={() =>
                 quickTerminal(model, terminalProjectName(origin, agent ? projectOf(agent) : "", cwd), cwd)
             }

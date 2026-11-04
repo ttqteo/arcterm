@@ -233,6 +233,12 @@ describe("agentVMFromInput", () => {
         expect(agentVMFromInput({ id: "t", name: "x", status: "idle" }, NOW).committed).toBeUndefined();
     });
 
+    it("carries a turn's uncommitted edits only while idle", () => {
+        expect(agentVMFromInput({ id: "t", name: "x", status: "idle", edited: true }, NOW).edited).toBe(true);
+        expect(agentVMFromInput({ id: "t", name: "x", status: "working", edited: true }, NOW).edited).toBeUndefined();
+        expect(agentVMFromInput({ id: "t", name: "x", status: "idle" }, NOW).edited).toBeUndefined();
+    });
+
     it("carries the /login email the agent's session started on, only when it has one", () => {
         const vm = agentVMFromInput({ id: "tab-9", name: "x", status: "idle", loginEmail: "old@x.io" }, NOW);
         expect(vm.loginEmail).toBe("old@x.io");

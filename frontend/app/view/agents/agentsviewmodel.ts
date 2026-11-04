@@ -118,6 +118,7 @@ export interface AgentVM {
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
+    edited?: boolean; // idle: its last turn changed files no later commit took, so the cockpit offers to ship it (shipmodel.ts)
     loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
     running?: boolean; // a plain terminal: its shell is running a command, not waiting at its prompt
     // Asleep (block meta agent:sleeping): its process is gone to free RAM, its row, output and conversation stay. The
@@ -520,6 +521,7 @@ export interface LiveAgentInput {
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab
     step?: string; // the status event's step: the "n/m" part an idle turn or a pending AskUserQuestion stopped on
     committed?: boolean; // the status event's committed: an idle turn that ended on a git commit
+    edited?: boolean; // the status event's edited: an idle turn that left file changes no commit took
     loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
     sleeping?: AgentVM["sleeping"]; // the block's agent:sleeping keys (sleepingOf), absent when it is awake
 }
@@ -591,6 +593,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     }
     if (input.status === "idle" && input.committed) {
         vm.committed = true;
+    }
+    if (input.status === "idle" && input.edited) {
+        vm.edited = true;
     }
     return vm;
 }

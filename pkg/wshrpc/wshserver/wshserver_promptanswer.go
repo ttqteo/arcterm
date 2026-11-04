@@ -40,6 +40,7 @@ func answeredStatus(last baseds.AgentStatusData, now int64) (baseds.AgentStatusD
 	next.Hook = ""
 	next.Step = ""
 	next.Committed = false
+	next.Edited = false
 	next.Usage = nil
 	next.Ts = now
 	return next, true

@@ -347,6 +347,7 @@ worker's transcript each show one thing in place of the grid; the grid comes bac
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
 | `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have (an agent with a brainstorm has Brainstorm in the canvas's place). Works from inside the terminal, where a bare `c` is typed into it |
 | `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
+| `Alt`+`S` | Ship the agent whose header shows **Ship**: it commits its own changes, pulls and resolves conflicts, then pushes. Works from inside the terminal; when the header offers no Ship, the key goes to the terminal |
 | `[` / `]` or `←` / `→` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Mod`+`Enter` | Send the marks to the agent (from mark mode) |

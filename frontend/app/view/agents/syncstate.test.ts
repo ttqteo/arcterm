@@ -1,6 +1,6 @@
 // frontend/app/view/agents/syncstate.test.ts
 import { describe, expect, it } from "vitest";
-import { agentsWorkingIn, explainSyncFailure, syncToast, syncView, terminalProjectName } from "./syncstate";
+import { agentsWorkingIn, diverged, explainSyncFailure, syncToast, syncView, terminalProjectName } from "./syncstate";
 
 const base = { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, running: null, fetchedAgo: "" } as const;
 
@@ -80,6 +80,20 @@ describe("explainSyncFailure", () => {
         const noff = { command: "git pull --ff-only", exitcode: 128, stderr: "fatal: Not possible to fast-forward" };
         expect(explainSyncFailure("pull", rejected, "main", "origin/main")).toBe("");
         expect(explainSyncFailure("push", noff, "main", "origin/main")).toBe("");
+    });
+});
+
+describe("diverged", () => {
+    it("is a pull that cannot fast-forward or a push the upstream is ahead of, and nothing else", () => {
+        const rejected = { command: "git push", exitcode: 1, stderr: "! [rejected] main -> main (fetch first)" };
+        const noff = { command: "git pull --ff-only", exitcode: 128, stderr: "fatal: Not possible to fast-forward" };
+        const auth = { command: "git push", exitcode: 128, stderr: "fatal: Authentication failed" };
+        expect(diverged("pull", noff)).toBe(true);
+        expect(diverged("push", rejected)).toBe(true);
+        expect(diverged("pull", rejected)).toBe(false);
+        expect(diverged("push", noff)).toBe(false);
+        expect(diverged("push", auth)).toBe(false);
+        expect(diverged("fetch", noff)).toBe(false);
     });
 });
 

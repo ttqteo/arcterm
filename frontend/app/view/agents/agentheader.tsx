@@ -30,12 +30,14 @@ import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
+    ArrowUpFromLine,
     Check,
     ChevronDown,
     ChevronLeft,
     CircleStop,
     Columns2,
     Ellipsis,
+    GitCommitHorizontal,
     Maximize2,
     Minimize2,
     PanelRight,
@@ -78,6 +80,8 @@ import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore"
 import { runQueueAtom } from "./runqueuestore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
+import { canShip, shipOffer } from "./shipmodel";
+import { loadShipGit, shipAgent, shipGitAtom } from "./shipstore";
 import { splitMenuState } from "./splitmenu";
 import { ServerMark, StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
@@ -484,6 +488,17 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         useAtomValue(runQueueAtom)
     );
     const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
+    // its last turn did git work and the repo still holds some of it: the header offers Ship, which hands the agent the
+    // commit → pull and resolve → push prompt (shipmodel.ts). The repo is read once per turn that ends on git work.
+    const ship = shipOffer(agent, useAtomValue(shipGitAtom)[agent.id]);
+    const gitTurn = agent.state === "idle" && (agent.edited === true || agent.committed === true);
+    useEffect(() => {
+        if (gitTurn) {
+            fireAndForget(() => loadShipGit(agent));
+        }
+        // idleSince moves at every turn's end, so each one reads again; the agent object itself changes on every roster
+        // tick and is left out
+    }, [agent.id, gitTurn, agent.idleSince]);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";
     // garbled text in the pane: repaint it and have the TUI draw itself again, without restarting the session
     const redraw = () => {
@@ -501,6 +516,21 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             return;
         }
         const items: ContextMenuItem[] = [];
+        if (canShip(agent)) {
+            items.push({
+                label: "Ship",
+                sublabel: "commit, pull and resolve, then push",
+                icon: <ArrowUpFromLine size={15} />,
+                click: () => fireAndForget(() => shipAgent(agent, "ship")),
+            });
+            items.push({
+                label: "Commit only",
+                sublabel: "its own changes, no pull or push",
+                icon: <GitCommitHorizontal size={15} />,
+                click: () => fireAndForget(() => shipAgent(agent, "commit")),
+            });
+            items.push({ type: "separator" });
+        }
         if (canSplit) {
             // the header is the focused agent's, which is whose folder the picker opens a tool in
             items.push({
@@ -794,6 +824,23 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 ) : null}
                 {blockId != null ? (
                     <>
+                        {ship != null ? (
+                            <button
+                                type="button"
+                                data-agent-header-ship={ship.kind}
+                                onClick={() => fireAndForget(() => shipAgent(agent, ship.kind))}
+                                disabled={waking}
+                                title={`${ship.title} (${formatChordString("Alt:s")})`}
+                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent/45 px-[9px] py-[5px] text-[12px] font-semibold text-accent hover:border-accent disabled:cursor-default disabled:opacity-40 disabled:hover:border-accent/45"
+                            >
+                                {ship.kind === "ship" ? (
+                                    <ArrowUpFromLine size={14} strokeWidth={2.2} aria-hidden />
+                                ) : (
+                                    <GitCommitHorizontal size={14} strokeWidth={2.2} aria-hidden />
+                                )}
+                                {ship.kind === "ship" ? "Ship" : "Commit"}
+                            </button>
+                        ) : null}
                         {done ? (
                             <button
                                 type="button"

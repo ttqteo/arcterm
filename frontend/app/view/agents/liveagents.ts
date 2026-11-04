@@ -90,6 +90,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 sessionId: status.sessionid,
                 step: status.step,
                 committed: status.committed,
+                edited: status.edited,
                 loginEmail: blockLoginEmail(block),
                 sleeping: sleepingOf(block?.meta),
             },

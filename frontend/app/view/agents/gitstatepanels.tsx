@@ -18,6 +18,9 @@ function exitLabel(failure: GitFailure): string {
     return failure.exitcode < 0 ? "no exit code" : `exit ${failure.exitcode}`;
 }
 
+// `attrs` marks the button for a test or a script
+type BannerAction = { label: string; onClick: () => void; attrs?: { [data: `data-${string}`]: boolean } };
+
 // The one strip that sits under the subject row while the panes stay put: a failed fetch and the
 // restore notice share it, so they differ only in tone.
 export function SurfaceBanner({
@@ -33,28 +36,35 @@ export function SurfaceBanner({
     tone: "error" | "neutral";
     icon: ReactNode;
     children: ReactNode;
-    // `attrs` marks the button for a test or a script
-    action?: { label: string; onClick: () => void; attrs?: { [data: `data-${string}`]: boolean } };
+    // one action, or several side by side, the first the one the strip means
+    action?: BannerAction | BannerAction[];
     onDismiss: () => void;
     // the text in a column with the action under it, for a strip too narrow to hold both on one line (the Diff panel's)
     stacked?: boolean;
     // laid over the strip's own margins and alignment
     className?: string;
 } & { [data: `data-${string}`]: boolean | string }) {
-    const actionButton = action ? (
-        <button
-            {...action.attrs}
-            onClick={action.onClick}
-            className={cn(
-                "flex-none rounded-[6px] border px-[9px] py-[3px] text-[11.5px] font-semibold",
-                tone === "error"
-                    ? "border-error/40 text-error hover:bg-error/12"
-                    : "border-edge-mid text-ink-mid hover:border-edge-strong hover:text-foreground"
-            )}
-        >
-            {action.label}
-        </button>
-    ) : null;
+    const actions = action == null ? [] : Array.isArray(action) ? action : [action];
+    const actionButton =
+        actions.length > 0 ? (
+            <div className="flex flex-none flex-wrap items-center gap-[6px]">
+                {actions.map((a) => (
+                    <button
+                        key={a.label}
+                        {...a.attrs}
+                        onClick={a.onClick}
+                        className={cn(
+                            "flex-none rounded-[6px] border px-[9px] py-[3px] text-[11.5px] font-semibold",
+                            tone === "error"
+                                ? "border-error/40 text-error hover:bg-error/12"
+                                : "border-edge-mid text-ink-mid hover:border-edge-strong hover:text-foreground"
+                        )}
+                    >
+                        {a.label}
+                    </button>
+                ))}
+            </div>
+        ) : null;
     return (
         <div
             {...rest}
@@ -152,13 +162,16 @@ export function GitFailureNotice({
 
 // A Pull or Push git refused, under the Diff panel's top bar. Not GitFailureNotice: that one is about a fetch ("showing refs
 // as of the last fetch") and offers a Retry, while a refused pull is settled by what the person does next (merge or rebase
-// in a terminal), so its action opens one in the worktree. The sentence is `explainSyncFailure`'s, when git's words are one
-// a person can act on; git's own follow, cut to a line with the whole text a hover away.
+// in a terminal), so its action opens one in the worktree. When the branches diverged and the agent working here can take
+// it, `askAgent` comes first: it hands that agent the merge (shipmodel.ts mergePrompt). The sentence is
+// `explainSyncFailure`'s, when git's words are one a person can act on; git's own follow, cut to a line with the whole
+// text a hover away.
 export function SyncFailureNotice({
     kind,
     failure,
     branch,
     upstream,
+    askAgent,
     onOpenTerminal,
     onDismiss,
 }: {
@@ -166,10 +179,16 @@ export function SyncFailureNotice({
     failure: GitFailure;
     branch: string;
     upstream: string;
+    askAgent?: { label: string; onClick: () => void };
     onOpenTerminal: () => void;
     onDismiss: () => void;
 }) {
     const sentence = explainSyncFailure(kind, failure, branch, upstream);
+    const terminal: BannerAction = {
+        label: "Open a terminal here",
+        onClick: onOpenTerminal,
+        attrs: { "data-sync-open-terminal": true },
+    };
     return (
         <SurfaceBanner
             data-sync-failure
@@ -178,11 +197,7 @@ export function SyncFailureNotice({
             stacked
             className="mx-[8px] mb-0 mt-[8px]"
             icon={<CircleAlert size={14} />}
-            action={{
-                label: "Open a terminal here",
-                onClick: onOpenTerminal,
-                attrs: { "data-sync-open-terminal": true },
-            }}
+            action={askAgent != null ? [{ ...askAgent, attrs: { "data-sync-ask-agent": true } }, terminal] : terminal}
             onDismiss={onDismiss}
         >
             <span className="font-semibold text-error">{kind === "pull" ? "Pull failed" : "Push failed"}</span>

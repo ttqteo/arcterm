@@ -15,6 +15,9 @@ import { diffStatsByIdAtom } from "@/app/view/agents/cardgitstore";
 import { openInSplit } from "@/app/view/agents/gridstore";
 import { rosterSeededAtom } from "@/app/view/agents/liveagents";
 import { isEndedWorkerId } from "@/app/view/agents/runlineage";
+import { canShip } from "@/app/view/agents/shipmodel";
+import { shipAgent } from "@/app/view/agents/shipstore";
+import { fireAndForget } from "@/util/util";
 import type { ThingAction, ThingKindDef } from "./types";
 
 export type ContextLevel = ReturnType<typeof contextLevel>;
@@ -86,6 +89,21 @@ const actions: ThingAction<AgentThing>[] = [
         group: "steer",
         applies: ({ agent }) => agent.blockId != null,
         run: ({ agent }) => interruptAgent(agent.blockId),
+    },
+    {
+        // the header's Ship chip, offered here whenever the agent can take the prompt, chip or not
+        id: "agent:ship",
+        label: "Ship (commit, pull, push)",
+        group: "steer",
+        applies: ({ agent }) => canShip(agent),
+        run: ({ agent }) => fireAndForget(() => shipAgent(agent, "ship")),
+    },
+    {
+        id: "agent:commit",
+        label: "Commit its changes",
+        group: "steer",
+        applies: ({ agent }) => canShip(agent),
+        run: ({ agent }) => fireAndForget(() => shipAgent(agent, "commit")),
     },
     {
         id: "agent:compact",

@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent whose last turn left work to commit or push shows a **Ship** button in its header (`Alt`+`S`, also from inside the terminal): one click asks it to commit only its own changes, pull and resolve any conflict, then push, and it stops to ask only on a conflict it cannot settle. The header's … menu and the palette also offer Ship and Commit only for any idle agent, and when a Pull or Push in Diff fails because the branches diverged, its notice has a button that hands the merge to the agent whose work is shown. <!-- big -->
 - A saved council report has a Cite check section after the Matrix: arcterm reads every `path:line` the report cites, the coordinator's own sentences included, with no model, and counts how many hold, how many point at a line that says nothing the sentence claims, and how many are wrong or outside the project, listing each with where it was cited. `wsh council cites <report.md>` runs the same check on a report you already have.
 - An agent that starts a council on the same topic as one that ended in the past week is stopped first: it shows you what that council said to do first and whether the council has been upgraded since, and runs again only with what is new (`--new-evidence`) or because you want the upgraded council's answer (`--rerun-upgraded`).
 

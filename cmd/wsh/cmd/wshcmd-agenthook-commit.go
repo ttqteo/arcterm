@@ -15,12 +15,23 @@ var turnCommitRe = regexp.MustCompile(`(?:^|[\s;&|(])git\s+(?:-[Cc]\s+\S+\s+)*co
 // tools that change files: one after the commit leaves work the commit does not hold
 var fileEditTools = map[string]bool{"Edit": true, "Write": true, "MultiEdit": true, "NotebookEdit": true}
 
-// turnCommitted reports whether the current turn ended on a git commit: a Bash git commit (not a dry run) whose result
-// was not an error, with no file edit after it. The turn starts at the last user record that carries human prose, as
-// lastAssistantTurn reads it. The cockpit offers to close an agent whose last turn committed (donesuggest.ts).
-func turnCommitted(lines []string) bool {
-	committed := false
+// turnGit is what the current turn left in git, as its tool calls tell it.
+type turnGit struct {
+	// it ended on a git commit: a Bash git commit (not a dry run) whose result was not an error, with no file edit after
+	// it. The cockpit offers to close an agent whose last turn committed (donesuggest.ts).
+	Committed bool
+	// it changed files that no commit after them took: a file edit with no good commit later in the turn. The cockpit
+	// offers to ship it (shipmodel.ts).
+	Edited bool
+}
+
+// turnOutcome reads turnGit from the current turn, which starts at the last user record that carries human prose, as
+// lastAssistantTurn reads it.
+func turnOutcome(lines []string) turnGit {
+	var out turnGit
 	commitID := ""
+	// Edited as it stood before the commit in flight, for a commit that fails
+	editedBefore := false
 	for _, ln := range lines {
 		ln = strings.TrimSpace(ln)
 		if ln == "" {
@@ -49,11 +60,11 @@ func turnCommitted(lines []string) bool {
 		switch rec.Type {
 		case "user":
 			if userText(rec.Message.Content) != "" {
-				committed, commitID = false, ""
+				out, commitID, editedBefore = turnGit{}, "", false
 			}
 			for _, b := range blocks {
 				if b.Type == "tool_result" && b.IsError && b.ToolUseID != "" && b.ToolUseID == commitID {
-					committed = false
+					out.Committed, out.Edited = false, editedBefore
 				}
 			}
 		case "assistant":
@@ -62,33 +73,34 @@ func turnCommitted(lines []string) bool {
 					continue
 				}
 				if b.Name == "Bash" && turnCommitRe.MatchString(b.Input.Command) && !strings.Contains(b.Input.Command, "--dry-run") {
-					committed, commitID = true, b.ID
+					editedBefore = out.Edited
+					out.Committed, out.Edited, commitID = true, false, b.ID
 				} else if fileEditTools[b.Name] {
-					committed = false
+					out.Committed, out.Edited = false, true
 				}
 			}
 		}
 	}
-	return committed
+	return out
 }
 
-// the furthest back readTurnCommitted reads for the turn's prompt
+// the furthest back readTurnOutcome reads for the turn's prompt
 const turnTailMaxBytes = 16 * 1024 * 1024
 
-// readTurnCommitted reads turnCommitted from the transcript's tail, read back far enough to hold the turn's prompt:
-// the window doubles from transcriptTailBytes until it does, up to turnTailMaxBytes. A turn's tool output easily
-// outgrows 64 KB, and a commit before the window read as no commit (an agent that committed, then checked the commit
-// with a few long git commands, never offered Close).
-func readTurnCommitted(path string) bool {
+// readTurnOutcome reads turnOutcome from the transcript's tail, read back far enough to hold the turn's prompt: the
+// window doubles from transcriptTailBytes until it does, up to turnTailMaxBytes. A turn's tool output easily outgrows
+// 64 KB, and a commit before the window read as no commit (an agent that committed, then checked the commit with a few
+// long git commands, never offered Close).
+func readTurnOutcome(path string) turnGit {
 	for n := int64(transcriptTailBytes); ; n *= 2 {
 		lines, whole := tailLinesN(path, n)
 		if whole || n >= turnTailMaxBytes || hasTurnStart(lines) {
-			return turnCommitted(lines)
+			return turnOutcome(lines)
 		}
 	}
 }
 
-// hasTurnStart reports whether lines hold a user record that carries human prose, where turnCommitted starts a turn.
+// hasTurnStart reports whether lines hold a user record that carries human prose, where turnOutcome starts a turn.
 func hasTurnStart(lines []string) bool {
 	for _, ln := range lines {
 		var rec struct {

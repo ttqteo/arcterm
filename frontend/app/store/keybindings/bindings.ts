@@ -93,6 +93,8 @@ import { toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { runQueueAtom } from "@/app/view/agents/runqueuestore";
+import { shipOffer } from "@/app/view/agents/shipmodel";
+import { shipAgent, shipGitAtom } from "@/app/view/agents/shipstore";
 import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
@@ -1275,6 +1277,13 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             ? agent
             : undefined;
     };
+    // the focused agent and the Ship chip its header shows, when it shows one (shipmodel.ts)
+    const shipTarget = () => {
+        const id = globalStore.get(model.focusIdAtom);
+        const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
+        const offer = agent != null ? shipOffer(agent, globalStore.get(shipGitAtom)[agent.id]) : null;
+        return agent != null && offer != null ? { agent, offer } : undefined;
+    };
     const inReview = (ctx: KeyContext) => agentNav(ctx) && docReview()?.mode === "review";
     // live inside the general note on purpose, as canvas-send is in a mark's note; it stands down in History and a
     // session, which cover the review pane without leaving review mode
@@ -1885,6 +1894,22 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 confirmCloseSession(agent, model, "Alt+W");
+            },
+        },
+        {
+            // the header's Ship chip, from inside the terminal too; like Alt+W, whether it is offered is read in run(),
+            // so the key passes to the TUI when the header shows no Ship
+            id: "agent:ship",
+            keys: "Alt:s",
+            group: "Agent",
+            label: "Ship the agent's work if its header offers Ship: commit, pull and resolve, push (works inside the terminal)",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: () => {
+                const target = shipTarget();
+                if (target == null) {
+                    return false;
+                }
+                fireAndForget(() => shipAgent(target.agent, target.offer.kind));
             },
         },
         {
