@@ -88,6 +88,8 @@ import {
     selectableRowIds,
     selectOnly,
     stageSubline,
+    tasksShown,
+    TASK_FOLD_AT,
     toggleRow,
     type BackgroundTaskRow,
     type ChecksFold,
@@ -242,6 +244,7 @@ import {
     toggleRunDoneOpen,
     toggleRunQueuedOpen,
     toggleTaskExtrasOpen,
+    toggleTasksOpen,
     treeFoldsAtom,
     useRunDigests,
     useRunInfo,
@@ -1177,6 +1180,9 @@ function ParentRow({
     // its running ones as rows under it: only while its process lives, since a sleeping or terminal-less agent's
     // transcript still reads them as running
     const taskRows = backgroundTaskRows(bgTasks, agent.blockId != null && !agent.sleeping, now);
+    // from TASK_FOLD_AT of them on, they fold behind a chip on its meta line until the person opens them
+    const tasksOpen = useAtomValue(treeFoldsAtom).tasksOpen?.get(agent.id);
+    const tasksOpenNow = tasksShown(taskRows.length, tasksOpen);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
     // where the runs and queued plans it started stand: one chip at the head of its meta line
     const originRuns = useOriginRuns(agent, lineageRuns);
@@ -1218,6 +1224,17 @@ function ParentRow({
                 onToggle={() => toggleSubagentExpand(oref, expanded)}
                 ariaShow="Show subagents"
                 ariaHide="Hide subagents"
+            />
+        ) : null;
+    const tasksChip =
+        taskRows.length >= TASK_FOLD_AT ? (
+            <FoldChip
+                label={String(taskRows.length)}
+                word="running"
+                open={tasksOpenNow}
+                onToggle={() => toggleTasksOpen(agent.id, tasksOpenNow)}
+                ariaShow="Show background tasks"
+                ariaHide="Hide background tasks"
             />
         ) : null;
 
@@ -1395,6 +1412,7 @@ function ParentRow({
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
+                        {lead ? tasksChip : null}
                     </div>
                 )}
                 {lead ? (
@@ -1443,6 +1461,7 @@ function ParentRow({
                         <span className="flex-1" />
                         {checks ? <ChecksChip agentId={agent.id} checks={checks} /> : null}
                         {subsChip}
+                        {tasksChip}
                         {badges}
                     </div>
                 )}
@@ -1499,7 +1518,8 @@ function ParentRow({
                     </motion.div>
                 ) : null}
             </AnimatePresence>
-            <BackgroundTaskRows model={model} agentId={agent.id} rows={taskRows} />
+            {/* folded, it gets no rows, which also closes a peek one of them held open */}
+            <BackgroundTaskRows model={model} agentId={agent.id} rows={tasksOpenNow ? taskRows : []} />
         </>
     );
 }

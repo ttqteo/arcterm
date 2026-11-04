@@ -4,6 +4,8 @@ import {
     agentsInCouncil,
     backgroundTaskRows,
     buildAgentTree,
+    tasksShown,
+    TASK_FOLD_AT,
     discussTogetherSeats,
     extendRow,
     foldCollapsedProjects,
@@ -1455,5 +1457,18 @@ describe("backgroundTaskRows", () => {
     it("hands the row its task unchanged, so the peek can open on it", () => {
         const t = monitor("m");
         expect(backgroundTaskRows([t], true, NOW)[0].task).toBe(t);
+    });
+});
+
+describe("tasksShown", () => {
+    it("shows a few running tasks whatever the fold", () => {
+        expect(tasksShown(1, undefined)).toBe(true);
+        expect(tasksShown(TASK_FOLD_AT - 1, false)).toBe(true);
+    });
+
+    it("folds from TASK_FOLD_AT on until the person opens them", () => {
+        expect(tasksShown(TASK_FOLD_AT, undefined)).toBe(false);
+        expect(tasksShown(TASK_FOLD_AT + 2, false)).toBe(false);
+        expect(tasksShown(TASK_FOLD_AT, true)).toBe(true);
     });
 });

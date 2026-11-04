@@ -94,6 +94,8 @@ export interface TreeFolds {
     queuedOpen: ReadonlySet<string>;
     extrasOpen: ReadonlySet<string>;
     checksOpen?: ReadonlyMap<string, { open: boolean; key: string }>;
+    // an agent's fold of its running background-task rows, by its id (tasksShown)
+    tasksOpen?: ReadonlyMap<string, boolean>;
 }
 
 // What a brainstorming agent's row knows of the check and judge sessions under it: their states in row order, whether
@@ -726,6 +728,16 @@ export interface BackgroundTaskRow {
     left: string | null; // a running Monitor with a timeout: "18m left"
     expiresAt: number | null; // the same Monitor's expiry, for the tooltip
     peekId: string | null; // the task id monitorPeekAtom names when the row is clicked; null: the row is no click target
+}
+
+/** How many running background tasks an agent holds before its rows fold behind a chip by default. */
+export const TASK_FOLD_AT = 3;
+
+/** Pure: whether an agent's `n` running background-task rows show. Fewer than TASK_FOLD_AT always show and take no
+ *  chip, since each leaves the tree when its command ends; from TASK_FOLD_AT on they fold, unless the person opened
+ *  them (`open`, their last toggle of this agent's chip). */
+export function tasksShown(n: number, open: boolean | undefined): boolean {
+    return n < TASK_FOLD_AT || open === true;
 }
 
 /** Pure: the rows an agent shows for the shell commands and Monitors it left running in the background, in the order

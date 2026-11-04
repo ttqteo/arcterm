@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - An agent waiting on your answer now breathes amber over its whole row in the Agent tree, where only its glyph pulsed, so you see it from across the tree.
+- An agent with three or more commands running in the background folds them behind a `3 running` chip on its row in the Agent tree; click it to list them. One or two still show as rows.
 - In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
 - A chat seat's button in a council's Seats list shows the agent mark and reads Go to <name>, where it showed a terminal icon; its name's hover says the same.
 

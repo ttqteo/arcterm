@@ -89,6 +89,15 @@ export function toggleChecksOpen(agentId: string, open: boolean, key: string): v
     });
 }
 
+// folds or unfolds an agent's running background-task rows (tasksShown)
+export function toggleTasksOpen(agentId: string, open: boolean): void {
+    globalStore.set(treeFoldsAtom, (f) => {
+        const tasksOpen = new Map(f.tasksOpen ?? []);
+        tasksOpen.set(agentId, !open);
+        return { ...f, tasksOpen };
+    });
+}
+
 export function toggleTaskExtrasOpen(runId: string, taskId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, extrasOpen: toggled(f.extrasOpen, taskFoldKey(runId, taskId)) }));
 }
