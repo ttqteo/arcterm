@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The council's Memory tab is now the council's memory: one list of what the seats agreed on, ruled out and left open, kept up after each round, with the direction pinned on top. Every seat reads it before it answers.
 - Switching a council between Report, Discussion and Map fades the new view in instead of cutting to it, and between Discussion and Map the grey mark slides to the tab you clicked.
 - A council's header is one slim row: the Report, Discussion and Map tabs are icons, the title gets the room, the mode, time, replies and tokens sit at the foot of the Ideas rail (under an ⓘ in the header when the rail is folded), the seats show two avatars and +N (hover for the whole list), and Summarize, Resume, Pin and Stop moved into a … menu.
 - A council ranks directions by how many experts picked them, counting an expert once across merged proposals, and its report says "3 experts, 1 model" rather than "5 picks": seats on one model are not independent votes. Run facts says when every seat ran on one model.

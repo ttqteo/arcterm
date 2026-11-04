@@ -1,19 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+    ADD_KINDS,
     cardKicker,
+    cardLinks,
     chosenLine,
     chotLine,
     chotText,
     directionHow,
+    directionSource,
     entryDetails,
     KIND_LABEL,
     KIND_MEANING,
+    kindTakesWhy,
     memoryCount,
-    memoryDot,
     memoryDotOn,
-    memoryEmpty,
     memoryEntries,
     memoryIsEmpty,
+    memoryTabLabel,
     newEntryIds,
     replacedRows,
     shownCard,
@@ -90,32 +93,32 @@ const held = (extra: Partial<CouncilMemoryCard> = {}): CouncilMemoryCard => ({
     ...extra,
 });
 
-describe("shownCard, memoryDot and memoryEmpty", () => {
+describe("shownCard, the dot and the empty state", () => {
     it("shows no card, no dot and the empty state for a council with no memory", () => {
         const c = council();
         expect(shownCard(c)).toBeUndefined();
-        expect(memoryDot(c)).toBe(false);
-        expect(memoryEmpty(c)).toBe(true);
+        expect(memoryDotOn(c, undefined)).toBe(false);
+        expect(memoryIsEmpty(c)).toBe(true);
     });
 
     it("shows the suggestion when only a suggestion waits", () => {
         const c = council({ memory: { suggestion: suggestion() } });
         expect(shownCard(c)?.kind).toBe("suggestion");
-        expect(memoryDot(c)).toBe(true);
-        expect(memoryEmpty(c)).toBe(false);
+        expect(memoryDotOn(c, undefined)).toBe(true);
+        expect(memoryIsEmpty(c)).toBe(false);
     });
 
     it("shows the held card when only a held card waits", () => {
         const c = council({ memory: { held: held() } });
         expect(shownCard(c)?.kind).toBe("held");
-        expect(memoryDot(c)).toBe(true);
-        expect(memoryEmpty(c)).toBe(false);
+        expect(memoryDotOn(c, undefined)).toBe(true);
+        expect(memoryIsEmpty(c)).toBe(false);
     });
 
     it("shows the held card first, and keeps the suggestion behind it", () => {
         const c = council({ memory: { held: held(), suggestion: suggestion() } });
         expect(shownCard(c)?.text).toBe("Drop the rail");
-        expect(memoryDot(c)).toBe(true);
+        expect(memoryDotOn(c, undefined)).toBe(true);
         // once the held card is settled the suggestion that waited behind it shows
         const settled = council({ memory: { suggestion: suggestion() } });
         expect(shownCard(settled)?.text).toBe("Go with B");
@@ -124,21 +127,21 @@ describe("shownCard, memoryDot and memoryEmpty", () => {
     it("has no dot with only a chosen direction, and is not empty", () => {
         const c = council({ memory: { chosen: direction() } });
         expect(shownCard(c)).toBeUndefined();
-        expect(memoryDot(c)).toBe(false);
-        expect(memoryEmpty(c)).toBe(false);
+        expect(memoryDotOn(c, undefined)).toBe(false);
+        expect(memoryIsEmpty(c)).toBe(false);
     });
 
     it("is empty again once the direction was unpinned and nothing waits, however many it replaced", () => {
         const c = council({
             memory: { changed: clock(11, 0), replaced: [direction({ replaced: clock(11, 0), ended: "unpinned" })] },
         });
-        expect(memoryEmpty(c)).toBe(true);
-        expect(memoryDot(c)).toBe(false);
-        expect(memoryEmpty(council({ memory: {} }))).toBe(true);
+        expect(memoryIsEmpty(c)).toBe(true);
+        expect(memoryDotOn(c, undefined)).toBe(false);
+        expect(memoryIsEmpty(council({ memory: {} }))).toBe(true);
     });
 
     it("is not empty with a card waiting and no direction", () => {
-        expect(memoryEmpty(council({ memory: { held: held() } }))).toBe(false);
+        expect(memoryIsEmpty(council({ memory: { held: held() } }))).toBe(false);
     });
 });
 
@@ -492,5 +495,49 @@ describe("chotLine", () => {
         expect(chotLine(long)).toBe(chotText(reply("r2", "ram", { text: long })));
         expect(chotLine("  Pin apps to the rail  ")).toBe("Pin apps to the rail");
         expect(chotLine(" \n ")).toBe("");
+    });
+});
+
+describe("cardLinks", () => {
+    it("links the messages a suggestion rests on", () => {
+        expect(cardLinks(suggestion({ messages: ["r21", "r22"], from: "P2" }))).toEqual(["r21", "r22"]);
+    });
+
+    it("falls back to the idea an all green suggestion came from, else none", () => {
+        expect(cardLinks(suggestion({ source: "green", from: "P2" }))).toEqual(["P2"]);
+        expect(cardLinks(suggestion({ messages: [] }))).toEqual([]);
+        expect(cardLinks(held())).toEqual([]);
+    });
+});
+
+describe("the Add form's kinds", () => {
+    it("offers Direction, Agreed, Ruled out, Open in that order, and a why only for Ruled out", () => {
+        expect(ADD_KINDS).toEqual(["direction", "agreed", "ruledout", "open"]);
+        expect(ADD_KINDS.filter(kindTakesWhy)).toEqual(["ruledout"]);
+    });
+});
+
+describe("memoryTabLabel", () => {
+    it("counts the entries and the direction, and says plain Memory with nothing", () => {
+        expect(memoryTabLabel(council())).toBe("Memory");
+        expect(memoryTabLabel(council({ memory: {} }))).toBe("Memory");
+        expect(memoryTabLabel(council({ memory: { chosen: direction() } }))).toBe("Memory · 1");
+        expect(
+            memoryTabLabel(
+                council({ memory: { chosen: direction(), entries: [entry("m1", "open"), entry("m2", "agreed")] } })
+            )
+        ).toBe("Memory · 3");
+    });
+});
+
+describe("directionSource", () => {
+    it("names an idea or a message by id, and nothing for an empty or unknown id", () => {
+        const c = council({ proposals: [prop("P3", "ux")], replies: [reply("r7", "ram", { proposalid: "P3" })] });
+        expect(directionSource(c, "P3")?.kind).toBe("idea");
+        expect(directionSource(c, "r7")?.kind).toBe("message");
+        expect(directionSource(c, "r7")?.thread).toBe("P3");
+        expect(directionSource(c, "")).toBeNull();
+        expect(directionSource(c, undefined)).toBeNull();
+        expect(directionSource(c, "r99")).toBeNull();
     });
 });

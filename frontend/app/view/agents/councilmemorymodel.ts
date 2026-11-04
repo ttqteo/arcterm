@@ -1,11 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the council's Memory tab draws (councilmemory.tsx; boards Memory-tab and Memory-held in
-// .superpowers/design/council-ideas-memory), derived from `Council.memory`: the one card that waits, whether the tab's
-// dot is on, the empty state, the chosen direction's line (who set it, when, from what), the Replaced rows, and the text
-// Chốt pins from an idea or a message. Pure, no React, no Wave runtime imports (councilmemorymodel.test.ts). The memory's
-// shape is pkg/council/types.go's CouncilMemory; how a direction changes is pkg/council/memory.go's.
+// What the council's Memory tab draws (councilmemory.tsx; boards C-merged, C-add and C-empty in
+// .superpowers/design/council-memory), derived from `Council.memory`: the one card that waits, the entries newest first,
+// the tab's label and dot, which entries are new, an entry's details, the empty state, the chosen direction's line (who
+// set it, when, from what), the earlier directions, and the text Chốt pins from an idea or a message. Pure, no React, no
+// Wave runtime imports (councilmemorymodel.test.ts). The memory's shape is pkg/council/types.go's CouncilMemory; how a
+// direction changes is pkg/council/memory.go's.
 
 import { CHAT_THREAD, councilList } from "./councillistmodel";
 import { authorName, readableReplies } from "./councilmodel";
@@ -30,17 +31,6 @@ export function shownCard(c: Council): CouncilMemoryCard | undefined {
     return c.memory?.held ?? c.memory?.suggestion;
 }
 
-/** Pure: whether the tab's dot is on: a suggestion or a held direction waits for the person. */
-export function memoryDot(c: Council): boolean {
-    return shownCard(c) != null;
-}
-
-/** Pure: whether the tab shows its empty state (the input and `Pin a message with Chốt…`): no chosen direction and no
- *  card waiting. The directions it replaced, if any, still show under it. */
-export function memoryEmpty(c: Council): boolean {
-    return c.memory?.chosen == null && shownCard(c) == null;
-}
-
 /** Pure: the line over a card: `Suggested direction` for the round check's suggestion,
  *  `Suggested · every seat agreed` for an all green one, `Held · this may clash with what the seats agreed` for a held
  *  direction. */
@@ -55,6 +45,15 @@ export function cardKicker(card: CouncilMemoryCard): string {
         return "Suggested direction";
     }
     return "Suggested";
+}
+
+/** Pure: the ids a card's reason links to: the messages the suggestion rests on, else the idea it came from (an all
+ *  green suggestion), else none. */
+export function cardLinks(card: CouncilMemoryCard): string[] {
+    if (card.messages != null && card.messages.length > 0) {
+        return [...card.messages];
+    }
+    return card.from != null && card.from !== "" ? [card.from] : [];
 }
 
 /** The four kinds a Memory row can be: the direction pinned on top, then the entries (CouncilMemoryEntry.kind). */
@@ -75,6 +74,20 @@ export const KIND_MEANING: Record<MemoryKind, string> = {
     ruledout: "Dropped. The seats do not bring it back without something new.",
     open: "Still to settle. The seats work on it next.",
 };
+
+/** The kinds the Add form offers, in the order it draws them. */
+export const ADD_KINDS: readonly MemoryKind[] = ["direction", "agreed", "ruledout", "open"];
+
+/** Pure: whether the Add form (and an entry's editor) asks for a why: only a Ruled out entry carries one. */
+export function kindTakesWhy(kind: MemoryKind): boolean {
+    return kind === "ruledout";
+}
+
+/** Pure: the tab's label: `Memory · 8` (the entries plus the direction), plain `Memory` when there is nothing. */
+export function memoryTabLabel(c: Council): string {
+    const n = memoryCount(c);
+    return n > 0 ? `Memory · ${n}` : "Memory";
+}
 
 const ENTRY_KINDS = new Set(["agreed", "ruledout", "open"]);
 const BY_AUTO = "auto";
@@ -111,7 +124,7 @@ export function newEntryIds(c: Council, seenAt: number | undefined): Set<string>
 
 /** Pure: whether the tab's dot is on: a card waits for the person, or an entry came in since `seenAt`. */
 export function memoryDotOn(c: Council, seenAt: number | undefined): boolean {
-    return memoryDot(c) || newEntryIds(c, seenAt).size > 0;
+    return shownCard(c) != null || newEntryIds(c, seenAt).size > 0;
 }
 
 /** What an entry's details popover says. */
@@ -133,7 +146,7 @@ export function entryDetails(e: CouncilMemoryEntry): EntryDetails {
 
 /** Pure: whether the tab is empty: no chosen direction, no entry and no card waiting (earlier directions do not count). */
 export function memoryIsEmpty(c: Council): boolean {
-    return memoryEntries(c).length === 0 && memoryEmpty(c);
+    return memoryEntries(c).length === 0 && c.memory?.chosen == null && shownCard(c) == null;
 }
 
 /** Pure: who set a direction, in words: `Pinned by you`, `Written by you`, `Accepted · auto after round 2`,
@@ -166,17 +179,17 @@ export interface DirectionSource {
     label: string; // `Idea 3`, `RAM's message`, `Your message`
 }
 
-// the item `from` names, or null when it is no idea or message a person can reach (a written direction names none; a
-// dropped idea or reply is gone)
-function directionSource(c: Council, from: string | undefined): DirectionSource | null {
-    if (from == null || from === "") {
+/** Pure: the item `id` names (an idea or a message id), as the tab links it, or null when it is no idea or message a
+ *  person can reach (a written direction names none; a dropped idea or reply is gone). */
+export function directionSource(c: Council, id: string | undefined): DirectionSource | null {
+    if (id == null || id === "") {
         return null;
     }
-    const idea = councilList(c, 0).ideas.find((r) => r.id === from);
+    const idea = councilList(c, 0).ideas.find((r) => r.id === id);
     if (idea != null) {
         return { kind: "idea", id: idea.id, thread: idea.id, label: `Idea ${idea.n}` };
     }
-    const message = readableReplies(c).find((r) => r.id === from);
+    const message = readableReplies(c).find((r) => r.id === id);
     if (message != null) {
         const label = message.author === YOU ? "Your message" : `${authorName(c, message.author)}'s message`;
         return { kind: "message", id: message.id, thread: message.proposalid || CHAT_THREAD, label };
@@ -186,7 +199,7 @@ function directionSource(c: Council, from: string | undefined): DirectionSource 
 
 /** The chosen direction's line: how it was set, when, and the item it came from. */
 export interface ChosenLine {
-    how: string; // `Pinned by you`, `Accepted from the check after round 2`
+    how: string; // `Pinned by you`, `Accepted · auto after round 2`
     time: string; // `10:05`
     source: DirectionSource | null;
 }
