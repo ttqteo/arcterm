@@ -13,6 +13,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Discussion → the title wraps to two lines (then an ellipsis), the row stays 52px, and the chip reads `Round 1/2`
   whole, never `Round 1 of…`; hovering it shows `Round 1 of 2`. Narrow the window to ~1000px: the chip still whole.
   Not run in the app (no dev app up); `council-discussion` CDP scenario not run either.
+- [ ] (arcterm) **Round 2 folds long ideas and marks new replies.** Open a council in round 2 (or done, with replies)
+  whose ideas are long → each long idea shows its first lines fading out with Show more, Show more opens it whole and
+  Show less folds it; an idea with seat replies since you last left the council says `N new replies` on its reply chip
+  and its Ideas rail row, the rail's `N with new replies` toggle lists only those, and opening the thread clears the
+  mark. An old council you left after it finished lights up nothing. The `round 2 fold` phase of `council-discussion`
+  was written but never run (no dev app up) (`councilchat.tsx`, fd4ca03b6).
 - [ ] (arcterm) **Open DAG opens at once.** Jarvis → a run's sheet → Open DAG → the window appears on the click with
   a skeleton where the graph goes, its entrance runs smoothly, and the graph fills in once it has arrived (the pet
   never freezes). Tried only in headless Chrome, never in WebView2, where the removed full-window `backdrop-blur`
