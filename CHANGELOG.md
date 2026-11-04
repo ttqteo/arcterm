@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A brainstorm whose agent judges the build small (a few files, no mockup to match) now offers a quick run at approve, where it always offered an orchestrator run; Change still opens the launcher to pick the other.
 - An agent waiting on your answer now breathes amber over its whole row in the Agent tree, where only its glyph pulsed, so you see it from across the tree.
 - Under critical memory pressure the heavy-job queue still starts one job at a time, where it held every job until you paused the queue, and the pause then let them all start at once.
 - The heavy-job queue runs e2e and smoke checks one at a time even in Auto, where several agents' runs started together and pegged the CPU though the RAM fit; it also catches a check wrapped in `timeout`, `node scripts/smoke.mjs`, `npm run smoke`, `npx playwright test` and npm/pnpm scripts named e2e or smoke.
