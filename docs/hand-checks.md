@@ -11,6 +11,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
   the typecheck only; no dev app was up (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
 
+- [ ] (arcterm) Open a council idea's thread panel (380px) and look at a reply whose seat name and stance pill fill the
+  byline ("Người lo trải nghiệm · has doubts") → no empty line between the byline and the bubble; hover it → its time
+  and thumbs appear over the byline's right end on the panel background, and nothing below moves. Same on the idea at
+  the top of the thread. No dev app was up; prettier only (`HoverEnd` in `councilchat.tsx`).
+
 - [ ] (arcterm) With the machine short of memory (Windows: commit charge past the RAM) and two runs active, let one
   run have a ready task while the other has a worker live → the ready task starts within a tick, and `waveapp.log`
   stops repeating `ready tasks held back while the machine's memory is short` for it; set Jobs to Off and a run with a

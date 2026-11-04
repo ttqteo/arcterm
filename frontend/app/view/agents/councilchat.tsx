@@ -404,7 +404,7 @@ function useSeatLink(who: Who | null): { title: string; open: () => void } | nul
 function Byline({ who, children }: { who: Who; children?: ReactNode }) {
     const link = useSeatLink(who);
     return (
-        <div className="flex flex-wrap items-center gap-[7px] text-[12.5px]">
+        <div className="relative flex flex-wrap items-center gap-[7px] text-[12.5px]">
             {link == null ? (
                 <span className={cn("font-semibold", TONE_TEXT[who.tone])}>{who.name}</span>
             ) : (
@@ -474,10 +474,17 @@ const THUMBS: { thumb: CouncilThumb; Icon: typeof ThumbsUp; word: string; done: 
     { thumb: "dislike", Icon: ThumbsDown, word: "Dislike", done: "Disliked", on: "bg-error/12 text-error-soft" },
 ];
 
-// a byline's right end: its time and the thumbs, seen while the message is hovered or focused. They are only dimmed out,
-// so they keep their width and nothing moves when the pointer comes
+// a byline's right end: its time and the thumbs, seen while the message is hovered or focused. They float over the
+// byline's right end instead of taking room in it: in a narrow column (the thread panel) room for them wrapped them onto
+// a line of their own, an empty line while nothing is hovered. On hover they cover what is under them, and nothing moves
 function HoverEnd({ children }: { children: ReactNode }) {
-    return <span className={cn("ml-auto flex flex-none items-center gap-[7px]", HOVER_ONLY)}>{children}</span>;
+    return (
+        <span
+            className={cn("absolute inset-y-0 right-0 flex items-center gap-[7px] bg-background pl-[8px]", HOVER_ONLY)}
+        >
+            {children}
+        </span>
+    );
 }
 
 function Thumbs({
@@ -2244,7 +2251,7 @@ function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThrea
             >
                 {idea.title}
             </h2>
-            <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
+            <div className="relative flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 <span className="text-secondary">{idea.name}</span>
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
                 {idea.withdrawn && <WithdrawnPill />}
