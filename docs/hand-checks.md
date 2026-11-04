@@ -17,6 +17,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
   bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and
   the typecheck only; no dev app was up (`revealIn` in `councilchat.tsx`, `revealTop` in `councilscroll.ts`).
+- [ ] (arcterm) **Council screenshot regions with real seats.** Run a Review council with a screenshot attached (and
+  paste an image into a reply) → the seats cite `screenshot:<file>#<name>@x,y,w,h`, each crop under an idea or reply
+  boxes the element the seat names, and a click opens the whole screenshot in Sources with the box on it. Done → the
+  saved document has a `<doc name>-regions/` folder beside it and shows the crops. The CDP scenario `council-regions`
+  covers a seeded council only; no model ran (`evidenceRule` in `pkg/council/prompts.go`, `regions.go`; commit
+  8b3f34d58).
 
 - [ ] (arcterm) Open a council idea's thread panel (380px) and look at a reply whose seat name and stance pill fill the
   byline ("Người lo trải nghiệm · has doubts") → no empty line between the byline and the bubble; hover it → its time
