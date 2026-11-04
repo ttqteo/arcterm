@@ -20,6 +20,7 @@
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { useCopyFeedback } from "@/app/element/copyfeedback";
+import { viewFade } from "@/app/element/motiontokens";
 import { Tooltip } from "@/app/element/tooltip";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -46,6 +47,7 @@ import {
     PinOff,
     TriangleAlert,
 } from "lucide-react";
+import { motion } from "motion/react";
 import {
     useEffect,
     useMemo,
@@ -1471,8 +1473,12 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
 export function CouncilSummary({ model }: { model: AgentsViewModel }) {
     const id = useAtomValue(councilSelAtom);
     const c = useCouncil(id);
+    // the whole page fades in as the view opens (a tab click, a council picked): its tab bar sits inside the page
     return (
-        <div
+        <motion.div
+            variants={viewFade}
+            initial="initial"
+            animate="animate"
             data-council-summary
             data-council-id={id ?? undefined}
             aria-busy={c == null}
@@ -1485,6 +1491,6 @@ export function CouncilSummary({ model }: { model: AgentsViewModel }) {
             ) : (
                 <SummaryView model={model} c={c} />
             )}
-        </div>
+        </motion.div>
     );
 }

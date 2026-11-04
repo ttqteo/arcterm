@@ -17,6 +17,7 @@
 // language (councilmapmodel.ts `mapWords`, councilmodel.ts for the matrix's own); the rules are in those models, and
 // this file only draws them. Every control carries a data-council-map-* attribute for the CDP scenario `council-map`.
 
+import { viewFade } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -28,6 +29,7 @@ import {
     ThumbsUp,
     type LucideIcon,
 } from "lucide-react";
+import { motion } from "motion/react";
 import { useMemo, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, MarkedText } from "./councilchat";
@@ -88,12 +90,19 @@ function MapView({ c, model }: { c: Council; model: AgentsViewModel }) {
             className={ROOT}
         >
             <Header c={c} onOpenTerminal={(tab) => model.openTerminal(tab)} />
-            <div data-council-map-scroll className="min-h-0 flex-1 overflow-y-auto px-6 py-5 @max-[900px]:px-4">
+            {/* the body fades in as the view opens (a tab click, a council picked); the header stays put */}
+            <motion.div
+                variants={viewFade}
+                initial="initial"
+                animate="animate"
+                data-council-map-scroll
+                className="min-h-0 flex-1 overflow-y-auto px-6 py-5 @max-[900px]:px-4"
+            >
                 <div className="mx-auto flex max-w-[1280px] flex-col gap-5">
                     <Cards c={c} cards={cards} words={words} />
                     <Matrix c={c} rows={rows} words={words} />
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 }

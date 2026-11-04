@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { councilTabs, discussionCount } from "./counciltabsmodel";
+import {
+    councilTabs,
+    discussionCount,
+    fillSlideFrom,
+    type CouncilTabId,
+    type ShownStrip,
+    type TabSpots,
+} from "./counciltabsmodel";
 
 const prop = (id: string, extra: Partial<CouncilProposal> = {}): CouncilProposal => ({
     id,
@@ -63,5 +70,48 @@ describe("councilTabs", () => {
 
     it("keeps the Map open whatever state the council is in, with no idea sent yet", () => {
         expect(councilTabs({ proposals: [] }).some((t) => t.id === "map")).toBe(true);
+    });
+});
+
+describe("fillSlideFrom", () => {
+    // the strip as the Discussion and the Map draw it: Report 32px, Discussion 52px with its count, Map 32px
+    const spots: TabSpots = {
+        summary: { left: 3, width: 32 },
+        discussion: { left: 37, width: 52 },
+        map: { left: 91, width: 32 },
+    };
+    const strip = (view: CouncilTabId, council = "c1"): ShownStrip => ({ council, view, spots });
+
+    it("slides from the Discussion's tab to the Map's, and back", () => {
+        expect(fillSlideFrom(strip("discussion"), "c1", "map")).toEqual({ x: -54, scale: 52 / 32 });
+        expect(fillSlideFrom(strip("map"), "c1", "discussion")).toEqual({ x: 54, scale: 32 / 52 });
+    });
+
+    it("draws the fill in place with no strip before it, or another council's", () => {
+        expect(fillSlideFrom(null, "c1", "map")).toBeNull();
+        expect(fillSlideFrom(strip("discussion", "c2"), "c1", "map")).toBeNull();
+    });
+
+    it("draws the fill in place on the same view", () => {
+        expect(fillSlideFrom(strip("map"), "c1", "map")).toBeNull();
+    });
+
+    it("never slides to or from the Report, whose strip sits elsewhere on the screen", () => {
+        expect(fillSlideFrom(strip("summary"), "c1", "discussion")).toBeNull();
+        expect(fillSlideFrom(strip("discussion"), "c1", "summary")).toBeNull();
+        expect(fillSlideFrom(strip("map"), "c1", "summary")).toBeNull();
+    });
+
+    it("draws the fill in place when a tab was not measured or has no width", () => {
+        expect(
+            fillSlideFrom({ council: "c1", view: "discussion", spots: { discussion: spots.discussion } }, "c1", "map")
+        ).toBeNull();
+        expect(
+            fillSlideFrom(
+                { council: "c1", view: "discussion", spots: { ...spots, map: { left: 91, width: 0 } } },
+                "c1",
+                "map"
+            )
+        ).toBeNull();
     });
 });

@@ -18,10 +18,12 @@
 
 import { reopenSession } from "@/app/cockpit/cockpit-actions";
 import { openFileInCode } from "@/app/cockpit/openfilestore";
+import { viewFade } from "@/app/element/motiontokens";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
 import { Check, ListChecks, Square, X } from "lucide-react";
+import { motion } from "motion/react";
 import { useMemo } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -152,25 +154,33 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
     return (
         <div data-council-discussion={c.id} data-council-id={c.id} data-council-state={c.state} className={ROOT}>
             <Header c={c} body={body} acts={acts} onOpenTerminal={(tab) => model.openTerminal(tab)} />
-            {isQueued(c) ? (
-                <QueuedBody c={c} />
-            ) : body === "not-run" ? (
-                <NotRunBody c={c} acts={acts} />
-            ) : body === "pause" ? (
-                <PauseBody c={c} acts={acts} />
-            ) : body === "experts" ? (
-                <ExpertsBody c={c} acts={acts} />
-            ) : (
-                <CouncilChat
-                    c={c}
-                    acts={acts}
-                    chats={chats}
-                    notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
-                    onOpenTerminal={(tab) => model.openTerminal(tab)}
-                    onReopenSession={(transcript) => fireAndForget(() => reopenSession(model, transcript))}
-                    onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}
-                />
-            )}
+            {/* the body fades in as the view opens (a tab click, a council picked); the header stays put */}
+            <motion.div
+                variants={viewFade}
+                initial="initial"
+                animate="animate"
+                className="flex min-h-0 flex-1 flex-col"
+            >
+                {isQueued(c) ? (
+                    <QueuedBody c={c} />
+                ) : body === "not-run" ? (
+                    <NotRunBody c={c} acts={acts} />
+                ) : body === "pause" ? (
+                    <PauseBody c={c} acts={acts} />
+                ) : body === "experts" ? (
+                    <ExpertsBody c={c} acts={acts} />
+                ) : (
+                    <CouncilChat
+                        c={c}
+                        acts={acts}
+                        chats={chats}
+                        notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
+                        onOpenTerminal={(tab) => model.openTerminal(tab)}
+                        onReopenSession={(transcript) => fireAndForget(() => reopenSession(model, transcript))}
+                        onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}
+                    />
+                )}
+            </motion.div>
         </div>
     );
 }
