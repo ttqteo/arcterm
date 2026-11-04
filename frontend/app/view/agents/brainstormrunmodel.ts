@@ -18,6 +18,8 @@ export type RunStepState =
     | "landing"
     | "held"
     | "merged"
+    | "done"
+    | "blocked"
     | "cancelled";
 
 export interface RunStepView {
@@ -89,6 +91,9 @@ export function runStepView(runId: string, run: RunInfo | undefined, loaded: boo
             detail: `${tasksLanded(done, total, where)} before it stopped. Nothing more builds or merges.`,
             tree: "cancelled",
         };
+    }
+    if (run.mode === "quick") {
+        return quickStepView(run, base);
     }
     if (run.land?.state === "landed") {
         const sha = run.land.commit ? run.land.commit.slice(0, SHA_CHARS) : undefined;
@@ -187,6 +192,38 @@ export function runStepView(runId: string, run: RunInfo | undefined, loaded: boo
         detail: `Tasks land on ${where} as they pass. Then the final check verifies the whole, and the run merges into ${into}.`,
         tree: `building ${done}/${total}`,
     };
+}
+
+// a quick run has no plan, final check or land of its own, so its status is all there is to read; done, its worker's
+// report is the only word on what it verified, and the person closes the brainstorm on it
+function quickStepView(run: RunInfo, base: Base): RunStepView {
+    switch (run.status) {
+        case "done":
+            return {
+                ...base,
+                state: "done",
+                headline: "The quick run is done",
+                detail: "A quick run has no final check or merge of its own: its report says what it changed and verified.",
+                tree: "done",
+                canClose: true,
+            };
+        case "blocked":
+            return {
+                ...base,
+                state: "blocked",
+                headline: "The quick run is blocked",
+                detail: "Its worker stopped on something it needs from you. The run shows what.",
+                tree: "blocked",
+            };
+        default:
+            return {
+                ...base,
+                state: "building",
+                headline: "The quick run is working",
+                detail: "One worker builds the design straight from the spec, with no plan. Its report lands in the run when it is done.",
+                tree: "working",
+            };
+    }
 }
 
 // runTreeText is the run's half of the brainstorm's tree line: the state leads, since the id only names the link target.

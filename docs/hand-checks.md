@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **A brainstorm handed to a quick run follows it.** Hand a brainstorm's spec to a quick run → its Agent
+  tree line reads `working · run …`, then `done · run …` (never `planning`), and the Run step offers Close the
+  brainstorm once the run is done (`brainstormrunmodel.ts` `quickStepView`).
 - [ ] (arcterm) **Ideas rail click keeps the window still.** In a council's Discussion with the Ideas rail open, click
   an idea far down the rail → the discussion scrolls the idea to its top, and the app's frame (nav rail labels, title
   bar, footer) stays put with no black band at the bottom; j / k and a reply's quote jump do the same. Unit tests and

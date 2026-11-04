@@ -48,6 +48,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A brainstorm handed to a quick run now follows that run: the Agent tree and the Run step say it is working, blocked or done instead of "planning" forever, and Close the brainstorm appears once it is done.
 - Clicking an idea in a council's Ideas rail no longer pushes the whole window up off its frame: only the discussion scrolls to the idea. Moving between ideas with j and k, and jumping back to a quoted question, scroll the same way.
 - A run no longer waits for hours to start its next task while your computer is short of memory and another run is working: each run now keeps at least one worker going, and Jobs set to Off (or paused) stops runs waiting for memory too, as it already did for builds and tests.
 - Pausing the heavy-job queue now pauses it on this computer only, where the pause synced through the vault and let every heavy job on your other computers start at once too.
