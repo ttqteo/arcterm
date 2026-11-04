@@ -10,8 +10,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   arcterm maximized: Float → the window leaves maximized and shrinks to the float's place at the float's size (not
   1.25× or 1.5× off); Full again → it is maximized. Fold into Sprout, switch to another app and back → Sprout lands in
   its corner at its size, and coming back grows it to Full, maximized (`waveapp.log` has `back in arcterm: growing back
-  to Full, maximized`). A unit test (`floatstore.test.ts`) and the typecheck only, on a Mac, whose branches are
-  unchanged; no app was run (`floatstore.ts`, 59935b14d).
+  to Full, maximized`). Click Sprout → the card's Restore window row ends `double-click · Ctrl+M`; drag an agent over
+  another's cell → `hold Alt to mention`. A unit test (`floatstore.test.ts`) and the typecheck only, on a Mac, whose
+  branches are unchanged; no app was run (`floatstore.ts`, 59935b14d; `sprout-mini.tsx`, `griddropoverlay.tsx`).
 - [ ] (arcterm) **Ship chip in the agent header.** After the next launch (wsh carries the hook's new `edited`), have a
   Claude agent edit a file and end its turn → its header shows an accent **Ship** before ✓ Close, its tooltip names the
   file count and the upstream; an agent beside it in the same checkout that did no git work shows none. Click it (or

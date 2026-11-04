@@ -88,8 +88,9 @@ const BOB_MS = 700;
 const DRAG_PX = 4;
 // how long a click waits for a second one: a single click opens the card, a double-click restores
 const DOUBLE_CLICK_MS = 250;
-// the key that folds and gives the window back (floatstore.ts minimizeRequested), as the card names it
-const FOLD_KEY = isMacOS() ? "⌘M" : "Ctrl+M";
+// the key that folds and gives the window back (floatstore.ts minimizeRequested), as the card names it; read per
+// render: at module load setPlatform has not run yet, so the platform still reads as macOS
+const foldKey = () => (isMacOS() ? "⌘M" : "Ctrl+M");
 // Spike result 1 or 2 failed on a platform: draw Sprout on a tile there (make this `isWindows()` or `isMacOS()`)
 const MINI_TILE = false;
 
@@ -647,7 +648,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     >
                         <PictureInPicture2 size={12} strokeWidth={2} aria-hidden />
                         {fromFloat ? "Restore float" : "Restore window"}
-                        <span className="ml-auto text-[10.5px] font-medium text-muted">double-click · {FOLD_KEY}</span>
+                        <span className="ml-auto text-[10.5px] font-medium text-muted">double-click · {foldKey()}</span>
                     </button>
                     <FoldPauseRow onPause={() => restore()} onTyping={setTyping} />
                 </div>
