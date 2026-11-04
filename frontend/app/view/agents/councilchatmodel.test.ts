@@ -906,6 +906,12 @@ describe("seatChips", () => {
                 { id: "t-old", transcript: "/s/notes.jsonl" },
             ])?.tab
         ).toBe("t-old");
+        // a council synced from another computer keeps that machine's path: the tab holding this disk's copy opens
+        expect(
+            seatLink({ ...seat, transcript: "/Users/me/.claude/projects/-x/notes.jsonl" }, [
+                { id: "t-here", transcript: "C:\\u\\.claude\\projects\\d--x\\notes.jsonl" },
+            ])?.tab
+        ).toBe("t-here");
     });
 
     it("gives an agent its tab for a click on its chip, and a role expert none", () => {

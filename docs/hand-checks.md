@@ -1637,3 +1637,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   (`wshserver_workflowscan.go`, `wshcmd-workflow.go`, `pkg/workflowscan/goal.go`, run 12a23f8b Task 3). From the
   palette's row, the open waits up to 15 s for the scan's agent to show in the roster and then lands on it, not on the
   run's sheet (`palette-scan.ts`, unit tests with fake timers only; run 12a23f8b fix round Task 1).
+- [ ] (arcterm) **Synced council seat reopens.** On Windows, open council 45b27fa6 (mit-thesis, synced from the Mac; its
+  thesis seat names `/Users/ttqteo/.claude/projects/...`), click the thesis · 040af37e chip or name → the session
+  `953f36b0` opens asleep in a new tab (or the tab holding it is focused) instead of the "Couldn't reopen the session"
+  toast; Retry on a failed thesis turn reaches that tab. Unit tests only (`transcriptpath.ts`, `archivedSession`,
+  `seatLink`, Go `Holder`).

@@ -69,4 +69,10 @@ describe("archivedSession", () => {
         expect(archivedSession([s], "/t/b.jsonl")).toBeUndefined();
         expect(archivedSession(null, "/t/a.jsonl")).toBeUndefined();
     });
+
+    it("finds a session synced from another computer, whose path there differs from this disk's", () => {
+        const here = { id: "2", transcriptpath: "C:\\u\\.claude\\projects\\d--thesis\\953f.jsonl" } as SessionActivity;
+        const other = { id: "3", transcriptpath: "C:\\u\\.claude\\projects\\d--thesis\\aaaa.jsonl" } as SessionActivity;
+        expect(archivedSession([other, here], "/Users/me/.claude/projects/-Users-me-thesis/953f.jsonl")).toBe(here);
+    });
 });

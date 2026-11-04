@@ -229,8 +229,9 @@ func (l liveAgentLink) Transcript(ctx context.Context, tabId string) (string, er
 }
 
 // Holder is the tab of the seatable live agent whose session's transcript is transcript (the same file, its path
-// cleaned), awake or asleep: an agent opened asleep carries its transcript on its block before it ever runs. "" when no
-// tab holds it.
+// cleaned), awake or asleep: an agent opened asleep carries its transcript on its block before it ever runs. Failing
+// the same path, the same file name: a council synced from another computer names its seat's session by that machine's
+// path, and this disk's copy of the session sits in another folder under the same name. "" when no tab holds it.
 func (l liveAgentLink) Holder(ctx context.Context, transcript string) (string, error) {
 	want := filepath.Clean(transcript)
 	if transcript == "" {
@@ -240,15 +241,30 @@ func (l liveAgentLink) Holder(ctx context.Context, transcript string) (string, e
 	if err != nil {
 		return "", err
 	}
+	byName := ""
 	for _, row := range buildAgentRoster(facts) {
 		if !seatHarnesses[row.Harness] {
 			continue
 		}
-		if tpath, err := agentTranscriptPath(ctx, &row); err == nil && tpath != "" && filepath.Clean(tpath) == want {
+		tpath, err := agentTranscriptPath(ctx, &row)
+		if err != nil || tpath == "" {
+			continue
+		}
+		if filepath.Clean(tpath) == want {
 			return row.TabId, nil
 		}
+		if byName == "" && strings.EqualFold(transcriptFileName(tpath), transcriptFileName(transcript)) {
+			byName = row.TabId
+		}
 	}
-	return "", nil
+	return byName, nil
+}
+
+// transcriptFileName is a transcript path's file name, read with either separator: a path another computer wrote may
+// use the one this OS does not.
+func transcriptFileName(p string) string {
+	p = strings.ReplaceAll(p, `\`, "/")
+	return p[strings.LastIndex(p, "/")+1:]
 }
 
 // LastAnswer is the agent's last answer and its time, as wsh agents read gives them; "", 0 while it has none.

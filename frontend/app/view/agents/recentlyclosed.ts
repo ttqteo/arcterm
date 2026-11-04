@@ -9,6 +9,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentVM } from "./agentsviewmodel";
+import { sameTranscript } from "./transcriptpath";
 
 export const RECENTLY_CLOSED_MAX = 5;
 
@@ -69,11 +70,16 @@ export function noteClosed(vms: (Pick<AgentVM, "name"> & Partial<Pick<AgentVM, "
     }
 }
 
-/** Pure: the scanned session holding this conversation, which carries its resume command, or undefined. */
+/** Pure: the scanned session holding this conversation, which carries its resume command, or undefined. The same path
+ *  wins; else the same file name, for a path another computer wrote (a council synced from there names its seat's
+ *  session by that machine's path). */
 export function archivedSession(
     sessions: SessionActivity[] | null,
     transcriptPath: string
 ): SessionActivity | undefined {
     const want = norm(transcriptPath);
-    return sessions?.find((s) => s.transcriptpath && norm(s.transcriptpath) === want);
+    return (
+        sessions?.find((s) => s.transcriptpath && norm(s.transcriptpath) === want) ??
+        sessions?.find((s) => s.transcriptpath && sameTranscript(s.transcriptpath, transcriptPath))
+    );
 }

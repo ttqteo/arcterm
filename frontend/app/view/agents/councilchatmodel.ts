@@ -58,6 +58,7 @@ import {
 } from "./councilmodel";
 import { claimOf, type ClaimEvidence } from "./councilsources";
 import { fileMentionMatches, insertFileMention } from "./launchermention";
+import { sameTranscript } from "./transcriptpath";
 
 export { chatMentionKeys, insertFileMention };
 
@@ -105,7 +106,7 @@ export function seatLink(
     }
     const chat =
         chats.find((a) => a.id === who.tab) ??
-        (who.transcript === "" ? undefined : chats.find((a) => a.transcript === who.transcript));
+        (who.transcript === "" ? undefined : chats.find((a) => sameTranscript(a.transcript ?? "", who.transcript)));
     if (chat == null) {
         return who.transcript === ""
             ? null

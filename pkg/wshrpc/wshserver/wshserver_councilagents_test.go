@@ -416,7 +416,9 @@ func TestLiveAgentLinkTranscriptAndHolder(t *testing.T) {
 	}
 	dir, base := filepath.Split(reopened.Status.TranscriptPath)
 	uncleaned := filepath.Join(dir, "sub") + string(filepath.Separator) + ".." + string(filepath.Separator) + base
-	for _, tpath := range []string{reopened.Status.TranscriptPath, uncleaned} {
+	// a council synced from another computer names the session by that machine's path; the file name is the same here
+	otherMachine := "/Users/me/.claude/projects/-Users-me-notes/" + base
+	for _, tpath := range []string{reopened.Status.TranscriptPath, uncleaned, otherMachine} {
 		if got, err := (liveAgentLink{}).Holder(ctx, tpath); err != nil || got != agentsTabA {
 			t.Errorf("Holder(%q) = %q, %v, want the tab that runs it", tpath, got, err)
 		}
