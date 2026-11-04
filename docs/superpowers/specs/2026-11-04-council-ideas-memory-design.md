@@ -102,7 +102,7 @@ the direction here.`
 A direction the person pins or types is checked before it is set: one no-tools haiku call reads it against the current
 direction and the council's recent messages and stances.
 
-- **Fits:** it is set at once.
+- **Fits:** it is set at once, and a held card waiting in its slot is cleared (the person has just settled it).
 - **Clashes** with what the seats agreed, or is unclear: it is **held**. The tab shows it with the check's one-line
   reason, and **Edit** (back into the input), **Set anyway**, **Discard**. Nothing is set until the person picks.
 - **The check fails** (no answer, an error): the direction is held with the reason `The check did not answer:
@@ -125,8 +125,8 @@ Agent's call (builder check): the council's saved document (`Markdown`, `pkg/cou
 
 ## Data and wire
 
-- On the council (Go, `pkg/council/types.go`, beside `Summary`): the chosen direction, its replaced history, and the one
-  waiting card (suggestion or held). Each direction records its text, how it was set (`pin`, `written`, `suggested`),
+- On the council (Go, `pkg/council/types.go`, beside `Summary`): the chosen direction, its replaced history, and the two
+  card slots (one suggestion, one held). Each direction records its text, how it was set (`pin`, `written`, `suggested`),
   when, the idea or message id it came from, and for a replaced one when it was replaced. Dismissed suggestion keys are
   kept so they are not raised again.
 - Set, pin, accept, dismiss, set anyway, discard, edit and unpin are wshrpc commands on the council runner (like
