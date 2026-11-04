@@ -143,6 +143,9 @@ func (svc *WorkspaceService) CloseTab(ctx context.Context, workspaceId string, t
 	ctx = waveobj.ContextWithUpdates(ctx)
 	tab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId)
 	if err == nil && tab != nil {
+		// the frontend's `[close]` line just before it names the route that asked
+		log.Printf("CloseTab: tab %s %q (agent %q, %d blocks)\n", tabId, tab.Name,
+			tab.Meta.GetString(waveobj.MetaKey_SessionAgent, ""), len(tab.BlockIds))
 		// before the tab itself, so the last tab's close still closes the window
 		closeBrainstormSessions(ctx, tab)
 		// read before DeleteTab removes the blocks

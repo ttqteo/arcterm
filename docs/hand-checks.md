@@ -1672,3 +1672,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   evidence row → the file, screenshot, `+N` and label chips ("Đã đọc code") never turn blue; the Weak and Wrong cite
   chips still select, so their reason can be copied. Not tried in the app (`councilsourcespanel.tsx`,
   `councilchecks.tsx`).
+- [ ] (arcterm) **Tab closes are logged.** Close an agent with Ctrl+Shift+W then Enter, and another with the header's
+  Close and a click → `waveapp.log` has, for each, `[fe-log] [close] ask … from=Mod+Shift+W` (or `from=header`), then
+  `[close] confirm … via=enter after=…ms` (or `via=click`), `[close] close … why=close from …`, and wavesrv's
+  `CloseTab: tab …`. Unit tests and the typecheck only (`closelog.ts`, `confirmdialog.tsx`, `agentactions.ts`).

@@ -10,7 +10,6 @@
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
-import { WorkspaceService } from "@/app/store/services";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -21,6 +20,7 @@ import { useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
 import { normPath } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
+import { closeTabLogged } from "./closetab";
 import { liveTerminalsAtom } from "./liveagents";
 import { projectsAtom } from "./projectsstore";
 import { runDigestsAtom } from "./runlineagestore";
@@ -126,16 +126,16 @@ export function useWorktreeGoneChecks(shown: readonly string[]): void {
 
 export type ReopenResult = { ok: true } | { ok: false; reason: string };
 
-function closeTab(id: string): void {
+function closeTab(id: string, why: string): void {
     const ws = globalStore.get(atoms.workspace);
     if (ws?.oid != null) {
-        fireAndForget(() => WorkspaceService.CloseTab(ws.oid, id));
+        fireAndForget(() => closeTabLogged(ws.oid, id, why));
     }
 }
 
 // "Close terminal" on the card: the terminal has nothing left to run in, so it closes without asking.
 export function closeGoneTerminal(terminal: AgentVM): void {
-    closeTab(terminal.id);
+    closeTab(terminal.id, "worktree gone: Close terminal");
 }
 
 // "Reopen in <project>": a new terminal in the project's root (Home without one) in the centre, running the same tool
@@ -168,6 +168,6 @@ export async function reopenTerminal(model: AgentsViewModel, terminal: AgentVM):
     } catch (e) {
         return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }
-    closeTab(terminal.id);
+    closeTab(terminal.id, "worktree gone: reopened elsewhere");
     return { ok: true };
 }

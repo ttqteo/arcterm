@@ -21,6 +21,7 @@ import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { addAccountStep, knownClaudeEmails, type AddAction, type AddStep } from "@/app/view/agents/claudeaccount";
+import { closeTabLogged } from "@/app/view/agents/closetab";
 import { claudeIdentityAtom, savedRateLimitsAtom } from "@/app/view/agents/ratelimitstore";
 import { setupTokenCommand, TokenScanner } from "@/app/view/agents/setuptokenscan";
 import { base64ToString, fireAndForget } from "@/util/util";
@@ -84,7 +85,7 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
             tabId = null;
             if (id != null && wsId != null) {
                 const ws = wsId;
-                fireAndForget(() => WorkspaceService.CloseTab(ws, id));
+                fireAndForget(() => closeTabLogged(ws, id, "claude sign-in helper done"));
             }
         };
         const onToken = async (found: string) => {

@@ -123,7 +123,7 @@ const actions: ThingAction<AgentThing>[] = [
         group: "stop",
         destructive: true,
         applies: ({ agent }) => agent.blockId != null,
-        run: ({ agent }, { model }) => confirmCloseSession(agent, model),
+        run: ({ agent }, { model }) => confirmCloseSession(agent, model, "palette"),
     },
 ];
 

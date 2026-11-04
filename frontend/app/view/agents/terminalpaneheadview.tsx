@@ -320,7 +320,7 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                     data-terminal-close
                     aria-label={`Close ${head.name}`}
                     title={`Close ${head.name}`}
-                    onClick={() => confirmCloseSession(terminal)}
+                    onClick={() => confirmCloseSession(terminal, undefined, "terminal header")}
                     className={cn(BUTTON, "hover:bg-error/15 hover:text-error")}
                 >
                     <X size={14} aria-hidden />

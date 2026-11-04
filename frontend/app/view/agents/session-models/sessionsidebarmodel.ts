@@ -10,6 +10,7 @@ import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import { WorkspaceService } from "@/app/store/services";
+import { closeTabLogged } from "@/app/view/agents/closetab";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -293,7 +294,7 @@ export function closeGroup(label: string, memberIds: string[]) {
         destructive: true,
         onConfirm: () => {
             for (const tabId of memberIds) {
-                fireAndForget(() => WorkspaceService.CloseTab(ws.oid, tabId));
+                fireAndForget(() => closeTabLogged(ws.oid, tabId, `close group ${label}`));
             }
         },
     });
