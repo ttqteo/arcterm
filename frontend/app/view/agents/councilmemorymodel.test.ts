@@ -5,8 +5,16 @@ import {
     chotLine,
     chotText,
     directionHow,
+    entryDetails,
+    KIND_LABEL,
+    KIND_MEANING,
+    memoryCount,
     memoryDot,
+    memoryDotOn,
     memoryEmpty,
+    memoryEntries,
+    memoryIsEmpty,
+    newEntryIds,
     replacedRows,
     shownCard,
 } from "./councilmemorymodel";
@@ -135,20 +143,14 @@ describe("shownCard, memoryDot and memoryEmpty", () => {
 });
 
 describe("cardKicker", () => {
-    it("names a check suggestion by its round, and says the chat may have moved", () => {
-        expect(cardKicker(suggestion({ source: "check", round: 2 }))).toBe(
-            "Suggested after round 2 · the chat may have moved"
-        );
-        expect(cardKicker(suggestion({ source: "check", round: 1 }))).toBe(
-            "Suggested after round 1 · the chat may have moved"
-        );
+    it("calls a check suggestion a suggested direction", () => {
+        expect(cardKicker(suggestion({ source: "check", round: 2 }))).toBe("Suggested direction");
+        expect(cardKicker(suggestion({ source: "check", round: 1 }))).toBe("Suggested direction");
     });
 
-    it("leaves the round out of a check suggestion that holds none", () => {
-        expect(cardKicker(suggestion({ source: "check", round: undefined }))).toBe(
-            "Suggested · the chat may have moved"
-        );
-        expect(cardKicker(suggestion({ source: "check", round: 0 }))).toBe("Suggested · the chat may have moved");
+    it("reads the same for a check suggestion that holds no round", () => {
+        expect(cardKicker(suggestion({ source: "check", round: undefined }))).toBe("Suggested direction");
+        expect(cardKicker(suggestion({ source: "check", round: 0 }))).toBe("Suggested direction");
     });
 
     it("says every seat agreed for an all green suggestion", () => {
@@ -177,9 +179,9 @@ describe("directionHow", () => {
 
     it("names the round of an accepted check suggestion", () => {
         expect(directionHow(direction({ how: "suggested", source: "check", round: 3 }))).toBe(
-            "Accepted from the check after round 3"
+            "Accepted · auto after round 3"
         );
-        expect(directionHow(direction({ how: "suggested", source: "check" }))).toBe("Accepted from the check");
+        expect(directionHow(direction({ how: "suggested", source: "check" }))).toBe("Accepted · auto");
     });
 
     it("says every seat agreed for an accepted all green suggestion", () => {
@@ -236,7 +238,7 @@ describe("chosenLine", () => {
 
     it("words an accepted check suggestion and an all green one", () => {
         expect(chosenLine(c, direction({ how: "suggested", source: "check", round: 2, from: "r7" })).how).toBe(
-            "Accepted from the check after round 2"
+            "Accepted · auto after round 2"
         );
         const green = chosenLine(c, direction({ how: "suggested", source: "green", from: "P3" }));
         expect(green.how).toBe("Accepted: every seat agreed");
@@ -266,17 +268,17 @@ describe("replacedRows", () => {
         expect(replacedRows(c)).toEqual([
             {
                 text: "B",
-                how: "Accepted from the check after round 1",
+                how: "Accepted · auto after round 1",
                 ended: "edited",
                 time: "10:05",
-                line: "Accepted from the check after round 1 · edited 10:05",
+                line: "edited 10:05",
             },
             {
                 text: "A",
                 how: "Pinned by you",
                 ended: "replaced",
                 time: "09:40",
-                line: "Pinned by you · replaced 09:40",
+                line: "replaced 09:40",
             },
         ]);
     });
@@ -293,7 +295,7 @@ describe("replacedRows", () => {
             },
         });
         expect(replacedRows(c).map((r) => r.text)).toEqual(["new", "tie 1", "tie 2", "old"]);
-        expect(replacedRows(c)[0]).toMatchObject({ ended: "unpinned", line: "Pinned by you · unpinned 10:00" });
+        expect(replacedRows(c)[0]).toMatchObject({ ended: "unpinned", line: "unpinned 10:00" });
     });
 
     it("calls a direction that left with no recorded end replaced, and is empty with nothing replaced", () => {
@@ -301,6 +303,158 @@ describe("replacedRows", () => {
         expect(replacedRows(c)[0]).toMatchObject({ ended: "replaced", time: "09:00" });
         expect(replacedRows(council())).toEqual([]);
         expect(replacedRows(council({ memory: { chosen: direction() } }))).toEqual([]);
+    });
+});
+
+const entry = (id: string, kind: string, extra: Partial<CouncilMemoryEntry> = {}): CouncilMemoryEntry => ({
+    id,
+    kind,
+    text: `text ${id}`,
+    by: "you",
+    at: clock(10, 0),
+    ...extra,
+});
+
+describe("KIND_LABEL and KIND_MEANING", () => {
+    it("words the four kinds as the badges and tooltips read", () => {
+        expect(KIND_LABEL).toEqual({ direction: "Direction", agreed: "Agreed", ruledout: "Ruled out", open: "Open" });
+        expect(KIND_MEANING.direction).toBe("What the council will do. The seats follow it over the Report.");
+        expect(KIND_MEANING.agreed).toBe("Settled as true. The seats do not argue it again.");
+        expect(KIND_MEANING.ruledout).toBe("Dropped. The seats do not bring it back without something new.");
+        expect(KIND_MEANING.open).toBe("Still to settle. The seats work on it next.");
+    });
+});
+
+describe("memoryEntries", () => {
+    it("lists the entries newest first, a tie by the later id", () => {
+        const c = council({
+            memory: {
+                entries: [
+                    entry("m1", "agreed", { at: clock(10, 0) }),
+                    entry("m2", "open", { at: clock(10, 30) }),
+                    entry("m3", "ruledout", { at: clock(10, 0) }),
+                    entry("m10", "agreed", { at: clock(10, 0) }),
+                ],
+            },
+        });
+        expect(memoryEntries(c).map((e) => e.id)).toEqual(["m2", "m10", "m3", "m1"]);
+    });
+
+    it("leaves out an entry of a kind it does not know, and does not touch the record's order", () => {
+        const entries = [
+            entry("m1", "agreed", { at: 1 }),
+            entry("m2", "weird", { at: 2 }),
+            entry("m3", "open", { at: 3 }),
+        ];
+        const c = council({ memory: { entries } });
+        expect(memoryEntries(c).map((e) => e.id)).toEqual(["m3", "m1"]);
+        expect(entries.map((e) => e.id)).toEqual(["m1", "m2", "m3"]);
+    });
+
+    it("is empty for a council with no entries", () => {
+        expect(memoryEntries(council())).toEqual([]);
+        expect(memoryEntries(council({ memory: {} }))).toEqual([]);
+    });
+});
+
+describe("memoryCount", () => {
+    it("counts the entries and one for a chosen direction", () => {
+        const entries = [entry("m1", "agreed"), entry("m2", "open")];
+        expect(memoryCount(council({ memory: { entries } }))).toBe(2);
+        expect(memoryCount(council({ memory: { entries, chosen: direction() } }))).toBe(3);
+        expect(memoryCount(council({ memory: { chosen: direction() } }))).toBe(1);
+    });
+
+    it("does not count a card, an earlier direction or an entry of an unknown kind", () => {
+        const c = council({
+            memory: {
+                suggestion: suggestion(),
+                replaced: [direction({ replaced: clock(9, 0) })],
+                entries: [entry("m1", "weird")],
+            },
+        });
+        expect(memoryCount(c)).toBe(0);
+    });
+});
+
+describe("newEntryIds and memoryDotOn", () => {
+    const c = council({
+        memory: {
+            entries: [entry("m1", "agreed", { at: clock(10, 0) }), entry("m2", "open", { at: clock(10, 30) })],
+        },
+    });
+
+    it("names the entries that came in after the tab was last open", () => {
+        expect([...newEntryIds(c, clock(10, 10))]).toEqual(["m2"]);
+        expect([...newEntryIds(c, clock(10, 30))]).toEqual([]);
+        expect(newEntryIds(c, undefined).size).toBe(2);
+    });
+
+    it("has no new entries for a council with none", () => {
+        expect(newEntryIds(council(), undefined).size).toBe(0);
+    });
+
+    it("turns the dot on for a new entry, or for a card that waits", () => {
+        expect(memoryDotOn(c, clock(10, 10))).toBe(true);
+        expect(memoryDotOn(c, clock(10, 30))).toBe(false);
+        expect(memoryDotOn(council({ memory: { held: held() } }), clock(23, 0))).toBe(true);
+        expect(memoryDotOn(council({ memory: { suggestion: suggestion() } }), undefined)).toBe(true);
+    });
+
+    it("keeps the dot off for a council with no entries and no card", () => {
+        expect(memoryDotOn(council(), undefined)).toBe(false);
+        expect(memoryDotOn(council({ memory: { chosen: direction() } }), undefined)).toBe(false);
+    });
+});
+
+describe("entryDetails", () => {
+    it("says Auto · round N for an entry the round check made, with the messages it rests on", () => {
+        expect(
+            entryDetails(entry("m1", "agreed", { by: "auto", round: 3, messages: ["r19"], at: clock(22, 31) }))
+        ).toEqual({
+            who: "Auto · round 3",
+            messages: ["r19"],
+            time: "22:31",
+        });
+    });
+
+    it("says only Auto when no round was recorded", () => {
+        expect(entryDetails(entry("m1", "open", { by: "auto", round: 0 })).who).toBe("Auto");
+        expect(entryDetails(entry("m1", "open", { by: "auto" })).who).toBe("Auto");
+    });
+
+    it("leaves who null for the person's own entry, whose view writes You and the time", () => {
+        expect(entryDetails(entry("m1", "agreed", { by: "you", at: clock(22, 40) }))).toEqual({
+            who: null,
+            messages: [],
+            time: "22:40",
+        });
+    });
+});
+
+describe("memoryIsEmpty", () => {
+    it("is empty with no direction, no entry and no card", () => {
+        expect(memoryIsEmpty(council())).toBe(true);
+        expect(memoryIsEmpty(council({ memory: {} }))).toBe(true);
+        expect(memoryIsEmpty(council({ memory: { replaced: [direction({ replaced: clock(9, 0) })] } }))).toBe(true);
+    });
+
+    it("is not empty with a direction, an entry or a card", () => {
+        expect(memoryIsEmpty(council({ memory: { chosen: direction() } }))).toBe(false);
+        expect(memoryIsEmpty(council({ memory: { entries: [entry("m1", "open")] } }))).toBe(false);
+        expect(memoryIsEmpty(council({ memory: { held: held() } }))).toBe(false);
+        expect(memoryIsEmpty(council({ memory: { suggestion: suggestion() } }))).toBe(false);
+    });
+});
+
+describe("old council with no entries", () => {
+    it("loads: counts the direction alone, has no dot from entries and lists nothing", () => {
+        const c = council({ memory: { chosen: direction() } });
+        expect(memoryCount(c)).toBe(1);
+        expect(memoryEntries(c)).toEqual([]);
+        expect(memoryDotOn(c, undefined)).toBe(false);
+        expect(newEntryIds(c, undefined).size).toBe(0);
+        expect(memoryCount(council())).toBe(0);
     });
 });
 
