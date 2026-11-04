@@ -105,8 +105,8 @@ direction and the council's recent messages and stances.
 - **Fits:** it is set at once, and a held card waiting in its slot is cleared (the person has just settled it).
 - **Clashes** with what the seats agreed, or is unclear: it is **held**. The tab shows it with the check's one-line
   reason, and **Edit** (back into the input), **Set anyway**, **Discard**. Nothing is set until the person picks.
-- **The check fails** (no answer, an error): the direction is held with the reason `The check did not answer:
-  <error>`, and Set anyway still works. A failed check never sets a direction silently.
+- **The check fails** (no answer, an error): the direction is held with the reason `Could not check it:
+  <error>` (worded so since 2026-11-05), and Set anyway still works. A failed check never sets a direction silently.
 
 ### When a direction changes
 
