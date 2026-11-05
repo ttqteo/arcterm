@@ -1791,6 +1791,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Initiative "only" bar wraps.** Jarvis → an initiative with a long chunk title → Notes → click the
   chunk → the "only" bar on top shows the whole title over several lines, the "only" label, tone dot and "show all"
   sitting on its first line. Prettier only (`NotesFeed` in `effortdetailview.tsx`); no dev app was up.
+- [ ] (arcterm) **Overview Quick look and Back.** Agent → a project's Overview → hover a History session row → Quick
+  look shows at its right end over the age → click it → the transcript opens in a dialog over the Overview, with
+  Activity/Transcript, Resume and Open; Esc or a click outside closes it. Open → the full session pane, its Back reads
+  "Back to Overview" and returns there, and so does Esc; the same from History says "Back to History". Vitest and
+  `task check:ts` only (`sessionpeek.tsx`, `agentcenter.ts`); no dev app was up.
 - [ ] (arcterm) **Memory tab without a model.** After the next build, Setup → Memory → arcterm → Check now, with
   `headless:runtime` still unset (no OpenRouter key) → the index card shows its lines and size, "Last check failed" still
   names the key, and the table lists Review rows (`feedback_no-co-author-trailer.md` among them, untouched 30+ days);

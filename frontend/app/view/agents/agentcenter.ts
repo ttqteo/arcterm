@@ -50,6 +50,56 @@ export const centerModeAtom = atom<CenterMode>("terminal") as PrimitiveAtom<Cent
 // the project whose Overview the `project` mode shows: a registry name, as the tree's folders name it
 export const overviewProjectAtom = atom("") as PrimitiveAtom<string>;
 
+// Where a session's or run's Back (its button, and Escape) returns: the centre view it was opened over on the Agent
+// surface (a project's Overview, History, Councils, the Canvas gallery), else the terminal.
+export type CenterBack = "terminal" | "project" | "history" | "councils" | "canvases";
+
+export const centerBackAtom = atom<CenterBack>("terminal") as PrimitiveAtom<CenterBack>;
+
+/** Pure: the way back for a session or run opened while the centre shows `from`; `onAgent` says whether the Agent surface
+ *  was on screen (opened from another surface, the centre behind it is stale, so Back goes to the terminal). null keeps
+ *  the way back already set: a session opened over another session or run (a run's member, a link in a transcript) goes
+ *  back where that one would have. */
+export function backFor(from: CenterMode, onAgent: boolean): CenterBack | null {
+    if (!onAgent) {
+        return "terminal";
+    }
+    switch (from) {
+        case "session":
+        case "run":
+            return null;
+        case "project":
+        case "history":
+        case "councils":
+        case "canvases":
+            return from;
+        default:
+            return "terminal";
+    }
+}
+
+const BACK_LABEL: Record<CenterBack, string> = {
+    terminal: "Back to terminal",
+    project: "Back to Overview",
+    history: "Back to History",
+    councils: "Back to Councils",
+    canvases: "Back to Canvases",
+};
+
+/** Pure: the words on a session's or run's Back. */
+export function backLabel(back: CenterBack): string {
+    return BACK_LABEL[back];
+}
+
+/** Back from the centre: a session or run goes back to where it was opened from (centerBackAtom), anything else to the
+ *  terminal. */
+export function leaveCenter(): void {
+    const mode = globalStore.get(centerModeAtom);
+    const to = mode === "session" || mode === "run" ? globalStore.get(centerBackAtom) : "terminal";
+    globalStore.set(centerBackAtom, "terminal");
+    globalStore.set(centerModeAtom, to);
+}
+
 type CenterOpener = Pick<AgentsViewModel, "surfaceAtom" | "sessionsSelAtom" | "sessionsMemberAtom">;
 
 /** Pure: where a value written to sessionsSelAtom is read. A run ("run:<id>") has its own pane, the merged feed ("all")
@@ -149,8 +199,13 @@ export function showCouncilSetupWithAgents(
 }
 
 /** Open one session in the Agent surface: its own transcript, or its run's detail. `member` is the run member in
- *  view, as sessionSelection (sessionsruns.ts) names it for a run's session. */
+ *  view, as sessionSelection (sessionsruns.ts) names it for a run's session. Its Back returns to the centre view it was
+ *  opened over (backFor). */
 export function showSession(model: CenterOpener, sel: string, member?: string): void {
+    const back = backFor(globalStore.get(centerModeAtom), globalStore.get(model.surfaceAtom) === "agent");
+    if (back != null) {
+        globalStore.set(centerBackAtom, back);
+    }
     globalStore.set(model.sessionsSelAtom, sel);
     if (member != null) {
         globalStore.set(model.sessionsMemberAtom, member);

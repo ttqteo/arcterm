@@ -10,7 +10,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { showTerminal } from "./agentcenter";
+import { backLabel, centerBackAtom, leaveCenter } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { RunInfo } from "./runlineage";
 import { runDigestsAtom, useRunDigests } from "./runlineagestore";
@@ -28,6 +28,7 @@ export function RunPane({ model }: { model: AgentsViewModel }) {
     const roster = useAtomValue(model.agentsAtom);
     const now = useAtomValue(model.nowAtom);
     const digests = useAtomValue(runDigestsAtom);
+    const back = backLabel(useAtomValue(centerBackAtom));
     const runId = runIdOfSel(sel) ?? "";
     // as SessionPane: the pane can open before the surface's scan has landed
     const archiveMissing = archive == null;
@@ -79,11 +80,11 @@ export function RunPane({ model }: { model: AgentsViewModel }) {
             <button
                 type="button"
                 data-agent-session-back
-                onClick={showTerminal}
+                onClick={leaveCenter}
                 className="mb-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
                 <ArrowLeft size={13} aria-hidden />
-                Back to terminal
+                {back}
             </button>
             <div className="flex min-h-0 flex-1 flex-col">
                 {archive == null ? (

@@ -10,7 +10,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { showTerminal } from "./agentcenter";
+import { backLabel, centerBackAtom, leaveCenter } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import {
     loadSessionsArchive,
@@ -27,6 +27,8 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
     const archive = useAtomValue(sessionsArchiveAtom);
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
+    // Back returns where the session was opened from: a project's Overview, History, else the terminal
+    const back = backLabel(useAtomValue(centerBackAtom));
     // the archive is scanned on entering the surface, but this pane can open before that scan has landed (or without
     // one); a call made while a scan is running is folded into it (which then runs once more), and a failure still ends
     // the skeleton (archive null -> [])
@@ -48,11 +50,11 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     data-agent-session-back
-                    onClick={showTerminal}
+                    onClick={leaveCenter}
                     className="mb-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <ArrowLeft size={13} aria-hidden />
-                    Back to terminal
+                    {back}
                 </button>
             ) : null}
             <div className="flex min-h-0 flex-1 flex-col">
@@ -63,7 +65,7 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
                         {loadError ? "Could not read the session archive." : "This session is not in the archive yet."}
                     </div>
                 ) : (
-                    <SoloDetail model={model} session={session} onBack={showTerminal} />
+                    <SoloDetail model={model} session={session} onBack={leaveCenter} backLabel={back} />
                 )}
             </div>
         </div>

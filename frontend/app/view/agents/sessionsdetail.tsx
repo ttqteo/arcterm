@@ -133,7 +133,15 @@ export function openSessionAsleep(model: AgentsViewModel, session: LiveSession) 
     });
 }
 
-function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; session: LiveSession; strong?: boolean }) {
+export function PrimaryButton({
+    model,
+    session,
+    strong,
+}: {
+    model: AgentsViewModel;
+    session: LiveSession;
+    strong?: boolean;
+}) {
     const primary = sessionPrimary(session);
     if (primary == null) {
         return null;
@@ -226,7 +234,7 @@ function DeleteSessionButton({ session, onDeleted }: { session: LiveSession; onD
     );
 }
 
-function ViewToggle({ model, className }: { model: AgentsViewModel; className?: string }) {
+export function ViewToggle({ model, className }: { model: AgentsViewModel; className?: string }) {
     const [view, setView] = useAtom(model.sessionsViewAtom);
     const options: { key: typeof view; label: string }[] = [
         { key: "activity", label: "Activity" },
@@ -304,8 +312,9 @@ function ActivityList({ events }: { events: SessionEvent[] }) {
     );
 }
 
-// SessionBody is the scrolling read of one session: its transcript, opened at the end, or its events.
-function SessionBody({
+// SessionBody is the scrolling read of one session: its transcript, opened at the end, or its events. The Overview's
+// quick look (sessionpeek.tsx) reads it too.
+export function SessionBody({
     model,
     session,
     empty,
@@ -426,15 +435,18 @@ function MetaLine({ items }: { items: { k: string; v: string }[] }) {
     );
 }
 
-// onBack: the Agent surface's session pane puts its way back to the terminal at the start of the header row
+// onBack: the Agent surface's session pane puts its way back (to the terminal, or the Overview or History it was opened
+// from, named by backLabel) at the start of the header row
 export function SoloDetail({
     model,
     session,
     onBack,
+    backLabel = "Back to terminal",
 }: {
     model: AgentsViewModel;
     session: LiveSession;
     onBack?: () => void;
+    backLabel?: string;
 }) {
     const rt = runtimeMeta(session.runtime);
     const status: Status = session.live
@@ -451,8 +463,8 @@ export function SoloDetail({
                         type="button"
                         data-agent-session-back
                         onClick={onBack}
-                        title="Back to terminal"
-                        aria-label="Back to terminal"
+                        title={backLabel}
+                        aria-label={backLabel}
                         className="-ml-1.5 flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <ArrowLeft size={14} aria-hidden />

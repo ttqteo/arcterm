@@ -5,8 +5,12 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { atom, createStore } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+    backFor,
+    backLabel,
+    centerBackAtom,
     centerForSelection,
     centerModeAtom,
+    leaveCenter,
     overviewProjectAtom,
     showCanvases,
     showCouncil,
@@ -93,6 +97,57 @@ describe("openers", () => {
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
         expect(globalStore.get(centerModeAtom)).toBe("run");
+    });
+});
+
+describe("a session's way back", () => {
+    beforeEach(() => globalStore.set(centerBackAtom, "terminal"));
+
+    it("backFor goes back to the Overview, History, Councils or Canvases a session was opened over", () => {
+        expect(backFor("project", true)).toBe("project");
+        expect(backFor("history", true)).toBe("history");
+        expect(backFor("councils", true)).toBe("councils");
+        expect(backFor("canvases", true)).toBe("canvases");
+        expect(backFor("terminal", true)).toBe("terminal");
+        expect(backFor("council", true)).toBe("terminal");
+    });
+
+    it("backFor keeps the way back over another session or run, and goes to the terminal from another surface", () => {
+        expect(backFor("session", true)).toBeNull();
+        expect(backFor("run", true)).toBeNull();
+        expect(backFor("project", false)).toBe("terminal");
+    });
+
+    it("names where Back goes", () => {
+        expect(backLabel("terminal")).toBe("Back to terminal");
+        expect(backLabel("project")).toBe("Back to Overview");
+    });
+
+    it("a session opened from the Overview goes back to it, and a second session opened from it keeps that", () => {
+        const model = stub();
+        globalStore.set(model.surfaceAtom, "agent");
+        showProjectOverview("mit-thesis");
+        showSession(model, "claude:abc");
+        showSession(model, "claude:def");
+        expect(globalStore.get(centerBackAtom)).toBe("project");
+        leaveCenter();
+        expect(globalStore.get(centerModeAtom)).toBe("project");
+        expect(globalStore.get(overviewProjectAtom)).toBe("mit-thesis");
+    });
+
+    it("a session opened from another surface goes back to the terminal", () => {
+        const model = stub();
+        showProjectOverview("mit-thesis");
+        showSession(model, "claude:abc");
+        leaveCenter();
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
+    });
+
+    it("leaving History goes to the terminal even when a session's way back is still set", () => {
+        globalStore.set(centerBackAtom, "project");
+        globalStore.set(centerModeAtom, "history");
+        leaveCenter();
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 });
 
