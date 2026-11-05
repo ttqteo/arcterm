@@ -54,6 +54,9 @@ import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
+import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
+import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import {
@@ -429,13 +432,9 @@ const briefSurface = {
     async arrange(h) {
         const ctx = {};
         try {
-            const effort = await h.rpc("effortcreate", { title: BRIEF_SURFACE_BLOCKED, chunks: [{ label: "Stuck" }] });
-            ctx.effortId = effort.effortoid;
-            await h.rpc("effortmutate", {
-                effortoid: ctx.effortId,
-                author: "you",
-                ops: [{ op: "setChunkStatus", chunk: "Stuck", status: "blocked" }],
-            });
+            ctx.effortId = await briefSeedInitiative(h, BRIEF_SURFACE_BLOCKED, ["Stuck"], [
+                { op: "setChunkStatus", chunk: "Stuck", status: "blocked" },
+            ]);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -782,6 +781,22 @@ const briefReadKeys = (h) =>
         }
         return out;
     })()`);
+
+// a real initiative with these chunk labels, then (when given) one batch of ops as "you"; returns its oid. The Brief
+// reads a boot-primed snapshot, so a scenario that seeds one reloads (briefReload) before it looks for the row. A
+// failing ops batch deletes the initiative before it throws, since the caller never learns its oid to tear it down.
+async function briefSeedInitiative(h, title, labels, ops = []) {
+    const effort = await h.rpc("effortcreate", { title, chunks: labels.map((label) => ({ label })) });
+    if (ops.length > 0) {
+        try {
+            await h.rpc("effortmutate", { effortoid: effort.effortoid, author: "you", ops });
+        } catch (e) {
+            await h.rpc("effortdelete", { effortoid: effort.effortoid }).catch(() => {});
+            throw e;
+        }
+    }
+    return effort.effortoid;
+}
 
 // every effort of this title, so a jot that landed after its step gave up is still cleaned up
 async function briefDeleteEfforts(h, title) {
@@ -1132,27 +1147,18 @@ const briefChunkPanel = {
     async arrange(h) {
         const ctx = { efforts: [] };
         try {
-            const panel = await h.rpc("effortcreate", {
-                title: CHUNK_PANEL_TITLE,
-                chunks: [{ label: "One" }, { label: "Two" }, { label: "Three" }],
-            });
-            ctx.efforts.push(panel.effortoid);
-            await h.rpc("effortmutate", {
-                effortoid: panel.effortoid,
-                author: "you",
-                // appendNote, not a note on the status change: only a plain note is yours to edit and delete
-                ops: [
+            // appendNote, not a note on the status change: only a plain note is yours to edit and delete
+            ctx.efforts.push(
+                await briefSeedInitiative(h, CHUNK_PANEL_TITLE, ["One", "Two", "Three"], [
                     { op: "setChunkStatus", chunk: "One", status: "done" },
                     { op: "appendNote", chunk: "One", note: CHUNK_PANEL_NOTE },
-                ],
-            });
-            const blocked = await h.rpc("effortcreate", { title: CHUNK_BLOCKED_TITLE, chunks: [{ label: "Stuck" }] });
-            ctx.efforts.push(blocked.effortoid);
-            await h.rpc("effortmutate", {
-                effortoid: blocked.effortoid,
-                author: "you",
-                ops: [{ op: "setChunkStatus", chunk: "Stuck", status: "blocked" }],
-            });
+                ])
+            );
+            ctx.efforts.push(
+                await briefSeedInitiative(h, CHUNK_BLOCKED_TITLE, ["Stuck"], [
+                    { op: "setChunkStatus", chunk: "Stuck", status: "blocked" },
+                ])
+            );
             await briefViewport(h, 1600, 1000);
             // the Brief reads a boot-primed snapshot, so the RPC-created initiatives need a reload
             await briefReload(h);
@@ -52512,6 +52518,38 @@ const RT_KIT = {
     MOD_BIT,
 };
 
+// what the Jarvis revamp's scenario modules (scenarios-jarvis-{cards,activity,sheet}.mjs,
+// docs/superpowers/plans/2026-11-05-jarvis-revamp.md) need of this file: the Brief's own helpers (open Jarvis on a reload,
+// pick a briefing fixture, seed and clear initiatives, the viewport, the localStorage keys), the fixture-run helpers that
+// seed a run, and the helpers ./council/fixtures.mjs takes as its `fx`, so a module can seed a council by passing the kit.
+// Pins seed through h.rpc ("effortpin").
+const JARVIS_KIT = {
+    briefNap,
+    briefViewport,
+    briefReload,
+    briefFixture,
+    briefInitiativeRow,
+    briefReadKeys,
+    briefRestoreKeys,
+    briefSeedInitiative,
+    briefDeleteEfforts,
+    BRIEF_STORAGE_KEYS,
+    DOCK_ACCENT_CLASSES,
+    arrangeFixtureRun,
+    waitForDispatch,
+    teardownFixtureRun,
+    arrangeSheetDagRun,
+    RUN_SHEET_POLISH_TASKS,
+    waitForProjectInConfig,
+    polishReload,
+    polishWaitFor,
+    polishNap,
+    openRailTerminal,
+    openPalette,
+    waveService,
+    openLauncherStart,
+};
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -61643,6 +61681,9 @@ export const SCENARIOS = [
     agentRailTabs,
     ...railTranscriptScenarios(RT_KIT),
     ...monitorTasksScenarios(RT_KIT),
+    ...jarvisCardsScenarios(JARVIS_KIT),
+    ...jarvisActivityScenarios(JARVIS_KIT),
+    ...jarvisSheetScenarios(JARVIS_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,

@@ -871,7 +871,10 @@ type Effort struct {
 	Events    []EffortEvent `json:"events,omitempty"` // delta-source event log (six kinds)
 	CreatedTs int64         `json:"createdts"`
 	UpdatedTs int64         `json:"updatedts"`
-	Meta      MetaMapType   `json:"meta"`
+	// PinnedTs is when the effort was pinned to the Brief's cards (0 = not pinned). A pin is a view
+	// preference: setting it writes no event or note and keeps UpdatedTs.
+	PinnedTs int64       `json:"pinnedts,omitempty"`
+	Meta     MetaMapType `json:"meta"`
 }
 
 func (*Effort) GetOType() string { return OType_Effort }

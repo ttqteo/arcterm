@@ -193,6 +193,11 @@ func (ws *WshServer) EffortDeleteCommand(ctx context.Context, data wshrpc.Comman
 	return effortstore.Delete(ctx, data.EffortOID)
 }
 
+// EffortPinCommand is a stub so the interface compiles; the pin flow lands with the pin command itself.
+func (ws *WshServer) EffortPinCommand(ctx context.Context, data wshrpc.CommandEffortPinData) (*wshrpc.CommandEffortPinRtnData, error) {
+	return nil, fmt.Errorf("effort pin is not built yet")
+}
+
 // noteAuthorFor attributes a batch's notes. A source block means `wsh effort` ran in a terminal, which
 // in this app is an agent: its tab is the session, and the run owning that tab, if any, is the run. A
 // caller-supplied Author is honoured only as "you" — anything else would let a terminal claim the human.
