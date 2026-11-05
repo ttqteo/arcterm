@@ -133,10 +133,18 @@ export const SHARED_TOKENS = {
     accent: "--color-accent",
     accent50: "--color-accent-50",
     code: "--color-surface-code",
+    // the Christmas decor (christmas theme spec, "Office"): the trees, their lights, the gifts and the wreath
+    xmasPine: "--color-xmas-pine",
+    xmasCrimson: "--color-xmas-crimson",
+    xmasBulb: "--color-xmas-bulb",
+    xmasSnow: "--color-xmas-snow",
 } as const;
 export type SharedRole = keyof typeof SHARED_TOKENS;
 
-export type OfficeRole = BaseRole | DerivedRole | SharedRole | "done";
+// a pine's shaded needles: the pine by this factor
+export const XMAS_PINE_DARK = 0.72;
+
+export type OfficeRole = BaseRole | DerivedRole | SharedRole | "done" | "xmasPineDark";
 export type OfficeColors = Partial<Record<OfficeRole, Rgb>>;
 
 export function shadeRgb(c: Rgb, f: number): Rgb {
@@ -171,6 +179,7 @@ export function officeColors(phase: OfficePhase, read: (token: string) => Rgb | 
     }
     // a done task on a run's screen: the working green dimmed, as a done segment is elsewhere
     out.done = out.working == null ? undefined : shadeRgb(out.working, 0.62);
+    out.xmasPineDark = out.xmasPine == null ? undefined : shadeRgb(out.xmasPine, XMAS_PINE_DARK);
     return out;
 }
 

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { buildPlan, MEET_H, type Box, type Plan, type PlanInput } from "@/app/view/agents/officeplanmodel";
+import { buildPlan, giftArea, MEET_H, type Box, type Plan, type PlanInput } from "@/app/view/agents/officeplanmodel";
 import { describe, expect, it } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors } from "./officepalette";
@@ -15,6 +15,8 @@ import {
     rasteriseProp,
     scenery,
     sceneryKey,
+    TREE,
+    WREATH,
     type Op,
     type Prop,
 } from "./scenery";
@@ -726,6 +728,163 @@ describe("rasteriseProp", () => {
     });
 });
 
+describe("Christmas", () => {
+    type GridOp = Extract<Op, { k: "grid" }>;
+    const grids = (ops: Op[], role: string) =>
+        ops.filter((o) => o.k === "grid" && Object.values(o.roles).includes(role as never)) as GridOp[];
+    // a plan whose rooms' gifts are set to n
+    const withGifts = (p: Plan, n: number): Plan => ({
+        ...p,
+        rooms: p.rooms.map((r) => (r.xmas ? { ...r, xmas: { ...r.xmas, gifts: n } } : r)),
+    });
+    const boxes = (prop: Prop) => prop.ops.filter((o) => o.k === "rect" && o.role === "ink" && o.w === 5 && o.h === 5);
+    const xmasRoles = ["xmasPine", "xmasPineDark", "xmasCrimson", "xmasBulb", "xmasSnow"];
+    const xmasOps = (ops: Op[]) =>
+        ops.filter((o) =>
+            o.k === "rect"
+                ? xmasRoles.includes(o.role)
+                : o.k === "grid" && Object.values(o.roles).some((r) => xmasRoles.includes(r))
+        );
+
+    it("draws a pine at every plant, the lounge's included, and no leaf cells", () => {
+        for (const p of [plan(), plan(1600, { height: 1000 }), onFloor(2)]) {
+            const s = scenery(p, "day", false, true);
+            expect(grids(s.under, "leaf")).toEqual([]);
+            const trees = grids(s.under, "xmasPine").filter((g) => g.rows === TREE);
+            const at = trees.map((g) => `${g.x},${g.y}`);
+            const lounge = artOf(p.lounge);
+            expect(at).toContain(`${lounge.x + art(200)},${lounge.y + art(172)}`);
+            for (const r of p.rooms) {
+                for (const q of r.plants ?? []) {
+                    expect(at).toContain(`${art(q.x)},${art(q.y)}`);
+                }
+                if (r.xmas) {
+                    expect(at).toContain(`${art(r.xmas.tree.x)},${art(r.xmas.tree.y)}`);
+                }
+            }
+            // a tree spot that is a plant gets one tree, not two
+            expect(new Set(at).size).toBe(at.length);
+            // each tree is a prop, its pot where a plant's pot was
+            expect(s.props.filter((x) => x.kind === "tree")).toHaveLength(trees.length);
+            expect(s.props.some((x) => x.kind === "plant")).toBe(false);
+        }
+    });
+
+    it("stands a tree at a busy room's free spot, which has no plant", () => {
+        const busy = plan(900, {
+            agents: [1, 2, 3].map((i) => ({
+                id: `a${i}`,
+                name: `a${i}`,
+                project: "arcterm",
+                state: "working" as const,
+                finished: false,
+            })),
+            runs: input().runs.map((r) => ({ ...r, project: "arcterm" })),
+        });
+        const r = busy.rooms.find((x) => x.key === "room:arcterm")!;
+        expect(r.plants).toBeUndefined();
+        expect(r.xmas).toBeDefined();
+        const s = scenery(busy, "day", false, true);
+        expect(
+            s.props.some((x) => x.kind === "tree" && x.x === art(r.xmas!.tree.x) && x.y === art(r.xmas!.tree.y))
+        ).toBe(true);
+        // its run's done task is its one gift
+        expect(r.xmas!.gifts).toBe(1);
+        expect(s.props.filter((x) => x.kind === "gifts").map(boxes)).toEqual([expect.any(Array)]);
+    });
+
+    it("lays min(gifts, 6) boxes beside each tree in a footprint that never grows", () => {
+        const p = plan();
+        const rooms = p.rooms.filter((r) => r.xmas);
+        expect(rooms.length).toBeGreaterThan(0);
+        let foot: Box[] | undefined;
+        for (const n of [1, 2, 4, 5, 6, 7, 12]) {
+            const s = scenery(withGifts(p, n), "day", false, true);
+            const gifts = s.props.filter((x) => x.kind === "gifts");
+            expect(gifts, `${n}`).toHaveLength(rooms.length);
+            for (const g of gifts) {
+                expect(boxes(g), `${n}`).toHaveLength(Math.min(n, 6));
+                expect(
+                    g.ops.some((o) => o.k === "rect" && ["xmasCrimson", "accent", "xmasPine"].includes(o.role))
+                ).toBe(true);
+                for (const o of g.ops) {
+                    if (o.k === "rect") {
+                        expect(within(o, g)).toBe(true);
+                    }
+                }
+            }
+            const now = gifts.map(({ x, y, w, h }) => ({ x, y, w, h }));
+            foot ??= now;
+            expect(now, `${n}`).toEqual(foot);
+        }
+        // the footprint is the plan's gift area on the art grid
+        for (const r of rooms) {
+            const a = giftArea(r)!;
+            const g = scenery(withGifts(p, 6), "day", false, true).props.find(
+                (x) => x.kind === "gifts" && x.x === art(a.x) && x.y === art(a.y)
+            )!;
+            expect(g.w * CELL).toBe(a.w);
+            expect(g.h * CELL).toBe(a.h);
+        }
+        // no gifts, no boxes
+        expect(scenery(withGifts(p, 0), "day", false, true).props.some((x) => x.kind === "gifts")).toBe(false);
+    });
+
+    it("hangs the wreath at the notice board's top centre, part of the board", () => {
+        const p = plan();
+        const s = scenery(p, "day", false, true);
+        const board = s.props.find((x) => x.kind === "board")!;
+        const w = board.ops.find((o) => o.k === "grid" && o.rows === WREATH) as GridOp;
+        expect(w).toBeDefined();
+        expect(Object.values(w.roles)).toEqual(expect.arrayContaining(["xmasPine", "xmasCrimson"]));
+        const { frame } = boardArt(p.board.box);
+        const mid = w.x + WREATH[0].length / 2;
+        expect(Math.abs(mid - (frame.x + frame.w / 2))).toBeLessThanOrEqual(0.5);
+        expect(w.y).toBeLessThan(frame.y);
+        expect(w.y + WREATH.length).toBeGreaterThan(frame.y);
+        // the board's prop takes the wreath's rows, so a body behind it is drawn under the wreath too
+        expect(board.y).toBe(w.y);
+        expect(board.foot).toBe(board.y + board.h);
+    });
+
+    it("draws today's office without christmas, whatever the plan's tree spots", () => {
+        for (const p of [plan(), plan(1600, { height: 1000 }), onFloor(2), plan(1050, { night: true })]) {
+            expect(p.rooms.some((r) => r.xmas)).toBe(true);
+            const today = scenery(p, "day", false);
+            expect(scenery(p, "day", false, false)).toEqual(today);
+            expect(xmasOps([...today.under, ...today.over])).toEqual([]);
+            expect(today.props.some((x) => x.kind === "tree" || x.kind === "gifts")).toBe(false);
+            const s = scenery(p, "after", true, true);
+            expect(xmasOps(s.under).length).toBeGreaterThan(0);
+        }
+    });
+
+    it("rasterises the decor in its colours, every role resolved", () => {
+        const p = plan();
+        const s = scenery(p, "day", false, true);
+        const colors: OfficeColors = {
+            ink: [1, 1, 1],
+            accent: [2, 2, 2],
+            potHi: [3, 3, 3],
+            pot: [4, 4, 4],
+            xmasPine: [5, 5, 5],
+            xmasPineDark: [6, 6, 6],
+            xmasCrimson: [7, 7, 7],
+            xmasBulb: [8, 8, 8],
+            xmasSnow: [9, 9, 9],
+        };
+        const t = s.props.find((x) => x.kind === "tree")!;
+        const px = rasterise(t.ops, t.w, t.h, colors, t.x, t.y);
+        const seen = new Set<number>();
+        for (let i = 0; i < px.length; i += 4) {
+            if (px[i + 3]) {
+                seen.add(px[i]);
+            }
+        }
+        expect([...seen].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 8, 9]);
+    });
+});
+
 describe("sceneryKey", () => {
     const key = (p: Plan, phase: "day" | "after" = "day", tired = false, theme = "claude") =>
         sceneryKey(p, phase, tired, theme);
@@ -791,6 +950,25 @@ describe("sceneryKey", () => {
         });
         expect(key(withText("+9 agents"))).not.toBe(key(crowd));
         expect(key(withText("+5 agents"))).toBe(key(crowd));
+    });
+
+    it("changes with christmas, and with a room's gifts or tree spot only under it", () => {
+        const p = plan();
+        const r = p.rooms.find((x) => x.xmas)!;
+        const set = (xmas: typeof r.xmas): Plan => ({
+            ...p,
+            rooms: p.rooms.map((x) => (x === r ? { ...x, xmas } : x)),
+        });
+        const more = set({ ...r.xmas!, gifts: r.xmas!.gifts + 1 });
+        const moved = set({ ...r.xmas!, tree: { x: r.xmas!.tree.x + 6, y: r.xmas!.tree.y } });
+        const xmas = (q: Plan) => sceneryKey(q, "day", false, "christmas", true);
+        const plain = (q: Plan) => sceneryKey(q, "day", false, "christmas");
+        expect(xmas(p)).not.toBe(plain(p));
+        expect(xmas(more)).not.toBe(xmas(p));
+        expect(xmas(moved)).not.toBe(xmas(p));
+        expect(plain(more)).toBe(plain(p));
+        expect(plain(moved)).toBe(plain(p));
+        expect(sceneryKey(p, "day", false, "christmas", false)).toBe(plain(p));
     });
 
     it("changes with a room's light and with a desk's light alone", () => {

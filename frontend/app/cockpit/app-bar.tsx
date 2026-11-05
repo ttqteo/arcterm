@@ -7,6 +7,8 @@ import { atoms, getSettingsKeyAtom, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { ChristmasLights } from "@/app/view/agents/christmaslights";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { foldToSprout, minimizeRequested, setSproutCorner, sproutSpotAtom } from "@/app/view/agents/floatstore";
 import { spotCorner, SPROUT_CORNER_LABEL, SPROUT_CORNERS } from "@/app/view/agents/floatwindow";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
@@ -39,13 +41,17 @@ import { versionInfoAtom } from "./versioninfo";
 // Window dragging: a bare data-tauri-drag-region only fires on a press directly on its own element,
 // so every non-interactive piece carries one. Not "deep" on the bar: the switchers' click-away
 // backdrops and dropdowns render inside it and would start a drag instead of closing.
-// the creature sitting, on the button that folds the window into it
-const FOLD_SPRITE = {
-    sprout: spriteFor("sit", [], null, "sprout"),
-    minion: spriteFor("sit", [], null, "minion"),
-    // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
-    spidey: spriteFor("stand", [], null, "spidey"),
-};
+// the creature sitting, on the button that folds the window into it; in its Santa hat while the Christmas decor shows
+function foldSprites(outfit: "santa-hat" | null) {
+    return {
+        sprout: spriteFor("sit", [], outfit, "sprout"),
+        minion: spriteFor("sit", [], outfit, "minion"),
+        // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
+        spidey: spriteFor("stand", [], outfit, "spidey"),
+    };
+}
+const FOLD_SPRITE = foldSprites(null);
+const FOLD_SPRITE_HAT = foldSprites("santa-hat");
 
 // The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
 export function useFoldTitle(): string {
@@ -94,6 +100,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const newAgentKeys = useBindingKeys("new-agent");
     // the Spider theme swaps the t> mark for its spider, in the suit's red against the theme's blue accent (themedecorview.tsx)
     const spider = useSpiderDecor();
+    // the Christmas theme hangs a string of lights under the bar (christmaslights.tsx)
+    const christmas = useChristmasDecor();
     return (
         <div
             data-app-bar
@@ -102,7 +110,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             // "deep": a bare attribute drags only on the bar's own pixels, not its children; buttons still opt out
             data-tauri-drag-region="deep"
             className={clsx(
-                "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
+                // relative: the Christmas lights hang from the bar's bottom edge
+                "relative flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
                 mac ? "pr-4" : null,
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}
@@ -172,11 +181,12 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     onContextMenu={showFoldMenu}
                     className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-mid bg-surface-raised hover:bg-surface-hover"
                 >
-                    <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
+                    <SproutSvg sprite={(christmas ? FOLD_SPRITE_HAT : FOLD_SPRITE)[character]} cellPx={1} />
                 </button>
 
                 {mac ? null : <WindowControls />}
             </div>
+            {christmas ? <ChristmasLights model={model} /> : null}
         </div>
     );
 }

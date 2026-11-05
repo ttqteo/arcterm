@@ -166,6 +166,7 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
             className="w-[min(560px,92vw)]"
             topClass="pt-[14vh]"
             dismissOnBackdrop={false}
+            christmasLights
         >
             {open ? (
                 <>

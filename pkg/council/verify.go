@@ -452,6 +452,14 @@ var (
 // in each run's Reason. The tree is removed when this returns, on an error and when ctx ends too (a Stop): a Stop leaves
 // the commands it cut off as requests, so a later call can run them.
 func RunVerifies(ctx context.Context, trees TreeMaker, c *Council, onStep func(expertId string, s CouncilStep)) {
+	RunVerifiesBy(ctx, trees, c, "", onStep)
+}
+
+// RunVerifiesBy is RunVerifies for the commands one seat's proposals asked for: author is that seat's id, and the other
+// seats' proposals are left alone, their requests still open. An empty author is every seat's, as RunVerifies. It makes
+// the same tree, keyed by the council, so two calls on one council must not overlap: the second would replace the
+// first's tree, and the first's return would remove it.
+func RunVerifiesBy(ctx context.Context, trees TreeMaker, c *Council, author string, onStep func(expertId string, s CouncilStep)) {
 	if c == nil {
 		return
 	}
@@ -465,7 +473,7 @@ func RunVerifies(ctx context.Context, trees TreeMaker, c *Council, onStep func(e
 	taken := map[string]int{}
 	forEachAsked := func(f func(p *CouncilProposal, r *CouncilRun)) {
 		for i := range c.Proposals {
-			if p := &c.Proposals[i]; Sent(p.Draft) && !p.Cut {
+			if p := &c.Proposals[i]; Sent(p.Draft) && !p.Cut && (author == "" || p.Author == author) {
 				for j := range p.Runs {
 					f(p, &p.Runs[j])
 				}

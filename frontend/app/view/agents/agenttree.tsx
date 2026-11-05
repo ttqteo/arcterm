@@ -43,6 +43,7 @@ import {
     CornerUpLeft,
     ExternalLink,
     FileDiff,
+    Gift,
     Folder,
     FolderOpen,
     GitBranch,
@@ -251,6 +252,7 @@ import {
     useRunDigests,
     useRunInfo,
 } from "./runlineagestore";
+import { useChristmasDecor } from "./christmasstore";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
 import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
@@ -812,16 +814,19 @@ function TaskStripBar({ run }: { run: RunInfo }) {
 }
 
 // a finished run's check and word; a run that landed with its final check unverified says so, in the amber a held
-// land uses, so "Complete" does not claim more than the engine could check
+// land uses, so "Complete" does not claim more than the engine could check. While the Christmas decor shows a verified
+// run's check is a gift, as its done tasks are gifts under the Office's tree; an unverified one keeps its check
 function RunCompleteLabel({ run }: { run: RunInfo }) {
     const unverified = runStage(run).outcome === "unverified";
     const label = `${finishedRunLabel(run)}${unverified ? " · unverified" : ""}`;
+    const gift = useChristmasDecor() && !unverified;
+    const Mark = gift ? Gift : Check;
     return (
         <span
             data-run-complete={unverified ? "unverified" : "done"}
             className={cn("flex min-w-0 items-center gap-[5px]", unverified ? "text-warning" : "text-success")}
         >
-            <Check size={11} aria-hidden className="flex-none" />
+            <Mark size={11} aria-hidden data-run-gift={gift ? "" : undefined} className="flex-none" />
             <span className="truncate" title={label}>
                 {label}
             </span>
@@ -1374,10 +1379,10 @@ function ParentRow({
                 {...dragSource(agent, !renaming)}
                 className={cn(
                     "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
-                    // selection is the one filled row; an asking agent's whole row breathes amber over it (.pulse-tint),
-                    // so one waiting on you is seen from across the tree, not only by its glyph
+                    // selection is the one filled row; an asking agent's whole row holds a steady amber wash and edge
+                    // over it (.asking-tint), so one waiting on you is seen from across the tree; its glyph pulses
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
-                    asking && "pulse-tint",
+                    asking && "asking-tint",
                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none",
                     nested && "pl-[28px]"
                 )}

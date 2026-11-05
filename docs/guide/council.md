@@ -13,7 +13,7 @@ Conversation History. Các trang liên quan: [Brainstorm](brainstorm.md), [Jarvi
 
 | Chế độ | Khi nào | Báo cáo cho ra gì |
 |---|---|---|
-| **Review** | Đánh giá một thứ đã có: một tính năng, spec, plan, bản nháp | Một câu trả lời, tối đa ba hướng đi xếp hạng, mỗi hướng có bước đầu tiên; phần còn lại nằm dưới **Also raised**, mỗi ý một dòng |
+| **Review** | Đánh giá một thứ đã có: một tính năng, spec, plan, bản nháp | Một câu trả lời, tối đa năm phát hiện xếp hạng theo mức nghiêm trọng, mỗi cái có lý lẽ, bằng chứng và bước đầu tiên; phần còn lại gập lại dưới **Also raised**, mỗi ý một dòng |
 | **Brainstorm** | Một vấn đề hay một mục tiêu chưa có lời giải | Tối đa ba ý đáng thử, mỗi ý có bước đầu tiên; các ý táo bạo được để riêng |
 
 arcterm tự chọn chế độ theo câu hỏi của bạn; chip chế độ trong **New council** cho bạn đổi lại.
@@ -83,6 +83,29 @@ Ngoài các vai, council còn xếp được ghế cho các **chat đang sống*
   tin nhắn này từ context của nó và ở lại làm một ghế.
 
 Trong cây Agent, agent đang ngồi trong một council đang chạy hoặc đang chờ bạn ghi `in council` trên hàng của nó.
+
+## Các vòng chạy thế nào
+
+Council **Review** không có chỗ chờ giữa vòng 1 và vòng 2. Mỗi ghế đi hết một chuỗi của riêng nó: đưa ý (vòng 1), rồi Go
+kiểm các ý của chính ghế đó (trích dẫn, và các lệnh `verify` nó xin; xem [Lệnh kiểm chứng](#lệnh-kiểm-chứng)), rồi ghế đó
+bắt đầu đọc và cãi những ý người khác đã đưa. Ghế xong sớm không phải chờ ghế chậm nhất, vốn có thể còn đọc code thêm vài
+phút. Bạn thấy:
+
+- **Vòng 2 bắt đầu khi ý đầu tiên được đọc.** Council chuyển sang vòng 2 ngay khi ghế đầu tiên bắt đầu đọc, nên Discussion
+  hiện việc đọc chéo trong khi ghế chậm vẫn còn ở vòng 1 (avatar của nó cho biết nó đang làm gì).
+- **Ý chỉ được đọc sau khi đã kiểm.** Ý của một ghế không vào lời nhắc của ai cho tới khi trích dẫn của nó đã kiểm và lệnh nó
+  xin đã chạy xong, nên không ai cãi trên một nhãn còn đổi.
+- **Mỗi ý đi tới một người kiểm.** Khi đưa ý, tác giả chọn một ghế khác để kiểm ý đó và ghi một dòng lý do. Ghế đó nhận đủ
+  lý lẽ và bằng chứng của ý; các ghế khác chỉ thấy tiêu đề và câu đầu của lý lẽ, và vẫn thách thức được. Tác giả không chọn,
+  chọn ghế không có, ghế đã lỗi hay chính mình thì ý đi tới ghế đang có ít ý phải kiểm nhất. Nếu người kiểm của một ý lỗi
+  ở vòng 1, ý đó được giao lại cho ghế khác.
+- **Lượt bổ sung.** Khi mọi ghế đã xong phần của mình, ghế nào còn việc dở thì chạy thêm một lượt: các ý đến sau khi nó bắt
+  đầu đọc, ý được giao lại cho nó mà trước đó nó chỉ thấy tiêu đề, câu bạn hỏi lúc đang chạy, và ba lựa chọn hàng đầu (**picks**)
+  của nó nếu chưa nêu. Lượt này không lặp lại lập trường ghế đã nêu. Ghế xong sau cùng chỉ chạy một lượt, có picks.
+
+Council giữ chỗ chờ cũ (mọi ghế xong vòng 1 rồi mới sang vòng 2) khi nó có bản nháp đang giữ cho bạn, khi nó dừng sau vòng 1,
+với **Brainstorm** (xếp hạng dựa trên picks và số ý được xây tiếp, nên mọi ghế phải đọc mọi ý), và với ghế agent đang sống:
+ghế agent sang vòng 2 sau khi mọi ghế xong vòng 1, nhưng cũng đọc ý theo người kiểm của nó.
 
 ## Đọc cuộc thảo luận
 
@@ -163,10 +186,12 @@ mỗi council, mỗi lệnh dừng sau **3 phút**, và mỗi lệnh xin một c
   dõi) thành một commit mà không đụng index hay file của bạn, và các lệnh chạy trong một cây tạm tách khỏi branch ở commit
   đó, tức là trên đúng đoạn code các chuyên gia đã đọc. Cây bị xóa khi council xong, lỗi hay bị dừng; checkout của bạn không
   bao giờ bị ghi. Project không phải git repo thì không chạy lệnh nào, và timeline nói rõ vì sao.
-- **Lúc nào**: ngay sau vòng 1, trước chỗ dừng sau vòng 1, để kết quả nằm trước mắt bạn khi chọn ý nào cần cắt. Ý bạn cắt thì
-  kết quả của nó không đi tiếp vào vòng 2. Council một vòng cũng chạy bước này, và kết quả đi tới bản tổng kết.
-- **Kết quả**: mỗi lệnh ghi pass hay fail, mã thoát, 40 dòng cuối của output và việc nó có đúng như dự đoán không. Kết quả được
-  đưa vào lời nhắc vòng 2 của **mọi** ghế, không chỉ người xin lệnh, nên vòng 2 cãi nhau trên kết quả.
+- **Lúc nào**: ngay khi vòng 1 của chính ghế xin lệnh xong, trước khi ai đọc ý đó. Council có chỗ dừng sau vòng 1 thì lệnh chạy
+  trước chỗ dừng, để kết quả nằm trước mắt bạn khi chọn ý nào cần cắt, và ý bạn cắt thì kết quả của nó không đi tiếp vào
+  vòng 2. Council một vòng cũng chạy bước này, và kết quả đi tới bản tổng kết. Các lệnh chạy lần lượt từng ghế một, vì chúng dùng
+  chung một cây tạm.
+- **Kết quả**: mỗi lệnh ghi pass hay fail, mã thoát, 40 dòng cuối của output và việc nó có đúng như dự đoán không. Kết quả đi cùng
+  ý vào lời nhắc vòng 2 của ghế được giao kiểm ý đó (và của chính tác giả) và vào bản tổng kết, nên vòng 2 cãi nhau trên kết quả.
 - **Chỉ kết quả đã thật sự thử ý đó mới tính.** Lệnh quá giờ, lệnh không khớp test nào ("no tests to run", "No test files
   found", "running 0 tests") hay không build được thì ghi **not run** kèm lý do, không bao giờ là pass hay fail, và không bao
   giờ làm một ý thành Ran hay Disproved.
@@ -221,9 +246,13 @@ Các nhãn cũng hiện trên chip bằng chứng trong Discussion và Report.
 
 ## Báo cáo
 
-Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi các hướng đi; các ý được xếp hạng theo ba lựa chọn hàng đầu của
-từng chuyên gia. Ai đồng ý với ý nào (**Agrees**, **Has doubts**, **Against**) nằm ở tab [**Map**](#tab-map): báo cáo có một
-dòng "See who agrees with which idea in Map" mở nó.
+Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi năm phát hiện xếp hạng (ba ý với Brainstorm), mỗi cái có lý lẽ,
+bằng chứng, bước đầu tiên và ai không đồng ý; phần còn lại gập lại dưới **Also raised** (hay **Wild ideas kept aside**), mỗi ý
+một dòng, bấm tiêu đề để mở. Coordinator xếp theo mức hại nếu để nguyên (mất dữ liệu, hỏng luồng, hiện sai trạng thái, tốn
+tiền, rồi chỗ chưa trau chuốt), nhãn do Go đặt phân hơn kém khi ngang nhau. **Ý nhãn Guess hay Disproved không bao giờ nằm
+trong top**: Go chuyển chúng xuống phần gập, nên top có thể ít hơn năm; một hướng gộp nhiều ý lấy nhãn tốt nhất của các ý trong
+nó. Ai đồng ý với ý nào (**Agrees**, **Has doubts**, **Against**) nằm ở tab [**Map**](#tab-map): báo cáo có một dòng "See who
+agrees with which idea in Map" mở nó.
 
 - **Cột thông tin** bên cạnh, luôn hiện khi cuộn: trạng thái và chi phí, mục lục của báo cáo (bấm để nhảy tới; phần đang
   đọc có màu xám), từng chuyên gia với model của họ và những gì họ đã làm, và tài liệu đã lưu. Bấm một chuyên gia để

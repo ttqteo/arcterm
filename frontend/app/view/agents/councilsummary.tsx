@@ -11,7 +11,8 @@
 // opens the Map tab, where every idea stands against every expert. A finished council opens on it; Summarize on the
 // Discussion opens it too, and the Discussion tab goes back. A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first
 // step and who had and built on it) and keeps the wild ideas aside under them with a count of the rest. A Review's report
-// gives its first three directions a first step each and lists the rest under Also raised. While a seat message is pinned
+// shows every direction it ranked and lists the rest under Also raised. Both keep their kept ideas folded behind the
+// heading and count until a click opens them. While a seat message is pinned
 // (the Discussion's Pin to Report), the Final proposal section follows the directions and the kept ideas, summary or not.
 // Under the directions a quiet row asks "Was this
 // useful?" (Useful / Not really) and feeds the answer to the council benchmark. What it derives from the council is
@@ -421,6 +422,44 @@ function KeptCard({ row }: { row: KeptRow }) {
                 <span className="text-[13.5px] leading-[1.5] text-secondary">{d.reasoning}</span>
             ) : null}
         </div>
+    );
+}
+
+// The ideas kept aside under the ranked directions (Also raised, or Wild ideas kept aside): the long tail of the report,
+// so it starts folded behind its heading and count, and a click on them opens the grid. The fold is local state: folded
+// is the default, so losing it when the view unmounts costs nothing.
+function KeptSection({ c, rows }: { c: Council; rows: KeptRow[] }) {
+    const [open, setOpen] = useState(false);
+    const Chevron = open ? ChevronUp : ChevronDown;
+    return (
+        <section data-council-kept className="flex flex-col gap-4">
+            <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
+                <button
+                    type="button"
+                    data-council-kept-toggle
+                    aria-expanded={open}
+                    aria-controls={open ? "council-kept-ideas" : undefined}
+                    onClick={() => setOpen(!open)}
+                    className={cn(
+                        "group flex w-fit cursor-pointer items-baseline gap-[10px] rounded-[4px] border-0 bg-transparent p-0 text-left",
+                        FOCUS
+                    )}
+                >
+                    <span data-council-kept-heading>{keptHeading(c)}</span>
+                    <span data-council-kept-count className="text-[14px] font-medium tabular-nums text-muted">
+                        {rows.length}
+                    </span>
+                    <Chevron size={14} aria-hidden className="self-center text-muted group-hover:text-primary" />
+                </button>
+            </h2>
+            {open ? (
+                <div id="council-kept-ideas" className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-[14px]">
+                    {rows.map((row, i) => (
+                        <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
+                    ))}
+                </div>
+            ) : null}
+        </section>
     );
 }
 
@@ -1409,23 +1448,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 ) : null}
                             </section>
                         ) : null}
-                        {kept.length > 0 ? (
-                            <section data-council-kept className="flex flex-col gap-4">
-                                <div className="flex items-baseline gap-[10px]">
-                                    <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
-                                        {keptHeading(c)}
-                                    </h2>
-                                    <span className="text-[14px] font-medium tabular-nums text-muted">
-                                        {kept.length}
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-[14px]">
-                                    {kept.map((row, i) => (
-                                        <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
-                                    ))}
-                                </div>
-                            </section>
-                        ) : null}
+                        {kept.length > 0 ? <KeptSection key={c.id} c={c} rows={kept} /> : null}
                         {finalSection}
                         {asks.length > 0 ? (
                             <section data-council-asks-next className="flex flex-col gap-4">

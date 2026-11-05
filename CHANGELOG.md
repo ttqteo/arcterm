@@ -24,8 +24,26 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- More of arcterm dresses up with the Christmas theme on: the snow keeps falling while a dialog is open (fainter over the dialog itself); New agent, New project, Keyboard shortcuts and Quick look hang a string of lights from their top edge; New agent's Start column, the cockpit's "No agents running" window and the Christmas theme chip wear Santa hats, as do the pet on the app bar's fold button and in What's new; a finished run's check becomes a gift; and the lights hang along the Christmas effects switch in Settings. A small Christmas tree stands in the bottom corner of an agent's Overview panel. <!-- try: new-agent -->
+- In a project's Overview, clicking a session in History opens it in Quick look, over the page, instead of leaving for the full session; Open in the dialog (or Open transcript in the row's right-click menu) still takes you there.
+
+### Fixed
+
+- Right-clicking twice in a terminal opens its menu again instead of pasting twice; a double right-click at an ordinary pace no longer counts as two clicks.
+- An agent asking you something in the Agent tree no longer flickers: its row keeps a steady amber box, and the stray amber line that came and went beside it is gone.
+- In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
+- Every orchestrator run no longer stalls for minutes while the engine deletes one task's worktree that holds a full `node_modules`.
+- New run now takes Jarvis's Parallel workers "auto": Workers at once reads auto and the lead picks the width, instead of always starting at 3. Press − at 1 to go back to auto.
+- A tooltip that explains something at length (the reason the council's router picked a seat, a source's note) no longer pops over the text you are reading as the pointer passes: it waits a moment before it shows. A control's short name still shows at once. In a council, the router's reason shows only when you point at the chips above your message, and it opens above them instead of over the message.
+
+## 1.0.2 — 2026-11-05
+
 ### Added
 
+- **Christmas**, a new theme in Settings → Appearance → Theme: forest green and antique gold, snow falling over the window (fainter over a terminal), a string of lights under the app bar that blinks while an agent needs you, Christmas trees, gifts and a wreath in the Office, and a Santa hat on the pet and on everyone in the Office. The Christmas effects switch under the themes drops the decor and keeps the colours; with reduced motion on, the snow and the blink stop and the rest stays. <!-- big --> <!-- shot: 1.0.2-christmas.webp -->
+- With the Christmas theme on, every icon on the nav rail wears a small Santa hat; it goes when you turn the Christmas effects off.
 - In a project's Overview, each session in History has a Quick look button (and a Quick look item in its right-click menu) that opens its transcript in a dialog over the page, with Resume and Open, so you can read a session without leaving the Overview.
 - In the Canvas gallery, a canvas that redraws an older one now says `Replaces <topic>`, and the older card is dimmed with an Outdated chip and a Newer link to the latest version. Scan for versions finds the pairs already there for you to untick and link in one go, a card that looks like a new version offers Link or No, and an open canvas has Link an older version… (and × to undo a link). <!-- try: go:canvases -->
 
@@ -35,6 +53,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A session or run opened from a project's Overview (or from History, Councils or the Canvas gallery) now goes back there with its Back button and Escape, and the button says where ("Back to Overview"), instead of always going back to the terminal.
 - In a council's message box, an `@seat` you pick or type is tinted in that seat's colour (and an `@file` as a link) as you write, as the sent message shows it, instead of sitting in the text as plain words.
 - In a brainstorm, clicking a board in the Boards rail opens it large in a dialog over the question, instead of stretching the rail and squeezing the question into a thin column. A board tied to an answer has a Pick button for that answer under it.
+- A Review council's report now leads with up to five ranked, evidence-backed findings and folds the rest under Also raised (a brainstorm folds its wild ideas kept aside the same way); click the heading to open them. A Review council also finishes sooner, because its seats start reviewing each other's ideas as they arrive instead of waiting for every seat to finish.
 - In a council, an idea's "4 agree" shows the avatars of the seats that agreed, and hovering it lists them one per line with their avatars, instead of a plain tooltip with their names run together.
 - Setup in the nav rail now carries a badge counting the projects whose memory has something to review, and its Memory tab reads `Memory · N`, so a stale or oversized memory gets noticed without opening Setup to look.
 

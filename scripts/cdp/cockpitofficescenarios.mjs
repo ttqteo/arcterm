@@ -103,9 +103,10 @@ export const OFFICE_FLOORS_LAYOUT = {
     },
 };
 export const LAYOUT_KEY = "cockpit.office.layout";
-// a run as the office plan reads it: a task is its state in the canvas's words, "ask" a running one that asks
+// a run as the office plan reads it: a task is its state in the canvas's words, "ask" a running one that asks (the
+// christmas-theme scenario builds its gift run with it too)
 const FLOORS_TASK_STATE = { done: "done", work: "running", wait: "pending", ask: "running", fail: "failed" };
-function floorsRun(n, title, project, { done = false, lead = "sit", tasks }) {
+export function floorsRun(n, title, project, { done = false, lead = "sit", tasks }) {
     return {
         id: `fx-floors-run-${n}`,
         title,

@@ -14,6 +14,7 @@ import {
     BOARD_KEY,
     BOSS_HALF_W,
     BOSS_HEADROOM,
+    giftArea,
     LIFT_KEY,
     type Box,
     type Desk,
@@ -86,10 +87,26 @@ const furnitureCache = new WeakMap<Plan, Box[]>();
 
 // a plant drawn at (x, y) by scenery.ts: its pot, so one may pass behind its leaves
 const pot = (x: number, y: number): Box => ({ x: x + 6, y: y + 26, w: 22, h: 18 });
+// the gifts' boxes on the floor: the footprint's lower rows (the two stacked stand on them), so one may pass behind
+const GIFT_STACK = 12;
+
+/** A room's Christmas tree and gifts as furniture: the tree's pot, and while it has gifts, their boxes on the floor. */
+function xmasFurniture(r: Room): Box[] {
+    if (r.xmas == null) {
+        return [];
+    }
+    const out = [pot(r.xmas.tree.x, r.xmas.tree.y)];
+    const g = giftArea(r);
+    if (g && r.xmas.gifts > 0) {
+        out.push({ x: g.x, y: g.y + GIFT_STACK, w: g.w, h: g.h - GIFT_STACK });
+    }
+    return out;
+}
 
 /** What the boss's feet stay off: each desk with the person at it and its name, each meeting table with its chairs,
  *  and what scenery.ts draws on the floor: the lounge's sofa with the people on it, its coffee machine, and the
- *  plants (each room's, where it has them), and the Needs you notice board and the lift in the hall. A desk's spot and a
+ *  plants (each room's, where it has them; under Christmas each room's tree and its gifts too), and the Needs you notice
+ *  board and the lift in the hall. A desk's spot and a
  *  table's stay clear, so the boss stands in front of a desk, never on it; so do the board's and the lift's, above
  *  the lift's dial and the strip over it that holds `Floor n`. */
 function furniture(plan: Plan): Box[] {
@@ -114,6 +131,8 @@ function furniture(plan: Plan): Box[] {
             { x: l.x + 166, y: l.y + 93, w: 36, h: 60 },
             pot(l.x + 200, l.y + 172),
             ...plan.rooms.flatMap((r) => (r.plants ?? []).map((p) => pot(p.x, p.y))),
+            // under Christmas each room's tree (its pot, where it is no plant) and the gifts beside it
+            ...(plan.christmas ? plan.rooms.flatMap(xmasFurniture) : []),
         ];
         furnitureCache.set(plan, boxes);
     }

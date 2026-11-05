@@ -21,6 +21,11 @@ export const themeOverridesAtom = atomWithStorage<Partial<Record<OverrideRole, s
     {}
 );
 
+// Settings → Appearance → Theme's "Christmas effects" switch, stored as "off" so the default (effects on) is false.
+// Kept beside the preset and not reset by picking one: off, the Christmas palette stays and every decor and motion
+// goes (christmas.ts hasChristmasDecor).
+export const christmasEffectsOffAtom = atomWithStorage<boolean>("cockpit.theme.christmasEffectsOff", false);
+
 // Applies the active theme's CSS vars to <html> before paint. atomWithStorage hydrates synchronously
 // from localStorage, so a non-default theme applies without a flash of the default. Always writes the full
 // themed set, so switching presets needs no stale-key cleanup.

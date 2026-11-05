@@ -1325,16 +1325,19 @@ function PersonText({ councilId, item }: { councilId: string; item: ReplyPost })
 
 // at the top of the person's own bubble: whom it reaches, when that is not the usual ones and its text does not name
 // them, as chips in the seats' colours behind the router's mark (or an arrow, for seats the person chose), or that the
-// router is still choosing, or failed; the hover is the router's line, its reason with it
+// router is still choosing, or failed; the hover is the router's line, its reason with it. The row is only as wide as
+// its chips, and the line opens above it: across the whole bubble, a pointer crossing the message raised the reason
+// right over the text being read.
 function ReachRow({ to }: { to: ReachChips }) {
     const failed = to.by === "failed";
     const Icon = failed ? CircleAlert : to.by === "you" ? ArrowRight : Route;
     return (
         <div
             data-council-reach={to.by}
+            data-tip-placement="top-start"
             title={to.title === "" ? undefined : to.title}
             className={cn(
-                "flex min-w-0 flex-wrap items-center gap-[5px] text-[12px] leading-[1.4]",
+                "flex w-fit min-w-0 max-w-full flex-wrap items-center gap-[5px] text-[12px] leading-[1.4]",
                 failed ? "text-error-soft" : "text-muted"
             )}
         >

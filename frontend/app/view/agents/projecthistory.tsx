@@ -38,13 +38,9 @@ import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessio
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
     "flex w-full cursor-pointer items-center gap-[10px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
-// a session row is wrapped with its Quick look button, so the divider moves to the wrapper
-const SESSION_WRAP = "group relative border-t border-edge-mid first:border-t-0";
+// a session row opens Quick look; the full session pane is its Open, or the row's menu
 const SESSION_ROW =
-    "flex w-full cursor-pointer flex-col items-stretch gap-[2px] px-3 py-[9px] text-left hover:bg-surface-hover group-hover:bg-surface-hover";
-// over the row's right end, shown while the row is hovered or holds focus; the age under it fades
-const PEEK_BTN =
-    "absolute right-2 top-1/2 flex h-[26px] -translate-y-1/2 cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-strong bg-surface-raised px-[9px] text-[12px] text-secondary opacity-0 hover:border-accent hover:text-accent-soft focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100";
+    "flex w-full cursor-pointer flex-col items-stretch gap-[2px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
 // a child row sits 28px in, its divider starting there too
 const NESTED_ROW =
     "relative flex w-full cursor-pointer items-center gap-[10px] py-[9px] pl-10 pr-3 text-left before:absolute before:left-10 before:right-0 before:top-0 before:h-px before:bg-edge-mid hover:bg-surface-hover";
@@ -377,37 +373,26 @@ export function HistoryColumn({
                     const s = row.session;
                     const quickLook = () => setPeek({ key: row.key, session: s });
                     return (
-                        <div key={row.key} className={SESSION_WRAP}>
-                            <button
-                                type="button"
-                                data-history-row={row.key}
-                                data-history-kind="session"
-                                title={s.task || undefined}
-                                onClick={() => showSession(model, row.key)}
-                                onContextMenu={(e) => sessionMenu(model, row.key, s, e, quickLook)}
-                                className={SESSION_ROW}
-                            >
-                                <span className="flex items-baseline gap-2">
-                                    <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
-                                        {marked(s.task || "(untitled session)", q)}
-                                    </span>
-                                    <span className="flex-none text-[11px] tabular-nums text-ink-faint group-focus-within:opacity-0 group-hover:opacity-0">
-                                        {formatAgeShort(now - s.lastactivets)}
-                                    </span>
+                        <button
+                            key={row.key}
+                            type="button"
+                            data-history-row={row.key}
+                            data-history-kind="session"
+                            title={s.task || undefined}
+                            onClick={quickLook}
+                            onContextMenu={(e) => sessionMenu(model, row.key, s, e, quickLook)}
+                            className={SESSION_ROW}
+                        >
+                            <span className="flex items-baseline gap-2">
+                                <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
+                                    {marked(s.task || "(untitled session)", q)}
                                 </span>
-                                <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
-                            </button>
-                            <button
-                                type="button"
-                                data-history-peek={row.key}
-                                onClick={quickLook}
-                                title="Quick look: read it here, without leaving the Overview"
-                                className={PEEK_BTN}
-                            >
-                                <Eye size={13} aria-hidden />
-                                Quick look
-                            </button>
-                        </div>
+                                <span className="flex-none text-[11px] tabular-nums text-ink-faint">
+                                    {formatAgeShort(now - s.lastactivets)}
+                                </span>
+                            </span>
+                            <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
+                        </button>
                     );
                 }
                 const isCouncil = row.kind === "council";

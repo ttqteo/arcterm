@@ -11,6 +11,8 @@ import {
     officeColors,
     PHASE_TOKENS,
     shadeRgb,
+    SHARED_TOKENS,
+    XMAS_PINE_DARK,
     type OfficePhase,
 } from "./officepalette";
 
@@ -53,6 +55,28 @@ describe("officepalette", () => {
     it("keeps a colour's alpha through a shade and a lift", () => {
         expect(shadeRgb([10, 20, 30, 0.5], 0.5)).toEqual([5, 10, 15, 0.5]);
         expect(liftRgb([0, 0, 0, 0.25], 0.5)).toEqual([128, 128, 128, 0.25]);
+    });
+
+    it("maps the Christmas roles to the xmas tokens, in both phases, and the probe checks them", () => {
+        const want = {
+            xmasPine: "--color-xmas-pine",
+            xmasCrimson: "--color-xmas-crimson",
+            xmasBulb: "--color-xmas-bulb",
+            xmasSnow: "--color-xmas-snow",
+        };
+        expect(SHARED_TOKENS).toMatchObject(want);
+        const read = (t: string) => [t.length, 50, 100] as [number, number, number];
+        for (const phase of PHASES) {
+            const c = officeColors(phase, read);
+            for (const [role, token] of Object.entries(want)) {
+                expect(c[role as keyof typeof c], `${phase} ${role}`).toEqual(read(token));
+                expect(OFFICE_TOKENS, token).toContain(token);
+            }
+            expect(c.xmasPineDark).toEqual(shadeRgb(read("--color-xmas-pine"), XMAS_PINE_DARK));
+        }
+        // every --color-xmas-* token the stylesheet declares is one the scenery reads
+        const declared = [...css.matchAll(/(--color-xmas-[a-z-]+):/g)].map((m) => m[1]);
+        expect([...declared].sort()).toEqual(Object.values(want).sort());
     });
 
     it("leaves a role out when its token does not resolve", () => {

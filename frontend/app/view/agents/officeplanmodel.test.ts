@@ -13,6 +13,7 @@ import {
     buildPlan,
     cut,
     DOOR,
+    giftArea,
     HALL_W,
     HOME,
     HWALL,
@@ -24,6 +25,8 @@ import {
     projectsOf,
     ROOM_TOP,
     taskLook,
+    TREE_H,
+    TREE_W,
     WALL,
     type Box,
     type PlanAgent,
@@ -509,6 +512,105 @@ describe("officeplanmodel", () => {
 
         it("has no plant when the first row is full and a table fills the strip", () => {
             expect(room(plan(seven, three)).plants).toBeUndefined();
+        });
+    });
+
+    describe("Christmas: a room's tree and gifts", () => {
+        const tree = (pl: { x: number; y: number }): Box => ({ x: pl.x, y: pl.y, w: TREE_W, h: TREE_H });
+
+        it("stands the tree at the room's first plant when it has one", () => {
+            for (const p of [plan([ag("a")]), plan(seven), plan([ag("a")], [run("r")])]) {
+                const r = room(p);
+                expect(r.xmas?.tree).toEqual(r.plants![0]);
+            }
+        });
+
+        it("counts a gift for each finished agent and each done task of the runs at its tables", () => {
+            const p = plan(
+                [ag("a", { state: "idle", finished: true }), ag("b", { state: "idle" }), ag("c")],
+                [run("r", { tasks: [task("t1", "done"), task("t2", "done"), task("t3")] })]
+            );
+            expect(room(p).xmas?.gifts).toBe(3);
+            expect(room(plan([ag("a")])).xmas?.gifts).toBe(0);
+        });
+
+        it("clamps the gifts at six", () => {
+            const done = Array.from({ length: 5 }, (_, i) => task(`t${i}`, "done"));
+            const p = plan(
+                [ag("a", { state: "idle", finished: true }), ag("b", { state: "idle", finished: true })],
+                [run("r", { tasks: done })]
+            );
+            expect(room(p).xmas?.gifts).toBe(6);
+        });
+
+        it("gives a room with a full desk row and a table a free tree spot, clear of desks, seats, tables, door and chip", () => {
+            const busy = [
+                plan(seven, [run("r1", { tasks: [task("t1", "done"), task("t2")] })]),
+                // the narrowest floor, every room taken, chips and tables in them
+                plan(
+                    [
+                        ...["p", "q", "s"].flatMap((pr) => [1, 2, 3].map((i) => ag(`${pr}${i}`, { project: pr }))),
+                        ...[1, 2, 3, 4].map((i) => ag(`h${i}`, { project: undefined })),
+                    ],
+                    [run("r1"), run("r2", { project: "q" }), run("r3", { project: "s" })],
+                    { width: MIN_W }
+                ),
+            ];
+            let checked = 0;
+            for (const p of busy) {
+                for (const r of p.rooms.filter((x) => x.kind === "agents" && !x.plants)) {
+                    expect(r.xmas, r.key).toBeDefined();
+                    checked++;
+                    const parts = [tree(r.xmas!.tree), giftArea(r)!];
+                    const d = r.door!;
+                    const blocked: Box[] = [
+                        ...p.desks
+                            .filter((k) => k.room === r.key)
+                            .map((k) => ({ x: k.x - 8, y: k.y - 20, w: 96, h: 100 })),
+                        ...p.desks.filter((k) => k.room === r.key).map((k) => ({ ...k.spot, w: 1, h: 1 })),
+                        ...p.seats
+                            .filter((s) => s.room === r.key)
+                            .map((s) => ({ x: s.x, y: s.bottom - 69, w: 42, h: 69 })),
+                        ...p.rooms.filter((z) => z.parent === r.key).map((z) => z.box),
+                        { x: d.x - BOSS_HALF_W, y: d.y - BOSS_H, w: d.w + 2 * BOSS_HALF_W, h: d.h + BOSS_H },
+                        ...(r.chip ? [r.chip.box, { ...r.chip.spot, w: 1, h: 1 }] : []),
+                    ];
+                    for (const part of parts) {
+                        expect(within(part, r.box), `${r.key} inside`).toBe(true);
+                        for (const k of blocked) {
+                            expect(overlaps(part, k), `${r.key} ${JSON.stringify(k)}`).toBe(false);
+                        }
+                    }
+                }
+            }
+            expect(checked).toBeGreaterThan(0);
+        });
+
+        it("has no tree spot, and no gifts, in a room with none free", () => {
+            const r = room(plan(seven, three));
+            expect(r.plants).toBeUndefined();
+            expect(r.xmas).toBeUndefined();
+        });
+
+        it("lays the gifts beside the tree, toward the room's middle, their foot level with the tree's", () => {
+            const left = room(plan([ag("a")], [run("r")])); // the desk row's plant, at the room's right
+            const right = room(plan(seven)); // the strip's plant, at its left
+            for (const r of [left, right]) {
+                const g = giftArea(r)!;
+                const t = tree(r.xmas!.tree);
+                expect(g.y + g.h).toBe(t.y + t.h);
+                expect(overlaps(g, t)).toBe(false);
+                expect(within(g, r.box)).toBe(true);
+            }
+            expect(giftArea(left)!.x).toBeLessThan(left.xmas!.tree.x);
+            expect(giftArea(right)!.x).toBeGreaterThan(right.xmas!.tree.x);
+            // the footprint is the same for one gift as for six
+            expect(giftArea({ ...left, xmas: { ...left.xmas!, gifts: 6 } })).toEqual(giftArea(left));
+        });
+
+        it("copies the Christmas flag onto the plan", () => {
+            expect(plan([ag("a")]).christmas).toBeUndefined();
+            expect(plan([ag("a")], [], { christmas: true }).christmas).toBe(true);
         });
     });
 

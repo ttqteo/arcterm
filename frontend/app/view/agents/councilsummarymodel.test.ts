@@ -362,6 +362,77 @@ describe("a Brainstorm report", () => {
     });
 });
 
+describe("a report's top and its folded rest", () => {
+    // the proposals the directions and kept items come from: nine ideas, four seats taking turns
+    const seats = ["ux", "ram", "nu", "sk"];
+    const ideas = Array.from({ length: 9 }, (_, i) => prop(`P${i + 1}`, seats[i % seats.length]));
+
+    // ranks are given out of order: the model sorts them
+    const review = council({
+        proposals: ideas,
+        replies: [],
+        summary: {
+            text: "",
+            directions: [3, 1, 5, 2, 4].map((n) => direction(n, [`P${n}`], { stances: { ram: "accept" } })),
+            kept: [4, 2, 1, 3].map((n) => direction(n, [`P${n + 5}`], { reasoning: `why ${n} was kept` })),
+            outcomes: {},
+            at: 15,
+        },
+    });
+
+    it("gives a Review's five directions and four kept items one row each, by rank, with no cap of its own", () => {
+        expect(directionRows(review).map((r) => r.direction.rank)).toEqual([1, 2, 3, 4, 5]);
+        expect(keptRows(review).map((r) => r.direction.rank)).toEqual([1, 2, 3, 4]);
+        expect(keptRows(review).map((r) => r.meta)).toEqual(["from RAM", "from New user", "from Skeptic", "from UX"]);
+        expect(keptHeading(review)).toBe("Also raised");
+    });
+
+    it("counts both in the outline and the jump links: the count the fold shows is the kept rows", () => {
+        expect(jumpLinks(review).map((e) => [e.id, e.count])).toEqual([
+            ["directions", 5],
+            ["kept", 4],
+        ]);
+        expect(outlineOf(review).filter((e) => e.depth === 1)).toHaveLength(5);
+    });
+
+    it("gives a Brainstorm's three directions three rows", () => {
+        const brainstorm = council({
+            ...review,
+            mode: "brainstorm",
+            summary: { ...review.summary!, directions: review.summary!.directions.slice(0, 3) },
+        });
+        expect(directionRows(brainstorm)).toHaveLength(3);
+        expect(keptHeading(brainstorm)).toBe("Wild ideas kept aside");
+        expect(keptRows(brainstorm)).toHaveLength(4);
+    });
+
+    it("gives an old report (three directions, stances the coordinator wrote, kept items) the rows it always gave", () => {
+        const old = council({
+            summary: {
+                ...council().summary!,
+                directions: [
+                    ...council().summary!.directions,
+                    direction(3, ["P1"], { stances: { ram: "challenge" }, agreed: false }),
+                ],
+                kept: [direction(2, ["P1"], { title: "Rename the chip" }), direction(1, ["P3"], { title: "Cap it" })],
+            },
+        });
+        expect(directionRows(old).map((r) => [r.direction.rank, r.tag, r.meta])).toEqual([
+            [1, "RAM is against it", "from UX and RAM · 1 file · 1 weak claim"],
+            [2, "Everyone agrees", "from Skeptic · 1 file"],
+            [3, "RAM has doubts", "from UX"],
+        ]);
+        expect(directionRows(old)[2].chips.map((x) => [x.expert.id, x.stance])).toEqual([
+            ["ux", "proposed"],
+            ["ram", "challenge"],
+        ]);
+        expect(keptRows(old).map((r) => [r.direction.title, r.meta])).toEqual([
+            ["Cap it", "from RAM"],
+            ["Rename the chip", "from UX"],
+        ]);
+    });
+});
+
 describe("the saved document", () => {
     it("says where the whole discussion was saved, relative to the project", () => {
         const c = council({ docpath: "D:\\code\\arc\\docs\\council\\2026-10-22-rail-apps.md" });

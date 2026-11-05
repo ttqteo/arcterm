@@ -111,6 +111,14 @@
     --color-spidey-seam: #2a0a0d;
     --color-spidey-eye: #f4f6fb;
     --color-spidey-web: #c9ced8;
+
+    /* The Christmas theme's decor (christmas.ts): crimson for the hats, ribbons, the wreath's bow and the gift paper,
+       a lit red bulb, pine for the trees and the wreath, and snow for the flakes, the hat's trim and a cream bulb.
+       The star and the gold bulb use the accent. Decor, never theme-derived */
+    --color-xmas-crimson: #a0061b;
+    --color-xmas-bulb: #d0283c;
+    --color-xmas-pine: #2f6b4a;
+    --color-xmas-snow: #f2ead9;
     --color-peter-skin: #f0c19b;
     --color-peter-hair: #4a2f1c;
     --color-peter-glasses: #3a3a40;
@@ -509,16 +517,23 @@ svg [aria-label="tip"] g path {
     );
 }
 
-/* An asking agent's row in the Agent tree breathes amber over the whole row: a wash laid as a background image, so a
-   selected row keeps its grey fill under it, and an inset edge. pulsedriver.tsx sets --pulse (1 at rest, 0 at the
-   peak) at 12fps; without the driver (reduced motion) it rests at the faint wash. */
-.pulse-tint {
-    --tint: calc(1 - var(--pulse, 1));
+/* An asking agent's row in the Agent tree holds a steady amber wash over the whole row: a background image, so a
+   selected row keeps its grey fill under it, and an edge drawn as a border on ::after (the row is `relative`). It does
+   not breathe (the glyph does): an inset box-shadow repainted at 12fps left WebView2 amber residue outside the row's
+   corners, a line that came and went beside the box. */
+.asking-tint {
     background-image: linear-gradient(
-        color-mix(in oklab, var(--color-warning) calc(4% + 10% * var(--tint)), transparent),
-        color-mix(in oklab, var(--color-warning) calc(4% + 10% * var(--tint)), transparent)
+        color-mix(in oklab, var(--color-warning) 9%, transparent),
+        color-mix(in oklab, var(--color-warning) 9%, transparent)
     );
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-warning) calc(18% + 32% * var(--tint)), transparent);
+}
+.asking-tint::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid color-mix(in oklab, var(--color-warning) 34%, transparent);
+    border-radius: inherit;
+    pointer-events: none;
 }
 
 /* Finished settle (moment 4): a single soft scale acknowledgement on working -> idle. */
