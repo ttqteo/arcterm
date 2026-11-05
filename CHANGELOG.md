@@ -31,6 +31,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   falls smoothly instead of in jerky steps when you turn it on.
 - While arcterm starts up (a long wait after a reinstall), the Agent and Cockpit screens show your pet running back and forth with "Setting up arcterm" instead of blank grey boxes, so it no longer looks stuck.
 
+### Fixed
+
+- A finished run no longer waits on you to land because its spec was edited in your checkout after it started: the land keeps the run's version, moves your newer draft into the repo's `.git/arc-drafts/<run>/`, and says so in the land's notes.
+
 ## 1.0.3 — 2026-11-05
 
 ### Added
