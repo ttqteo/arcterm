@@ -40,8 +40,10 @@ import {
 } from "@/app/view/agents/brainstormstore";
 import {
     cancelCleanup,
+    cancelScan,
     canvasGalleryAtom,
     closeCanvas,
+    closeLinkPicker,
     moveCleanupCards,
     moveGalleryCards,
     openCursorCanvas,
@@ -1142,8 +1144,9 @@ const galleryView = () => globalStore.get(canvasGalleryAtom).view;
 const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
 const inGalleryViewer = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "viewer";
 const inGalleryCleanup = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "cleanup";
-// An open canvas and the clean-up mode go back to the grid on Escape, so the Escape that leaves the centre stands down;
-// the grid has nothing to back out of, and leaves. Escape inside the search box is the box's own.
+// An open canvas, the clean-up mode and the version scan's review go back to the grid on Escape, so the Escape that
+// leaves the centre stands down; the grid has nothing to back out of, and leaves. Escape inside the search box is the
+// box's own.
 const galleryHoldsEscape = () =>
     globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view !== "grid";
 // A council's chat keeps the keys of its channel and thread (buildCouncilBindings) while focus is inside either: the
@@ -1489,9 +1492,25 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Back to the canvases",
             paletteHidden: true,
-            // strict like every Escape here; agent:leave-center stands down while a canvas is open (galleryHoldsEscape)
+            // strict like every Escape here; agent:leave-center stands down while a canvas is open (galleryHoldsEscape).
+            // The link picker, when it is open, takes the first Escape; the viewer closes on the second. (Inside the
+            // picker's search box the Escape is the box's own, like the grid's.)
             when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "viewer",
-            run: () => closeCanvas(),
+            run: () => {
+                if (!closeLinkPicker()) {
+                    closeCanvas();
+                }
+            },
+        },
+        {
+            id: "canvases:scan-cancel",
+            keys: "Escape",
+            group: "Agent",
+            label: "Cancel the version scan",
+            paletteHidden: true,
+            // strict like every Escape here; agent:leave-center stands down in the review (galleryHoldsEscape)
+            when: (ctx) => navigateStrict(ctx) && onGallery(ctx) && galleryView() === "scan",
+            run: () => cancelScan(),
         },
         // Clean up walks the same cards in its own order (the suggested group, then Newer)
         ...(

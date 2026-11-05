@@ -32910,13 +32910,14 @@ async function cgHeap(h) {
     }
 }
 
-// Esc out of whatever the gallery shows (a search, a canvas, clean up, then the grid itself), so the next scenario meets
-// the terminal and not a centre mode. Best effort: a teardown step never throws
+// Esc out of whatever the gallery shows (a search, a canvas and its link picker, clean up, the version scan's review,
+// then the grid itself), so the next scenario meets the terminal and not a centre mode. Best effort: a teardown step
+// never throws
 async function cgLeaveGallery(h) {
     await h.goto("agent");
     for (let i = 0; i < 4; i++) {
         const open = await h.ev(
-            `document.querySelector("[data-canvas-gallery], [data-canvas-viewer], [data-canvas-cleanup]") != null`
+            `document.querySelector("[data-canvas-gallery], [data-canvas-viewer], [data-canvas-cleanup], [data-canvas-scan], [data-canvas-link-picker]") != null`
         );
         if (!open) break;
         await cgPress(h, "Escape");
@@ -33241,11 +33242,14 @@ const canvasGallery = {
         // 6. board Storage: the Design canvases summary card and the canvas row of Auto-clean
         const scanFrom = Date.now();
         await h.rpc("rescanstorage", null);
-        const scanBy = Date.now() + 60_000;
+        // the first scan of a fresh store measures build output and the package caches (pkg/storage/scanner.go: "can take
+        // minutes"), and the throw discards the steps before it: it took more than 60 s on a cold Final, and more than 180 s
+        // on a machine with large build and package caches, so the scan gets 600 s
+        const scanBy = Date.now() + 600_000;
         for (;;) {
             const r = await h.rpc("getstorage", null);
             if (r?.scannedts >= scanFrom && !r.scanning) break;
-            if (Date.now() > scanBy) throw new Error("no storage scan within 60 s");
+            if (Date.now() > scanBy) throw new Error("no storage scan within 600 s");
             await polishNap(500);
         }
         const listed = (await h.rpc("listcanvases", null)) ?? [];
@@ -33458,6 +33462,581 @@ const canvasGalleryMaker = {
         await cgTeardown(h, ctx, "canvas-gallery-maker", CGM_PROJECT);
         if (ctx.sessionDir != null) {
             cgRemove(ctx.sessionDir);
+        }
+    },
+};
+
+// --- Agent → Canvas gallery: versions, a newer canvas outdates the one it replaces ----------------------------------------
+// docs/superpowers/specs/2026-11-05-canvas-related-design.md; the boards are A-viewer-header (the cards, the viewer's
+// header and its picker), A-scan-suggest (the dashed row) and C-scan-review (Scan for versions). A temp project holds ten
+// canvases, oldest first by canvas.json's createdOnFiles.at (CV_SEED). vs-home-fresh already replaces vs-home. The scan
+// finds exactly two pairs, by topic prefix: vs-overview-history over vs-overview and vs-board-v2 over vs-board. No other
+// two titles share two words, and council-ux / council-stronger share only the word "council" and the `council-` prefix,
+// which is a near miss and never a pair. vs-pick-alpha and vs-pick-beta sit between vs-home and vs-home-fresh so the
+// picker on vs-home-fresh lists more than the linked canvas. Step 4 writes six more. The steps share one place (the
+// gallery's view, the scan key in localStorage), so they run in order. The counts need a store with no other canvas: a
+// populated one skips the whole scenario, and Final's store is empty. A write is checked on disk, in canvas.json.
+const CV_PROJECT = "verify-canvas-versions";
+const CV_SCANNED_KEY = "canvasgallery.versionsScanned";
+const CV_STEP_MS = 60_000;
+// [topic, canvas.json title, replaces]
+const CV_SEED = [
+    ["vs-home", "Home screen"],
+    ["vs-pick-alpha", "Alpha notes"],
+    ["vs-pick-beta", "Beta sketch"],
+    ["vs-home-fresh", "Home screen redrawn", "vs-home"],
+    ["vs-overview", "Project overview"],
+    ["vs-overview-history", "Overview history"],
+    ["vs-board", "Board layout"],
+    ["vs-board-v2", "Board layout again"],
+    ["council-ux", "Council UX"],
+    ["council-stronger", "Council, stronger"],
+];
+// step 4's pairs, written after the scan: each newer canvas continues its older one's topic at a dash
+const CV_MORE = [
+    ["vs-tour", "Welcome tour"],
+    ["vs-tour-v2", "Guided walkthrough"],
+    ["vs-list", "Session list"],
+    ["vs-list-new", "Task queue"],
+    ["vs-gone", "Gone soon"],
+    ["vs-gone-v2", "Vanishing act"],
+];
+
+// a topic as the arc:design skill leaves it: one board, and a canvas.json with the title, the creation time and, for a
+// redraw, the topic it replaces. Every file takes the mtime `at` too, so the grid's order is the creation order
+function cvWriteTopic(cwd, topic, { title, at, replaces }) {
+    const dir = cgWriteTopic(cwd, topic, { boards: ["Main"], at });
+    const path = join(dir, "project", "canvas.json");
+    const index = JSON.parse(readFileSync(path, "utf8"));
+    index.title = title;
+    index.createdOnFiles = { v: 1, at: new Date(at).toISOString() };
+    if (replaces != null) index.replaces = replaces;
+    writeFileSync(path, JSON.stringify(index));
+    utimesSync(path, new Date(at), new Date(at));
+    return dir;
+}
+
+const cvIndexPath = (cwd, topic) => join(cgTopic(cwd, topic), "project", "canvas.json");
+// canvas.json as parsed, or null when it is missing or does not parse
+function cvIndex(cwd, topic) {
+    try {
+        return JSON.parse(readFileSync(cvIndexPath(cwd, topic), "utf8"));
+    } catch {
+        return null;
+    }
+}
+// every canvas.json's bytes in one string: equal before and after means nothing was written
+function cvSnapshot(cwd) {
+    const design = join(cwd, ".superpowers", "design");
+    return JSON.stringify(
+        readdirSync(design)
+            .sort()
+            .map((t) => [t, existsSync(cvIndexPath(cwd, t)) ? readFileSync(cvIndexPath(cwd, t), "utf8") : null])
+    );
+}
+// a write reaches disk before the UI reads it back, but a check that must not flake still waits
+async function cvDisk(check, ms = 8000) {
+    for (let waited = 0; waited < ms; waited += 250) {
+        if (check()) return true;
+        await polishNap(250);
+    }
+    return false;
+}
+
+const cvList = (...a) => JSON.stringify(a);
+const CV_WRAPS = `[...document.querySelectorAll("[data-canvas-card-wrap]")].map((w) => w.getAttribute("data-canvas-card-wrap"))`;
+const CV_OUTDATED = `[...document.querySelectorAll("[data-canvas-card-wrap][data-canvas-outdated]")].map((w) => w.getAttribute("data-canvas-card-wrap")).sort()`;
+const CV_SUGGESTS = `[...document.querySelectorAll("[data-canvas-suggest]")].map((s) => [s.closest("[data-canvas-card-wrap]")?.getAttribute("data-canvas-card-wrap"), s.getAttribute("data-canvas-suggest")]).sort()`;
+const CV_SCAN_ROWS = `[...document.querySelectorAll("[data-canvas-scan-row]")].map((r) => ({ topic: r.getAttribute("data-canvas-scan-row"), checked: r.hasAttribute("data-checked") }))`;
+const CV_PICKER_ROWS = `[...document.querySelectorAll("[data-canvas-link-row]")].map((r) => ({ topic: r.getAttribute("data-canvas-link-row"), current: r.hasAttribute("data-current") }))`;
+const cvWrap = (topic) => `document.querySelector('[data-canvas-card-wrap="${topic}"]')`;
+const cvClick = (h, expr) => h.ev(`${expr}?.click()`);
+const cvTopics = (rows) => rows.map((r) => r.topic).sort();
+
+async function cvOpenGallery(h) {
+    await h.ev(`document.querySelector("[data-agent-canvases-open]")?.click()`);
+    return polishWaitFor(h, `document.querySelector("[data-canvas-grid]") != null`, 10000);
+}
+
+// a card or a header under a resting pointer shows its title tooltip, which lands on the row a shot is about: park the
+// pointer on the app bar's blank stretch first
+async function cvParkPointer(h) {
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 830, y: 20 });
+    await polishNap(400);
+}
+
+// mount the grid again (it reads the list and the scan key when it mounts): History, then back
+async function cvReopenGallery(h) {
+    await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+    await polishNap(400);
+    return cvOpenGallery(h);
+}
+
+async function cvOpenScan(h) {
+    await cvClick(h, `document.querySelector("[data-canvas-scan-open]")`);
+    return polishWaitFor(
+        h,
+        `document.querySelector("[data-canvas-scan]") != null && document.querySelectorAll("[data-canvas-scan-row]").length > 0`,
+        5000
+    );
+}
+
+const cvScanLabelIs = (h, label) =>
+    polishWaitFor(h, `document.querySelector("[data-canvas-scan-link]")?.textContent.trim() === ${JSON.stringify(label)}`, 3000);
+
+// what the grid shows once the review is left: back on the grid, no Scan button, the key kept, nothing written
+async function cvScanLeft(h, ctx, before) {
+    const back = await polishWaitFor(
+        h,
+        `document.querySelector("[data-canvas-scan]") == null && document.querySelector("[data-canvas-grid]") != null`,
+        5000
+    );
+    const buttonGone = await h.ev(`document.querySelector("[data-canvas-scan-open]") == null`);
+    const key = await h.ev(`localStorage.getItem(${JSON.stringify(CV_SCANNED_KEY)})`);
+    return { back, buttonGone, key, wroteNothing: cvSnapshot(ctx.cwd) === before };
+}
+
+// clear the scan key and mount the grid again: the button is back
+async function cvScanBack(h) {
+    await h.ev(`localStorage.removeItem(${JSON.stringify(CV_SCANNED_KEY)})`);
+    await cvReopenGallery(h);
+    return polishWaitFor(h, `document.querySelector("[data-canvas-scan-open]") != null`, 8000);
+}
+
+// the open canvas, from the viewer's header
+const cvViewerOf = (topic) =>
+    `document.querySelector("[data-canvas-viewer] h1")?.textContent === ${JSON.stringify(topic)}`;
+
+async function cvOpenPicker(h) {
+    await cvClick(h, `document.querySelector("[data-canvas-link-open]")`);
+    return polishWaitFor(h, `document.querySelector("[data-canvas-link-picker]") != null`, 5000);
+}
+
+const canvasVersions = {
+    name: "canvas-versions",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-canvas-versions-")), registered: false, base: Date.now() - 3 * 3600_000 };
+        ctx.folder = basename(ctx.cwd);
+        try {
+            await h.ev(`localStorage.removeItem(${JSON.stringify(CV_SCANNED_KEY)})`).catch(() => {});
+            ctx.existing = (await h.rpc("listcanvases", null)) ?? [];
+            CV_SEED.forEach(([topic, title, replaces], i) =>
+                cvWriteTopic(ctx.cwd, topic, { title, replaces, at: ctx.base + i * CV_STEP_MS })
+            );
+            if (ctx.existing.length === 0) {
+                ctx.registered = true;
+                await h.rpc("createproject", { name: CV_PROJECT, path: ctx.cwd });
+                await waitForProjectInConfig(h, CV_PROJECT);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the project and its ten canvases were made", false, ctx.arrangeError);
+            return steps;
+        }
+        if (ctx.existing.length > 0) {
+            const names = ctx.existing.slice(0, 4).map((c) => c.topic).join(", ");
+            return [
+                skipStep(
+                    "canvas versions",
+                    `the store already has ${ctx.existing.length} canvases (${names}${ctx.existing.length > 4 ? ", …" : ""}): the scan must find exactly two pairs, so run on a fresh Final store`
+                ),
+            ];
+        }
+        await h.ev(`localStorage.removeItem(${JSON.stringify(CV_SCANNED_KEY)})`);
+        const cwd = ctx.cwd;
+
+        // 1. board A-viewer-header, the cards: a Replaces chip, an Outdated card with its Newer link, the Scan button, no dashed rows
+        await cvOpenGallery(h);
+        const all = await polishWaitFor(h, `${CV_WRAPS}.length === ${CV_SEED.length}`, 10000);
+        // the end of the list: the chip on vs-home-fresh and the Outdated card vs-home, the oldest, both whole
+        await h.ev(`${cvWrap("vs-home")}?.scrollIntoView({ block: "end" })`);
+        await cvParkPointer(h);
+        const cards = await h.ev(`(() => {
+            const wrap = (t) => document.querySelector('[data-canvas-card-wrap="' + t + '"]');
+            const attr = (el, a) => el?.querySelector("[" + a + "]")?.getAttribute(a) ?? null;
+            return {
+                cards: ${CV_WRAPS}.length,
+                chip: attr(wrap("vs-home-fresh"), "data-canvas-replaces"),
+                freshNewer: attr(wrap("vs-home-fresh"), "data-canvas-newer"),
+                homeOutdated: wrap("vs-home")?.hasAttribute("data-canvas-outdated") ?? false,
+                homeNewer: attr(wrap("vs-home"), "data-canvas-newer"),
+                homeText: wrap("vs-home")?.textContent ?? "",
+                outdated: ${CV_OUTDATED},
+                chips: [...document.querySelectorAll("[data-canvas-replaces]")].map((c) => c.getAttribute("data-canvas-replaces")),
+                scan: document.querySelector("[data-canvas-scan-open]")?.textContent.trim() ?? null,
+                suggest: document.querySelectorAll("[data-canvas-suggest]").length,
+            };
+        })()`);
+        await h.shot("cdp-shots/canvas-versions-cards.png");
+        rec(
+            "1. the grid draws ten cards: vs-home-fresh has the Replaces vs-home chip, vs-home is Outdated with Newer: vs-home-fresh → and nothing else is, the Scan for versions button shows and no dashed suggestion row does (the scan is not done yet)",
+            all &&
+                cards.cards === CV_SEED.length &&
+                cards.chip === "vs-home" &&
+                cards.freshNewer == null &&
+                cards.homeOutdated &&
+                cards.homeNewer === "vs-home-fresh" &&
+                cards.homeText.includes("Outdated") &&
+                cards.homeText.includes("Newer: vs-home-fresh →") &&
+                cvList(...cards.outdated) === cvList("vs-home") &&
+                cvList(...cards.chips) === cvList("vs-home") &&
+                cards.scan === "Scan for versions" &&
+                cards.suggest === 0,
+            JSON.stringify({ all, ...cards })
+        );
+
+        // 2. Scan for versions: two ticked rows and no council row; Esc and Cancel each leave writing nothing and hide the button for
+        // good (the key is kept); with the key cleared and the grid mounted again, the button is back
+        const before = cvSnapshot(cwd);
+        const scanUp = await cvOpenScan(h);
+        const rows = await h.ev(CV_SCAN_ROWS);
+        const review = await h.ev(`document.querySelector("[data-canvas-scan]")?.textContent ?? ""`);
+        await h.shot("cdp-shots/canvas-versions-scan-open.png");
+        await cgPress(h, "Escape");
+        const esc = await cvScanLeft(h, ctx, before);
+        const escBack = await cvScanBack(h);
+        const scanUp2 = await cvOpenScan(h);
+        await cvClick(h, `document.querySelector("[data-canvas-scan-cancel]")`);
+        const cancel = await cvScanLeft(h, ctx, before);
+        const cancelBack = await cvScanBack(h);
+        rec(
+            "2. Scan for versions opens a review of two ticked pairs (vs-board-v2, vs-overview-history; no council row); Esc, and Cancel in a second review, each return to the grid writing nothing and hiding the button with the key kept; clearing the key and mounting the grid again brings the button back",
+            scanUp &&
+                cvList(...cvTopics(rows)) === cvList("vs-board-v2", "vs-overview-history") &&
+                rows.every((r) => r.checked) &&
+                review.includes("Found 2 pairs") &&
+                !/council/i.test(review) &&
+                esc.back &&
+                esc.buttonGone &&
+                esc.key === "1" &&
+                esc.wroteNothing &&
+                escBack &&
+                scanUp2 &&
+                cancel.back &&
+                cancel.buttonGone &&
+                cancel.key === "1" &&
+                cancel.wroteNothing &&
+                cancelBack,
+            JSON.stringify({ scanUp, rows, escReview: review.slice(0, 160), esc, escBack, scanUp2, cancel, cancelBack })
+        );
+
+        // 3. board C-scan-review: both unticked leaves Link disabled, ticking vs-overview-history alone reads Link 1 pair; Link writes
+        // the link and remembers the unticked pair as not a version
+        const scanUp3 = await cvOpenScan(h);
+        await cvClick(h, `document.querySelector('[data-canvas-scan-row="vs-board-v2"]')`);
+        const oneAfterBoard = await cvScanLabelIs(h, "Link 1 pair");
+        await cvClick(h, `document.querySelector('[data-canvas-scan-row="vs-overview-history"]')`);
+        const zero = await cvScanLabelIs(h, "Link 0 pairs");
+        const zeroState = await h.ev(`(() => ({
+            disabled: document.querySelector("[data-canvas-scan-link]")?.disabled ?? null,
+            checked: ${CV_SCAN_ROWS}.filter((r) => r.checked).length,
+        }))()`);
+        await cvClick(h, `document.querySelector('[data-canvas-scan-row="vs-overview-history"]')`);
+        const one = await cvScanLabelIs(h, "Link 1 pair");
+        const oneState = await h.ev(`(() => ({
+            disabled: document.querySelector("[data-canvas-scan-link]")?.disabled ?? null,
+            rows: ${CV_SCAN_ROWS},
+        }))()`);
+        await h.shot("cdp-shots/canvas-versions-scan-review.png");
+        await cvClick(h, `document.querySelector("[data-canvas-scan-link]")`);
+        const linkedUi = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-scan]") == null && ${CV_OUTDATED}.includes("vs-overview")`,
+            10000
+        );
+        const history = cvIndex(cwd, "vs-overview-history");
+        const v2 = cvIndex(cwd, "vs-board-v2");
+        const afterScan = await h.ev(`(() => ({
+            scan: document.querySelector("[data-canvas-scan-open]") != null,
+            outdated: ${CV_OUTDATED},
+            chip: document.querySelector('[data-canvas-card-wrap="vs-overview-history"] [data-canvas-replaces]')?.getAttribute("data-canvas-replaces") ?? null,
+            suggest: document.querySelectorAll("[data-canvas-suggest]").length,
+        }))()`);
+        rec(
+            "3. in the review, unticking vs-board-v2 reads Link 1 pair, unticking both reads Link 0 pairs with the button disabled, ticking vs-overview-history again reads Link 1 pair; Link writes replaces vs-overview into vs-overview-history's canvas.json and notreplaces [vs-board] into vs-board-v2's (keeping their other keys), the Scan button is gone, vs-overview is Outdated and no council row shows",
+            scanUp3 &&
+                oneAfterBoard &&
+                zero &&
+                zeroState.disabled === true &&
+                zeroState.checked === 0 &&
+                one &&
+                oneState.disabled === false &&
+                cvList(...oneState.rows.filter((r) => r.checked).map((r) => r.topic)) === cvList("vs-overview-history") &&
+                linkedUi &&
+                history?.replaces === "vs-overview" &&
+                history.title === "Overview history" &&
+                typeof history.createdOnFiles?.at === "string" &&
+                Array.isArray(history.order) &&
+                v2?.replaces == null &&
+                cvList(...(v2?.notreplaces ?? [])) === cvList("vs-board") &&
+                v2.title === "Board layout again" &&
+                !afterScan.scan &&
+                cvList(...afterScan.outdated) === cvList("vs-home", "vs-overview") &&
+                afterScan.chip === "vs-overview" &&
+                afterScan.suggest === 0,
+            JSON.stringify({
+                scanUp3,
+                oneAfterBoard,
+                zero,
+                zeroState,
+                one,
+                oneState,
+                linkedUi,
+                history: { replaces: history?.replaces, notreplaces: history?.notreplaces, title: history?.title },
+                v2: { replaces: v2?.replaces, notreplaces: v2?.notreplaces, title: v2?.title },
+                ...afterScan,
+            })
+        );
+
+        // 4. board A-scan-suggest: with the scan done, each newer canvas of three new pairs shows the dashed row; Link writes, No
+        // remembers, and a Link onto a canvas that has gone since is refused with an error toast and a canvas.json untouched
+        CV_MORE.forEach(([topic, title], j) =>
+            cvWriteTopic(cwd, topic, { title, at: ctx.base + (CV_SEED.length + j) * CV_STEP_MS })
+        );
+        await cvReopenGallery(h);
+        const rowsUp = await polishWaitFor(
+            h,
+            `${CV_WRAPS}.length === ${CV_SEED.length + CV_MORE.length} && ${CV_SUGGESTS}.length === 3`,
+            10000
+        );
+        const suggests = await h.ev(CV_SUGGESTS);
+        const rowText = await h.ev(
+            `document.querySelector('[data-canvas-card-wrap="vs-tour-v2"] [data-canvas-suggest]')?.textContent.trim() ?? ""`
+        );
+        await h.ev(`${cvWrap("vs-gone-v2")}?.scrollIntoView({ block: "start" })`);
+        await cvParkPointer(h);
+        await h.shot("cdp-shots/canvas-versions-suggest.png");
+
+        await cvClick(h, `${cvWrap("vs-tour-v2")}?.querySelector("[data-canvas-suggest-link]")`);
+        const tourDisk = await cvDisk(() => cvIndex(cwd, "vs-tour-v2")?.replaces === "vs-tour");
+        const tourUi = await polishWaitFor(
+            h,
+            `${cvWrap("vs-tour-v2")}?.querySelector('[data-canvas-replaces="vs-tour"]') != null && ${cvWrap("vs-tour-v2")}?.querySelector("[data-canvas-suggest]") == null && ${cvWrap("vs-tour")}?.hasAttribute("data-canvas-outdated")`,
+            8000
+        );
+
+        await cvClick(h, `${cvWrap("vs-list-new")}?.querySelector("[data-canvas-suggest-no]")`);
+        const listDisk = await cvDisk(() => cvList(...(cvIndex(cwd, "vs-list-new")?.notreplaces ?? [])) === cvList("vs-list"));
+        const listUi = await polishWaitFor(h, `${cvWrap("vs-list-new")}?.querySelector("[data-canvas-suggest]") == null`, 8000);
+        const listState = await h.ev(`(() => ({
+            outdated: ${CV_OUTDATED},
+            chip: ${cvWrap("vs-list-new")}?.querySelector("[data-canvas-replaces]") != null,
+        }))()`);
+
+        cgRemove(cgTopic(cwd, "vs-gone"));
+        const goneBefore = readFileSync(cvIndexPath(cwd, "vs-gone-v2"), "utf8");
+        await cvClick(h, `${cvWrap("vs-gone-v2")}?.querySelector("[data-canvas-suggest-link]")`);
+        const toasted = await polishWaitFor(h, cgToast("Couldn't link vs-gone-v2"), 10000);
+        const toastText = await h.ev(
+            `[...document.querySelectorAll("[data-notification-toast]")].map((t) => (t.textContent || "").trim()).find((t) => t.includes("vs-gone-v2")) ?? ""`
+        );
+        const goneUi = await polishWaitFor(
+            h,
+            `${cvWrap("vs-gone")} == null && ${cvWrap("vs-gone-v2")} != null && ${cvWrap("vs-gone-v2")}.querySelector("[data-canvas-suggest]") == null`,
+            8000
+        );
+        const goneAfter = readFileSync(cvIndexPath(cwd, "vs-gone-v2"), "utf8");
+        const goneChip = await h.ev(`${cvWrap("vs-gone-v2")}?.querySelector("[data-canvas-replaces]") != null`);
+        const tour = cvIndex(cwd, "vs-tour-v2");
+        const listNew = cvIndex(cwd, "vs-list-new");
+        rec(
+            "4. with the scan done, vs-tour-v2, vs-list-new and vs-gone-v2 each show a dashed row (Looks like it replaces …, Link, No) and no council card does; Link on vs-tour-v2 writes replaces and shows the chip with vs-tour Outdated; No on vs-list-new writes notreplaces, drops the row and dims nothing; Link on vs-gone-v2 after its older canvas's folder is removed toasts Couldn't link vs-gone-v2 and leaves its canvas.json byte for byte",
+            rowsUp &&
+                JSON.stringify(suggests) ===
+                    JSON.stringify([
+                        ["vs-gone-v2", "vs-gone"],
+                        ["vs-list-new", "vs-list"],
+                        ["vs-tour-v2", "vs-tour"],
+                    ]) &&
+                rowText.includes("Looks like it replaces vs-tour") &&
+                rowText.includes("Link") &&
+                rowText.includes("No") &&
+                tourDisk &&
+                tourUi &&
+                tour?.title === "Guided walkthrough" &&
+                listDisk &&
+                listUi &&
+                listNew?.replaces == null &&
+                cvList(...listState.outdated) === cvList("vs-home", "vs-overview", "vs-tour") &&
+                !listState.chip &&
+                toasted &&
+                goneUi &&
+                goneAfter === goneBefore &&
+                !goneChip,
+            JSON.stringify({
+                rowsUp,
+                suggests,
+                rowText,
+                tourDisk,
+                tourUi,
+                listDisk,
+                listUi,
+                listState,
+                toasted,
+                toastText: toastText.slice(0, 200),
+                goneUi,
+                unchanged: goneAfter === goneBefore,
+                goneChip,
+            })
+        );
+
+        // 5. Newer on vs-home opens vs-home-fresh; its header holds the chip, and the picker (board A-viewer-header, the viewer half)
+        // lists the older canvases nothing replaces, the linked one marked; a search narrows it; Esc closes the picker and the viewer stays
+        await h.ev(`${cvWrap("vs-home")}?.scrollIntoView({ block: "center" })`);
+        await cvClick(h, `${cvWrap("vs-home")}?.querySelector("[data-canvas-newer]")`);
+        const viewerUp = await polishWaitFor(
+            h,
+            `${cvViewerOf("vs-home-fresh")} && document.querySelector('[data-canvas-viewer-replaces="vs-home"]') != null`,
+            8000
+        );
+        const header = await h.ev(`(() => ({
+            chip: document.querySelector("[data-canvas-viewer-replaces]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+            unlink: document.querySelector("[data-canvas-viewer-unlink]") != null,
+            open: document.querySelector("[data-canvas-link-open]")?.textContent.trim() ?? null,
+        }))()`);
+        const pickerUp = await cvOpenPicker(h);
+        const pickerRows = await h.ev(CV_PICKER_ROWS);
+        const picker = await h.ev(`(() => {
+            const el = document.querySelector("[data-canvas-link-picker]");
+            return {
+                placeholder: document.querySelector("[data-canvas-link-search]")?.getAttribute("placeholder") ?? null,
+                note: el?.textContent.includes(${JSON.stringify(`Only canvases in ${ctx.folder}, older than this one`)}) ?? false,
+                empty: document.querySelector("[data-canvas-link-empty]") != null,
+            };
+        })()`);
+        await h.shot("cdp-shots/canvas-versions-picker.png");
+        await h.ev(`document.querySelector("[data-canvas-link-search]")?.focus()`);
+        await h.cdp("Input.insertText", { text: "pick" });
+        const narrowed = await polishWaitFor(h, `${CV_PICKER_ROWS}.length === 2`, 3000);
+        const narrowRows = await h.ev(CV_PICKER_ROWS);
+        await cgPress(h, "Escape", { blur: false });
+        const pickerGone = await polishWaitFor(h, `document.querySelector("[data-canvas-link-picker]") == null`, 3000);
+        const stayed = await h.ev(`${cvViewerOf("vs-home-fresh")}`);
+        rec(
+            "5. Newer: vs-home-fresh → on vs-home opens vs-home-fresh with the chip Replaces vs-home × and Link an older version…; the picker (placeholder Search <project>'s canvases, footnote, no empty line) lists vs-home marked current, vs-pick-alpha and vs-pick-beta; typing pick leaves only the two vs-pick rows; Esc closes the picker and the viewer stays",
+            viewerUp &&
+                header.chip === "Replaces vs-home×" &&
+                header.unlink &&
+                header.open === "Link an older version…" &&
+                pickerUp &&
+                cvList(...cvTopics(pickerRows)) === cvList("vs-home", "vs-pick-alpha", "vs-pick-beta") &&
+                cvList(...pickerRows.filter((r) => r.current).map((r) => r.topic)) === cvList("vs-home") &&
+                picker.placeholder === `Search ${ctx.folder}'s canvases` &&
+                picker.note &&
+                !picker.empty &&
+                narrowed &&
+                cvList(...cvTopics(narrowRows)) === cvList("vs-pick-alpha", "vs-pick-beta") &&
+                pickerGone &&
+                stayed === true,
+            JSON.stringify({ viewerUp, ...header, pickerUp, pickerRows, ...picker, narrowed, narrowRows, pickerGone, stayed })
+        );
+
+        // 6. × is "not a version": replaces is cleared and vs-home is remembered in notreplaces, the chip goes, and vs-home is no longer Outdated
+        await cvClick(h, `document.querySelector("[data-canvas-viewer-unlink]")`);
+        const chipGone = await polishWaitFor(h, `document.querySelector("[data-canvas-viewer-replaces]") == null`, 8000);
+        const unlinkDisk = await cvDisk(() => {
+            const i = cvIndex(cwd, "vs-home-fresh");
+            return i != null && i.replaces == null && cvList(...(i.notreplaces ?? [])) === cvList("vs-home");
+        });
+        await cgPress(h, "Escape");
+        const gridUp = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-viewer]") == null && ${CV_WRAPS}.length === ${CV_SEED.length + CV_MORE.length - 1}`,
+            8000
+        );
+        const unlinked = await h.ev(`(() => ({
+            homeOutdated: ${cvWrap("vs-home")}?.hasAttribute("data-canvas-outdated") ?? null,
+            homeNewer: ${cvWrap("vs-home")}?.querySelector("[data-canvas-newer]") != null,
+            freshChip: ${cvWrap("vs-home-fresh")}?.querySelector("[data-canvas-replaces]") != null,
+            outdated: ${CV_OUTDATED},
+        }))()`);
+        const fresh6 = cvIndex(cwd, "vs-home-fresh");
+        rec(
+            "6. × in vs-home-fresh's header clears replaces and puts vs-home in notreplaces in canvas.json (its other keys kept), the chip goes, and back on the grid vs-home is no longer Outdated",
+            chipGone &&
+                unlinkDisk &&
+                fresh6?.title === "Home screen redrawn" &&
+                typeof fresh6.createdOnFiles?.at === "string" &&
+                gridUp &&
+                unlinked.homeOutdated === false &&
+                !unlinked.homeNewer &&
+                !unlinked.freshChip &&
+                cvList(...unlinked.outdated) === cvList("vs-overview", "vs-tour"),
+            JSON.stringify({ chipGone, unlinkDisk, replaces: fresh6?.replaces, notreplaces: fresh6?.notreplaces, gridUp, ...unlinked })
+        );
+
+        // 7. the picker again: vs-home is offered, no longer marked, and picking it links it again and drops it from notreplaces
+        await cvClick(h, `document.querySelector('[data-canvas-card="vs-home-fresh"]')`);
+        const viewer7 = await polishWaitFor(h, cvViewerOf("vs-home-fresh"), 8000);
+        const picker7 = await cvOpenPicker(h);
+        const rows7 = await h.ev(CV_PICKER_ROWS);
+        await cvClick(h, `document.querySelector('[data-canvas-link-row="vs-home"]')`);
+        const chipBack = await polishWaitFor(h, `document.querySelector('[data-canvas-viewer-replaces="vs-home"]') != null`, 8000);
+        const relinked = await cvDisk(() => {
+            const i = cvIndex(cwd, "vs-home-fresh");
+            return i?.replaces === "vs-home" && !(i.notreplaces ?? []).includes("vs-home");
+        });
+        const closed7 = await polishWaitFor(h, `document.querySelector("[data-canvas-link-picker]") == null`, 3000);
+        const fresh7 = cvIndex(cwd, "vs-home-fresh");
+        rec(
+            "7. reopened, the picker offers vs-home unmarked; picking it writes replaces vs-home and removes it from notreplaces, closes the picker and brings the chip back",
+            viewer7 &&
+                picker7 &&
+                rows7.some((r) => r.topic === "vs-home" && !r.current) &&
+                chipBack &&
+                relinked &&
+                closed7 &&
+                fresh7?.notreplaces == null,
+            JSON.stringify({ viewer7, picker7, rows7, chipBack, relinked, closed7, replaces: fresh7?.replaces, notreplaces: fresh7?.notreplaces })
+        );
+
+        // 8. the oldest canvas has nothing older: its picker says No older canvas in <project>, and the two Escapes close it, then the viewer
+        await cgPress(h, "Escape");
+        await polishWaitFor(h, `document.querySelector("[data-canvas-viewer]") == null && document.querySelector("[data-canvas-grid]") != null`, 5000);
+        await cvClick(h, `document.querySelector('[data-canvas-card="vs-home"]')`);
+        const viewer8 = await polishWaitFor(h, cvViewerOf("vs-home"), 8000);
+        const picker8 = await cvOpenPicker(h);
+        const empty8 = await h.ev(`(() => ({
+            text: document.querySelector("[data-canvas-link-empty]")?.textContent.trim() ?? null,
+            rows: document.querySelectorAll("[data-canvas-link-row]").length,
+            chip: document.querySelector("[data-canvas-viewer-replaces]") != null,
+        }))()`);
+        await cgPress(h, "Escape");
+        const closed8 = await polishWaitFor(
+            h,
+            `document.querySelector("[data-canvas-link-picker]") == null && ${cvViewerOf("vs-home")}`,
+            3000
+        );
+        await cgPress(h, "Escape");
+        const left8 = await polishWaitFor(h, `document.querySelector("[data-canvas-viewer]") == null && document.querySelector("[data-canvas-grid]") != null`, 5000);
+        rec(
+            "8. vs-home, the oldest canvas, has no older one to offer: its picker reads No older canvas in the project's folder with no row and no chip; Esc closes the picker, the next Esc leaves the viewer",
+            viewer8 &&
+                picker8 &&
+                empty8.text === `No older canvas in ${ctx.folder}` &&
+                empty8.rows === 0 &&
+                !empty8.chip &&
+                closed8 &&
+                left8,
+            JSON.stringify({ viewer8, picker8, ...empty8, closed8, left8 })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await cgTeardown(h, ctx, "canvas-versions", CV_PROJECT);
+        // after leaving the gallery: leaving the review while it is open writes the key
+        try {
+            await h.ev(`localStorage.removeItem(${JSON.stringify(CV_SCANNED_KEY)})`);
+        } catch (e) {
+            console.error(`canvas-versions teardown: clearing the scan key failed: ${e?.message ?? e}`);
         }
     },
 };
@@ -60149,6 +60728,7 @@ export const SCENARIOS = [
     canvasGallery,
     canvasGalleryPreview,
     canvasGalleryMaker,
+    canvasVersions,
     agentRailSections,
     railServers,
     agentGrid,

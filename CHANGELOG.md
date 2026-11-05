@@ -27,6 +27,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - In a project's Overview, each session in History has a Quick look button (and a Quick look item in its right-click menu) that opens its transcript in a dialog over the page, with Resume and Open, so you can read a session without leaving the Overview.
+- In the Canvas gallery, a canvas that redraws an older one now says `Replaces <topic>`, and the older card is dimmed with an Outdated chip and a Newer link to the latest version. Scan for versions finds the pairs already there for you to untick and link in one go, a card that looks like a new version offers Link or No, and an open canvas has Link an older version… (and × to undo a link). <!-- try: go:canvases -->
 
 ### Changed
 
