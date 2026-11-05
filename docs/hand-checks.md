@@ -15,6 +15,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   go, the colours stay. Checked by the `christmas-theme` CDP scenario in the dev app; the look itself, in the packaged
   build and at real sizes, was not judged by eye (`christmassnowview.tsx`, `christmaslights.tsx`, `petsprite.ts`).
 
+- [ ] (arcterm) **Christmas: the empty cockpit's hat and a finished run's gift.** With the Christmas theme on, close
+  every agent so the Cockpit shows "No agents running" → the terminal-window glyph wears the Santa hat on its top-left
+  corner, clear of its glow. Let an orchestrator run land with its final check passed → its row in the Agent tree reads
+  Complete beside a small gift instead of the check; a run that landed unverified keeps its check. No CDP scenario
+  opens either state (`cockpitemptystate.tsx`, `agenttree.tsx` RunCompleteLabel, f4d4c99cb).
 - [ ] (arcterm) **New → Orchestrate follows the Profile's Approvals.** Jarvis → Profile → Global → Approvals:
   Autonomous → Save. Open New, pick Orchestrate with arcterm picked → Approvals shows Autonomous. Pick another
   project, then back → still Orchestrate. Change Workers by hand, switch project → your pick stays. (fix(launcher):
