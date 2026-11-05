@@ -35,6 +35,8 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/projectactivity"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
+	"github.com/wavetermdev/waveterm/pkg/runpause"
+	"github.com/wavetermdev/waveterm/pkg/runregulator"
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
 	"github.com/wavetermdev/waveterm/pkg/service"
 	"github.com/wavetermdev/waveterm/pkg/services"
@@ -554,8 +556,10 @@ func main() {
 	orchestrate.LaunchLeadHook = wshserver.LaunchPlanLead                // a run submitted with no lead gets one at its first judgment event; before StartWatchdog, whose first tick can deliver one
 	orchestrate.MarkInterruptedRuns(context.Background())                // no worker survives a restart; the previous wavesrv's non-dag runs would otherwise read executing forever
 	orchestrate.ResumeInterruptedLeads(context.Background())             // nor does a dag run's lead, and unlike its workers nothing else restarts it
+	runpause.ResumeAtBoot(context.Background())                          // a paused run resumes unless memory is already tight, then it stays paused for the regulator; before StartWatchdog, whose first tick is immediate
 	wshserver.ResumeBrainstormSessions(context.Background())             // a brainstorm's builder check or judge was watched by a goroutine the restart ended
 	orchestrate.StartWatchdog(context.Background())                      // dag advance + stall detection tick
+	runregulator.Start(context.Background())                             // RAM regulator: pauses a run when memory stays tight, resumes it when memory is free again; after the watchdog
 	agentask.AnswerHook = wshserver.RecordAskAnswered                    // one ask lifecycle row per delivered answer, whichever surface delivered it
 	blocklogger.InitBlockLogger()
 	blockcontroller.InitBlockController()

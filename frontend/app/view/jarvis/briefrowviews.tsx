@@ -755,6 +755,8 @@ export function RunRowView({
     onAnswer,
     onOpenAgent,
     onStop,
+    onResume,
+    resuming,
 }: {
     line: BriefLine;
     face: RunRowFace;
@@ -765,6 +767,9 @@ export function RunRowView({
     onAnswer: () => void;
     onOpenAgent: () => void;
     onStop: () => void;
+    // a paused run's Resume, beside Stop; resuming holds it while the RPC is in flight
+    onResume: () => void;
+    resuming?: boolean;
 }) {
     const stop = (fn: () => void) => (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -820,14 +825,30 @@ export function RunRowView({
                 </div>
             </div>
             <span
+                data-run-paused={face.paused ? "" : undefined}
+                // a paused run's state is the Agent tree's whole sentence, which the word-wide column cannot hold
                 className={cn(
-                    "w-[62px] flex-none text-right text-[11px] font-semibold tabular-nums",
+                    "flex-none text-right text-[11px] font-semibold tabular-nums",
+                    face.paused ? "whitespace-nowrap" : "w-[62px]",
                     TONE_TEXT[face.stateTone]
                 )}
             >
                 {face.state}
             </span>
             <div className="flex flex-none justify-end gap-1">
+                {face.paused ? (
+                    <button
+                        type="button"
+                        data-run-resume
+                        aria-label="Resume run"
+                        title="Resume this run"
+                        disabled={resuming}
+                        onClick={stop(onResume)}
+                        className={cn(SMALL_BTN, "disabled:cursor-default disabled:opacity-60")}
+                    >
+                        {resuming ? "Resuming…" : "Resume"}
+                    </button>
+                ) : null}
                 {face.asking ? (
                     <button
                         type="button"

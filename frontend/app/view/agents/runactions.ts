@@ -143,6 +143,45 @@ export async function cancelRun(channelId: string, runId: string): Promise<void>
     }
 }
 
+// Run ids whose Pause / Resume RPC is in flight. Both RPCs return once the run's agents are all suspended or
+// reopened, which takes a moment, so these drive the buttons' transient "Pausing…" / "Resuming…" state until the
+// run's status flips. Frontend-only, like cancellingRunIdsAtom.
+export const pausingRunIdsAtom = atom<Set<string>>(new Set<string>());
+export const resumingRunIdsAtom = atom<Set<string>>(new Set<string>());
+
+async function trackRunRpc(
+    inFlight: PrimitiveAtom<Set<string>>,
+    runId: string,
+    call: () => Promise<void>
+): Promise<void> {
+    globalStore.set(inFlight, (prev) => new Set(prev).add(runId));
+    try {
+        await call();
+    } finally {
+        globalStore.set(inFlight, (prev) => {
+            const next = new Set(prev);
+            next.delete(runId);
+            return next;
+        });
+    }
+}
+
+// Pause a top-level run: its agents are suspended (their RAM freed, their sessions kept) until it is resumed. The
+// backend refuses, with the reason, a run it cannot pause; the rejection reaches the caller, which runs it through
+// fireAndForget as confirmCancelRun does.
+export function pauseRun(channelId: string, runId: string): Promise<void> {
+    return trackRunRpc(pausingRunIdsAtom, runId, () =>
+        RpcApi.PauseRunCommand(TabRpcClient, { channelid: channelId, runid: runId })
+    );
+}
+
+// Resume a paused run: its agents reopen in their own sessions. Not resumeRun, which restarts a failed phase's worker.
+export function resumePausedRun(channelId: string, runId: string): Promise<void> {
+    return trackRunRpc(resumingRunIdsAtom, runId, () =>
+        RpcApi.ResumeRunCommand(TabRpcClient, { channelid: channelId, runid: runId })
+    );
+}
+
 export type FinalEndOutcome = "unverified" | "failed";
 
 // as long as `wsh runs` waits on a cancel (runsCancelTimeoutMs): stopping the verifier stops its worker

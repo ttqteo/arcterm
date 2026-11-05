@@ -1261,6 +1261,12 @@ func PathCommand(w *wshutil.WshRpc, data wshrpc.PathCommandData, opts *wshrpc.Rp
 	return resp, err
 }
 
+// command "pauserun", wshserver.PauseRunCommand
+func PauseRunCommand(w *wshutil.WshRpc, data wshrpc.CommandPauseRunData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "pauserun", data, opts)
+	return err
+}
+
 // command "postchannelmessage", wshserver.PostChannelMessageCommand
 func PostChannelMessageCommand(w *wshutil.WshRpc, data wshrpc.CommandPostChannelMessageData, opts *wshrpc.RpcOpts) (*waveobj.ChannelMessage, error) {
 	resp, err := sendRpcRequestCallHelper[*waveobj.ChannelMessage](w, "postchannelmessage", data, opts)
@@ -1396,6 +1402,12 @@ func ResolveFocusScopeCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveFocus
 func ResolveIdsCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveIdsData, opts *wshrpc.RpcOpts) (wshrpc.CommandResolveIdsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[wshrpc.CommandResolveIdsRtnData](w, "resolveids", data, opts)
 	return resp, err
+}
+
+// command "resumerun", wshserver.ResumeRunCommand
+func ResumeRunCommand(w *wshutil.WshRpc, data wshrpc.CommandPauseRunData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "resumerun", data, opts)
+	return err
 }
 
 // command "retryradarclustering", wshserver.RetryRadarClusteringCommand

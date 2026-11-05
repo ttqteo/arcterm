@@ -20887,6 +20887,331 @@ const runTimingScenario = {
     },
 };
 
+// --- run-paused: a paused run, its Resume button and the Pause / Resume items of the ⋯ menus -----------
+// (docs/superpowers/specs/2026-11-05-run-pause-design.md, docs/superpowers/plans/2026-11-05-run-pause.md Task 9.)
+// Two real orchestrator runs held by deferstart in one channel. The executing one has a fixture lead in the roster and
+// a chained plan, so the Cockpit draws its lead card and the DAG view its header. The other is stored the way a pause
+// leaves a run (status paused and a Pause record) and has a fixture lead of its own, so the Agent tree draws its row.
+// Both leads are fixtures, so nothing here suspends a session: a seeded pause proves the UI, not the engine
+// (docs/reference/cdp-run-fixtures.md). The run card's menu has no step: BlockedCard (runcards.tsx), the one run card
+// that carries a Cancel, is mounted nowhere in the app.
+const RUN_PAUSED_LABEL = "Paused · resumes when memory frees";
+const RUN_PAUSED_LEAD = "run-paused executing lead";
+const RUN_PAUSED_LEAD2 = "run-paused paused lead";
+const RUN_PAUSED_LEAD2_ID = "fx-lead-paused";
+// arrangeFixtureRun words the executing run's goal itself
+const RUN_PAUSED_GOAL = "verify run-paused: do nothing";
+const RUN_PAUSED_GOAL2 = "verify run-paused: held for memory";
+const RUN_PAUSED_WAIT_MS = 20_000;
+const RUN_PAUSED_LIB = `
+    const text = (el) => (el?.textContent || "").replace(/\\s+/g, " ").trim();
+    const squash = (s) => s.replace(/\\s+/g, "");
+    const until = async (ok, ms = ${RUN_PAUSED_WAIT_MS}) => {
+        for (let waited = 0; waited < ms && !ok(); waited += 250) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        return !!ok();
+    };
+    // the element itself or the first thing it holds
+    const within = (el, sel) => (el == null ? null : el.matches(sel) ? el : el.querySelector(sel));
+    // what a row says about its run: the paused mark, the label beside it, and a Resume button
+    const pausedRead = (row) => {
+        const mark = within(row, "[data-run-paused]");
+        const resume = within(row, "[data-run-resume]");
+        return {
+            row: row != null,
+            paused: mark != null,
+            label: mark != null && squash(text(row)).includes(${JSON.stringify(RUN_PAUSED_LABEL.replace(/\s+/g, ""))}),
+            resume: resume != null && (text(resume) + " " + (resume.getAttribute("aria-label") || "")).includes("Resume"),
+        };
+    };
+    // a lead's row in the Agent tree, by the name its leaf prints
+    const treeRow = (name) => {
+        const leaf = [...(document.querySelector("[data-agent-tree]")?.querySelectorAll("*") ?? [])].find(
+            (d) => d.children.length === 0 && text(d) === name
+        );
+        return leaf ? (leaf.closest("[data-agent-row]") ?? leaf.closest("[data-agent-run-row]")) : null;
+    };
+    // a run's row in the Jarvis Brief, by any text it prints
+    const briefRow = (marks) =>
+        [...document.querySelectorAll("[data-jarvis-brief-row]")].find((r) => marks.some((m) => (r.innerText || "").includes(m)));
+`;
+const RUN_PAUSED_TREE_FIND = `(which) => treeRow(which === "paused" ? ${JSON.stringify(RUN_PAUSED_LEAD2)} : ${JSON.stringify(RUN_PAUSED_LEAD)})`;
+const RUN_PAUSED_LIST_FIND = `(which) => briefRow(which === "paused" ? ${JSON.stringify([RUN_PAUSED_LEAD2, RUN_PAUSED_GOAL2])} : ${JSON.stringify([RUN_PAUSED_LEAD, RUN_PAUSED_GOAL])})`;
+
+// The stored run a pause leaves. The Pause record's keys are waveobj.RunPause's wire names; the surfaces read the
+// run's status. Written again if a write of the engine's landed over it, as seedRunUsage does.
+async function seedPausedRun(h, runId) {
+    const pause = { pausedts: Date.now() - 90_000, by: "auto", heldbytes: 3 * 1024 ** 3, sessions: [] };
+    const kept = (run) => run?.status === "paused" && run.pause != null;
+    let stored = null;
+    for (let i = 0; i < 3 && !kept(stored); i++) {
+        stored = await fstWriteRun(h, runId, (run) => ({ ...run, status: "paused", pause }));
+    }
+    if (!kept(stored)) {
+        throw new Error(
+            `the run did not keep its paused state: status ${stored?.status}, pause ${JSON.stringify(stored?.pause ?? null)}`
+        );
+    }
+    return stored;
+}
+
+// both runs' rows on the surface that `find` reads, once the paused run's row carries its mark
+const runPausedRows = (h, find) =>
+    h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        const find = ${find};
+        await until(() => pausedRead(find("paused")).paused && find("executing") != null);
+        return { paused: pausedRead(find("paused")), executing: pausedRead(find("executing")) };
+    })()`);
+
+const openRunSheet = (h, runId) =>
+    h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        if (!(await until(() => typeof window.__openAddress === "function", 5000))) return { ok: false, why: "no __openAddress hook" };
+        const opened = await window.__openAddress(${JSON.stringify(`run:${runId}`)});
+        return { ok: opened?.ok === true, shown: await until(() => document.querySelector("[data-run-sheet]") != null) };
+    })()`);
+
+const closeRunSheet = (h) =>
+    h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        document.querySelector('[aria-label="Close detail sheet"]')?.click();
+        return until(() => document.querySelector("[data-run-sheet]") == null, 5000);
+    })()`);
+
+// Opens the first ⋯ menu (data-run-menu) under `scopeExpr`, reads which items it holds, shoots it open, then closes
+// it. The items are read on the whole document: a menu may be portaled out of the card that holds its button.
+async function runPausedMenu(h, scopeExpr, shot) {
+    const opened = await h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        const button = () => ${scopeExpr}?.querySelector("[data-run-menu]");
+        if (!(await until(() => button() != null, 10000))) return { button: false };
+        const btn = button();
+        btn.focus();
+        btn.click();
+        await until(() => document.querySelector("[data-run-menu-pause], [data-run-menu-resume]") != null, 5000);
+        const pause = document.querySelector("[data-run-menu-pause]");
+        const resume = document.querySelector("[data-run-menu-resume]");
+        return { button: true, pause: pause != null, resume: resume != null, pauseText: text(pause), resumeText: text(resume) };
+    })()`);
+    await h.shot(shot);
+    const closed = await h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        const open = () => document.querySelector("[data-run-menu-pause], [data-run-menu-resume]") != null;
+        if (!open()) return true;
+        (document.activeElement ?? document.body).dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true })
+        );
+        if (await until(() => !open(), 2000)) return true;
+        ${scopeExpr}?.querySelector("[data-run-menu]")?.click();
+        return until(() => !open(), 2000);
+    })()`);
+    return { ...opened, closed };
+}
+
+// a menu that holds `want` and not `other`, with `want`'s own text, and that closed again
+const menuHolds = (m, want, other, word) =>
+    m.button === true && m[want] === true && m[other] !== true && (m[`${want}Text`] ?? "").includes(word) && m.closed === true;
+
+const runPaused = {
+    name: "run-paused",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-run-paused-"));
+        const ctx = { cwd, prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`) };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // the executing run: a fixture lead in the roster (id fx-lead) and a chained plan
+            await arrangeFixtureRun(h, ctx, "run-paused", RUN_PAUSED_LEAD);
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify run-paused",
+                parallelism: 1,
+                tasks: RUN_SHEET_POLISH_TASKS,
+            });
+            // the paused run, in the same channel
+            const wslist = await h.rpc("workspacelist", null);
+            const created = await h.rpc(
+                "createrun",
+                {
+                    channelid: ctx.channelId,
+                    workspaceid: wslist[0].workspacedata.oid,
+                    goal: RUN_PAUSED_GOAL2,
+                    runtime: "claude",
+                    mode: "orchestrator",
+                    deferstart: true,
+                },
+                { timeout: 30000 }
+            );
+            ctx.pausedRunId = created.run.id;
+            ctx.pausedLandPath = created.run.landpath;
+            ctx.paused = await seedPausedRun(h, ctx.pausedRunId);
+            // the roster is read once at boot: the executing run's lead and the paused run's lead, which is idle
+            // because a pause suspended its session
+            const now = Date.now();
+            const roster = treeRailRoster(ctx.runId, now, RUN_PAUSED_LEAD);
+            roster.push({
+                id: RUN_PAUSED_LEAD2_ID,
+                name: RUN_PAUSED_LEAD2,
+                project: "waveterm",
+                task: "verify run-paused",
+                state: "idle",
+                agent: "claude",
+                model: "opus",
+                idleSince: now - 60_000,
+                runId: ctx.pausedRunId,
+                blockId: "fx-blk-paused-lead",
+            });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster, null, 2));
+            // every project's folder open, as the default has it
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
+            await h.ev("location.reload()");
+            if (!(await polishWaitFor(h, `!!document.querySelector("nav button")`, 30_000))) {
+                throw new Error("the app did not come back within 30s of the reload");
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. both runs are made, the paused one is stored as a pause leaves it, and the page booted on them",
+            ctx.arrangeError == null && ctx.paused?.status === "paused" && ctx.paused?.pause != null,
+            ctx.arrangeError ?? JSON.stringify({ executing: ctx.runId, paused: ctx.pausedRunId, status: ctx.paused?.status })
+        );
+        if (ctx.arrangeError != null) return steps;
+        const rows = (r) => r.paused.paused && r.paused.label && r.paused.resume && r.executing.row && !r.executing.paused && !r.executing.resume;
+
+        // 1. the Agent tree
+        await h.goto("agent");
+        const tree = await runPausedRows(h, RUN_PAUSED_TREE_FIND);
+        rec(
+            `1. the Agent tree's row of the paused run reads "${RUN_PAUSED_LABEL}" with a Resume button, and the executing run's row has neither`,
+            rows(tree),
+            JSON.stringify(tree)
+        );
+        await h.shot("cdp-shots/run-paused-tree.png");
+
+        // 2. the run list: the Brief's rows
+        await h.goto("jarvis");
+        const list = await runPausedRows(h, RUN_PAUSED_LIST_FIND);
+        rec(
+            `2. the run list's row of the paused run reads "${RUN_PAUSED_LABEL}" with a Resume button, and the executing run's row has neither`,
+            rows(list),
+            JSON.stringify(list)
+        );
+        await h.shot("cdp-shots/run-paused-list.png");
+
+        // 3. the paused run's sheet
+        const openedPaused = await openRunSheet(h, ctx.pausedRunId);
+        const sheet = await h.ev(`(async () => {
+            ${RUN_PAUSED_LIB}
+            const root = () => document.querySelector("[data-run-sheet]");
+            await until(() => root()?.getAttribute("data-run-sheet") === "paused" && pausedRead(root()).paused);
+            return { status: root()?.getAttribute("data-run-sheet") ?? null, ...pausedRead(root()) };
+        })()`);
+        rec(
+            `3. the paused run's sheet status line reads "${RUN_PAUSED_LABEL}" (data-run-paused)`,
+            openedPaused.ok === true && sheet.status === "paused" && sheet.paused === true && sheet.label === true,
+            JSON.stringify({ opened: openedPaused, ...sheet })
+        );
+        await h.shot("cdp-shots/run-paused-sheet.png");
+
+        // 4. the sheet's ⋯ menu: Resume on the paused run, Pause on the executing one
+        const sheetScope = `document.querySelector("[data-jarvis-brief-sheet]")`;
+        const resumeMenu = await runPausedMenu(h, sheetScope, "cdp-shots/run-paused-sheet-menu-resume.png");
+        rec(
+            "4a. the paused run's sheet ⋯ menu holds Resume and not Pause",
+            menuHolds(resumeMenu, "resume", "pause", "Resume"),
+            JSON.stringify(resumeMenu)
+        );
+        const sheetClosed = await closeRunSheet(h);
+        const openedExecuting = await openRunSheet(h, ctx.runId);
+        const executingShown = await h.ev(`(async () => {
+            ${RUN_PAUSED_LIB}
+            const status = () => document.querySelector("[data-run-sheet]")?.getAttribute("data-run-sheet");
+            await until(() => status() != null && status() !== "paused");
+            return status() ?? null;
+        })()`);
+        const pauseMenu = await runPausedMenu(h, sheetScope, "cdp-shots/run-paused-sheet-menu-pause.png");
+        rec(
+            "4b. the executing run's sheet ⋯ menu holds Pause and not Resume",
+            sheetClosed === true &&
+                openedExecuting.ok === true &&
+                executingShown != null &&
+                menuHolds(pauseMenu, "pause", "resume", "Pause"),
+            JSON.stringify({ sheetClosed, opened: openedExecuting, status: executingShown, ...pauseMenu })
+        );
+
+        // 7. the DAG header's ⋯ menu, from the executing run's sheet (still open)
+        const dagOpened = await h.ev(`(async () => {
+            ${RUN_PAUSED_LIB}
+            const open = [...(document.querySelector("[data-run-sheet]")?.querySelectorAll("button") ?? [])].find(
+                (b) => text(b) === "Open DAG"
+            );
+            if (!open) return false;
+            open.click();
+            return until(() => document.querySelector("[data-dag-modal-kind]") != null);
+        })()`);
+        const dagMenu = dagOpened
+            ? await runPausedMenu(h, `document.querySelector("[data-dag-modal-kind]")`, "cdp-shots/run-paused-dag-menu.png")
+            : { button: false };
+        rec(
+            "7. the DAG header's ⋯ menu holds Pause",
+            dagOpened === true && menuHolds(dagMenu, "pause", "resume", "Pause"),
+            JSON.stringify({ dagOpened, ...dagMenu })
+        );
+        await h.ev(`(async () => {
+            ${RUN_PAUSED_LIB}
+            const close = [...(document.querySelector("[data-dag-modal-kind]")?.querySelectorAll("button") ?? [])].find((b) =>
+                text(b).startsWith("Close")
+            );
+            close?.click();
+            return until(() => document.querySelector("[data-dag-modal-kind]") == null, 5000);
+        })()`);
+
+        // 6. the lead card's ⋯ menu on the Cockpit
+        await h.goto("cockpit");
+        const leadMenu = await runPausedMenu(h, COCKPIT_LEAD_CARD, "cdp-shots/run-paused-lead-menu.png");
+        rec("6. the lead card's ⋯ menu holds Pause", menuHolds(leadMenu, "pause", "resume", "Pause"), JSON.stringify(leadMenu));
+
+        // run in the order the surfaces were reached, listed in the plan's order
+        return steps.sort((a, b) => a.step.localeCompare(b.step, undefined, { numeric: true }));
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "run-paused", {
+            what: "cancel the paused run and put the tree's folds back",
+            fn: async () => {
+                const failed = [];
+                const attempt = async (what, fn) => {
+                    try {
+                        await fn();
+                    } catch (e) {
+                        failed.push(`${what}: ${e?.message ?? e}`);
+                    }
+                };
+                if (ctx.pausedRunId) {
+                    await attempt("cancel the paused run", () =>
+                        h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.pausedRunId })
+                    );
+                }
+                if (ctx.pausedLandPath) {
+                    await attempt("remove the paused run's landing tree", () =>
+                        rmSync(ctx.pausedLandPath, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+                    );
+                }
+                await attempt("put the tree's folds back", () => h.ev(restoreLocalStorage(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
+                if (failed.length) throw new Error(failed.join("; "));
+            },
+        });
+    },
+};
+
 // --- run-cost: the API-equivalent estimate of a run's tokens on the run surfaces ------------------------
 // The run sheet, the DAG header, the run peek and the details rail's Task section each price the same usage rows
 // (docs/superpowers/specs/2026-10-08-usage-attribution-design.md). The rows are seeded as the run's sealed
@@ -61632,6 +61957,7 @@ export const SCENARIOS = [
     runSheetPolish,
     runTimingScenario,
     runCost,
+    runPaused,
     dagObservability,
     dagPeekScenario,
     dagMotionScenario,

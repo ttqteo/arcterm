@@ -117,7 +117,9 @@ func ResumeWorkerArgs(runtime, sessionId string, baseArgs []string, nudge string
 }
 
 // ResumeRunWorker restarts the worker in tabORef in its own session, in the same tab so the human keeps its
-// scrollback, with nudge as its first turn. A var so tests can stub the restart.
+// scrollback, with nudge as its first turn. It arms the block's controller again in the same write as the resume
+// args, because SuspendRunWorker (and StopRunWorker) leave it disarmed and a forced start of a block with no
+// controller name would start nothing. A var so tests can stub the restart.
 var ResumeRunWorker = func(ctx context.Context, tabORef, runtime, sessionId, nudge string) error {
 	oref, err := waveobj.ParseORef(tabORef)
 	if err != nil || oref.OType != waveobj.OType_Tab {
@@ -142,7 +144,11 @@ var ResumeRunWorker = func(ctx context.Context, tabORef, runtime, sessionId, nud
 	if !ok {
 		return fmt.Errorf("runtime %q cannot resume a session", runtime)
 	}
-	return configureAndStartWorker(ctx, oref.OID, blockId, waveobj.MetaMapType{waveobj.MetaKey_CmdArgs: args})
+	return configureAndStartWorker(ctx, oref.OID, blockId, waveobj.MetaMapType{
+		// every run worker is a cmd block (makeWorkerBlockMeta)
+		waveobj.MetaKey_Controller: blockcontroller.BlockController_Cmd,
+		waveobj.MetaKey_CmdArgs:    args,
+	})
 }
 
 // SpawnRunWorker creates a background tab set up to run the runtime's unattended worker form in cwd and

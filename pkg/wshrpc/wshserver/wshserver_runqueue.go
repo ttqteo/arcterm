@@ -72,7 +72,7 @@ var (
 
 var allRunStatuses = []string{
 	jarvis.RunStatus_Planning, jarvis.RunStatus_AwaitingReview, jarvis.RunStatus_Executing,
-	jarvis.RunStatus_Blocked, jarvis.RunStatus_Done, jarvis.RunStatus_Cancelled,
+	jarvis.RunStatus_Blocked, jarvis.RunStatus_Paused, jarvis.RunStatus_Done, jarvis.RunStatus_Cancelled,
 }
 
 // PokeRunQueue has the loop evaluate the queue now. It never blocks: it is the hook every run write calls.
@@ -292,10 +292,11 @@ func publishRunQueue(started ...wshrpc.RunQueueStarted) {
 	runQueuePublish(wshrpc.RunQueueChangedData{Entries: entries, Started: started})
 }
 
-// loadRunQueueRuns is the loop's view of the runs: those that count against the cap (not done or cancelled), and the
-// runs an entry waits After or is blocked on, which may be long finished.
+// loadRunQueueRuns is the loop's view of the runs: those that count against the cap (not done or cancelled, a paused
+// run included: it holds its place until it resumes), and the runs an entry waits After or is blocked on, which may be
+// long finished.
 func loadRunQueueRuns(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
-	live, err := wstore.GetRunsByStatus(ctx, jarvis.RunStatus_Planning, jarvis.RunStatus_AwaitingReview, jarvis.RunStatus_Executing, jarvis.RunStatus_Blocked)
+	live, err := wstore.GetRunsByStatus(ctx, jarvis.RunStatus_Planning, jarvis.RunStatus_AwaitingReview, jarvis.RunStatus_Executing, jarvis.RunStatus_Blocked, jarvis.RunStatus_Paused)
 	if err != nil {
 		return nil, err
 	}

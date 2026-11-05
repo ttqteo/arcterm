@@ -6,6 +6,25 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Pause and Resume keep each agent's session (claude, pi, agy, codex).** In the installed app, for each
+  of the four harnesses, start an orchestrator run whose worker uses it (a run per harness is fine; a quick run works
+  too) → while a worker is mid-task, the run's ⋯ menu → Pause → the lead and every worker stop (their processes leave
+  Task Manager or Activity Monitor), the run reads "Paused · resumes when memory frees", and the worktrees and commits
+  stay. Answer a question the worker had open while the run is paused. Resume → each agent reopens in its own tab and
+  session with the "Arc paused this run…" nudge, still holding its earlier conversation (no fresh session), carries on
+  from where it stopped, and gets the answer you gave while paused. Go tests only; the CDP `run-paused` scenario seeds a
+  paused run and never suspends a session.
+- [ ] (arcterm) **A run pauses itself under real memory pressure and resumes when it frees (Windows and macOS).** On
+  each OS, with two or three runs going, fill RAM (several `node -e` allocating a few GB each, or a few big builds)
+  until the app bar's RAM chip is amber and stays so for about a minute → the run with the fewest tasks done (not one in
+  its Final stage or mid-merge, and holding over 1 GB) pauses by itself, the RAM drops, and its `run-paused` event
+  reads `auto` with the RAM it held; no card and no toast. Free the RAM → about five minutes later, once the free RAM is
+  over what the run held plus 4 GB, it resumes by itself. On Windows the pressure reading (commit charge) is never
+  "normal", only unknown: check it resumes there all the same. Only the pure rules (`runregulator.Decide`) are unit
+  tested.
+- [ ] (arcterm) **The run card's ⋯ menu.** `BlockedCard` in `runcards.tsx`, the one run card that carries a Cancel, is
+  mounted by no screen, so the `run-paused` scenario has no step for its menu. When a screen mounts it: on a top-level
+  active run its ⋯ menu holds Pause, on a paused one Resume, and neither sits beside Cancel.
 - [ ] (arcterm) **Skim folds a long reply.** After the next build, a new `claude` session (fullscreen) → ask something
   that gets a reply longer than 10 lines → it shows the first paragraph and up to 4 one-sentence reasons, then
   `▾ show more · N lines` → click it → the whole reply, highlighted as before, with `▴ show less` under it → click →
@@ -83,6 +102,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `pickRunShape` in `runconfigstore.ts`)
 - [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
   one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing
   its own worktree under `arc-wt` is never asked. Tried only headless (`claude -p`, where the ask is a refusal with

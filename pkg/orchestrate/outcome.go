@@ -44,11 +44,19 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 	if run.DagORef == "" {
 		return nil
 	}
+	// a suspended worker's exit is not an outcome: the pause marked it before it stopped anything
+	if runUnderPause(ctx, run) {
+		return nil
+	}
 	poke := false
 	err = withDagMutation(run.DagORef, func() error {
 		g, err := wstore.GetDag(ctx, run.DagORef)
 		if err != nil {
 			return fmt.Errorf("loading dag for child outcome: %w", err)
+		}
+		// re-read under the lock: a pause that landed while this waited for it
+		if dagPaused(g) {
+			return nil
 		}
 		task := taskByRunID(g, run.ID)
 		if task == nil {
@@ -193,6 +201,11 @@ func HandleRunWorkerExit(ctx context.Context, workerORef string, exit jarvis.Wor
 	if err != nil {
 		return fmt.Errorf("loading run %s: %w", runId, err)
 	}
+	// before anything is recorded or closed: a worker the pause suspended exits like a failed one, and is neither. Its
+	// lead's tab is not collected either: the resume reopens it
+	if runUnderPause(ctx, run) {
+		return nil
+	}
 	recordWorkerOutput(ctx, run, workerORef, exit)
 	// before the dag early-return, because a lead's tab has to be collected in both shapes: a bounded
 	// run reaches no other close site at all, and a dag run whose lead was still mid-turn when the dag
@@ -212,6 +225,10 @@ func HandleWorkerTabClose(ctx context.Context, tabId string) {
 	workerORef := waveobj.MakeORef(waveobj.OType_Tab, tabId).String()
 	channelId, runId, err := workerRunIds(ctx, workerORef)
 	if err == nil && runId != "" {
+		// a suspended worker's tab closed by hand: the run stays paused, and its resume reopens it in a new tab
+		if run, gerr := wstore.GetRun(ctx, channelId, runId); gerr == nil && runUnderPause(ctx, run) {
+			return
+		}
 		err = failWorkerPhase(ctx, channelId, runId, workerORef, workerTabClosedNote, leadTabClosedNote)
 	}
 	if err != nil {

@@ -778,6 +778,30 @@ describe("runRowFace", () => {
         const f = runRowFace({ line, run: { ...run, status: "blocked" } as Run, asking: false, project: "p" });
         expect(f).toMatchObject({ state: "blocked", stateTone: "asking", dot: "asking" });
     });
+    // paused is the Agent tree's words, said whole: the row is the one place a paused run's Resume sits
+    it("reads a paused run as paused, faint and idle, offers Resume, and can still be stopped", () => {
+        const paused = { ...run, status: "paused" } as Run;
+        const dag = { status: "paused", tasks: [] } as unknown as TaskGroup;
+        for (const d of [undefined, dag]) {
+            const f = runRowFace({ line, run: paused, dag: d, asking: false, project: "p" });
+            expect(f).toMatchObject({
+                state: "Paused · resumes when memory frees",
+                stateTone: "faint",
+                dot: "idle",
+                paused: true,
+                canStop: true,
+                stopped: false,
+            });
+        }
+    });
+    it("offers Resume on a paused run only", () => {
+        for (const status of ["executing", "blocked", "done", "cancelled"]) {
+            const f = runRowFace({ line, run: { ...run, status } as Run, asking: false, project: "p" });
+            expect(f.paused, status).toBe(false);
+        }
+        const direct = { ...line, runOid: undefined, agentId: "a1", meta: "claude · waveterm", state: "working" };
+        expect(runRowFace({ line: direct, asking: false, project: "" }).paused).toBe(false);
+    });
 });
 
 describe("sessionLine age", () => {
