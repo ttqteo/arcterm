@@ -11,6 +11,7 @@ import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-
 import type { Turn } from "./control-core";
 import { ALL_CATEGORIES, applyEdit, goalpostNote, goalpostRole, inspectChange, inspectCommand } from "./goalpost-core";
 import type { GoalpostFinding } from "./goalpost-core";
+import { absolutePath, editTarget, foreignReason, needsAsk, parentDirs, repoKey, repoRoot } from "./foreignrepo-core";
 import { denial, isEngineTree } from "./guard-core";
 import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
@@ -143,6 +144,63 @@ async function steerTurn($: EngineInterface, text: string) {
 // why this session may not run the shell command; null when it may, and always outside arcterm
 async function refusal($: EngineInterface, command: string, background?: boolean): Promise<string | null> {
     return active ? denial(command, await $.session.cwd(), background === true) : null;
+}
+
+// a repo as git names it: its key, and the folder the person knows it by
+type Repo = { key: string; root: string };
+
+// the repo each directory sits in, null outside one; asked of git once per directory
+const repoOfDir = new Map<string, Repo | null>();
+
+// the other repos the person said yes to editing this session. module state on purpose: a reload of the mod
+// forgets them, and the next edit there asks again
+const allowedRepos = new Set<string>();
+
+async function repoOf($: EngineInterface, dir: string): Promise<Repo | null> {
+    if (repoOfDir.has(dir)) {
+        return repoOfDir.get(dir) ?? null;
+    }
+    const ran = await $.process.run(["git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    const key = ran.exitCode === 0 ? repoKey(ran.stdout) : null;
+    const repo = key === null ? null : { key, root: repoRoot(ran.stdout) };
+    repoOfDir.set(dir, repo);
+    return repo;
+}
+
+// the file a file tool is about to write and the repos on either side, when that repo is another one the person
+// has not allowed; null when the edit needs no yes
+async function foreignEdit(
+    $: EngineInterface,
+    input: unknown
+): Promise<{ file: string; target: Repo; own: Repo } | null> {
+    const path = editTarget(input);
+    const cwd = sessionCwd ?? (await $.session.cwd());
+    if (path === null) {
+        return null;
+    }
+    const own = await repoOf($, absolutePath(cwd, cwd));
+    const file = absolutePath(path, cwd);
+    for (const dir of parentDirs(file)) {
+        if (await $.fs.exists(dir)) {
+            const target = await repoOf($, dir);
+            return own && target && needsAsk(own.key, target.key, allowedRepos) ? { file, target, own } : null;
+        }
+    }
+    return null;
+}
+
+// runs a file tool; one that ran in another repo had the person's yes at tool.check, so that repo stays allowed
+async function allowingRepo<R extends { deny?: string; isError?: true }>(
+    $: EngineInterface,
+    input: unknown,
+    run: () => Promise<R>
+): Promise<R> {
+    const foreign = await foreignEdit($, input).catch(() => null);
+    const ran = await run();
+    if (foreign && ran.deny === undefined && !ran.isError) {
+        allowedRepos.add(foreign.target.key);
+    }
+    return ran;
 }
 
 // set by a shell command that tried a UI change in the running app; a commit that changed UI clears it, so each
@@ -592,7 +650,7 @@ export const register: Register = (on) => {
             const after = before === null ? null : applyEdit(before, e.old_string, e.new_string, e.replace_all);
             return after === null ? [] : inspectChange({ path: e.file_path, before, after }, ALL_CATEGORIES);
         });
-        return withGoalposts($, findings, e, next);
+        return allowingRepo($, e, () => withGoalposts($, findings, e, next));
     });
 
     on("tool.call", { tool: "Write" }, async ($, e, next) => {
@@ -602,8 +660,28 @@ export const register: Register = (on) => {
                 ALL_CATEGORIES
             )
         );
-        return withGoalposts($, findings, e, next);
+        return allowingRepo($, e, () => withGoalposts($, findings, e, next));
     });
+
+    on("tool.call", { tool: "NotebookEdit" }, ($, e, next) => allowingRepo($, e, () => next(e)));
+
+    // an edit in a repo other than the session's own goes to the person, whatever the mode: a session once
+    // edited another project's checkout unasked. in every session, Arc's or not. where nobody can be asked the
+    // engine turns the ask into a deny, and the reason tells the model to ask
+    for (const tool of ["Edit", "Write", "NotebookEdit"] as const) {
+        on("tool.check", { tool }, async ($, e, next) => {
+            const verdict = await next(e);
+            if (verdict.decision === "deny") {
+                return verdict;
+            }
+            const foreign = await foreignEdit($, e.input);
+            if (foreign === null) {
+                return verdict;
+            }
+            const reason = foreignReason(foreign.file, foreign.target.root, foreign.own.root, e.approver !== undefined);
+            return { decision: "ask", reason };
+        });
+    }
 
     // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
     for (const tool of ["Agent", "Task", "Workflow"] as const) {
