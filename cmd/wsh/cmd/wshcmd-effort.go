@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -188,6 +189,62 @@ var effortUnarchiveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return mutateOne(args[0], wshrpc.EffortOp{Op: "unarchive"}, isJSON(cmd))
 	},
+}
+
+var effortPinCmd = &cobra.Command{
+	Use:     "pin <effort> [--replace-oldest]",
+	Short:   "pin an effort to the Brief's cards (at most 6; --replace-oldest unpins the oldest to make room)",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		replace, _ := cmd.Flags().GetBool("replace-oldest")
+		return pinOne(args[0], true, replace, isJSON(cmd))
+	},
+}
+
+var effortUnpinCmd = &cobra.Command{
+	Use:     "unpin <effort>",
+	Short:   "unpin an effort from the Brief's cards",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return pinOne(args[0], false, false, isJSON(cmd))
+	},
+}
+
+func pinOne(effortOID string, pin, replaceOldest, asJSON bool) error {
+	rtn, err := wshclient.EffortPinCommand(RpcClient, wshrpc.CommandEffortPinData{
+		EffortOID: effortOID, Pin: pin, ReplaceOldest: replaceOldest,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	if asJSON && !rtn.CapReached {
+		return jsonOut(rtn)
+	}
+	msg, err := pinResultMessage(effortOID, rtn)
+	if err != nil {
+		return err
+	}
+	fmt.Println(msg)
+	return nil
+}
+
+// pinResultMessage words a pin call's answer; a pin the cap refused is an error, so the command exits
+// nonzero and names the pin it would have to replace.
+func pinResultMessage(effortOID string, rtn *wshrpc.CommandEffortPinRtnData) (string, error) {
+	if rtn.CapReached {
+		oldest := "the oldest pin"
+		if rtn.Oldest != nil {
+			oldest = fmt.Sprintf("%q (effort:%s)", rtn.Oldest.Title, rtn.Oldest.OID)
+		}
+		return "", fmt.Errorf("EC-PIN-CAP: %d initiatives are pinned; the oldest is %s — pass --replace-oldest to unpin it and pin this one",
+			jarvis.MaxPinnedEfforts, oldest)
+	}
+	if rtn.Pinned {
+		return fmt.Sprintf("effort %s is pinned", effortOID), nil
+	}
+	return fmt.Sprintf("effort %s is not pinned", effortOID), nil
 }
 
 var effortLinkCmd = &cobra.Command{
@@ -558,6 +615,9 @@ func init() {
 	effortListCmd.Flags().Bool("archived", false, "include archived efforts")
 	effortListCmd.Flags().Bool("json", false, "JSON output")
 	effortShowCmd.Flags().Bool("json", false, "JSON output")
+	effortPinCmd.Flags().Bool("replace-oldest", false, "at the cap, unpin the oldest pin to make room")
+	effortPinCmd.Flags().Bool("json", false, "JSON output")
+	effortUnpinCmd.Flags().Bool("json", false, "JSON output")
 	effortLinkCmd.Flags().String("parent", "", "parent effort oid")
 	effortDeleteCmd.Flags().Bool("force", false, "delete without archiving first")
 	effortAdvanceCmd.Flags().String("note", "", "annotation")
@@ -575,7 +635,8 @@ func init() {
 	effortChunkDetachCmd.Flags().String("agent", "", "agent tab id")
 
 	effortCmd.AddCommand(effortCreateCmd, effortListCmd, effortShowCmd, effortRenameCmd,
-		effortProjectCmd, effortTicketCmd, effortStatusCmd, effortUnarchiveCmd, effortLinkCmd, effortUnlinkCmd,
+		effortProjectCmd, effortTicketCmd, effortStatusCmd, effortUnarchiveCmd, effortPinCmd, effortUnpinCmd,
+		effortLinkCmd, effortUnlinkCmd,
 		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortChunkCmd)
 	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkMoveCmd,
 		effortChunkRemoveCmd, effortChunkStatusCmd, effortChunkNoteCmd, effortChunkOwnerCmd,

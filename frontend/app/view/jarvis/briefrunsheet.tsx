@@ -84,8 +84,10 @@ function RunIdChip({ id }: { id: string }) {
     );
 }
 
-// The one panel both faces use. `face` is what the sheet is drawing, and it is on the element rather than
-// inferred from the subject so a check can tell a sheet that never opened from one that opened empty.
+// The one panel every face uses. `face` is what the sheet is drawing, and it is on the element rather than
+// inferred from the subject so a check can tell a sheet that never opened from one that opened empty. A face
+// with a head of its own (the council's, the initiative's) passes it as `head`, which replaces the default
+// header row; label, title, meta, runId and actions then go unread. The run sheet keeps the default.
 export function SheetShell({
     face,
     label,
@@ -93,6 +95,7 @@ export function SheetShell({
     meta,
     runId,
     actions,
+    head,
     onClose,
     children,
 }: {
@@ -103,6 +106,7 @@ export function SheetShell({
     meta?: string;
     runId?: string;
     actions?: ReactNode;
+    head?: ReactNode;
     onClose: () => void;
     children: ReactNode;
 }) {
@@ -113,30 +117,61 @@ export function SheetShell({
             // positioning, width, scrim and edge now belong to ModalShell variant="sheet"
             className="flex h-full min-h-0 flex-col"
         >
-            <header className="flex flex-none items-center gap-3 border-b border-edge-faint px-4 py-2.5">
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex min-w-0 items-baseline gap-2.5">
-                        <span className={cn(REGION_LABEL, "text-accent-soft")}>{label}</span>
-                        <span title={title} className="min-w-0 truncate text-[13.5px] font-semibold text-ink-hi">
-                            {title}
-                        </span>
-                    </div>
-                    {meta || runId ? (
-                        <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-muted">
-                            {runId ? <RunIdChip id={runId} /> : null}
-                            {meta ? <span className="min-w-0 truncate">{meta}</span> : null}
-                        </div>
-                    ) : null}
-                </div>
-                <div className="flex flex-none items-center gap-2.5 whitespace-nowrap">
-                    {actions}
-                    <button type="button" aria-label="Close detail sheet" onClick={onClose} className={SHEET_BTN}>
-                        Close
-                    </button>
-                </div>
-            </header>
+            {head != null ? (
+                head
+            ) : (
+                <SheetHeader
+                    label={label}
+                    title={title}
+                    meta={meta}
+                    runId={runId}
+                    actions={actions}
+                    onClose={onClose}
+                />
+            )}
             {children}
         </aside>
+    );
+}
+
+function SheetHeader({
+    label,
+    title,
+    meta,
+    runId,
+    actions,
+    onClose,
+}: {
+    label: string;
+    title: string;
+    meta?: string;
+    runId?: string;
+    actions?: ReactNode;
+    onClose: () => void;
+}) {
+    return (
+        <header className="flex flex-none items-center gap-3 border-b border-edge-faint px-4 py-2.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <div className="flex min-w-0 items-baseline gap-2.5">
+                    <span className={cn(REGION_LABEL, "text-accent-soft")}>{label}</span>
+                    <span title={title} className="min-w-0 truncate text-[13.5px] font-semibold text-ink-hi">
+                        {title}
+                    </span>
+                </div>
+                {meta || runId ? (
+                    <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-muted">
+                        {runId ? <RunIdChip id={runId} /> : null}
+                        {meta ? <span className="min-w-0 truncate">{meta}</span> : null}
+                    </div>
+                ) : null}
+            </div>
+            <div className="flex flex-none items-center gap-2.5 whitespace-nowrap">
+                {actions}
+                <button type="button" aria-label="Close detail sheet" onClick={onClose} className={SHEET_BTN}>
+                    Close
+                </button>
+            </div>
+        </header>
     );
 }
 

@@ -8,7 +8,8 @@
 export type TourLang = "vi" | "en";
 export type TourTrackId = "brief" | "initiatives" | "runsheet" | "profile";
 
-// what a step needs open before its target can be on screen; a word, not a function, so the order is testable
+// what a step needs open before its target can be on screen; a word, not a function, so the order is testable.
+// "firstInitiative" is the first card's initiative open in the sheet (jarvistouractions.ts).
 export type TourPrepare = "profile" | "newestRun" | "firstInitiative";
 
 export interface TourText {

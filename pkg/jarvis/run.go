@@ -6,6 +6,7 @@ package jarvis
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -291,8 +292,9 @@ func RunningPhaseIndex(run waveobj.Run) int {
 	return -1
 }
 
-// CancelRun terminally cancels a run: open phases become skipped, completed phases are preserved. A cancelled run
-// no longer reads paused: its pause record and its PausedUnder mark are dropped (LastResumedTs is history and stays).
+// CancelRun terminally cancels a run: open phases become skipped, completed phases are preserved, and
+// CancelledTs records when (kept on a second cancel). A cancelled run no longer reads paused: its pause record and
+// its PausedUnder mark are dropped (LastResumedTs is history and stays).
 func CancelRun(run waveobj.Run) waveobj.Run {
 	for i := range run.Phases {
 		if run.Phases[i].State == PhaseState_Pending || run.Phases[i].State == PhaseState_Running {
@@ -300,6 +302,9 @@ func CancelRun(run waveobj.Run) waveobj.Run {
 		}
 	}
 	run.Status = RunStatus_Cancelled
+	if run.CancelledTs == 0 {
+		run.CancelledTs = time.Now().UnixMilli()
+	}
 	run.Pause = nil
 	run.PausedUnder = ""
 	return run

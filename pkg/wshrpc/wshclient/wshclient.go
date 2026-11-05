@@ -656,6 +656,12 @@ func EffortMutateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortMutateData,
 	return resp, err
 }
 
+// command "effortpin", wshserver.EffortPinCommand
+func EffortPinCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortPinData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortPinRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortPinRtnData](w, "effortpin", data, opts)
+	return resp, err
+}
+
 // command "eventpublish", wshserver.EventPublishCommand
 func EventPublishCommand(w *wshutil.WshRpc, data wps.WaveEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "eventpublish", data, opts)

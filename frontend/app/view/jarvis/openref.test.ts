@@ -56,7 +56,8 @@ import {
 import { setupTabAtom } from "../agents/setupstore";
 import type { OpenTarget } from "./address";
 import { effortDetailAtom } from "./effortstore";
-import { briefOpenInitiativeAtom, briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { initiativeSheetAtom } from "./initiativesheetstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, recordDetailAtom } from "./jarvissubjectstore";
 import {
     isPeekable,
@@ -126,7 +127,7 @@ beforeEach(() => {
     globalStore.set(radarSelectedIdAtom, undefined);
     globalStore.set(briefPeekRecordAtom, null);
     globalStore.set(briefSheetOpenAtom, false);
-    globalStore.set(briefOpenInitiativeAtom, null);
+    globalStore.set(initiativeSheetAtom, { view: "plan", chunk: null });
     globalStore.set(pendingDecisionAnchorAtom, null);
     globalStore.set(activeSubjectAtom, null);
     globalStore.set(activeRunIdAtom, {});
@@ -379,9 +380,9 @@ describe("effort landing", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
     });
 
-    // a plan-review item whose agent has closed opens its initiative: Accept all and Drop all are on the Brief's
-    // inline tracker, which the Activity sheet does not have
-    it("opens an initiative with a plan to review in place in the Brief, not its sheet", async () => {
+    // a plan-review item whose agent has closed opens its initiative: the sheet's plan keeps the Proposed group's
+    // Accept and Drop (spec decision 7), so it opens in the sheet like any other
+    it("opens an initiative with a plan to review in the sheet, on its plan", async () => {
         const model = makeModel();
         const chunks = [
             { label: "Spec", status: "done" },
@@ -389,21 +390,31 @@ describe("effort landing", () => {
         ];
         rpc.EffortGetCommand.mockResolvedValue({ effort: { oid: "e-1", chunks } });
         expect(await openAddress(model, "effort:e-1")).toEqual({ ok: true });
-        expect(globalStore.get(briefOpenInitiativeAtom)).toBe("effort:e-1");
-        expect(globalStore.get(briefSheetOpenAtom)).toBe(false);
-        expect(globalStore.get(activeSubjectAtom)).toBeNull();
+        expect(globalStore.get(briefSheetOpenAtom)).toBe(true);
+        expect(globalStore.get(activeSubjectAtom)).toEqual({ kind: "effort", id: "e-1" });
+        expect(globalStore.get(initiativeSheetAtom)).toEqual({ view: "plan", chunk: null });
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
     });
 
-    it("opens the Activity sheet when asked for it, even with a plan to review", async () => {
+    it("opens the sheet on the initiative's Activity feed when asked for it", async () => {
         const model = makeModel();
         rpc.EffortGetCommand.mockResolvedValue({
             effort: { oid: "e-1", chunks: [{ label: "Radial layout model", status: "proposed" }] },
         });
         expect(await openTarget(model, { kind: "effort", effortId: "e-1", view: "activity" })).toEqual({ ok: true });
-        expect(globalStore.get(briefOpenInitiativeAtom)).toBeNull();
         expect(globalStore.get(activeSubjectAtom)).toEqual({ kind: "effort", id: "e-1" });
         expect(globalStore.get(briefSheetOpenAtom)).toBe(true);
+        expect(globalStore.get(initiativeSheetAtom)).toEqual({ view: "activity", chunk: null });
+    });
+
+    it("starts the sheet on the plan again when another initiative opens after the feed", async () => {
+        const model = makeModel();
+        rpc.EffortGetCommand.mockResolvedValue({ effort: { oid: "e-1" } });
+        await openTarget(model, { kind: "effort", effortId: "e-1", view: "activity" });
+        rpc.EffortGetCommand.mockResolvedValue({ effort: { oid: "e-2" } });
+        expect(await openAddress(model, "effort:e-2")).toEqual({ ok: true });
+        expect(globalStore.get(activeSubjectAtom)).toEqual({ kind: "effort", id: "e-2" });
+        expect(globalStore.get(initiativeSheetAtom)).toEqual({ view: "plan", chunk: null });
     });
 
     it("reports an initiative the store cannot find, instead of opening an empty sheet", async () => {
@@ -941,7 +952,6 @@ function selections(model: AgentsViewModel) {
 // priors that are not the defaults, so a write of the default would still show
 function seedSelections(model: AgentsViewModel): void {
     globalStore.set(briefSheetOpenAtom, false);
-    globalStore.set(briefOpenInitiativeAtom, null);
     globalStore.set(activeSubjectAtom, { kind: "channel", id: "c-prior" });
     globalStore.set(activeRunIdAtom, { "c-prior": "r-prior" });
     globalStore.set(activeChannelIdAtom, "c-prior");

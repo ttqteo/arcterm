@@ -395,16 +395,25 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`N` | New initiative |
 | `i` | With a live run sheet open: focus its composer |
 | `/` | Filter the Brief's rows (`Esc` clears) |
-| `Enter` | Open the row under the cursor |
+| `j` / `k` | Move the Brief's cursor: the Waiting strip's item, the initiative cards row by row, the initiatives list, Activity, then Since you looked, Shipped and Ideas |
+| `Enter` | Open the row under the cursor (an initiative opens in the sheet) |
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
+| `p` | Pin the initiative under the cursor to the cards, or unpin it (with an initiative open in the sheet: that one) |
 | `v` | Review: walk the initiatives that changed since you last reviewed them, then the ones idle for two weeks. While a pass is on: `Enter` Mark reviewed and open the next, `j` / `k` (or `←` / `→`) move through the pass, `Esc` leaves it |
 | `Alt`+`↑` / `Alt`+`↓` | Move the chunk under the cursor up / down within its stage |
 | `e` | Expand / collapse the record band |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |
-| `j` / `k` | With a run sheet open: next / previous run in the list it counts (Runs, or Shipped for a finished run) |
+| `j` / `k` | With a run sheet open: next / previous run in the list it counts (Activity's live then earlier runs, or Shipped for a finished run) |
 | `1`…`9` | With a run sheet open: pick an option on the lead's question card |
 | `Enter` | Submit the answer |
 | `Esc` | Leave the composer (a second `Esc` closes the sheet) |
+| `j` / `k` | With an initiative open in the sheet: move the chunk cursor down / up its plan (the first press lands on the chunk picked up next); in a chunk opened inside the sheet, the next / previous chunk |
+| `Enter` | With an initiative open in the sheet: open the chunk under the cursor |
+| `w` | With an initiative open in the sheet: Work on it in a new agent, or go to the agent already open on it |
+| `Alt`+`↑` / `Alt`+`↓` | With an initiative open in the sheet: move the chunk under its cursor up / down within its stage |
+| `s` | In a chunk opened inside the sheet: open its status menu |
+| `1`…`6` | In a chunk opened inside the sheet: mark it pending, active, blocked, deferred, skipped or done (blocked asks for a one-line reason) |
+| `Esc` | In a chunk opened inside the sheet: back to the initiative (a second `Esc` closes the sheet) |
 | `→` / `Enter` | While a Jarvis tour shows: next step |
 | `←` | While a Jarvis tour shows: previous step |
 | `Esc` | While a Jarvis tour shows: end the tour |

@@ -6,6 +6,18 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The council sheet's actions do what they say.** In the dev or installed app, open a finished council
+  from Jarvis → Activity → its Earlier line, so the report opens in the Brief's sheet → Add to initiative… lists the
+  initiatives and adds the chosen direction as a chunk (the initiative's plan shows it); Ask in chat opens the council's
+  Discussion with the draft filled; Open chat opens the Discussion; Full report ↗ opens the report file in Code. Then a
+  failed and a stopped council: the verdict block says it ended and lists what finished. Unit tests only; the
+  `jarvis-council-sheet` scenario clicks none of these (Revamp Jarvis, 471a49f67).
+- [ ] (arcterm) **An agent's note on a chunk reads as an agent's.** Let an agent write a note on a chunk (`wsh effort
+  note` from a run's worker), then open the initiative in the Brief's sheet and the chunk → the note block is drawn in
+  the agent's colour with Open agent session ↗ (or Open run ↗ for a run's note), clamps at four lines with Show all, and
+  a run's report shows under Show all. Unit tests only: a scenario cannot write an agent-authored note (Revamp Jarvis,
+  d2848e49d).
+
 - [ ] (arcterm) **Pause and Resume keep each agent's session (claude, pi, agy, codex).** In the installed app, for each
   of the four harnesses, start an orchestrator run whose worker uses it (a run per harness is fine; a quick run works
   too) → while a worker is mid-task, the run's ⋯ menu → Pause → the lead and every worker stop (their processes leave
@@ -102,6 +114,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `pickRunShape` in `runconfigstore.ts`)
 - [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
   one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing

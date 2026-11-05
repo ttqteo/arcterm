@@ -38,6 +38,11 @@ describe("buildEffortCard", () => {
         expect(buildEffortCard(base).lastnote).toBeUndefined();
     });
 
+    it("carries when it was pinned, 0 when it is not", () => {
+        expect(buildEffortCard({ ...base, pinnedts: 4200 }).pinnedTs).toBe(4200);
+        expect(buildEffortCard(base).pinnedTs).toBe(0);
+    });
+
     it("projects tones and progress with the skip-shrinking denominator", () => {
         const m = buildEffortCard(base);
         expect(m.done).toBe(2);

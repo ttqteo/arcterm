@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeedEntry } from "./effortfeed";
-import { noteRunFace, sidebarNotes } from "./sidebarnotes";
+import { changedTo, noteRunFace, sidebarNotes } from "./sidebarnotes";
 
 const e = (seq: number, text: string, over: Partial<FeedEntry> = {}): FeedEntry => ({
     seq,
@@ -43,6 +43,31 @@ describe("sidebarNotes", () => {
         expect(cards[0]).toMatchObject({ sessionTab: "tab9", runOid: "r1", editable: false });
         expect(cards[1].editable).toBe(true);
         expect(cards[2].editable).toBe(true);
+    });
+});
+
+describe("changedTo", () => {
+    it("reads the status a status change set", () => {
+        expect(changedTo(e(1, "", { kind: "chunk-status", marked: "marked blocked" }))).toBe("blocked");
+        expect(changedTo(e(1, "", { kind: "chunk-done", marked: "marked done" }))).toBe("done");
+    });
+    it("a done event whose note went unlocated still reads done", () => {
+        expect(changedTo(e(1, "", { kind: "chunk-done", marked: "marked done" }))).toBe("done");
+        expect(changedTo(e(1, "", { kind: "chunk-done", marked: "" }))).toBe("done");
+    });
+    it("a status change with no recorded status is null; a note and a chunk added are not status changes", () => {
+        expect(changedTo(e(1, "", { kind: "chunk-status", marked: "status changed" }))).toBeNull();
+        expect(changedTo(e(1, "text"))).toBeNull();
+        expect(changedTo(e(1, "", { kind: "chunk-added", marked: "chunk added" }))).toBeNull();
+    });
+    it("a note card carries the status its change set", () => {
+        const cards = sidebarNotes(
+            [e(2, "why", { kind: "chunk-status", marked: "marked blocked", noteAt: undefined }), e(1, "plain")],
+            "N1",
+            5000,
+            new Set()
+        );
+        expect(cards.map((c) => c.changed)).toEqual(["blocked", null]);
     });
 });
 

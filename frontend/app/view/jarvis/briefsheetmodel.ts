@@ -15,13 +15,19 @@ export type SheetFace =
     | { kind: "none" }
     | { kind: "channel"; channelId: string; body: "run" | "launcher" }
     | { kind: "effort"; effortId: string }
-    | { kind: "queued"; entryId: string };
+    | { kind: "queued"; entryId: string }
+    | { kind: "council"; councilId: string };
 
 export function sheetFace(
     subject: ActiveSubject | null,
     run: Run | null,
-    queuedEntryId: string | null = null
+    queuedEntryId: string | null = null,
+    councilId: string | null = null
 ): SheetFace {
+    // a council is no subject either (councilsheetstore.ts): the three ways in clear one another, so at most one is set
+    if (councilId != null) {
+        return { kind: "council", councilId };
+    }
     // a queue entry is no subject (briefqueuestore.ts); opening one clears the subject, and opening a subject clears it
     if (queuedEntryId != null) {
         return { kind: "queued", entryId: queuedEntryId };
@@ -40,4 +46,19 @@ export function sheetFace(
     }
     // dossier -> the record peek, briefing -> the Brief
     return { kind: "none" };
+}
+
+export type SheetPosition = { n: number; total: number; prev: string | null; next: string | null };
+
+// Where the sheet's item sits in the list the Brief published (the run sheet's briefRunListAtom, the initiative
+// sheet's briefInitiativeListAtom): "n / total" and the neighbours its Previous/Next open. An item outside the list
+// (a run opened from Waiting, an initiative from the palette) has no position, and its arrows are inert.
+export function sheetPosition(list: string[], id: string | null | undefined): SheetPosition {
+    const at = id != null ? list.indexOf(id) : -1;
+    return {
+        n: at + 1,
+        total: at >= 0 ? list.length : 0,
+        prev: at > 0 ? list[at - 1] : null,
+        next: at >= 0 && at < list.length - 1 ? list[at + 1] : null,
+    };
 }

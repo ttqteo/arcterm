@@ -21,10 +21,12 @@ import {
 import { runStage } from "@/app/view/agents/runstage";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
 import { queueSheetModel } from "./briefqueue";
 import { openQueueSheet } from "./briefqueuestore";
 import { SHEET_BTN } from "./briefrunsheet";
+import { sheetPosition } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
 import { openOrPeekAddress } from "./openref";
 
@@ -56,6 +58,45 @@ function useAfterStage(model: AgentsViewModel, runId: string | undefined): strin
     const label = runStage({ status: run.status, land: run.land, dag }).label.toLowerCase();
     const { done, total } = runProgress(dag);
     return dag != null && total > 0 ? `${label} ${done}/${total}` : label;
+}
+
+// Activity draws the queue as one `Queued N` line that opens the first plan (spec 2026-11-05-jarvis-revamp-design.md
+// decision 5), so the sheet steps through the rest: n / N and Previous / Next, in the queue's order.
+function QueueStep({ entryId }: { entryId: string }) {
+    const rows = useAtomValue(queuedRowsAtom);
+    const pos = sheetPosition(
+        rows.map((r) => r.entry.id),
+        entryId
+    );
+    if (pos.total < 2) {
+        return null;
+    }
+    return (
+        <div data-queue-sheet-step className="ml-auto flex flex-none items-center gap-1">
+            <span className="mr-0.5 text-[10.5px] tabular-nums text-muted">
+                {pos.n} / {pos.total}
+            </span>
+            {(["prev", "next"] as const).map((dir) => {
+                const to = pos[dir];
+                return (
+                    <button
+                        key={dir}
+                        type="button"
+                        aria-label={dir === "prev" ? "Previous queued plan" : "Next queued plan"}
+                        title={dir === "prev" ? "Previous queued plan" : "Next queued plan"}
+                        disabled={to == null}
+                        onClick={() => to != null && openQueueSheet(to)}
+                        className={cn(
+                            "inline-flex h-[26px] w-6 cursor-pointer items-center justify-center rounded-[6px] border border-border hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            to != null ? "text-secondary" : "cursor-default text-feed-glyph"
+                        )}
+                    >
+                        {dir === "prev" ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
+                    </button>
+                );
+            })}
+        </div>
+    );
 }
 
 function QueueSheetBody({ model, row }: { model: AgentsViewModel; row: QueuedRow }) {
@@ -117,6 +158,7 @@ function QueueSheetBody({ model, row }: { model: AgentsViewModel; row: QueuedRow
                     >
                         {m.chip}
                     </span>
+                    <QueueStep entryId={entry.id} />
                 </div>
                 <Field label="waits on" data-queue-sheet-waits="">
                     {m.waits.runId != null || m.waits.entryId != null ? (

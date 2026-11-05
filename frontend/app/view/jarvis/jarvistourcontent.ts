@@ -56,39 +56,38 @@ export const TOUR_TRACKS: TourTrack[] = [
         steps: [
             {
                 id: "brief:waiting",
-                target: ['[data-jarvis-brief-region="waiting"]', '[data-jarvis-brief-band="waiting"]'],
+                target: ["[data-jarvis-waiting-strip]", '[data-jarvis-brief-band="waiting"]'],
                 vi: {
                     title: "Việc đang chờ bạn",
-                    body: "Câu hỏi của lead và worker, cổng duyệt, task bị chặn và run cần accept gom về đây. Ba việc gấp nhất hiện sẵn, «+N more» mở phần còn lại. Khi không có gì chờ, chỉ còn chip «all clear» trên header. Huy hiệu Jarvis trên nav rail đếm cùng các mục này.",
+                    body: "Câu hỏi của lead và worker, cổng duyệt, task bị chặn và run cần accept gom vào dải này ở đầu trang. Dải chỉ hiện việc gấp nhất, kèm nút hành động của nó; «Show all» mở toàn bộ ngay bên dưới. Khi không có gì chờ, dải biến mất và chỉ còn chip «all clear» trên header. Huy hiệu Jarvis trên nav rail đếm cùng các mục này.",
                 },
                 en: {
                     title: "What waits on you",
-                    body: "Questions from leads and workers, review gates, blocked tasks and runs to accept gather here. The first three show here, «+N more» opens the rest. With nothing waiting, only the «all clear» chip in the header shows. The Jarvis badge on the nav rail counts the same items.",
+                    body: "Questions from leads and workers, review gates, blocked tasks and runs to accept gather in this strip at the top. It shows the most urgent one with its own action; «Show all» opens the rest right under it. With nothing waiting the strip is gone, and only the «all clear» chip in the header shows. The Jarvis badge on the nav rail counts the same items.",
                 },
             },
             {
                 id: "brief:regions",
                 target: ["[data-jarvis-region-only]"],
                 vi: {
-                    title: "Các vùng của Brief",
-                    body: "Brief có hai cột. Cột chính: Waiting on you, Runs, Initiatives. Cột bên cạnh: Since you looked, Shipped, Ideas. Nút nhỏ ở cuối tiêu đề mỗi vùng (Show only) chỉ hiện vùng đó; bấm lại để hiện tất cả.",
+                    title: "Bố cục của Brief",
+                    body: "Cột chính: dải Waiting on you, rồi Initiatives (các thẻ đã ghim, dưới là danh sách còn lại). Cột bên cạnh: Activity, Since you looked, Shipped, Ideas. Nút nhỏ ở cuối tiêu đề Initiatives và Activity (Show only) chỉ hiện vùng đó; bấm lại để hiện tất cả.",
                 },
                 en: {
-                    title: "The Brief's regions",
-                    body: "The Brief has two columns. The main one holds Waiting on you, Runs and Initiatives; the one beside it holds Since you looked, Shipped and Ideas. The small Show only button at the end of a region's heading shows that region alone; press it again to show them all.",
+                    title: "How the Brief is laid out",
+                    body: "The main column holds the Waiting on you strip, then Initiatives: the pinned cards, and every other initiative in a list under them. The column beside it holds Activity, Since you looked, Shipped and Ideas. The small Show only button at the end of the Initiatives and Activity headings shows that region alone; press it again to show them all.",
                 },
             },
             {
-                id: "brief:runs",
-                target: ['[data-jarvis-brief-region="sessions"]'],
-                also: ["[data-jarvis-run-kind]"],
+                id: "brief:activity",
+                target: ["[data-jarvis-activity]"],
                 vi: {
-                    title: "Run đang chạy",
-                    body: "Các run tự chạy, theo project, nằm trên Initiatives. Nút lọc phía trên chọn loại run. Bấm một hàng để mở run sheet của nó; tour «Run sheet» giải thích sheet đó.",
+                    title: "Activity",
+                    body: "Run và council đang chạy là các thẻ nhỏ ở đầu cột bên cạnh; bên dưới, «Earlier · 7 days» liệt kê council đã xong và run kết thúc mà không ship. Các tab chọn loại: all, orchestrator, quick, councils; tab cũng lọc Shipped. Bấm một run để mở run sheet, bấm một council để đọc báo cáo của nó trong sheet.",
                 },
                 en: {
-                    title: "Runs going on",
-                    body: "Runs working on their own, by project, above Initiatives. The toggle above picks which kind to show. Click a row to open its run sheet; the «Run sheet» tour walks through it.",
+                    title: "Activity",
+                    body: "Runs and councils at work are small cards at the top of the side column; under them, «Earlier · 7 days» lists finished councils and runs that ended without shipping. The tabs pick a kind (all, orchestrator, quick, councils) and narrow Shipped too. Click a run to open its run sheet, a council to read its report in the sheet.",
                 },
             },
             {
@@ -97,11 +96,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 also: ["[data-jarvis-brief-mark-seen]", '[data-jarvis-brief-region="shipped"]'],
                 vi: {
                     title: "Từ lần bạn nhìn",
-                    body: "Run đã land và việc đã xong kể từ lần cuối bạn xem, ở cột bên cạnh. Ngay dưới là Shipped: những gì đã ship trong 7 ngày qua. «Mark seen» đánh dấu đã xem để Since you looked gọn lại.",
+                    body: "Run đã land và việc đã xong kể từ lần cuối bạn xem, dưới Activity. Ngay dưới là Shipped: những gì đã ship trong 7 ngày qua. «Mark seen» đánh dấu đã xem để Since you looked gọn lại.",
                 },
                 en: {
                     title: "Since you looked",
-                    body: "Runs that landed and work that finished since you last looked, in the column beside the work. Shipped sits under it with what shipped in the last seven days. Mark seen clears Since you looked so it stays short.",
+                    body: "Runs that landed and work that finished since you last looked, under Activity. Shipped sits under it with what shipped in the last seven days. Mark seen clears Since you looked so it stays short.",
                 },
             },
             {
@@ -117,11 +116,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 id: "brief:keys",
                 vi: {
                     title: "Phím tắt của Brief",
-                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · r: run mới · e: mở hoặc gập dải record. Shift+? mở danh sách phím đầy đủ.",
+                    body: "j / k: đi qua dải chờ, các thẻ, danh sách, Activity rồi cột bên cạnh · Enter: mở · w: Work on · p: ghim hoặc bỏ ghim initiative · r: run mới · e: mở hoặc gập dải record. Shift+? mở danh sách phím đầy đủ.",
                 },
                 en: {
                     title: "The Brief's keys",
-                    body: "j / k: move between rows · Enter: open the row · r: new run · e: open or fold the record band. Shift+? lists every key.",
+                    body: "j / k: walk the strip, the cards, the list, Activity and the side column · Enter: open · w: Work on · p: pin or unpin an initiative · r: new run · e: open or fold the record band. Shift+? lists every key.",
                 },
             },
         ],
@@ -144,56 +143,68 @@ export const TOUR_TRACKS: TourTrack[] = [
                 },
             },
             {
-                id: "initiatives:card",
-                target: ['[data-jarvis-brief-row="initiative"]'],
+                id: "initiatives:cards",
+                target: ["[data-jarvis-cards]"],
                 also: ["[data-jarvis-segment-bar]"],
                 vi: {
-                    title: "Hàng initiative",
-                    body: "Mỗi initiative là một hàng. Thanh màu có một đoạn cho mỗi chunk: thấy ngay bao nhiêu đã xong và chunk nào nên làm tiếp. Thứ tự cho biết nên làm gì trước: initiative bị chặn lên đầu, rồi đến những cái đang có agent mở, rồi theo hoạt động gần nhất.",
+                    title: "Thẻ đã ghim",
+                    body: "Ghim tối đa sáu initiative để chúng thành thẻ ở đầu trang; chưa ghim cái nào thì sáu cái nên làm trước hiện ở đây. Mỗi thẻ có số chunk đã xong, thanh màu một đoạn cho mỗi chunk, và chunk làm tiếp theo (hoặc chunk đang bị chặn). «Pinned N of M» đếm số đã ghim.",
                 },
                 en: {
-                    title: "An initiative's row",
-                    body: "Each initiative is one row. Its bar has one segment per chunk: how much is done and which chunk comes next, at a glance. The order says where to look first: blocked ones on top, then ones with an agent open, then by latest activity.",
+                    title: "Pinned cards",
+                    body: "Pin up to six initiatives and they become cards at the top; with none pinned, the six that need you first show here. A card has how many chunks are done, a bar with one segment per chunk, and the chunk to do next (or the one that is blocked). «Pinned N of M» counts the pins.",
+                },
+            },
+            {
+                id: "initiatives:list",
+                target: ["[data-jarvis-initiative-list]"],
+                vi: {
+                    title: "Mọi initiative khác",
+                    body: "Những initiative không phải thẻ nằm trong danh sách gọn này, mỗi cái một dòng, theo thứ tự nên làm trước. Các tab project lọc danh sách (thẻ luôn hiện). Rê chuột lên một dòng để thấy nút ghim, hoặc nhấn p.",
+                },
+                en: {
+                    title: "Every other initiative",
+                    body: "The initiatives that are not cards sit in this compact list, one line each, in the order to look at them. The project tabs narrow the list (the cards always show). Hover a row for its pin, or press p.",
                 },
             },
             {
                 id: "initiatives:actions",
-                target: ["[data-jarvis-work-on]"],
+                target: ["[data-jarvis-card] [data-jarvis-work-on]", "[data-jarvis-work-on]"],
                 also: ["[data-jarvis-initiative-menu]"],
                 vi: {
                     title: "Work on và menu",
-                    body: "Work on (phím w) mở một agent mới làm initiative, hoặc nhảy tới agent đang làm nó. Menu … bên cạnh có Rename, Edit details, Pause, Archive và Delete.",
+                    body: "Work on (phím w) mở một agent mới làm initiative, hoặc nhảy tới agent đang làm nó. Menu … bên cạnh có Pin, Rename, Edit details, Pause, Archive, Link và Delete.",
                 },
                 en: {
                     title: "Work on, and the menu",
-                    body: "Work on (key w) opens a new agent on the initiative, or jumps to the one already on it. The … menu beside it has Rename, Edit details, Pause, Archive and Delete.",
+                    body: "Work on (key w) opens a new agent on the initiative, or jumps to the one already on it. The … menu beside it has Pin, Rename, Edit details, Pause, Archive, Link and Delete.",
                 },
             },
             {
-                id: "initiatives:detail",
-                target: ['[data-jarvis-initiative-detail="true"]'],
+                id: "initiatives:sheet",
+                target: ["[data-jarvis-initiative-sheet-head]"],
                 prepare: "firstInitiative",
                 vi: {
-                    title: "Bên trong một initiative",
-                    body: "Bấm một hàng để mở ra ngay tại chỗ: các stage và chunk hiện bên dưới hàng đó. Bấm chữ trạng thái của chunk để đổi trạng thái, Add chunk để thêm, Alt+↑ / Alt+↓ để đổi thứ tự trong stage.",
+                    title: "Initiative trong sheet",
+                    body: "Bấm một thẻ hoặc một dòng (hoặc Enter) để mở initiative trong sheet bên phải. Đầu sheet có tiến độ, Pin, Work on và Activity ↗; nút ↑ ↓ đi tới initiative trước hay sau theo thứ tự trên trang. Esc đóng sheet.",
                 },
                 en: {
-                    title: "Inside an initiative",
-                    body: "Click a row to open it in place: its stages and chunks show right under it. Click a chunk's status word to change its state, Add chunk to add one, Alt+↑ / Alt+↓ to reorder within a stage.",
+                    title: "An initiative in the sheet",
+                    body: "Click a card or a row (or press Enter) to open the initiative in the sheet on the right. Its head has the progress, Pin, Work on and Activity ↗; the ↑ ↓ buttons step to the previous or next initiative in the page's order. Esc closes the sheet.",
                 },
             },
             {
-                id: "chunk-panel",
-                target: ["[data-jarvis-chunk-sidebar]"],
-                // the step before opened the initiative; keeping it open keeps the chunk the panel shows
+                id: "initiatives:plan",
+                target: ['[data-jarvis-initiative-sheet-body="plan"]'],
+                // the step before opened the sheet; keeping it open keeps the plan on screen
                 prepare: "firstInitiative",
                 vi: {
-                    title: "Panel của chunk",
-                    body: "Bấm một chunk (hoặc Enter) để mở panel của nó. Trên Brief rộng, panel thế chỗ cột bên cạnh; trên Brief hẹp, panel nổi lên trên. Panel có chuỗi ghi chú, ô thêm ghi chú, hàng trạng thái và Work on this chunk: mở một agent chỉ làm chunk này (Go to agent nếu đã có agent đang làm initiative). Esc để đóng.",
+                    title: "Kế hoạch của initiative",
+                    body: "Thân sheet là các stage và chunk, sửa được ngay tại đây: bấm chữ trạng thái để đổi, Add chunk để thêm, Alt+↑ / Alt+↓ để đổi thứ tự trong stage. j / k di chuyển giữa các chunk; Enter mở chunk ngay trong sheet, với ghi chú và trạng thái của nó.",
                 },
                 en: {
-                    title: "The chunk panel",
-                    body: "Click a chunk (or press Enter) to open its panel. On a wide Brief it takes the side column's place; on a narrow one it floats over the Brief. It holds the chunk's notes, a box to add one, a status row and Work on this chunk, which starts an agent on just this chunk (Go to agent when one is already on the initiative). Esc closes it.",
+                    title: "The initiative's plan",
+                    body: "The sheet's body is its stages and chunks, edited right there: click a status word to change it, Add chunk to add one, Alt+↑ / Alt+↓ to reorder within a stage. j / k move between chunks; Enter opens a chunk inside the sheet, with its notes and status.",
                 },
             },
             {
@@ -214,11 +225,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 target: ["[data-jarvis-brief-archived]"],
                 vi: {
                     title: "Initiative đã lưu trữ",
-                    body: "Initiative đã Archive được giấu đi; bấm đây để hiện lại chúng.",
+                    body: "Initiative đã Archive được giấu đi; bấm đây (cuối danh sách) để hiện lại chúng.",
                 },
                 en: {
                     title: "Archived initiatives",
-                    body: "Archived initiatives are hidden; click here to show them again.",
+                    body: "Archived initiatives are hidden; click here, at the end of the list, to show them again.",
                 },
             },
         ],

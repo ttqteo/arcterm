@@ -108,6 +108,17 @@ export function openLauncher(
     globalStore.set(model.launcherAtom, door);
 }
 
+// The agent half, prefilled: a council direction's Work on (docs/superpowers/specs/2026-11-05-jarvis-revamp-design.md,
+// decision 8). It opens on the agent kind with `project` picked (the registered project's name; undefined leaves the
+// pick as it was) and the Task box holding `task`, which replaces whatever a close kept there. It never spawns: the
+// person picks harness and model and starts it in the dialog. openLauncher's prefill is a run's, so this is its own way.
+export function openAgentLauncher(model: LauncherModel, input: { project?: string; task: string }): void {
+    openLauncher(model, "agent", undefined, input.project);
+    globalStore.set(launcherTaskAtom, input.task);
+    // the Task box is this open's own text, not a draft a close kept
+    globalStore.set(launcherRestoredAtom, false);
+}
+
 // The app bar's one New button: no door of its own, so it opens on whichever half the last open left picked.
 export function reopenLauncher(model: LauncherModel): void {
     openLauncher(model, globalStore.get(launcherKindAtom));

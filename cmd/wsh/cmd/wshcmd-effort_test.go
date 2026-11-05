@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 func hasSub(cmd *cobra.Command, name string) bool {
@@ -137,6 +139,43 @@ func TestResolveDue(t *testing.T) {
 		if _, err := resolveDue(bad, now); err == nil {
 			t.Fatalf("resolveDue(%q) should fail", bad)
 		}
+	}
+}
+
+func TestEffortPinCommandsRegistered(t *testing.T) {
+	for _, want := range []string{"pin", "unpin"} {
+		if !hasSub(effortCmd, want) {
+			t.Fatalf("`effort %s` subcommand is not registered", want)
+		}
+	}
+	if effortPinCmd.Flags().Lookup("replace-oldest") == nil {
+		t.Fatal("`effort pin --replace-oldest` is not registered")
+	}
+}
+
+// at the cap the command must fail (exit nonzero) and name the pin --replace-oldest would drop
+func TestEffortPinCapIsAnErrorNamingTheOldest(t *testing.T) {
+	_, err := pinResultMessage("effort:t", &wshrpc.CommandEffortPinRtnData{
+		CapReached: true, Oldest: &wshrpc.EffortPinRef{OID: "p1", Title: "Old plan"},
+	})
+	if err == nil {
+		t.Fatal("a pin refused at the cap read as success")
+	}
+	for _, want := range []string{"6 initiatives are pinned", "Old plan", "--replace-oldest"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("cap error %q does not say %q", err, want)
+		}
+	}
+}
+
+func TestEffortPinResultMessages(t *testing.T) {
+	msg, err := pinResultMessage("effort:t", &wshrpc.CommandEffortPinRtnData{Pinned: true})
+	if err != nil || msg != "effort effort:t is pinned" {
+		t.Fatalf("pin: %q, %v", msg, err)
+	}
+	msg, err = pinResultMessage("effort:t", &wshrpc.CommandEffortPinRtnData{})
+	if err != nil || msg != "effort effort:t is not pinned" {
+		t.Fatalf("unpin: %q, %v", msg, err)
 	}
 }
 

@@ -263,6 +263,16 @@ func pruneCache(dir string, paths []string) {
 // Update applies fn to the stored effort and writes the result; an error from fn leaves the file
 // untouched.
 func Update(ctx context.Context, oid string, fn func(*waveobj.Effort) error) error {
+	return update(oid, fn, false)
+}
+
+// UpdateKeepTs is Update for a view preference (a pin): it bumps Version but keeps UpdatedTs, so the
+// change neither reorders "most recent" nor reads as work on the effort.
+func UpdateKeepTs(ctx context.Context, oid string, fn func(*waveobj.Effort) error) error {
+	return update(oid, fn, true)
+}
+
+func update(oid string, fn func(*waveobj.Effort) error, keepTs bool) error {
 	root := vaultRoot()
 	path, err := effortPath(root, oid)
 	if err != nil {
@@ -279,7 +289,9 @@ func Update(ctx context.Context, oid string, fn func(*waveobj.Effort) error) err
 		return err
 	}
 	e.Version++
-	e.UpdatedTs = time.Now().UnixMilli()
+	if !keepTs {
+		e.UpdatedTs = time.Now().UnixMilli()
+	}
 	return write(root, path, e)
 }
 

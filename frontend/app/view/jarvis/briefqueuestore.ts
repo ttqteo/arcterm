@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The queue entry the Brief's sheet is open on. A queue entry is not an ActiveSubject (it would reach the subject
-// store, restore and the palette), so the sheet reads it from here; opening any subject clears it (briefsheet.tsx).
+// store, restore and the palette), so the sheet reads it from here; opening any subject clears it (briefsheet.tsx), and
+// so does opening a council (councilsheetstore.ts), which this clears in turn.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
+import { councilSheetAtom } from "./councilsheetstore";
 import { briefSheetOpenAtom } from "./jarvisstore";
 import { clearSubject } from "./jarvissubjectstore";
 
@@ -13,6 +15,7 @@ export const briefQueueSheetAtom = atom<string | null>(null) as PrimitiveAtom<st
 
 export function openQueueSheet(entryId: string): void {
     clearSubject();
+    globalStore.set(councilSheetAtom, null);
     globalStore.set(briefQueueSheetAtom, entryId);
     globalStore.set(briefSheetOpenAtom, true);
 }

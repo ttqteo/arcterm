@@ -1209,6 +1209,20 @@ declare global {
         effort: Effort;
     };
 
+    // wshrpc.CommandEffortPinData
+    type CommandEffortPinData = {
+        effortoid: string;
+        pin: boolean;
+        replaceoldest?: boolean;
+    };
+
+    // wshrpc.CommandEffortPinRtnData
+    type CommandEffortPinRtnData = {
+        pinned: boolean;
+        capreached?: boolean;
+        oldest?: EffortPinRef;
+    };
+
     // wshrpc.CommandEventReadHistoryData
     type CommandEventReadHistoryData = {
         event: string;
@@ -3087,6 +3101,7 @@ declare global {
         events?: EffortEvent[];
         createdts: number;
         updatedts: number;
+        pinnedts?: number;
     };
 
     // waveobj.EffortChunk
@@ -3157,6 +3172,12 @@ declare global {
         oref?: string;
     };
 
+    // wshrpc.EffortPinRef
+    type EffortPinRef = {
+        oid: string;
+        title: string;
+    };
+
     // wshrpc.EffortSummary
     type EffortSummary = {
         oref: string;
@@ -3170,7 +3191,18 @@ declare global {
         total: number;
         activechunk?: string;
         updatedts: number;
+        pinnedts?: number;
         lastnote?: EffortLastNote;
+    };
+
+    // wshrpc.EndedItem
+    type EndedItem = {
+        project: string;
+        runoid: string;
+        goal: string;
+        status: string;
+        mode?: string;
+        completedts: number;
     };
 
     // waveobj.EvidenceArtifact
@@ -3883,6 +3915,7 @@ declare global {
         project: string;
         active?: ActiveWorkItem[];
         shipped?: ShippedItem[];
+        ended?: EndedItem[];
         events?: TimelineEvent[];
         delta?: TimelineEvent[];
     };
@@ -4147,6 +4180,7 @@ declare global {
         radarorigin?: RunRadarOrigin;
         createdts: number;
         completedts?: number;
+        cancelledts?: number;
         evidence?: RunEvidence;
         land?: RunLand;
         verificationackts?: number;

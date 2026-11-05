@@ -98,6 +98,27 @@ func TestUpdateBumpsVersionAndTs(t *testing.T) {
 	}
 }
 
+// a pin is a view preference: it is written (Version moves, so sync carries it) but is not work on the
+// effort, so UpdatedTs stays where the last real change left it
+func TestUpdateKeepTsBumpsVersionKeepsUpdatedTs(t *testing.T) {
+	useTempRoot(t)
+	e := mustCreate(t, &waveobj.Effort{Title: "pin me"})
+	time.Sleep(2 * time.Millisecond)
+	if err := UpdateKeepTs(context.Background(), e.OID, func(x *waveobj.Effort) error {
+		x.PinnedTs = 1234
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Get(context.Background(), e.OID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PinnedTs != 1234 || got.Version != 2 || got.UpdatedTs != e.UpdatedTs {
+		t.Fatalf("keep-ts update: got %+v, want PinnedTs 1234, Version 2, UpdatedTs %d", got, e.UpdatedTs)
+	}
+}
+
 func TestUpdateFnErrorLeavesFileUntouched(t *testing.T) {
 	root := useTempRoot(t)
 	e := mustCreate(t, &waveobj.Effort{Title: "keep"})

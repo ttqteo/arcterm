@@ -26,6 +26,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Jarvis's Brief opens on the initiatives you pinned, as cards: up to six, each with its progress bar, its next chunk and Work on. Pin one from a card's ⋯ menu, a list row, the open initiative's Pin, or `p` under the cursor; every other initiative sits in one compact list under the cards, and with nothing pinned the six that most need you show as cards. <!-- try: go:jarvis --> <!-- big -->
+- `wsh effort pin <initiative>` and `wsh effort unpin <initiative>` pin an initiative to the Brief's cards from a terminal. Pinning a seventh says six are pinned and offers to unpin the oldest (`--replace-oldest` in the terminal).
+- A council's report opens in the Brief's side sheet from its line in Activity: the verdict, the ranked directions with their first steps, Work on (it opens the New agent dialog filled in and never starts an agent by itself), Add to initiative…, and what to ask next. <!-- try: go:jarvis -->
+
+### Changed
+
+- The Brief shows what is waiting on you as one strip at the top (Show all opens the full queue under it), and runs and councils together in one Activity column on the right: live ones as cards, the last week's finished councils and failed or cancelled runs under Earlier, with tabs for all, orchestrator, quick and councils. <!-- try: go:jarvis -->
+- An initiative opens in the side sheet instead of expanding in place, and its plan is still editable there (add, rename, move and remove chunks). `j`/`k` step its chunks, Previous and Next step the initiatives, and Activity ↗ shows its feed. A run's ↳ link opens its initiative on that chunk.
+- A chunk opens inside its initiative's sheet instead of a separate side panel: one status button (`s`, then `1`–`6`; blocked asks why and keeps the reason as a note) beside the move it most needs (Start, Done, Reopen, Unblock), and its trail newest first, where Notes only hides the bare status changes. Esc goes back to the initiative.
 - Pause a run from its ⋯ menu (the run sheet, the lead card on the Cockpit, the DAG view's header) or with `wsh runs pause <run>`, to free its memory without losing it: the lead, the workers and any running Verify or Final stop, the worktrees, commits and sessions stay, and a paused run reads "Paused · resumes when memory frees" in the Agent tree and the run list. Resume it from the same menu, from the small Resume button on its row, or with `wsh runs resume <run>`, and each agent carries on in its own session.
 - Arc pauses a run by itself when memory stays tight, the one with the fewest tasks done, never one in its Final stage or mid-merge, and resumes it once memory has been free for a while, so a crowded machine slows down instead of stalling. It does nothing while the heavy-job queue is switched off, and it leaves a notice only in the run itself, never a card or a toast.
 - A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or

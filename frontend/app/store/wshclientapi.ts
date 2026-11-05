@@ -660,6 +660,12 @@ export class RpcApiType {
         return client.wshRpcCall("effortmutate", data, opts);
     }
 
+    // command "effortpin" [call]
+    EffortPinCommand(client: WshClient, data: CommandEffortPinData, opts?: RpcOpts): Promise<CommandEffortPinRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortpin", data, opts);
+        return client.wshRpcCall("effortpin", data, opts);
+    }
+
     // command "eventpublish" [call]
     EventPublishCommand(client: WshClient, data: WaveEvent, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "eventpublish", data, opts);
