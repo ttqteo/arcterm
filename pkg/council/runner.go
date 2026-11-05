@@ -2608,9 +2608,6 @@ func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model str
 	return err
 }
 
-// directionOutcome reads the direction number of a proposal's outcome: "Direction 4", "Merged into direction 4".
-var directionOutcome = regexp.MustCompile(`(?i)^(?:merged into )?direction (\d+)$`)
-
 // findSentProposal is the proposal with id when it is out in the room, nil when there is none or it is held or dropped.
 func findSentProposal(c *Council, id string) *CouncilProposal {
 	if p := findProposal(c, id); p != nil && Sent(p.Draft) {
@@ -2619,52 +2616,38 @@ func findSentProposal(c *Council, id string) *CouncilProposal {
 	return nil
 }
 
-// cleanSummary drops what the coordinator named that is not on the council: a proposal that does not exist, an
-// expert that is not on the panel, and a stance from the author of a proposal the direction merges. A Brainstorm's
-// report holds at most maxDirections ideas worth trying, then the wild ideas kept aside. A Review's holds at most
-// maxDirections directions too, each with its first step, then Also raised (Kept): a direction past the cap moves there
-// as one line, ahead of the ones the model put there, and an outcome naming a direction past the cap reads Also raised.
+// cleanSummary drops what the coordinator named that is not on the council (a proposal that does not exist or was never
+// sent), then makes the report what the person reads. A Brainstorm's holds at most maxDirections ideas worth trying, then
+// the wild ideas kept aside. A Review's holds at most maxDirections directions, each with its first step, then Also raised
+// (Kept): a direction past the cap moves there as one line, ahead of the ones the model put there, and the evidence gate
+// folds the top's unbacked directions into it too. Go then fills in the stances, agreed flags and outcomes from the replies
+// (fill.go), whatever the model sent.
 func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	if strings.TrimSpace(c.Question) == "" {
 		s.Answer = "" // nothing was asked, so there is nothing to answer
 	}
+	if n := maxDirections(c); len(s.Directions) > n {
+		if !isBrainstorm(c) {
+			var moved []CouncilDirection
+			for _, d := range s.Directions[n:] {
+				moved = append(moved, foldedLine(d))
+			}
+			s.Kept = append(moved, s.Kept...)
+		}
+		s.Directions = s.Directions[:n]
+	}
+	for i := range s.Directions {
+		cleanDirection(c, &s.Directions[i])
+	}
+	for i := range s.Kept {
+		cleanDirection(c, &s.Kept[i])
+	}
+	gateByEvidence(c, &s)
+	fillSummary(c, &s)
 	panel := map[string]bool{}
 	for _, e := range panelOf(c) {
 		panel[e.Id] = true
 	}
-	if isBrainstorm(c) {
-		if len(s.Directions) > maxDirections {
-			s.Directions = s.Directions[:maxDirections]
-		}
-	} else if len(s.Directions) > maxDirections {
-		var moved []CouncilDirection
-		for _, d := range s.Directions[maxDirections:] {
-			moved = append(moved, CouncilDirection{Title: d.Title, Reasoning: d.Reasoning, From: d.From, Stances: map[string]CouncilStance{}})
-		}
-		s.Directions = s.Directions[:maxDirections]
-		s.Kept = append(moved, s.Kept...)
-		for i := range s.Kept {
-			s.Kept[i].Rank = i + 1
-		}
-	}
-	for i := range s.Directions {
-		cleanDirection(c, &s.Directions[i], panel)
-	}
-	for i := range s.Kept {
-		cleanDirection(c, &s.Kept[i], panel)
-	}
-	outcomes := map[string]string{}
-	for pid, o := range s.Outcomes {
-		if o = strings.TrimSpace(o); o != "" && findSentProposal(c, pid) != nil {
-			if m := directionOutcome.FindStringSubmatch(o); m != nil && !isBrainstorm(c) {
-				if n, _ := strconv.Atoi(m[1]); n > maxDirections {
-					o = "Also raised"
-				}
-			}
-			outcomes[pid] = o
-		}
-	}
-	s.Outcomes = outcomes
 	s.Asks = cleanAsks(s.Asks, panel)
 	return s
 }
@@ -2688,23 +2671,16 @@ func cleanAsks(asks []CouncilAsk, panel map[string]bool) []CouncilAsk {
 	return out
 }
 
-// cleanDirection keeps the proposal ids of d that are on the council, once each, and the stances of the panel's
-// experts other than the authors of those proposals.
-func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
+// cleanDirection keeps the proposal ids of d that are on the council, once each. Its stances are Go's, written after
+// (fillSummary).
+func cleanDirection(c *Council, d *CouncilDirection) {
 	from := make([]string, 0, len(d.From))
-	authors := map[string]bool{}
 	for _, pid := range d.From {
-		if p := findSentProposal(c, pid); p != nil && !slices.Contains(from, pid) {
+		if findSentProposal(c, pid) != nil && !slices.Contains(from, pid) {
 			from = append(from, pid)
-			authors[p.Author] = true
 		}
 	}
 	d.From = from
-	for expert := range d.Stances {
-		if !panel[expert] || authors[expert] {
-			delete(d.Stances, expert)
-		}
-	}
 }
 
 // Summarize reruns the synthesis on everything so far and replaces the Summary. A done, stopped or paused council

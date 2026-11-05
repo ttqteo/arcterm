@@ -565,6 +565,22 @@ func repliesBy(c *Council, author string) []CouncilReply {
 
 func panelIds() []string { return []string{"ux", "ram", "newuser", "skeptic"} }
 
+// flowCouncil is testCouncil in a real project folder holding pkg/<seat>.go, the one line each seat's canned round 1 cites
+// (round1JSON), so the cite check reads every idea as Read code. On testCouncil's fake folder every cite is wrong, every
+// idea is a Guess, and the evidence gate folds a Review's whole top into Also raised.
+func flowCouncil(t *testing.T, id string) *Council {
+	t.Helper()
+	c := testCouncil(id)
+	c.Project = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(c.Project, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, seat := range panelIds() {
+		vWriteFile(t, filepath.Join(c.Project, "pkg", seat+".go"), "package "+seat+"\n")
+	}
+	return c
+}
+
 // ---- the rounds ----
 
 func TestStartRunsThreeRounds(t *testing.T) {
@@ -573,7 +589,8 @@ func TestStartRunsThreeRounds(t *testing.T) {
 	for _, id := range order {
 		h.f.gate(id + "/r1")
 	}
-	saved := h.start(testCouncil("c1"))
+	fc := flowCouncil(t, "c1")
+	saved := h.start(fc)
 	if saved.State != StateRunning || saved.Round != 1 || saved.Started == 0 || saved.Created == 0 {
 		t.Fatalf("Start returned %s round %d started %d created %d, want a running council in round 1", saved.State, saved.Round, saved.Started, saved.Created)
 	}
@@ -618,7 +635,7 @@ func TestStartRunsThreeRounds(t *testing.T) {
 		t.Fatalf("calls per round = %d, %d, %d, want 4, 4, 1", len(r1), len(r2), len(r3))
 	}
 	for _, req := range r1 {
-		if !req.Tools || req.Cwd != `D:\proj` || req.Expert.Model != "sonnet" || req.OnTool == nil {
+		if !req.Tools || req.Cwd != fc.Project || req.Expert.Model != "sonnet" || req.OnTool == nil {
 			t.Errorf("round 1 request = tools %v cwd %q model %q, want tools in the project folder on sonnet", req.Tools, req.Cwd, req.Expert.Model)
 		}
 	}
@@ -648,18 +665,23 @@ func TestStartRunsThreeRounds(t *testing.T) {
 		t.Errorf("%d stances in %d replies, want 12 and 12", stances, len(c.Replies))
 	}
 
-	// the summary keeps only what is on the council
+	// the summary keeps only what is on the council, and Go fills its stances and outcomes from the replies: the canned
+	// synthesis is an older model's reply that writes them, and none of what it wrote (a ghost's stance, the coordinator's,
+	// an accept where the seat challenged, an outcome for P99 or P4) survives
 	d := c.Summary.Directions[0]
 	if slices.Contains(d.From, "P99") || len(d.From) != 2 {
 		t.Errorf("direction 1 from %v, want P1 and P2 without the unknown P99", d.From)
 	}
-	for _, gone := range []string{"ghost", "lead"} {
-		if _, ok := d.Stances[gone]; ok {
-			t.Errorf("direction 1 stances %v hold %s, who is not on the panel", d.Stances, gone)
-		}
+	// P1 is ram's and P2 ux's; newuser and the skeptic each accepted P1 and challenged P2
+	if want := map[string]CouncilStance{"newuser": StanceChallenge, "skeptic": StanceChallenge}; !reflect.DeepEqual(d.Stances, want) || d.Agreed {
+		t.Errorf("direction 1 stances = %v agreed %v, want %v and not agreed", d.Stances, d.Agreed, want)
 	}
-	if _, ok := c.Summary.Outcomes["P99"]; ok || c.Summary.Outcomes["P1"] != "Direction 1" {
-		t.Errorf("outcomes = %v, want P1's and not the unknown P99's", c.Summary.Outcomes)
+	wantOutcomes := map[string]string{"P1": "Direction 1", "P2": "Merged into direction 1", "P3": "Direction 2", "P4": "Also raised"}
+	if !reflect.DeepEqual(c.Summary.Outcomes, wantOutcomes) {
+		t.Errorf("outcomes = %v, want %v: P4 was placed nowhere, so it is a line of Also raised", c.Summary.Outcomes, wantOutcomes)
+	}
+	if k := c.Summary.Kept; len(k) != 1 || !slices.Equal(k[0].From, []string{"P4"}) {
+		t.Errorf("kept = %+v, want P4 alone", k)
 	}
 	// the weak note landed on the proposal it names
 	if ev := proposalOf(t, c, "P4").Evidence; !slices.ContainsFunc(ev, func(e CouncilEvidence) bool { return e.Weak && strings.Contains(e.Note, "no measurement") }) {
@@ -2988,7 +3010,7 @@ func TestAnAnswersPassFailureCanBeRetried(t *testing.T) {
 
 func TestSummarizeRerunsTheSynthesis(t *testing.T) {
 	h := newHarness(t)
-	first := h.run(testCouncil("c1"))
+	first := h.run(flowCouncil(t, "c1")) // a real project, so no idea is a Guess and the gate keeps the direction
 	h.f.setText("lead/r3", titledSynthesis("Second take.", "Only direction"))
 	saved, err := h.r.Summarize("c1")
 	if err != nil {
@@ -4384,9 +4406,10 @@ func TestAReviewDropsTheBrainstormFlags(t *testing.T) {
 		return fence(mustJSON(map[string]any{"stances": []map[string]any{{"proposalid": ids[0], "stance": "accept", "builds": true, "reason": "Build."}}}))
 	})
 	h.f.setFn("lead/r3", func(CallReq) string {
-		return fence(`{"text": "x", "directions": [{"rank": 1, "title": "One", "firststep": "Start", "from": ["P1"]}], "kept": [{"title": "A mascot"}], "outcomes": {}}`)
+		// one direction from every idea: ux's own cites nothing (a Guess), the others read the project, so it is not gated
+		return fence(`{"text": "x", "directions": [{"rank": 1, "title": "One", "firststep": "Start", "from": ["P1", "P2", "P3", "P4"]}], "kept": [{"title": "A mascot"}], "outcomes": {}}`)
 	})
-	c := h.run(testCouncil("r1"))
+	c := h.run(flowCouncil(t, "r1"))
 	ux := repliesBy(c, "ram")
 	if len(ux) != 1 || ux[0].Builds {
 		t.Errorf("ram's replies = %+v, want one that does not build", ux)
@@ -4399,8 +4422,8 @@ func TestAReviewDropsTheBrainstormFlags(t *testing.T) {
 			t.Errorf("%s evidence = %+v, want the weak chip a Review gives", p.Id, p.Evidence)
 		}
 	}
-	if c.Summary == nil || c.Summary.Directions[0].FirstStep != "Start" || len(c.Summary.Kept) != 1 || c.Summary.Kept[0].Title != "A mascot" {
-		t.Errorf("summary = %+v, want the first step and the direction also raised kept in a Review", c.Summary)
+	if c.Summary == nil || len(c.Summary.Directions) != 1 || c.Summary.Directions[0].FirstStep != "Start" || len(c.Summary.Kept) != 1 || c.Summary.Kept[0].Title != "A mascot" {
+		t.Fatalf("summary = %+v, want the first step and the direction also raised kept in a Review", c.Summary)
 	}
 }
 
@@ -4464,16 +4487,36 @@ func TestCleanSummaryForABrainstorm(t *testing.T) {
 		},
 	}
 	got := cleanSummary(c, in)
-	if len(got.Directions) != maxDirections || got.Directions[2].Title != "c" {
-		t.Errorf("directions = %+v, want the first %d", got.Directions, maxDirections)
+	if n := maxDirections(c); n != 3 || len(got.Directions) != 3 || got.Directions[2].Title != "c" {
+		t.Errorf("directions = %+v, want the first 3 (maxDirections = %d)", got.Directions, n)
 	}
 	if len(got.Kept) != 2 || !slices.Equal(got.Kept[0].From, []string{"P2"}) || len(got.Kept[1].From) != 0 {
 		t.Errorf("kept = %+v, want the known ids once; a kept idea that cites nothing real stays (it is the model's idea)", got.Kept)
 	}
-	if want := map[string]CouncilStance{"ux": StanceAccept}; !reflect.DeepEqual(got.Kept[0].Stances, want) {
-		t.Errorf("kept stances = %v, want %v", got.Kept[0].Stances, want)
+	// Go's fill gives the wild idea no stance it was sent: ram wrote P2, and nobody replied to it
+	if got.Kept[0].Stances == nil || len(got.Kept[0].Stances) != 0 {
+		t.Errorf("kept stances = %v, want the model's replaced by Go's (none were said)", got.Kept[0].Stances)
 	}
+	if got.Outcomes["P2"] != "Kept aside" || got.Outcomes["P1"] != "Direction 1" {
+		t.Errorf("outcomes = %v, want P1 Direction 1 and the wild P2 Kept aside", got.Outcomes)
+	}
+}
 
+// A Review's top holds five directions, a Brainstorm's three: maxDirections is a function of the council.
+func TestMaxDirectionsIsFiveForAReviewAndThreeForABrainstorm(t *testing.T) {
+	review := fixtureCouncil("c1", StateDone, 3)
+	brainstorm := fixtureCouncil("c2", StateDone, 3)
+	brainstorm.Mode = ModeBrainstorm
+	if got := maxDirections(review); got != 5 {
+		t.Errorf("a Review's maxDirections = %d, want 5", got)
+	}
+	if got := maxDirections(brainstorm); got != 3 {
+		t.Errorf("a Brainstorm's maxDirections = %d, want 3", got)
+	}
+	review.Mode = ModeReview
+	if got := maxDirections(review); got != 5 {
+		t.Errorf("an explicit Review's maxDirections = %d, want 5", got)
+	}
 }
 
 func TestCleanSummaryForAReview(t *testing.T) {
@@ -4485,20 +4528,26 @@ func TestCleanSummaryForAReview(t *testing.T) {
 		}
 	}
 	in := CouncilSummary{
-		Directions: []CouncilDirection{dir("a", "P1"), dir("b", "P1"), dir("c", "P1"), dir("d", "P2")},
+		Directions: []CouncilDirection{dir("a", "P1"), dir("b", "P1"), dir("c", "P1"), dir("d", "P1"), dir("e", "P1"), dir("f", "P2")},
 		Kept:       []CouncilDirection{{Title: "wording", Reasoning: "rename the chip", From: []string{"P1"}}},
-		Outcomes:   map[string]string{"P1": "Direction 1", "P2": "Merged into direction 4"},
+		Outcomes:   map[string]string{"P1": "Direction 1", "P2": "Merged into direction 6"},
 	}
 	got := cleanSummary(c, in)
-	if len(got.Directions) != maxDirections || got.Directions[2].Title != "c" || got.Directions[0].FirstStep != "Start a" {
-		t.Errorf("directions = %+v, want the first %d with their first steps", got.Directions, maxDirections)
+	if len(got.Directions) != 5 || got.Directions[4].Title != "e" || got.Directions[0].FirstStep != "Start a" {
+		t.Errorf("directions = %+v, want the first 5 with their first steps", got.Directions)
 	}
-	if len(got.Kept) != 2 || got.Kept[0].Title != "d" || got.Kept[0].Rank != 1 || got.Kept[0].Reasoning != "why d" ||
+	// the sixth moves to Also raised as one line, ahead of the model's own; Go's fill gives the stances it has said
+	if len(got.Kept) != 2 || got.Kept[0].Title != "f" || got.Kept[0].Rank != 1 || got.Kept[0].Reasoning != "why f" ||
 		got.Kept[0].FirstStep != "" || len(got.Kept[0].Stances) != 0 || got.Kept[1].Title != "wording" || got.Kept[1].Rank != 2 {
 		t.Errorf("kept = %+v, want the direction past the cap as one line, ahead of the model's own", got.Kept)
 	}
 	if got.Outcomes["P1"] != "Direction 1" || got.Outcomes["P2"] != "Also raised" {
 		t.Errorf("outcomes = %v, want a direction past the cap to read Also raised", got.Outcomes)
+	}
+	// with 3 directions or fewer, nothing moves
+	in.Directions = in.Directions[:3]
+	if got := cleanSummary(c, in); len(got.Directions) != 3 || len(got.Kept) != 2 {
+		t.Errorf("directions %d kept %d, want 3 and 2: a Review keeps what is under the cap", len(got.Directions), len(got.Kept))
 	}
 }
 
@@ -4517,11 +4566,13 @@ func TestCleanSummaryDropsWhatIsNotOnTheCouncil(t *testing.T) {
 	if !reflect.DeepEqual(d.From, []string{"P1", "P2"}) {
 		t.Errorf("from = %v, want the known ids once", d.From)
 	}
-	if want := map[string]CouncilStance{"skeptic": StanceChallenge, "newuser": StanceAccept}; !reflect.DeepEqual(d.Stances, want) {
-		t.Errorf("stances = %v, want %v: the authors, the coordinator and the stranger left out", d.Stances, want)
+	// Go's fill replaces the stances the model sent: only the skeptic replied (r1, a challenge of P1), and the authors, the
+	// coordinator and the stranger are out
+	if want := map[string]CouncilStance{"skeptic": StanceChallenge}; !reflect.DeepEqual(d.Stances, want) || d.Agreed {
+		t.Errorf("stances = %v agreed %v, want %v and not agreed", d.Stances, d.Agreed, want)
 	}
-	if want := map[string]string{"P1": "Direction 1"}; !reflect.DeepEqual(got.Outcomes, want) {
-		t.Errorf("outcomes = %v, want %v", got.Outcomes, want)
+	if want := map[string]string{"P1": "Direction 1", "P2": "Merged into direction 1"}; !reflect.DeepEqual(got.Outcomes, want) {
+		t.Errorf("outcomes = %v, want %v: Go's, for the proposals on the council", got.Outcomes, want)
 	}
 }
 

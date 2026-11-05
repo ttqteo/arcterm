@@ -81,9 +81,14 @@ type Round2Result struct {
 // maxPicks is how many of the others' proposals an expert names in round 2.
 const maxPicks = 3
 
-// maxDirections is how many directions a report holds in full: a Brainstorm's ideas worth trying, a Review's directions
-// (the rest of a Review's go under Also raised, one line each).
-const maxDirections = 3
+// maxDirections is how many directions a report holds in full: five findings for a Review, three ideas worth trying for a
+// Brainstorm. The rest of a Review's go under Also raised, one line each.
+func maxDirections(c *Council) int {
+	if isBrainstorm(c) {
+		return 3
+	}
+	return 5
+}
 
 // MaxAsks is how many questions to ask next a report suggests.
 const MaxAsks = 3
@@ -473,8 +478,9 @@ func ParseAnswers(reply string) ([]Answer, error) {
 }
 
 // ParseSynthesis reads the coordinator's round 3 reply into the Summary (its At left for the runner) and the weak
-// notes. Directions come back ranked 1..n; a direction's Agreed is the coordinator's word, or, when it gave none,
-// true when no expert challenges or opposes it. A Brainstorm's reply adds each direction's first step and the wild
+// notes. Directions come back ranked 1..n. The shapes ask for no stances, agreed flags or outcomes (fill.go writes
+// them), but a reply that holds them, an older model's or a test's, is read: a direction's Agreed is the coordinator's
+// word, or, when it gave none, true when no expert it names challenges or opposes it. A Brainstorm's reply adds the wild
 // ideas kept aside, numbered 1..n; a kept idea with no title is skipped, since it names nothing.
 func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 	const what = "round 3"

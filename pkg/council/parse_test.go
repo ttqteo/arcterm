@@ -599,10 +599,18 @@ func TestShapesParse(t *testing.T) {
 		t.Errorf("answersShape: %+v, %v", a, err)
 	}
 	sum, weak, err := ParseSynthesis(jsonFence(synthesisShape))
-	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || len(sum.Outcomes) != 4 ||
-		len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" || len(sum.Asks) != 2 || sum.Asks[0].To != "skeptic" ||
+	// the lean shape holds no stances, agreed flags or outcomes: Go fills them (fill.go)
+	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || len(sum.Outcomes) != 0 ||
+		len(weak) != 1 || len(sum.Directions[0].Stances) != 0 || sum.Answer == "" || len(sum.Asks) != 2 || sum.Asks[0].To != "skeptic" ||
 		sum.Asks[1].To != "" {
 		t.Errorf("synthesisShape: %+v, %+v, %v", sum, weak, err)
+	}
+	for _, shape := range []string{synthesisShape, brainstormSynthesisShape} {
+		for _, key := range []string{`"stances"`, `"agreed"`, `"outcomes"`} {
+			if strings.Contains(shape, key) {
+				t.Errorf("a synthesis shape asks for %s: Go fills it", key)
+			}
+		}
 	}
 	if _, _, err := ParseSynthesis(jsonFence(synthesisShapeNoQuestion)); err != nil {
 		t.Errorf("synthesisShapeNoQuestion: %v", err)
@@ -625,6 +633,38 @@ func TestShapesParse(t *testing.T) {
 	sum, _, err = ParseSynthesis(jsonFence(brainstormSynthesisShapeNoQuestion))
 	if err != nil || len(sum.Directions) != 1 || sum.Answer != "" {
 		t.Errorf("brainstormSynthesisShapeNoQuestion: %+v, %v", sum, err)
+	}
+}
+
+// A reply written to the lean shape holds no stances, agreed flags or outcomes; one from an older model or a test still
+// holds them, and they read as before (Go's fill overwrites them later).
+func TestParseSynthesisReadsTheLeanShapeAndAnOlderReply(t *testing.T) {
+	lean, _, err := ParseSynthesis(jsonFence(`{"text": "Two.", "directions": [
+		{"rank": 2, "title": "Poll less", "reasoning": "Saves RAM.", "firststep": "Log the gaps", "from": ["P3"]},
+		{"rank": 1, "title": "Show the state", "reasoning": "Cheap.", "firststep": "Add the badge", "from": ["P1", "P2"]}],
+		"kept": [{"title": "Rename the chip", "reasoning": "the name is wrong", "from": ["P5"]}]}`))
+	if err != nil || len(lean.Directions) != 2 || lean.Directions[0].Title != "Show the state" || lean.Directions[0].Rank != 1 {
+		t.Fatalf("lean reply = %+v, %v, want the directions ranked 1 and 2", lean, err)
+	}
+	if d := lean.Directions[0]; d.Stances == nil || len(d.Stances) != 0 || !d.Agreed || d.FirstStep != "Add the badge" {
+		t.Errorf("direction = %+v, want empty stances, agreed and its first step", d)
+	}
+	if lean.Outcomes == nil || len(lean.Outcomes) != 0 || len(lean.Kept) != 1 {
+		t.Errorf("outcomes = %v, kept = %+v, want no outcomes (not nil) and the kept line", lean.Outcomes, lean.Kept)
+	}
+
+	old, _, err := ParseSynthesis(jsonFence(`{"text": "One.", "directions": [
+		{"rank": 1, "title": "Show", "from": ["P1"], "stances": {"ux": "accept", "skeptic": "challenge"}, "agreed": false}],
+		"outcomes": {"P1": "Direction 1", "P4": "Withdrawn in round 2"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]CouncilStance{"ux": StanceAccept, "skeptic": StanceChallenge}
+	if d := old.Directions[0]; !reflect.DeepEqual(d.Stances, want) || d.Agreed {
+		t.Errorf("older reply direction = %+v, want its stances %v and not agreed", d, want)
+	}
+	if old.Outcomes["P4"] != "Withdrawn in round 2" || len(old.Outcomes) != 2 {
+		t.Errorf("older reply outcomes = %v, want both read", old.Outcomes)
 	}
 }
 

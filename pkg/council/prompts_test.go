@@ -180,7 +180,9 @@ func TestSynthesisPrompt(t *testing.T) {
 	p := SynthesisPrompt(c)
 
 	mustContain(t, "synthesis prompt", p, "You are Lead", "the coordinator", "Merge and rank.", "Idle sleep for services", "Which direction first?", "no tools",
-		evidenceRule, synthesisShape, stanceRule, summaryRule, askRule)
+		evidenceRule, synthesisShape, summaryRule, askRule)
+	// Go fills the stances, the agreed flags and the outcomes: the coordinator is asked for none
+	mustNotContain(t, "synthesis prompt", p, stanceRule, `"stances"`, `"agreed"`, `"outcomes"`, "In \"stances\"", "In \"outcomes\"", "every proposal its fate")
 	// every proposal, the cut and the withdrawn ones too
 	mustContain(t, "synthesis prompt", p, "Title-one", "Title-two", "Title-three", "Title-four", "Title-five",
 		"The person cut this proposal at the pause", "Its author withdrew it in round 2")
@@ -192,9 +194,49 @@ func TestSynthesisPrompt(t *testing.T) {
 		"- [r7] RAM (oppose): Text-r7 no",
 		"- [r8] RAM (accept): Text-r8 agreed Evidence: z.go:9.",
 		"### To the whole council", "- [r4] the person: Text-r4 what about Mac?")
-	// who is missing, and the experts the stances are keyed by
-	mustContain(t, "synthesis prompt", p, "Skeptic (its round 1 call failed)", "do not guess their stance", "- ux (UX)", "- ram (RAM)")
+	// who is missing, and the experts an ask is addressed to
+	mustContain(t, "synthesis prompt", p, "Skeptic (its round 1 call failed)", "do not guess their stance", "- ux (UX)", "- ram (RAM)", `in "to"`)
 	mustNotContain(t, "synthesis prompt", p, "- lead (Lead)")
+}
+
+// The synthesis shows each proposal's and each stance's label, the words the document and the UI use; a proposal or a
+// reply nothing labels shows none. The experts' own prompts stay as they were.
+func TestSynthesisPromptShowsTheLabelOfEachClaim(t *testing.T) {
+	c := promptCouncil()
+	c.Proposals[0].Label = LabelRan
+	c.Proposals[1].Label = LabelRead
+	c.Proposals[2].Label = LabelGuess
+	c.Replies[0].Label = LabelDisproved // r1, the skeptic's challenge of P1
+	c.Replies[6].Label = LabelRead      // r7, RAM's objection to P2
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p,
+		"Evidence: a.go:1\nLabel: Ran\n", "Evidence: b.go:2\nLabel: Read code\n", "cites no evidence\nLabel: Guess\n",
+		"- [r1] Skeptic (challenge, label: Disproved): Text-r1 it breaks",
+		"- [r7] RAM (oppose, label: Read code): Text-r7 no",
+		"  - [r2] UX (accept, revised its proposal) replying to r1:") // no label, no tag
+	mustNotContain(t, "synthesis prompt", p, "Label: Disproved\n", "Label: \n")
+
+	// a proposal with no label, and a council whose checks did not run, show none
+	c = promptCouncil()
+	mustNotContain(t, "unlabelled synthesis prompt", SynthesisPrompt(c), "Label:", "label:")
+
+	c.Proposals[0].Label, c.Replies[0].Label = LabelRan, LabelRan
+	mustNotContain(t, "round 2 prompt", Round2Prompt(c, c.Experts[1]), "Label:", "label:")
+}
+
+// A Review is ranked by how bad a finding is if left alone, the label breaking ties, and a claim that only guesses or was
+// disproved stays out of the top; the picks are context, not the ranking.
+func TestSynthesisPromptRanksReviewBySeverityAndKeepsGuessesOutOfTheTop(t *testing.T) {
+	c := promptCouncil()
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p, "by how bad it is if left alone", "data loss", "a broken flow", "a wrong state shown", "cost", "polish",
+		"the label breaks a tie", "Ran", "Read code", "Guess", "Disproved", "keep at most 5", "one of the 5 places",
+		"all Guess or Disproved", `put it in "kept"`, `"firststep" is its first step`)
+	mustNotContain(t, "synthesis prompt", p, "keep at most 3", "rank the rest by how many experts picked them",
+		"Put the directions no expert challenges or opposes first")
+	// the picks stay as context
+	mustContain(t, "synthesis prompt", section(t, p, "## Picks"), "- P3 (Title-three): 2 (UX, RAM)", "Count the experts behind a direction")
 }
 
 func TestSynthesisPromptListsPicksPerProposal(t *testing.T) {
@@ -204,7 +246,9 @@ func TestSynthesisPromptListsPicksPerProposal(t *testing.T) {
 	picks := section(t, p, "## Picks")
 	mustContain(t, "picks section", picks, "- P1 (Title-one): 1 (RAM)", "- P2 (Title-two): 1 (UX)", "- P3 (Title-three): 2 (UX, RAM)", "- P4 (Title-four): 0")
 	mustNotContain(t, "picks section", picks, "before picks existed")
-	mustContain(t, "synthesis prompt", p, "rank the rest by how many experts picked them", "counts once")
+	// the picks are context for the coordinator, not a ranking rule
+	mustContain(t, "synthesis prompt", p, "Count the experts behind a direction, not its picks", "counts once")
+	mustNotContain(t, "synthesis prompt", p, "rank the rest by how many experts picked them")
 }
 
 // picks from seats on one model are one model's judgement: the coordinator is told so, and to write experts and models
@@ -604,9 +648,12 @@ func TestBrainstormSynthesisPromptPicksAtMostThreeIdeasAndKeepsTheWildOnesAside(
 	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
 	p := SynthesisPrompt(c)
 	mustContain(t, "synthesis prompt", p, "This is round 3 of 3", "no tools", "at most 3 ideas worth trying", "first step", `"firststep"`,
-		`"kept"`, "wild ideas", "Kept aside", brainstormSynthesisShape, titleRule, summaryRule, "answers the question")
+		`"kept"`, "wild ideas", brainstormSynthesisShape, titleRule, summaryRule, "answers the question",
+		"Rank by how many experts picked it", "then by how many experts built on it")
 	mustContain(t, "synthesis prompt", p, "### P3 · Skeptic · Title-three (wild idea)", "- [r8] UX (accept, builds on it): Text-r8 add a badge")
-	mustNotContain(t, "synthesis prompt", p, evidenceRule, synthesisShape, `"weak"`, "marked weak")
+	mustNotContain(t, "synthesis prompt", p, evidenceRule, synthesisShape, `"weak"`, "marked weak", "Label:", "label:")
+	// Go fills a Brainstorm's stances, agreed flags and outcomes too
+	mustNotContain(t, "synthesis prompt", p, stanceRule, `"stances"`, `"agreed"`, `"outcomes"`, "In \"stances\"", "In \"outcomes\"", "its fate")
 	mustContain(t, "picks section", section(t, p, "## Picks"), "ideas of the others most worth trying", "- P3 (Title-three): 2 (UX, RAM)")
 
 	c.Question = " "
@@ -645,7 +692,7 @@ func TestReviewPromptsUnchanged(t *testing.T) {
 	mustContain(t, "round 1 prompt", prompts(plain)["round 1"], "Feature: Idle sleep for services", "reviews one feature", evidenceRule, round1Shape)
 	mustContain(t, "round 2 prompt", prompts(plain)["round 2"], "This is round 2 of 3: cross-review", round2Shape)
 	mustContain(t, "synthesis prompt", prompts(plain)["synthesis"], "This is round 3 of 3: synthesis", synthesisShape,
-		"keep at most 3", "only changes wording, names or formatting", `"firststep" is its first step`, "Also raised")
+		"keep at most 5", "only changes wording, names or formatting", `"firststep" is its first step`, "Also raised")
 
 	// the library's brief keeps its evidence rule in a Review
 	withRule := promptCouncil()
@@ -724,24 +771,18 @@ func TestSynthesisAnswersAndPicksNameTheLastReplyRound(t *testing.T) {
 
 		p := SynthesisPrompt(review)
 		mustContain(t, "review synthesis", p, "In "+tc.round+" each expert named the proposals of the others most worth doing",
-			"Its author withdrew it in "+tc.round+".", `"Also raised", "Withdrawn in `+tc.round+`" or "Cut at the pause"`,
-			`"P4": "Withdrawn in `+tc.round+`", `)
-		mustNotContain(t, "review synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+			"Its author withdrew it in "+tc.round+".")
+		mustNotContain(t, "review synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in round")
 
 		p = SynthesisPrompt(brain)
 		mustContain(t, "brainstorm synthesis", p, "In "+tc.round+" each expert named the ideas of the others most worth trying",
-			"Its author withdrew it in "+tc.round+".", `"Not picked", "Withdrawn in `+tc.round+`" or "Cut at the pause"`)
-		mustNotContain(t, "brainstorm synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+			"Its author withdrew it in "+tc.round+".")
+		mustNotContain(t, "brainstorm synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in round")
 
 		for name, c := range map[string]*Council{"review": review, "brainstorm": brain} {
 			p = AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) // UX, who withdrew P5
 			mustContain(t, name+" answers", p, "You withdrew this one in "+tc.round+".")
 			mustNotContain(t, name+" answers", p, "withdrew this one in "+tc.none)
-		}
-
-		// the shape still parses once its example outcome names the round
-		if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(review, synthesisShape))); err != nil {
-			t.Errorf("%d rounds: the synthesis shape does not parse: %v", tc.rounds, err)
 		}
 	}
 	if SynthesisPrompt(build(0, false)) != SynthesisPrompt(build(2, false)) {
@@ -754,16 +795,10 @@ func TestSynthesisAndAnswersOfACouncilOfOneRoundSpeakOfNoReplyPass(t *testing.T)
 		c.Rounds = 1
 		c.Picks = map[string][]string{"ux": {"P2"}}
 		p := SynthesisPrompt(c)
-		mustContain(t, name+" synthesis", p, "This is round 2 of 2", `or "Cut at the pause"`)
+		mustContain(t, name+" synthesis", p, "This is round 2 of 2")
 		mustNotContain(t, name+" synthesis", p, "## Picks", "each expert named", "withdrew it in round", "Withdrawn in round", `"P4"`)
 		mustNotContain(t, name+" answers", AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}), "withdrew this one in round")
 	}
-	one := promptCouncil()
-	one.Rounds = 1
-	if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(one, synthesisShape))); err != nil {
-		t.Errorf("the synthesis shape of one round does not parse: %v", err)
-	}
-	mustContain(t, "synthesis", SynthesisPrompt(one), `"Also raised" or "Cut at the pause"`)
 }
 
 // agentPromptCouncil is a council of three rounds with two live agents (Witness and Scout) beside the experts UX and RAM,

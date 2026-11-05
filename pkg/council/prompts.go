@@ -17,7 +17,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-05.2"
+const HarnessVersion = "2026-11-05.3"
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -93,9 +93,7 @@ const (
       "title": "a short title for the direction",
       "reasoning": "why it ranks here",
       "firststep": "the one thing to do first",
-      "from": ["P2", "P3"],
-      "stances": {"ux": "accept", "skeptic": "challenge"},
-      "agreed": false
+      "from": ["P2", "P3"]
     }
   ],
   "kept": [
@@ -105,16 +103,12 @@ const (
     {"text": "a question the person could ask next, as they would type it", "to": "skeptic"},
     {"text": "one for the whole panel", "to": ""}
   ],
-  "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P4": "Withdrawn in round 2", "P5": "Also raised"},
   "weak": [{"ref": "P3", "note": "\"about 3 s\" has no measurement"}]
 }`
 )
 
 // answerLine is the line of both synthesis shapes that holds the answer to the person's question.
 const answerLine = "  \"answer\": \"one short sentence that answers the person's question directly\",\n"
-
-// withdrawnExample is the example outcome synthesisShape shows for a withdrawn idea, written for a council of 2 rounds.
-const withdrawnExample = `"P4": "Withdrawn in round 2", `
 
 // lastReplyRound is the round the seats' picks and withdrawals come in: the last reply pass, the one before the
 // summary. 0 for a council of one round, which has no reply pass. A withdrawal in an earlier pass of a council of three
@@ -126,37 +120,13 @@ func lastReplyRound(c *Council) int {
 	return 0
 }
 
-// withdrawnOutcome is the outcome of an idea its author withdrew, "Withdrawn in round 2" for 2 rounds. A council of one
-// round has none.
+// withdrawnOutcome is the outcome Go gives an idea its author withdrew (fill.go), "Withdrawn in round 2" for 2 rounds. A
+// council of one round has none.
 func withdrawnOutcome(c *Council) string {
 	if r := lastReplyRound(c); r > 0 {
 		return fmt.Sprintf("Withdrawn in round %d", r)
 	}
 	return ""
-}
-
-// outcomeWords is the list of words a synthesis prompt offers for a proposal's fate: "a", "b" or "c". The fate of a
-// withdrawn idea is among them only when the council has a reply pass to withdraw in.
-func outcomeWords(c *Council, words ...string) string {
-	if w := withdrawnOutcome(c); w != "" {
-		words = append(words, w)
-	}
-	words = append(words, "Cut at the pause")
-	quoted := make([]string, len(words))
-	for i, w := range words {
-		quoted[i] = `"` + w + `"`
-	}
-	return strings.Join(quoted[:len(quoted)-1], ", ") + " or " + quoted[len(quoted)-1]
-}
-
-// shapeForRounds is a synthesis shape written for 2 rounds, as it reads for c: the withdrawn idea in its example
-// outcomes names the council's last reply round, and a council of one round shows none.
-func shapeForRounds(c *Council, shape string) string {
-	w := withdrawnOutcome(c)
-	if w == "" {
-		return strings.Replace(shape, withdrawnExample, "", 1)
-	}
-	return strings.Replace(shape, "Withdrawn in round 2", w, 1)
 }
 
 // synthesisShapeNoQuestion is synthesisShape for a council with no question: there is nothing to answer, so it asks
@@ -223,9 +193,7 @@ const (
       "title": "a short title for the idea worth trying",
       "reasoning": "why it is worth trying",
       "firststep": "the one thing to do first",
-      "from": ["P2", "P3"],
-      "stances": {"designer": "accept", "contrarian": "challenge"},
-      "agreed": false
+      "from": ["P2", "P3"]
     }
   ],
   "kept": [
@@ -234,8 +202,7 @@ const (
   "asks": [
     {"text": "a question the person could ask next, as they would type it", "to": "contrarian"},
     {"text": "one for the whole panel", "to": ""}
-  ],
-  "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P5": "Kept aside", "P6": "Not picked"}
+  ]
 }`
 )
 
@@ -281,6 +248,13 @@ const (
 		`opinions. Where a result backs a direction or contradicts it, say so in that direction's reasoning.`
 
 	stanceRule = `A stance is one of "accept", "challenge" or "oppose".`
+
+	// labelRule is in a Review's synthesis, which shows each proposal's and each stance's label (writeLabelled, writeThread):
+	// Go's check of the claim, never a model's. The words are the ones the document and the UI use (labelWord).
+	labelRule = `A proposal's label is Go's check of its claim, shown under it: Ran (a check Go ran backs it), Read code ` +
+		`(a path:line it cites resolves), Guess (nothing it cites checks out) or Disproved (a check Go ran contradicts it). ` +
+		`A direction takes the label of its best proposal, Ran first, then Read code. A stance carries a label too: a ` +
+		`challenge or an objection that is Ran or Read code holds, and one that is a Guess does not weigh much.`
 
 	// titleRule is in every prompt that cites proposals by id: the person reads the prose fields, and the UI shows no
 	// proposal id.
@@ -1284,7 +1258,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int, scope round2Scope) 
 	writeThreadOf := func(p CouncilProposal) {
 		if round > 2 {
 			var thread strings.Builder
-			writeThread(&thread, c, p.Id)
+			writeThread(&thread, c, p.Id, false)
 			if thread.Len() > 0 {
 				b.WriteString("What was said about it:\n" + thread.String() + "\n")
 			}
@@ -1356,9 +1330,23 @@ func revisedTag(r CouncilReply) string {
 	return "revised its proposal"
 }
 
+// writeLabelled is writeProposal with the proposal's claim label under it, as the synthesis shows each proposal: Go's check
+// of the claim, in the words the document and the UI use. A proposal nothing labels is written as writeProposal does.
+func writeLabelled(b *strings.Builder, c *Council, p CouncilProposal, level string) {
+	var one strings.Builder
+	writeProposal(&one, c, p, level)
+	w := labelWord(p.Label)
+	if w == "" {
+		b.WriteString(one.String())
+		return
+	}
+	fmt.Fprintf(b, "%s\nLabel: %s\n\n", strings.TrimRight(one.String(), "\n"), w)
+}
+
 // writeThread writes the replies of one proposal (or, with an empty id, the ones to the whole council), each
-// indented under the reply it answers. A held or dropped reply is not written: it is not out in the room.
-func writeThread(b *strings.Builder, c *Council, proposalId string) {
+// indented under the reply it answers. A held or dropped reply is not written: it is not out in the room. With labels, a
+// reply that carries a claim label says it among its tags (the synthesis shows them; the experts' rounds do not).
+func writeThread(b *strings.Builder, c *Council, proposalId string, labels bool) {
 	for _, r := range c.Replies {
 		if r.ProposalId != proposalId || !Sent(r.Draft) {
 			continue
@@ -1367,6 +1355,9 @@ func writeThread(b *strings.Builder, c *Council, proposalId string) {
 		var tags []string
 		if r.Stance != "" {
 			tags = append(tags, string(r.Stance))
+		}
+		if w := labelWord(r.Label); labels && w != "" {
+			tags = append(tags, "label: "+w)
 		}
 		if r.Builds && isBrainstorm(c) {
 			tags = append(tags, "builds on it")
@@ -1445,7 +1436,7 @@ func SynthesisPrompt(c *Council) string {
 		fmt.Fprintf(&b, "\nThis is round %d of %d: synthesis. You have no tools: work from the text below.\n\n", last, last)
 	}
 
-	b.WriteString("## Experts\n\nUse the id as the key in \"stances\".\n\n")
+	b.WriteString("## Experts\n\nUse the id in \"to\" of a question for one expert.\n\n")
 	for _, e := range c.Experts {
 		if !e.Coordinator {
 			fmt.Fprintf(&b, "- %s (%s)\n", e.Id, e.Name)
@@ -1477,7 +1468,7 @@ func SynthesisPrompt(c *Council) string {
 		b.WriteString("(no expert made a proposal)\n\n")
 	}
 	for _, p := range sent {
-		writeProposal(&b, c, p, "###")
+		writeLabelled(&b, c, p, "###")
 		switch {
 		case p.Cut:
 			b.WriteString("The person cut this proposal at the pause: it was not reviewed.\n\n")
@@ -1485,13 +1476,13 @@ func SynthesisPrompt(c *Council) string {
 			fmt.Fprintf(&b, "Its author withdrew it in round %d.\n\n", lastReplyRound(c))
 		}
 		var thread strings.Builder
-		writeThread(&thread, c, p.Id)
+		writeThread(&thread, c, p.Id, true)
 		if thread.Len() > 0 {
 			b.WriteString(thread.String() + "\n")
 		}
 	}
 	var whole strings.Builder
-	writeThread(&whole, c, "")
+	writeThread(&whole, c, "", true)
 	if whole.Len() > 0 {
 		b.WriteString("### To the whole council\n\n" + whole.String() + "\n")
 	}
@@ -1503,28 +1494,25 @@ func SynthesisPrompt(c *Council) string {
 		return writeBrainstormSynthesisTask(&b, c)
 	}
 	b.WriteString("1. Merge proposals that say the same thing into one direction, and list their ids in \"from\".\n")
-	b.WriteString("2. Rank the directions, best first, from \"rank\" 1. Put the directions no expert challenges or opposes " +
-		"first; rank the rest by how many experts picked them (an expert who picked any of the proposals a direction merges " +
-		"counts once), most first.\n")
+	b.WriteString("2. Rank the directions, best first, from \"rank\" 1, by how bad it is if left alone: data loss first, then a " +
+		"broken flow, then a wrong state shown to the person, then cost (RAM, time, tokens), then polish. Between two that " +
+		"are as bad, the label breaks a tie, the stronger one first. " + labelRule + " The picks above are context for the " +
+		"ranking, not the ranking itself.\n")
+	n := maxDirections(c)
 	fmt.Fprintf(&b, "3. In \"directions\", keep at most %d: the best of that ranking, read in full. A direction that only "+
-		"changes wording, names or formatting takes one of the %d places only when no direction of another kind is left.\n",
-		maxDirections, maxDirections)
+		"changes wording, names or formatting takes one of the %d places only when no direction of another kind is left. A "+
+		"direction whose proposals are all Guess or Disproved takes none: put it in \"kept\".\n", n, n)
 	b.WriteString("4. For each of them, \"reasoning\" says why it ranks here, and \"firststep\" is its first step: the one " +
 		"thing to do first, a text edit to make now or the first piece of new work, small enough to start this week.\n")
 	b.WriteString("5. In \"kept\", list every other direction, best first, each with a title, one line on what it asks for, " +
 		"and its ids in \"from\". The person reads them as Also raised. Leave \"kept\" empty when there are none.\n")
-	b.WriteString("6. In \"stances\", give each expert's stance towards the direction, keyed by the expert's id, from the replies " +
-		"above. " + stanceRule + " Leave out the authors of the proposals the direction merges. \"agreed\" is true when no " +
-		"expert challenges or opposes it.\n")
-	b.WriteString("7. In \"outcomes\", give every proposal its fate: " +
-		outcomeWords(c, "Direction N", "Merged into direction N", "Also raised") + ".\n")
-	b.WriteString("8. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
+	b.WriteString("6. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
-	b.WriteString("9. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")
-	b.WriteString("10. " + askRule + "\n")
+	b.WriteString("7. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")
+	b.WriteString("8. " + askRule + "\n")
 	shape, summary := synthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
-		b.WriteString("11. In \"answer\", write one sentence that answers the question for the council directly: the " +
+		b.WriteString("9. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
 		shape, summary = synthesisShape, summaryRule
 	}
@@ -1534,7 +1522,7 @@ func SynthesisPrompt(c *Council) string {
 	}
 	b.WriteString(summary + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(jsonRule + "\n```json\n" + shapeForRounds(c, shape) + "\n```\n")
+	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }
 
@@ -1551,26 +1539,22 @@ func LangLine(lang string) string {
 }
 
 // writeBrainstormSynthesisTask ends a Brainstorm's synthesis prompt: at most 3 ideas worth trying, each with why and a
-// first step, the wild ideas kept aside, and the fate of every idea. It returns the whole prompt.
+// first step, and the wild ideas kept aside. It returns the whole prompt.
 func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 	b.WriteString("1. Merge ideas that say the same thing into one, and list their ids in \"from\".\n")
+	n := maxDirections(c)
 	fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by how many experts "+
 		"picked it (an expert who picked any of the ideas it merges counts once), then by how many experts built on it. Leave out an idea nobody picked or built on. "+
-		"A wild idea never takes one of the %d places.\n", maxDirections, maxDirections)
+		"A wild idea never takes one of the %d places.\n", n, n)
 	b.WriteString("3. For each of them, \"reasoning\" says why it is worth trying, and \"firststep\" is its first step: the one " +
 		"thing to do first, small enough to start this week.\n")
-	b.WriteString("4. In \"stances\", give each expert's stance towards the idea, keyed by the expert's id, from the replies " +
-		"above. " + stanceRule + " Leave out the authors of the ideas it merges. \"agreed\" is true when no expert has doubts " +
-		"about it or is against it.\n")
-	b.WriteString("5. In \"kept\", list the wild ideas that were not chosen (the ones marked wild above), each with a title, a " +
+	b.WriteString("4. In \"kept\", list the wild ideas that were not chosen (the ones marked wild above), each with a title, a " +
 		"line on why it is worth remembering, and its ids in \"from\". Leave \"kept\" empty when there are none.\n")
-	b.WriteString("6. In \"outcomes\", give every idea its fate: " +
-		outcomeWords(c, "Direction N", "Merged into direction N", "Kept aside", "Not picked") + ".\n")
-	b.WriteString("7. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")
-	b.WriteString("8. " + askRule + "\n")
+	b.WriteString("5. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")
+	b.WriteString("6. " + askRule + "\n")
 	shape, summary := brainstormSynthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
-		b.WriteString("9. In \"answer\", write one sentence that answers the question for the council directly: the " +
+		b.WriteString("7. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
 		shape, summary = brainstormSynthesisShape, summaryRule
 	}
