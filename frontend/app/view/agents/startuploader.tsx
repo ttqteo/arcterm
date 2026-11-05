@@ -7,7 +7,7 @@
 // not a CSS animation, which would hold the page at display rate (pulse.ts); with reduced motion the pet stands still.
 
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
-import { PET_CELL_PX, PET_PX, spriteFor } from "@/app/view/jarvis/petsprite";
+import { PET_GRID, spriteFor } from "@/app/view/jarvis/petsprite";
 import { petCharacterAtom } from "@/app/view/jarvis/petstore";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { cn } from "@/util/util";
@@ -16,7 +16,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useChristmasDecor } from "./christmasstore";
 import { RUN_FRAME_MS, runFrame } from "./startuprun";
 
-const TRACK_PX = 348;
+// a size up from the folded pet's 3px cells: it is the only thing on an otherwise empty screen
+const CELL_PX = 4;
+const PET_PX = PET_GRID * CELL_PX;
+const TRACK_PX = 440;
 
 function useReducedMotion(): boolean {
     const [reduce, setReduce] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -55,7 +58,7 @@ function RunningPet() {
         }),
         [character, outfit]
     );
-    const frame = runFrame(elapsed, TRACK_PX, PET_PX, PET_CELL_PX);
+    const frame = runFrame(elapsed, TRACK_PX, PET_PX, CELL_PX);
     const x = reduce ? Math.round((TRACK_PX - PET_PX) / 2) : frame.x;
     const flip = !reduce && frame.facing === "left";
     return (
@@ -64,7 +67,7 @@ function RunningPet() {
                 className="absolute bottom-0 left-0"
                 style={{ transform: `translate(${x}px, ${reduce ? 0 : -frame.lift}px)${flip ? " scaleX(-1)" : ""}` }}
             >
-                <SproutSvg sprite={reduce ? sprites.stand : sprites[frame.pose]} cellPx={PET_CELL_PX} />
+                <SproutSvg sprite={reduce ? sprites.stand : sprites[frame.pose]} cellPx={CELL_PX} />
             </div>
             <div className="absolute inset-x-0 -bottom-[3px] h-px bg-edge-mid" />
         </div>
