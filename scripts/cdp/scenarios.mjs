@@ -11674,7 +11674,8 @@ const terminalTheme = {
 // --- the Christmas theme ------------------------------------------------------------------------
 // docs/superpowers/specs/2026-11-05-christmas-theme-design.md. One pass over the preset: picked in Settings (the palette,
 // the effects switch, the app bar and content kept in place), the snow falling and fainter over a terminal, the lights
-// lit and still and then blinking while an agent asks, the Office's trees, gifts, wreath and hats, the pet's hat in its
+// lit and still and then blinking while an agent asks, the nav rail's hats at the wide and the narrow width (2026-11-05-
+// christmas-nav-icons-design.md), the Office's trees, gifts, wreath and hats, the pet's hat in its
 // corner and in Jarvis and folded into Sprout (the default pet and Spider-Man), reduced motion (the snow and the blink
 // stop, the static decor stays), and the effects switch off (snow and lights gone, the palette kept, the Settings
 // outfit back). Between the last two it measures the snow's CPU and heap over 10 s on and 10 s off, for open-issues'
@@ -11816,6 +11817,55 @@ const XMAS_OFFICE_READ = `(() => {
         bossShirt: boss.filter((f) => f === ${JSON.stringify(XMAS_SHIRT)}).length,
     };
 })()`;
+// verify.mjs's viewport, which step 5b narrows below navRailCollapsed's 900px and puts back
+const XMAS_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
+// the nav rail as drawn: its width, the token's lit-bulb red resolved, and per button its hat's box and fill and its
+// count badge's box
+const XMAS_RAIL_READ = `(() => {
+    const nav = document.querySelector("nav");
+    if (!nav) return null;
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-xmas-bulb)";
+    document.body.append(probe);
+    const bulb = getComputedStyle(probe).color;
+    probe.remove();
+    const box = (e) => {
+        const r = e.getBoundingClientRect();
+        return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+    };
+    return {
+        width: Math.round(nav.getBoundingClientRect().width),
+        bulb,
+        items: [...nav.querySelectorAll("button")].map((b) => {
+            const hat = b.querySelector("svg[data-rail-hat]");
+            const badge = b.querySelector("[data-nav-badge]");
+            return {
+                label: b.getAttribute("aria-label"),
+                active: b.className.includes("text-accent-soft"),
+                hat: hat ? box(hat) : null,
+                fill: hat ? getComputedStyle(hat.querySelector("path")).fill : null,
+                badge: badge ? box(badge) : null,
+            };
+        }),
+    };
+})()`;
+const xmasMeets = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+// every button hatted in the bulb red, no hat over a badge, the Cockpit badge up, Agent selected, the rail that wide
+const xmasRailHatted = (rail, width) =>
+    rail != null &&
+    rail.width === width &&
+    rail.items.length > 0 &&
+    rail.items.every((it) => it.hat != null && it.fill === rail.bulb && (it.badge == null || !xmasMeets(it.hat, it.badge))) &&
+    rail.items.some((it) => it.label === "Cockpit" && it.badge != null) &&
+    rail.items.some((it) => it.label === "Agent" && it.active);
+const xmasRailSummary = (rail) =>
+    rail == null
+        ? null
+        : {
+              width: rail.width,
+              bulb: rail.bulb,
+              items: rail.items.map((it) => `${it.label}${it.active ? "*" : ""}:${it.hat ? it.fill : "no hat"}${it.badge ? "+badge" : ""}`),
+          };
 // the roster written to the fixture and re-read without a reload; without the asker the Cockpit badge counts nothing
 async function xmasRoster(h, withAsker) {
     const roster = COCKPIT_FIXTURES["christmas-office"](Date.now()).filter((a) => withAsker || a.id !== CHRISTMAS_ASKER);
@@ -12050,6 +12100,30 @@ const christmasTheme = {
             { classes5, bulb0: b0, lagGap5 }
         );
 
+        // 5b. the nav rail's hats (docs/superpowers/specs/2026-11-05-christmas-nav-icons-design.md), wide then narrow:
+        // every rail button wears one in the lit-bulb red, none touches a count badge, the Cockpit badge (the asker)
+        // shows, and Agent, the selected item, wears its hat too
+        await h.goto("agent");
+        await xmasNap(400);
+        const rail5w = await h.ev(XMAS_RAIL_READ);
+        await h.shot("cdp-shots/christmas-theme-5b-rail-wide.png");
+        await xmasClip(h, "christmas-theme-5b-rail-wide-zoom", "nav", 78, 950, 2);
+        ctx.narrowed = true;
+        await h.cdp("Emulation.setDeviceMetricsOverride", { ...XMAS_VIEWPORT, width: 860 });
+        await polishWaitFor(h, `Math.round(document.querySelector("nav")?.getBoundingClientRect().width ?? 0) === 56`, 5000);
+        await xmasNap(300);
+        const rail5n = await h.ev(XMAS_RAIL_READ);
+        await h.shot("cdp-shots/christmas-theme-5b-rail-narrow.png");
+        await xmasClip(h, "christmas-theme-5b-rail-narrow-zoom", "nav", 56, 950, 2);
+        await h.cdp("Emulation.setDeviceMetricsOverride", XMAS_VIEWPORT);
+        ctx.narrowed = false;
+        await polishWaitFor(h, `Math.round(document.querySelector("nav")?.getBoundingClientRect().width ?? 0) === 78`, 5000);
+        rec(
+            "5b. every nav rail icon wears a Santa hat in the lit-bulb red on the wide (78px) and narrow (56px) rail, clear of every count badge, with the Cockpit badge up and Agent selected and hatted",
+            xmasRailHatted(rail5w, 78) && xmasRailHatted(rail5n, 56),
+            { wide: xmasRailSummary(rail5w), narrow: xmasRailSummary(rail5n) }
+        );
+
         // 6. the Office: trees for plants, gifts and the wreath on the board, hats on its people and the boss
         await h.goto("cockpit");
         const missing6 = await waitForOffice(h);
@@ -12172,6 +12246,12 @@ const christmasTheme = {
             clicked10 && off10 && !gone10.snow && !gone10.lights && bg10 === XMAS_BG && accent10 === XMAS_ACCENT,
             { clicked10, off10, gone10, bg10, accent10, measure }
         );
+        const rail10 = await h.ev(XMAS_RAIL_READ);
+        rec(
+            "10b. with the effects off the nav rail wears no hats",
+            off10 && rail10 != null && rail10.items.length > 0 && rail10.items.every((it) => it.hat == null),
+            xmasRailSummary(rail10)
+        );
 
         // 11. with the effects off the Settings outfit comes back: the shirt on the pet and on the boss, and no hat or
         // tree is left in the Office
@@ -12212,6 +12292,7 @@ const christmasTheme = {
             }
         };
         await step("lift the media emulation", () => h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET));
+        if (ctx.narrowed) await step("restore the viewport", () => h.cdp("Emulation.setDeviceMetricsOverride", XMAS_VIEWPORT));
         await step("clear the Office's seeded run", () => h.ev("window.__cockpitOffice?.(null)"));
         await step("restore the stored theme, effects, pet and Office view", async () => {
             for (const [k, key] of Object.entries(XMAS_KEYS)) {

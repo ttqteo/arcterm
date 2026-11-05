@@ -27,6 +27,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - **Christmas**, a new theme in Settings → Appearance → Theme: forest green and antique gold, snow falling over the window (fainter over a terminal), a string of lights under the app bar that blinks while an agent needs you, Christmas trees, gifts and a wreath in the Office, and a Santa hat on the pet and on everyone in the Office. The Christmas effects switch under the themes drops the decor and keeps the colours; with reduced motion on, the snow and the blink stop and the rest stays. <!-- big -->
+- With the Christmas theme on, every icon on the nav rail wears a small Santa hat; it goes when you turn the Christmas effects off.
 - In a project's Overview, each session in History has a Quick look button (and a Quick look item in its right-click menu) that opens its transcript in a dialog over the page, with Resume and Open, so you can read a session without leaving the Overview.
 
 ### Changed
