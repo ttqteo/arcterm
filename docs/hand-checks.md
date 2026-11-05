@@ -11,6 +11,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   at your usual double-click pace → the terminal menu opens and nothing pastes. With text selected, one right-click
   copies it and clears the highlight. The double-click window went from 300 ms to Windows' default 500 ms, after a hand
   check where a double right-click pasted twice; only the unit tests ran (`termrightclick.ts`).
+- [ ] (arcterm) **No Resume while an agent watches a Monitor.** Have a Claude agent start a Monitor (or a
+  `while …; sleep` loop) in the background and end its turn → the Overview panel's session line reads "waiting <1m ·
+  cache …" with the header's waiting dot and no Resume button; give it a build in the background instead → "working",
+  still no button and no Stop. Once nothing runs in the background → "idle" and Resume is back. Unit tests and the
+  typecheck only (`railAction` in `agentrailmodel.ts`, `agentdetailsrail.tsx`).
 - [ ] (arcterm) **The Christmas theme in WebView2.** In the packaged app pick Settings → Appearance → Theme →
   Christmas, with an agent's terminal open → snow falls over the whole window and reads clearly fainter over the
   terminal, whose text stays readable; the lights hang under the app bar without moving it. Have an agent ask → the

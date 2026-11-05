@@ -96,13 +96,22 @@ describe("cacheRewriteTitle", () => {
 
 describe("railAction", () => {
     it("offers Resume for an idle agent and Stop for one mid-turn", () => {
-        expect(railAction("idle", true)).toEqual({ kind: "resume" });
-        expect(railAction("working", true)).toEqual({ kind: "stop" });
-        expect(railAction("asking", true)?.kind).toBe("stop");
+        expect(railAction("idle", null, true)).toEqual({ kind: "resume" });
+        expect(railAction("working", null, true)).toEqual({ kind: "stop" });
+        expect(railAction("asking", null, true)?.kind).toBe("stop");
+    });
+
+    it("offers nothing to an idle agent whose background work will wake it", () => {
+        expect(railAction("idle", "waiting", true)).toBeNull();
+        expect(railAction("idle", "working", true)).toBeNull();
+    });
+
+    it("keeps Stop mid-turn while background work also runs", () => {
+        expect(railAction("working", "waiting", true)).toEqual({ kind: "stop" });
     });
 
     it("offers nothing without a live terminal", () => {
-        expect(railAction("working", false)).toBeNull();
+        expect(railAction("working", null, false)).toBeNull();
     });
 });
 
@@ -113,6 +122,12 @@ describe("railStatusLine", () => {
         );
         expect(railStatusLine({ state: "idle", age: "2h", ended: false, cache: "expired" })).toBe(
             "idle 2h · cache expired"
+        );
+    });
+
+    it("says waiting for an idle agent watching its background work", () => {
+        expect(railStatusLine({ state: "waiting", age: "<1m", ended: false, cache: "58m left" })).toBe(
+            "waiting <1m · cache 58m left"
         );
     });
 
