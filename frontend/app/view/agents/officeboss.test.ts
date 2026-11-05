@@ -23,6 +23,7 @@ import {
     BOSS_HALF_W,
     BOSS_HEADROOM,
     buildPlan,
+    giftArea,
     HWALL,
     LIFT_KEY,
     type Plan,
@@ -77,6 +78,40 @@ const upstairs = buildPlan({
     now: 0,
     away: {},
     night: false,
+});
+// Christmas: the full floor with a finished agent hidden in b's chip and a done task at each table, so every room has a
+// tree (b's and Home's at their strip's plant, a's and c's at a free spot right of their table) and three have gifts
+const doneRun = (id: string, project: string) => ({
+    ...run(id, project),
+    tasks: [
+        { id: "t1", label: "t1", state: "done", asking: false },
+        { id: "t2", label: "t2", state: "running", asking: false },
+    ],
+});
+const merryInput = (christmas: boolean) => ({
+    agents: [
+        ...["a", "b", "c"].flatMap((p) => [ag(`${p}1`, p), ag(`${p}2`, p, "asking")]),
+        { ...ag("b3", "b", "idle"), finished: true },
+        ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
+    ],
+    runs: [doneRun("r1", "a"), doneRun("r2", "c")],
+    width: 900,
+    now: 0,
+    away: {},
+    night: false,
+    christmas,
+});
+const merry = buildPlan(merryInput(true));
+const plainMerry = buildPlan(merryInput(false));
+// alpha's tree at its desk row's plant, its gifts beside it
+const merryAlpha = buildPlan({
+    agents: [ag("a1", "alpha"), ag("a2", "alpha"), ag("b1", "beta"), ag("h1")],
+    runs: [doneRun("r1", "alpha")],
+    width: 1050,
+    now: 0,
+    away: {},
+    night: false,
+    christmas: true,
 });
 // one project: its three other rooms are empty
 const lone = buildPlan({ agents: [ag("a1", "alpha")], runs: [], width: 1050, now: 0, away: {}, night: false });
@@ -212,21 +247,75 @@ describe("officeboss", () => {
         expect(overFurniture(plan, pathBetween(plan, above, a1))).toEqual([]);
     });
 
-    it("walks every desk and seat to every other on a full floor round the furniture, never over it", () => {
-        const spots = [
-            ...full.desks.map((d) => d.spot),
-            ...full.seats.map((s) => s.spot),
-            full.board.spot,
-            full.lift.spot,
-        ];
-        for (const a of spots) {
-            for (const b of spots) {
-                const path = pathBetween(full, a, b);
-                expect(path[0]).toEqual(a);
-                expect(path[path.length - 1]).toEqual(b);
-                expect(overFurniture(full, path), JSON.stringify([a, b])).toEqual([]);
-                expect(offFloor(full, path), JSON.stringify([a, b])).toEqual([]);
+    it.each([
+        ["", full],
+        [" under Christmas, round the trees and gifts", merry],
+    ] as [string, Plan][])(
+        "walks every desk and seat to every other on a full floor round the furniture, never over it%s",
+        (_, p) => {
+            const spots = [...p.desks.map((d) => d.spot), ...p.seats.map((s) => s.spot), p.board.spot, p.lift.spot];
+            for (const a of spots) {
+                for (const b of spots) {
+                    const path = pathBetween(p, a, b);
+                    expect(path[0]).toEqual(a);
+                    expect(path[path.length - 1]).toEqual(b);
+                    expect(overFurniture(p, path), JSON.stringify([a, b])).toEqual([]);
+                    expect(offFloor(p, path), JSON.stringify([a, b])).toEqual([]);
+                }
             }
+        }
+    );
+
+    it("keeps the boss's feet off each room's Christmas tree and its gifts, only while Christmas shows", () => {
+        const rooms = merry.rooms.filter((r) => r.xmas);
+        expect(rooms.filter((r) => r.kind === "agents")).toHaveLength(4);
+        // a tree at a free spot (no plant there) and gifts beside a plant's tree are both among them
+        expect(rooms.some((r) => !r.plants && r.xmas!.gifts > 0)).toBe(true);
+        expect(rooms.some((r) => r.plants && r.xmas!.gifts > 0)).toBe(true);
+        // the points of a box the boss could stand on, were nothing there (a tree by a wall stands partly out of reach)
+        const floorIn = (p: Plan, b: { x: number; y: number; w: number; h: number }) => {
+            const out: Point[] = [];
+            for (let y = b.y + 1; y < b.y + b.h; y += 3) {
+                for (let x = b.x + 1; x < b.x + b.w; x += 3) {
+                    if (canStand(p, { x, y })) {
+                        out.push({ x, y });
+                    }
+                }
+            }
+            return out;
+        };
+        const potOf = (t: Point) => ({ x: t.x + 6, y: t.y + 26, w: 22, h: 18 });
+        const giftsOf = (g: { x: number; y: number; w: number; h: number }) => ({ ...g, y: g.y + 12, h: g.h - 12 });
+        for (const p of [merry, merryAlpha]) {
+            for (const r of p.rooms.filter((x) => x.xmas)) {
+                const pot = floorIn(p, potOf(r.xmas!.tree));
+                expect(pot.length, r.key).toBeGreaterThan(0);
+                expect(
+                    pot.filter((q) => canWalk(p, q)),
+                    `${r.key} pot`
+                ).toEqual([]);
+                const gifts = floorIn(p, giftsOf(giftArea(r)!));
+                expect(gifts.length, r.key).toBeGreaterThan(0);
+                const walkable = gifts.filter((q) => canWalk(p, q));
+                expect(walkable, `${r.key} gifts`).toEqual(r.xmas!.gifts > 0 ? [] : gifts);
+            }
+        }
+        // the same floor without Christmas: a free spot's tree and every gift pile are bare floor
+        for (const r of plainMerry.rooms.filter((x) => x.xmas && !x.plants)) {
+            const pot = floorIn(plainMerry, potOf(r.xmas!.tree));
+            expect(pot.length, r.key).toBeGreaterThan(0);
+            expect(
+                pot.every((q) => canWalk(plainMerry, q)),
+                r.key
+            ).toBe(true);
+        }
+        for (const r of plainMerry.rooms.filter((x) => x.xmas && x.xmas.gifts > 0)) {
+            const gifts = floorIn(plainMerry, giftsOf(giftArea(r)!));
+            expect(gifts.length, r.key).toBeGreaterThan(0);
+            expect(
+                gifts.every((q) => canWalk(plainMerry, q)),
+                r.key
+            ).toBe(true);
         }
     });
 
@@ -390,6 +479,8 @@ describe("officeboss", () => {
         ["a floor", plan, a1],
         ["a full floor", full, spotOf(full, "a1")!],
         ["a floor above G", upstairs, spotOf(upstairs, "b1")!],
+        ["a full floor under Christmas", merry, spotOf(merry, "a1")!],
+        ["a floor under Christmas, gifts by a desk row's tree", merryAlpha, spotOf(merryAlpha, "a1")!],
     ] as [string, Plan, Point][])(
         "leaves every desk, seat, chip, the board and the lift within a walk of every other, around all the furniture: %s",
         (_, p, start) => {
