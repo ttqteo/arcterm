@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
@@ -193,9 +194,50 @@ func (ws *WshServer) EffortDeleteCommand(ctx context.Context, data wshrpc.Comman
 	return effortstore.Delete(ctx, data.EffortOID)
 }
 
-// EffortPinCommand is a stub so the interface compiles; the pin flow lands with the pin command itself.
+// pinMu serializes pin calls: the cap is read over every effort and then written effort by effort, so two
+// pins racing past the same count would land a seventh.
+var pinMu sync.Mutex
+
+// EffortPinCommand pins or unpins an effort to the Brief's cards. A pin is a view preference: it is written
+// through the keep-UpdatedTs update, with no event or note, so it neither reorders "most recent" nor shows
+// as work. The caller reloads the briefing, as after a mutate.
 func (ws *WshServer) EffortPinCommand(ctx context.Context, data wshrpc.CommandEffortPinData) (*wshrpc.CommandEffortPinRtnData, error) {
-	return nil, fmt.Errorf("effort pin is not built yet")
+	oid := effortstore.BareOID(data.EffortOID)
+	pinMu.Lock()
+	defer pinMu.Unlock()
+	all, err := effortstore.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := jarvis.PlanPin(all, oid, data.Pin, data.ReplaceOldest, time.Now().UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	if plan.CapReached {
+		return &wshrpc.CommandEffortPinRtnData{
+			CapReached: true,
+			Oldest:     &wshrpc.EffortPinRef{OID: plan.Oldest.OID, Title: plan.Oldest.Title},
+		}, nil
+	}
+	for _, clearOID := range plan.Clear {
+		if err := effortstore.UpdateKeepTs(ctx, clearOID, func(e *waveobj.Effort) error {
+			e.PinnedTs = 0
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	if plan.Stamp != "" {
+		if err := effortstore.UpdateKeepTs(ctx, plan.Stamp, func(e *waveobj.Effort) error {
+			if e.PinnedTs == 0 {
+				e.PinnedTs = plan.StampTs
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return &wshrpc.CommandEffortPinRtnData{Pinned: plan.Pinned}, nil
 }
 
 // noteAuthorFor attributes a batch's notes. A source block means `wsh effort` ran in a terminal, which

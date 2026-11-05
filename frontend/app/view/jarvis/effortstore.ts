@@ -4,11 +4,12 @@
 // The effort store: an on-demand full-effort cache, and the mutate helpers that write through and
 // refresh the briefing's summary leg.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
-import { loadBriefingAsync, stateRpcTimeoutMs } from "./briefingstore";
+import { briefingStateAtom, loadBriefingAsync, stateRpcTimeoutMs } from "./briefingstore";
 import { chunkTone, type ChunkTone } from "./effortmodel";
 import { acceptOps, attachAgentOp, dropOps, linkOp, restoreOps, unacceptOps } from "./proposedmodel";
 import { chunkRef, type EditChunk } from "./trackeredit";
@@ -234,6 +235,70 @@ export async function attachAgent(oref: string, chunk: string, tabId: string): P
 // "" unlinks
 export async function linkEffort(oref: string, parentOref: string): Promise<void> {
     await mutateEffort(oref, [linkOp(parentOref)]);
+}
+
+// The pin as the app last read it: the briefing's summary (reloaded after each pin), else the cached detail.
+function pinnedNow(oref: string): { pinned: boolean; title: string } {
+    const summary = globalStore.get(briefingStateAtom).snapshot?.state.efforts?.find((e) => e.oref === oref);
+    const detail = globalStore.get(effortDetailAtom).get(oref);
+    return {
+        pinned: (summary != null ? (summary.pinnedts ?? 0) : (detail?.pinnedts ?? 0)) > 0,
+        title: summary?.title ?? detail?.title ?? "",
+    };
+}
+
+// a pin moves no updatedts, so effortDetailIsFresh would never refetch the cached detail: patch its pin here
+function patchDetailPin(oref: string, pinned: boolean): void {
+    const cached = globalStore.get(effortDetailAtom).get(oref);
+    if (cached == null || (cached.pinnedts ?? 0) > 0 === pinned) {
+        return;
+    }
+    const cache = new Map(globalStore.get(effortDetailAtom));
+    cache.set(oref, { ...cached, pinnedts: pinned ? Date.now() : 0 });
+    globalStore.set(effortDetailAtom, cache);
+}
+
+async function requestPin(oref: string, pin: boolean, title: string, replaceOldest: boolean): Promise<void> {
+    let rtn: CommandEffortPinRtnData;
+    try {
+        rtn = await RpcApi.EffortPinCommand(
+            TabRpcClient,
+            replaceOldest
+                ? { effortoid: effortOid(oref), pin, replaceoldest: true }
+                : { effortoid: effortOid(oref), pin },
+            { timeout: stateRpcTimeoutMs }
+        );
+    } catch (err) {
+        pushToast({
+            title: `Couldn't ${pin ? "pin" : "unpin"} ${title ? `“${title}”` : "the initiative"}`,
+            message: err instanceof Error ? err.message : String(err),
+            level: "error",
+        });
+        return;
+    }
+    if (rtn.capreached) {
+        const oldest = rtn.oldest?.title || "the oldest pin";
+        pushToast({
+            title: `${MAX_PINNED_EFFORTS} initiatives are pinned`,
+            message: `Unpin “${oldest}” to pin ${title ? `“${title}”` : "this one"} in its place.`,
+            level: "info",
+            action: { label: `Unpin ${oldest}`, run: () => void requestPin(oref, pin, title, true) },
+        });
+        return;
+    }
+    patchDetailPin(oref, rtn.pinned);
+    void loadBriefingAsync(); // the cards and the list read the pin off the summary
+}
+
+// mirrors jarvis.MaxPinnedEfforts: only the cap toast's wording uses it, the server enforces the cap
+export const MAX_PINNED_EFFORTS = 6;
+
+// The one pin flow: every pin control (card menu, list row, sheet head, the `p` key) calls it. It pins an
+// unpinned initiative and unpins a pinned one. At the cap it offers to unpin the oldest; a failure is an error
+// toast, never thrown to the control.
+export async function togglePin(oref: string): Promise<void> {
+    const { pinned, title } = pinnedNow(oref);
+    await requestPin(oref, !pinned, title, false);
 }
 
 // an idea is a title written down to come back to: no project, no chunks, no form. It returns the new

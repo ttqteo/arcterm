@@ -274,3 +274,13 @@ func TestTimelineLeavesOutDagWorkers(t *testing.T) {
 		}
 	}
 }
+
+// the Brief's cards read the pin off the summary: an effort's pin has to reach it
+func TestEffortSummaryCarriesPinnedTs(t *testing.T) {
+	if got := EffortSummaryOf(&waveobj.Effort{OID: "e1", PinnedTs: 777}).PinnedTs; got != 777 {
+		t.Fatalf("summary PinnedTs = %d, want 777", got)
+	}
+	if got := EffortSummaryOf(&waveobj.Effort{OID: "e2"}).PinnedTs; got != 0 {
+		t.Fatalf("unpinned summary PinnedTs = %d, want 0", got)
+	}
+}

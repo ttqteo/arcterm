@@ -691,3 +691,24 @@ func TestApplyOpsLeavesTheAuthorEmpty(t *testing.T) {
 		t.Fatalf("note = %+v, want no author", n)
 	}
 }
+
+// a pin is for live initiatives: archiving drops it, so an unarchived one comes back unpinned
+func TestApplyOpsArchiveClearsThePin(t *testing.T) {
+	e := mkEffort()
+	e.PinnedTs = 42
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setStatus", Status: "archived"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.PinnedTs != 0 {
+		t.Fatalf("PinnedTs = %d after archive, want 0", e.PinnedTs)
+	}
+	// another status keeps it
+	e = mkEffort()
+	e.PinnedTs = 42
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setStatus", Status: "paused"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.PinnedTs != 42 {
+		t.Fatalf("PinnedTs = %d after pause, want 42", e.PinnedTs)
+	}
+}

@@ -238,7 +238,7 @@ func Delta(sinceMs int64, runs []*waveobj.Run, sessions []agentsessions.SessionI
 func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 	s := wshrpc.EffortSummary{
 		ORef: "effort:" + e.OID, Title: e.Title, Project: e.Project, Ticket: e.Ticket,
-		Status: e.Status, ParentOID: e.ParentOID, UpdatedTs: e.UpdatedTs,
+		Status: e.Status, ParentOID: e.ParentOID, UpdatedTs: e.UpdatedTs, PinnedTs: e.PinnedTs,
 	}
 	for _, c := range e.Chunks {
 		s.Chunks = append(s.Chunks, wshrpc.EffortChunkSummary{

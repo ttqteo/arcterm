@@ -299,6 +299,10 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			effortNote(e, "ticket set to "+orNone(op.Ticket)+noteSuffix(cmdNote), now)
 		case "setStatus":
 			e.Status = op.Status
+			if op.Status == "archived" {
+				// a pin is for live initiatives: an archived one leaves the cards, and comes back unpinned
+				e.PinnedTs = 0
+			}
 			effortNote(e, "effort "+op.Status+noteSuffix(cmdNote), now)
 			effortEvent(e, "effort-status", "", op.Status, now)
 		case "unarchive":
