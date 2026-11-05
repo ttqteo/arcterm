@@ -62,16 +62,16 @@ import { runQueueAtom, runQueueStartedAtom } from "@/app/view/agents/runqueuesto
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueueSheet } from "./briefqueuesheet";
 import { briefQueueSheetAtom } from "./briefqueuestore";
 import { SHEET_BTN, SheetShell } from "./briefrunsheet";
-import { sheetFace, type SheetFace } from "./briefsheetmodel";
+import { sheetFace, sheetPosition, type SheetFace } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
 import { briefUndo } from "./briefundo";
 import { CouncilSheetBody, CouncilSheetHead } from "./councilsheet";
 import { councilSheetAtom, yieldToSubject } from "./councilsheetstore";
-import { EffortDetailView } from "./effortdetailview";
+import { InitiativeSheet } from "./initiativesheet";
 import { briefRunListAtom, briefSheetOpenAtom } from "./jarvisstore";
 import {
     activeSubjectAtom,
@@ -401,13 +401,14 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
         }
     }, [bandOpen, bandRecordId]);
 
-    const close = () => {
+    // stable: the initiative sheet's edits hold it as their Delete's close (initiativeedits.ts)
+    const close = useCallback(() => {
         globalStore.set(briefSheetOpenAtom, false);
         globalStore.set(briefQueueSheetAtom, null);
         globalStore.set(councilSheetAtom, null);
         clearSubject();
         returnToOrigin("sheet");
-    };
+    }, []);
     // an initiative's body leads with its own title, so the header naming it again would be a second one.
     // "none" is never drawn — `visible` below excludes it, so it is never latched.
     const title =
@@ -415,13 +416,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const meta = face.kind === "channel" && face.body === "run" && run != null ? runLine(run) : undefined;
     // where the shown run sits in the list the Brief published (design L420-424); a run outside it (opened
     // from Waiting, say) has no position and its arrows are inert
-    const at = run != null ? runList.indexOf(run.id) : -1;
-    const pos = {
-        n: at + 1,
-        total: at >= 0 ? runList.length : 0,
-        prev: at > 0 ? runList[at - 1] : null,
-        next: at >= 0 && at < runList.length - 1 ? runList[at + 1] : null,
-    };
+    const pos = sheetPosition(runList, run?.id);
     const step = (id: string | null, e: React.MouseEvent) => {
         if (id != null) {
             fireAndForget(() => openOrPeekAddress(model, "run:" + id, e));
@@ -441,18 +436,22 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
 
     return (
         <ModalShell open={visible} variant="sheet" onClose={close} className="h-full w-[640px] max-w-[92vw]">
-            {shown == null ? null : (
+            {shown == null ? null : shown.face.kind === "effort" ? (
+                // the initiative's own head and body (spec decision 7); the latched face keeps it drawn through the
+                // exit animation
+                <div className="flex h-full min-h-0 flex-col">
+                    <InitiativeSheet model={model} effortId={shown.face.effortId} onClose={close} />
+                </div>
+            ) : (
                 <div className="flex h-full min-h-0 flex-col">
                     <SheetShell
                         face={shown.face.kind}
                         label={
-                            shown.face.kind === "effort"
-                                ? "initiative"
-                                : shown.face.kind === "queued"
-                                  ? "queued"
-                                  : shown.face.kind === "council"
-                                    ? "council"
-                                    : "project"
+                            shown.face.kind === "queued"
+                                ? "queued"
+                                : shown.face.kind === "council"
+                                  ? "council"
+                                  : "project"
                         }
                         // the council's head is its own (its mode, question, project and age); the latched
                         // face keeps it drawn through the exit animation
@@ -530,11 +529,6 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                                     <ChannelLaunch channel={channel} />
                                 </div>
                             )
-                        ) : null}
-                        {face.kind === "effort" ? (
-                            <div className="flex min-h-0 flex-1 flex-col bg-background">
-                                <EffortDetailView model={model} />
-                            </div>
                         ) : null}
                         {face.kind === "queued" ? <QueueSheet model={model} entryId={face.entryId} /> : null}
                         {shown.face.kind === "council" ? (

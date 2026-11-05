@@ -58,3 +58,7 @@ export const briefEffortIndexAtom = atom<EffortIndex>(new Map()) as PrimitiveAto
 // the run oids of the group the open run sheet belongs to (live runs, or shipped), in row order: the
 // sheet's "n / N" and its ↑/↓ (design L420-424)
 export const briefRunListAtom = atom<string[]>([]) as PrimitiveAtom<string[]>;
+
+// the effort orefs of the Brief's initiatives in page order (the cards, then the list): the initiative sheet's
+// Previous/Next step through it (spec decision 7). The Brief publishes it as it publishes briefRunListAtom.
+export const briefInitiativeListAtom = atom<string[]>([]) as PrimitiveAtom<string[]>;

@@ -33,7 +33,8 @@ import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
-import { briefOpenInitiativeAtom, briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { openInitiativeSheet } from "./initiativesheetstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
 import { loadRecordDetail, selectSubject, setActiveRunId } from "./jarvissubjectstore";
 import { clearLoadingPeek, settlePeek, startPeek, type PeekTarget } from "./peekstore";
 import { pendingDecisionAnchorAtom } from "./petstore";
@@ -674,22 +675,13 @@ async function loadEffort(effortId: string, current: () => boolean): Promise<Loa
     return effort != null ? loaded(effort) : unavailable(EFFORT_GONE);
 }
 
-// An initiative with a plan to review opens in place in the Brief, where its Proposed group's Accept all and Drop
-// all decide it: a plan-review item whose agent has closed lands here, and the Activity sheet has no such buttons.
-// Any other initiative, and the activity link, open the Activity sheet.
+// Every initiative opens in the Brief's sheet (spec decision 7), on its plan, or its Activity feed for the activity link.
+// One with a plan to review is decided there too: the sheet's plan keeps the Proposed group's Accept and Drop, so a
+// plan-review item whose agent has closed lands on them.
 function selectEffort(model: AgentsViewModel, effort: Effort, view?: "activity"): OpenResult {
-    if (view !== "activity" && hasProposed(effort)) {
-        globalStore.set(briefOpenInitiativeAtom, "effort:" + effort.oid);
-        landOn(model.surfaceAtom, "jarvis");
-        return OK;
-    }
-    openEffortSheet(effort.oid);
+    openInitiativeSheet(effort.oid, { view: view ?? "plan" });
     landOn(model.surfaceAtom, "jarvis", "sheet");
     return OK;
-}
-
-function hasProposed(effort: Effort): boolean {
-    return (effort.chunks ?? []).some((c) => c.status === "proposed");
 }
 
 // Any rejected read, a timeout included, reads as gone, as an initiative's does: the server names no cause.
@@ -745,10 +737,5 @@ export async function openChannelSheet(channelId: string, runId: string | null):
     if (runId != null) {
         setActiveRunId(channelId, runId);
     }
-    globalStore.set(briefSheetOpenAtom, true);
-}
-
-function openEffortSheet(effortId: string): void {
-    selectSubject({ kind: "effort", id: effortId });
     globalStore.set(briefSheetOpenAtom, true);
 }

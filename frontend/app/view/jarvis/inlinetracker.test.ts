@@ -8,12 +8,16 @@ import {
     chunkDueChip,
     chunkRowId,
     expandableORef,
+    flatPlanId,
+    initiativeRows,
     isFlatPlan,
     localDay,
+    STAGE_PREVIEW_CAP,
     stageRowId,
     stageStartsOpen,
     trackerNavIds,
     trackerRows,
+    type DetailRow,
     type TrackerRow,
 } from "./inlinetracker";
 
@@ -335,5 +339,77 @@ describe("chunkDueChip", () => {
     });
     it("spells today as the server compares it", () => {
         expect(localDay(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
+    });
+});
+
+// the sheet's plan (spec decision 7): a folded stage previews its first ten chunks, an unfolded one shows them all
+describe("initiativeRows", () => {
+    const many = (n: number, status: string, stage: string) =>
+        Array.from({ length: n }, (_, i) => chunk(`${stage || "flat"} chunk ${i + 1}`, status, stage));
+    // a finished stage of 14 (it starts folded), then the stage the work goes on in
+    const STAGED: ChunkRowModel[] = [...many(14, "done", "Build"), ...many(3, "pending", "Ship")];
+    const sheet = (over: Partial<Parameters<typeof initiativeRows>[0]> = {}) =>
+        initiativeRows({ oref: OREF, chunks: STAGED, noteCounts: new Map(), stageOverrides: {}, ...over });
+    const kinds = (rows: DetailRow[]) => rows.map((r) => (r.kind === "chunk" ? `chunk:${r.row.label}` : r.kind));
+
+    it("previews a folded stage's first ten chunks and counts the rest", () => {
+        const rows = sheet();
+        const build = stageRowId(OREF, "Build", 0);
+        expect(rows.find((r) => r.id === build)).toMatchObject({ kind: "stage", collapsed: true });
+        const under = rows.slice(
+            rows.findIndex((r) => r.id === build) + 1,
+            rows.findIndex((r) => r.kind === "more") + 1
+        );
+        expect(under.filter((r) => r.kind === "chunk")).toHaveLength(STAGE_PREVIEW_CAP);
+        expect(under[under.length - 1]).toEqual({
+            kind: "more",
+            id: build + "/more",
+            oref: OREF,
+            stageId: build,
+            n: 4,
+        });
+    });
+
+    it("shows every chunk of an unfolded stage, with no more row", () => {
+        const build = stageRowId(OREF, "Build", 0);
+        const rows = sheet({ stageOverrides: { [build]: true } });
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(17);
+        expect(rows.some((r) => r.kind === "more")).toBe(false);
+    });
+
+    it("draws a folded stage of ten or fewer whole, with no more row", () => {
+        const ship = stageRowId(OREF, "Ship", 1);
+        const rows = sheet({ stageOverrides: { [ship]: false } });
+        expect(rows.find((r) => r.id === ship)).toMatchObject({ collapsed: true });
+        expect(kinds(rows).filter((k) => k.startsWith("chunk:Ship"))).toHaveLength(3);
+        // the Build stage's own more row is the only one
+        expect(rows.filter((r) => r.kind === "more")).toHaveLength(1);
+    });
+
+    it("marks the next chunk, even under a folded stage's preview", () => {
+        const rows = sheet();
+        const next = rows.filter((r) => r.kind === "chunk" && r.next);
+        expect(next.map((r) => (r.kind === "chunk" ? r.row.label : ""))).toEqual(["Ship chunk 1"]);
+    });
+
+    it("folds a long flat plan like the board's +16 more, and unfolds it by its own key", () => {
+        const flat = many(26, "pending", "");
+        const folded = sheet({ chunks: flat });
+        expect(folded.filter((r) => r.kind === "chunk")).toHaveLength(STAGE_PREVIEW_CAP);
+        expect(folded[folded.length - 1]).toMatchObject({ kind: "more", n: 16, stageId: flatPlanId(OREF) });
+        expect(folded.some((r) => r.kind === "stage")).toBe(false);
+        const open = sheet({ chunks: flat, stageOverrides: { [flatPlanId(OREF)]: true } });
+        expect(open.filter((r) => r.kind === "chunk")).toHaveLength(26);
+    });
+
+    it("keys its rows under the effort, so the sheet's cursor names a chunk by its oref", () => {
+        const rows = sheet();
+        expect(rows.find((r) => r.kind === "chunk")?.id).toBe(chunkRowId(OREF, "Build chunk 1"));
+    });
+
+    it("keeps the Brief's in-place tracker shutting a folded stage", () => {
+        const rows = trackerRows({ ...base, chunks: STAGED });
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(3);
+        expect(rows.some((r) => r.kind === "more")).toBe(false);
     });
 });

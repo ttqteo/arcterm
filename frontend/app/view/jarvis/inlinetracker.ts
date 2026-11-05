@@ -42,6 +42,9 @@ export type TrackerRow =
           first: boolean;
       }
     | { kind: "chunk"; id: string; oref: string; row: ChunkRowModel; notes: number; next: boolean }
+    // the sheet's folded stage past its preview (initiativeRows): how many chunks the fold hides, and the key that
+    // unfolds it (the stage row's id, or a flat plan's flatPlanId)
+    | { kind: "more"; id: string; oref: string; stageId: string; n: number }
     | { kind: "pending"; id: string; oref: string; message: string };
 
 // The rows that make up an expanded initiative's block — every TrackerRow except the Brief lines the
@@ -84,14 +87,8 @@ export function isFlatPlan(chunks: { stage: string }[]): boolean {
 }
 
 /**
- * The Brief's visible lines with the open initiative's plan spliced in after its row.
- *
- * `chunks` is null while the effort detail is still loading — the row still expands, so the click
- * lands somewhere, and says so rather than flickering an empty plan.
- *
- * The chunks an agent proposed and nobody accepted yet are held out of the plan: they are their own group,
- * first, and are not in the stage groups, the chunk rows or the facts count (the way the summary leaves them
- * out of done/total).
+ * The Brief's visible lines with the open initiative's plan spliced in after its row (planRows says how the plan
+ * reads). A folded stage here shows its header only.
  */
 export function trackerRows(args: {
     lines: BriefLine[];
@@ -109,64 +106,124 @@ export function trackerRows(args: {
         if (!expanded || oref == null) {
             continue;
         }
-        if (args.chunks == null) {
-            out.push({ kind: "pending", id: line.id + "/pending", oref, message: "Loading this initiative's plan…" });
-            continue;
-        }
-        if (args.chunks.length === 0) {
-            out.push({ kind: "pending", id: line.id + "/pending", oref, message: "No chunks on this initiative yet." });
-            continue;
-        }
-        const proposed = proposedRows(args.chunks.map((c) => ({ ...c, notes: c.trail })));
-        if (proposed.length > 0) {
-            out.push({ kind: "proposed", id: proposedRowId(line.id), oref, rows: proposed });
-        }
-        const chunks = args.chunks.filter((c) => c.status !== "proposed");
-        if (chunks.length === 0) {
-            continue;
-        }
-        const doneN = chunks.filter((c) => c.status === "done").length;
-        out.push({
-            kind: "facts",
-            id: line.id + "/facts",
-            oref,
-            count: `${chunks.length} chunk${chunks.length === 1 ? "" : "s"} · ${doneN} done`,
-        });
-        const next = nextChunk(chunks);
-        const pushChunk = (row: ChunkRowModel) =>
-            out.push({
-                kind: "chunk",
-                id: chunkRowId(line.id, row.label),
-                oref,
-                row,
-                notes: noteCounts.get(row.label) ?? 0,
-                next: next != null && row.label === next.label,
-            });
-        if (isFlatPlan(chunks)) {
-            chunks.forEach(pushChunk);
-            continue;
-        }
-        groupChunksByStage(chunks).forEach((group, at) => {
-            const id = stageRowId(line.id, group.stage, at);
-            const open = stageOverrides[id] ?? stageStartsOpen(group);
-            out.push({
-                kind: "stage",
-                id,
-                oref,
-                stage: group.stage,
-                fraction: group.fraction,
-                done: group.done,
-                total: group.total,
-                collapsed: !open,
-                at,
-                first: at === 0,
-            });
-            if (!open) {
-                return;
-            }
-            group.rows.forEach(pushChunk);
-        });
+        out.push(...planRows(line.id, oref, args.chunks, noteCounts, stageOverrides, false));
     }
+    return out;
+}
+
+// A folded stage in the sheet still shows its first chunks, up to this many, then "+N more" (spec decision 7)
+export const STAGE_PREVIEW_CAP = 10;
+
+// the key a flat plan's fold is stored under: it has no stage header to own one
+export const flatPlanId = (base: string): string => `${base}/flat`;
+
+/**
+ * One initiative's plan as the sheet draws it (spec decision 7), its rows keyed under the effort's oref. The rows the
+ * Brief's in-place tracker splices under a line (trackerRows), but a folded stage is not shut: it previews its first
+ * STAGE_PREVIEW_CAP chunks and a `more` row counts the rest, while an unfolded stage shows every chunk. A flat plan
+ * folds the same way, longer than the cap from the start; a stage starts folded by stageStartsOpen.
+ */
+export function initiativeRows(args: {
+    oref: string;
+    chunks: ChunkRowModel[] | null;
+    noteCounts: Map<string, number>;
+    stageOverrides: Record<string, boolean>;
+}): DetailRow[] {
+    return planRows(args.oref, args.oref, args.chunks, args.noteCounts, args.stageOverrides, true) as DetailRow[];
+}
+
+/**
+ * The plan's rows under `base` (a Brief line's id, or the effort's oref in the sheet).
+ *
+ * `chunks` is null while the effort detail is still loading — the row still expands, so the click lands somewhere,
+ * and says so rather than flickering an empty plan.
+ *
+ * The chunks an agent proposed and nobody accepted yet are held out of the plan: they are their own group, first, and
+ * are not in the stage groups, the chunk rows or the facts count (the way the summary leaves them out of done/total).
+ *
+ * `preview`: a folded stage shows its first STAGE_PREVIEW_CAP chunks and a `more` row (the sheet), instead of none
+ * (the Brief's in-place tracker).
+ */
+function planRows(
+    base: string,
+    oref: string,
+    all: ChunkRowModel[] | null,
+    noteCounts: Map<string, number>,
+    stageOverrides: Record<string, boolean>,
+    preview: boolean
+): TrackerRow[] {
+    const out: TrackerRow[] = [];
+    if (all == null) {
+        out.push({ kind: "pending", id: base + "/pending", oref, message: "Loading this initiative's plan…" });
+        return out;
+    }
+    if (all.length === 0) {
+        out.push({ kind: "pending", id: base + "/pending", oref, message: "No chunks on this initiative yet." });
+        return out;
+    }
+    const proposed = proposedRows(all.map((c) => ({ ...c, notes: c.trail })));
+    if (proposed.length > 0) {
+        out.push({ kind: "proposed", id: proposedRowId(base), oref, rows: proposed });
+    }
+    const chunks = all.filter((c) => c.status !== "proposed");
+    if (chunks.length === 0) {
+        return out;
+    }
+    const doneN = chunks.filter((c) => c.status === "done").length;
+    out.push({
+        kind: "facts",
+        id: base + "/facts",
+        oref,
+        count: `${chunks.length} chunk${chunks.length === 1 ? "" : "s"} · ${doneN} done`,
+    });
+    const next = nextChunk(chunks);
+    const pushChunk = (row: ChunkRowModel) =>
+        out.push({
+            kind: "chunk",
+            id: chunkRowId(base, row.label),
+            oref,
+            row,
+            notes: noteCounts.get(row.label) ?? 0,
+            next: next != null && row.label === next.label,
+        });
+    // a folded run in the sheet: its first chunks, then how many it hides
+    const pushPreview = (rows: ChunkRowModel[], stageId: string) => {
+        rows.slice(0, STAGE_PREVIEW_CAP).forEach(pushChunk);
+        if (rows.length > STAGE_PREVIEW_CAP) {
+            out.push({ kind: "more", id: stageId + "/more", oref, stageId, n: rows.length - STAGE_PREVIEW_CAP });
+        }
+    };
+    if (isFlatPlan(chunks)) {
+        // the in-place tracker shows a flat plan whole; the sheet folds a long one like a stage
+        const id = flatPlanId(base);
+        if (preview && !(stageOverrides[id] ?? false)) {
+            pushPreview(chunks, id);
+        } else {
+            chunks.forEach(pushChunk);
+        }
+        return out;
+    }
+    groupChunksByStage(chunks).forEach((group, at) => {
+        const id = stageRowId(base, group.stage, at);
+        const open = stageOverrides[id] ?? stageStartsOpen(group);
+        out.push({
+            kind: "stage",
+            id,
+            oref,
+            stage: group.stage,
+            fraction: group.fraction,
+            done: group.done,
+            total: group.total,
+            collapsed: !open,
+            at,
+            first: at === 0,
+        });
+        if (open) {
+            group.rows.forEach(pushChunk);
+        } else if (preview) {
+            pushPreview(group.rows, id);
+        }
+    });
     return out;
 }
 

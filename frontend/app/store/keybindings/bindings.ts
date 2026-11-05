@@ -128,6 +128,7 @@ import { toggleCodeWrap, toggleWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { COMPOSER_FIELDS, COMPOSER_SELECTOR } from "@/app/view/jarvis/composerkey";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
+import { chunkViewOpenAtom, initiativeSheetOpenAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
 import {
     briefPeekRecordAtom,
     chunkMoveAtom,
@@ -644,6 +645,11 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
         if (ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null) {
             return false;
         }
+        // the initiative in the Brief's sheet takes j, k and Enter for its chunks (buildInitiativeSheetBindings): the
+        // page's cursor stays where it was under the sheet
+        if (ctx.surface === "jarvis" && globalStore.get(initiativeSheetOpenAtom)) {
+            return false;
+        }
         const c = globalStore.get(listNavAtom);
         return c != null && c.surface === ctx.surface;
     };
@@ -861,6 +867,14 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
         run: () => globalStore.set(trackerMenuAtom, null),
     };
 
+    // Alt+↑/↓ moves the chunk under the cursor: the sheet's plan view publishes its move while the initiative is open in
+    // the sheet, the Brief's in-place tracker otherwise. Both are read, so the predicate sweep (store.test.ts) sees both.
+    const chunkMove = () => {
+        const sheet = globalStore.get(sheetChunkMoveAtom);
+        const page = globalStore.get(chunkMoveAtom);
+        return globalStore.get(initiativeSheetOpenAtom) ? sheet : page;
+    };
+
     // the run switcher, keyboard-side: the same list the Subjects column expands under the selected
     // channel, in the same order, moved with the same clamped cursor the lists use.
     const stepRun = (delta: number): boolean | void => {
@@ -909,7 +923,13 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             group: "Jarvis",
             label: "Work on the initiative under the cursor, or go to its open agent",
             when: onJarvis,
-            run: () => clickThrough('[data-jarvis-brief-cursor="true"] [data-jarvis-work-on]'),
+            // with an initiative open in the sheet, the sheet's own Work on / Go to agent
+            run: () =>
+                clickThrough(
+                    globalStore.get(initiativeSheetOpenAtom)
+                        ? "[data-jarvis-initiative-sheet-head] [data-jarvis-work-on]"
+                        : '[data-jarvis-brief-cursor="true"] [data-jarvis-work-on]'
+                ),
         },
         {
             id: "jarvis:record-band",
@@ -940,16 +960,16 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             keys: "Alt:ArrowUp",
             group: "Jarvis",
             label: "Move the chunk up within its stage",
-            when: (ctx) => onJarvis(ctx) && globalStore.get(chunkMoveAtom) != null,
-            run: () => globalStore.get(chunkMoveAtom)?.("up"),
+            when: (ctx) => onJarvis(ctx) && chunkMove() != null,
+            run: () => chunkMove()?.("up"),
         },
         {
             id: "jarvis:chunk-down",
             keys: "Alt:ArrowDown",
             group: "Jarvis",
             label: "Move the chunk down within its stage",
-            when: (ctx) => onJarvis(ctx) && globalStore.get(chunkMoveAtom) != null,
-            run: () => globalStore.get(chunkMoveAtom)?.("down"),
+            when: (ctx) => onJarvis(ctx) && chunkMove() != null,
+            run: () => chunkMove()?.("down"),
         },
         {
             id: "jarvis:review",
@@ -2826,5 +2846,62 @@ export function buildJarvisTourBindings(handlers: { next(): void; back(): void; 
         bind("next-enter", "Enter", "Next step", handlers.next),
         bind("back", "ArrowLeft", "Previous step", handlers.back),
         bind("close", "Escape", "End the tour", handlers.close),
+    ];
+}
+
+// The chunk statuses in the order the chunk view's 1–6 choose them (spec decision 9)
+export const CHUNK_STATUS_KEYS = ["pending", "active", "blocked", "deferred", "skipped", "done"] as const;
+
+// The initiative sheet's keys (spec decision 7 and 9): every one defined here, each view activating the handlers it
+// has with useKeybindings. The plan view passes `step` (its chunk cursor) and `open` (the chunk under it); the chunk
+// view (Task 7) passes `step` (its neighbouring chunk), `statusMenu`, `setStatus` and `back`. A handler a view leaves
+// out lets its key pass. Gated on the sheet's own atoms: the sheet is no dialog, so ctx.modalOpen stays false under it
+// and the Brief's keys stay live; buildListNavBindings stands down while the sheet holds an initiative, so j, k and
+// Enter reach these.
+export type InitiativeSheetHandlers = {
+    step?: (delta: 1 | -1) => boolean | void;
+    open?: () => boolean | void;
+    statusMenu?: () => boolean | void;
+    setStatus?: (status: string) => boolean | void;
+    back?: () => boolean | void;
+};
+
+export function buildInitiativeSheetBindings(handlers: InitiativeSheetHandlers): Binding[] {
+    const onSheet = (ctx: KeyContext) =>
+        ctx.surface === "jarvis" && !ctx.editable && !ctx.modalOpen && globalStore.get(initiativeSheetOpenAtom);
+    const onChunk = (ctx: KeyContext) =>
+        ctx.surface === "jarvis" && !ctx.editable && !ctx.modalOpen && globalStore.get(chunkViewOpenAtom);
+    const bind = (
+        id: string,
+        keys: string,
+        label: string,
+        when: (ctx: KeyContext) => boolean,
+        run: () => boolean | void
+    ): Binding => ({
+        id: `jarvis:sheet-${id}`,
+        keys,
+        group: "Jarvis",
+        label,
+        when,
+        paletteHidden: true,
+        run,
+    });
+    return [
+        bind("next-chunk", "j", "Next chunk", onSheet, () => (handlers.step != null ? handlers.step(1) : false)),
+        bind("prev-chunk", "k", "Previous chunk", onSheet, () => (handlers.step != null ? handlers.step(-1) : false)),
+        bind("open-chunk", "Enter", "Open the chunk under the cursor", onSheet, () =>
+            handlers.open != null ? handlers.open() : false
+        ),
+        bind("status-menu", "s", "Change the chunk's status", onChunk, () =>
+            handlers.statusMenu != null ? handlers.statusMenu() : false
+        ),
+        ...CHUNK_STATUS_KEYS.map((status, i) =>
+            bind(`status-${i + 1}`, String(i + 1), `Mark the chunk ${status}`, onChunk, () =>
+                handlers.setStatus != null ? handlers.setStatus(status) : false
+            )
+        ),
+        bind("chunk-back", "Escape", "Back to the initiative", onChunk, () =>
+            handlers.back != null ? handlers.back() : false
+        ),
     ];
 }

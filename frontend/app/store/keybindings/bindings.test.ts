@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
@@ -67,7 +68,8 @@ import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
-import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
+import { initiativeSheetAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
@@ -89,6 +91,7 @@ import {
     buildFilesBindings,
     buildFinalShotsBindings,
     buildGlobalBindings,
+    buildInitiativeSheetBindings,
     buildJarvisBindings,
     buildJarvisTourBindings,
     buildListNavBindings,
@@ -3175,6 +3178,123 @@ describe("council chat keys", () => {
             const active = all.filter((b) => b.when!({ ...council, editable: typing }));
             const keys = active.map((b) => b.keys);
             expect(new Set(keys).size).toBe(keys.length);
+        }
+    });
+});
+
+// the initiative in the Brief's sheet (spec decisions 7 and 9): its keys, and what yields to them
+describe("the initiative sheet's keys", () => {
+    const nav: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
+    const key = (k: string, alt = false) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: alt, meta: false, alt }) as any;
+    const model = stubModel("a1");
+    const step = vi.fn();
+    const open = vi.fn();
+    const back = vi.fn();
+    const setStatus = vi.fn();
+    const statusMenu = vi.fn();
+    // the plan view's handlers, and the chunk view's; the global and list keys are registered first, as the root does
+    const planKeys = buildInitiativeSheetBindings({ step, open });
+    const chunkKeys = buildInitiativeSheetBindings({ step, back, setStatus, statusMenu });
+    const all = (sheet = planKeys) => [
+        ...buildGlobalBindings(model),
+        ...buildListNavBindings(model),
+        ...buildJarvisBindings(model),
+        ...sheet,
+    ];
+    const claim = (k: string, sheet = planKeys, alt = false) => {
+        const r = matchBinding(key(k, alt), nav, all(sheet));
+        return r.kind === "run" ? r.binding : null;
+    };
+    // the sheet is a ModalShell (variant sheet): registered, it holds Escape away from back-home
+    let unregister = () => {};
+    const openSheet = (chunk: string | null = null) => {
+        unregister();
+        unregister = registerModal("brief-sheet", "sheet");
+        globalStore.set(activeSubjectAtom, { kind: "effort", id: "e1" });
+        globalStore.set(briefSheetOpenAtom, true);
+        globalStore.set(initiativeSheetAtom, { view: "plan", chunk });
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+        globalStore.set(diffScopeAtom, null);
+    });
+    afterEach(() => {
+        unregister();
+        unregister = () => {};
+        globalStore.set(listNavAtom, null);
+        globalStore.set(briefSheetOpenAtom, false);
+        globalStore.set(activeSubjectAtom, null);
+        globalStore.set(initiativeSheetAtom, { view: "plan", chunk: null });
+        globalStore.set(sheetChunkMoveAtom, null);
+        globalStore.set(chunkMoveAtom, null);
+    });
+
+    it("leaves j, k and Enter to the page while no initiative is in the sheet", () => {
+        expect(claim("j")?.id).toBe("list:next-j");
+        expect(claim("Enter")?.id).toBe("list:activate");
+        // a run in the sheet keeps the page's j/k: they step the runs (briefsurface.tsx runNav)
+        globalStore.set(activeSubjectAtom, { kind: "channel", id: "ch1" });
+        globalStore.set(briefSheetOpenAtom, true);
+        expect(claim("j")?.id).toBe("list:next-j");
+    });
+
+    it("steps the plan's chunk cursor with j/k and opens the chunk under it with Enter", () => {
+        openSheet();
+        claim("j")!.run(nav);
+        expect(step).toHaveBeenLastCalledWith(1);
+        claim("k")!.run(nav);
+        expect(step).toHaveBeenLastCalledWith(-1);
+        claim("Enter")!.run(nav);
+        expect(open).toHaveBeenCalled();
+        // the plan view has no status keys: s and the digits pass
+        expect(claim("s")).toBeNull();
+        expect(claim("1")).toBeNull();
+    });
+
+    it("gives a chunk view s, 1–6 in status order and Escape back", () => {
+        openSheet("Spec");
+        claim("s", chunkKeys)!.run(nav);
+        expect(statusMenu).toHaveBeenCalled();
+        const order = ["1", "2", "3", "4", "5", "6"].map((d) => {
+            claim(d, chunkKeys)!.run(nav);
+            return setStatus.mock.lastCall?.[0];
+        });
+        expect(order).toEqual(["pending", "active", "blocked", "deferred", "skipped", "done"]);
+        claim("Escape", chunkKeys)!.run(nav);
+        expect(back).toHaveBeenCalled();
+    });
+
+    it("lets a key whose handler the view left out pass", () => {
+        openSheet("Spec");
+        // the plan view's set, with a chunk open (Task 7 swaps the body): Escape matches, runs nothing and passes
+        expect(claim("Escape", planKeys)?.run(nav)).toBe(false);
+        expect(back).not.toHaveBeenCalled();
+    });
+
+    it("moves the sheet's chunk with Alt+arrows while the sheet is open, the page's otherwise", () => {
+        const sheetMove = vi.fn();
+        const pageMove = vi.fn();
+        globalStore.set(sheetChunkMoveAtom, () => sheetMove);
+        globalStore.set(chunkMoveAtom, () => pageMove);
+        claim("ArrowDown", planKeys, true)!.run(nav);
+        expect(pageMove).toHaveBeenCalledWith("down");
+        openSheet();
+        claim("ArrowUp", planKeys, true)!.run(nav);
+        expect(sheetMove).toHaveBeenCalledWith("up");
+        // the sheet open with no chunk under its cursor: the key passes, the page's chunk stays put
+        globalStore.set(sheetChunkMoveAtom, null);
+        expect(claim("ArrowUp", planKeys, true)).toBeNull();
+        expect(pageMove).toHaveBeenCalledTimes(1);
+    });
+
+    it("stands down in a field and on every other surface", () => {
+        openSheet("Spec");
+        for (const b of chunkKeys) {
+            expect(b.when!({ ...nav, editable: true })).toBe(false);
+            expect(b.when!({ ...nav, surface: "cockpit" })).toBe(false);
         }
     });
 });

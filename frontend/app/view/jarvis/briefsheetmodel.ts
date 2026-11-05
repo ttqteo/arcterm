@@ -47,3 +47,18 @@ export function sheetFace(
     // dossier -> the record peek, briefing -> the Brief
     return { kind: "none" };
 }
+
+export type SheetPosition = { n: number; total: number; prev: string | null; next: string | null };
+
+// Where the sheet's item sits in the list the Brief published (the run sheet's briefRunListAtom, the initiative
+// sheet's briefInitiativeListAtom): "n / total" and the neighbours its Previous/Next open. An item outside the list
+// (a run opened from Waiting, an initiative from the palette) has no position, and its arrows are inert.
+export function sheetPosition(list: string[], id: string | null | undefined): SheetPosition {
+    const at = id != null ? list.indexOf(id) : -1;
+    return {
+        n: at + 1,
+        total: at >= 0 ? list.length : 0,
+        prev: at > 0 ? list[at - 1] : null,
+        next: at >= 0 && at < list.length - 1 ? list[at + 1] : null,
+    };
+}

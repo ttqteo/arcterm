@@ -43,6 +43,7 @@ import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { chunkViewOpenAtom, initiativeSheetOpenAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
 import { briefPeekRecordAtom, chunkMoveAtom, noteChunkAtom, trackerMenuAtom } from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { reviewModeAtom } from "@/app/view/jarvis/reviewstore";
@@ -62,6 +63,9 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     activeReviewKeyAtom, // buildFilesBindings: files:review-send
     noteChunkAtom, // buildJarvisBindings: jarvis:close-notes, and surface:back-home yields to it
     chunkMoveAtom, // buildJarvisBindings: jarvis:chunk-up / jarvis:chunk-down
+    sheetChunkMoveAtom, // buildJarvisBindings: jarvis:chunk-up / jarvis:chunk-down while the initiative sheet is open
+    initiativeSheetOpenAtom, // buildInitiativeSheetBindings: j/k/Enter; buildListNavBindings: active; jarvis:chunk-up/down
+    chunkViewOpenAtom, // buildInitiativeSheetBindings: the chunk view's s, 1–6 and Escape
     trackerMenuAtom, // buildJarvisBindings: jarvis:close-tracker-menu, jarvis:close-notes, surface:back-home
     // (readingNoteAtom is deliberately absent: jarvis:close-notes reads it in run(), never in when())
     autonomyPanelOpenAtom, // surface:back-home
