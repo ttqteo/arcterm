@@ -140,27 +140,40 @@ function WorkOnButton({
     );
 }
 
-// each chunk in plan order, coloured by where it stands. Past SEGMENT_GAP_LIMIT chunks the gaps would eat
-// the segments, so the bar reads as one strip of the same colours.
+// each chunk in plan order: done in a soft green, the one being worked on in full green, every other one in the
+// strong edge (docs/superpowers/specs/2026-11-05-jarvis-revamp-design.md, decision 3). Blocked and deferred chunks
+// are said in words beside the bar (Blocked on, the status cell), so the bar stays two colours on a grey track. Past
+// SEGMENT_GAP_LIMIT chunks the gaps would eat the segments, so the bar reads as one strip of the same colours.
 const SEGMENT_GAP_LIMIT = 24;
 const SEGMENT_BG: Record<ChunkTone, string> = {
     done: "bg-success/45",
-    active: "bg-working",
-    blocked: "bg-asking",
-    deferred: "bg-ink-faint",
-    skipped: "bg-ink-faint",
+    active: "bg-success",
+    blocked: "bg-edge-strong",
+    deferred: "bg-edge-strong",
+    skipped: "bg-edge-strong",
     pending: "bg-edge-strong",
 };
+// md: the 6px bar of a card, the sheet and the popover; sm: the 4px bar of a list row
+const SEGMENT_SIZE = { md: "h-1.5 gap-[2px]", sm: "h-1 gap-[2px]" } as const;
 
-export function SegmentBar({ segments, className }: { segments: ChunkTone[]; className?: string }) {
+export function SegmentBar({
+    segments,
+    className,
+    size = "md",
+}: {
+    segments: ChunkTone[];
+    className?: string;
+    size?: keyof typeof SEGMENT_SIZE;
+}) {
     const gapless = segments.length > SEGMENT_GAP_LIMIT;
     return (
         <span
             aria-hidden
             data-jarvis-segment-bar
             className={cn(
-                "flex h-1.5 min-w-0",
-                gapless ? "gap-0 overflow-hidden rounded-[2px]" : "gap-[3px]",
+                "flex min-w-0",
+                SEGMENT_SIZE[size],
+                gapless && "gap-0 overflow-hidden rounded-[2px]",
                 className
             )}
         >
