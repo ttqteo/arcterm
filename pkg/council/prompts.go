@@ -4,7 +4,10 @@
 package council
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,12 +17,23 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-05.1"
+const HarnessVersion = "2026-11-05.2"
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
 const verifyField = `,
       "verify": [{"command": "go test ./pkg/services -run TestIdleSleep", "expect": "fail", "why": "one line: what the result would show"}]`
+
+// checkerField is the "checker" and "checkwhy" lines of round1Shape, on each proposal: the one other seat that should check
+// it, and why. A Review's panel of one has no other seat (round1ShapeNoChecker), and an agent seat's first turn names none
+// (round1ShapeNoVerify).
+const checkerField = `,
+      "checker": "skeptic",
+      "checkwhy": "one line: why that seat should check it"`
+
+// picksField is the "picks" line of round2Shape. A pass that asks for no picks (round2ShapeNoPicks) leaves it out.
+const picksField = `,
+  "picks": ["P2", "P3", "P4"]`
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -31,12 +45,12 @@ const (
     {
       "title": "a short title for the change you propose",
       "argument": "why, in about 70 words, with a table, a list or a diagram when it compares or counts",
-      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]` + verifyField + `
+      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]` + verifyField + checkerField + `
     },
     {
       "title": "Sleep after one idle minute",
       "argument": "I'd put a service to sleep after one idle minute, not five. Here's what each wait holds:\n\n| Idle wait | RAM held | Wake time |\n|---|---|---|\n| 1 min | 40 MB | 2 s |\n| 5 min | 120 MB | 2 s |\n\nWaking takes as long either way, so the shorter wait only saves. To try it:\n\n1. Log the idle gaps for a day.\n2. Count how often a wake would cost 2 s.\n3. Ship it behind a setting.",
-      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]
+      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]` + checkerField + `
     }
   ]
 }`
@@ -55,8 +69,7 @@ const (
   ],
   "answers": [
     {"replyid": "r3", "text": "your answer to the person, in about 50 words"}
-  ],
-  "picks": ["P2", "P3", "P4"]
+  ]` + picksField + `
 }`
 
 	answersShape = `{
@@ -150,8 +163,14 @@ func shapeForRounds(c *Council, shape string) string {
 // for no answer.
 var synthesisShapeNoQuestion = strings.Replace(synthesisShape, answerLine, "", 1)
 
-// round1ShapeNoVerify is round1Shape for a live agent seat: the quote, and no verify request.
-var round1ShapeNoVerify = strings.Replace(round1Shape, verifyField, "", 1)
+// round1ShapeNoChecker is round1Shape for a Review's panel of one: the verify request, and no checker to name.
+var round1ShapeNoChecker = strings.ReplaceAll(round1Shape, checkerField, "")
+
+// round1ShapeNoVerify is round1Shape for a live agent seat: the quote, and no verify request and no checker.
+var round1ShapeNoVerify = strings.Replace(round1ShapeNoChecker, verifyField, "", 1)
+
+// round2ShapeNoPicks is round2Shape for a pass that asks for no picks.
+var round2ShapeNoPicks = strings.Replace(round2Shape, picksField, "", 1)
 
 // The Brainstorm shapes. They keep the keys the parsers read ("proposals" holds the ideas, "directions" the ideas worth
 // trying) and add the Brainstorm ones: a wild flag, a build flag, a first step and the ideas kept aside.
@@ -777,12 +796,83 @@ func writeResults(b *strings.Builder, c *Council, p CouncilProposal) {
 	}
 }
 
-// writeFiles lists the files and screenshots the person put in front of the panel.
-func writeFiles(b *strings.Builder, c *Council) {
+// The pre-read: with inline, writeFiles puts the contents of the council's files into the prompt, so no seat spends its
+// first minute reading the same files. A file past the per-file cap, or one that would take the total past its cap, and
+// every file after that, stays a list line with a note.
+const (
+	preReadFileCap  = 48 * 1024
+	preReadTotalCap = 160 * 1024
+)
+
+// preReadFile reads the council's file f for the pre-read: its text, or why it is not inlined. A relative path is read
+// against the project, as a cite's is (citeRoots). At most preReadFileCap bytes are read.
+func preReadFile(c *Council, f string) (text, note string) {
+	path := strings.TrimSpace(f)
+	if !filepath.IsAbs(path) && strings.TrimSpace(c.Project) != "" {
+		path = filepath.Join(c.Project, path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", "could not be read"
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, preReadFileCap+1))
+	switch {
+	case err != nil:
+		return "", "could not be read"
+	case len(data) > preReadFileCap:
+		return "", "over 48 KB"
+	case bytes.IndexByte(data, 0) >= 0:
+		return "", "not a text file"
+	}
+	return string(data), ""
+}
+
+// fenced is text as a code block, the fence one backtick longer than the longest run in the text.
+func fenced(text string) string {
+	fence, run := "```", 0
+	for _, r := range text {
+		if r != '`' {
+			run = 0
+			continue
+		}
+		if run++; run >= len(fence) {
+			fence += "`"
+		}
+	}
+	return fence + "\n" + strings.TrimSuffix(text, "\n") + "\n" + fence + "\n"
+}
+
+// writeFiles lists the files and screenshots the person put in front of the panel. With inline, each file that reads
+// follows the list in full under its path, and the list line of one that does not says why.
+func writeFiles(b *strings.Builder, c *Council, inline bool) {
 	if len(c.Files) > 0 {
 		b.WriteString("\nFiles to read first:\n")
+		var contents strings.Builder
+		used, full := 0, false
 		for _, f := range c.Files {
+			if !inline {
+				fmt.Fprintf(b, "- %s\n", f)
+				continue
+			}
+			text, note := "", "the 160 KB total is used"
+			if !full {
+				text, note = preReadFile(c, f)
+			}
+			if note == "" && used+len(text) > preReadTotalCap {
+				text, note, full = "", "the 160 KB total is used", true
+			}
+			if note != "" {
+				fmt.Fprintf(b, "- %s (not inlined: %s)\n", f, note)
+				continue
+			}
+			used += len(text)
 			fmt.Fprintf(b, "- %s\n", f)
+			fmt.Fprintf(&contents, "### %s\n%s\n", f, fenced(text))
+		}
+		if contents.Len() > 0 {
+			b.WriteString("\nThe files above with no note after them are here in full: there is no need to open them again.\n\n")
+			b.WriteString(contents.String())
 		}
 	}
 	if len(c.Screenshots) > 0 {
@@ -793,9 +883,24 @@ func writeFiles(b *strings.Builder, c *Council) {
 	}
 }
 
+// checkerRule is in round 1 of a Review, an agent seat's excepted, when the panel has a seat to name besides the author:
+// each proposal names the one other seat that should check it, the seat the cross-check sends the proposal to in full.
+func checkerRule(c *Council) string {
+	var seats []string
+	for _, e := range panelOf(c) {
+		seats = append(seats, fmt.Sprintf("%s (%s)", e.Id, e.Name))
+	}
+	return `Name the one other seat that should check each proposal: in a proposal's "checker", give its id, and in ` +
+		`"checkwhy" say in one line why that seat, whose angle can break the claim. The seats are ` +
+		strings.Join(seats, ", ") + `. Never name yourself. After this round the seat you name reads the whole proposal, ` +
+		`with its evidence and results, and checks it; every other seat reads only its title and first line, and may still ` +
+		`challenge it.`
+}
+
 // round1Task is what the ideas round asks, and the shape of the answer: the end of the round 1 prompt, and of an agent
-// seat's first turn. verify says the expert may ask Go to run commands for its proposals, which a role expert in a Review
-// may and an agent seat may not; a Brainstorm asks for no evidence, so for no quote and no check either.
+// seat's first turn. verify says the expert is a role expert in a Review, not an agent seat: it may ask Go to run commands
+// for its proposals, and it names a checker for each when the panel has another seat to name. A Brainstorm asks for no
+// evidence, so for no quote and no check either.
 func round1Task(c *Council, verify bool) string {
 	var b strings.Builder
 	if isBrainstorm(c) {
@@ -817,7 +922,11 @@ func round1Task(c *Council, verify bool) string {
 	shape := round1ShapeNoVerify
 	if verify {
 		b.WriteString(verifyRule + "\n\n")
-		shape = round1Shape
+		shape = round1ShapeNoChecker
+		if len(panelOf(c)) > 1 {
+			b.WriteString(checkerRule(c) + "\n\n")
+			shape = round1Shape
+		}
 	}
 	b.WriteString(messageRules + "\n\n")
 	b.WriteString(pictureCheck + "\n\n")
@@ -829,7 +938,7 @@ func round1Task(c *Council, verify bool) string {
 func Round1Prompt(c *Council, e CouncilExpert) string {
 	var b strings.Builder
 	writeContext(&b, c, e, "one expert on")
-	writeFiles(&b, c)
+	writeFiles(&b, c, true)
 	writeRepeat(&b, c)
 	writeCouncilMemory(&b, c)
 	if isBrainstorm(c) {
@@ -953,8 +1062,117 @@ func askLine(c *Council, r CouncilReply, reads bool) string {
 // Round2Prompt asks one expert to cross-review. It is given the other experts' proposals the person did not cut, with no
 // tools. Its own proposals sit apart, under their own heading, because each call is a fresh process that remembers
 // nothing of round 1: the expert can revise or withdraw only what it is shown. The person's unanswered replies to
-// it, and the question asked at the pause (a reply to the whole council), come last.
-func Round2Prompt(c *Council, e CouncilExpert) string { return round2PromptFor(c, e, 2) }
+// it, and the question asked at the pause (a reply to the whole council), come last. It covers every proposal, and asks
+// for picks when round 2 is the last reply pass.
+func Round2Prompt(c *Council, e CouncilExpert) string {
+	return round2PromptFor(c, e, 2, round2Scope{Picks: 2 == lastReplyRound(c)})
+}
+
+// round2Scope is what one reply pass covers. Only lists the ids of the proposals it reviews (nil: all of them), and Picks
+// says whether it asks for the seat's picks. A proposal out of scope is listed by title under "Already reviewed", so a
+// pass that asks for picks can still name it.
+type round2Scope struct {
+	Only  []string
+	Picks bool
+}
+
+// routes says the council's cross-check is targeted: a Review in which some proposal names a checker. A Review from before
+// checkers has none, and a Brainstorm's cross-check is whole, since its ranking needs every seat to read every idea.
+func routes(c *Council) bool {
+	return !isBrainstorm(c) && slices.ContainsFunc(c.Proposals, func(p CouncilProposal) bool { return p.Checker != "" })
+}
+
+// drewDoubt says a sent reply challenged or opposed proposal p.
+func drewDoubt(c *Council, p CouncilProposal) bool {
+	return slices.ContainsFunc(c.Replies, func(r CouncilReply) bool {
+		return r.ProposalId == p.Id && Sent(r.Draft) && (r.Stance == StanceChallenge || r.Stance == StanceOppose)
+	})
+}
+
+// readInFull says seat e reads proposal p whole in reply pass round, not as a title and first line: p is routed to it, or
+// to no seat (a proposal from before checkers), or, after the first pass, has drawn a challenge or an objection.
+func readInFull(c *Council, e CouncilExpert, round int, p CouncilProposal) bool {
+	return p.Checker == "" || p.Checker == e.Id || (round > 2 && drewDoubt(c, p))
+}
+
+// briefMax is how long the first sentence of an argument is in the one line a proposal gets under "Other proposals".
+const briefMax = 160
+
+// firstSentence is the first sentence of s: up to the first full stop, question mark or exclamation mark that ends a word,
+// and no further than the first line, cut at briefMax characters with a "…".
+func firstSentence(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	rs := []rune(strings.TrimSpace(line))
+	for i, r := range rs {
+		if (r == '.' || r == '?' || r == '!') && (i+1 == len(rs) || rs[i+1] == ' ') {
+			rs = rs[:i+1]
+			break
+		}
+	}
+	if len(rs) > briefMax {
+		rs = append(rs[:briefMax-1], '…')
+	}
+	return string(rs)
+}
+
+// briefLine is a proposal as one line: its id, author and title, and the first sentence of its argument.
+func briefLine(c *Council, p CouncilProposal) string {
+	line := fmt.Sprintf("%s · %s · %s", p.Id, speaker(c, p.Author), p.Title)
+	if s := firstSentence(p.Argument); s != "" {
+		line += ": " + s
+	}
+	return line
+}
+
+// writeRouted writes proposal p whole for seat e. When p was routed to e and its author said why, that line follows.
+func writeRouted(b *strings.Builder, c *Council, e CouncilExpert, p CouncilProposal) {
+	why := ""
+	if p.Checker == e.Id {
+		why = oneLine(p.CheckWhy)
+	}
+	if why == "" {
+		writeProposal(b, c, p, "###")
+		return
+	}
+	var one strings.Builder
+	writeProposal(&one, c, p, "###")
+	fmt.Fprintf(b, "%s\nWhy it is routed to you: %s\n\n", strings.TrimRight(one.String(), "\n"), why)
+}
+
+// writeToReview writes the proposals seat e reviews in reply pass round (props), through write. A council that routes puts
+// the ones e reads whole under "Proposals routed to you", and the others as one line each under "Other proposals"; any
+// other council writes them all under "Proposals to review". none stands in when there is nothing to review.
+func writeToReview(b *strings.Builder, c *Council, e CouncilExpert, round int, props []CouncilProposal, none string, write func(CouncilProposal)) {
+	split := routes(c)
+	if split {
+		b.WriteString("## Proposals routed to you\n\n")
+	} else {
+		b.WriteString("## Proposals to review\n\n")
+	}
+	var rest []CouncilProposal
+	written := 0
+	for _, p := range props {
+		if split && !readInFull(c, e, round, p) {
+			rest = append(rest, p)
+			continue
+		}
+		write(p)
+		written++
+	}
+	switch {
+	case len(props) == 0:
+		b.WriteString(none + "\n\n")
+	case written == 0:
+		b.WriteString("(none: no proposal is routed to you, so \"stances\" is empty unless you challenge one below)\n\n")
+	}
+	if len(rest) > 0 {
+		b.WriteString("## Other proposals\n\nYou read only the title and first line of each of these. You may still challenge one.\n\n")
+		for _, p := range rest {
+			b.WriteString("- " + briefLine(c, p) + "\n")
+		}
+		b.WriteString("\n")
+	}
+}
 
 // laterPassNote opens the task of every reply pass after the first, a council with agents and three rounds: the stances
 // of the pass before stand, and what was said since is answered.
@@ -969,8 +1187,10 @@ const round2ReadsNote = "You have Read, Grep and Glob this round, only for the f
 
 // round2Task is what a reply pass asks, and the shape of the answer: the end of the round 2 prompt, and of an agent
 // seat's turn in a reply pass. A pass after the first opens with laterPassNote. reads says a reply the seat is owed has
-// files to read: it may cite them.
-func round2Task(c *Council, round int, reads bool) string {
+// files to read: it may cite them. picks says the pass asks for the seat's picks; a Brainstorm's pass always does, since
+// its ranking rests on them. In a Review that routes, a stance is asked on each proposal routed to the seat and, of the
+// others it reads as a title and a line, only on one it challenges.
+func round2Task(c *Council, round int, reads, picks bool) string {
 	var b strings.Builder
 	if round > 2 {
 		b.WriteString(laterPassNote + "\n\n")
@@ -1000,11 +1220,26 @@ func round2Task(c *Council, round int, reads bool) string {
 		cite = "You cannot read the code in this round except the files the person attached or named in a question " +
 			"above, so cite only evidence that appears in the text above or in those files."
 	}
-	b.WriteString(`Give every proposal under "Proposals to review" one entry in "stances". ` + stanceRule +
+	split := routes(c)
+	heading := "Proposals to review"
+	if split {
+		heading = "Proposals routed to you"
+	}
+	b.WriteString(`Give every proposal under "` + heading + `" one entry in "stances". ` + stanceRule +
 		" Add one line of reason, and the evidence it rests on. An accept needs no reason: leave \"reason\" empty. " +
 		"A challenge or an oppose always needs one. " + cite + "\n\n")
-	b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth doing, best ` +
-		"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth doing.\n\n")
+	if split {
+		b.WriteString(`You read only the title and first line of each proposal under "Other proposals". Give one an entry in ` +
+			`"stances" only when you have a challenge or an oppose for it, with its reason; leave the rest out.` + "\n\n")
+	}
+	if picks && split {
+		b.WriteString(`Then name your picks in "picks": the 3 proposals most worth doing, best first, by proposal id. You may ` +
+			"pick any proposal listed above, whichever heading it sits under. Never pick one of your own. Name fewer than 3 " +
+			"only when fewer are worth doing.\n\n")
+	} else if picks {
+		b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth doing, best ` +
+			"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth doing.\n\n")
+	}
 	b.WriteString(`If reading the others changed your mind about one of your own proposals, add an entry to "revisions": ` +
 		`set "withdraw" to true to drop it, or give its new title and argument. ` + changeRule + ` Leave "revisions" ` +
 		"empty otherwise.\n\n")
@@ -1016,13 +1251,19 @@ func round2Task(c *Council, round int, reads bool) string {
 	}
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(messageRules + "\n\n")
-	b.WriteString(jsonRule + "\n```json\n" + round2Shape + "\n```\n")
+	shape := round2ShapeNoPicks
+	if picks {
+		shape = round2Shape
+	}
+	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }
 
-// round2PromptFor is the cross-review prompt of reply pass round (2, or 3 in a council with three rounds). A pass after
-// the first shows what was said under each proposal, which the first pass has none of.
-func round2PromptFor(c *Council, e CouncilExpert, round int) string {
+// round2PromptFor is the cross-review prompt of reply pass round (2, or 3 in a council with three rounds) for the part of
+// the council scope covers. A pass after the first shows what was said under each proposal, which the first pass has none
+// of. In a Review that routes, the proposals routed to the seat come whole and the rest as a line each (writeToReview).
+// A Brainstorm's pass is whole whatever the scope says.
+func round2PromptFor(c *Council, e CouncilExpert, round int, scope round2Scope) string {
 	var b strings.Builder
 	asks := unansweredFor(c, e.Id)
 	reads, _ := readsOf(asks)
@@ -1040,8 +1281,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 	} else {
 		fmt.Fprintf(&b, "\nThis is round %d of %d: cross-review. %s\n\n", round, SynthesisRound(c), toolsLine)
 	}
-	writeWithThread := func(p CouncilProposal) {
-		writeProposal(&b, c, p, "###")
+	writeThreadOf := func(p CouncilProposal) {
 		if round > 2 {
 			var thread strings.Builder
 			writeThread(&thread, c, p.Id)
@@ -1051,28 +1291,42 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 		}
 	}
 
-	b.WriteString("## Proposals to review\n\n")
-	review := 0
+	if isBrainstorm(c) {
+		scope.Only = nil
+	}
+	var review, reviewed, own []CouncilProposal
 	for _, p := range sentProposals(c) {
-		if p.Author != e.Id && !p.Cut {
-			writeWithThread(p)
-			review++
+		switch {
+		case p.Cut:
+		case p.Author == e.Id:
+			own = append(own, p)
+		case scope.Only == nil || slices.Contains(scope.Only, p.Id):
+			review = append(review, p)
+		default:
+			reviewed = append(reviewed, p)
 		}
 	}
-	if review == 0 {
-		b.WriteString("(none: no other expert has a proposal to review, so \"stances\" is empty)\n\n")
+	none := "(none: no other expert has a proposal to review, so \"stances\" is empty)"
+	if scope.Only != nil {
+		none = "(none: nothing is left for you to review, so \"stances\" is empty)"
+	}
+	writeToReview(&b, c, e, round, review, none, func(p CouncilProposal) {
+		writeRouted(&b, c, e, p)
+		writeThreadOf(p)
+	})
+	if len(reviewed) > 0 {
+		b.WriteString("## Already reviewed\n\nYou read these in an earlier pass; only their titles are listed here.\n\n")
+		for _, p := range reviewed {
+			fmt.Fprintf(&b, "- %s · %s\n", p.Id, p.Title)
+		}
+		b.WriteString("\n")
 	}
 
-	var own []CouncilProposal
-	for _, p := range sentProposals(c) {
-		if p.Author == e.Id && !p.Cut {
-			own = append(own, p)
-		}
-	}
 	if len(own) > 0 {
 		b.WriteString("## Your own proposals\n\nThese are yours, from round 1. Do not review them.\n\n")
 		for _, p := range own {
-			writeWithThread(p)
+			writeProposal(&b, c, p, "###")
+			writeThreadOf(p)
 		}
 	}
 	writeThumbs(&b, c)
@@ -1086,7 +1340,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 	}
 
 	b.WriteString("## What to do\n\n")
-	b.WriteString(round2Task(c, round, reads))
+	b.WriteString(round2Task(c, round, reads, scope.Picks))
 	return b.String()
 }
 
@@ -1608,7 +1862,7 @@ func AgentFirstPrompt(c *Council, e CouncilExpert, round int) string {
 		fmt.Fprintf(&b, "Question for the council: %s\n", q)
 	}
 	fmt.Fprintf(&b, "Project folder: %s\n", c.Project)
-	writeFiles(&b, c)
+	writeFiles(&b, c, false) // a live agent reads with its own tools
 	writeCouncilMemory(&b, c)
 
 	b.WriteString("\n## Who sits in the council\n\n")
@@ -1691,13 +1945,7 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 		ideas, said = nil, nil // the report names the ideas it keeps; what was said since it is written above
 	}
 	if round < last {
-		b.WriteString("## Proposals to review\n\n")
-		if len(ideas) == 0 {
-			b.WriteString("(none since your last turn)\n\n")
-		}
-		for _, p := range ideas {
-			writeProposal(b, c, p, "###")
-		}
+		writeToReview(b, c, e, round, ideas, "(none since your last turn)", func(p CouncilProposal) { writeRouted(b, c, e, p) })
 	}
 	if len(said) > 0 || (round >= last && len(ideas) > 0) {
 		b.WriteString("## What was said since your last turn\n\n")
@@ -1746,7 +1994,7 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 		b.WriteString(answersTask(c, others))
 	} else {
 		reads, _ := readsOf(asks)
-		b.WriteString(round2Task(c, round, reads))
+		b.WriteString(round2Task(c, round, reads, true)) // a live seat's pass is whole: it asks for picks as ever
 	}
 }
 

@@ -304,7 +304,8 @@ func parseStance(word string) (CouncilStance, error) {
 // ParseRound1 reads a round 1 reply into the expert's proposals and its overall view. A proposal that cites no
 // evidence gets one weak chip saying so; the runner takes that chip off a Brainstorm's ideas, which need none. A
 // proposal's wild flag is a Brainstorm's, and the runner clears it in a Review. A proposal's verify list becomes its
-// Runs, each a request with State empty; a Brainstorm asks for none, and the runner clears any it is given.
+// Runs, each a request with State empty; a Brainstorm asks for none, and the runner clears any it is given. A proposal's
+// checker and checkwhy are the seat its author named to check it and why, as written: the runner settles the seat.
 func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 	const what = "round 1"
 	var r struct {
@@ -315,6 +316,8 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Evidence evidenceList `json:"evidence"`
 			Verify   verifyList   `json:"verify"`
 			Wild     bool         `json:"wild"`
+			Checker  string       `json:"checker"`
+			CheckWhy string       `json:"checkwhy"`
 		} `json:"proposals"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
@@ -338,6 +341,8 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Evidence: ev,
 			Runs:     []CouncilRun(p.Verify),
 			Wild:     p.Wild,
+			Checker:  strings.TrimSpace(p.Checker),
+			CheckWhy: strings.TrimSpace(p.CheckWhy),
 		})
 	}
 	return out, strings.TrimSpace(r.Overview), nil

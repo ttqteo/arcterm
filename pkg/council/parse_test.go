@@ -209,6 +209,26 @@ func TestParseRound1Verify(t *testing.T) {
 	}
 }
 
+func TestParseRound1ReadsTheCheckerAndWhy(t *testing.T) {
+	props, _, err := ParseRound1(jsonFence(`{"overview": "", "proposals": [
+	  {"title": "Sleep sooner", "argument": "A", "checker": " ram ", "checkwhy": " it knows what stays in memory "},
+	  {"title": "Show the state", "argument": "B"},
+	  {"title": "Wake on hover", "argument": "C", "checker": "skeptic"}
+	]}`))
+	if err != nil || len(props) != 3 {
+		t.Fatalf("got %+v, %v", props, err)
+	}
+	if props[0].Checker != "ram" || props[0].CheckWhy != "it knows what stays in memory" {
+		t.Errorf("first proposal: checker %q, why %q; want both read, trimmed", props[0].Checker, props[0].CheckWhy)
+	}
+	if props[1].Checker != "" || props[1].CheckWhy != "" {
+		t.Errorf("a proposal with neither: checker %q, why %q; want both empty", props[1].Checker, props[1].CheckWhy)
+	}
+	if props[2].Checker != "skeptic" || props[2].CheckWhy != "" {
+		t.Errorf("a checker with no why: checker %q, why %q", props[2].Checker, props[2].CheckWhy)
+	}
+}
+
 func TestParseRound1KeepsEveryRequestForTheRunnerToCap(t *testing.T) {
 	// the cap of 2 per expert is Go's to apply when it runs them, with the reason on the third; parsing keeps all of them
 	props, _, err := ParseRound1(jsonFence(`{"proposals": [{"title": "T", "argument": "A", "verify": [
@@ -547,17 +567,33 @@ func TestShapesParse(t *testing.T) {
 			strings.ContainsAny(cmd, "|&;<>`$") {
 			t.Errorf("round1Shape: its example command %q is not a plain `go test <package> -run <pattern>`", cmd)
 		}
+		// and, on each proposal, the seat that should check it and why
+		for i, p := range props {
+			if p.Checker == "" || p.CheckWhy == "" {
+				t.Errorf("round1Shape: proposal %d has checker %q, why %q; want both shown", i+1, p.Checker, p.CheckWhy)
+			}
+		}
 	}
 	// the shape an agent seat gets asks for the quote and no verify request
 	if props, _, err := ParseRound1(jsonFence(round1ShapeNoVerify)); err != nil || len(props) != 2 || props[0].Evidence[0].Weak ||
 		props[0].Evidence[0].Quote == "" || props[0].Runs != nil || !hasPicture(props[1].Argument) {
 		t.Errorf("round1ShapeNoVerify: %+v, %v", props, err)
 	}
-	if strings.Contains(round1ShapeNoVerify, "verify") {
-		t.Errorf("round1ShapeNoVerify still shows verify:\n%s", round1ShapeNoVerify)
+	if strings.Contains(round1ShapeNoVerify, "verify") || strings.Contains(round1ShapeNoVerify, "check") {
+		t.Errorf("round1ShapeNoVerify still shows verify or a checker:\n%s", round1ShapeNoVerify)
+	}
+	// a Review with one seat has nobody to name: its shape keeps the verify request and shows no checker
+	if props, _, err := ParseRound1(jsonFence(round1ShapeNoChecker)); err != nil || len(props) != 2 || len(props[0].Runs) != 1 ||
+		props[0].Checker != "" || props[0].CheckWhy != "" || strings.Contains(round1ShapeNoChecker, "check") {
+		t.Errorf("round1ShapeNoChecker: %+v, %v", props, err)
 	}
 	if r, err := ParseRound2(jsonFence(round2Shape)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 || len(r.Picks) != 3 {
 		t.Errorf("round2Shape: %+v, %v", r, err)
+	}
+	// a pass that asks for no picks shows none
+	if r, err := ParseRound2(jsonFence(round2ShapeNoPicks)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 ||
+		len(r.Picks) != 0 || strings.Contains(round2ShapeNoPicks, "picks") {
+		t.Errorf("round2ShapeNoPicks: %+v, %v", r, err)
 	}
 	if a, err := ParseAnswers(jsonFence(answersShape)); err != nil || len(a) != 1 || a[0].Stance != StanceAccept || len(a[0].Evidence) != 1 {
 		t.Errorf("answersShape: %+v, %v", a, err)

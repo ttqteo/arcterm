@@ -1513,7 +1513,7 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 	if target == nil {
 		return
 	}
-	prompt := round2PromptFor(view, e, round)
+	prompt := round2PromptFor(view, e, round, round2Scope{Picks: round == lastReplyRound(view)}) // picks count in the last pass only (applyRound2)
 	if IsAgent(e) {
 		prompt = agentPrompt(view, e, round)
 	}
