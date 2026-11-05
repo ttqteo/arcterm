@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Stop on a background shell task stops what it ran (Windows).** In the installed app, have a Claude
+  agent run `sleep 300` (or `npm run dev`) with `run_in_background`, then press Stop on that task in the agent's rail →
+  the task leaves the rail and no `sleep.exe` (or the server's `node.exe`) is left in Task Manager. Before, the bash
+  stopped and the command it ran kept going. Unit and Windows tests only (`KillShellTask`, b9b0a8444).
 - [ ] (arcterm) **The pet runs while arcterm starts up.** Install a build, then open arcterm → while the agents and
   terminals load, the Agent screen (and the Cockpit, if you land there) shows your pet (Sprout, the Minion or Spider-Man,
   in its Santa hat under the Christmas decor) running left and right over a thin floor line, turning to face the way it
