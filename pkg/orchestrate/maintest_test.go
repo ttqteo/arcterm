@@ -67,11 +67,27 @@ func skipVerifier(_, _ context.Context, g *waveobj.TaskGroup, owner *waveobj.Run
 // stageLeakTimeout bounds how long a test's cleanup waits for the background stages it started.
 const stageLeakTimeout = 10 * time.Second
 
+// landStageTimeout bounds the wait for a background land a test drives to its end (waitLandStages). A whole land is
+// ~100 git launches, which on a loaded Windows machine took 13 to 20 s and failed
+// TestADirtyHoldLandsOnceTheCheckoutIsClean as flaky in run 983dcb44's Verify, three times.
+const landStageTimeout = 60 * time.Second
+
 // waitStages waits until no background stage is running, and fails the test, naming them, if some still are
 // after stageLeakTimeout: a stage that outlives its test lands in the next test's fakes.
 func waitStages(t *testing.T) {
 	t.Helper()
-	deadline := time.Now().Add(stageLeakTimeout)
+	waitStagesWithin(t, stageLeakTimeout)
+}
+
+// waitLandStages is waitStages for a test that waits on a whole background land, not only a leak.
+func waitLandStages(t *testing.T) {
+	t.Helper()
+	waitStagesWithin(t, landStageTimeout)
+}
+
+func waitStagesWithin(t *testing.T, limit time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(limit)
 	for len(runningStages()) > 0 {
 		if time.Now().After(deadline) {
 			t.Errorf("background stages outlived the test: %s", strings.Join(runningStages(), ", "))

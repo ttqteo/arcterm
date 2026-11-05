@@ -274,30 +274,38 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if hold := landPrecheck(ctx, run); hold != nil {
 		return hold
 	}
-	if reason := clearUntrackedCopies(ctx, project, branch); reason != "" {
+	drafts, draftNote, reason := clearUntrackedCopies(ctx, run)
+	if reason != "" {
 		return heldLand(reason)
 	}
 	carried, reason, dirty := clearEditedCopies(ctx, project, branch, unionMergePaths(ctx, project, run.BaseBranch))
 	if reason != "" {
+		putBackDrafts(drafts)
 		return &waveobj.RunLand{State: LandState_Held, Reason: reason, Dirty: dirty}
 	}
 	pre, err := ProjectHeadCommit(ctx, project)
 	if err != nil {
+		putBackDrafts(drafts)
 		return heldLand("reading the checkout's head: " + err.Error())
 	}
 	aside, err := setAsideEdits(ctx, project, run.ID, carried)
 	if err != nil {
+		putBackDrafts(drafts)
 		return heldLand("setting aside the checkout's edits to " + carriedPaths(carried) + ": " + err.Error())
 	}
 	title := landTitle(run, g, branchSubjects(ctx, project, pre, branch))
 	if _, err := git(ctx, project, "merge", "--no-ff", "-m", title, "-m", "Arc-Run: "+run.ID, branch); err != nil {
 		reason := mergeRefusal(ctx, project, run.BaseBranch, err)
 		restoreEdits(carried, project, aside)
+		putBackDrafts(drafts)
 		return heldLand(reason)
 	}
 	land := &waveobj.RunLand{State: LandState_Landed}
 	if land.Commit, err = ProjectHeadCommit(ctx, project); err != nil {
 		log.Printf("run %s: reading the land's merge commit: %v", run.ID, err)
+	}
+	if draftNote != "" {
+		land.Notes = append(land.Notes, draftNote)
 	}
 	land.Notes = append(land.Notes, putBackEdits(ctx, project, pre, aside, carried)...)
 	if checkNote != "" {
@@ -452,7 +460,7 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 	if len(overlap) > 0 {
 		return "the checkout has unstaged edits to files the run changes: " + strings.Join(overlap, ", "), true
 	}
-	_, differs, err := untrackedCopies(ctx, project, branch)
+	_, _, differs, err := untrackedCopies(ctx, project, branch, runDocs(ctx, run))
 	if err != nil {
 		return err.Error(), false
 	}
@@ -707,20 +715,25 @@ func onlyMarkdown(ctx context.Context, dir, from, to string) bool {
 // lead wrote its spec or plan there before submit, or adopted it from there, and the engine committed that file
 // on the branch, which may since have revised it. git would refuse to overwrite it. One the run never held is
 // the human's, and holds the land.
-func clearUntrackedCopies(ctx context.Context, project, branch string) string {
-	copies, differs, err := untrackedCopies(ctx, project, branch)
+// The checkout's draft of the run's own spec or plan is set aside instead (setAsideDrafts).
+func clearUntrackedCopies(ctx context.Context, run *waveobj.Run) (drafts map[string]string, note, reason string) {
+	project, branch := run.ProjectPath, "wave/"+run.ID
+	copies, found, differs, err := untrackedCopies(ctx, project, branch, runDocs(ctx, run))
 	if err != nil {
-		return err.Error()
+		return nil, "", err.Error()
 	}
 	if differs != "" {
-		return untrackedDiffersReason(differs)
+		return nil, "", untrackedDiffersReason(differs)
 	}
 	for _, full := range copies {
 		if err := os.Remove(full); err != nil {
-			return "removing an untracked copy of what the run adds: " + err.Error()
+			return nil, "", "removing an untracked copy of what the run adds: " + err.Error()
 		}
 	}
-	return ""
+	if drafts, note, err = setAsideDrafts(ctx, project, run.ID, found); err != nil {
+		return nil, "", err.Error()
+	}
+	return drafts, note, ""
 }
 
 func untrackedDiffersReason(path string) string {
@@ -728,20 +741,21 @@ func untrackedDiffersReason(path string) string {
 }
 
 // untrackedCopies lists, as full paths, the untracked files in the checkout that are versions of ones the branch
-// adds, or names the first that is not instead. It changes nothing.
-func untrackedCopies(ctx context.Context, project, branch string) (copies []string, differs string, err error) {
+// adds, and the run's own spec or plan (own, repo-relative) where the checkout holds a draft the run never held,
+// or names the first other file that is not a version instead. It changes nothing.
+func untrackedCopies(ctx context.Context, project, branch string, own []string) (copies, drafts []string, differs string, err error) {
 	// git names what the branch adds from the repo root, which a project in a subfolder of its repo is not
 	top, err := git(ctx, project, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, "", fmt.Errorf("finding the checkout's repo root: %w", err)
+		return nil, nil, "", fmt.Errorf("finding the checkout's repo root: %w", err)
 	}
 	base, err := git(ctx, top, "merge-base", "HEAD", branch)
 	if err != nil {
-		return nil, "", fmt.Errorf("finding where the run's branch forked: %w", err)
+		return nil, nil, "", fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
 	added, err := git(ctx, top, "diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", base, branch)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing what the run adds: %w", err)
+		return nil, nil, "", fmt.Errorf("listing what the run adds: %w", err)
 	}
 	for _, p := range strings.Split(added, "\x00") {
 		if p == "" {
@@ -757,24 +771,90 @@ func untrackedCopies(ctx context.Context, project, branch string) (copies []stri
 		// hash-object applies the checkout's filters, so a CRLF copy of an LF file still reads as the same
 		theirs, err := git(ctx, top, "rev-parse", branch+":"+p)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading %s on the run's branch: %w", p, err)
+			return nil, nil, "", fmt.Errorf("reading %s on the run's branch: %w", p, err)
 		}
 		mine, err := git(ctx, top, "hash-object", "--", p)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading the untracked %s: %w", p, err)
+			return nil, nil, "", fmt.Errorf("reading the untracked %s: %w", p, err)
 		}
 		if mine != theirs {
 			held, err := runHeld(ctx, top, base, branch, p, mine)
 			if err != nil {
-				return nil, "", err
+				return nil, nil, "", err
 			}
 			if !held {
-				return nil, p, nil
+				if slices.Contains(own, p) {
+					drafts = append(drafts, full)
+					continue
+				}
+				return nil, nil, p, nil
 			}
 		}
 		copies = append(copies, full)
 	}
-	return copies, "", nil
+	return copies, drafts, "", nil
+}
+
+// runDocs is the run's own spec and plan, repo-relative with forward slashes: the docs SnapshotDocs committed on
+// its branch at submit. A checkout-landed dag keeps them absolute and has none here.
+func runDocs(ctx context.Context, run *waveobj.Run) []string {
+	if run.DagORef == "" {
+		return nil
+	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	if err != nil || g == nil {
+		return nil
+	}
+	var docs []string
+	for _, p := range []string{g.SpecPath, g.PlanPath} {
+		if p != "" && !filepath.IsAbs(p) {
+			docs = append(docs, filepath.ToSlash(p))
+		}
+	}
+	return docs
+}
+
+// setAsideDrafts moves the checkout's drafts of the run's own spec and plan into the git dir, out of the merge's
+// way, and returns where it put each (keyed by the draft's path) and the land's note about them. The run started
+// from that doc and the engine moved it into the run's tree (MoveSpecIntoTree); a draft back in the checkout is a
+// later edit the run never read. Holding the land on it asked the human to clear a file the run itself brought
+// (runs 983dcb44, ebf318c1, ee2ca359), so it is kept, not merged over, and named.
+func setAsideDrafts(ctx context.Context, project, runID string, drafts []string) (map[string]string, string, error) {
+	if len(drafts) == 0 {
+		return nil, "", nil
+	}
+	dir, err := git(ctx, project, "rev-parse", "--git-path", "arc-drafts/"+runID)
+	if err != nil {
+		return nil, "", err
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(project, dir)
+	}
+	moved := make(map[string]string, len(drafts))
+	var names []string
+	for _, full := range drafts {
+		to := filepath.Join(dir, filepath.Base(full))
+		if err := MoveFile(full, to); err != nil {
+			putBackDrafts(moved)
+			return nil, "", fmt.Errorf("setting aside the checkout's draft %s: %w", full, err)
+		}
+		moved[full] = to
+		names = append(names, fmt.Sprintf("%s (now %s)", filepath.Base(full), to))
+	}
+	note := "the checkout held a newer draft of the run's own spec or plan, which the run never read; the land kept the run's version and moved the draft aside: " + strings.Join(names, ", ")
+	return moved, note, nil
+}
+
+// putBackDrafts returns drafts setAsideDrafts moved, after a merge that did not happen.
+func putBackDrafts(moved map[string]string) {
+	for from, to := range moved {
+		if _, err := os.Stat(from); err == nil {
+			continue
+		}
+		if err := MoveFile(to, from); err != nil {
+			log.Printf("putting back the checkout's draft %s from %s: %v", from, to, err)
+		}
+	}
 }
 
 // runHeld reports whether blob is a version of p the run's branch has held since base: in its history, or at a
