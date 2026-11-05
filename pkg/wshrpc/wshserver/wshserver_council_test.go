@@ -805,7 +805,18 @@ func councilStartData(t *testing.T) wshrpc.CommandCouncilStartData {
 	if err != nil {
 		t.Fatalf("ExpertsFor: %v", err)
 	}
-	return wshrpc.CommandCouncilStartData{Project: t.TempDir(), Feature: "Idle sleep for services", Experts: experts}
+	// the canned round 1 cites pkg/<expert>.go:1; the file exists so the cite resolves and the evidence gate keeps the
+	// direction in the top instead of folding it as a guess
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, "pkg"), 0o755); err != nil {
+		t.Fatalf("mkdir pkg: %v", err)
+	}
+	for _, e := range experts {
+		if err := os.WriteFile(filepath.Join(project, "pkg", e.Id+".go"), []byte("package pkg\n"), 0o644); err != nil {
+			t.Fatalf("write cited file: %v", err)
+		}
+	}
+	return wshrpc.CommandCouncilStartData{Project: project, Feature: "Idle sleep for services", Experts: experts}
 }
 
 // startDoneCouncil starts a council and waits for its three rounds.
@@ -857,10 +868,15 @@ func TestCouncilStartRunsTheRoundsToDone(t *testing.T) {
 	if len(done.Proposals) != 4 {
 		t.Errorf("proposals = %d, want one per expert (4)", len(done.Proposals))
 	}
-	for kind, want := range map[string]int{"r1": 4, "r2": 4, "r3": 1} {
+	for kind, want := range map[string]int{"r1": 4, "r3": 1} {
 		if got := len(fake.calls(kind)); got != want {
 			t.Errorf("%s calls = %d, want %d", kind, got, want)
 		}
+	}
+	// round 2 runs early per seat: each seat reviews once, then a catch-up that makes a call only when something is left
+	// (pkg/council reviewPass), so which seats were ready first sets the count, between one and two passes per seat
+	if got := len(fake.calls("r2")); got < 4 || got > 8 {
+		t.Errorf("r2 calls = %d, want one early pass per seat and at most one catch-up each (4..8)", got)
 	}
 
 	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: started.Id})
