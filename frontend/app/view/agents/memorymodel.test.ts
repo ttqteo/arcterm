@@ -21,6 +21,7 @@ import {
     railOrder,
     railRow,
     resolveSelection,
+    setupRailTitle,
     splitText,
     statusOf,
     stepChange,
@@ -157,7 +158,7 @@ describe("checkResult", () => {
     });
 });
 
-describe("projectsToReview and toolbarStatus", () => {
+describe("projectsToReview, setupRailTitle and toolbarStatus", () => {
     it("counts projects with an undecided change, including a conflict", () => {
         const ps = [
             project({ project: "a", changes: [change("1"), change("2")] }),
@@ -168,6 +169,12 @@ describe("projectsToReview and toolbarStatus", () => {
         ];
         expect(projectsToReview(ps)).toBe(3);
         expect(toolbarStatus(ps)).toEqual({ text: "3 projects to review", tone: "warn" });
+    });
+
+    it("names what the Setup badge counts in its title, and nothing when there is no badge", () => {
+        expect(setupRailTitle(0)).toBe("Setup");
+        expect(setupRailTitle(1)).toBe("Setup — memory to review in 1 project");
+        expect(setupRailTitle(3)).toBe("Setup — memory to review in 3 projects");
     });
 
     it("says 1 project in the singular", () => {

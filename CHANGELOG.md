@@ -27,14 +27,20 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - **Christmas**, a new theme in Settings → Appearance → Theme: forest green and antique gold, snow falling over the window (fainter over a terminal), a string of lights under the app bar that blinks while an agent needs you, Christmas trees, gifts and a wreath in the Office, and a Santa hat on the pet and on everyone in the Office. The Christmas effects switch under the themes drops the decor and keeps the colours; with reduced motion on, the snow and the blink stop and the rest stays. <!-- big -->
+- In a project's Overview, each session in History has a Quick look button (and a Quick look item in its right-click menu) that opens its transcript in a dialog over the page, with Resume and Open, so you can read a session without leaving the Overview.
 
 ### Changed
 
+- A Claude agent that goes to edit a file in another repo than the project it was started in now asks you first, naming both repos, even in auto mode; once you say yes it edits that repo freely until the session ends. A run's agent, which nobody is watching, is refused instead and told to ask.
+- A session or run opened from a project's Overview (or from History, Councils or the Canvas gallery) now goes back there with its Back button and Escape, and the button says where ("Back to Overview"), instead of always going back to the terminal.
 - In a council's message box, an `@seat` you pick or type is tinted in that seat's colour (and an `@file` as a link) as you write, as the sent message shows it, instead of sitting in the text as plain words.
 - In a brainstorm, clicking a board in the Boards rail opens it large in a dialog over the question, instead of stretching the rail and squeezing the question into a thin column. A board tied to an answer has a Pick button for that answer under it.
+- In a council, an idea's "4 agree" shows the avatars of the seats that agreed, and hovering it lists them one per line with their avatars, instead of a plain tooltip with their names run together.
+- Setup in the nav rail now carries a badge counting the projects whose memory has something to review, and its Memory tab reads `Memory · N`, so a stale or oversized memory gets noticed without opening Setup to look.
 
 ### Fixed
 
+- The New dialog's Orchestrate and Quick run now start from the project's saved Profile (Approvals, workers, workers at once): picking the row used to count as changing the run by hand, so an Autonomous default never showed and it stayed on Ask me.
 - Quick translate on Windows keeps translating when Google turns it away for too many requests: it falls back to MyMemory's free translator (up to about 500 characters at a time and a few thousand a day) instead of failing until Google lets it back in. On a Mac it is tried after Apple Translation.
 - Setup → Memory now shows each project's memory size even when its model check fails, and lists the memories worth a second look without a model: one untouched for 30 days, or (when the model check failed) one naming a file that is gone. Each comes up as a Review; Still true marks it reviewed, so neither this tab nor the session-start memory check flags it again for 30 days.
 - Ctrl+Z in a council's message box takes back a seat or file picked from the `@` list, a suggested question put in with a click, and text pasted beside an image; before, any of these wiped the box's undo, so Ctrl+Z did nothing after them.

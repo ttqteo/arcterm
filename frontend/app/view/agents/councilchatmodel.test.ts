@@ -369,8 +369,9 @@ describe("councilChannel: an idea", () => {
         expect(byId(items, "P1")).toMatchObject({
             agrees: ["Skeptic agrees"],
             agreed: { word: "Skeptic agrees", title: "" },
+            agreers: [{ name: "Skeptic" }],
         });
-        expect(byId(items, "P2")).toMatchObject({ agrees: [], agreed: null });
+        expect(byId(items, "P2")).toMatchObject({ agrees: [], agreed: null, agreers: [] });
     });
 
     it("words a Brainstorm idea `idea`, and a wild one `wild idea` with a pill", () => {

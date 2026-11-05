@@ -15,6 +15,7 @@ import {
     checkResult,
     isPending,
     nextPending,
+    projectsToReview,
     resolveSelection,
     type MemorySelection,
     type StatusText,
@@ -87,13 +88,24 @@ export async function loadMemory(): Promise<void> {
     }
 }
 
-// every state write publishes memhygiene:update with no payload, so the tab re-lists while it is open
-export function subscribeMemory(): () => void {
-    return waveEventSubscribeSingle({
+let feeding = false;
+
+// the nav rail's Setup badge counts the projects to review while Setup is closed, so the list is read once at
+// start and again on every memhygiene:update (each state write publishes one, with no payload) for the app's life
+export function ensureMemoryFeed(): void {
+    if (feeding) {
+        return;
+    }
+    feeding = true;
+    waveEventSubscribeSingle({
         eventType: "memhygiene:update",
         handler: () => fireAndForget(loadMemory),
     });
+    fireAndForget(loadMemory);
 }
+
+// the projects with a change still to review: the Setup badge and the Memory tab's count
+export const memoryToReviewAtom = atom((get) => projectsToReview(get(memoryProjectsAtom) ?? []));
 
 export function selectMemoryProject(name: string): void {
     globalStore.set(memorySelectedProjectAtom, name);

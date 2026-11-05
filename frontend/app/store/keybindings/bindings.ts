@@ -8,7 +8,7 @@ import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
-import { centerModeAtom, showCanvases, showCouncils, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
+import { centerModeAtom, leaveCenter, showCanvases, showCouncils, showHistory } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { openRailTranscript } from "@/app/view/agents/agentrailstore";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
@@ -1369,7 +1369,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             id: "agent:leave-center",
             keys: "Escape",
             group: "Agent",
-            label: "Back to the terminal (from History, a session, the canvases or the councils)",
+            // a session or run goes back to the Overview or History it was opened from (leaveCenter)
+            label: "Back to the terminal (from History, the canvases or the councils), or from a session to where it was opened",
             // exclusive with agent:back (which needs the centre at rest) and with subagent:back (which needs a focused
             // subagent), so Escape never means two things. Deliberately not gated on noCanvas(): the focused agent's
             // canvas or review can still be on while History covers the terminal, and Escape must leave History then
@@ -1381,7 +1382,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 globalStore.get(focusSubagentAtom) == null &&
                 !galleryHoldsEscape() &&
                 !councilHoldsEscape(),
-            run: () => showTerminal(),
+            run: () => leaveCenter(),
         },
         // Agent → Canvas gallery. Moving over cards and paging through boards are postures, not actions to search for.
         ...(

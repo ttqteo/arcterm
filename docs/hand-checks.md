@@ -15,12 +15,29 @@ does not, say what you saw and it becomes a bug row under Actionable.
   go, the colours stay. Checked by the `christmas-theme` CDP scenario in the dev app; the look itself, in the packaged
   build and at real sizes, was not judged by eye (`christmassnowview.tsx`, `christmaslights.tsx`, `petsprite.ts`).
 
+- [ ] (arcterm) **New → Orchestrate follows the Profile's Approvals.** Jarvis → Profile → Global → Approvals:
+  Autonomous → Save. Open New, pick Orchestrate with arcterm picked → Approvals shows Autonomous. Pick another
+  project, then back → still Orchestrate. Change Workers by hand, switch project → your pick stays. (fix(launcher):
+  `pickRunShape` in `runconfigstore.ts`)
+- [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
+  one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
+  its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing
+  its own worktree under `arc-wt` is never asked. Tried only headless (`claude -p`, where the ask is a refusal with
+  that reason); the dialog itself is untried (`claude/arc-mod/hooks/foreignrepo-core.ts`, 4b5c0bc94).
+- [ ] (arcterm) **Council "N agree": avatars and a list on hover.** Open a council with an idea two or more seats
+  agreed with → the signal line under it shows their small avatars stacked before `✓ N agree`; hover it → a card under
+  it reads "Agreed, nothing to add" and lists each seat, avatar and name, one per line (it flips above near the bottom
+  of the window). One seat shows its avatar and `<Seat> agrees` with no hover. (main, 2026-11-05)
 - [ ] (arcterm) **Council composer: tinted @seat, and Ctrl+Z.** In the packaged app open a council, type `@` in the
   message box and pick a seat with a long name (`Reviewer 1 (area expert)`) → it shows tinted in the seat's colour,
   the caret and a selection sit where the letters are, also once the text wraps and once it scrolls past the box's
   height. Press `Ctrl`+`Z` → the pick goes back to the `@…` you typed; click an Ask next question → `Ctrl`+`Z` empties
   the box. Checked only in headless Chrome by `council-discussion` (undo there by `execCommand`, not the keys); not in
   WebView2 (`councilchat.tsx` ComposerMarks / editBox, aaad0bc86).
+- [ ] (arcterm) **Mark shows a ticked box when on.** Open a design canvas (Canvas pane, or a brainstorm board opened
+  large) → Mark shows a dashed square; click it or press `m` → it turns accent and its icon becomes a ticked square;
+  click again → back to the dashed square. (`canvaspane.tsx`, `brainstormrail.tsx`, main, 2026-11-05)
 
 - [ ] (arcterm) **Float and the fold on a scaled Windows display.** On the Windows PC at 125% or 150% scaling, with
   arcterm maximized: Float → the window leaves maximized and shrinks to the float's place at the float's size (not
@@ -1800,6 +1817,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Initiative "only" bar wraps.** Jarvis → an initiative with a long chunk title → Notes → click the
   chunk → the "only" bar on top shows the whole title over several lines, the "only" label, tone dot and "show all"
   sitting on its first line. Prettier only (`NotesFeed` in `effortdetailview.tsx`); no dev app was up.
+- [ ] (arcterm) **Overview Quick look and Back.** Agent → a project's Overview → hover a History session row → Quick
+  look shows at its right end over the age → click it → the transcript opens in a dialog over the Overview, with
+  Activity/Transcript, Resume and Open; Esc or a click outside closes it. Open → the full session pane, its Back reads
+  "Back to Overview" and returns there, and so does Esc; the same from History says "Back to History". Vitest and
+  `task check:ts` only (`sessionpeek.tsx`, `agentcenter.ts`); no dev app was up.
 - [ ] (arcterm) **Memory tab without a model.** After the next build, Setup → Memory → arcterm → Check now, with
   `headless:runtime` still unset (no OpenRouter key) → the index card shows its lines and size, "Last check failed" still
   names the key, and the table lists Review rows (`feedback_no-co-author-trailer.md` among them, untouched 30+ days);

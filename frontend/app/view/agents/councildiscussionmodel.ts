@@ -331,6 +331,11 @@ export function reactions(c: Council, proposalId: string): string[] {
 
 /** Pure: the names `reactions` words, `Reader` for `Reader agrees`, in the same order. */
 export function agreeNames(c: Council, proposalId: string): string[] {
+    return agreeSeats(c, proposalId).map((id) => authorName(c, id));
+}
+
+/** Pure: the seat ids behind `agreeNames`, in the same order. */
+export function agreeSeats(c: Council, proposalId: string): string[] {
     const latest = new Map<string, CouncilReply>();
     (c.replies ?? [])
         .map((r, i) => ({ r, i }))
@@ -341,7 +346,7 @@ export function agreeNames(c: Council, proposalId: string): string[] {
                 latest.set(r.author, r);
             }
         });
-    return [...latest.values()].filter(isReaction).map((r) => authorName(c, r.author));
+    return [...latest.values()].filter(isReaction).map((r) => r.author);
 }
 
 // ---- the composer ----

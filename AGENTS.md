@@ -168,7 +168,8 @@ before working in an area you don't already know.
   `showHistory` / `showSession`, and `showTerminal` whenever a route chooses an agent). The Office (floors, rooms, the
   notice board) is a view of the Cockpit surface (`cockpitoffice.tsx`), unrelated to Jarvis. The nav badges are
   disjoint (`navrail.tsx`): Cockpit counts the agents that need you, Jarvis the rest that waits on you (gates, runs
-  to confirm or land, escalations), Radar the projects with untriaged findings, Agent the agents with an unread turn.
+  to confirm or land, escalations), Radar the projects with untriaged findings, Agent the agents with an unread turn,
+  Setup the projects whose memory has a change to review.
 
 Load-bearing rules:
 

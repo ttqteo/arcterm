@@ -30,6 +30,8 @@ import { attentionAtom, cockpitWaitingCount, splitAttention } from "./attentions
 import { channelMessagesAtom } from "./channelsstore";
 import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
+import { setupRailTitle } from "./memorymodel";
+import { ensureMemoryFeed, memoryToReviewAtom } from "./memorystore";
 import { navRailCollapsed } from "./navrailwidth";
 import { railDot, railItemTitle, railPins } from "./railapps";
 import { appSurfaceIdAtom, moveRailPin, railPinsAtom, setRailPinned } from "./railappsstore";
@@ -164,7 +166,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     // Three disjoint "needs you" badges from one server-computed list: Cockpit counts the agents that need you
     // (its cards), Jarvis the rest of what waits on you (gates, runs to confirm or land, escalations: its Brief
     // queue), Radar the projects with untriaged findings. Each sits on the surface that clears it. Agent counts
-    // the agents that finished a turn you have not looked at yet (unreadagents.ts).
+    // the agents that finished a turn you have not looked at yet (unreadagents.ts). Setup, at the bottom, counts the
+    // projects whose memory has a change to review (memorystore.ts).
     const attention = useAtomValue(attentionAtom);
     const split = splitAttention(attention);
     const unread = useAtomValue(unreadAgentsAtom);
@@ -201,8 +204,11 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const appId = useAtomValue(appSurfaceIdAtom);
     const translateOpen = useAtomValue(translateOpenAtom);
     const translateKeys = useBindingKeys("translate");
+    // Setup counts the projects whose memory has a change to review (Setup → Memory clears it)
+    const memoryToReview = useAtomValue(memoryToReviewAtom);
     useEffect(() => {
         ensureServicesFeed();
+        ensureMemoryFeed();
     }, []);
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
     useEffect(() => {
@@ -224,7 +230,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 onClick={() => setActive(key)}
                 // the label carries the item's name, so a 56px rail needs the accessible name here
                 aria-label={label}
-                title={busy > 0 ? `${label} — ${busy} working` : label}
+                title={busy > 0 ? `${label} — ${busy} working` : key === "setup" ? setupRailTitle(badge) : label}
                 className={cn(
                     "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent text-muted hover:text-muted-foreground",
                     tool ? "py-[8px]" : "py-[11px]",
@@ -316,7 +322,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 <Languages size={16} strokeWidth={1.8} />
                 {narrow ? null : <span className="text-[10px] font-semibold">Translate</span>}
             </button>
-            {renderItem("setup", "Setup")}
+            {renderItem("setup", "Setup", memoryToReview)}
             {renderItem("settings", "Settings")}
         </nav>
     );

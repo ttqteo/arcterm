@@ -11,7 +11,7 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronRight, Copy, ExternalLink, FileText, Moon, Pin, PinOff, Play, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, ExternalLink, Eye, FileText, Moon, Pin, PinOff, Play, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -31,12 +31,20 @@ import {
     type HistoryItem,
 } from "./projectoverviewmodel";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
+import { SessionPeek } from "./sessionpeek";
 import type { LiveSession } from "./sessionsarchivestore";
 import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessionsdetail";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
     "flex w-full cursor-pointer items-center gap-[10px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
+// a session row is wrapped with its Quick look button, so the divider moves to the wrapper
+const SESSION_WRAP = "group relative border-t border-edge-mid first:border-t-0";
+const SESSION_ROW =
+    "flex w-full cursor-pointer flex-col items-stretch gap-[2px] px-3 py-[9px] text-left hover:bg-surface-hover group-hover:bg-surface-hover";
+// over the row's right end, shown while the row is hovered or holds focus; the age under it fades
+const PEEK_BTN =
+    "absolute right-2 top-1/2 flex h-[26px] -translate-y-1/2 cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-strong bg-surface-raised px-[9px] text-[12px] text-secondary opacity-0 hover:border-accent hover:text-accent-soft focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100";
 // a child row sits 28px in, its divider starting there too
 const NESTED_ROW =
     "relative flex w-full cursor-pointer items-center gap-[10px] py-[9px] pl-10 pr-3 text-left before:absolute before:left-10 before:right-0 before:top-0 before:h-px before:bg-edge-mid hover:bg-surface-hover";
@@ -114,8 +122,9 @@ function copyTitleItem(title: string): ContextMenuItem {
 
 // A session row's menu: open its transcript, resume it (or open it asleep, for a harness that can sleep), copy its
 // title, and delete it when it can be (an ended Claude session; sessiondelete.ts).
-function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: React.MouseEvent) {
+function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: React.MouseEvent, quickLook: () => void) {
     const items: ContextMenuItem[] = [
+        { label: "Quick look", icon: <Eye size={15} />, click: quickLook },
         { label: "Open transcript", icon: <FileText size={15} />, click: () => showSession(model, key) },
     ];
     if (s.resumecommand || (s.live && s.liveId)) {
@@ -292,6 +301,8 @@ export function HistoryColumn({
     const now = useAtomValue(model.nowAtom);
     // the one council row unfolded: a council opens in two steps, the row's peek, then its Open council
     const [unfolded, setUnfolded] = useState<string | null>(null);
+    // the session read in the Quick look dialog, over the page; Open there takes it to the full pane
+    const [peek, setPeek] = useState<{ key: string; session: LiveSession } | null>(null);
     const rows = useMemo(
         () => historyRows(h.sessions, h.councils, h.runs.runs, path, now, q),
         [h.sessions, h.councils, h.runs.runs, path, now, q]
@@ -364,27 +375,39 @@ export function HistoryColumn({
             {shown.map((row, i) => {
                 if (row.kind === "session") {
                     const s = row.session;
+                    const quickLook = () => setPeek({ key: row.key, session: s });
                     return (
-                        <button
-                            key={row.key}
-                            type="button"
-                            data-history-row={row.key}
-                            data-history-kind="session"
-                            title={s.task || undefined}
-                            onClick={() => showSession(model, row.key)}
-                            onContextMenu={(e) => sessionMenu(model, row.key, s, e)}
-                            className={`${ROW} flex-col items-stretch gap-[2px]`}
-                        >
-                            <span className="flex items-baseline gap-2">
-                                <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
-                                    {marked(s.task || "(untitled session)", q)}
+                        <div key={row.key} className={SESSION_WRAP}>
+                            <button
+                                type="button"
+                                data-history-row={row.key}
+                                data-history-kind="session"
+                                title={s.task || undefined}
+                                onClick={() => showSession(model, row.key)}
+                                onContextMenu={(e) => sessionMenu(model, row.key, s, e, quickLook)}
+                                className={SESSION_ROW}
+                            >
+                                <span className="flex items-baseline gap-2">
+                                    <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
+                                        {marked(s.task || "(untitled session)", q)}
+                                    </span>
+                                    <span className="flex-none text-[11px] tabular-nums text-ink-faint group-focus-within:opacity-0 group-hover:opacity-0">
+                                        {formatAgeShort(now - s.lastactivets)}
+                                    </span>
                                 </span>
-                                <span className="flex-none text-[11px] tabular-nums text-ink-faint">
-                                    {formatAgeShort(now - s.lastactivets)}
-                                </span>
-                            </span>
-                            <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
-                        </button>
+                                <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
+                            </button>
+                            <button
+                                type="button"
+                                data-history-peek={row.key}
+                                onClick={quickLook}
+                                title="Quick look: read it here, without leaving the Overview"
+                                className={PEEK_BTN}
+                            >
+                                <Eye size={13} aria-hidden />
+                                Quick look
+                            </button>
+                        </div>
                     );
                 }
                 const isCouncil = row.kind === "council";
@@ -511,6 +534,18 @@ export function HistoryColumn({
                 />
             </div>
             {list}
+            <SessionPeek
+                model={model}
+                session={peek?.session ?? null}
+                onClose={() => setPeek(null)}
+                onOpen={() => {
+                    const key = peek?.key;
+                    setPeek(null);
+                    if (key != null) {
+                        showSession(model, key);
+                    }
+                }}
+            />
         </section>
     );
 }

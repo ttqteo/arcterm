@@ -16,6 +16,7 @@
 
 import {
     agreeNames,
+    agreeSeats,
     avatarTone,
     expertDoing,
     failedWhile as failedWhileWords,
@@ -561,6 +562,7 @@ export interface IdeaPost extends Who {
     claim: ClaimEvidence;
     agrees: string[]; // `Skeptic agrees`: the seats that agreed with nothing to add
     agreed: AgreeSignal | null; // the same seats as the one word its signal line shows; null with none
+    agreers: Who[]; // those seats, for their avatars beside the word and the list in its hover
     thumb: CouncilThumb | ""; // the person's like or dislike
     picks: { count: number; label: string; title: string } | null; // `Picked by 2`; null when no seat picked it
     edited: boolean;
@@ -607,6 +609,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         claim: claimOf(c, p),
         agrees: reactions(view, p.id),
         agreed: agreeSignal(agreeNames(view, p.id)),
+        agreers: agreeSeats(view, p.id).map((id) => whoIs(view, id)),
         thumb: thumbOf(p),
         picks:
             picked != null && picked > 0
