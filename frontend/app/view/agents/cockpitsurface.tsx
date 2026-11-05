@@ -97,7 +97,7 @@ import {
     type DialogItemId,
 } from "./officedialogmodel";
 import { boardCall, boardEmptyItems, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
-import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
+import { BOARD_KEY, LIFT_KEY, TREE_KEY } from "./officeplanmodel";
 import { useNeedsYou } from "./needsyou";
 import type { StripRow } from "./needsyoustripmodel";
 import {
@@ -390,15 +390,19 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // keep the cursor on a visible stop as the set changes; a worker's id follows its row, else the first stop
     useEffect(() => {
-        // the office's stops include the Idle section's agents and seats with no card row. The notice board and the lift are
-        // stops the cursor may stay on at any row count (the boss stands at them even when nothing waits), but never the one
-        // it falls back to: before the roster loads it would be the first stop, and the boss would open at the board
+        // the office's stops include the Idle section's agents and seats with no card row. The notice board, the lift and
+        // the hall's Christmas tree are stops the cursor may stay on at any row count (the boss stands at them even when
+        // nothing waits), but never the one it falls back to: before the roster loads it would be the first stop, and
+        // the boss would open at the board
         const stops =
             view === "office"
-                ? [...navigableIds, ...(officeRef.current?.order() ?? []).filter((k) => k !== BOARD_KEY)]
+                ? [
+                      ...navigableIds,
+                      ...(officeRef.current?.order() ?? []).filter((k) => k !== BOARD_KEY && k !== TREE_KEY),
+                  ]
                 : navigableIds;
         const next =
-            view === "office" && (cursorId === BOARD_KEY || cursorId === LIFT_KEY)
+            view === "office" && (cursorId === BOARD_KEY || cursorId === LIFT_KEY || cursorId === TREE_KEY)
                 ? cursorId
                 : resolveCursor(cursorId, stops, cursorAlias);
         if (next !== cursorId) {
@@ -550,6 +554,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             slot: (d) => officeRef.current?.slot(d),
             drop: () => officeRef.current?.drop(),
             cancel: () => officeRef.current?.cancel(),
+            treeMove: (d) => officeRef.current?.treeMove(d),
+            treeLift: () => officeRef.current?.treeLift(),
         }),
         []
     );
@@ -767,6 +773,10 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         }
         if (key === LIFT_KEY) {
             return liftPanel();
+        }
+        // the hall's Christmas tree has no dialog box: A at it opens its close-up card, a layer of its own
+        if (key === TREE_KEY) {
+            return null;
         }
         if (key.startsWith("chip:")) {
             return chipPanel(key);

@@ -181,8 +181,18 @@ export function dagStatusPill(group: Pick<TaskGroup, "status" | "planreview">): 
     const label = status.split("-").join(" ");
     if (status === "done" || status === "awaiting-review") return { label, tone: "done" };
     if (status === "blocked" || status === "awaiting-plan") return { label, tone: "waiting" };
-    if (status === "cancelled") return { label, tone: "muted" };
+    // paused is muted, not active: nothing in the dag is moving until the run resumes
+    if (status === "cancelled" || status === "paused") return { label, tone: "muted" };
     return { label, tone: "active" };
+}
+
+// the dag statuses the graph header's Cancel still applies to. awaiting-plan is cancellable: abandoning a run at its
+// gate is a normal answer, and the alternative would be approving work you do not want in order to be allowed to stop
+// it. paused is too: a paused run is live, not finished, and its Cancel clears the pause.
+const CANCELLABLE_DAG = new Set(["running", "awaiting-review", "awaiting-plan", "plan-review", "finalizing", "paused"]);
+
+export function dagCancellable(status: string): boolean {
+    return CANCELLABLE_DAG.has(status);
 }
 
 // isWaiting mirrors taskWaiting: a task nothing has started or touched, whose model can still change.

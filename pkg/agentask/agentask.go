@@ -68,6 +68,9 @@ type Registry struct {
 	// typed holds prose answers typed into a dag child's session, keyed by task, until the engine meets them in the
 	// child's transcript, where they look exactly like a prompt the human typed.
 	typed map[string][]typedAnswer
+	// held holds the answers given to a suspended agent's open question, keyed by oref, until its resume nudge takes
+	// them (TakeHeldAnswers).
+	held  map[string][]HeldAnswer
 	waits waiters
 }
 
@@ -83,7 +86,26 @@ type typedAnswer struct {
 }
 
 func MakeRegistry() *Registry {
-	return &Registry{pending: make(map[string]PendingAsk), clears: make(map[string]sentAnswer), typed: make(map[string][]typedAnswer)}
+	return &Registry{
+		pending: make(map[string]PendingAsk),
+		clears:  make(map[string]sentAnswer),
+		typed:   make(map[string][]typedAnswer),
+		held:    make(map[string][]HeldAnswer),
+	}
+}
+
+func (r *Registry) hold(oref string, answers []HeldAnswer) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.held[oref] = append(r.held[oref], answers...)
+}
+
+func (r *Registry) takeHeld(oref string) []HeldAnswer {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	answers := r.held[oref]
+	delete(r.held, oref)
+	return answers
 }
 
 func typedKey(dagOID, taskId string) string {

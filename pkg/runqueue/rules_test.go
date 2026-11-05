@@ -92,6 +92,32 @@ func TestActive(t *testing.T) {
 	}
 }
 
+// a paused run still holds its place against runs:maxactive: the queue starts nothing in its stead
+func TestActiveCountsAPausedTopLevelRun(t *testing.T) {
+	paused := func(r *waveobj.Run) { r.Pause = &waveobj.RunPause{PausedTs: 1, By: "auto"} }
+	underPause := func(r *waveobj.Run) { r.ParentLeadORef = "tab:abc"; r.PausedUnder = "top" }
+	runs := []*waveobj.Run{
+		mkRun("top", "paused", paused),
+		mkRun("child", "executing", underPause), // marked under the paused run, and not top-level
+		mkRun("task", "executing", func(r *waveobj.Run) { r.TaskId = "t-1"; r.PausedUnder = "top" }),
+	}
+	if got := Active(runs); got != 1 {
+		t.Errorf("Active = %d, want 1: the paused top-level run counts, the runs marked under it do not", got)
+	}
+}
+
+func TestNextStartsNothingInThePlaceOfAPausedRun(t *testing.T) {
+	runs := runMap(mkRun("p", "paused", func(r *waveobj.Run) { r.Pause = &waveobj.RunPause{PausedTs: 1, By: "auto"} }))
+	start, _, _ := Next([]wshrpc.RunQueueEntry{mkEntry("q1", "")}, runs, 1)
+	if start != "" {
+		t.Fatalf("started %q while the one allowed run is paused", start)
+	}
+	start, _, _ = Next([]wshrpc.RunQueueEntry{mkEntry("q1", "")}, runs, 2)
+	if start != "q1" {
+		t.Fatalf("with a second slot free start = %q, want q1", start)
+	}
+}
+
 func TestOutcome(t *testing.T) {
 	cases := []struct {
 		name       string

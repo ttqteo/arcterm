@@ -108,7 +108,7 @@ const RUN_READ = (pane) => `(() => {
         title: flat(pane?.querySelector("h1")),
         open: open ? { text: flat(open), primary: open.className.includes("bg-accent") } : null,
         card: flat(pane?.querySelector("[data-brainstorm-run-card]")),
-        closeOff: flat(pane?.querySelector("[data-brainstorm-close-off]")),
+        closeWarn: flat(pane?.querySelector("[data-brainstorm-close-warn]")),
         close: close ? { text: flat(close), disabled: close.disabled } : null,
         closeError: flat(pane?.querySelector("[data-brainstorm-close-error]")),
         handedHead: flat(pane?.querySelector("[data-brainstorm-handed] h2")?.parentElement),
@@ -378,13 +378,14 @@ export default function (kit) {
             const sha7 = SHA.slice(0, SHA_CHARS);
             const merged = `Built and merged into main at ${sha7}`;
 
-            let s = await runUntil(h, (x) => x.state === "merged" && x.closeOff !== "");
+            let s = await runUntil(h, (x) => x.state === "merged" && x.closeWarn !== "");
             rec(
-                "1. with the final unverified and the land landed: the merged card, no Close, the closeOff line",
+                "1. with the final unverified and the land landed: the merged card, Close offered, the closeWarn line",
                 s.ok &&
                     s.card.includes(merged) &&
-                    s.close == null &&
-                    s.closeOff.includes("could not verify everything") &&
+                    s.close != null &&
+                    !s.close.disabled &&
+                    s.closeWarn.includes("could not verify everything") &&
                     s.open?.text === `Open run ${short}` &&
                     !s.open.primary,
                 s
@@ -407,7 +408,7 @@ export default function (kit) {
                     s.card.includes(deletes) &&
                     s.close?.text === "Close the brainstorm" &&
                     !s.close.disabled &&
-                    s.closeOff === "" &&
+                    s.closeWarn === "" &&
                     s.handedHead === "What you handed over · 7" &&
                     s.current.length === 0 &&
                     s.done === 3 &&

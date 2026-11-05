@@ -345,10 +345,20 @@ func SameDagProposal(a, b *waveobj.TaskGroup) bool {
 
 // RecomputeDagStatus derives g.Status from task states. Single source of truth.
 // Order matters: cancelled (terminal override, which only CancelGroup sets) -> plan-review -> finalizing/done -> blocked -> awaiting-review -> running.
+// While g.PausedTs is set the derived status then becomes paused, unless the dag is done: a dag that landed in the
+// instant before its pause stays done. The status derived without the pause comes back when PausedTs is cleared.
 func RecomputeDagStatus(g *waveobj.TaskGroup) {
 	if g.Status == DagStatus_Cancelled {
 		return
 	}
+	deriveDagStatus(g)
+	if g.PausedTs != 0 && g.Status != DagStatus_Done {
+		g.Status = DagStatus_Paused
+	}
+}
+
+// deriveDagStatus is RecomputeDagStatus without the pause: the status the tasks alone give.
+func deriveDagStatus(g *waveobj.TaskGroup) {
 	if planReviewHolds(g) {
 		g.Status = DagStatus_PlanReview
 		return

@@ -2,19 +2,32 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The brainstorm's Run step: the design handed over and where the run it started stands, read from the run
-// itself. Once the run merged with its final check passed (or a quick run is done), Close deletes the brainstorm file and ends its agent; the
-// canvas stays, in the Canvas gallery.
+// itself. Once the run merged (or a quick run is done), Close deletes the brainstorm file and ends its agent, and
+// closes what is left of the run: accepts its outcome, ends its open sessions, removes the worktrees its cleanup
+// left. A merged run whose final check did not pass asks first. The canvas stays, in the Canvas gallery.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
+import { useAtomValue } from "jotai";
 import { closeSessions } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { decisionParts, partGist, type BrainstormFile, type BrainstormPart, type PartState } from "./brainstormmodel";
-import { closeTarget, runStepView, shortRunId, type RunStepState, type RunStepView } from "./brainstormrunmodel";
+import {
+    closesRun,
+    closeTarget,
+    runClose,
+    runCloseText,
+    runStepView,
+    shortRunId,
+    type RunClose,
+    type RunStepState,
+    type RunStepView,
+} from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile, type BrainstormState } from "./brainstormstore";
 import {
     CheckMark,
@@ -29,6 +42,7 @@ import {
     Toolbar,
     useAction,
 } from "./brainstormui";
+import { runAgentsOf } from "./runlineage";
 import { runInfoAtom, useRunInfo } from "./runlineagestore";
 import { RunSection, useRunAsks } from "./runrailsections";
 import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
@@ -53,6 +67,10 @@ const STATE_DOT: Partial<Record<RunStepState, string>> = {
 // os.RemoveAll already treats a missing path as removed; this covers a server that reports it instead
 const NOT_FOUND = /no such file|cannot find|does not exist|not exist|not found/i;
 
+// a worktree removal reaps what holds the tree first and takes tens of seconds: the budget `wsh jarvis dag
+// retry-cleanup` gives it
+const CLEANUP_TIMEOUT_MS = 60_000;
+
 export function RunStep({
     model,
     agent,
@@ -68,6 +86,12 @@ export function RunStep({
     const { run, loaded } = useRunInfo(runId);
     const asks = useRunAsks(run);
     const view = runStepView(runId, run, loaded);
+    const lineage = useAtomValue(model.lineageAtom);
+    const agents = useAtomValue(model.agentsAtom);
+    const rc = runClose(
+        run,
+        runAgentsOf(lineage, agents, runId).map((a) => a.id)
+    );
     return (
         <>
             <Toolbar topic={s.topic} f={f} progress={false} merged={view.merged} />
@@ -97,7 +121,7 @@ export function RunStep({
                             </button>
                         ) : null}
                     </div>
-                    <StateCard agent={agent} s={s} f={f} runId={runId} view={view} />
+                    <StateCard model={model} agent={agent} s={s} f={f} runId={runId} view={view} rc={rc} />
                     <HandedOver f={f} caption={!view.merged} />
                 </div>
                 {run != null ? (
@@ -115,20 +139,24 @@ export function RunStep({
 }
 
 function StateCard({
+    model,
     agent,
     s,
     f,
     runId,
     view,
+    rc,
 }: {
+    model: AgentsViewModel;
     agent: AgentVM;
     s: BrainstormState;
     f: BrainstormFile;
     runId: string;
     view: RunStepView;
+    rc: RunClose;
 }) {
     const closing = view.canClose;
-    const detail = closing ? closeDetail(view, s.topic, f.canvas, agent.state === "idle") : view.detail;
+    const detail = closing ? closeDetail(view, s.topic, f.canvas, agent.state === "idle", rc) : view.detail;
     return (
         <div
             data-brainstorm-run-card
@@ -147,40 +175,74 @@ function StateCard({
                     {view.headline}
                 </span>
                 {detail ? <span className="text-[13px] leading-[1.5] text-ink-mid">{detail}</span> : null}
-                {view.closeOff ? (
-                    <span data-brainstorm-close-off className="text-[13px] leading-[1.5] text-ink-mid">
-                        {view.closeOff}
+                {closing && view.closeWarn ? (
+                    <span data-brainstorm-close-warn className="text-[13px] leading-[1.5] text-warning">
+                        {view.closeWarn}
                     </span>
                 ) : null}
             </div>
-            {closing ? <CloseButton agent={agent} s={s} runId={runId} /> : null}
+            {closing ? <CloseButton model={model} agent={agent} s={s} runId={runId} view={view} rc={rc} /> : null}
         </div>
     );
 }
 
 // an agent at work is left running: the brainstorm is done, but it may have moved on to something else
-function closeDetail(view: RunStepView, topic: string, canvas: string | undefined, idle: boolean): string {
+function closeDetail(
+    view: RunStepView,
+    topic: string,
+    canvas: string | undefined,
+    idle: boolean,
+    rc: RunClose
+): string {
     const kept = canvas ? ` The ${canvas} canvas stays in the Canvas gallery.` : "";
     const agent = idle ? " and ends this agent" : "; this agent is at work, so it keeps running";
-    const why = view.state === "done" ? view.detail : "The final check passed.";
-    return `${why} The spec stays in docs/.${kept} Closing deletes .superpowers/brainstorm/${topic}${agent}.`;
+    return `${view.detail} The spec stays in docs/.${kept} Closing deletes .superpowers/brainstorm/${topic}${agent}.${runCloseText(rc)}`;
 }
 
-function CloseButton({ agent, s, runId }: { agent: AgentVM; s: BrainstormState; runId: string }) {
+function CloseButton({
+    model,
+    agent,
+    s,
+    runId,
+    view,
+    rc,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    s: BrainstormState;
+    runId: string;
+    view: RunStepView;
+    rc: RunClose;
+}) {
     const act = useAction();
     const target = closeTarget(s.cwd, s.topic);
     const refusal = "reason" in target ? target.reason : null;
     const error = refusal ?? act.error;
+    const label = closesRun(rc) ? "Close brainstorm and run" : "Close the brainstorm";
+    const close = () => void act.run(() => closeBrainstorm(model, agent, runId));
+    const onClick = () => {
+        if (view.closeWarn == null) {
+            close();
+            return;
+        }
+        modalsModel.pushModal("ConfirmModal", {
+            title: label,
+            message: `${view.closeWarn}${runCloseText(rc)}`,
+            confirmLabel: label,
+            destructive: true,
+            onConfirm: close,
+        });
+    };
     return (
         <div className="flex max-w-[45%] flex-none flex-col items-end gap-[6px]">
             <button
                 type="button"
                 data-brainstorm-close
                 disabled={refusal != null || act.busy}
-                onClick={() => void act.run(() => closeBrainstorm(agent, runId))}
+                onClick={onClick}
                 className={SWAP_PRIMARY_BTN}
             >
-                Close the brainstorm
+                {label}
             </button>
             {error != null ? (
                 <span data-brainstorm-close-error className={cn(ERROR_LINE, "text-right")}>
@@ -192,10 +254,10 @@ function CloseButton({ agent, s, runId }: { agent: AgentVM; s: BrainstormState; 
 }
 
 // the gate and the targets are read again at the click, not trusted from the render that drew the button
-async function closeBrainstorm(agent: AgentVM, runId: string): Promise<void> {
+async function closeBrainstorm(model: AgentsViewModel, agent: AgentVM, runId: string): Promise<void> {
     const read = globalStore.get(runInfoAtom(runId));
     if (!runStepView(runId, read.run, read.loaded).canClose) {
-        throw new Error("The run is no longer done with its final check passed, so the brainstorm stays.");
+        throw new Error("The run is no longer merged or done, so the brainstorm stays.");
     }
     const s = globalStore.get(brainstormAtom(agent.id));
     if (s == null || shownBrainstormFile(s) == null) {
@@ -205,6 +267,29 @@ async function closeBrainstorm(agent: AgentVM, runId: string): Promise<void> {
     if ("reason" in target) {
         throw new Error(target.reason);
     }
+    const runTabs = runAgentsOf(globalStore.get(model.lineageAtom), globalStore.get(model.agentsAtom), runId);
+    const rc = runClose(
+        read.run,
+        runTabs.map((a) => a.id)
+    );
+    // a failed accept leaves everything for a retry, as a failed delete does
+    if (rc.ack && read.run != null) {
+        await RpcApi.AckRunCommand(TabRpcClient, { channelid: read.run.channelId, runid: runId });
+    }
+    // the sessions end before the cleanup, which a shell still in a worktree would hold
+    if (runTabs.length > 0) {
+        closeSessions(runTabs, "brainstorm closed with its run");
+    }
+    // a tree that still cannot be removed does not hold the close: the run keeps its Cleanup failed line for it
+    await Promise.allSettled(
+        rc.cleanup.map((taskid) =>
+            RpcApi.DagActionCommand(
+                TabRpcClient,
+                { channelid: read.run!.channelId, runid: runId, taskid, action: "retry-cleanup" },
+                { timeout: CLEANUP_TIMEOUT_MS }
+            )
+        )
+    );
     // a failed delete leaves the brainstorm, its agent and this button for a retry
     try {
         await RpcApi.FileDeleteCommand(TabRpcClient, { path: target.path, recursive: true });

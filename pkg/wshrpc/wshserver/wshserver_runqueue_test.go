@@ -844,6 +844,66 @@ func TestLoadRunQueueRunsReadsTheActiveRunsAndTheAfterTargets(t *testing.T) {
 	}
 }
 
+// storePausedRun stores a paused top-level run in a fresh channel and returns its id. The pause freezes a run's agents,
+// not its place: it still counts against runs:maxactive.
+func storePausedRun(t *testing.T) string {
+	t.Helper()
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "run-queue-paused", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.NewString()
+	paused := waveobj.Run{ID: id, Status: jarvis.RunStatus_Paused, Pause: &waveobj.RunPause{PausedTs: time.Now().UnixMilli(), By: "manual"}}
+	if err := wstore.AppendRun(ctx, ch.OID, paused); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// the spec's "The run queue": a paused run still counts as active, so the queue starts nothing in its place. This runs
+// the real run source, narrowed to the paused run: the shared test db holds other tests' runs, which would fill the cap
+// on their own and hide a loader that skips paused runs.
+func TestRunQueueCountsAPausedRunAgainstTheCap(t *testing.T) {
+	w := useQueueWorld(t)
+	w.maxActive = 1
+	pausedId := storePausedRun(t)
+	runQueueLoadRuns = func(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
+		runs, err := loadRunQueueRuns(ctx, afterIds)
+		if err != nil {
+			return nil, err
+		}
+		only := map[string]*waveobj.Run{}
+		if r := runs[pausedId]; r != nil {
+			only[pausedId] = r
+		}
+		return only, nil
+	}
+	if runs, _ := runQueueLoadRuns(context.Background(), nil); runs[pausedId] == nil {
+		t.Fatal("the run source does not read a paused run, so it never counts against the cap")
+	}
+	queueEntry(t, "Alpha", "")
+	evaluateRunQueue(context.Background())
+	if got := w.createdGoals(); len(got) != 0 {
+		t.Fatalf("created %v: a paused run holds the only slot, so the queue starts nothing", got)
+	}
+	if left := queueEntries(t); len(left) != 1 {
+		t.Fatalf("%d entries left, want the one still waiting", len(left))
+	}
+}
+
+// --after names a paused run by a unique prefix of its id, as it does a run in any other status
+func TestResolveQueueAfterFindsAPausedRunByPrefix(t *testing.T) {
+	pausedId := storePausedRun(t)
+	got, err := resolveQueueAfter(context.Background(), pausedId[:8])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != pausedId {
+		t.Fatalf("a prefix of the paused run %s resolved to %q", pausedId, got)
+	}
+}
+
 // RunQueueAdd: the checks happen at queue time, against the real channel and runs
 func TestRunQueueAdd(t *testing.T) {
 	ctx := context.Background()

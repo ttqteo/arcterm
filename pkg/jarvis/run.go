@@ -18,8 +18,11 @@ const (
 	RunStatus_AwaitingReview = "awaiting-review"
 	RunStatus_Executing      = "executing"
 	RunStatus_Blocked        = "blocked"
-	RunStatus_Done           = "done"
-	RunStatus_Cancelled      = "cancelled"
+	// RunStatus_Paused reads on a top-level run while its Pause record is set: its agents and commands are stopped
+	// to free RAM and a resume carries on. Only recomputeStatus derives it; done and cancelled still win.
+	RunStatus_Paused    = "paused"
+	RunStatus_Done      = "done"
+	RunStatus_Cancelled = "cancelled"
 )
 
 // Phase states.
@@ -143,7 +146,22 @@ func NewRun(goal, workspaceId, projectPath string, principles waveobj.PrincipleL
 
 // recomputeStatus derives run.Status from phase states. Single source of truth: never set Status
 // directly outside this function (except CancelRun, a terminal override).
+//
+// While r.Pause is set the derived status becomes paused, unless every phase is closed (a worker that finished in
+// the instant before its stop is done) or the run is cancelled: both still win over a pause.
 func recomputeStatus(r *waveobj.Run) {
+	if r.Pause != nil && r.Status == RunStatus_Cancelled {
+		return
+	}
+	status := derivePhaseStatus(r)
+	if r.Pause != nil && status != RunStatus_Done {
+		status = RunStatus_Paused
+	}
+	r.Status = status
+}
+
+// derivePhaseStatus is the status the phases alone give.
+func derivePhaseStatus(r *waveobj.Run) string {
 	firstOpen := -1
 	for i, p := range r.Phases {
 		if p.State != PhaseState_Done && p.State != PhaseState_Skipped {
@@ -152,20 +170,43 @@ func recomputeStatus(r *waveobj.Run) {
 		}
 	}
 	if firstOpen == -1 {
-		r.Status = RunStatus_Done
-		return
+		return RunStatus_Done
 	}
 	cur := r.Phases[firstOpen]
 	if cur.State == PhaseState_Blocked || cur.State == PhaseState_Failed {
-		r.Status = RunStatus_Blocked
-		return
+		return RunStatus_Blocked
 	}
 	// orchestrate is a single phase: a running lead is actively working = executing.
 	if cur.Kind == PhaseKind_Execute || cur.Kind == PhaseKind_Orchestrate {
-		r.Status = RunStatus_Executing
-		return
+		return RunStatus_Executing
 	}
-	r.Status = RunStatus_Planning
+	return RunStatus_Planning
+}
+
+// RunPaused reports whether r is paused: a top-level run that reads paused, or a child run marked under a paused
+// top-level run (PausedUnder). The one test every guard that must leave a paused run alone uses (the exit hook,
+// stall detection, autoRetryStalled, MarkInterruptedRuns, ResumeInterruptedLeads, cancelOrphanedDagRun and
+// LivePendingAsks). A nil run is not paused.
+func RunPaused(r *waveobj.Run) bool {
+	return r != nil && (r.Status == RunStatus_Paused || r.PausedUnder != "")
+}
+
+// SetRunPause records p as r's pause and re-derives its status, which reads paused unless the run is done or
+// cancelled. A nil p clears the record without noting a resume; use ClearRunPause for a resume.
+func SetRunPause(r *waveobj.Run, p *waveobj.RunPause) {
+	r.Pause = p
+	recomputeStatus(r)
+}
+
+// ClearRunPause drops r's pause record, notes the resume at ts (Unix ms) for the regulator's no-flap hold, and
+// re-derives a status that read paused. A run that is done or cancelled keeps its status.
+func ClearRunPause(r *waveobj.Run, ts int64) {
+	wasPaused := r.Status == RunStatus_Paused
+	r.Pause = nil
+	r.LastResumedTs = ts
+	if wasPaused {
+		recomputeStatus(r)
+	}
 }
 
 // CompletePhase marks phaseIdx done, records the reported artifacts, and starts its successor. A stored
@@ -252,7 +293,8 @@ func RunningPhaseIndex(run waveobj.Run) int {
 }
 
 // CancelRun terminally cancels a run: open phases become skipped, completed phases are preserved, and
-// CancelledTs records when (kept on a second cancel).
+// CancelledTs records when (kept on a second cancel). A cancelled run no longer reads paused: its pause record and
+// its PausedUnder mark are dropped (LastResumedTs is history and stays).
 func CancelRun(run waveobj.Run) waveobj.Run {
 	for i := range run.Phases {
 		if run.Phases[i].State == PhaseState_Pending || run.Phases[i].State == PhaseState_Running {
@@ -263,6 +305,8 @@ func CancelRun(run waveobj.Run) waveobj.Run {
 	if run.CancelledTs == 0 {
 		run.CancelledTs = time.Now().UnixMilli()
 	}
+	run.Pause = nil
+	run.PausedUnder = ""
 	return run
 }
 

@@ -1035,7 +1035,8 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 // frontend — not just filtered out of this one response.
 //
 // Two ways to be gone: the block object is deleted, or the block is a kept shell whose process ended
-// without a clear ever coming.
+// without a clear ever coming. A paused run's agent is not gone: a pause ended its process on purpose, so its ask
+// stays for the person to answer, and the answer is held for the resumed agent (agentask.HoldAnswer).
 func LivePendingAsks(ctx context.Context) (map[string]agentask.PendingAsk, error) {
 	pendingAsks := agentask.GlobalRegistry.List()
 	for oref, pending := range pendingAsks {
@@ -1051,6 +1052,13 @@ func LivePendingAsks(ctx context.Context) (map[string]agentask.PendingAsk, error
 			// a kept block whose process ended has no clear coming: the agent that would send it is gone
 			rs := controllerStatusFn(parsed.OID)
 			if rs == nil || rs.ShellProcStatus != blockcontroller.Status_Done {
+				continue
+			}
+			paused, err := blockRunPaused(ctx, block)
+			if err != nil {
+				return nil, fmt.Errorf("checking the run of pending ask block %s: %w", parsed.OID, err)
+			}
+			if paused {
 				continue
 			}
 		}

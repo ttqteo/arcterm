@@ -12,6 +12,7 @@ import type { SeatPose } from "@/app/view/office/plansprite";
 import { giftCount } from "./christmas";
 import { shortAge, type Away } from "./officebehavior";
 import { EMPTY_LAYOUT, floorLabel, floorsShown, placeRooms, SLOTS, type Placements } from "./officelayout";
+import { XMAS_TREE_H, XMAS_TREE_W } from "./xmastreegrid";
 
 export interface Box {
     x: number;
@@ -70,6 +71,9 @@ export interface PlanInput {
     night: boolean;
     // the Christmas decor shows: the plan copies it, so the boss walks round the trees and gifts only when they are drawn
     christmas?: boolean;
+    // the lobby Christmas tree stands in the hall (tree game spec, "The Office"): the decor shows and the season's
+    // phase is not off. The plan places it only on the ground floor
+    xmasTree?: boolean;
 }
 
 export type RoomKind = "agents" | "meeting" | "lounge" | "empty";
@@ -186,6 +190,9 @@ export interface Plan {
     asks: string[]; // this floor's asks, in office order
     otherAsks: { key: string; floor: number }[]; // the asks on the other floors, in floor order then office order
     christmas?: boolean; // the input's: the Christmas decor shows
+    // the lobby Christmas tree against the hall's right wall level with the board, and where the boss stands at it:
+    // only on G, while the input asks for it
+    xmasTree?: { box: Box; spot: Point };
 }
 
 export const WALL = 8; // a vertical wall: its top only
@@ -206,11 +213,17 @@ const DESK_SPOT_DY = 84; // the boss's feet below a desk top: between its row's 
 export const LOUNGE_H = 230;
 export const BOARD_KEY = "board:needs-you"; // the notice board's cursor key, like a desk's
 export const LIFT_KEY = "lift"; // the lift's, the same
+export const TREE_KEY = "xmas-tree"; // the hall's Christmas tree's, the same
 export const CHIP_KEY = (roomKey: string) => `chip:${roomKey}`; // a room's chip, the same
 export const BOARD_W = 96;
 export const BOARD_H = 96;
 const BOARD_GAP = 16; // the board's top below the lounge's foot
 const BOARD_SPOT_DY = 22; // the boss's feet below the board's foot
+// the hall's Christmas tree: xmastreegrid.ts's grid at 3 px a cell, kept off the hall's right wall by this much, so the
+// boss's feet at its spot stay a half body off the wall
+export const XMAS_TREE_PX = 3;
+const XMAS_TREE_WALL_GAP = 12;
+const XMAS_TREE_SPOT_DY = 22; // the boss's feet below the tree's foot, as at the board
 const LIFT_W = 70;
 const LIFT_H = 68;
 const LIFT_DIAL_H = 26;
@@ -875,6 +888,16 @@ export function buildPlan(input: PlanInput): Plan {
         box: boardBox,
         spot: { x: boardBox.x + boardBox.w / 2, y: boardBox.y + boardBox.h + BOARD_SPOT_DY },
     };
+    // the lobby Christmas tree against the hall's right wall, level with the board: the lane between the two stays wider
+    // than the boss, and the right-hand rooms' doors open on the hall far below its foot (their tops are a room's
+    // height under it)
+    let xmasTree: Plan["xmasTree"];
+    if (input.xmasTree && floor === 0) {
+        const w = XMAS_TREE_W * XMAS_TREE_PX;
+        const h = XMAS_TREE_H * XMAS_TREE_PX;
+        const box: Box = { x: hallX + HALL_W - XMAS_TREE_WALL_GAP - w, y: boardBox.y, w, h };
+        xmasTree = { box, spot: { x: box.x + w / 2, y: box.y + h + XMAS_TREE_SPOT_DY } };
+    }
     const loungers: Lounger[] = [];
     const loungeOverflow: string[] = [];
     for (const place of ["sofa", "coffee"] as const) {
@@ -933,5 +956,6 @@ export function buildPlan(input: PlanInput): Plan {
         asks,
         otherAsks,
         ...(input.christmas ? { christmas: true } : {}),
+        ...(xmasTree ? { xmasTree } : {}),
     };
 }

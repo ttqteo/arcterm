@@ -6,6 +6,53 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Pause and Resume keep each agent's session (claude, pi, agy, codex).** In the installed app, for each
+  of the four harnesses, start an orchestrator run whose worker uses it (a run per harness is fine; a quick run works
+  too) → while a worker is mid-task, the run's ⋯ menu → Pause → the lead and every worker stop (their processes leave
+  Task Manager or Activity Monitor), the run reads "Paused · resumes when memory frees", and the worktrees and commits
+  stay. Answer a question the worker had open while the run is paused. Resume → each agent reopens in its own tab and
+  session with the "Arc paused this run…" nudge, still holding its earlier conversation (no fresh session), carries on
+  from where it stopped, and gets the answer you gave while paused. Go tests only; the CDP `run-paused` scenario seeds a
+  paused run and never suspends a session.
+- [ ] (arcterm) **A run pauses itself under real memory pressure and resumes when it frees (Windows and macOS).** On
+  each OS, with two or three runs going, fill RAM (several `node -e` allocating a few GB each, or a few big builds)
+  until the app bar's RAM chip is amber and stays so for about a minute → the run with the fewest tasks done (not one in
+  its Final stage or mid-merge, and holding over 1 GB) pauses by itself, the RAM drops, and its `run-paused` event
+  reads `auto` with the RAM it held; no card and no toast. Free the RAM → about five minutes later, once the free RAM is
+  over what the run held plus 4 GB, it resumes by itself. On Windows the pressure reading (commit charge) is never
+  "normal", only unknown: check it resumes there all the same. Only the pure rules (`runregulator.Decide`) are unit
+  tested.
+- [ ] (arcterm) **The run card's ⋯ menu.** `BlockedCard` in `runcards.tsx`, the one run card that carries a Cancel, is
+  mounted by no screen, so the `run-paused` scenario has no step for its menu. When a screen mounts it: on a top-level
+  active run its ⋯ menu holds Pause, on a paused one Resume, and neither sits beside Cancel.
+- [ ] (arcterm) **Skim folds a long reply.** After the next build, a new `claude` session (fullscreen) → ask something
+  that gets a reply longer than 10 lines → it shows the first paragraph and up to 4 one-sentence reasons, then
+  `▾ show more · N lines` → click it → the whole reply, highlighted as before, with `▴ show less` under it → click →
+  folded again; `/skim` off → replies draw in full. The fold was seen live through a dev-mod probe; the click and the
+  skim-mod build were not tried (`claude/skim-mod`, fold-core.ts).
+- [ ] (arcterm) **Filter box on the rail's Files tab.** Agent → an agent's side panel → Files → type `harn` in Filter
+  files (or press `/` with the tree focused) → only files whose name has it stay, their folders open, the part that
+  matches in bold, the count in the box, Pinned hidden; ↑/↓ move, Enter opens the file in the panel; Esc clears it and
+  the whole tree shows with the cursor on that file. Vitest and the typecheck only (`railtreepane.tsx`, d88315e3b);
+  no dev app was up.
+- [ ] (arcterm) **Close brainstorm and run.** A brainstorm whose run merged with its final unverified (the Christmas
+  tree one, run 983dcb44) → its Run step shows an amber line under the card and a "Close brainstorm and run" button →
+  click → a confirm names the unverified final and what of the run it closes → Close → the brainstorm folder goes, its
+  idle agent ends, the run leaves Needs you (accepted), its open sessions end, and its "Cleanup failed" line clears
+  unless a tree is still held. Unit tests and typecheck only (`brainstormrun.tsx`); no dev app was up, and the
+  `brainstorm-run-landed` CDP scenario was updated but not run.
+- [ ] (arcterm) **Your prompts stand out in a transcript.** Agent → a project's Overview → History → a session → Open →
+  Transcript (or an ended session's transcript in the centre) → each of your messages is a box tinted in the accent
+  colour with an accent border, clearly apart from the agent's prose; the prompt pinned at the top while you scroll
+  wears the same tint. Typecheck only (`compacttranscript.tsx`, `pinnedpromptbar.tsx`); no dev app was up.
+- [ ] (arcterm) **Mark for later from History.** Agent → a project's Overview → History → right-click a session →
+  Mark for later → an accent bookmark shows after its title (hover: since when), and the same session carries the mark
+  in the Agent tree's Conversations; right-click again → Done (clear later) → the bookmark goes. Typecheck only
+  (`projecthistory.tsx`); no dev app was up.
+- [ ] (arcterm) **Stop on a background shell task stops what it ran (Windows).** In the installed app, have a Claude
+  agent run `sleep 300` (or `npm run dev`) with `run_in_background`, then press Stop on that task in the agent's rail →
+  the task leaves the rail and no `sleep.exe` (or the server's `node.exe`) is left in Task Manager. Before, the bash
+  stopped and the command it ran kept going. Unit and Windows tests only (`KillShellTask`, b9b0a8444).
 - [ ] (arcterm) **The pet runs while arcterm starts up.** Install a build, then open arcterm → while the agents and
   terminals load, the Agent screen (and the Cockpit, if you land there) shows your pet (Sprout, the Minion or Spider-Man,
   in its Santa hat under the Christmas decor) running left and right over a thin floor line, turning to face the way it
@@ -37,6 +84,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   measures the terminals every 500 ms; measured in the dev app at 73 fps on a 75 Hz display, ~7–11% of the main thread
   while it falls (the old 12 fps snow ~0%). Checked by the `christmas-theme` scenario; smoothness not judged by eye in
   the packaged build (`christmassnowview.tsx`, `appearance.tsx`).
+- [ ] (arcterm) **A landing run says what its land is doing.** In the installed app, with a run landing (after its
+  final stage) → its line in the Agent tree reads "Landing · Verify running 2m 5s" (or Check), or "Landing · Check
+  waiting for RAM · #1" in amber while its step waits in Jobs; hover it → the tooltip lists the run, the step, why it
+  waits, the command, the job id and `wsh runs show <run>`; click it → a peek beside the tree with the same lines, Run
+  now (only while waiting), Jobs, and Copy for an agent (paste it to an agent: the lines are there). Unit tests and the
+  typecheck only (`landprogress.ts`, `landprogressview.tsx`); no dev app or CDP scenario ran.
 
 - [ ] (arcterm) **Christmas: the empty cockpit's hat and a finished run's gift.** With the Christmas theme on, close
   every agent so the Cockpit shows "No agents running" → the terminal-window glyph wears the Santa hat on its top-left
@@ -49,6 +102,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `pickRunShape` in `runconfigstore.ts`)
 - [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
   one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing
   its own worktree under `arc-wt` is never asked. Tried only headless (`claude -p`, where the ask is a refusal with

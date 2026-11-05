@@ -3,11 +3,12 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useAtomValue } from "jotai";
 import { runProgress } from "../agents/runlineage";
+import { RunMenu } from "../agents/runmenu";
 import { useRunUsage } from "../agents/runtokenstore";
 import { modelsText, summarizeUsage, usageText } from "../agents/runusage";
 import { chipGroups, pickNext, type ChipGroup } from "./dagcanvas";
 import { selectedTaskIdAtom } from "./dagstore";
-import { dagStatusPill, reviewersChip, workersChip, type DagStatusPill } from "./taskroute";
+import { dagCancellable, dagStatusPill, reviewersChip, workersChip, type DagStatusPill } from "./taskroute";
 
 // a chip's dot: filled for the groups that are doing or done something, an open ring for those that are not
 const CHIP_DOT = new Map<ChipGroup["key"], string>([
@@ -85,13 +86,7 @@ export function DagGraphHeader({ group, owner }: { group: TaskGroup; owner: Run 
             >
                 {label}
             </span>
-            {/* awaiting-plan is cancellable too: abandoning a run at its gate is a normal answer, and the
-                alternative would be approving work you do not want in order to be allowed to stop it */}
-            {group.status === "running" ||
-            group.status === "awaiting-review" ||
-            group.status === "awaiting-plan" ||
-            group.status === "plan-review" ||
-            group.status === "finalizing" ? (
+            {dagCancellable(group.status) ? (
                 <button
                     type="button"
                     onClick={() =>
@@ -107,6 +102,8 @@ export function DagGraphHeader({ group, owner }: { group: TaskGroup; owner: Run 
                     Cancel
                 </button>
             ) : null}
+            {/* Pause and Resume sit in the run's ⋯ menu, not beside Cancel: the owning run is what pauses */}
+            <RunMenu channelId={owner.channeloid} runId={owner.id} run={owner} />
         </div>
     );
 }

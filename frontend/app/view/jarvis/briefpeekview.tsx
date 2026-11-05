@@ -60,6 +60,7 @@ export const RUN_TONE: Record<RunStatusTone, string> = {
     blocked: "text-warning",
     failed: "text-error",
     cancelled: "text-muted",
+    paused: "text-muted",
 };
 
 // LINK_BTN's type and hover without its border: a link inside the body, not a control beside it

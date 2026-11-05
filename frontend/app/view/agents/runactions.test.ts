@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const stopRunWorkerCommand = vi.fn();
 const cancelRunCommand = vi.fn();
+const pauseRunCommand = vi.fn();
+const resumeRunCommand = vi.fn();
 const createRunCommand = vi.fn();
 const getJarvisProfileCommand = vi.fn();
 const listHarnessesCommand = vi.fn();
@@ -17,6 +19,8 @@ vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         StopRunWorkerCommand: (...args: any[]) => stopRunWorkerCommand(...args),
         CancelRunCommand: (...args: any[]) => cancelRunCommand(...args),
+        PauseRunCommand: (...args: any[]) => pauseRunCommand(...args),
+        ResumeRunCommand: (...args: any[]) => resumeRunCommand(...args),
         CreateRunCommand: (...args: any[]) => createRunCommand(...args),
         GetJarvisProfileCommand: (...args: any[]) => getJarvisProfileCommand(...args),
         ListHarnessesCommand: (...args: any[]) => listHarnessesCommand(...args),
@@ -31,6 +35,10 @@ import {
     cancelRun,
     cancellingRunIdsAtom,
     confirmCancelRun,
+    pauseRun,
+    pausingRunIdsAtom,
+    resumePausedRun,
+    resumingRunIdsAtom,
     stopRunWorker,
     stoppingWorkerIdsAtom,
     cacheJarvisProfile,
@@ -54,10 +62,14 @@ function deferred() {
 beforeEach(() => {
     stopRunWorkerCommand.mockReset();
     cancelRunCommand.mockReset();
+    pauseRunCommand.mockReset();
+    resumeRunCommand.mockReset();
     createRunCommand.mockReset();
     pushModal.mockReset();
     globalStore.set(stoppingWorkerIdsAtom, new Set());
     globalStore.set(cancellingRunIdsAtom, new Set());
+    globalStore.set(pausingRunIdsAtom, new Set());
+    globalStore.set(resumingRunIdsAtom, new Set());
     globalStore.set(resolvedProfileAtom, {});
     globalStore.set(channelOverrideAtom, {});
 });
@@ -237,6 +249,56 @@ describe("cancelRun", () => {
 
         await rejected;
         expect(globalStore.get(cancellingRunIdsAtom).size).toBe(0);
+    });
+});
+
+describe.each([
+    ["pauseRun", pauseRun, pauseRunCommand, pausingRunIdsAtom],
+    ["resumePausedRun", resumePausedRun, resumeRunCommand, resumingRunIdsAtom],
+])("%s", (_name, action, rpc, inFlight) => {
+    it("tracks the run id until the RPC resolves", async () => {
+        const pending = deferred();
+        rpc.mockReturnValueOnce(pending.promise);
+
+        const call = action("channel-1", "run-1");
+
+        expect([...globalStore.get(inFlight)]).toEqual(["run-1"]);
+        expect(rpc).toHaveBeenCalledWith(expect.anything(), { channelid: "channel-1", runid: "run-1" });
+
+        pending.resolve();
+        await call;
+        expect(globalStore.get(inFlight).size).toBe(0);
+    });
+
+    it("keeps each run's flag apart", async () => {
+        const first = deferred();
+        const second = deferred();
+        rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+        const a = action("channel-1", "run-1");
+        const b = action("channel-1", "run-2");
+        expect([...globalStore.get(inFlight)]).toEqual(["run-1", "run-2"]);
+
+        first.resolve();
+        await a;
+        expect([...globalStore.get(inFlight)]).toEqual(["run-2"]);
+        second.resolve();
+        await b;
+    });
+
+    // the server's refusal reason (a run that is not top-level, already paused, ...) reaches the caller, and the
+    // button comes back
+    it("throws the server's reason and clears the flag when the RPC rejects", async () => {
+        const pending = deferred();
+        rpc.mockReturnValueOnce(pending.promise);
+        const call = action("channel-1", "run-1");
+        const rejected = expect(call).rejects.toThrow("refused: not top-level");
+
+        expect([...globalStore.get(inFlight)]).toEqual(["run-1"]);
+        pending.reject(new Error("refused: not top-level"));
+
+        await rejected;
+        expect(globalStore.get(inFlight).size).toBe(0);
     });
 });
 

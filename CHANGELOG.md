@@ -35,10 +35,40 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Brief shows what is waiting on you as one strip at the top (Show all opens the full queue under it), and runs and councils together in one Activity column on the right: live ones as cards, the last week's finished councils and failed or cancelled runs under Earlier, with tabs for all, orchestrator, quick and councils. <!-- try: go:jarvis -->
 - An initiative opens in the side sheet instead of expanding in place, and its plan is still editable there (add, rename, move and remove chunks). `j`/`k` step its chunks, Previous and Next step the initiatives, and Activity ↗ shows its feed. A run's ↳ link opens its initiative on that chunk.
 - A chunk opens inside its initiative's sheet instead of a separate side panel: one status button (`s`, then `1`–`6`; blocked asks why and keeps the reason as a note) beside the move it most needs (Start, Done, Reopen, Unblock), and its trail newest first, where Notes only hides the bare status changes. Esc goes back to the initiative.
+- Pause a run from its ⋯ menu (the run sheet, the lead card on the Cockpit, the DAG view's header) or with `wsh runs pause <run>`, to free its memory without losing it: the lead, the workers and any running Verify or Final stop, the worktrees, commits and sessions stay, and a paused run reads "Paused · resumes when memory frees" in the Agent tree and the run list. Resume it from the same menu, from the small Resume button on its row, or with `wsh runs resume <run>`, and each agent carries on in its own session.
+- Arc pauses a run by itself when memory stays tight, the one with the fewest tasks done, never one in its Final stage or mid-merge, and resumes it once memory has been free for a while, so a crowded machine slows down instead of stalling. It does nothing while the heavy-job queue is switched off, and it leaves a notice only in the run itself, never a card or a toast.
+- A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
+  waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
+  for an agent, to hand a stuck land to another agent.
+- The Files tab in an agent's side panel has a filter box: type part of a file name (or press `/` in the tree) and
+  the tree keeps only the files that match, their folders open. Enter opens the file, Esc shows it in the whole tree.
+- A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
+  waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
+  for an agent, to hand a stuck land to another agent.
+- In a `claude` session, a long reply folds to its verdict and the first sentence of each of its top reasons, with a
+  ▾ show more button that opens it in full (and ▴ show less to fold it back). `/skim` off draws replies in full.
+- Right-click a session in a project's History to mark it for later: a bookmark shows on its row, the same mark the
+  Agent tree's Conversations carry, and Done clears it.
+- A Christmas tree stands in the Office's lobby from 1 November to New Year and grows as your orchestrator runs finish tasks: every finished task hangs an ornament, ten small ones merge into a big bauble, and the tree gains tiers of branches, then its lights, then its star, with a notice each time it reaches a new stage. Walk the boss to the tree and press `Space` for a close-up: pick an ornament with the arrows, lift it and hang it somewhere else, and the tree keeps your arrangement. <!-- big -->
+
+### Changed
+
+- A brainstorm whose run merged can now be closed even when the run's final check could not verify everything (it
+  asks first), and Close also closes what is left of the run: accepts its outcome, ends its open sessions and removes
+  the worktrees its cleanup left.
+- Your own messages in a session's transcript sit in an accent-tinted box, so they stand out from the agent's replies.
 - An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
 - The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and
   falls smoothly instead of in jerky steps when you turn it on.
 - While arcterm starts up (a long wait after a reinstall), the Agent and Cockpit screens show your pet running back and forth with "Setting up arcterm" instead of blank grey boxes, so it no longer looks stuck.
+
+### Fixed
+
+- A run no longer logs "Cleanup failed" every 30 seconds when a dev server a worker started and left behind holds a
+  finished task's folder: the engine stops what holds the folder and deletes it.
+- Stop on an agent's background shell task on Windows also stops the command the task started (a `sleep`, a dev
+  server), which kept running before.
+- A finished run no longer waits on you to land because its spec was edited in your checkout after it started: the land keeps the run's version, moves your newer draft into the repo's `.git/arc-drafts/<run>/`, and says so in the land's notes.
 
 ## 1.0.3 — 2026-11-05
 

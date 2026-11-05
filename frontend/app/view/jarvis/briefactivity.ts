@@ -34,8 +34,9 @@ export type ActivityRunInput = {
     status: string;
     // when it started (or ended, for an ended run the caller has the time of): what orders and cuts it
     ts: number;
-    // the run's face when the Brief has its Run (runRowFace): the stage word, its tone, and `runtime · project`
-    face?: { stage: string; stageTone: LineTone; meta: string };
+    // the run's face when the Brief has its Run (runRowFace): the stage word, its tone, `runtime · project`, and
+    // whether the run is paused (its card then offers Resume)
+    face?: { stage: string; stageTone: LineTone; meta: string; paused?: boolean };
 };
 
 export type ActivityCouncilInput = { line: CouncilLine; ts: number };
@@ -60,6 +61,8 @@ export type ActivityItem = {
     line: BriefLine;
     // the council's id, for the council sheet; "" for a run
     councilId: string;
+    // a paused run (memory regulation): its card marks it and offers Resume
+    paused: boolean;
 };
 
 export type ActivityCounts = Record<ActivityFilter, number>;
@@ -112,6 +115,7 @@ function runItem(r: ActivityRunInput, now: number): ActivityItem {
         ts: r.ts,
         line: r.line,
         councilId: "",
+        paused: r.face?.paused === true,
     };
 }
 
@@ -129,6 +133,7 @@ function councilItem(c: ActivityCouncilInput): ActivityItem {
         ts: c.ts,
         line: c.line,
         councilId: c.line.id.slice("councils:".length),
+        paused: false,
     };
 }
 

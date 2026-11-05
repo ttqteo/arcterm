@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunInfo } from "./runlineage";
-import { runStage } from "./runstage";
+import { PAUSED_LABEL, runStage } from "./runstage";
 
 type R = Pick<RunInfo, "status" | "land" | "dag">;
 const dag = (status: string, final?: Partial<FinalStage>): TaskGroup =>
@@ -148,5 +148,52 @@ describe("runStage", () => {
         expect(runStage({ status: "cancelled" }).tone).toBe("muted");
         expect(runStage({ status: "executing", dag: dag("running") }).tone).toBe("working");
         expect(runStage({ status: "executing", dag: dag("finalizing") }).tone).toBe("running");
+    });
+
+    // a paused run is mid-work with nothing moving: its words and tone say so, whether or not it has a dag, and
+    // it never asks anything of the person
+    it("reads a paused run as paused, muted and not needing you", () => {
+        for (const r of [{ status: "paused" }, { status: "paused", dag: dag("paused") }] as R[]) {
+            expect(runStage(r), JSON.stringify(r)).toMatchObject({
+                key: "working",
+                label: PAUSED_LABEL,
+                tone: "muted",
+                needsYou: false,
+                complete: false,
+                paused: true,
+            });
+        }
+        expect(PAUSED_LABEL).toBe("Paused · resumes when memory frees");
+    });
+
+    it("keeps the stage a paused run stopped in, and its tail, under the paused words", () => {
+        const checking = runStage({ status: "paused", dag: dag("finalizing", { state: "checking", step: "final" }) });
+        expect(checking).toMatchObject({ key: "final-check", label: PAUSED_LABEL, paused: true });
+        expect(checking.tail.map((p) => p.state)).toEqual(["active", "pending", "pending"]);
+        expect(runStage({ status: "paused", dag: dag("done", { state: "passed" }) })).toMatchObject({
+            key: "wrapping-up",
+            label: PAUSED_LABEL,
+        });
+    });
+
+    it("does not read a question a paused run held as waiting on the person", () => {
+        expect(runStage({ status: "paused", dag: dag("blocked") }, true)).toMatchObject({
+            needsYou: false,
+            tone: "muted",
+        });
+    });
+
+    it("lets done and cancelled win over paused, and anything else read as not paused", () => {
+        expect(runStage({ status: "done", dag: dag("paused") })).toMatchObject({ paused: false });
+        expect(runStage({ status: "done", dag: dag("paused") }).label).not.toBe(PAUSED_LABEL);
+        expect(runStage({ status: "cancelled", dag: dag("paused") })).toMatchObject({
+            label: "Cancelled",
+            paused: false,
+        });
+        expect(runStage({ status: "paused", dag: dag("cancelled") })).toMatchObject({
+            label: "Cancelled",
+            paused: false,
+        });
+        expect(runStage({ status: "executing", dag: dag("running") }).paused).toBe(false);
     });
 });

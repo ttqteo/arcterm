@@ -240,8 +240,10 @@ func SkipTask(g *waveobj.TaskGroup, taskID string) error {
 	return fmt.Errorf("no task %q", taskID)
 }
 
-// CancelGroup terminally cancels: pending/ready -> skipped, running -> cancelled.
+// CancelGroup terminally cancels: pending/ready -> skipped, running -> cancelled. A cancelled dag no longer reads
+// paused, so its PausedTs is cleared with it.
 func CancelGroup(g *waveobj.TaskGroup) *waveobj.TaskGroup {
+	g.PausedTs = 0
 	for i := range g.Tasks {
 		t := &g.Tasks[i]
 		switch t.State {

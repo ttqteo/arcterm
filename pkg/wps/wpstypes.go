@@ -48,6 +48,9 @@ const (
 
 	// held services (pkg/services): the whole list, after every change to a service's state
 	Event_ServicesChanged = "services:changed" // type: wshrpc.ServicesData
+
+	// the Christmas tree's season ledger (pkg/xmastree): the whole data, after a task joins it
+	Event_XmasTreeChanged = "xmastree:changed" // type: wshrpc.XmasTreeData
 )
 
 var AllEvents []string = []string{
@@ -79,6 +82,7 @@ var AllEvents []string = []string{
 	Event_RunQueueChanged,
 	Event_MemHygieneUpdate,
 	Event_ServicesChanged,
+	Event_XmasTreeChanged,
 }
 
 type WaveEvent struct {

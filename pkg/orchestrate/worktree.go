@@ -200,7 +200,7 @@ func removeWorktreeDir(ctx context.Context, projectPath, wt string) error {
 	if _, err := os.Stat(wt); err != nil {
 		return nil
 	}
-	if err := os.RemoveAll(wt); err != nil {
+	if err := removeHeldDir(ctx, wt); err != nil {
 		return fmt.Errorf("removing worktree dir %s: %w", wt, err)
 	}
 	return nil
@@ -342,7 +342,7 @@ func removeLeftovers(ctx context.Context, projectPath, key string) error {
 			errs = append(errs, fmt.Errorf("removing left-behind worktree dir: %w", err))
 			continue
 		}
-		if err := os.RemoveAll(dir); err != nil {
+		if err := removeHeldDir(ctx, dir); err != nil {
 			errs = append(errs, fmt.Errorf("removing left-behind worktree dir %s: %w", dir, err))
 		}
 	}

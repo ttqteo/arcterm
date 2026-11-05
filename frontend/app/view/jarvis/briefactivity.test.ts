@@ -171,6 +171,21 @@ describe("buildActivity", () => {
         expect(card.stageTone).toBe("running");
         expect(card.meta).toBe("lead · arcterm · 2h");
     });
+
+    it("marks a paused run's card, so it offers Resume, and no other card", () => {
+        const paused = {
+            stage: "Paused · resumes when memory frees",
+            stageTone: "muted" as const,
+            meta: "",
+            paused: true,
+        };
+        const m = build([run("held", { face: paused }), run("going")], [council("c", "running", NOW - MIN)]);
+        expect(Object.fromEntries(m.live.map((c) => [c.id, c.paused]))).toEqual({
+            "councils:c": false,
+            going: false,
+            held: true,
+        });
+    });
 });
 
 describe("Shipped and the queue under the tab", () => {

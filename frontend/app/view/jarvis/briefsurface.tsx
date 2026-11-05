@@ -35,7 +35,7 @@ import { useCouncils } from "@/app/view/agents/councilstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
-import { pendingRunDraftAtom } from "@/app/view/agents/runactions";
+import { pendingRunDraftAtom, resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
 import { leadAsker } from "@/app/view/agents/runmodel";
 import { queuedRowsAtom, useRunQueueFeed } from "@/app/view/agents/runqueuestore";
 import { DagModal } from "@/app/view/orchestrate/dagmodal";
@@ -962,6 +962,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         return oids.length === 0 ? NO_RUNS : atom((get) => oids.map((id) => get(runAtom(id))));
     }, [runOidsKey]);
     const liveRuns = useAtomValue(liveRunsAtom);
+    const resuming = useAtomValue(resumingRunIdsAtom);
     const lineage = useAtomValue(model.lineageAtom);
     const effortIndex = useAtomValue(briefEffortIndexAtom);
     const activity = useMemo(() => {
@@ -987,7 +988,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 mode: row?.mode ?? "",
                 status: row?.status ?? "",
                 ts,
-                ...(face != null ? { face: { stage: face.state, stageTone: face.stateTone, meta: face.meta } } : {}),
+                ...(face != null
+                    ? { face: { stage: face.state, stageTone: face.stateTone, meta: face.meta, paused: face.paused } }
+                    : {}),
             };
         });
         // the runs that ended without shipping: their status files them under Earlier, and a line opens the run
@@ -2026,6 +2029,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 setCursor(l.id);
                                                 openLine(l.target, e);
                                             }}
+                                            onResume={(l) => {
+                                                const run = liveRuns.find((r) => r != null && r.id === l.runOid);
+                                                if (run != null) {
+                                                    fireAndForget(() => resumePausedRun(run.channeloid ?? "", run.id));
+                                                }
+                                            }}
+                                            resuming={resuming}
                                             onOpenCouncil={(id) => {
                                                 setCursor("councils:" + id);
                                                 openCouncilSheet(id);

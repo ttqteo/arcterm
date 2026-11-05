@@ -28,6 +28,8 @@ import {
     type SheetRowInput,
 } from "./runsheetmodel";
 
+import { PAUSED_LABEL } from "../agents/runstage";
+
 const NOW = 10_000_000;
 const MIN = 60_000;
 
@@ -158,6 +160,51 @@ describe("sheetStatus", () => {
     it("says only cancel is left when a blocked run cannot be resumed", () => {
         const s = sheetStatus(read({ run: stoppedLead({ sessionid: "" }), dag: null }));
         expect(s.next).toBe("cancel the run and start a new one: this one cannot be resumed");
+    });
+
+    describe("a paused run", () => {
+        const paused = (by: string, over: Partial<Run> = {}) =>
+            run({ status: "paused", pause: { pausedts: NOW - 5 * MIN, by }, ...over });
+
+        it("says the tree's words as its verb, still, with the plan's strip under it", () => {
+            const s = sheetStatus(read({ run: paused("auto") }));
+            expect(s).toMatchObject({
+                verb: "Paused · resumes when memory frees",
+                tone: "muted",
+                pulse: false,
+                meter: { kind: "strip" },
+                retry: false,
+            });
+            expect(s.verb).toBe(PAUSED_LABEL);
+            expect(s.meta.map((m) => m.text)).toEqual(["paused 5m ago"]);
+        });
+
+        it("tells an automatic pause from the person's own", () => {
+            expect(sheetStatus(read({ run: paused("auto") })).sub).toBe(
+                "Arc paused it to free memory: its agents are suspended and keep their sessions"
+            );
+            expect(sheetStatus(read({ run: paused("boot") })).sub).toBe(
+                "Arc paused it to free memory: its agents are suspended and keep their sessions"
+            );
+            expect(sheetStatus(read({ run: paused("manual") })).sub).toBe(
+                "you paused it: its agents are suspended and keep their sessions"
+            );
+        });
+
+        it("reads a paused quick run with no graph, and one whose record is gone, the same way", () => {
+            const quick = sheetStatus(read({ run: paused("manual", { mode: "quick", dagoref: "" }), dag: null }));
+            expect(quick).toMatchObject({ verb: PAUSED_LABEL, meter: null, meta: [{ text: "paused 5m ago" }] });
+            expect(sheetStatus(read({ run: run({ status: "paused" }) })).meta).toEqual([]);
+        });
+
+        it("lets a stale or missing graph read leave the status as paused", () => {
+            expect(sheetStatus(read({ run: paused("auto"), dag: null })).verb).toBe(PAUSED_LABEL);
+        });
+
+        it("asks nothing of the person even when a worker's question is still held", () => {
+            const s = sheetStatus(read({ run: paused("auto"), workerAsking: true, userAsks: [ask()] }));
+            expect(s.verb).toBe(PAUSED_LABEL);
+        });
     });
 
     it("says no plan was submitted for a blocked lead with no graph", () => {

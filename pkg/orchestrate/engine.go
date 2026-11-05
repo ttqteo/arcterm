@@ -22,6 +22,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/wavetermdev/waveterm/pkg/xmastree"
 )
 
 // DagEvent kinds published on the wps broker. The names live in wps (the event hub's single source
@@ -281,6 +282,10 @@ func autoRetryStalled(ctx context.Context, dagID string, s stalledTask) bool {
 		if g, err = wstore.GetDag(ctx, dagID); err != nil {
 			return nil, fmt.Errorf("loading dag: %w", err)
 		}
+		// a pause that landed since the tick found the stall: the worker is suspended, not hung, and the resume reopens it
+		if g.PausedTs != 0 {
+			return nil, nil
+		}
 		if task := taskByID(g, s.taskID); task != nil && task.State == TaskState_Stalled && task.RunID == s.runID {
 			return task, nil
 		}
@@ -466,6 +471,11 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 	if g.Status == DagStatus_Cancelled {
 		return nil
 	}
+	// a paused dag's agents are suspended, not dead: nothing is spawned, merged, retried or judged stalled until the
+	// resume has reopened them (ResumeDag)
+	if g.PausedTs != 0 {
+		return nil
+	}
 	// the sessions the dag records before this tick starts any: a tick that cannot commit stops the rest
 	recorded := sessionRunIDs(g)
 	var afterCommit []func()
@@ -640,7 +650,13 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			}
 			afterCommit = append(afterCommit, func() {
 				publishDagEvent(DagEventChildDone, g, taskID)
-				appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskDone, nil, map[string]any{"taskid": taskID, "runid": childRunID})
+				// one timestamp for the run event and the Christmas tree's ledger, so the backfill and the live write
+				// agree on when the task finished
+				now := time.Now().UnixMilli()
+				appendRunEventAt(ctx, now, g.ChannelId, g.RunID, waveobj.RunEventKindTaskDone, nil, map[string]any{"taskid": taskID, "runid": childRunID})
+				if err := recordXmasTaskDone(ctx, g.RunID, taskID, now); err != nil {
+					log.Printf("xmastree: run %s task %s: %v", g.RunID, taskID, err)
+				}
 				if unreviewed != "" {
 					PostQuiet(ctx, g.ChannelId, g.RunID, unreviewed)
 				}
@@ -763,14 +779,23 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
 				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
+				// a pause cuts Setup off at once (PauseDag): it holds this lock, which the pause waits on
+				setupCtx, endSetup := dagSetupCtx(setupCtx, g.OID)
 				var serr error
 				_, notLinked, serr = PrepareTree(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup)
 				setupMs = time.Since(setupStart).Milliseconds()
+				pausedMidSetup := setupCut(setupCtx)
+				endSetup()
 				if serr != nil {
 					// only a new tree is set up, so a retry must not reuse this half-prepared one. The branch
 					// stays: it holds the lane's earlier commits, and the retry checks it out again.
 					if rerr := removeWorktreeDir(context.WithoutCancel(ctx), owner.ProjectPath, wt); rerr != nil {
 						log.Printf("schedule dag %s task %s: removing worktree after setup failure: %v", g.OID, taskID, rerr)
+					}
+					if pausedMidSetup {
+						// the pause cut Setup off, which says nothing about the task: it stays pending, and the
+						// tick after the resume dispatches it again. Nothing after it is started either.
+						break
 					}
 					failDispatch(ctx, g, taskID, FailureKindSetup, serr, &afterCommit)
 					continue
@@ -1230,6 +1255,10 @@ var appendRunEventAt = func(ctx context.Context, ts int64, channelId, runId, kin
 		})
 	}
 }
+
+// recordXmasTaskDone adds a finished task to the Christmas tree's season ledger. Best-effort like the run event beside
+// it: the caller logs a failure and the run goes on. Var so a test can capture the call.
+var recordXmasTaskDone = xmastree.RecordTaskDone
 
 var appendRunEvent = func(ctx context.Context, channelId, runId, kind string, phaseIdx *int, detail any) {
 	appendRunEventAt(ctx, time.Now().UnixMilli(), channelId, runId, kind, phaseIdx, detail)

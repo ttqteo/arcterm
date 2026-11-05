@@ -44,6 +44,10 @@ export interface OfficeKeys {
     slot(dir: Dir): void;
     drop(): void;
     cancel(): void;
+    // the lobby tree's close-up card (A at the tree, layer "tree"): the arrows move its cursor to the nearest spot,
+    // Space or ↵ lifts the ornament under it or puts the lifted one down; Esc closes the card (back)
+    treeMove(dir: Dir): void;
+    treeLift(): void;
 }
 
 export type CockpitKeyDeps = {
@@ -107,8 +111,10 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         if (office?.menuOpen() && isMenuShortcut(key, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey })) {
             office.toggleMenu();
         }
-        // a room carried takes every key until it is put down (officecontrols.ts), the view switch too
-        if (key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView && office?.layer() !== "carry") {
+        // a room carried, and the tree's close-up card, take every key until put down or closed (officecontrols.ts),
+        // the view switch too
+        const holds = office?.layer() === "carry" || office?.layer() === "tree";
+        if (key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView && !holds) {
             e.preventDefault();
             toggleView();
             return;
@@ -185,6 +191,14 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 case "cancel":
                     e.preventDefault();
                     office.cancel();
+                    return;
+                case "treeMove":
+                    e.preventDefault();
+                    office.treeMove(act.dir);
+                    return;
+                case "treeLift":
+                    e.preventDefault();
+                    office.treeLift();
                     return;
                 case "tab": {
                     // the notice board's box pages between its rows (← → and h l); until the box is shown h l are

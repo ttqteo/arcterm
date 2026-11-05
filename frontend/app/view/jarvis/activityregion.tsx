@@ -19,7 +19,7 @@ import {
     type ActivityModel,
 } from "./briefactivity";
 import type { BriefLine, LineTone } from "./briefrows";
-import { CURSOR_RING, cursorAttrs, LINK_BTN, TONE_TEXT } from "./briefstyle";
+import { CURSOR_RING, cursorAttrs, LINK_BTN, SMALL_BTN, TONE_TEXT } from "./briefstyle";
 
 const DOT: Record<LineTone, string> = {
     ok: "bg-success",
@@ -55,6 +55,9 @@ export type ActivityRegionProps = {
     selected?: string | null;
     onOpenRun: (line: BriefLine, e?: React.MouseEvent) => void;
     onOpenCouncil: (councilId: string, e?: React.MouseEvent) => void;
+    // a paused run's Resume, and the runs whose resume is in flight (by run oid)
+    onResume: (line: BriefLine) => void;
+    resuming: ReadonlySet<string>;
 };
 
 const EMPTY: Record<ActivityFilter, string> = {
@@ -121,6 +124,8 @@ export function ActivityRegion(p: ActivityRegionProps) {
                     focused={p.cursor === item.line.id}
                     selected={p.selected === item.id}
                     onOpen={(e) => open(item, e)}
+                    onResume={() => p.onResume(item.line)}
+                    resuming={item.line.runOid != null && p.resuming.has(item.line.runOid)}
                 />
             ))}
             {p.queued > 0 ? (
@@ -193,39 +198,65 @@ function LiveCard({
     focused,
     selected,
     onOpen,
+    onResume,
+    resuming,
 }: {
     item: ActivityItem;
     focused: boolean;
     selected: boolean;
     onOpen: (e?: React.MouseEvent) => void;
+    onResume: () => void;
+    resuming: boolean;
 }) {
+    // a paused run's Resume sits over the card's meta corner, beside the card's button rather than inside it
     return (
-        <button
-            type="button"
-            data-jarvis-activity-card={item.source}
-            data-jarvis-activity-id={item.id}
-            {...cursorAttrs(focused)}
-            onClick={onOpen}
-            className={cn(
-                "flex w-full cursor-pointer flex-col gap-1 rounded-[8px] border bg-surface-raised px-2.5 py-[9px] text-left hover:bg-surface-hover",
-                selected ? "border-edge-strong" : "border-edge-mid",
-                FOCUS,
-                focused && CURSOR_RING
-            )}
-        >
-            <span className="flex w-full items-center gap-1.5">
-                <span className={cn("h-1.5 w-1.5 flex-none rounded-full", DOT[item.stageTone])} />
-                <span className="min-w-0 truncate text-[10.5px] text-muted">{item.kind}</span>
-                <span className="flex-1" />
-                <span className={cn("flex-none text-[10.5px] font-semibold", TONE_TEXT[item.stageTone])}>
-                    {item.stage}
+        <div className="relative">
+            <button
+                type="button"
+                data-jarvis-activity-card={item.source}
+                data-jarvis-activity-id={item.id}
+                {...cursorAttrs(focused)}
+                onClick={onOpen}
+                className={cn(
+                    "flex w-full cursor-pointer flex-col gap-1 rounded-[8px] border bg-surface-raised px-2.5 py-[9px] text-left hover:bg-surface-hover",
+                    selected ? "border-edge-strong" : "border-edge-mid",
+                    FOCUS,
+                    focused && CURSOR_RING
+                )}
+            >
+                <span className="flex w-full items-center gap-1.5">
+                    <span className={cn("h-1.5 w-1.5 flex-none rounded-full", DOT[item.stageTone])} />
+                    <span className="min-w-0 truncate text-[10.5px] text-muted">{item.kind}</span>
+                    <span className="flex-1" />
+                    <span
+                        data-run-paused={item.paused ? "" : undefined}
+                        className={cn("flex-none text-[10.5px] font-semibold", TONE_TEXT[item.stageTone])}
+                    >
+                        {item.stage}
+                    </span>
                 </span>
-            </span>
-            <span title={item.title} className="line-clamp-2 break-words text-[12.5px] leading-[17px] text-ink-hi">
-                {item.title}
-            </span>
-            <span className="truncate text-[10.5px] text-muted">{item.meta}</span>
-        </button>
+                <span title={item.title} className="line-clamp-2 break-words text-[12.5px] leading-[17px] text-ink-hi">
+                    {item.title}
+                </span>
+                <span className={cn("truncate text-[10.5px] text-muted", item.paused && "pr-[72px]")}>{item.meta}</span>
+            </button>
+            {item.paused ? (
+                <button
+                    type="button"
+                    data-run-resume
+                    aria-label="Resume run"
+                    title="Resume this run"
+                    disabled={resuming}
+                    onClick={onResume}
+                    className={cn(
+                        SMALL_BTN,
+                        "absolute bottom-[7px] right-2.5 disabled:cursor-default disabled:opacity-60"
+                    )}
+                >
+                    {resuming ? "Resuming…" : "Resume"}
+                </button>
+            ) : null}
+        </div>
     );
 }
 
