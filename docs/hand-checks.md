@@ -41,6 +41,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   measures the terminals every 500 ms; measured in the dev app at 73 fps on a 75 Hz display, ~7–11% of the main thread
   while it falls (the old 12 fps snow ~0%). Checked by the `christmas-theme` scenario; smoothness not judged by eye in
   the packaged build (`christmassnowview.tsx`, `appearance.tsx`).
+- [ ] (arcterm) **A landing run says what its land is doing.** In the installed app, with a run landing (after its
+  final stage) → its line in the Agent tree reads "Landing · Verify running 2m 5s" (or Check), or "Landing · Check
+  waiting for RAM · #1" in amber while its step waits in Jobs; hover it → the tooltip lists the run, the step, why it
+  waits, the command, the job id and `wsh runs show <run>`; click it → a peek beside the tree with the same lines, Run
+  now (only while waiting), Jobs, and Copy for an agent (paste it to an agent: the lines are there). Unit tests and the
+  typecheck only (`landprogress.ts`, `landprogressview.tsx`); no dev app or CDP scenario ran.
 
 - [ ] (arcterm) **Christmas: the empty cockpit's hat and a finished run's gift.** With the Christmas theme on, close
   every agent so the Cockpit shows "No agents running" → the terminal-window glyph wears the Santa hat on its top-left
