@@ -1,13 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What a council's view headers share beside the tabs (counciltabs.tsx). The details icon (councildetails.tsx) holds the
-// mode, the clock, the replies and the tokens in its tooltip, where the Ideas rail is not on screen to show them. The
-// actions menu (…) holds what the view offers (the Discussion's Summarize), then Resume and Pin, then Stop on its own
-// past a separator; it is the app's one context menu, opened under the button. CouncilHeaderRow is the Discussion's and the
-// Map's row: tabs, title, step chip, details (unless the rail shows them), the seats' stack, actions, one 44px line that never wraps. Only the title
-// shrinks: it truncates (the whole is its hover) before anything leaves the row. The Report keeps its own tab bar, with the
-// tabs and the actions menu.
+// The one header row of a council's three views, the Report, the Discussion and the Map (CouncilHeaderRow): the tabs
+// (counciltabs.tsx), the title, the step chip, then the seats' stack and the actions menu (…), one 44px line that never
+// wraps and sits in the same place on every tab, so a tab click moves nothing in it. Only the title shrinks: it truncates
+// (the whole is its hover) before anything leaves the row. The Report adds its details after the chip (the mode, the
+// clock, the replies and the tokens: councildetails.tsx CouncilDetailsLine) and its jump links before the seats; the
+// Discussion keeps its details at the foot of its Ideas rail, and the Map shows none. The actions menu holds what the
+// view offers (the Discussion's Summarize, the Report's document and initiative rows), then Resume and Pin, then Stop
+// on its own past a separator; it is the app's one context menu, opened under the button.
 
 import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -15,7 +16,8 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Ellipsis, Pin, PinOff, Play } from "lucide-react";
 import { useRef, type ReactNode } from "react";
-import { CouncilDetailsIcon } from "./councildetails";
+import { chipShort, stepChip } from "./councilchatmodel";
+import { CouncilDetailsLine } from "./councildetails";
 import { isPinnedCouncil } from "./councilmodel";
 import { resumeCouncil, useCanResumeCouncil } from "./councilresume";
 import { CouncilSeats } from "./councilseats";
@@ -92,31 +94,63 @@ export function CouncilActions({
     );
 }
 
-/** The Discussion's and the Map's header row. `titleAttr` is the title's data attribute (each view's scenarios read
- *  their own); `status` is the view's step chip; `details` draws the details icon (false while the Ideas rail shows them,
- *  railHoldsDetails). */
+// the step chip's colours by its dot: amber while the council waits on the person, green while it runs, red when it failed
+const CHIP_TONE = {
+    working: { box: "bg-pill text-secondary", dot: "bg-working pulse-dot" },
+    waiting: { box: "bg-askingbg text-warning-soft", dot: "bg-asking" },
+    failed: { box: "bg-error/12 text-error-soft", dot: "bg-error" },
+    idle: { box: "bg-pill text-secondary", dot: "bg-ink-faint" },
+};
+
+// the step in its short words (`Round 1/2`), whole: the title truncates before it would shrink. The full words are its
+// hover and what a screen reader hears (and what `data-council-chip` reads)
+function StatusChip({ c }: { c: Council }) {
+    const chip = stepChip(c);
+    const tone = CHIP_TONE[chip.dot];
+    return (
+        <span
+            title={chip.text}
+            className={cn(
+                "inline-flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-[7px] py-[2px] text-[10.5px] tabular-nums",
+                tone.box
+            )}
+        >
+            <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", tone.dot)} />
+            <span aria-hidden>{chipShort(chip.text)}</span>
+            <span data-council-chip aria-live="polite" className="sr-only">
+                {chip.text}
+            </span>
+        </span>
+    );
+}
+
+/** A council view's header row. `titleAttr` is the title's data attribute (each view's scenarios read their own);
+ *  `details` draws the details after the step chip (the Report's); `aside` sits before the seats (the Report's jump
+ *  links); `onCurrent` runs on a click of the tab already shown (CouncilTabs). */
 export function CouncilHeaderRow({
     c,
     view,
-    details,
     titleAttr,
-    status,
+    details = false,
+    aside,
     items,
     stop,
+    onCurrent,
     onOpenTerminal,
 }: {
     c: Council;
     view: CouncilTabId;
-    details: boolean;
     titleAttr: `data-${string}`;
-    status: ReactNode;
+    details?: boolean;
+    aside?: ReactNode;
     items?: ContextMenuItem[];
     stop?: ContextMenuItem;
+    onCurrent?: () => void;
     onOpenTerminal: (tab: string) => void;
 }) {
     return (
         <div className="flex h-[44px] min-w-0 items-center gap-[10px] px-5 @max-[900px]:gap-2 @max-[900px]:px-[14px]">
-            <CouncilTabs c={c} view={view} />
+            <CouncilTabs c={c} view={view} onCurrent={onCurrent} />
             <div aria-hidden className="h-5 w-px flex-none bg-edge-mid" />
             <h1
                 {...{ [titleAttr]: "" }}
@@ -126,9 +160,10 @@ export function CouncilHeaderRow({
             >
                 {c.feature}
             </h1>
-            {status}
+            <StatusChip c={c} />
+            {details && <CouncilDetailsLine c={c} />}
             <div className="min-w-3 flex-1" />
-            {details && <CouncilDetailsIcon c={c} />}
+            {aside}
             <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
             <CouncilActions c={c} items={items} stop={stop} />
         </div>

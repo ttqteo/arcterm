@@ -30,7 +30,6 @@ import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
 import { CouncilAvatar, CouncilChat, CouncilText } from "./councilchat";
-import { chipShort, councilThread, stepChip } from "./councilchatmodel";
 import {
     avatarTone,
     callBarLabel,
@@ -43,7 +42,6 @@ import {
     failedWhile,
     isQueued,
     keptProposals,
-    railHoldsDetails,
     retriedOut,
     seatInitials,
     summarizeAction,
@@ -71,10 +69,7 @@ import { claimOf } from "./councilsources";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
     continueCouncil,
-    councilIdeasRailFoldedAtom,
-    councilOpenProposalAtom,
     councilSelAtom,
-    councilSourcesAtom,
     councilTimelineAtom,
     retryExpert,
     startSavedCouncil,
@@ -234,36 +229,6 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
 
 // ---- the header ----
 
-// the step chip's colours by its dot: amber while the council waits on the person, green while it runs, red when it failed
-const CHIP_TONE = {
-    working: { box: "bg-pill text-secondary", dot: "bg-working pulse-dot" },
-    waiting: { box: "bg-askingbg text-warning-soft", dot: "bg-asking" },
-    failed: { box: "bg-error/12 text-error-soft", dot: "bg-error" },
-    idle: { box: "bg-pill text-secondary", dot: "bg-ink-faint" },
-};
-
-// the step in its short words (`Round 1/2`), whole: the title wraps before it would shrink. The full words are its hover and
-// what a screen reader hears (and what `data-council-chip` reads)
-function StatusChip({ c }: { c: Council }) {
-    const chip = stepChip(c);
-    const tone = CHIP_TONE[chip.dot];
-    return (
-        <span
-            title={chip.text}
-            className={cn(
-                "inline-flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full px-[7px] py-[2px] text-[10.5px] tabular-nums",
-                tone.box
-            )}
-        >
-            <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", tone.dot)} />
-            <span aria-hidden>{chipShort(chip.text)}</span>
-            <span data-council-chip aria-live="polite" className="sr-only">
-                {chip.text}
-            </span>
-        </span>
-    );
-}
-
 const SEGMENT: Record<SegmentState, string> = {
     done: "bg-success/45",
     running: "bg-working",
@@ -318,17 +283,6 @@ function Header({
           ]
         : [];
     const stopping = acts.busy.has("stop");
-    // the details sit at the foot of the Ideas rail while it shows; the header's icon holds them otherwise
-    const folded = useAtomValue(councilIdeasRailFoldedAtom);
-    const openId = useAtomValue(councilOpenProposalAtom(c.id));
-    const sources = useAtomValue(councilSourcesAtom(c.id));
-    const threadOpen = openId != null && councilThread(c, openId) != null;
-    const inRail = railHoldsDetails({
-        chat: body === "chat",
-        folded,
-        threadOpen,
-        sourcesOpen: !threadOpen && sources != null,
-    });
     const stop: ContextMenuItem | undefined =
         c.state === "running"
             ? {
@@ -347,9 +301,7 @@ function Header({
             <CouncilHeaderRow
                 c={c}
                 view="discussion"
-                details={!inRail}
                 titleAttr="data-council-title"
-                status={<StatusChip c={c} />}
                 items={items}
                 stop={stop}
                 onOpenTerminal={onOpenTerminal}

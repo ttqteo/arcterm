@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's Report, Discussion and Map share one header row, so the tabs and the ⋯ menu stay in place when you
+  switch. The Report's row shows the mode, the clock, the replies and the tokens after the status chip, and the lone ⓘ
+  button is gone from the Discussion and the Map.
 - The app bar shows the t> mark alone, without the "arcterm" name beside it.
 - With the Christmas theme, the t> mark dresses for the season: the t a pine with a star and two baubles, the > a
   string of red and gold lights. On a Mac the menu bar icon wears it too, in colour, in deeper tones on a light menu bar.

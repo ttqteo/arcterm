@@ -114,10 +114,11 @@ chữ cái (ĐV, KT) để phân biệt những ghế có tên đầu giống nh
 và mỗi câu trả lời nằm dưới phần trích của ý mà nó đáp lại. Câu hỏi của bạn nằm bên phải, gấp còn ba dòng, các giới hạn
 bạn đặt thành chip.
 
-Đầu Discussion (và Map) là một hàng gọn: ba tab dạng icon (Report, Discussion kèm số ý, Map), tiêu đề, chip trạng thái,
-rồi chồng avatar và nút **…** ở cuối. Chế độ (Review hay Brainstorm; rê chuột để xem lý do chọn), thời gian, số câu trả
-lời và số token nằm ở một dòng dưới đáy rail Ideas, thấy ở mọi tab của rail. Khi rail gập lại (hay ở vòng 1, lúc dừng chờ
-bạn, và trong Map), chúng vào nút **ⓘ** trên header, đọc khi rê chuột. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
+Report, Discussion và Map có chung một hàng đầu, đứng yên một chỗ khi chuyển tab: ba tab dạng icon (Report, Discussion
+kèm số ý, Map), tiêu đề, chip trạng thái, rồi chồng avatar và nút **…** ở cuối. Ở Report, sau chip là chế độ (Review hay
+Brainstorm; rê chuột để xem lý do chọn), thời gian, số câu trả lời và số token, và trước chồng avatar là các nút nhảy tới
+từng phần của báo cáo. Ở Discussion, những số đó nằm ở một dòng dưới đáy rail Ideas, thấy ở mọi tab của rail; Map không
+hiện chúng. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
 bấm vào để xem cả danh sách. Nút **…** mở menu: **Summarize** (hay **Summarize again**), **Resume**, **Pin** / **Unpin**,
 và **Stop council** khi council đang chạy.
 
@@ -286,7 +287,7 @@ agrees with which idea in Map" mở nó.
 
 ## Ghim, xóa
 
-- **Pin** trong menu **…** ở đầu Discussion, Map và thanh tab của báo cáo **ghim** council, ở bất kỳ trạng thái nào, kể
+- **Pin** trong menu **…** ở hàng đầu của Report, Discussion và Map **ghim** council, ở bất kỳ trạng thái nào, kể
   cả đang chạy: council nằm trên cùng trong project của nó ở cây Agent, và mục đó đổi thành **Unpin** để bỏ ghim. Ngoài ra
   chỉ ghim được từ **Councils** và từ History của Overview project (mở một hàng council, hay chuột phải): cây không có
   nút Pin. Chỉ bạn ghim và bỏ ghim:

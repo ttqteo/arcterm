@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council report (docs/superpowers/specs/2026-10-22-council-agent-team-design.md "UI", board M-report-cover.dc.html):
-// one scroll box. A tab bar heads it and sticks to the top (Report / Discussion / Map, jump links to the sections below,
-// and the one `⋯` menu: Save as doc or Open the document, Create initiative, Run again, then Resume and Pin), then the
+// the header row the three views share (councilheader.tsx: the tabs, the title, the step chip and, on the Report alone,
+// the mode, the clock, the replies and the tokens; jump links to the sections below, the seats, and the one `⋯` menu:
+// Save as doc or Open the document, Create initiative, Run again, then Resume and Pin) over one scroll box. In the box the
 // cover: the title, what was asked, the answer in one bold sentence with the coordinator's text under it, and a glance
 // box beside them: the state, three figures, the panel with each model and what each seat did (a click opens the
 // Discussion on that seat's messages alone), and where the council saved itself, docs/council/, a click or the `⋯` menu
@@ -58,7 +59,7 @@ import { askChips } from "./councilchatmodel";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import { finalProposal, type FinalProposal } from "./councilfinalmodel";
-import { CouncilActions } from "./councilheader";
+import { CouncilHeaderRow } from "./councilheader";
 import { useKeptScroll } from "./councilkeptscroll";
 import { mapWords } from "./councilmapmodel";
 import {
@@ -116,7 +117,6 @@ import {
     type OutlineEntry,
     type Position,
 } from "./councilsummarymodel";
-import { CouncilTabs } from "./counciltabs";
 import { runtimeStartupCommand } from "./launch";
 import { projectListAtom } from "./projectsstore";
 
@@ -611,17 +611,9 @@ function glideTo(box: HTMLElement, top: number) {
     box.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
 }
 
-// The tab bar's jump links (board M-report-cover.dc.html): a button per section after the answer, scrolling the box so
-// the section's top lands 12px under the bar (as far as the box can scroll).
-function JumpLinks({
-    c,
-    scroller,
-    bar,
-}: {
-    c: Council;
-    scroller: RefObject<HTMLDivElement | null>;
-    bar: RefObject<HTMLDivElement | null>;
-}) {
+// The header's jump links (board M-report-cover.dc.html), before its seats: a button per section after the answer,
+// scrolling the box under the header so the section's top lands 12px under the box's top (as far as it can scroll).
+function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivElement | null> }) {
     const entries = useMemo(() => jumpLinks(c), [c]);
     if (entries.length === 0) {
         return null;
@@ -632,11 +624,10 @@ function JumpLinks({
         if (box == null || el == null) {
             return;
         }
-        const barHeight = bar.current?.offsetHeight ?? 0;
-        glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - barHeight - 12);
+        glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - 12);
     };
     return (
-        <nav aria-label="On this page" className="flex min-w-0 items-center gap-1">
+        <nav aria-label="On this page" className="flex min-w-0 flex-none items-center gap-1 @max-[700px]:hidden">
             {entries.map((e) => (
                 <button
                     key={e.id}
@@ -1006,10 +997,9 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
     const scroller = useRef<HTMLDivElement>(null);
-    const tabBar = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
-    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself, just under
-    // the tab bar that heads the box and sticks there
+    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself, at the top of
+    // the box under the header
     const toReport = () => {
         const box = scroller.current;
         const cover = box?.querySelector<HTMLElement>("[data-council-cover]");
@@ -1127,7 +1117,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const kept = useMemo(() => keptRows(c), [c]);
     const dropped = droppedLine(c);
     const doc = docAction(c);
-    // the report's own rows of the tab bar's `⋯` menu, ahead of Resume and Pin (CouncilActions)
+    // the report's own rows of the header's `⋯` menu, ahead of Resume and Pin (CouncilActions)
     const menuItems: ContextMenuItem[] = [
         doc.id === "open-doc"
             ? {
@@ -1166,6 +1156,23 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
         ) : null;
     return (
         <>
+            {/* the header row the three views share, over the box like theirs, so a tab click moves nothing in it; the
+                tabs, the jump links and the ⋯ menu are what the scenarios find under data-council-tabbar */}
+            <header
+                data-council-tabbar
+                className="@container flex flex-none flex-col border-b border-border bg-surface"
+            >
+                <CouncilHeaderRow
+                    c={c}
+                    view="summary"
+                    titleAttr="data-council-summary-title"
+                    details
+                    aside={<JumpLinks c={c} scroller={scroller} />}
+                    items={menuItems}
+                    onCurrent={toReport}
+                    onOpenTerminal={(tab) => model.openTerminal(tab)}
+                />
+            </header>
             {summary != null && c.state === "running" ? (
                 <Banner tone="working">
                     <Loader2 size={13} aria-hidden className="animate-spin text-muted" />
@@ -1209,19 +1216,16 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     </button>
                 </Banner>
             ) : null}
-            <div ref={scroller} data-council-scroll onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
-                <div
-                    ref={tabBar}
-                    data-council-tabbar
-                    className="@container sticky top-0 z-10 border-b border-border bg-surface"
-                >
-                    <div className="mx-auto flex h-[46px] max-w-[1180px] items-stretch gap-6 px-10 @max-[900px]:gap-3 @max-[900px]:px-4">
-                        <CouncilTabs c={c} view="summary" onCurrent={toReport} className="self-center" />
-                        <span className="flex-1" />
-                        <JumpLinks c={c} scroller={scroller} bar={tabBar} />
-                        <CouncilActions c={c} items={menuItems} className="self-center" />
-                    </div>
-                </div>
+            {/* the page fades in as the view opens (a tab click, a council picked); the header stays put */}
+            <motion.div
+                ref={scroller}
+                variants={viewFade}
+                initial="initial"
+                animate="animate"
+                data-council-scroll
+                onScroll={onScroll}
+                className="min-h-0 flex-1 overflow-y-auto"
+            >
                 <div data-council-cover className="bg-surface">
                     <div className="mx-auto flex max-w-[1180px] flex-col gap-[22px] px-10 pt-[26px]">
                         <div className="flex flex-col gap-2">
@@ -1395,7 +1399,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         {finalSection}
                     </div>
                 ) : null}
-            </div>
+            </motion.div>
         </>
     );
 }
@@ -1403,12 +1407,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
 export function CouncilSummary({ model }: { model: AgentsViewModel }) {
     const id = useAtomValue(councilSelAtom);
     const c = useCouncil(id);
-    // the whole page fades in as the view opens (a tab click, a council picked): its tab bar sits inside the page
     return (
-        <motion.div
-            variants={viewFade}
-            initial="initial"
-            animate="animate"
+        <div
             data-council-summary
             data-council-id={id ?? undefined}
             aria-busy={c == null}
@@ -1421,6 +1421,6 @@ export function CouncilSummary({ model }: { model: AgentsViewModel }) {
             ) : (
                 <SummaryView model={model} c={c} />
             )}
-        </motion.div>
+        </div>
     );
 }

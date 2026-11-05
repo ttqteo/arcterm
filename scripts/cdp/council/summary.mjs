@@ -221,15 +221,15 @@ const KEPT_FOLD_FACTS = `(() => {
     };
 })()`;
 
-// scrolls the report's box so the element the selector `sel` matches first sits just under the sticky bar (as far as the
-// box scrolls), then says whether the first match of `inView` (default: the same element) is wholly between the bar and
-// the box's bottom
+// scrolls the report's box so the element the selector `sel` matches first sits just under the box's top, below the
+// header (as far as the box scrolls), then says whether the first match of `inView` (default: the same element) is
+// wholly between the header and the box's bottom
 const frameOn = (h, sel, inView = sel) =>
     h.ev(`(() => {
         const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
         const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
         const at = document.querySelector(${q(sel)});
-        box.scrollTop += at.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+        box.scrollTop += at.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
         const view = document.querySelector(${q(inView)}).getBoundingClientRect();
         return view.top >= bar.getBoundingClientRect().bottom && view.bottom <= box.getBoundingClientRect().bottom;
     })()`);
@@ -285,14 +285,19 @@ export const councilSummary = {
         };
         await openSummary(h, ctx);
 
-        await step("the tab bar heads the page with the tabs and the one ⋯ menu; the cover: the title; the glance: the state, its figures and each expert with its model and what it did", async () => {
+        await step("the header heads the page as the Discussion's and the Map's do (the tabs, the title, the step chip, the seats and the one ⋯ menu) and adds the mode, the clock, the replies and the tokens after the chip; the cover: the title; the glance: the state, its figures and each expert with its model and what it did", async () => {
             const cover = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const t = (s) => root.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
                 const bar = root.querySelector("[data-council-tabbar]");
                 const coverEl = root.querySelector("[data-council-cover]");
                 return {
-                    title: t("h1"),
+                    title: t("[data-council-cover] h1"),
+                    headerTitle: t("[data-council-tabbar] [data-council-summary-title]"),
+                    chip: t("[data-council-tabbar] [data-council-chip]"),
+                    headerMode: t("[data-council-tabbar] [data-council-details] [data-council-mode]"),
+                    headerCost: t("[data-council-tabbar] [data-council-details] [data-council-cost]"),
+                    seats: !!bar?.querySelector("[data-council-seats]"),
                     eyebrow: t("[data-council-cover] [data-council-eyebrow]"),
                     summaryTab: !!bar?.querySelector("[data-council-tab='summary'][aria-selected='true']"),
                     discussionTab: !!bar?.querySelector("[data-council-tab='discussion']"),
@@ -315,6 +320,11 @@ export const councilSummary = {
             const mode = loadCouncilFixture("done").mode === "brainstorm" ? "Brainstorm" : "Review";
             const ok =
                 cover.title === "Rail apps" &&
+                cover.headerTitle === "Rail apps" &&
+                cover.chip === "Done" &&
+                cover.headerMode === mode &&
+                /^\d+:\d\d · .*tokens$/.test(cover.headerCost ?? "") &&
+                cover.seats &&
                 cover.eyebrow === `Council · ${mode}` &&
                 cover.summaryTab &&
                 cover.discussionTab &&
@@ -334,22 +344,21 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify(cover) };
         });
 
-        await step("the tab bar sticks and its jump links scroll the box", async () => {
+        await step("the header stays over the box and its jump links scroll the box", async () => {
             const BAR = `${SUMMARY} [data-council-tabbar]`;
             const BOX = `${SUMMARY} [data-council-scroll]`;
             const entries = await h.ev(`[...document.querySelectorAll(${q(`${BAR} [data-council-jump]`)})].map((e) => e.dataset.councilJump + ":" + e.innerText.replace(/\\s+/g, " ").trim())`);
-            const sticky = await h.ev(`getComputedStyle(document.querySelector(${q(BAR)})).position`);
+            const barTop = await h.ev(`Math.round(document.querySelector(${q(BAR)}).getBoundingClientRect().top)`);
             // direction 1 open: its detail under the grid gives the box the room to scroll as far as the directions' link
             // asks (with every card closed a report this short cannot scroll its bar into place)
             await openDirection(h, 1);
             await sleep(600);
             await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
-            // where the directions' section would put the box's scrollTop: its top in the content, less the bar and 12px
+            // where the directions' section would put the box's scrollTop: its top in the content, less 12px
             const expected = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
-                const bar = document.querySelector(${q(BAR)});
                 const el = box.querySelector("[data-council-directions-heading]") ?? box.querySelector("[data-council-direction]");
-                const target = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - bar.offsetHeight - 12;
+                const target = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12;
                 return Math.max(0, Math.min(target, box.scrollHeight - box.clientHeight));
             })()`);
             await click(h, `${BAR} [data-council-jump='directions']`);
@@ -359,7 +368,8 @@ export const councilSummary = {
             const placed = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
                 const bar = document.querySelector(${q(BAR)});
-                return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
+                const b = bar.getBoundingClientRect();
+                return { scrollTop: box.scrollTop, barTop: Math.round(b.top), barBottom: Math.round(b.bottom), boxTop: Math.round(box.getBoundingClientRect().top) };
             })()`);
             // every card's chevron sits at its footer's right: its right edge on the card's content box (the card's rect
             // less its right padding) and its bottom on the footer's bottom, 2px of slack for the rounding
@@ -381,15 +391,15 @@ export const councilSummary = {
             // the matrix is no section of the Report any more (the Map tab holds it): the directions are the only link
             const ok =
                 entries.join("|") === ["directions:Directions 4"].join("|") &&
-                sticky === "sticky" &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
-                placed.barTop === placed.boxTop &&
+                placed.barTop === barTop &&
+                placed.barBottom <= placed.boxTop + 1 &&
                 midway < expected - 4 &&
                 chevronsOk;
-            return { ok, detail: JSON.stringify({ entries, sticky, expected, midway, placed, chevrons }) };
+            return { ok, detail: JSON.stringify({ entries, barTop, expected, midway, placed, chevrons }) };
         });
 
-        await step("the Report tab, clicked while shown, glides the box down past the cover to the body under the tab bar", async () => {
+        await step("the Report tab, clicked while shown, glides the box down past the cover to the body under the header", async () => {
             const BAR = `${SUMMARY} [data-council-tabbar]`;
             const BOX = `${SUMMARY} [data-council-scroll]`;
             // direction 1 open gives the box room to scroll the bar to its top, as in the step above
@@ -408,7 +418,8 @@ export const councilSummary = {
             const placed = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
                 const bar = document.querySelector(${q(BAR)});
-                return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
+                const b = bar.getBoundingClientRect();
+                return { scrollTop: box.scrollTop, barTop: Math.round(b.top), barBottom: Math.round(b.bottom), boxTop: Math.round(box.getBoundingClientRect().top) };
             })()`);
             // still the Report: the click scrolled, it opened no other view
             const stillReport = await exists(h, `${BAR} [data-council-tab='summary'][aria-selected='true']`);
@@ -420,7 +431,7 @@ export const councilSummary = {
                 stillReport &&
                 expected > 0 &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
-                placed.barTop === placed.boxTop &&
+                placed.barBottom <= placed.boxTop + 1 &&
                 midway < expected - 4;
             return { ok, detail: JSON.stringify({ pointer, stillReport, expected, midway, placed }) };
         });
@@ -570,7 +581,7 @@ export const councilSummary = {
                 one: document.querySelector(${q(DIRECTION(1))}).getAttribute("aria-expanded"),
                 three: document.querySelector(${q(DIRECTION(3))}).getAttribute("aria-expanded"),
             })`);
-            // frame the shot on the open card and the top of its detail: card 1's row goes just under the sticky bar;
+            // frame the shot on the open card and the top of its detail: card 1's row goes just under the header;
             // if the detail's top is still below the box, the detail is centred instead
             const FRAME = `(() => {
                 const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
@@ -578,7 +589,7 @@ export const councilSummary = {
                 const card = document.querySelector(${q(DIRECTION(1))});
                 const detail = document.querySelector(${q(DETAIL(1))});
                 const before = box.scrollTop;
-                box.scrollTop += card.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+                box.scrollTop += card.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
                 if (detail.getBoundingClientRect().top >= box.getBoundingClientRect().bottom - 40) {
                     detail.scrollIntoView({ block: "center" });
                 }
@@ -1197,13 +1208,13 @@ export const councilSummary = {
             // the kept ideas start folded: open them so the facts read them
             await openKept(h);
             const facts = await h.ev(BRAINSTORM_FACTS);
-            // frame the shot on the cards: the directions heading goes just under the sticky bar, so the First step
+            // frame the shot on the cards: the directions heading goes just under the header, so the First step
             // boxes are in view
             const stepsInFrame = await h.ev(`(() => {
                 const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
                 const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
                 const head = document.querySelector(${q(`${SUMMARY} [data-council-directions-heading]`)});
-                box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+                box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
                 const br = box.getBoundingClientRect();
                 const bb = bar.getBoundingClientRect().bottom;
                 return [...document.querySelectorAll(${q(`${SUMMARY} [data-council-first-step]`)})].some((s) => {

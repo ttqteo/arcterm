@@ -21,7 +21,6 @@ import {
     listNames,
     modeWord,
     postedAt,
-    railHoldsDetails,
     reactions,
     retriedOut,
     seatInitials,
@@ -319,22 +318,6 @@ describe("councilDetails", () => {
             const d = councilDetails(council({ state, started: 1000, tokens: 313_000 }), 441_000);
             expect([d.mode, d.clock, d.replies, d.tokens, d.line]).toEqual(["Review", "", "", "", ""]);
         }
-    });
-});
-
-describe("railHoldsDetails", () => {
-    const at = (r: Partial<Parameters<typeof railHoldsDetails>[0]>) =>
-        railHoldsDetails({ chat: true, folded: false, threadOpen: false, sourcesOpen: false, ...r });
-
-    it("holds them while the chat shows its rail, unfolded or with a thread open", () => {
-        expect(at({})).toBe(true);
-        expect(at({ folded: true, threadOpen: true })).toBe(true);
-    });
-
-    it("gives them back to the header with the rail folded, Sources in its place, or no chat", () => {
-        expect(at({ folded: true })).toBe(false);
-        expect(at({ sourcesOpen: true })).toBe(false);
-        expect(at({ chat: false })).toBe(false);
     });
 });
 

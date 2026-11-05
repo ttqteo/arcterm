@@ -8,10 +8,10 @@
 // in any language (Vietnamese's Bản đồ included); the Discussion's carries the number of ideas sent beside its icon, the
 // words in its aria-label (counciltabsmodel.ts).
 //
-// Each view draws its own strip, so a tab click swaps one strip for another. Between the Discussion and the Map, whose
-// strips sit in the one place, the grey fill slides from the tab left to the tab clicked (indicatorSlide): the strip on
-// screen keeps where its tabs sit in `shown`, and the strip that replaces it reads that as it first renders
-// (fillSlideFrom).
+// Each view draws its own strip, so a tab click swaps one strip for another. The strips sit in the one place, the left of
+// the header row the views share (councilheader.tsx), so the grey fill slides from the tab left to the tab clicked
+// (indicatorSlide): the strip on screen keeps where its tabs sit in `shown`, and the strip that replaces it reads that
+// as it first renders (fillSlideFrom).
 
 import { indicatorSlide } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
