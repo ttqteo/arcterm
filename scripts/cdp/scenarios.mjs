@@ -40,7 +40,14 @@ import {
     writeMemoryStates,
 } from "./memory-fixtures.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
-import { makeCockpitOfficeScenarios } from "./cockpitofficescenarios.mjs";
+import {
+    clipShot as officeClipShot,
+    dev as officeDev,
+    floorsRun,
+    makeCockpitOfficeScenarios,
+    probe as officeProbe,
+    waitForOffice,
+} from "./cockpitofficescenarios.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
 import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
@@ -72,7 +79,7 @@ const PEEK_KEY = ON_MAC
     ? { key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91 }
     : { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17 };
 const PEEK_GLYPH = `space · ${ON_MAC ? "⌘-click" : "ctrl+click"}`;
-import { SCENARIOS as COCKPIT_FIXTURES } from "../cockpit-fixtures/scenarios.mjs";
+import { CHRISTMAS_ASKER, SCENARIOS as COCKPIT_FIXTURES } from "../cockpit-fixtures/scenarios.mjs";
 
 // A step this profile cannot run: no scan report to cite, no pi session focused. Neither a pass nor a
 // failure — report.mjs tallies it apart and exitCode ignores it. The detail must name what to seed, so a
@@ -11598,6 +11605,574 @@ const terminalTheme = {
             return true;
         })()`);
         await h.goto("cockpit");
+    },
+};
+
+// --- the Christmas theme ------------------------------------------------------------------------
+// docs/superpowers/specs/2026-11-05-christmas-theme-design.md. One pass over the preset: picked in Settings (the palette,
+// the effects switch, the app bar and content kept in place), the snow falling and fainter over a terminal, the lights
+// lit and still and then blinking while an agent asks, the Office's trees, gifts, wreath and hats, the pet's hat in its
+// corner and in Jarvis and folded into Sprout (the default pet and Spider-Man), reduced motion (the snow and the blink
+// stop, the static decor stays), and the effects switch off (snow and lights gone, the palette kept, the Settings
+// outfit back). Between the last two it measures the snow's CPU and heap over 10 s on and 10 s off, for open-issues'
+// RAM watch. The roster is the christmas-office fixture (scripts/cockpit-fixtures/scenarios.mjs): its asking agent is
+// dropped and put back through window.__reloadDevMockRoster for the lights' two states, and the run whose done tasks
+// add gifts goes to the Office's dev hook.
+const XMAS_PROJECT = "verify-christmas";
+const XMAS_KEYS = {
+    preset: "cockpit.theme.preset",
+    effectsOff: "cockpit.theme.christmasEffectsOff",
+    character: "jarvis.pet.character",
+    outfit: "jarvis.pet.outfit",
+    view: "cockpit.view",
+    layout: "cockpit.office.layout",
+};
+// the Christmas palette's ground and accent (themes.ts), which the effects switch keeps
+const XMAS_BG = "#131d18";
+const XMAS_ACCENT = "#d4a26a";
+const XMAS_CRIMSON = "var(--color-xmas-crimson)";
+const XMAS_SNOW = "var(--color-xmas-snow)";
+// the Settings outfit's shirt (the default choice), which the hat replaces while the decor shows
+const XMAS_SHIRT = "var(--color-flag-red)";
+const XMAS_BULB_COLOURS = ["bg-xmas-bulb", "bg-accent", "bg-success", "bg-xmas-snow"];
+// two done tasks at north-pole's table, so its gifts are the finished elf and these two
+const XMAS_GIFT_RUN = floorsRun(1, "Sleigh route", "north-pole", { tasks: ["done", "done", "work"] });
+// the snow's measured hold
+const XMAS_HOLD_MS = 10_000;
+const xmasNap = (ms) => new Promise((r) => setTimeout(r, ms));
+const xmasVar = (h, name) =>
+    h.ev(`getComputedStyle(document.documentElement).getPropertyValue(${JSON.stringify(name)}).trim().toLowerCase()`);
+// the theme chip, scoped to the preset grid (terminal-theme's reason: an unscoped query finds the app bar's search)
+const xmasPickPreset = (h, name) =>
+    h.ev(`(() => {
+        const b = [...(document.querySelector("[data-theme-presets]")?.querySelectorAll("button") ?? [])].find(
+            (x) => (x.textContent || "").trim() === ${JSON.stringify(name)}
+        );
+        if (!b) return false;
+        b.click();
+        return true;
+    })()`);
+const XMAS_SWITCH = `document.querySelector("button[data-christmas-effects][role=switch]")`;
+const xmasSwitch = (h) => h.ev(`${XMAS_SWITCH}?.getAttribute("aria-checked") ?? null`);
+const xmasFrames = (h) =>
+    h.ev(`(() => {
+        const c = document.querySelector("canvas[data-christmas-snow]");
+        return c == null ? null : Number(c.dataset.frames ?? 0);
+    })()`);
+// One frame of the snow: how many pixels have any alpha, and the strongest alpha well inside the visible terminals and
+// well outside them. A flake is at most 2px across, so 3px off a terminal's edge keeps a flake straddling it out of both.
+const XMAS_SNOW_READ = `(() => {
+    const c = document.querySelector("canvas[data-christmas-snow]");
+    if (!c || c.width === 0) return null;
+    const s = c.width / window.innerWidth;
+    const rects = [...document.querySelectorAll(".term-connectelem")]
+        .map((e) => e.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0);
+    const m = 3;
+    const inside = (x, y) => rects.some((r) => x >= r.left + m && x <= r.right - m && y >= r.top + m && y <= r.bottom - m);
+    const near = (x, y) => rects.some((r) => x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m);
+    const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let painted = 0, inMax = 0, outMax = 0, inPainted = 0;
+    for (let i = 3; i < data.length; i += 4) {
+        const a = data[i];
+        if (a === 0) continue;
+        painted++;
+        const p = (i - 3) / 4;
+        const x = (p % c.width) / s;
+        const y = Math.floor(p / c.width) / s;
+        if (inside(x, y)) {
+            inPainted++;
+            inMax = Math.max(inMax, a);
+        } else if (!near(x, y)) {
+            outMax = Math.max(outMax, a);
+        }
+    }
+    return { painted, inPainted, inMax, outMax, terminals: rects.length };
+})()`;
+// a zoomed shot of the top left of the first visible element the selector matches, w x h page pixels at scale
+async function xmasClip(h, name, selector, w, hgt, scale) {
+    const r = await h.ev(`(() => {
+        const e = [...document.querySelectorAll(${JSON.stringify(selector)})].find((x) => x.getBoundingClientRect().width > 0);
+        const b = e?.getBoundingClientRect();
+        return b == null ? null : { x: Math.max(0, Math.floor(b.left)), y: Math.max(0, Math.floor(b.top)), vw: window.innerWidth, vh: window.innerHeight };
+    })()`);
+    if (r == null) return false;
+    const clip = { x: r.x, y: r.y, width: Math.min(w, r.vw - r.x), height: Math.min(hgt, r.vh - r.y), scale };
+    const { data } = await h.cdp("Page.captureScreenshot", { format: "png", clip });
+    const path = `cdp-shots/${name}.png`;
+    mkdirSync("cdp-shots", { recursive: true });
+    writeFileSync(path, Buffer.from(data, "base64"));
+    h.shots.push({ name, png: `${name}.png`, path });
+    return true;
+}
+// the lights: whether they ask, where they hang against the app bar, and each bulb's class, inline opacity and lag
+const XMAS_LIGHTS_READ = `(() => {
+    const row = document.querySelector("[data-christmas-lights]");
+    if (!row) return null;
+    const r = row.getBoundingClientRect();
+    return {
+        asking: row.hasAttribute("data-asking"),
+        top: r.top,
+        barBottom: document.querySelector("[data-app-bar]")?.getBoundingClientRect().bottom ?? null,
+        bulbs: [...row.querySelectorAll("[data-bulb]")].map((b) => ({
+            cls: String(b.className),
+            op: b.style.opacity,
+            lag: b.dataset.pulseLag ?? null,
+        })),
+    };
+})()`;
+// reads every everyMs, count times (PulseDriver ticks at 12fps, so 150ms apart sees a new frame)
+async function xmasSamples(h, expr, count, everyMs) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        if (i > 0) await xmasNap(everyMs);
+        out.push(await h.ev(expr));
+    }
+    return out;
+}
+// a lit, still bulb: exactly one of the four colours, no PULSES class, nothing written on its opacity
+const xmasBulbLit = (b) =>
+    XMAS_BULB_COLOURS.filter((c) => b.cls.split(/\s+/).includes(c)).length === 1 && !/\bpulse-/.test(b.cls) && b.op === "";
+const xmasBulbAsking = (b) => b.cls.split(/\s+/).includes("bg-asking");
+const xmasPetTokens = (h) => h.ev("window.__jarvisPet?.tokens ?? null");
+const xmasHatted = (t) => Array.isArray(t) && t.includes(XMAS_CRIMSON) && t.includes(XMAS_SNOW) && !t.includes(XMAS_SHIRT);
+// the Office's decor as the page drew it: props by kind, hatted people and the boss's fills
+const XMAS_OFFICE_READ = `(() => {
+    const fill = ${PET_FILL};
+    const count = (sel) => document.querySelectorAll(sel).length;
+    const boss = [...document.querySelectorAll("[data-office-boss] rect")].map(fill);
+    return {
+        trees: count('[data-office-prop="tree"]'),
+        plants: count('[data-office-prop="plant"]'),
+        gifts: count('[data-office-prop="gifts"]'),
+        boards: count('[data-office-prop="board"]'),
+        sprites: count("img[data-office-sprite]"),
+        hats: count("img[data-office-sprite][data-office-hat]"),
+        bossCrimson: boss.filter((f) => f === ${JSON.stringify(XMAS_CRIMSON)}).length,
+        bossSnow: boss.filter((f) => f === ${JSON.stringify(XMAS_SNOW)}).length,
+        bossShirt: boss.filter((f) => f === ${JSON.stringify(XMAS_SHIRT)}).length,
+    };
+})()`;
+// the roster written to the fixture and re-read without a reload; without the asker the Cockpit badge counts nothing
+async function xmasRoster(h, withAsker) {
+    const roster = COCKPIT_FIXTURES["christmas-office"](Date.now()).filter((a) => withAsker || a.id !== CHRISTMAS_ASKER);
+    writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster, null, 2));
+    await h.ev("window.__reloadDevMockRoster?.()");
+}
+// the main thread's busy share (TaskDuration) and the heap after a GC, as cockpitofficescenarios.mjs metrics() reads them
+async function xmasMetrics(h) {
+    await h.ev("performance.clearMeasures()");
+    await h.cdp("HeapProfiler.collectGarbage");
+    const { metrics: list } = await h.cdp("Performance.getMetrics");
+    const m = Object.fromEntries(list.map((x) => [x.name, x.value]));
+    return { heap: m.JSHeapUsedSize, task: m.TaskDuration };
+}
+const xmasMB = (bytes) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
+const xmasBusy = (from, to) => Math.round(((to.task - from.task) / ((XMAS_HOLD_MS) / 1000)) * 1000) / 10;
+// the pet character, picked in Settings → Jarvis as jarvis-pet step 15 picks it
+async function xmasPickCharacter(h, name) {
+    await h.goto("settings");
+    if (!(await spOpen(h, "jarvis"))) return false;
+    return spClick(
+        h,
+        `[...(${spRow("appearance.petcharacter")}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`
+    );
+}
+// folds into Sprout with the app bar's button, reads the folded creature's fills until the hat is drawn (and, for
+// Spider-Man, his rooftop), checks the snow stopped, shoots, and restores with a double-click as jarvis-pet step 22 does
+async function xmasFold(h, name, spidey) {
+    await h.goto("agent");
+    await h.ev(`document.querySelector("[data-app-sprout]")?.click()`);
+    const folded = await floatMiniWait(h, `!!document.querySelector("[data-sprout-mini]")`);
+    const read = () =>
+        h.ev(`(() => {
+            const fill = ${PET_FILL};
+            const fills = [...document.querySelectorAll("[data-sprout-mini] svg rect")].map(fill);
+            return {
+                character: window.__jarvisMini?.character ?? null,
+                roof: !!document.querySelector("[data-spidey-roof]"),
+                crimson: fills.filter((f) => f === ${JSON.stringify(XMAS_CRIMSON)}).length,
+                snow: fills.filter((f) => f === ${JSON.stringify(XMAS_SNOW)}).length,
+                shirt: fills.filter((f) => f === ${JSON.stringify(XMAS_SHIRT)}).length,
+            };
+        })()`);
+    const got = await petUntil(read, (r) => r?.crimson > 0 && r.snow > 0 && (!spidey || r.roof), 8000, 200);
+    await miniShot(h, name);
+    const f1 = await xmasFrames(h);
+    await xmasNap(700);
+    const f2 = await xmasFrames(h);
+    await h.ev(MINI_CLICK);
+    const restored = await floatMiniWait(
+        h,
+        `!document.querySelector("[data-sprout-mini]") && !!document.querySelector("[data-app-bar]")?.offsetParent`
+    );
+    await xmasNap(1200);
+    return { folded, ...got, snowStill: f1 === f2, restored };
+}
+
+const christmasTheme = {
+    name: "christmas-theme",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [], prev: {} };
+        for (const [k, key] of Object.entries(XMAS_KEYS)) {
+            ctx.prev[k] = await h.ev(`localStorage.getItem(${JSON.stringify(key)})`);
+        }
+        ctx.prevFixture = existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null;
+        // a throw past this point still returns ctx, so teardown puts back whatever was already changed
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, XMAS_PROJECT);
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            ctx.wroteFixture = true;
+            await xmasRoster(h, true);
+            // the default preset to pick Christmas from, its effects on, Sprout in the Settings shirt (the outfit the
+            // effects switch must bring back), and the Cockpit opening on the Office, its rooms arranged automatically
+            const set = (key, v) =>
+                h.ev(
+                    v == null
+                        ? `localStorage.removeItem(${JSON.stringify(key)})`
+                        : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(JSON.stringify(v))})`
+                );
+            await set(XMAS_KEYS.preset, null);
+            await set(XMAS_KEYS.effectsOff, null);
+            await set(XMAS_KEYS.character, "sprout");
+            await set(XMAS_KEYS.outfit, "shirt");
+            await set(XMAS_KEYS.view, "office");
+            await set(XMAS_KEYS.layout, null);
+            // the stored atoms and the fixture roster are read at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            const t = ctx.terminals[0];
+            ctx.listed = await polishWaitFor(
+                h,
+                `!!document.querySelector('[data-agent-row="${CHRISTMAS_ASKER}"]') && !!document.querySelector('[data-tree-terminal-row="${t.tabId}"]')`,
+                20000
+            );
+            await h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
+            ctx.termShown = await polishWaitFor(
+                h,
+                `[...document.querySelectorAll(".term-connectelem")].some((e) => e.getBoundingClientRect().width > 0)`,
+                15000
+            );
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError || !ctx.listed || !ctx.termShown) {
+            rec("0. arrange: the christmas-office roster and a terminal in the Agent surface", false, {
+                error: ctx.arrangeError,
+                listed: ctx.listed,
+                termShown: ctx.termShown,
+            });
+            return steps;
+        }
+        const t = ctx.terminals[0];
+        const layout = () =>
+            h.ev(`(() => {
+                const b = (sel) => {
+                    const r = document.querySelector(sel)?.getBoundingClientRect();
+                    return r == null ? null : [Math.round(r.top), Math.round(r.bottom), Math.round(r.left)];
+                };
+                return { bar: b("[data-app-bar]"), nav: b("nav"), tree: b("[data-agent-tree]") };
+            })()`);
+
+        // 1. pick Christmas: the chip in Settings → Appearance turns the palette on and shows the effects switch, on;
+        // back on Agent the asker is in the tree, the terminal shows, and the bar and content keep their place
+        const before1 = await layout();
+        await h.goto("settings");
+        await spOpen(h, "appearance");
+        const picked1 = await xmasPickPreset(h, "Christmas");
+        await xmasNap(400);
+        const switch1 = await xmasSwitch(h);
+        const bg1 = await xmasVar(h, "--color-background");
+        const accent1 = await xmasVar(h, "--color-accent");
+        await h.shot("cdp-shots/christmas-theme-1-settings.png");
+        await h.goto("agent");
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
+        await xmasNap(800);
+        const after1 = await layout();
+        const asker1 = await h.ev(`!!document.querySelector('[data-agent-row="${CHRISTMAS_ASKER}"]')`);
+        const term1 = await h.ev(
+            `[...document.querySelectorAll(".term-connectelem")].some((e) => e.getBoundingClientRect().width > 0)`
+        );
+        await h.shot("cdp-shots/christmas-theme-1-agent.png");
+        rec(
+            "1. picking Christmas in Settings sets its palette (bg #131d18, accent #d4a26a) and shows the effects switch on; the Agent surface shows the christmas-office asker in the tree and a terminal, with the app bar and content where they were",
+            picked1 &&
+                switch1 === "true" &&
+                bg1 === XMAS_BG &&
+                accent1 === XMAS_ACCENT &&
+                asker1 &&
+                term1 &&
+                JSON.stringify(before1) === JSON.stringify(after1),
+            { picked1, switch1, bg1, accent1, asker1, term1, before1, after1 }
+        );
+
+        // 2. the snow falls: one canvas, painting about 12 frames a second, with flakes on it
+        const f2a = await xmasFrames(h);
+        await xmasNap(1000);
+        const f2b = await xmasFrames(h);
+        const snow2 = await h.ev(XMAS_SNOW_READ);
+        await h.shot("cdp-shots/christmas-theme-2-snow.png");
+        rec(
+            "2. snow falls: the snow canvas paints 8+ frames a second and has flakes on it",
+            f2a != null && f2b - f2a >= 8 && snow2?.painted > 0,
+            { frames: [f2a, f2b], snow: snow2 }
+        );
+
+        // 3. the snow over the terminal is fainter: over 12 frames, the strongest flake pixel well inside the terminal
+        // is at most 0.7 of the strongest well outside (half by the rule, with room for a flake's anti-aliasing)
+        const frames3 = [];
+        for (let i = 0; i < 12; i++) {
+            frames3.push(await h.ev(XMAS_SNOW_READ));
+            await xmasNap(100);
+        }
+        const inMax3 = Math.max(0, ...frames3.map((f) => f?.inMax ?? 0));
+        const outMax3 = Math.max(0, ...frames3.map((f) => f?.outMax ?? 0));
+        await h.shot("cdp-shots/christmas-theme-3-terminal.png");
+        await xmasClip(h, "christmas-theme-3-terminal-zoom", ".term-connectelem", 480, 240, 2);
+        rec(
+            "3. snow over the terminal is fainter: the strongest flake pixel inside the terminal is ≤ 0.7 of the strongest outside it",
+            frames3.every((f) => f?.terminals > 0) && inMax3 > 0 && outMax3 > 0 && inMax3 <= 0.7 * outMax3,
+            { inMax: inMax3, outMax: outMax3, ratio: outMax3 ? Math.round((inMax3 / outMax3) * 100) / 100 : null }
+        );
+
+        // 4. with nobody asking, the lights hang under the bar lit and still: each bulb one of the four colours, no
+        // PULSES class, nothing written on its opacity across four reads
+        await xmasRoster(h, false);
+        await polishWaitFor(h, `!!document.querySelector("[data-christmas-lights]:not([data-asking])")`, 8000);
+        await xmasNap(300);
+        const lit4 = await xmasSamples(h, XMAS_LIGHTS_READ, 4, 200);
+        const l4 = lit4[0];
+        await h.shot("cdp-shots/christmas-theme-4-lights-lit.png");
+        await xmasClip(h, "christmas-theme-4-lights-lit-zoom", "[data-app-bar]", 480, 60, 3);
+        rec(
+            "4. with no agent asking, the lights hang under the app bar lit and still: every bulb red, gold, green or cream, no PULSES class, no opacity written across 4 reads",
+            l4 != null &&
+                l4.barBottom != null &&
+                Math.abs(l4.top - l4.barBottom) <= 1 &&
+                l4.bulbs.length >= Math.floor(1600 / 30) &&
+                lit4.every((s) => s && !s.asking && s.bulbs.every(xmasBulbLit)),
+            { top: l4?.top, barBottom: l4?.barBottom, bulbs: l4?.bulbs.length, first: l4?.bulbs.slice(0, 4) }
+        );
+
+        // 5. an agent asks: every bulb turns asking and blinks, every other one half a period behind
+        await xmasRoster(h, true);
+        await polishWaitFor(h, `!!document.querySelector("[data-christmas-lights][data-asking]")`, 8000);
+        await xmasNap(400);
+        const blink5 = await xmasSamples(h, XMAS_LIGHTS_READ, 10, 150);
+        const op = (b) => (b.op === "" ? 1 : Number(b.op));
+        const b0 = blink5.map((s) => op(s.bulbs[0]));
+        const lagGap5 = Math.max(...blink5.map((s) => Math.abs(op(s.bulbs[0]) - op(s.bulbs[1]))));
+        const classes5 = blink5.every(
+            (s) =>
+                s?.asking &&
+                s.bulbs.every(
+                    (b, i) => xmasBulbAsking(b) && b.cls.includes("pulse-blink") && b.lag === (i % 2 === 1 ? "600" : null)
+                )
+        );
+        await h.shot("cdp-shots/christmas-theme-5-lights-asking.png");
+        await xmasClip(h, "christmas-theme-5-lights-asking-zoom", "[data-app-bar]", 480, 60, 3);
+        rec(
+            "5. while an agent asks, every bulb is asking with pulse-blink (odd ones lagged 600ms), its opacity swings ≥ 0.4 and neighbours differ by ≥ 0.3 at some read",
+            classes5 && Math.max(...b0) - Math.min(...b0) >= 0.4 && lagGap5 >= 0.3,
+            { classes5, bulb0: b0, lagGap5 }
+        );
+
+        // 6. the Office: trees for plants, gifts and the wreath on the board, hats on its people and the boss
+        await h.goto("cockpit");
+        const missing6 = await waitForOffice(h);
+        if (!missing6) await officeDev(h, { runs: [XMAS_GIFT_RUN], afterHours: false, energy: 63, entrance: "skip" });
+        await xmasNap(1500);
+        const office6 = await h.ev(XMAS_OFFICE_READ);
+        await h.shot("cdp-shots/christmas-theme-6-office.png");
+        const room6 = (await officeProbe(h))?.rooms?.find((r) => r.key === "north-pole" || r.title === "north-pole");
+        if (room6?.box) await officeClipShot(h, "christmas-theme-6-office-room", room6.box).catch(() => {});
+        rec(
+            "6. the Office is decorated: north-pole has a tree and gifts and no plant, the notice board (and its wreath) is drawn, every person wears a hat, and the boss wears the hat (crimson and cream) over no shirt",
+            !missing6 &&
+                office6.trees > 0 &&
+                office6.plants === 0 &&
+                office6.gifts > 0 &&
+                office6.boards > 0 &&
+                office6.sprites > 0 &&
+                office6.hats === office6.sprites &&
+                office6.bossCrimson > 0 &&
+                office6.bossSnow > 0 &&
+                office6.bossShirt === 0,
+            { missing6, office6, room: room6?.key ?? null }
+        );
+
+        // 7. the pet wears the hat in its corner and in Jarvis, in place of the Settings shirt
+        await h.goto("agent");
+        const tokens7 = await petUntil(() => xmasPetTokens(h), xmasHatted, 8000, 200);
+        await h.shot("cdp-shots/christmas-theme-7-pet.png");
+        await petCropOf(h, "christmas-theme-7-pet-zoom", PET_SVG_SELECTOR).catch(() => false);
+        await h.goto("jarvis");
+        const tokens7j = await petUntil(() => xmasPetTokens(h), xmasHatted, 8000, 200);
+        await h.shot("cdp-shots/christmas-theme-7-pet-jarvis.png");
+        rec(
+            "7. the pet wears the Santa hat (crimson and cream, no shirt) in its corner and in Jarvis",
+            xmasHatted(tokens7) && xmasHatted(tokens7j),
+            { tokens7, tokens7j }
+        );
+
+        // 8. folded into Sprout, the default pet wears the hat; then Spider-Man on his rooftop (SpideyRoof); the snow
+        // stops while folded
+        const sprout8 = await xmasFold(h, "christmas-theme-8-sprout", false);
+        rec(
+            "8a. Sprout (the default pet) folded into Sprout wears the hat (crimson and cream, no shirt), the snow stops while folded, and a double-click restores",
+            sprout8.folded && sprout8.character === "sprout" && sprout8.crimson > 0 && sprout8.snow > 0 && sprout8.shirt === 0 && sprout8.snowStill && sprout8.restored,
+            sprout8
+        );
+        const pickedSpidey8 = await xmasPickCharacter(h, "Spider-Man");
+        const spidey8 = await xmasFold(h, "christmas-theme-8-spidey", true);
+        rec(
+            "8b. Spider-Man folded into Sprout sits on his rooftop (SpideyRoof) wearing the hat (crimson and cream, no shirt), the snow stops while folded, and a double-click restores",
+            pickedSpidey8 && spidey8.folded && spidey8.character === "spidey" && spidey8.roof && spidey8.crimson > 0 && spidey8.snow > 0 && spidey8.shirt === 0 && spidey8.snowStill && spidey8.restored,
+            { pickedSpidey8, ...spidey8 }
+        );
+        const pickedSprout8 = await xmasPickCharacter(h, "Sprout");
+
+        // 9. reduced motion: the snow stops and clears, the lights stay lit in asking without blinking, the static
+        // decor (the canvas's place, the lights, the pet's hat, the Office's hats) stays
+        await h.cdp("Emulation.setEmulatedMedia", PET_REDUCE);
+        ctx.reduced = true;
+        await h.goto("agent");
+        await xmasNap(800);
+        const f9a = await xmasFrames(h);
+        await xmasNap(1000);
+        const f9b = await xmasFrames(h);
+        const snow9 = await h.ev(XMAS_SNOW_READ);
+        const lights9 = await xmasSamples(h, XMAS_LIGHTS_READ, 4, 200);
+        const tokens9 = await xmasPetTokens(h);
+        await h.shot("cdp-shots/christmas-theme-9-reduced.png");
+        await h.goto("cockpit");
+        await waitForOffice(h);
+        await xmasNap(800);
+        const office9 = await h.ev(XMAS_OFFICE_READ);
+        await h.shot("cdp-shots/christmas-theme-9-reduced-office.png");
+        await h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET);
+        ctx.reduced = false;
+        rec(
+            "9. under reduced motion the snow paints no frame and its canvas is clear, the lights stay lit in asking with no opacity written, and the pet's hat and the Office's trees and hats stay",
+            pickedSprout8 &&
+                f9a === f9b &&
+                snow9 != null &&
+                snow9.painted === 0 &&
+                lights9.every((s) => s?.asking && s.bulbs.length > 0 && s.bulbs.every((b) => xmasBulbAsking(b) && b.op === "")) &&
+                xmasHatted(tokens9) &&
+                office9.trees > 0 &&
+                office9.hats > 0,
+            { pickedSprout8, frames: [f9a, f9b], snow9, bulb0: lights9.map((s) => s?.bulbs[0]), tokens9, office9 }
+        );
+
+        // 10. the effects switch off: snow and lights gone, the palette kept. Around it, the snow's cost: the main
+        // thread's busy share over 10 s and the heap after a GC, with the effects on, then off, on Settings both times
+        await h.goto("settings");
+        await spOpen(h, "appearance");
+        await h.cdp("Performance.enable");
+        const on0 = await xmasMetrics(h);
+        await xmasNap(XMAS_HOLD_MS);
+        const on1 = await xmasMetrics(h);
+        const clicked10 = await spClick(h, XMAS_SWITCH);
+        const off10 = await polishWaitFor(h, `${XMAS_SWITCH}?.getAttribute("aria-checked") === "false"`, 3000);
+        await xmasNap(1000);
+        const off0 = await xmasMetrics(h);
+        await xmasNap(XMAS_HOLD_MS);
+        const off1 = await xmasMetrics(h);
+        const measure = {
+            busyOnPct: xmasBusy(on0, on1),
+            busyOffPct: xmasBusy(off0, off1),
+            heapOnMB: xmasMB(on1.heap),
+            heapOffMB: xmasMB(off1.heap),
+            heapDeltaMB: xmasMB(on1.heap - off1.heap),
+        };
+        console.log(`christmas-theme: snow measured over ${XMAS_HOLD_MS / 1000} s on Settings: ${JSON.stringify(measure)}`);
+        const gone10 = await h.ev(`({
+            snow: !!document.querySelector("canvas[data-christmas-snow]"),
+            lights: !!document.querySelector("[data-christmas-lights]"),
+        })`);
+        const bg10 = await xmasVar(h, "--color-background");
+        const accent10 = await xmasVar(h, "--color-accent");
+        await h.shot("cdp-shots/christmas-theme-10-effects-off.png");
+        rec(
+            "10. turning Christmas effects off removes the snow canvas and the lights and keeps the palette (bg #131d18, accent #d4a26a)",
+            clicked10 && off10 && !gone10.snow && !gone10.lights && bg10 === XMAS_BG && accent10 === XMAS_ACCENT,
+            { clicked10, off10, gone10, bg10, accent10, measure }
+        );
+
+        // 11. with the effects off the Settings outfit comes back: the shirt on the pet and on the boss, and no hat or
+        // tree is left in the Office
+        await h.goto("agent");
+        const tokens11 = await petUntil(
+            () => xmasPetTokens(h),
+            (tk) => Array.isArray(tk) && tk.includes(XMAS_SHIRT) && !tk.includes(XMAS_CRIMSON),
+            8000,
+            200
+        );
+        await h.shot("cdp-shots/christmas-theme-11-outfit.png");
+        await petCropOf(h, "christmas-theme-11-outfit-zoom", PET_SVG_SELECTOR).catch(() => false);
+        await h.goto("cockpit");
+        await waitForOffice(h);
+        await xmasNap(800);
+        const office11 = await h.ev(XMAS_OFFICE_READ);
+        await h.shot("cdp-shots/christmas-theme-11-office.png");
+        rec(
+            "11. with the effects off the pet wears the Settings shirt again (no hat), and the Office has no hats, trees or gifts, its boss in the shirt",
+            Array.isArray(tokens11) &&
+                tokens11.includes(XMAS_SHIRT) &&
+                !tokens11.includes(XMAS_CRIMSON) &&
+                office11.hats === 0 &&
+                office11.trees === 0 &&
+                office11.gifts === 0 &&
+                office11.bossCrimson === 0 &&
+                office11.bossShirt > 0,
+            { tokens11, office11 }
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`christmas-theme teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("lift the media emulation", () => h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET));
+        await step("clear the Office's seeded run", () => h.ev("window.__cockpitOffice?.(null)"));
+        await step("restore the stored theme, effects, pet and Office view", async () => {
+            for (const [k, key] of Object.entries(XMAS_KEYS)) {
+                const v = ctx.prev?.[k];
+                await h.ev(
+                    v == null
+                        ? `localStorage.removeItem(${JSON.stringify(key)})`
+                        : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(v)})`
+                );
+            }
+        });
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
+        // the restored atoms and roster are read at boot
+        await step("reload onto the restored state", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
     },
 };
 
@@ -59984,6 +60559,7 @@ export const SCENARIOS = [
     briefRestore,
     briefComposerSteerOnly,
     terminalTheme,
+    christmasTheme,
     appBarNarrow,
     harnessUpdate,
     settingsClaudeAccount,

@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- **Christmas**, a new theme in Settings → Appearance → Theme: forest green and antique gold, snow falling over the window (fainter over a terminal), a string of lights under the app bar that blinks while an agent needs you, Christmas trees, gifts and a wreath in the Office, and a Santa hat on the pet and on everyone in the Office. The Christmas effects switch under the themes drops the decor and keeps the colours; with reduced motion on, the snow and the blink stop and the rest stays. <!-- big -->
+
 ### Changed
 
 - In a council's message box, an `@seat` you pick or type is tinted in that seat's colour (and an `@file` as a link) as you write, as the sent message shows it, instead of sitting in the text as plain words.

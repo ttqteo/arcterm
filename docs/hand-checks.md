@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The Christmas theme in WebView2.** In the packaged app pick Settings → Appearance → Theme →
+  Christmas, with an agent's terminal open → snow falls over the whole window and reads clearly fainter over the
+  terminal, whose text stays readable; the lights hang under the app bar without moving it. Have an agent ask → the
+  string blinks in the asking colour, every other bulb half a beat behind, and goes back to lit and still once nothing
+  asks. Look at the pet at taskbar size, folded into Sprout (and as Spider-Man on his rooftop) and in the Office → the
+  Santa hat reads as a hat, red with a cream trim, not a smudge. Turn Christmas effects off → the snow, lights and hats
+  go, the colours stay. Checked by the `christmas-theme` CDP scenario in the dev app; the look itself, in the packaged
+  build and at real sizes, was not judged by eye (`christmassnowview.tsx`, `christmaslights.tsx`, `petsprite.ts`).
+
 - [ ] (arcterm) **Council composer: tinted @seat, and Ctrl+Z.** In the packaged app open a council, type `@` in the
   message box and pick a seat with a long name (`Reviewer 1 (area expert)`) → it shows tinted in the seat's colour,
   the caret and a selection sit where the letters are, also once the text wraps and once it scrolls past the box's
