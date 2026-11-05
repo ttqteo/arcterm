@@ -245,6 +245,64 @@ func TestRoundCheckReadRoundIsWhatAPassAdded(t *testing.T) {
 	}
 }
 
+// The person's messages the pass answers are part of the round, not context: a choice made in one is the round's to
+// record. One an earlier pass answered stays context.
+func TestRoundCheckReadRoundHasThePersonsMessagesItAnswers(t *testing.T) {
+	before := fixtureCouncil("c1", StateDone, 2)
+	before.Replies = append(before.Replies,
+		CouncilReply{Id: "r3", Author: YouId, Text: "Old question, answered.", To: []string{"ux"}, Answered: true, Ts: 4},
+		CouncilReply{Id: "r4", Author: YouId, Text: "We settle on P2, drop P1.", To: []string{"ram"}, Ts: 5},
+	)
+	c := fixtureCouncil("c1", StateDone, 2)
+	c.Replies = append(slices.Clone(before.Replies), CouncilReply{Id: "r5", ParentId: "r4", Author: "ram", Text: "Then P2 it is.", Round: 4, Ts: 6})
+	c.Replies[3].Answered = true // the pass marked r4 answered
+	rr := readRound(c, before)
+	var fresh, earlier []string
+	for _, m := range rr.fresh {
+		fresh = append(fresh, m.id)
+	}
+	for _, m := range rr.earlier {
+		earlier = append(earlier, m.id)
+	}
+	if strings.Join(fresh, ",") != "r4,r5" {
+		t.Errorf("fresh = %v, want the person's r4 and the answer r5", fresh)
+	}
+	if !slices.Contains(earlier, "r3") || slices.Contains(earlier, "r4") {
+		t.Errorf("earlier = %v, want r3 (answered before the pass) and not r4", earlier)
+	}
+	mustContain(t, "round-check prompt", roundCheckPrompt(c, rr), "[r4] the person", personSettlesRule)
+}
+
+// A long message is not cut at its start alone: the check reads its start, every sentence its author marked as the one
+// to read (==…==), and its end, where a seat states what it settled.
+func TestMemoryLinesKeepTheMarkedSentencesAndTheEndOfALongMessage(t *testing.T) {
+	c := fixtureCouncil("c1", StateDone, 2)
+	filler := strings.Repeat("Some table row about the paper. ", 30)
+	c.Replies = append(c.Replies, CouncilReply{Id: "r3", Author: "ux", Round: 4, Ts: 4,
+		Text: "I read it, it is a benchmark. " + filler + "==Cite it for noisy selection, not as proof harnesses add nothing.== " + filler + "So the M5 result stands on its own numbers."})
+	var got string
+	for _, l := range memoryLines(c) {
+		if l.id == "r3" {
+			got = l.text
+		}
+	}
+	for _, want := range []string{"I read it, it is a benchmark.", "Cite it for noisy selection, not as proof harnesses add nothing.", "So the M5 result stands on its own numbers."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the check's line lacks %q:\n%s", want, got)
+		}
+	}
+	if n := len([]rune(got)); n > memoryLongMax {
+		t.Errorf("the line is %d characters, want at most %d", n, memoryLongMax)
+	}
+	if strings.Contains(got, "==") {
+		t.Errorf("the marks are left in: %s", got)
+	}
+	short := checkText("A short one, ==marked==.")
+	if short != "A short one, marked." {
+		t.Errorf("checkText(short) = %q, want the words whole with the marks gone", short)
+	}
+}
+
 func TestRoundCheckCallNoTools(t *testing.T) {
 	before := fixtureCouncil("c1", StateDone, 2)
 	c := fixtureCouncil("c1", StateDone, 2)

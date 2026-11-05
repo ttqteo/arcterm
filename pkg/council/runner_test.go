@@ -7086,7 +7086,7 @@ var roundCheckIdRe = regexp.MustCompile(`(?m)^- \[(\w+)\]`)
 
 // roundsMessages are the ids the round check's prompt lists as what the seats said this round.
 func roundsMessages(req CallReq) []string {
-	return idsIn(roundCheckIdRe, sectionText(req.Prompt, "## What the seats said this round, oldest first"))
+	return idsIn(roundCheckIdRe, sectionText(req.Prompt, "## What was said this round, oldest first"))
 }
 
 // suggestRoundCheck makes the fake's round check suggest text, citing the first message it was shown.
@@ -7239,7 +7239,7 @@ func TestRoundCheckRunsAfterAnAnswerBatch(t *testing.T) {
 	}
 	mustContain(t, "the batch's round check", checks[1].Prompt, "Answer from ram")
 	// the reply pass's replies are not this round's: they are in the context section, if anywhere
-	mustNotContain(t, "the batch's round check", sectionText(checks[1].Prompt, "## What the seats said this round, oldest first"), "Reason from")
+	mustNotContain(t, "the batch's round check", sectionText(checks[1].Prompt, "## What was said this round, oldest first"), "Reason from")
 	if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+callTokens["ans"]+callTokens["roundcheck"] {
 		t.Errorf("calls %d tokens %d, want %d and %d: the one answer and its round check", c.Calls, c.Tokens, done.Calls+2, done.Tokens+callTokens["ans"]+callTokens["roundcheck"])
 	}
