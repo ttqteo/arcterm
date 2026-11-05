@@ -63,7 +63,7 @@ type MemIndexStats struct {
 
 type MemChange struct {
 	Id            string        `json:"id"`    // sha256 of kind + sorted file paths + their hashes; stable across checks
-	Kind          string        `json:"kind"`  // delete|trim|merge|move-to-doc|add-to-index|move-here|copy-here|remove-shared|settings
+	Kind          string        `json:"kind"`  // delete|trim|merge|move-to-doc|add-to-index|move-here|copy-here|remove-shared|settings|review
 	Group         string        `json:"group"` // ""|shared|own|switch (the split's three groups)
 	Title         string        `json:"title"`
 	Note          string        `json:"note"`

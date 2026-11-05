@@ -433,6 +433,10 @@ export function closedText(p: MemHygieneProject, change: MemChange, now: number)
         const day = dayName(change.decidedat, now);
         when = `${day === "today" ? "" : ` ${day}`} at ${fmtClock(change.decidedat)}`;
     }
+    if (change.kind === "review") {
+        // Still true rewrites the memory as it was, so the backup holds nothing worth naming
+        return `Marked still true${when}. It comes back for review if it goes untouched another 30 days.`;
+    }
     const settings = change.kind === "settings";
     let text = `Applied${when}.`;
     if (settings) {
@@ -477,6 +481,8 @@ export function kindLabel(p: MemHygieneProject, change: MemChange): string {
             return `Remove from ${sharedRepo(p)}`;
         case "settings":
             return "Settings";
+        case "review":
+            return "Review";
         default:
             return change.kind;
     }

@@ -39,6 +39,7 @@ type checkOutcome struct {
 	changes []wshrpc.MemChange
 	seen    map[string]string
 	sort    map[string]SortEntry
+	err     error // the model failed: the result holds only what code found, and this is the reason
 }
 
 // runCheck checks one project and stores the result. A failure records its reason and keeps the last
@@ -86,9 +87,19 @@ func checkRun(ctx context.Context, project, claudeHome string, startedAt time.Ti
 	docTarget := DocTarget(r.Path)
 
 	if len(r.SharedWith) == 0 {
-		if out.changes, err = checkJudge(ctx, prev, inv, docs, docTarget, out.seen); err != nil {
-			return err
+		judged, jerr := checkJudge(ctx, prev, inv, docs, docTarget, out.seen)
+		if jerr != nil {
+			if ctx.Err() != nil {
+				return jerr
+			}
+			// the model failed: store what code found (the index's size and the reviews) with the
+			// reason, and keep the last fingerprints so the next check judges the same memories again
+			log.Printf("memhygiene: judge of %s failed, storing what code found: %v\n", project, jerr)
+			out.err, out.seen = jerr, prev.Seen
+			out.changes = ReviewChanges(inv, prev.Changes, false, startedAt)
+			return checkStore(project, startedAt, out)
 		}
+		out.changes = append(judged, ReviewChanges(inv, append(judged, prev.Changes...), true, startedAt)...)
 		if prev.FormerShared != "" {
 			removals, err := checkRemoveShared(ctx, project, prev, registry, resolved, out.sort)
 			if err != nil {
@@ -331,6 +342,9 @@ func checkStore(project string, startedAt time.Time, out checkOutcome) error {
 		st.Changes = checkMerge(st.Changes, out.changes, startedAt.UnixMilli(), now)
 		st.Checking = false
 		st.LastError = ""
+		if out.err != nil {
+			st.LastError = out.err.Error()
+		}
 		st.CheckedAt = now.UnixMilli()
 		st.NextCheckAt = now.Add(checkInterval).UnixMilli()
 		st.Folder = r.Folder

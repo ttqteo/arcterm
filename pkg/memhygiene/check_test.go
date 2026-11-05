@@ -260,8 +260,9 @@ func TestCheckFailureKeepsLastResult(t *testing.T) {
 			if err := entryBegin("p"); err != nil {
 				t.Fatal(err)
 			}
-			if err := runCheck(context.Background(), "p", env.claudeHome); err == nil {
-				t.Fatal("want the check to fail")
+			// a failed judge still stores what code found, with the reason
+			if err := runCheck(context.Background(), "p", env.claudeHome); err != nil {
+				t.Fatal(err)
 			}
 			st := checkTestLoad(t, "p")
 			if st.Checking || st.LastError == "" {
@@ -270,10 +271,76 @@ func TestCheckFailureKeepsLastResult(t *testing.T) {
 			if name == "model error" && !strings.Contains(st.LastError, "model down") {
 				t.Fatalf("lasterror %q doesn't give the reason", st.LastError)
 			}
-			if st.CheckedAt != good.CheckedAt || len(st.Changes) != 1 || st.Changes[0].Id != good.Changes[0].Id {
-				t.Fatalf("the last good result was not kept: %+v", st.MemHygieneProject)
+			if len(st.Changes) != 1 || st.Changes[0].Id != good.Changes[0].Id {
+				t.Fatalf("the last good result was not kept: %+v", st.Changes)
+			}
+			if !st.Index.Exists || st.Index.Lines != 2 || st.Memories != 2 {
+				t.Fatalf("the index and memories were not measured: %+v", st.MemHygieneProject)
+			}
+			if !maps.Equal(st.Seen, good.Seen) {
+				t.Fatalf("a failed judge moved the hash gate: %v, was %v", st.Seen, good.Seen)
 			}
 		})
+	}
+}
+
+func TestCheckFailedJudgeProposesReviewsFromCode(t *testing.T) {
+	env := checkTestSetup(t)
+	folder := checkTestSimple(t, env, "p")
+	writeFile(t, filepath.Join(folder, "orphan.md"), "not linked\n")
+	env.setReply(func(string) (string, error) { return "", errors.New("model down") })
+	checkTestRun(t, env, "p")
+	st := checkTestLoad(t, "p")
+	c := checkTestFind(t, st, reviewKind)
+	if c.Op.Memories[0] != "orphan.md" || len(st.Changes) != 1 {
+		t.Fatalf("want one review, of orphan.md (it has a warning): %+v", st.Changes)
+	}
+}
+
+func TestCheckProposesReviewForStaleMemory(t *testing.T) {
+	env := checkTestSetup(t)
+	folder := checkTestSimple(t, env, "p")
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(folder, "b.md"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	checkTestRun(t, env, "p")
+	c := checkTestFind(t, checkTestLoad(t, "p"), reviewKind)
+	if c.Op.Memories[0] != "b.md" || !strings.HasPrefix(c.Effect, "untouched 4") {
+		t.Fatalf("want a review of b.md, untouched 40 days: %+v", c)
+	}
+
+	checkTestDecide(t, "p", c.Id, wshrpc.MemVerdict_Apply)
+	info, err := os.Stat(filepath.Join(folder, "b.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(info.ModTime()) > time.Hour {
+		t.Fatalf("Still true left b.md's mtime at %v", info.ModTime())
+	}
+	if got, err := os.ReadFile(filepath.Join(folder, "b.md")); err != nil || string(got) != "beta rule\n" {
+		t.Fatalf("Still true changed b.md: %q %v", got, err)
+	}
+	checkTestRun(t, env, "p")
+	for _, ch := range checkTestLoad(t, "p").Changes {
+		if ch.Kind == reviewKind && ch.Status == splitStatusOpen {
+			t.Fatalf("a memory marked still true came back for review: %+v", ch)
+		}
+	}
+}
+
+func TestCheckNoReviewWhereJudgeProposesChange(t *testing.T) {
+	env := checkTestSetup(t)
+	folder := checkTestSimple(t, env, "p")
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(folder, "a.md"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	env.setReply(func(string) (string, error) { return checkTestDelete("a.md"), nil })
+	checkTestRun(t, env, "p")
+	st := checkTestLoad(t, "p")
+	if len(st.Changes) != 1 || st.Changes[0].Kind != "delete" {
+		t.Fatalf("want only the judge's delete of a.md: %+v", st.Changes)
 	}
 }
 
