@@ -111,7 +111,13 @@ export function ShapeCards({ showParallelism }: { showParallelism: boolean }) {
                 {showParallelism ? (
                     <div className="ml-auto flex items-center gap-1.5">
                         <span className="text-[10.5px] text-ink-mid">workers</span>
-                        <WorkerStepper value={par} onStep={stepParallelism} warn={overCapacity(cap, extra)} />
+                        <WorkerStepper
+                            value={par}
+                            onStep={stepParallelism}
+                            unsetLabel="auto"
+                            unsettable
+                            warn={overCapacity(cap, extra)}
+                        />
                         <CapacityWarn cap={cap} extra={extra} />
                     </div>
                 ) : null}
@@ -236,6 +242,7 @@ export function WorkerStepper({
     onStep,
     disabled = false,
     unsetLabel = "–",
+    unsettable = false,
     warn = false,
 }: {
     value: number | null;
@@ -243,6 +250,8 @@ export function WorkerStepper({
     disabled?: boolean;
     // what a null value reads as: the launcher's dash, or the profile's "auto"
     unsetLabel?: string;
+    // − at 1 goes back to the unset value (the launcher's auto) instead of stopping there
+    unsettable?: boolean;
     // the pick is more workers than fit in RAM (CapacityWarn says why)
     warn?: boolean;
 }) {
@@ -251,7 +260,7 @@ export function WorkerStepper({
             <button
                 type="button"
                 onClick={() => onStep(-1)}
-                disabled={disabled || (value != null && value <= 1)}
+                disabled={disabled || (unsettable ? value == null : value != null && value <= 1)}
                 aria-label="Fewer concurrent workers"
                 className={STEP_BTN}
             >

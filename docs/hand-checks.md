@@ -1843,3 +1843,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   across the message: no tip shows. Rest it on the Planner chip above the text → after about half a second "Router
   chose …" opens above the chips, never over the message; a short button name (Copy, Pin) still shows at once.
   Vitest and `task check:ts` only (`titletip.ts` `tipDelay`, `titletiphost.tsx`, `ReachRow`); no dev app was up.
+- [ ] (arcterm) **New run takes the profile's auto width.** Jarvis → Profile → Parallel workers "auto" → + Run →
+  Orchestrate: Workers at once reads `auto` (− disabled), the footer says "Orchestrator × auto in …"; Start run → the
+  run's DAG width is the lead's (or the plan's) pick, not 3. + steps to 3; − at 1 returns to auto. Set the profile to 5
+  → a fresh New run shows 5. Vitest and `task check:ts` only (`runconfigstore.ts`, `WorkerStepper` `unsettable`,
+  `newrun.ts`); no dev app was up.
