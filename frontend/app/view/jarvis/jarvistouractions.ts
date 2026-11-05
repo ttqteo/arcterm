@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What a tour step opens before it shows: the Profile through its atom, the newest run's sheet through the router,
-// and an initiative's card by clicking it, the way a person opens one. Covered by the jarvis-tour CDP scenario, not
-// by unit tests.
+// and the first card's initiative in the sheet by clicking the card, the way a person opens one. Covered by the
+// jarvis-tour CDP scenario, not by unit tests.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { fireAndForget } from "@/util/util";
+import { initiativeSheetOpenAtom } from "./initiativesheetstore";
 import { briefProfileAtom, briefRunListAtom, briefSheetOpenAtom } from "./jarvisstore";
 import type { TourPrepare, TourStep } from "./jarvistour";
 import { openAddress } from "./openref";
@@ -41,10 +42,11 @@ export function openPrepare(p: TourPrepare, model: AgentsViewModel): boolean {
             return click('[data-jarvis-brief-row="shipped"][data-peek]');
         }
         case "firstInitiative":
-            if (document.querySelector('[data-jarvis-initiative-card="open"]') != null) {
+            // an initiative opens in the sheet, as a click on its card opens it; one already there is left open
+            if (globalStore.get(initiativeSheetOpenAtom)) {
                 return false;
             }
-            return click('[data-jarvis-initiative-card="closed"] > [role="button"]');
+            return click("[data-jarvis-card]") || click("[data-jarvis-initiative-row]");
     }
 }
 
@@ -54,10 +56,8 @@ export function closePrepare(p: TourPrepare): void {
             globalStore.set(briefProfileAtom, null);
             return;
         case "newestRun":
-            globalStore.set(briefSheetOpenAtom, false);
-            return;
         case "firstInitiative":
-            click('[data-jarvis-initiative-card="open"] > [role="button"]');
+            globalStore.set(briefSheetOpenAtom, false);
             return;
     }
 }

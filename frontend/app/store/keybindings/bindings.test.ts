@@ -76,7 +76,9 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
-import { noteChunkAtom } from "@/app/view/jarvis/jarvisstore";
+import { briefCursorInitiativeAtom } from "@/app/view/jarvis/jarvisstore";
+import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
+import { togglePin } from "@/app/view/jarvis/effortstore";
 import { enterReview, exitReview, reviewModeAtom, reviewedAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
@@ -107,6 +109,10 @@ import type { KeyContext } from "./types";
 vi.mock("@/app/view/jarvis/openref", async (orig) => ({
     ...(await orig<typeof import("@/app/view/jarvis/openref")>()),
     peekTarget: vi.fn(async () => ({ ok: true })),
+}));
+vi.mock("@/app/view/jarvis/effortstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/jarvis/effortstore")>()),
+    togglePin: vi.fn(async () => {}),
 }));
 
 vi.mock("@/app/view/agents/floatstore", async (orig) => ({
@@ -2696,7 +2702,6 @@ describe("review mode on the Jarvis surface", () => {
     afterEach(() => {
         exitReview();
         globalStore.set(listNavAtom, null);
-        globalStore.set(noteChunkAtom, null);
     });
 
     it("hands j, k and Enter to the list while no review is on", () => {
@@ -2727,14 +2732,6 @@ describe("review mode on the Jarvis surface", () => {
         expect(claim("Escape", { ...nav, surface: "usage" })).toBe("surface:back-home");
         expect(claim("j", { ...nav, editable: true })).toBeNull();
         expect(claim("Enter", { ...nav, editable: true })).toBeNull();
-    });
-
-    it("lets the Chunk sidebar have Escape first, then the review", () => {
-        enterReview(["a", "b"], 100);
-        globalStore.set(noteChunkAtom, "initiatives:effort:e1/chunk:x");
-        expect(claim("Escape")).toBe("jarvis:close-notes");
-        globalStore.set(noteChunkAtom, null);
-        expect(claim("Escape")).toBe("jarvis:review-exit");
     });
 
     it("steps with the arrows and j/k around the pass, and Enter marks the one it is on and moves on", () => {
@@ -3296,5 +3293,72 @@ describe("the initiative sheet's keys", () => {
             expect(b.when!({ ...nav, editable: true })).toBe(false);
             expect(b.when!({ ...nav, surface: "cockpit" })).toBe(false);
         }
+    });
+});
+
+// the Brief's own initiative keys (spec 2026-11-05-jarvis-revamp-design.md, Keyboard): p pins, w works on, and the
+// council sheet holds the page's j/k as the initiative sheet does
+describe("the Brief's initiative keys", () => {
+    const nav: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
+    const key = (k: string) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
+    const model = stubModel("a1");
+    const all = () => [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings(model)];
+    const claim = (k: string, on: KeyContext = nav) => {
+        const r = matchBinding(key(k), on, all());
+        return r.kind === "run" ? r.binding : null;
+    };
+    const workOn = vi.fn();
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+        globalStore.set(diffScopeAtom, null);
+    });
+    afterEach(() => {
+        exitReview();
+        globalStore.set(listNavAtom, null);
+        globalStore.set(briefCursorInitiativeAtom, null);
+        globalStore.set(councilSheetAtom, null);
+        globalStore.set(briefSheetOpenAtom, false);
+        globalStore.set(activeSubjectAtom, null);
+    });
+
+    it("pins the initiative under the page cursor with p", () => {
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        claim("p")!.run(nav);
+        expect(togglePin).toHaveBeenCalledWith("effort:e1");
+    });
+
+    it("pins the initiative open in the sheet with p, whatever the page cursor is on", () => {
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        globalStore.set(activeSubjectAtom, { kind: "effort", id: "e2" });
+        globalStore.set(briefSheetOpenAtom, true);
+        claim("p")!.run(nav);
+        expect(togglePin).toHaveBeenCalledWith("effort:e2");
+    });
+
+    it("lets p pass with no initiative under the cursor, in a review pass, in a field and off the Brief", () => {
+        expect(claim("p")).toBeNull();
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        expect(claim("p", { ...nav, editable: true })).toBeNull();
+        expect(claim("p", { ...nav, surface: "cockpit" })?.id).not.toBe("jarvis:pin-initiative");
+        enterReview(["effort:e1"], 100);
+        expect(claim("p")).toBeNull();
+    });
+
+    it("works on the initiative under the page cursor with w, though a list row draws no button", () => {
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        claim("w")!.run(nav);
+        expect(workOn).toHaveBeenCalled();
+    });
+
+    it("holds the page's j/k while a council's report is in the sheet", () => {
+        expect(claim("j")?.id).toBe("list:next-j");
+        globalStore.set(councilSheetAtom, "c1");
+        globalStore.set(briefSheetOpenAtom, true);
+        expect(claim("j")).toBeNull();
+        expect(claim("k")).toBeNull();
+        expect(claim("Enter")).toBeNull();
     });
 });

@@ -43,8 +43,14 @@ import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
 import { chunkViewOpenAtom, initiativeSheetOpenAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
-import { briefPeekRecordAtom, chunkMoveAtom, noteChunkAtom, trackerMenuAtom } from "@/app/view/jarvis/jarvisstore";
+import {
+    briefCursorInitiativeAtom,
+    briefPeekRecordAtom,
+    chunkMoveAtom,
+    trackerMenuAtom,
+} from "@/app/view/jarvis/jarvisstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { reviewModeAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
@@ -61,13 +67,13 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     historyFiltersAtom, // buildFilesBindings: filtering, surface:back-home
     lineReviewsAtom, // buildFilesBindings: files:review-send
     activeReviewKeyAtom, // buildFilesBindings: files:review-send
-    noteChunkAtom, // buildJarvisBindings: jarvis:close-notes, and surface:back-home yields to it
     chunkMoveAtom, // buildJarvisBindings: jarvis:chunk-up / jarvis:chunk-down
+    briefCursorInitiativeAtom, // buildJarvisBindings: jarvis:pin-initiative
+    councilSheetAtom, // buildListNavBindings: active (the council sheet holds the page's j/k)
     sheetChunkMoveAtom, // buildJarvisBindings: jarvis:chunk-up / jarvis:chunk-down while the initiative sheet is open
     initiativeSheetOpenAtom, // buildInitiativeSheetBindings: j/k/Enter; buildListNavBindings: active; jarvis:chunk-up/down
     chunkViewOpenAtom, // buildInitiativeSheetBindings: the chunk view's s, 1–6 and Escape
-    trackerMenuAtom, // buildJarvisBindings: jarvis:close-tracker-menu, jarvis:close-notes, surface:back-home
-    // (readingNoteAtom is deliberately absent: jarvis:close-notes reads it in run(), never in when())
+    trackerMenuAtom, // buildJarvisBindings: jarvis:close-tracker-menu, jarvis:review-exit, surface:back-home
     autonomyPanelOpenAtom, // surface:back-home
     petPeekOpenAtom, // surface:back-home
     briefPeekRecordAtom, // surface:back-home

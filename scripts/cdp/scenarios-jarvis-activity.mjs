@@ -53,7 +53,13 @@ export default function (kit) {
             // a throw past this point still returns ctx, so teardown removes whatever was already made
             try {
                 ctx.council = await arrangeCouncilProject(h, kit);
-                const titled = (title) => ({ edit: (c) => (c.feature = title) });
+                // the council sheet's head names the question, Activity the feature: one title for both
+                const titled = (title) => ({
+                    edit: (c) => {
+                        c.feature = title;
+                        c.question = title;
+                    },
+                });
                 ctx.councilIds = {
                     live: writeCouncil(ctx.council, "round1", titled(TITLES.live)),
                     done: writeCouncil(ctx.council, "done", titled(TITLES.done)),
@@ -125,7 +131,7 @@ export default function (kit) {
             await h.ev(`[...(${ACTIVITY}?.querySelectorAll('[data-jarvis-activity-line="council"]') ?? [])]
                 .find((l) => l.innerText.includes(${JSON.stringify(TITLES.done)}))?.click()`);
             const sheet = `(() => {
-                const s = document.querySelector('[data-jarvis-council-sheet]') ?? document.querySelector('[data-jarvis-brief-sheet]');
+                const s = document.querySelector('[data-jarvis-brief-sheet="council"]');
                 return s != null && s.innerText.includes(${JSON.stringify(TITLES.done)});
             })()`;
             const opened = await polishWaitFor(h, sheet, 10000);
@@ -135,7 +141,7 @@ export default function (kit) {
                 opened,
                 JSON.stringify({
                     councilId: ctx.councilIds.done,
-                    councilSheet: await h.ev(`!!document.querySelector('[data-jarvis-council-sheet]')`),
+                    councilSheet: await h.ev(`!!document.querySelector('[data-jarvis-brief-sheet="council"]')`),
                     briefSheet: await h.ev(`!!document.querySelector('[data-jarvis-brief-sheet]')`),
                 })
             );

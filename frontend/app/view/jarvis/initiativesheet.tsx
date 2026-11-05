@@ -62,7 +62,7 @@ import { noteStamp, openAgentFor } from "./initiativework";
 import { workOnInitiative, type WorkOnTarget } from "./initiativeworkaction";
 import { chunkRowId, initiativeRows, type DetailRow } from "./inlinetracker";
 import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
-import { briefInitiativeListAtom } from "./jarvisstore";
+import { briefInitiativeListAtom, initiativeSheetRequestAtom } from "./jarvisstore";
 import { openOrPeekAddress } from "./openref";
 import { STAGE_SCROLLER } from "./stagemeasure";
 
@@ -99,7 +99,8 @@ function useCards(): EffortCardModel[] {
 }
 
 /**
- * The sheet's head. `onClose` and `stepping` are the sheet's: the review pass draws the head in place without them.
+ * The sheet's head. `onClose` and `stepping` are the sheet's: the review pass draws the head in place without them,
+ * and passes `onActivity`, since the sheet's own Activity toggle would flip the state of a sheet that is not open.
  */
 export function InitiativeSheetHead({
     model,
@@ -108,6 +109,7 @@ export function InitiativeSheetHead({
     card,
     onClose,
     stepping = true,
+    onActivity,
 }: {
     model: AgentsViewModel;
     oref: string;
@@ -115,6 +117,7 @@ export function InitiativeSheetHead({
     card: EffortCardModel | null;
     onClose?: () => void;
     stepping?: boolean;
+    onActivity?: (e: React.MouseEvent) => void;
 }) {
     const { effort, edits, renaming, setRenaming, commitRename, planChunks } = state;
     const agents = useAtomValue(model.agentsAtom);
@@ -284,11 +287,17 @@ export function InitiativeSheetHead({
                 <button
                     type="button"
                     data-jarvis-sheet-activity
-                    aria-pressed={sheet.view === "activity"}
-                    onClick={() => (sheet.view === "activity" ? backToPlan() : showInitiativeActivity())}
+                    aria-pressed={onActivity == null ? sheet.view === "activity" : undefined}
+                    onClick={(e) =>
+                        onActivity != null
+                            ? onActivity(e)
+                            : sheet.view === "activity"
+                              ? backToPlan()
+                              : showInitiativeActivity()
+                    }
                     className={cn(
                         "flex h-[26px] cursor-pointer items-center gap-1 px-1 text-[11.5px] hover:text-ink-hi",
-                        sheet.view === "activity" ? "text-ink-hi" : "text-ink-mid",
+                        onActivity == null && sheet.view === "activity" ? "text-ink-hi" : "text-ink-mid",
                         FOCUS
                     )}
                 >
@@ -660,6 +669,20 @@ export function InitiativeSheet({
             backToPlan();
         }
     }, [chunk, sheet.chunk, state.effort]);
+    // the Brief's initiative menu opened the sheet to rename it or to edit its details: done once its plan is loaded
+    const [request, setRequest] = useAtom(initiativeSheetRequestAtom);
+    const { effort, setRenaming, setDetailsOpen } = state;
+    useEffect(() => {
+        if (request == null || request.oref !== oref || effort == null) {
+            return;
+        }
+        setRequest(null);
+        if (request.action === "rename") {
+            setRenaming(effort.title);
+        } else {
+            setDetailsOpen(true);
+        }
+    }, [request, oref, effort, setRequest, setRenaming, setDetailsOpen]);
     return (
         <SheetShell
             face="effort"

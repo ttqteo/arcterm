@@ -129,11 +129,12 @@ import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { COMPOSER_FIELDS, COMPOSER_SELECTOR } from "@/app/view/jarvis/composerkey";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { chunkViewOpenAtom, initiativeSheetOpenAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
+import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
+import { togglePin } from "@/app/view/jarvis/effortstore";
 import {
+    briefCursorInitiativeAtom,
     briefPeekRecordAtom,
     chunkMoveAtom,
-    noteChunkAtom,
-    readingNoteAtom,
     trackerMenuAtom,
 } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, setActiveRunId } from "@/app/view/jarvis/jarvissubjectstore";
@@ -621,10 +622,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                 globalStore.get(briefPeekRecordAtom) == null &&
                 // the DAG modal takes Escape itself too, and the Brief mounts it as well as Channels
                 globalStore.get(dagModalStateAtom) == null &&
-                // and the Brief's Chunk sidebar: while a note is open, Escape means "back out of the
-                // note", and going home too would do both at once
-                globalStore.get(noteChunkAtom) == null &&
-                // and the plan-editing menu above it, the innermost rung of all
+                // and the plan-editing menu, the innermost rung of all
                 globalStore.get(trackerMenuAtom) == null &&
                 // and a review pass on the Brief: Escape leaves the pass, and going home too would do both
                 !(ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null),
@@ -648,6 +646,10 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
         // the initiative in the Brief's sheet takes j, k and Enter for its chunks (buildInitiativeSheetBindings): the
         // page's cursor stays where it was under the sheet
         if (ctx.surface === "jarvis" && globalStore.get(initiativeSheetOpenAtom)) {
+            return false;
+        }
+        // and a council's report in the sheet has nothing to step: the page's cursor waits under it
+        if (ctx.surface === "jarvis" && globalStore.get(councilSheetAtom) != null) {
             return false;
         }
         const c = globalStore.get(listNavAtom);
@@ -809,26 +811,6 @@ export function buildChannelsAskBindings(
 const onJarvis = (ctx: KeyContext) => ctx.surface === "jarvis" && !ctx.editable && !ctx.modalOpen;
 
 export function buildJarvisBindings(model: LauncherModel): Binding[] {
-
-    // One rung per press: an expanded note card folds, then the sidebar closes. Only then does Escape
-    // fall through to esc-home, which is guarded on the same atom — otherwise a single press would close
-    // the note AND leave the surface.
-    const noteSidebarEscape: Binding = {
-        id: "jarvis:close-notes",
-        keys: "Escape",
-        group: "Jarvis",
-        label: "Back out of the Chunk sidebar",
-        when: (ctx) =>
-            onJarvis(ctx) && globalStore.get(noteChunkAtom) != null && globalStore.get(trackerMenuAtom) == null,
-        run: () => {
-            if (globalStore.get(readingNoteAtom).size > 0) {
-                globalStore.set(readingNoteAtom, new Set());
-                return;
-            }
-            globalStore.set(noteChunkAtom, null);
-        },
-    };
-
     const reviewing = (ctx: KeyContext) => onJarvis(ctx) && globalStore.get(reviewModeAtom) != null;
     const reviewKey = (id: string, keys: string, label: string, run: () => void, when = reviewing): Binding => ({
         id,
@@ -852,12 +834,11 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             "Escape",
             "Leave the review",
             exitReview,
-            (ctx) =>
-                reviewing(ctx) && globalStore.get(noteChunkAtom) == null && globalStore.get(trackerMenuAtom) == null
+            (ctx) => reviewing(ctx) && globalStore.get(trackerMenuAtom) == null
         ),
     ];
 
-    // an open status or stage menu sits above the sidebar: Escape closes the menu and nothing else
+    // an open status or stage menu sits above everything: Escape closes the menu and nothing else
     const trackerMenuEscape: Binding = {
         id: "jarvis:close-tracker-menu",
         keys: "Escape",
@@ -898,9 +879,14 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
         setActiveRunId(subject.id, next);
     };
 
+    // the initiative `p` and `w` act on: the one open in the sheet, else the one under the Brief's page cursor
+    const sheetInitiative = (): string | null => {
+        const subject = globalStore.get(activeSubjectAtom);
+        return subject?.kind === "effort" ? "effort:" + subject.id : null;
+    };
+
     return [
         trackerMenuEscape,
-        noteSidebarEscape,
         {
             id: "jarvis:new-run",
             keys: "r",
@@ -923,13 +909,37 @@ export function buildJarvisBindings(model: LauncherModel): Binding[] {
             group: "Jarvis",
             label: "Work on the initiative under the cursor, or go to its open agent",
             when: onJarvis,
-            // with an initiative open in the sheet, the sheet's own Work on / Go to agent
-            run: () =>
-                clickThrough(
-                    globalStore.get(initiativeSheetOpenAtom)
-                        ? "[data-jarvis-initiative-sheet-head] [data-jarvis-work-on]"
-                        : '[data-jarvis-brief-cursor="true"] [data-jarvis-work-on]'
-                ),
+            // with an initiative open in the sheet, the sheet's own Work on / Go to agent; on the page, the one under the
+            // cursor (a list row draws no button, so the Brief publishes the move)
+            run: () => {
+                if (globalStore.get(initiativeSheetOpenAtom)) {
+                    return clickThrough("[data-jarvis-initiative-sheet-head] [data-jarvis-work-on]");
+                }
+                const cursor = globalStore.get(briefCursorInitiativeAtom);
+                if (cursor == null) {
+                    return clickThrough('[data-jarvis-brief-cursor="true"] [data-jarvis-work-on]');
+                }
+                cursor.workOn();
+            },
+        },
+        {
+            id: "jarvis:pin-initiative",
+            keys: "p",
+            group: "Jarvis",
+            label: "Pin or unpin the initiative under the cursor",
+            when: (ctx) =>
+                onJarvis(ctx) &&
+                globalStore.get(reviewModeAtom) == null &&
+                (globalStore.get(initiativeSheetOpenAtom) || globalStore.get(briefCursorInitiativeAtom) != null),
+            run: () => {
+                const oref = globalStore.get(initiativeSheetOpenAtom)
+                    ? sheetInitiative()
+                    : (globalStore.get(briefCursorInitiativeAtom)?.oref ?? null);
+                if (oref == null) {
+                    return false;
+                }
+                void togglePin(oref);
+            },
         },
         {
             id: "jarvis:record-band",

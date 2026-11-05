@@ -57,7 +57,7 @@ import { setupTabAtom } from "../agents/setupstore";
 import type { OpenTarget } from "./address";
 import { effortDetailAtom } from "./effortstore";
 import { initiativeSheetAtom } from "./initiativesheetstore";
-import { briefOpenInitiativeAtom, briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, recordDetailAtom } from "./jarvissubjectstore";
 import {
     isPeekable,
@@ -127,7 +127,6 @@ beforeEach(() => {
     globalStore.set(radarSelectedIdAtom, undefined);
     globalStore.set(briefPeekRecordAtom, null);
     globalStore.set(briefSheetOpenAtom, false);
-    globalStore.set(briefOpenInitiativeAtom, null);
     globalStore.set(initiativeSheetAtom, { view: "plan", chunk: null });
     globalStore.set(pendingDecisionAnchorAtom, null);
     globalStore.set(activeSubjectAtom, null);
@@ -391,7 +390,6 @@ describe("effort landing", () => {
         ];
         rpc.EffortGetCommand.mockResolvedValue({ effort: { oid: "e-1", chunks } });
         expect(await openAddress(model, "effort:e-1")).toEqual({ ok: true });
-        expect(globalStore.get(briefOpenInitiativeAtom)).toBeNull();
         expect(globalStore.get(briefSheetOpenAtom)).toBe(true);
         expect(globalStore.get(activeSubjectAtom)).toEqual({ kind: "effort", id: "e-1" });
         expect(globalStore.get(initiativeSheetAtom)).toEqual({ view: "plan", chunk: null });
@@ -954,7 +952,6 @@ function selections(model: AgentsViewModel) {
 // priors that are not the defaults, so a write of the default would still show
 function seedSelections(model: AgentsViewModel): void {
     globalStore.set(briefSheetOpenAtom, false);
-    globalStore.set(briefOpenInitiativeAtom, null);
     globalStore.set(activeSubjectAtom, { kind: "channel", id: "c-prior" });
     globalStore.set(activeRunIdAtom, { "c-prior": "r-prior" });
     globalStore.set(activeChannelIdAtom, "c-prior");

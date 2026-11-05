@@ -19,7 +19,7 @@ const oidOf = (oref) => String(oref ?? "").replace(/^effort:/, "");
 
 // the live, non-idea initiatives and the pinned ones, as the cards model counts them (briefcards.ts)
 async function storeCounts(h) {
-    const { efforts = [] } = (await h.rpc("effortlist", {})) ?? {};
+    const efforts = (await h.rpc("effortlist", {}))?.efforts ?? [];
     const live = efforts.filter((e) => e.status !== "archived" && (e.total ?? 0) > 0);
     const pins = live.filter((e) => (e.pinnedts ?? 0) > 0).sort((a, b) => a.pinnedts - b.pinnedts);
     return { live: live.length, pins: pins.map((e) => oidOf(e.oref)) };

@@ -16,9 +16,6 @@ export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 // The window a region opens at. This projection produces every row it knows about; the caps are what
 // the Brief shows before its regions are expanded, so the hidden rows stay addressable rather than
 // being discarded here. capRegion applies them.
-export const EFFORT_CAP = 8;
-// Waiting shows its most urgent three; a longer queue folds behind "+N more" (spec 2026-10-12 decision 1)
-export const WAITING_CAP = 3;
 // the ideas column caps on its own, so a pile of ideas never hides a live tracker
 export const IDEA_CAP = 6;
 export const ACTIVE_CAP = 8;
@@ -35,6 +32,12 @@ export interface CappedRows<T> {
 export function capRegion<T>(rows: T[], cap: number, expanded: boolean): CappedRows<T> {
     const shown = expanded ? rows : rows.slice(0, cap);
     return { rows: shown, more: rows.length - shown.length };
+}
+
+// The Waiting strip (spec 2026-11-05-jarvis-revamp-design.md decision 2): the most urgent item inline, and with
+// Show all open, every item as a row under it in the queue's order. With nothing waiting there is no strip: head null.
+export function waitingStrip<T>(lines: T[], open: boolean): { head: T | null; rows: T[] } {
+    return { head: lines[0] ?? null, rows: open ? lines : [] };
 }
 
 export interface BriefingModelInput {

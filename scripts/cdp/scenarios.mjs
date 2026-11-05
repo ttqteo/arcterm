@@ -418,23 +418,63 @@ async function cacheMissNoticeSteps(h, ctx) {
 
 // --- brief surface: the Brief is the Jarvis surface ----------------------------------------------
 // B5 retired the three-pane composition, so the Brief is the whole surface. Against the briefing fixtures
-// this walks its five regions, Waiting's first three rows and the "+N more" that reveals the rest (each row
-// opens what it names and carries the design's one action), the j/k cursor, an initiative expanding in
-// place, and a blocked chunk opening its initiative's sheet.
+// this walks its regions, the Waiting strip and the Show all that opens the queue rows under it (each row opens what
+// it names and carries the design's one action), and the j/k cursor; on live data, a blocked chunk opening its
+// initiative's sheet, a card opening in the sheet, the sheet's Next, p pinning a list row, and the review pass.
 
 // step 8's initiative: a fixture's initiative is not in the store, and the router checks that before it opens
-// one, so a blocked chunk that opens its sheet needs a real initiative holding one
+// one, so a blocked chunk that opens its sheet needs a real initiative holding one. The pinned one and the listed one
+// are the cards and the list the sheet and the p steps act on (spec 2026-11-05-jarvis-revamp-design.md).
 const BRIEF_SURFACE_BLOCKED = "verify-brief-surface-blocked";
+const BRIEF_SURFACE_PINNED = "verify-brief-surface-pinned";
+const BRIEF_SURFACE_LISTED = "verify-brief-surface-listed";
+
+// a key on the window, as the keybinding dispatcher reads it
+const briefPress = async (h, key) => {
+    await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }))`);
+    await briefNap(150);
+};
+// walks the page cursor with j until `expr` (run against the cursor's element, `el`) holds; false when it never does
+async function briefCursorTo(h, expr, max = 80) {
+    for (let i = 0; i < 40; i++) {
+        await briefPress(h, "k");
+    }
+    for (let i = 0; i < max; i++) {
+        const hit = await h.ev(`(() => { const el = document.querySelector('[data-jarvis-brief-cursor="true"]'); return !!el && (${expr}); })()`);
+        if (hit) return true;
+        await briefPress(h, "j");
+    }
+    return false;
+}
+// the initiatives in the page's order as drawn: the cards, then the list's rows
+const BRIEF_PAGE_ORDER = `[...document.querySelectorAll('[data-jarvis-card], [data-jarvis-initiative-row]')].map((e) => e.dataset.jarvisCard ?? e.dataset.jarvisInitiativeRow)`;
+const briefCloseSheet = (h) =>
+    h.ev(`(() => {
+        const s = document.querySelector('[data-jarvis-brief-sheet]');
+        const b = s && [...s.querySelectorAll('button')].find((b) => /^Close/.test(b.getAttribute('aria-label') ?? ''));
+        b?.click();
+        return !!b;
+    })()`);
 
 const briefSurface = {
     name: "brief-surface",
     surface: "jarvis",
     async arrange(h) {
-        const ctx = {};
+        const ctx = { ids: [] };
         try {
             ctx.effortId = await briefSeedInitiative(h, BRIEF_SURFACE_BLOCKED, ["Stuck"], [
                 { op: "setChunkStatus", chunk: "Stuck", status: "blocked" },
             ]);
+            ctx.ids.push(ctx.effortId);
+            ctx.pinnedId = await briefSeedInitiative(h, BRIEF_SURFACE_PINNED, ["Spec", "Build", "Ship"], [
+                { op: "setChunkStatus", chunk: "Spec", status: "done" },
+            ]);
+            ctx.ids.push(ctx.pinnedId);
+            ctx.listedId = await briefSeedInitiative(h, BRIEF_SURFACE_LISTED, ["One", "Two"]);
+            ctx.ids.push(ctx.listedId);
+            // a pin makes the cards the pins only, so the listed one is in the list for the p step to pin
+            const pin = await h.rpc("effortpin", { effortoid: ctx.pinnedId, pin: true });
+            ctx.pinCapped = pin?.capreached === true;
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -442,6 +482,7 @@ const briefSurface = {
     },
     async assert(h, ctx) {
         const steps = [];
+        await briefViewport(h, 1600, 1000);
         await h.goto("jarvis");
 
         // B5 retired the three-pane composition, so the Brief is no longer one of two: the region every
@@ -459,77 +500,77 @@ const briefSurface = {
 
         // the fixture seam bypasses the rpc, so these checks do not race FetchWorkState (which walks
         // transcript scans over ~/.claude and is documented at ~14s warm).
-        await h.ev(`document.querySelector('[data-briefing-fixture="normal"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 900))");
+        await briefFixture(h, "attention", 900);
         const regions = await h.ev(
             `[...document.querySelectorAll('[data-jarvis-brief-region]')].map((s) => s.dataset.jarvisBriefRegion)`
         );
         steps.push({
-            step: "2. the Brief renders its five regions",
-            ok: ["waiting", "sessions", "initiatives", "behind", "shipped"].every((r) => regions.includes(r)),
+            step: "2. the Brief renders the strip, Initiatives, Activity, Since you looked and Shipped",
+            ok: ["waiting", "initiatives", "activity", "behind", "shipped"].every((r) => regions.includes(r)),
             detail: JSON.stringify(regions),
         });
 
-        // Waiting draws its first three rows, and "+N more" folds the rest in. The
-        // fold is module state, so it is normalized closed first, and N is read off the toggle rather than
-        // hard-coded: the attention fixture is what makes it overflow.
-        await h.ev(`document.querySelector('[data-briefing-fixture="attention"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 900))");
-        await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary][aria-expanded="true"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
-        const seeded = await h.ev(`(() => {
-            const m = {};
-            document.querySelectorAll('[data-jarvis-brief-row]').forEach((r) => {
-                const k = r.dataset.jarvisBriefRow;
-                m[k] = (m[k] || 0) + 1;
-            });
-            const toggle = document.querySelector('[data-jarvis-brief-attention-summary]');
+        // the strip: the most urgent item on one line with its own action, and Show all N folding the rest. The fold is
+        // module state, so it is normalized shut first.
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all="open"]')?.click()`);
+        await briefNap(300);
+        const strip = await h.ev(`(() => {
+            const s = document.querySelector('[data-jarvis-waiting-strip]');
+            const head = s?.querySelector('[data-jarvis-waiting-head]');
+            const all = s?.querySelector('[data-jarvis-strip-show-all]');
             return {
-                rows: m,
-                toggle: toggle != null,
-                open: toggle?.getAttribute('aria-expanded') ?? null,
-                more: Number(/\\+(\\d+) more/.exec(toggle?.textContent ?? '')?.[1] ?? 0),
-                queueRows: document.querySelectorAll('[data-jarvis-brief-row="queue"]').length,
+                strip: !!s,
+                height: head ? Math.round(head.getBoundingClientRect().height) : null,
+                count: Number(/Waiting on you\\s*(\\d+)/.exec(head?.innerText ?? '')?.[1] ?? 0),
+                kind: (s?.querySelector('[data-jarvis-waiting-kind]')?.textContent ?? '').trim(),
+                title: (s?.querySelector('[data-jarvis-waiting-title]')?.textContent ?? '').trim(),
+                act: (head?.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim(),
+                showAll: (all?.textContent ?? '').trim(),
+                rows: document.querySelectorAll('[data-jarvis-brief-row="queue"]').length,
+                first: s === document.querySelector('[data-jarvis-brief-main]')?.firstElementChild,
             };
         })()`);
-        const waitingN = seeded.queueRows + seeded.more;
+        const waitingN = strip.count;
         steps.push({
-            step: "3. Waiting shows its first three rows while the other seeded regions stay visible",
+            step: "3. the Waiting strip is one 44px line at the top: the count, the most urgent item's kind, title and action",
             ok:
-                waitingN > 3 &&
-                seeded.toggle === true &&
-                seeded.open === "false" &&
-                seeded.queueRows === 3 &&
-                ["initiative", "session", "delta", "shipped"].every((kind) => (seeded.rows[kind] ?? 0) > 0),
-            detail:
-                waitingN > 3
-                    ? JSON.stringify(seeded)
-                    : `the attention fixture no longer overflows Waiting: ${JSON.stringify(seeded)}`,
+                strip.strip === true &&
+                strip.first === true &&
+                strip.height === 44 &&
+                waitingN > 1 &&
+                strip.kind !== "" &&
+                strip.title !== "" &&
+                strip.act !== "" &&
+                strip.showAll === `Show all ${waitingN}` &&
+                strip.rows === 0,
+            detail: JSON.stringify(strip),
         });
 
-        // "+N more" reveals the rest of the actionable rows; the fold changes presentation, not where a
-        // decision lands. A row opens what it names, and carries the design's one action (Approve, Open,
-        // Retry, Accept) as its only control. Accept replaced Acknowledge, so no act may read it.
-        await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
+        // strip show all: every item opens as today's queue row under the strip, each opening what it names with its
+        // one action; Accept, never Acknowledge
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all]')?.click()`);
+        await briefNap(400);
+        await h.shot("cdp-shots/brief-surface-strip-all.png");
         const q = await h.ev(`(() => {
-            const toggle = document.querySelector('[data-jarvis-brief-attention-summary]');
-            const rows = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')];
+            const s = document.querySelector('[data-jarvis-waiting-strip]');
+            const head = s?.querySelector('[data-jarvis-waiting-head]');
+            const box = s?.querySelector('[data-jarvis-waiting-rows]');
+            const rows = [...(box?.querySelectorAll('[data-jarvis-brief-row="queue"]') ?? [])];
             const controls = (r) => r.querySelectorAll('button, a, input, select, textarea');
-            const acts = rows.map((r) => (r.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim());
             return {
-                expanded: toggle?.getAttribute('aria-expanded') ?? null,
+                expanded: s?.querySelector('[data-jarvis-strip-show-all]')?.getAttribute('aria-expanded') ?? null,
+                under: !!head && !!box && box.getBoundingClientRect().top >= head.getBoundingClientRect().bottom,
                 rows: rows.length,
                 openable: rows.filter((r) => r.classList.contains('cursor-pointer')).length,
-                oneAction: rows.filter((r) => controls(r).length === 1 && r.querySelectorAll('[data-jarvis-queue-act]').length === 1)
-                    .length,
-                acts,
+                oneAction: rows.filter((r) => controls(r).length === 1 && r.querySelectorAll('[data-jarvis-queue-act]').length === 1).length,
+                acts: rows.map((r) => (r.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim()),
             };
         })()`);
         steps.push({
-            step: "4. +N more reveals every queue row, each opening what it names with its one action; Accept, never Acknowledge",
+            step: "strip show all: Show all opens every queue row under the strip, each opening what it names with its one action",
             ok:
                 q.expanded === "true" &&
+                q.under === true &&
                 q.rows === waitingN &&
                 q.openable === q.rows &&
                 q.oneAction === q.rows &&
@@ -547,128 +588,60 @@ const briefSurface = {
             detail: JSON.stringify(fleet),
         });
 
-        // j/k is the surface's only list navigation once the subjects column is gone (meta spec 4a
-        // item 9). The cursor has to cross region boundaries, because the four regions are one column.
+        // j/k walk one cursor across the page: the strip's rows (Show all is open), then the cards. The cursor is
+        // module state and outlives a run, so it is walked back to the top first (k clamps at the first row).
         const cursorNow = `(() => {
             const el = document.querySelector('[data-jarvis-brief-cursor="true"]');
             if (!el) return null;
             return {
-                row: el.dataset.jarvisBriefRow,
+                row: el.dataset.jarvisBriefRow ?? (el.dataset.jarvisCard != null ? 'card' : el.dataset.jarvisInitiativeRow != null ? 'list' : '?'),
                 text: (el.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 32),
                 n: document.querySelectorAll('[data-jarvis-brief-cursor="true"]').length,
             };
         })()`;
-        const press = async (key) => {
-            await h.ev(
-                `document.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }))`
-            );
-            await h.ev("new Promise((r) => setTimeout(r, 150))");
-        };
-        // the cursor is module state and outlives a scenario run, so walk it back to the top first:
-        // otherwise this step asserts where the PREVIOUS run left it. k clamps at the first row.
-        for (let i = 0; i < 15; i++) {
-            await press("k");
+        for (let i = 0; i < 40; i++) {
+            await briefPress(h, "k");
         }
         const trail = [await h.ev(cursorNow)];
-        await press("j");
+        for (let i = 0; i < waitingN; i++) {
+            await briefPress(h, "j");
+            trail.push(await h.ev(cursorNow));
+        }
+        await briefPress(h, "k");
         trail.push(await h.ev(cursorNow));
-        await press("j");
-        trail.push(await h.ev(cursorNow));
-        await press("k");
-        trail.push(await h.ev(cursorNow));
-        const text = trail.map((t) => (t == null ? null : t.text));
+        const kinds = trail.map((t) => t?.row ?? null);
         steps.push({
-            step: "6. j/k walk the cursor down the column and back, one cursor at a time",
+            step: "6. j/k walk one cursor from the strip's rows into the cards, and k comes back",
             ok:
                 trail.every((t) => t != null && t.n === 1) &&
-                trail[0].row === "queue" && // the cursor starts on the first row of "Waiting on you"
-                text[0] !== text[1] &&
-                text[1] !== text[2] &&
-                text[3] === text[1], // k returns to the row j came from
+                kinds[0] === "queue" &&
+                kinds[waitingN - 1] === "queue" &&
+                kinds[waitingN] === "card" &&
+                trail[waitingN + 1]?.text === trail[waitingN - 1]?.text,
             detail: JSON.stringify(trail.map((t) => (t == null ? null : `${t.row}/${t.text}`))),
         });
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all="open"]')?.click()`);
+        await briefNap(300);
 
-        // An initiative row is one line, and a click on its toggle expands its plan in place (cd1a9ce4): it has
-        // no sheet to open. The row now carries Work on and its menu, so it nests controls; the toggle is the
-        // row's own [role=button] child, and the open state sits on the row as data-jarvis-initiative-card.
-        // The expansion and the sheet are module state, so whatever a previous run left open is closed first.
-        const TOGGLE = `:scope > [role="button"]`;
-        await h.ev(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close detail sheet')?.click()`);
-        await h.ev(`document.querySelector('[data-jarvis-initiative-card="open"]')?.querySelector('${TOGGLE}')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
-        await h.ev(`document.querySelector('[data-jarvis-brief-row="initiative"]')?.querySelector('${TOGGLE}')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 900))");
-        const card = await h.ev(`(() => {
-            const rows = [...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')];
-            const open = rows.filter((r) => r.dataset.jarvisInitiativeCard === 'open');
-            return {
-                rows: rows.length,
-                toggles: rows.filter((r) => r.querySelector(':scope > [role="button"]') != null).length,
-                open: open.length,
-                openIsFirst: open[0] === rows[0],
-                expanded: rows[0]?.querySelector(':scope > [role="button"]')?.getAttribute('aria-expanded') ?? null,
-                detailInside: open[0]?.querySelector('[data-jarvis-initiative-detail]') != null,
-                sheet: !!document.querySelector('[data-jarvis-brief-sheet]'),
-            };
-        })()`);
-        steps.push({
-            step: "7. an initiative row expands in place and opens no sheet",
-            ok:
-                card.rows > 0 &&
-                card.toggles === card.rows &&
-                card.open === 1 &&
-                card.openIsFirst === true &&
-                card.expanded === "true" &&
-                card.detailInside === true &&
-                card.sheet === false,
-            detail: JSON.stringify(card),
-        });
-        await h.ev(`document.querySelector('[data-jarvis-initiative-card="open"]')?.querySelector('${TOGGLE}')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
-
-        // The sideways arm into the effort sheet is still the one a blocked chunk takes. It runs on live data: a
-        // fixture's initiative is not in the store, so the router answers "no longer exists" and opens nothing.
-        // Arrange made a real initiative with one blocked chunk, and a reload puts the Brief on it.
-        const blockedRow = `[...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].find((r) => r.innerText.includes(${JSON.stringify(BRIEF_SURFACE_BLOCKED)}))`;
-        if (ctx.arrangeError != null) {
-            steps.push(skipStep("8. a blocked chunk still opens the initiative's own sheet", `arrange: ${ctx.arrangeError}`));
-        } else {
-            await briefReload(h);
-            const found = await polishWaitFor(h, `!!(${blockedRow})`, 20000);
-            await h.ev(`(${blockedRow})?.click()`);
-            await h.ev("new Promise((r) => setTimeout(r, 600))");
-            const sheet = await h.ev(`(() => {
-                const el = document.querySelector('[data-jarvis-brief-sheet]');
-                return {
-                    found: ${found},
-                    face: el ? el.dataset.jarvisBriefSheet : null,
-                    label: el ? (el.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 10).toLowerCase() : null,
-                };
-            })()`);
-            steps.push({
-                step: "8. a blocked chunk still opens the initiative's own sheet",
-                ok: sheet.found === true && sheet.face === "effort" && sheet.label === "initiative",
-                detail: JSON.stringify(sheet),
-            });
-            await h.ev(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close detail sheet')?.click()`);
-            await h.ev("new Promise((r) => setTimeout(r, 300))");
-        }
-
-        // F8: the row states what it is waiting on and what it belongs to, on its one line. The "attention"
-        // fixture is the one that carries wire attention items; "normal" has none, so the queue there is only
-        // blocked chunks, which carry no attribution by design. The row itself opens (step 4), so its one
-        // nested control is its action. A one-line row has no room for cites, so it no longer draws them.
-        await h.ev(`document.querySelector('[data-briefing-fixture="attention"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        // F8: the row states what it is waiting on and what it belongs to, on its one line. The "attention" fixture is
+        // the one that carries wire attention items. The row itself opens, so its one nested control is its action.
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all="shut"]')?.click()`);
+        await briefNap(300);
         const named = await h.ev(`(() => {
             const rows = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')];
             const txt = (e) => (e.innerText || "").replace(/\\s+/g, " ").trim();
+            const act = (title) => {
+                const row = rows.find((r) => r.innerText.includes(title));
+                return row ? (row.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim() : null;
+            };
             return {
                 rows: rows.length,
                 oneAction: rows.filter(
                     (r) => r.querySelectorAll('button, a, input, select, textarea').length === 1 && r.querySelector('[data-jarvis-queue-act]')
                 ).length,
                 first: rows.length ? txt(rows[0]) : null,
+                linked: act("slice 2"),
+                unlinked: act("Phase 7"),
             };
         })()`);
         steps.push({
@@ -678,36 +651,178 @@ const briefSurface = {
                 named.oneAction === named.rows &&
                 // the effort title is joined on the frontend from the efforts already on the surface,
                 // so a raw oid here would mean the join silently failed
-                (named.first ?? "").includes("Scenario gate clearance \u00b7 Phase 3") &&
+                (named.first ?? "").includes("Scenario gate clearance · Phase 3") &&
                 /2 of 4 tasks done/.test(named.first ?? ""),
             detail: JSON.stringify(named),
         });
-
         // a due chunk's Work on starts an agent linked to its initiative; while that agent is open the row's button
         // says Go to agent. The attention fixture holds one due chunk on an initiative an agent is open on, one not.
-        await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary][aria-expanded="false"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 300))");
-        const due = await h.ev(`(() => {
-            const act = (title) => {
-                const row = [...document.querySelectorAll('[data-jarvis-brief-row="queue"]')].find((r) => r.innerText.includes(title));
-                return row ? (row.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim() : null;
-            };
-            return { linked: act("slice 2"), unlinked: act("Phase 7") };
-        })()`);
         steps.push({
             step: "10. a due chunk reads Go to agent while an agent is open on its initiative, else Work on",
-            ok: due.linked === "Go to agent" && due.unlinked === "Work on",
-            detail: JSON.stringify(due),
+            ok: named.linked === "Go to agent" && named.unlinked === "Work on",
+            detail: JSON.stringify(named),
         });
         await h.shot("cdp-shots/brief-queue-context.png");
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all="open"]')?.click()`);
+        await briefNap(200);
+
+        // The rest runs on live data: a fixture's initiative is not in the store, so the router answers "no longer
+        // exists" and opens nothing. Arrange made real initiatives, and a reload puts the Brief on them.
+        if (ctx.arrangeError != null) {
+            for (const s of ["8. a blocked chunk", "open card", "step initiatives", "pin key", "review pass"]) {
+                steps.push(skipStep(s, `arrange: ${ctx.arrangeError}`));
+            }
+            await h.shot("cdp-shots/brief-surface.png");
+            return steps;
+        }
+        await briefReload(h);
+        const pinnedCard = `document.querySelector('[data-jarvis-card="effort:${ctx.pinnedId}"]')`;
+        await polishWaitFor(h, `!!(${pinnedCard})`, 20000);
+        await briefCloseSheet(h);
+        await briefNap(300);
+
+        // 8. the blocked chunk is waiting on you, and its queue row opens the initiative's own sheet
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all="shut"]')?.click()`);
+        // a queue row names its initiative; the strip's own line names only the chunk, so it is found by its item id
+        const blockedRow = `([...document.querySelectorAll('[data-jarvis-waiting-strip] [data-jarvis-brief-row="queue"]')].find((r) => r.innerText.includes(${JSON.stringify(BRIEF_SURFACE_BLOCKED)})) ?? [...document.querySelectorAll('[data-jarvis-waiting-head]')].find((r) => (r.dataset.jarvisWaitingItem ?? '').includes(${JSON.stringify(ctx.effortId ?? "-")}))?.querySelector('[data-jarvis-waiting-title]'))`;
+        const found = await polishWaitFor(h, `!!(${blockedRow})`, 20000);
+        await h.ev(`(${blockedRow})?.click()`);
+        await briefNap(800);
+        const sheet8 = await h.ev(`(() => {
+            const el = document.querySelector('[data-jarvis-brief-sheet]');
+            return {
+                found: ${found},
+                face: el ? el.dataset.jarvisBriefSheet : null,
+                head: el?.querySelector('[data-jarvis-initiative-sheet-head]')?.dataset.jarvisInitiativeSheetHead ?? null,
+            };
+        })()`);
+        steps.push({
+            step: "8. a blocked chunk still opens the initiative's own sheet",
+            ok: sheet8.found === true && sheet8.face === "effort" && sheet8.head === `effort:${ctx.effortId}`,
+            detail: JSON.stringify(sheet8),
+        });
+        await briefCloseSheet(h);
+        await h.ev(`document.querySelector('[data-jarvis-strip-show-all="open"]')?.click()`);
+        await briefNap(400);
+
+        // open card: Enter on the pinned card opens the initiative in the sheet, and the card keeps an accent outline
+        if (ctx.pinCapped) {
+            steps.push(skipStep("open card", "six initiatives are already pinned in this profile, so the seeded pin did not land"));
+            steps.push(skipStep("step initiatives", "no seeded card (pins at the cap)"));
+        } else {
+            const onCard = await briefCursorTo(h, `el.dataset.jarvisCard === "effort:${ctx.pinnedId}"`);
+            await briefPress(h, "Enter");
+            await polishWaitFor(h, `!!document.querySelector('[data-jarvis-brief-sheet="effort"] [data-jarvis-initiative-sheet-head]')`, 8000);
+            await briefNap(500);
+            await h.shot("cdp-shots/brief-surface-open-card.png");
+            const opened = await h.ev(`(() => {
+                const card = ${pinnedCard};
+                const head = document.querySelector('[data-jarvis-brief-sheet="effort"] [data-jarvis-initiative-sheet-head]');
+                return {
+                    head: head?.dataset.jarvisInitiativeSheetHead ?? null,
+                    outlined: card?.dataset.jarvisCardOpened === 'true' && card.classList.contains('border-accent'),
+                    inPlace: !!document.querySelector('[data-jarvis-initiative-card="open"], [data-jarvis-chunk-sidebar]'),
+                };
+            })()`);
+            steps.push({
+                step: "open card: Enter on a card opens its initiative in the sheet, the card outlined under it",
+                ok: onCard && opened.head === `effort:${ctx.pinnedId}` && opened.outlined === true && opened.inPlace === false,
+                detail: JSON.stringify({ onCard, ...opened }),
+            });
+
+            // step initiatives: the sheet's Next opens the next initiative in the page's order (the cards, then the list)
+            const order = await h.ev(BRIEF_PAGE_ORDER);
+            const at = order.indexOf(`effort:${ctx.pinnedId}`);
+            const want = at >= 0 ? (order[at + 1] ?? null) : null;
+            await h.ev(`document.querySelector('[data-jarvis-brief-sheet="effort"] [aria-label="Next initiative"]')?.click()`);
+            await polishWaitFor(
+                h,
+                `document.querySelector('[data-jarvis-initiative-sheet-head]')?.dataset.jarvisInitiativeSheetHead === ${JSON.stringify(want)}`,
+                8000
+            );
+            const stepped = await h.ev(`document.querySelector('[data-jarvis-initiative-sheet-head]')?.dataset.jarvisInitiativeSheetHead ?? null`);
+            await h.shot("cdp-shots/brief-surface-step.png");
+            steps.push({
+                step: "step initiatives: the sheet's Next opens the next initiative in the page's order",
+                ok: want != null && stepped === want,
+                detail: JSON.stringify({ order, at, want, stepped }),
+            });
+            await briefCloseSheet(h);
+            await briefNap(400);
+        }
+
+        // pin key: p on the listed initiative's row makes it a card
+        const listedRow = `document.querySelector('[data-jarvis-initiative-row="effort:${ctx.listedId}"]')`;
+        const listedCard = `document.querySelector('[data-jarvis-card="effort:${ctx.listedId}"]')`;
+        // a list past its window hides the row behind +N more
+        await h.ev(`document.querySelector('[data-jarvis-initiatives-more="more"]')?.click()`);
+        await briefNap(300);
+        const inList = await h.ev(`!!(${listedRow})`);
+        if (ctx.pinCapped || !inList) {
+            steps.push(
+                skipStep(
+                    "pin key: p on a list row pins it, and it becomes a card",
+                    ctx.pinCapped ? "pins at the cap in this profile" : "the listed initiative is not a list row (it is a fallback card)"
+                )
+            );
+        } else {
+            const onRow = await briefCursorTo(h, `el.dataset.jarvisInitiativeRow === "effort:${ctx.listedId}"`, 200);
+            await briefPress(h, "p");
+            const became = await polishWaitFor(h, `!!(${listedCard}) && !(${listedRow})`, 10000);
+            await h.shot("cdp-shots/brief-surface-pin-key.png");
+            steps.push({
+                step: "pin key: p on a list row pins it, and it becomes a card",
+                ok: onRow && became,
+                detail: JSON.stringify({ onRow, became, heading: await h.ev(`document.querySelector('[data-jarvis-cards-count]')?.textContent ?? null`) }),
+            });
+        }
+        await h.ev(`document.querySelector('[data-jarvis-initiatives-more="less"]')?.click()`);
+
+        // review pass: Review takes the Initiatives region over, its open initiative drawn with the sheet's head and
+        // chunk list in place. A note written now makes the pinned initiative changed since the last look, which the
+        // reload's snapshot reads, so the pass has something to open.
+        await h
+            .rpc("effortmutate", {
+                effortoid: ctx.pinnedId,
+                author: "you",
+                ops: [{ op: "appendNote", chunk: "Build", note: "verify review pass" }],
+            })
+            .catch(() => {});
+        await briefReload(h);
+        await polishWaitFor(h, `!!document.querySelector('[data-jarvis-review-enter]')`, 15000);
+        await h.ev(`document.querySelector('[data-jarvis-review-enter]')?.click()`);
+        const reviewing = await polishWaitFor(h, `!!document.querySelector('[data-jarvis-review-current] [data-jarvis-tracker-chunk]')`, 10000);
+        await h.shot("cdp-shots/brief-surface-review.png");
+        const pass = await h.ev(`(() => {
+            const cur = document.querySelector('[data-jarvis-review-current]');
+            return {
+                current: cur?.dataset.jarvisReviewCurrent ?? null,
+                head: !!cur?.querySelector('[data-jarvis-initiative-sheet-head]'),
+                stepping: !!cur?.querySelector('[data-jarvis-sheet-step]'),
+                chunks: cur?.querySelectorAll('[data-jarvis-tracker-chunk]').length ?? 0,
+                cards: document.querySelectorAll('[data-jarvis-card]').length,
+                sheet: !!document.querySelector('[data-jarvis-brief-sheet]'),
+            };
+        })()`);
+        steps.push(
+            pass.current == null && !reviewing
+                ? skipStep("review pass: the open initiative draws the sheet's head and chunk list in place", `nothing to review: ${JSON.stringify(pass)}`)
+                : {
+                      step: "review pass: the open initiative draws the sheet's head and chunk list in place",
+                      ok: pass.head === true && pass.stepping === false && pass.chunks > 0 && pass.cards === 0 && pass.sheet === false,
+                      detail: JSON.stringify(pass),
+                  }
+        );
+        await briefPress(h, "Escape");
+        await briefNap(300);
 
         await h.shot("cdp-shots/brief-surface.png");
-        await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary][aria-expanded="true"]')?.click()`);
         return steps;
     },
     async teardown(h, ctx) {
-        if (ctx.effortId != null) {
-            await h.rpc("effortdelete", { effortoid: ctx.effortId }).catch(() => {});
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        for (const id of ctx.ids ?? []) {
+            await h.rpc("effortdelete", { effortoid: id }).catch(() => {});
         }
         await h.goto("cockpit");
     },
@@ -800,17 +915,18 @@ async function briefSeedInitiative(h, title, labels, ops = []) {
 
 // every effort of this title, so a jot that landed after its step gave up is still cleaned up
 async function briefDeleteEfforts(h, title) {
-    const { efforts = [] } = (await h.rpc("effortlist", {})) ?? {};
+    const efforts = (await h.rpc("effortlist", {}))?.efforts ?? [];
     for (const e of efforts.filter((x) => x.title === title)) {
         await h.rpc("effortdelete", { effortoid: e.oref.replace(/^effort:/, "") }).catch(() => {});
     }
 }
 
 // --- brief-layout: the header, the two columns, the footer keys, the empty states, ideas ---------------------------
-// The Brief at 1600x1000 against the briefing fixtures: New run is the one accent button, the side column holds Since
-// you looked, Shipped and Ideas, Runs sit above Initiatives, the footer teaches r and w, the first-visit offer covers no
-// control, a blocked run reads amber, Show only hides and restores the other regions, the empty boxes carry the button
-// that starts what they say is missing, and an idea saves from its input without a form.
+// The Brief at 1600x1000 against the briefing fixtures: New run is the one accent button, the strip sits above the cards
+// above the list, the side column holds Activity, Since you looked, Shipped and Ideas, the footer teaches r and w, the
+// first-visit offer covers no control, a blocked run reads amber, Show only hides and restores the other regions, a
+// 1200px window stacks the columns, the empty boxes carry the button that starts what they say is missing, and an idea
+// saves from its input without a form.
 const BRIEF_JOT_IDEA = "verify-jot-idea";
 
 const briefLayout = {
@@ -862,7 +978,35 @@ const briefLayout = {
                   }
         );
 
-        // 3. the side column: Since you looked, Shipped, Ideas, to the right of the main column
+        // page order: the strip above the cards above the list in the main column, and Activity first in the side column
+        // (spec 2026-11-05-jarvis-revamp-design.md decision 1)
+        await h.ev(`document.querySelector('[data-jarvis-brief-region="activity"]')?.closest('.overflow-y-auto')?.scrollTo(0, 0)`);
+        await briefNap(200);
+        await h.shot("cdp-shots/brief-layout-page.png");
+        const page = await h.ev(`(() => {
+            const top = (sel) => document.querySelector(sel)?.getBoundingClientRect().top ?? null;
+            const side = document.querySelector('[data-jarvis-brief-side]');
+            return {
+                strip: top('[data-jarvis-waiting-strip]'),
+                cards: top('[data-jarvis-cards]'),
+                list: top('[data-jarvis-initiative-list]'),
+                sideFirst: side?.firstElementChild?.dataset.jarvisBriefRegion ?? null,
+                runsRegion: !!document.querySelector('[data-jarvis-brief-region="sessions"], [data-jarvis-brief-region="councils"]'),
+            };
+        })()`);
+        rec(
+            "page order: the strip above the cards above the list, and Activity first in the side column",
+            page.strip != null &&
+                page.cards != null &&
+                page.list != null &&
+                page.strip < page.cards &&
+                page.cards < page.list &&
+                page.sideFirst === "activity" &&
+                page.runsRegion === false,
+            JSON.stringify(page)
+        );
+
+        // 3. the side column: Activity, Since you looked, Shipped, Ideas, to the right of the main column
         const side = await h.ev(`(() => {
             const side = document.querySelector('[data-jarvis-brief-side]');
             if (!side) return null;
@@ -876,9 +1020,9 @@ const briefLayout = {
             };
         })()`);
         rec(
-            "3. the side column holds Since you looked, Shipped and Ideas, to the right of the main column",
+            "3. the side column holds Activity, Since you looked, Shipped and Ideas, to the right of the main column",
             side != null &&
-                JSON.stringify(side.order) === JSON.stringify(["behind", "shipped", "ideas"]) &&
+                JSON.stringify(side.order) === JSON.stringify(["activity", "behind", "shipped", "ideas"]) &&
                 side.mainRight != null &&
                 side.sideLeft > side.mainRight,
             JSON.stringify(side)
@@ -914,35 +1058,6 @@ const briefLayout = {
         // the shot is the whole viewport, which at 1600 wide holds the side column to the right
         await h.shot("cdp-shots/brief-layout-side.png");
 
-        // 3c. the Waiting head says what orders the queue, and how old its oldest item is when there is one
-        const waitingHead = await h.ev(`(() => {
-            const head = document.querySelector('[data-jarvis-brief-region="waiting"]')?.firstElementChild;
-            return head ? (head.innerText || '').replace(/\\s+/g, ' ').trim() : null;
-        })()`);
-        steps.push(
-            waitingHead == null
-                ? skipStep("3c. the Waiting head reads gates first, with the oldest item's age", "the attention fixture draws no Waiting region")
-                : {
-                      step: "3c. the Waiting head reads gates first, with the oldest item's age",
-                      ok:
-                          waitingHead.includes("gates first") &&
-                          !waitingHead.includes("gates before asks") &&
-                          (!waitingHead.includes("oldest") || /gates first · oldest \S+/.test(waitingHead)),
-                      detail: JSON.stringify(waitingHead),
-                  }
-        );
-
-        // 4. Runs above Initiatives
-        const tops = await h.ev(`(() => {
-            const top = (id) => document.querySelector('[data-jarvis-brief-region="' + id + '"]')?.getBoundingClientRect().top ?? null;
-            return { waiting: top('waiting'), sessions: top('sessions'), initiatives: top('initiatives') };
-        })()`);
-        rec(
-            "4. Runs sit above Initiatives in the main column",
-            tops.sessions != null && tops.initiatives != null && tops.sessions < tops.initiatives,
-            JSON.stringify(tops)
-        );
-
         // 5. the footer teaches r and w while on Jarvis
         const chips = await h.ev(`(() => {
             const bars = [...document.querySelectorAll('[data-pet-ledge]')];
@@ -954,13 +1069,13 @@ const briefLayout = {
             JSON.stringify(chips)
         );
 
-        // 6. the first-visit offer sits where it covers no control: bottom right, clear of Waiting's +N more
+        // 6. the first-visit offer sits where it covers no control: bottom right, clear of the strip's Show all
         await h.ev(`localStorage.removeItem("jarvis.tour.offered")`);
         await briefReload(h);
         await briefFixture(h, "attention", 900);
         const offer = await h.ev(`(() => {
             const offer = document.querySelector('[data-jarvis-tour-offer]');
-            const toggle = document.querySelector('[data-jarvis-brief-attention-summary]');
+            const toggle = document.querySelector('[data-jarvis-strip-show-all]');
             if (!offer || !toggle) return { offer: !!offer, toggle: !!toggle };
             const r = toggle.getBoundingClientRect();
             const o = offer.getBoundingClientRect();
@@ -973,7 +1088,7 @@ const briefLayout = {
             };
         })()`);
         rec(
-            "6. the tour offer covers no control: +N more stays hittable and clear of it",
+            "6. the tour offer covers no control: Show all stays hittable and clear of it",
             offer.offer === true && offer.toggle === true && offer.hit === true && offer.overlap === false,
             JSON.stringify(offer)
         );
@@ -982,10 +1097,10 @@ const briefLayout = {
         await h.ev(`document.querySelector('[data-jarvis-tour-offer-later]')?.click()`);
         await briefNap(300);
 
-        // 7. a blocked run reads amber, not the green a run with no object used to get
+        // 7. a blocked run reads amber, not the green a run with no object used to get (its Activity card's stage word)
         const blocked = await h.ev(`(() => {
-            const rows = [...document.querySelectorAll('[data-jarvis-brief-row="session"]')];
-            const cell = (r) => [...r.querySelectorAll(':scope > span')].find((s) => s.textContent.trim() === 'blocked');
+            const rows = [...document.querySelectorAll('[data-jarvis-activity-card]')];
+            const cell = (r) => [...r.querySelectorAll('span')].find((s) => s.children.length === 0 && s.textContent.trim() === 'blocked');
             const hit = rows.map(cell).find((c) => c != null);
             return hit
                 ? { rows: rows.length, asking: hit.classList.contains('text-asking'), success: hit.classList.contains('text-success') }
@@ -993,7 +1108,7 @@ const briefLayout = {
         })()`);
         steps.push(
             blocked == null
-                ? skipStep("7. a blocked run's state reads amber", "the attention fixture has no run row whose state reads blocked")
+                ? skipStep("7. a blocked run's state reads amber", "the attention fixture has no Activity card whose stage reads blocked")
                 : {
                       step: "7. a blocked run's state reads amber",
                       ok: blocked.asking === true && blocked.success === false,
@@ -1003,7 +1118,7 @@ const briefLayout = {
 
         // 8. Show only hides every other region, and a second press brings them back
         const regionIds = `[...document.querySelectorAll('[data-jarvis-brief-region]')].map((s) => s.dataset.jarvisBriefRegion)`;
-        const onlyBtn = `document.querySelector('[data-jarvis-brief-region="sessions"] [data-jarvis-region-only]')`;
+        const onlyBtn = `document.querySelector('[data-jarvis-brief-region="activity"] [data-jarvis-region-only]')`;
         const allRegions = await h.ev(regionIds);
         await h.ev(`${onlyBtn}?.click()`);
         await briefNap(500);
@@ -1021,11 +1136,35 @@ const briefLayout = {
             "8. Show only keeps one region and a second press brings every region back",
             alone.pressed === "true" &&
                 alone.label === "Show every region" &&
-                JSON.stringify(alone.regions) === JSON.stringify(["sessions"]) &&
+                JSON.stringify(alone.regions) === JSON.stringify(["activity"]) &&
                 back.pressed === "false" &&
                 JSON.stringify(back.regions) === JSON.stringify(allRegions),
             JSON.stringify({ allRegions, alone, back })
         );
+
+        // narrow: at a 1200px window the cards go two columns and the side column drops under the main one
+        await briefViewport(h, 1200, 1000);
+        await briefNap(600);
+        const narrow = await h.ev(`(() => {
+            const grid = document.querySelector('[data-jarvis-cards-grid]');
+            const main = document.querySelector('[data-jarvis-brief-main]');
+            const side = document.querySelector('[data-jarvis-brief-side]');
+            return {
+                columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : null,
+                sideTop: side ? Math.round(side.getBoundingClientRect().top) : null,
+                mainBottom: main ? Math.round(main.getBoundingClientRect().bottom) : null,
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-jarvis-brief-side]')?.scrollIntoView({ block: "start" })`);
+        await briefNap(200);
+        await h.shot("cdp-shots/brief-layout-narrow.png");
+        rec(
+            "narrow: at 1200px the cards are two columns and the side column sits under the main one",
+            narrow.columns === 2 && narrow.sideTop != null && narrow.mainBottom != null && narrow.sideTop >= narrow.mainBottom,
+            JSON.stringify(narrow)
+        );
+        await briefViewport(h, 1600, 1000);
+        await briefNap(400);
 
         // 9. the empty boxes carry the button that starts what they say is missing; Since you looked tells a first visit
         // from a quiet one. The empty fixture has no run and no initiative; a live archived initiative still fills the
@@ -1043,9 +1182,9 @@ const briefLayout = {
             };
         })()`);
         rec(
-            "9. the empty Runs box holds New run, and Shipped says its week is empty",
+            "9. the empty Activity box holds New run, and Shipped says its week is empty",
             empty.run.startsWith("New run") &&
-                empty.runIn === "sessions" &&
+                empty.runIn === "activity" &&
                 empty.shipped === "Nothing shipped in the last seven days.",
             JSON.stringify(empty)
         );
@@ -1114,7 +1253,7 @@ const briefLayout = {
         const entered = await h.ev(`${jot}?.value ?? null`);
         let saved = false;
         for (let waited = 0; waited < 3000 && !saved; waited += 250) {
-            const { efforts = [] } = (await h.rpc("effortlist", {})) ?? {};
+            const efforts = (await h.rpc("effortlist", {}))?.efforts ?? [];
             saved = efforts.some((e) => e.title === BRIEF_JOT_IDEA);
             if (!saved) await briefNap(250);
         }
@@ -14533,8 +14672,15 @@ const briefProfile = {
 const jarvisTour = {
     name: "jarvis-tour",
     surface: "jarvis",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        // one real initiative, so the Initiatives track's card and sheet stops have a card to light and open
+        try {
+            const id = await briefSeedInitiative(h, "verify-tour-initiative", ["Plan", "Build"]);
+            await briefReload(h);
+            return { id };
+        } catch (e) {
+            return { arrangeError: String(e?.message ?? e) };
+        }
     },
     async assert(h) {
         const steps = [];
@@ -14603,7 +14749,7 @@ const jarvisTour = {
         const english = await h.ev(CARD);
         steps.push({
             step: "4. EN switches the card to English",
-            ok: english?.lang === "en" && english.text.includes("The Brief's regions"),
+            ok: english?.lang === "en" && english.text.includes("How the Brief is laid out"),
             detail: JSON.stringify(english),
         });
         await h.shot("cdp-shots/jarvis-tour-english.png");
@@ -14624,10 +14770,23 @@ const jarvisTour = {
         });
 
         // a step whose target is missing shows no card (and no Next) for up to a second, so each click waits it out
+        const briefWalk = [];
         for (let i = 0; i < 5; i++) {
             await click("[data-jarvis-tour-next]");
             await wait(1200);
+            const c = await h.ev(CARD);
+            briefWalk.push({ step: c?.step ?? null, view: c?.view ?? null });
         }
+        // the Brief track's new stops: the strip (a centered card when nothing waits), the layout, Activity lit
+        const activityStop = briefWalk.find((s) => s.step === "brief:activity");
+        steps.push({
+            step: "6b. the Brief track walks the layout, Activity (lit), Since you looked, the filter and the keys",
+            ok:
+                JSON.stringify(briefWalk.map((s) => s.step)) ===
+                    JSON.stringify(["brief:regions", "brief:activity", "brief:behind", "brief:filter", "brief:keys"]) &&
+                activityStop?.view === "spot",
+            detail: JSON.stringify(briefWalk),
+        });
         const keys = await h.ev(CARD);
         steps.push({
             step: "7. the Brief's keys are a centered card with no spotlight, and Next reads Done",
@@ -14707,6 +14866,50 @@ const jarvisTour = {
                 detail: JSON.stringify(card),
             });
             await h.shot(`cdp-shots/jarvis-tour-${track}.png`);
+            if (track === "initiatives") {
+                // every stop of the track: the cards, the list, the actions, then the first card's initiative opened in
+                // the sheet for its head and its plan, then ideas and archived. With no initiative in the store the
+                // card and sheet stops are centered cards, the designed fallback.
+                const hadCard = await h.ev(`!!document.querySelector('[data-jarvis-card]')`);
+                const walk = [{ step: card?.step ?? null, view: card?.view ?? null, sheet: false }];
+                for (let i = 0; i < 7; i++) {
+                    await click("[data-jarvis-tour-next]");
+                    await wait(1500);
+                    const c = await h.ev(CARD);
+                    walk.push({
+                        step: c?.step ?? null,
+                        view: c?.view ?? null,
+                        sheet: await h.ev(`!!document.querySelector('[data-jarvis-brief-sheet="effort"]')`),
+                    });
+                    if (c?.step === "initiatives:sheet") {
+                        await h.shot("cdp-shots/jarvis-tour-initiative-sheet.png");
+                    }
+                }
+                const ids = walk.map((s) => s.step);
+                const at = (id) => walk.find((s) => s.step === id);
+                steps.push({
+                    step: "13b. the initiatives track walks the cards, the list and the sheet, and opens the sheet for its stops",
+                    ok:
+                        JSON.stringify(ids) ===
+                            JSON.stringify([
+                                "initiatives:new",
+                                "initiatives:cards",
+                                "initiatives:list",
+                                "initiatives:actions",
+                                "initiatives:sheet",
+                                "initiatives:plan",
+                                "initiatives:ideas",
+                                "initiatives:archived",
+                            ]) &&
+                        (!hadCard ||
+                            (at("initiatives:cards")?.view === "spot" &&
+                                at("initiatives:sheet")?.view === "spot" &&
+                                at("initiatives:sheet")?.sheet === true &&
+                                at("initiatives:plan")?.sheet === true &&
+                                at("initiatives:ideas")?.sheet === false)),
+                    detail: JSON.stringify({ hadCard, walk }),
+                });
+            }
             if (track === "runsheet") {
                 // back to the default language: removing jarvis.tour.lang does not reset the atom the app already
                 // read, so a rerun in this app would start in English and fail step 2
@@ -14718,7 +14921,7 @@ const jarvisTour = {
         }
         return steps;
     },
-    async teardown(h) {
+    async teardown(h, ctx) {
         // a run that stopped mid-tour: the language back to Vietnamese through its own switch, then end the tour
         await h
             .ev(`(() => {
@@ -14727,6 +14930,9 @@ const jarvisTour = {
             })()`)
             .catch(() => {});
         await h.ev("localStorage.setItem('jarvis.tour.offered', 'true')").catch(() => {});
+        if (ctx?.id != null) {
+            await h.rpc("effortdelete", { effortoid: ctx.id }).catch(() => {});
+        }
     },
 };
 
@@ -14736,209 +14942,181 @@ const jarvisTour = {
 // structure each moment depends on, which is also the half a later refactor can quietly break with
 // nothing failing: the detail sheet's surface scoping, the freshness mark's presence and its cap, and
 // the updates drawer's split between the element whose height animates and the inner scroller.
-// --- the Brief's inline initiative tracker ------------------------------------------------------
-// An initiative expands IN PLACE instead of opening the detail sheet, and its chunks join the Brief's
-// own j/k list so one cursor walks rows and chunks alike. The chunk rows need the effort DETAIL, which
-// the briefing fixture does not carry (it seeds summaries only) — so the plan-dependent steps SKIP when
-// the dev store has no real initiative with chunks, rather than failing on an empty dev database.
+// --- the Brief's initiative plan, edited in the sheet ------------------------------------------------------------
+// An initiative no longer expands in place (spec 2026-11-05-jarvis-revamp-design.md decision 7): a click on its card or
+// list row opens the sheet, and the plan is edited there. A real initiative with two stages on live data: it opens in
+// the sheet and nothing expands on the page, one stage starts open, the status pill's menu lists the six statuses and
+// Escape closes only the menu, a double-click renames, a delete hides the chunk behind Undo, the head's ⋯ offers Delete,
+// and Escape closes the sheet with no plan rows left on the page. Nothing is written: the delete is taken back.
+const INLINE_TRACKER_TITLE = "verify-inline-tracker";
+const INLINE_TRACKER_CHUNKS = [
+    ["Sketch", "Design", "done"],
+    ["Review", "Design", "done"],
+    ["Wire", "Build", "active"],
+    ["Ship", "Build", "pending"],
+];
+const inlineEsc = async (h) => {
+    // real key events, not synthetic DOM ones: the binding registry listens on the window
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+    await briefNap(400);
+};
+
 const briefInlineTracker = {
     name: "brief-inline-tracker",
     surface: "jarvis",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.id = await briefSeedInitiative(
+                h,
+                INLINE_TRACKER_TITLE,
+                INLINE_TRACKER_CHUNKS.map(([label]) => label),
+                [
+                    ...INLINE_TRACKER_CHUNKS.map(([chunk, stage]) => ({ op: "setChunkStage", chunk, stage })),
+                    ...INLINE_TRACKER_CHUNKS.filter(([, , s]) => s !== "pending").map(([chunk, , status]) => ({
+                        op: "setChunkStatus",
+                        chunk,
+                        status,
+                    })),
+                ]
+            );
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
-        await h.goto("jarvis");
-        await h.ev(`document.querySelector('[data-briefing-fixture="normal"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 900))");
+        if (ctx.arrangeError != null) {
+            steps.push(skipStep("1-9. the plan edited in the sheet", `arrange: ${ctx.arrangeError}`));
+            return steps;
+        }
+        await briefViewport(h, 1600, 1000);
+        await briefReload(h);
+        const oref = `effort:${ctx.id}`;
+        const opener = `document.querySelector('[data-jarvis-card="${oref}"], [data-jarvis-initiative-row="${oref}"]')`;
+        // the list may hold it past its window
+        await polishWaitFor(h, `!!(${opener}) || !!document.querySelector('[data-jarvis-initiatives-more="more"]')`, 20000);
+        if (!(await h.ev(`!!(${opener})`))) {
+            await h.ev(`document.querySelector('[data-jarvis-initiatives-more="more"]')?.click()`);
+            await briefNap(300);
+        }
+        const SHEET = `document.querySelector('[data-jarvis-brief-sheet="effort"]')`;
 
-        // 1. an initiative row no longer opens the modal sheet
-        const row = `[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')][0]`;
-        const before = await h.ev(`(() => ({
-            rows: document.querySelectorAll('[data-jarvis-brief-row="initiative"]').length,
-            expanded: !!document.querySelector('[data-jarvis-initiative-detail]'),
-        }))()`);
-        await h.ev(`${row}?.querySelector(':scope > [role="button"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 700))");
-        const after = await h.ev(`(() => ({
-            detail: !!document.querySelector('[data-jarvis-initiative-detail]'),
-            sheet: !!document.querySelector('[data-jarvis-brief-sheet-face]'),
-            aria: document.querySelector('[data-jarvis-brief-row="initiative"] > [role="button"]')?.getAttribute('aria-expanded') ?? null,
+        // 1. a click on its card or row opens the sheet; nothing expands on the page
+        await h.ev(`(${opener})?.click()`);
+        await polishWaitFor(h, `!!${SHEET}?.querySelector('[data-jarvis-tracker-chunk]')`, 10000);
+        await briefNap(400);
+        const opened = await h.ev(`(() => ({
+            head: ${SHEET}?.querySelector('[data-jarvis-initiative-sheet-head]')?.dataset.jarvisInitiativeSheetHead ?? null,
+            plan: ${SHEET}?.querySelector('[data-jarvis-initiative-detail]')?.dataset.jarvisInitiativeDetail ?? null,
+            // the sheet mounts inside the Brief's element, so a plan outside the sheet is one drawn on the page
+            inPlace: [...document.querySelectorAll('[data-jarvis-initiative-detail], [data-jarvis-initiative-card="open"]')].some(
+                (e) => e.closest('[data-jarvis-brief-sheet]') == null
+            ),
         }))()`);
         steps.push({
-            step: "1. clicking an initiative expands it in place and opens no sheet",
-            ok: before.rows > 0 && after.detail === true && after.sheet === false && after.aria === "true",
-            detail: JSON.stringify({ before, after }),
+            step: "1. clicking an initiative opens its plan in the sheet, and nothing expands in place",
+            ok: opened.head === oref && opened.plan === "sheet" && opened.inPlace === false,
+            detail: JSON.stringify(opened),
         });
         await h.shot("cdp-shots/brief-inline-tracker-expanded.png");
 
-        // 2. only the stage holding the next chunk starts open
-        const stages = await h.ev(`[...document.querySelectorAll('[data-jarvis-tracker-stage]')].map((b) => b.getAttribute('aria-expanded'))`);
-        const chunks = await h.ev(`[...document.querySelectorAll('[data-jarvis-tracker-chunk]')].length`);
-        const hasPlan = Array.isArray(stages) && stages.length > 0;
-        steps.push(
-            hasPlan
-                ? {
-                      step: "2. exactly one stage starts expanded, and it is the only one contributing chunk rows",
-                      ok: stages.filter((a) => a === "true").length === 1 && chunks > 0,
-                      detail: JSON.stringify({ stages, chunks }),
-                  }
-                : skipStep(
-                      "2. exactly one stage starts expanded, and it is the only one contributing chunk rows",
-                      "no initiative with chunks in this dev store - the fixture seeds summaries only"
-                  )
+        // 2. the stage holding the next chunk starts open, the finished one folded
+        const stages = await h.ev(
+            `[...(${SHEET}?.querySelectorAll('[data-jarvis-tracker-stage]') ?? [])].map((s) => [s.dataset.jarvisTrackerStage, s.getAttribute('aria-expanded')])`
         );
-
-        // 3. a chunk row takes the Brief's cursor and opens its Chunk sidebar
-        let sidebar = { panel: false, cursorOnChunk: false };
-        if (hasPlan && chunks > 0) {
-            await h.ev(`[...document.querySelectorAll('[data-jarvis-tracker-chunk]')][0]?.click()`);
-            await h.ev("new Promise((r) => setTimeout(r, 500))");
-            sidebar = await h.ev(`(() => ({
-                panel: !!document.querySelector('[data-jarvis-chunk-sidebar]'),
-                cursorOnChunk: !!document.querySelector('[data-jarvis-tracker-chunk][aria-pressed="true"]'),
-            }))()`);
-        }
-        steps.push(
-            hasPlan && chunks > 0
-                ? {
-                      step: "3. selecting a chunk opens the Chunk sidebar and marks that row selected",
-                      ok: sidebar.panel === true && sidebar.cursorOnChunk === true,
-                      detail: JSON.stringify(sidebar),
-                  }
-                : skipStep(
-                      "3. selecting a chunk opens the Chunk sidebar and marks that row selected",
-                      "no chunk rows to select - seed an initiative carrying a plan"
-                  )
-        );
-        await h.shot("cdp-shots/brief-inline-tracker-notes.png");
-
-        // 4. Escape backs out one rung at a time and never leaves the surface while a note is open
-        let esc = { afterFirst: null, surface: null };
-        if (hasPlan && chunks > 0) {
-            // real key events, not synthetic DOM ones: the binding registry listens on the window
-            for (const type of ["keyDown", "keyUp"]) {
-                await h.cdp("Input.dispatchKeyEvent", {
-                    type,
-                    key: "Escape",
-                    code: "Escape",
-                    windowsVirtualKeyCode: 27,
-                });
-            }
-            await h.ev("new Promise((r) => setTimeout(r, 400))");
-            esc = await h.ev(`(() => ({
-                afterFirst: !!document.querySelector('[data-jarvis-chunk-sidebar]'),
-                surface: !!document.querySelector('[data-jarvis-region="brief"]'),
-            }))()`);
-        }
-        steps.push(
-            hasPlan && chunks > 0
-                ? {
-                      step: "4. Escape closes the sidebar and stays on the Brief",
-                      ok: esc.afterFirst === false && esc.surface === true,
-                      detail: JSON.stringify(esc),
-                  }
-                : skipStep(
-                      "4. Escape closes the sidebar and stays on the Brief",
-                      "sidebar never opened - step 3 had no chunk row to select"
-                  )
-        );
-
-        // 5-8. the editing layer. Every step asserts and none commits a write: the delete is taken back
-        // with Undo inside its window, so no RPC is ever sent against the dev store.
-        if (hasPlan && chunks > 0) {
-            // 5. the status pill opens a menu with the six statuses
-            await h.ev(`document.querySelector('[data-jarvis-chunk-status]')?.click()`);
-            await h.ev("new Promise((r) => setTimeout(r, 200))");
-            // each item leads with a glyph span, so read the label span rather than the whole button
-            const menu = await h.ev(`(() => {
-                const m = document.querySelector('[data-jarvis-tracker-menu]');
-                return m ? [...m.querySelectorAll('button')].map((b) => b.querySelector('.flex-1')?.textContent.trim() ?? "") : null;
-            })()`);
-            await h.shot("cdp-shots/brief-inline-tracker-menu.png");
-            // real keys again: the menu's Escape rung is a window-capture binding, and it must close the
-            // menu without also backing out of the surface
-            for (const type of ["keyDown", "keyUp"]) {
-                await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-            }
-            await h.ev("new Promise((r) => setTimeout(r, 300))");
-            const afterEsc = await h.ev(`(() => ({
-                menu: !!document.querySelector('[data-jarvis-tracker-menu]'),
-                brief: !!document.querySelector('[data-jarvis-region="brief"]'),
-                chunks: document.querySelectorAll('[data-jarvis-tracker-chunk]').length,
-            }))()`);
-            const six = ["pending", "active", "blocked", "deferred", "skipped", "done"];
-            steps.push({
-                step: "5. the status pill opens a menu listing all six statuses, and Escape closes only the menu",
-                ok:
-                    Array.isArray(menu) &&
-                    six.every((s) => menu.includes(s)) &&
-                    afterEsc.menu === false &&
-                    afterEsc.brief === true &&
-                    afterEsc.chunks === chunks,
-                detail: JSON.stringify({ menu, afterEsc }),
-            });
-
-            // 6. double-click renames in place, and Escape leaves the label untouched
-            await h.ev(`document.querySelector('[data-jarvis-tracker-chunk]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
-            await h.ev("new Promise((r) => setTimeout(r, 200))");
-            const renaming = await h.ev(`!!document.querySelector('[data-jarvis-rename-input]')`);
-            steps.push({ step: "6. double-clicking a chunk opens its rename input", ok: renaming === true, detail: String(renaming) });
-            await h.ev(`document.querySelector('[data-jarvis-rename-input]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-            await h.ev("new Promise((r) => setTimeout(r, 150))");
-
-            // 7. delete hides the row at once, and Undo brings it back without a write
-            const label = await h.ev(`document.querySelectorAll('[data-jarvis-tracker-chunk]').length > 1 ? document.querySelector('[data-jarvis-tracker-chunk]').getAttribute('data-jarvis-tracker-chunk') : null`);
-            if (label != null) {
-                const sel = `document.querySelector('[data-jarvis-tracker-chunk="' + CSS.escape(${JSON.stringify(label)}) + '"]')`;
-                await h.ev(`document.querySelector('[data-jarvis-chunk-status]')?.click()`);
-                await h.ev("new Promise((r) => setTimeout(r, 200))");
-                await h.ev(`[...document.querySelectorAll('[data-jarvis-tracker-menu] button')].find((b) => b.textContent.trim() === 'Delete chunk')?.click()`);
-                await h.ev("new Promise((r) => setTimeout(r, 200))");
-                const gone = await h.ev(`!${sel} && !!document.querySelector('[data-jarvis-toast-undo]')`);
-                await h.ev(`document.querySelector('[data-jarvis-toast-undo]')?.click()`);
-                await h.ev("new Promise((r) => setTimeout(r, 300))");
-                const back = await h.ev(`!!${sel}`);
-                steps.push({
-                    step: "7. delete hides the chunk behind an Undo toast, and Undo restores it",
-                    ok: gone === true && back === true,
-                    detail: JSON.stringify({ label, gone, back }),
-                });
-            } else {
-                steps.push(skipStep("7. delete hides the chunk behind an Undo toast, and Undo restores it", "the plan has one chunk"));
-            }
-
-            // 8. the footer's delete asks first
-            await h.ev(`document.querySelector('[data-jarvis-initiative-action="delete"]')?.click()`);
-            await h.ev("new Promise((r) => setTimeout(r, 200))");
-            const confirm = await h.ev(`document.querySelector('[data-jarvis-delete-confirm]')?.textContent ?? null`);
-            steps.push({
-                step: "8. deleting an initiative asks for confirmation first",
-                ok: typeof confirm === "string" && confirm.includes("Delete this initiative"),
-                detail: String(confirm),
-            });
-            await h.shot("cdp-shots/brief-inline-tracker-confirm.png");
-            await h.ev(`[...document.querySelectorAll('[data-jarvis-delete-confirm] button')].find((b) => b.textContent.trim() === 'cancel')?.click()`);
-            await h.ev("new Promise((r) => setTimeout(r, 150))");
-        } else {
-            steps.push(skipStep("5-8. the editing layer: status menu, rename, delete + undo, delete confirm", "no initiative with chunks in this dev store"));
-        }
-
-        // 9. collapsing removes the chunk rows again, so a stale cursor cannot survive on one
-        await h.ev(`[...document.querySelectorAll('[data-jarvis-brief-row="initiative"]')][0]?.querySelector(':scope > [role="button"]')?.click()`);
-        await h.ev("new Promise((r) => setTimeout(r, 500))");
-        const collapsed = await h.ev(`(() => ({
-            detail: !!document.querySelector('[data-jarvis-initiative-detail]'),
-            chunks: document.querySelectorAll('[data-jarvis-tracker-chunk]').length,
-        }))()`);
+        const chunks = await h.ev(`${SHEET}?.querySelectorAll('[data-jarvis-tracker-chunk]').length ?? 0`);
         steps.push({
-            step: "9. collapsing the initiative removes its plan rows",
-            ok: collapsed.detail === false && collapsed.chunks === 0,
-            detail: JSON.stringify(collapsed),
+            step: "2. one stage starts expanded, the one holding the next chunk",
+            ok: JSON.stringify(stages) === JSON.stringify([["Design", "false"], ["Build", "true"]]) && chunks > 0,
+            detail: JSON.stringify({ stages, chunks }),
         });
 
+        // 5. the status pill opens a menu with the six statuses, and Escape closes only the menu
+        await h.ev(`${SHEET}?.querySelector('[data-jarvis-tracker-chunk="Wire"] [data-jarvis-chunk-status]')?.click()`);
+        await briefNap(250);
+        const menu = await h.ev(`(() => {
+            const m = document.querySelector('[data-jarvis-tracker-menu]');
+            return m ? [...m.querySelectorAll('button')].map((b) => b.querySelector('.flex-1')?.textContent.trim() ?? "") : null;
+        })()`);
+        await h.shot("cdp-shots/brief-inline-tracker-menu.png");
+        await inlineEsc(h);
+        const afterEsc = await h.ev(`(() => ({
+            menu: !!document.querySelector('[data-jarvis-tracker-menu]'),
+            sheet: !!${SHEET},
+            chunks: ${SHEET}?.querySelectorAll('[data-jarvis-tracker-chunk]').length ?? 0,
+        }))()`);
+        const six = ["pending", "active", "blocked", "deferred", "skipped", "done"];
+        steps.push({
+            step: "5. the status pill opens a menu listing all six statuses, and Escape closes only the menu",
+            ok:
+                Array.isArray(menu) &&
+                six.every((s) => menu.includes(s)) &&
+                afterEsc.menu === false &&
+                afterEsc.sheet === true &&
+                afterEsc.chunks === chunks,
+            detail: JSON.stringify({ menu, afterEsc }),
+        });
+
+        // 6. double-click renames in place, and Escape leaves the label untouched
+        await h.ev(`${SHEET}?.querySelector('[data-jarvis-tracker-chunk="Wire"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+        await briefNap(250);
+        const renaming = await h.ev(`!!${SHEET}?.querySelector('[data-jarvis-rename-input]')`);
+        steps.push({ step: "6. double-clicking a chunk opens its rename input", ok: renaming === true, detail: String(renaming) });
+        await h.ev(`${SHEET}?.querySelector('[data-jarvis-rename-input]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+        await briefNap(200);
+
+        // 7. delete hides the row at once, and Undo brings it back without a write
+        const sel = `${SHEET}?.querySelector('[data-jarvis-tracker-chunk="Ship"]')`;
+        await h.ev(`(${sel})?.querySelector('[data-jarvis-chunk-status]')?.click()`);
+        await briefNap(250);
+        await h.ev(`[...document.querySelectorAll('[data-jarvis-tracker-menu] button')].find((b) => b.textContent.trim() === 'Delete chunk')?.click()`);
+        await briefNap(250);
+        const gone = await h.ev(`!(${sel}) && !!document.querySelector('[data-jarvis-toast-undo]')`);
+        await h.ev(`document.querySelector('[data-jarvis-toast-undo]')?.click()`);
+        await briefNap(400);
+        const back = await h.ev(`!!(${sel})`);
+        steps.push({
+            step: "7. delete hides the chunk behind an Undo toast, and Undo restores it",
+            ok: gone === true && back === true,
+            detail: JSON.stringify({ gone, back }),
+        });
+
+        // 8. the initiative's own edits are the head's ⋯ menu: Rename, Edit details, Pause, Archive, Delete
+        await h.ev(`${SHEET}?.querySelector('[data-jarvis-sheet-menu]')?.click()`);
+        await briefNap(300);
+        const items = await h.ev(`[...document.querySelectorAll('[data-menu-item]')].map((r) => r.dataset.menuItem)`);
+        await h.shot("cdp-shots/brief-inline-tracker-confirm.png");
+        steps.push({
+            step: "8. the sheet's ⋯ menu holds the initiative's edits, Delete among them",
+            ok: ["Rename", "Edit details…", "Archive", "Delete"].every((i) => items.includes(i)),
+            detail: JSON.stringify(items),
+        });
+        await inlineEsc(h);
+
+        // 9. Escape closes the sheet, and the page draws no plan rows
+        await inlineEsc(h);
+        const closed = await h.ev(`(() => ({
+            sheet: !!document.querySelector('[data-jarvis-brief-sheet]'),
+            chunks: document.querySelectorAll('[data-jarvis-tracker-chunk]').length,
+            brief: !!document.querySelector('[data-jarvis-region="brief"]'),
+        }))()`);
+        steps.push({
+            step: "9. Escape closes the sheet and stays on the Brief, with no plan rows on the page",
+            ok: closed.sheet === false && closed.chunks === 0 && closed.brief === true,
+            detail: JSON.stringify(closed),
+        });
         return steps;
+    },
+    async teardown(h, ctx) {
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        if (ctx.id != null) {
+            await h.rpc("effortdelete", { effortoid: ctx.id }).catch(() => {});
+        }
+        await h.goto("cockpit");
     },
 };
 
@@ -14954,7 +15132,7 @@ const briefDesignParity = {
     name: "brief-design-parity",
     surface: "jarvis",
     async arrange(h) {
-        const { efforts = [] } = (await h.rpc("effortlist", {})) ?? {};
+        const efforts = (await h.rpc("effortlist", {}))?.efforts ?? [];
         if (!efforts.some((e) => e.title === PARITY_INITIATIVE)) {
             throw new Error(`no "${PARITY_INITIATIVE}" initiative - run node scripts/cdp/seed-brief.mjs first`);
         }

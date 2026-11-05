@@ -10,7 +10,6 @@ import {
     buildAttentionQueue,
     capRegion,
     DELTA_CAP,
-    EFFORT_CAP,
     groupDelta,
     kindWord,
     mergeActiveWork,
@@ -20,7 +19,7 @@ import {
     queueKindLabel,
     queueOpenTarget,
     SHIPPED_CAP,
-    WAITING_CAP,
+    waitingStrip,
     type AgentRow,
     type BlockerRow,
     type BriefingModelInput,
@@ -282,8 +281,8 @@ describe("briefing projection", () => {
         const m2 = projectBriefing(input({ ...state, efforts: many }));
         expect(m2.efforts).toHaveLength(9);
         expect(m2.efforts.some((e) => e.title === "effort 0")).toBe(false); // archived excluded
-        expect(capRegion(m2.efforts, EFFORT_CAP, false)).toMatchObject({ more: 1 });
-        expect(capRegion(m2.efforts, EFFORT_CAP, true).rows).toHaveLength(9);
+        expect(capRegion(m2.efforts, 8, false)).toMatchObject({ more: 1 });
+        expect(capRegion(m2.efforts, 8, true).rows).toHaveLength(9);
     });
 
     it("folds blocked chunks into the queue", () => {
@@ -705,12 +704,15 @@ describe("capRegion", () => {
     });
 });
 
-describe("the Waiting window", () => {
-    it("shows the first three items and folds the rest", () => {
-        const q = ["a", "b", "c", "d", "e"];
-        expect(WAITING_CAP).toBe(3);
-        expect(capRegion(q, WAITING_CAP, false)).toEqual({ rows: ["a", "b", "c"], more: 2 });
-        expect(capRegion(q, WAITING_CAP, true)).toEqual({ rows: q, more: 0 });
+describe("the Waiting strip", () => {
+    it("shows the most urgent item inline and no rows while Show all is shut", () => {
+        expect(waitingStrip(["a", "b", "c"], false)).toEqual({ head: "a", rows: [] });
+    });
+    it("opens every item as a row, in the queue's order, with Show all", () => {
+        expect(waitingStrip(["a", "b", "c"], true)).toEqual({ head: "a", rows: ["a", "b", "c"] });
+    });
+    it("has no strip with nothing waiting", () => {
+        expect(waitingStrip([], true)).toEqual({ head: null, rows: [] });
     });
 });
 
