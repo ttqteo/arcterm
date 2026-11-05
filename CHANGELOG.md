@@ -31,6 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
+- Every orchestrator run no longer stalls for minutes while the engine deletes one task's worktree that holds a full `node_modules`.
 
 ## 1.0.2 — 2026-11-05
 

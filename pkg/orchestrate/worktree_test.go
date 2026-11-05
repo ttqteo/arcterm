@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -427,6 +428,52 @@ func TestRemoveWorktreeDirKeepsTheBranch(t *testing.T) {
 	}
 	if got := gitCmd(t, dir, "rev-parse", "wave/run-1"); got != base {
 		t.Fatalf("the branch must stay, got %q", got)
+	}
+}
+
+// git deletes a tree under repoAdminMu, so a lane's npm-installed node_modules (10+ minutes on Windows) held every
+// run's worktree add, list and prune behind it. The tree's contents go before the lock is taken.
+func TestRemoveWorktreeDirDeletesTheTreesContentsOutsideTheRepoLock(t *testing.T) {
+	dir := newGitRepo(t)
+	wt, err := CreateRunWorktree(context.Background(), dir, "run-1", gitCmd(t, dir, "rev-parse", "HEAD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(wt, "node_modules", "pkg", "index.js"), "x\n")
+	var deleted []string
+	lockedDuring := false
+	orig := removeTreeEntry
+	removeTreeEntry = func(path string) error {
+		deleted = append(deleted, filepath.Base(path))
+		if repoAdminMu.TryLock() {
+			repoAdminMu.Unlock()
+		} else {
+			lockedDuring = true
+		}
+		return orig(path)
+	}
+	t.Cleanup(func() { removeTreeEntry = orig })
+
+	if err := removeWorktreeDir(context.Background(), dir, wt); err != nil {
+		t.Fatal(err)
+	}
+	if lockedDuring {
+		t.Fatal("the tree's contents were deleted while the repo lock was held")
+	}
+	if !slices.Contains(deleted, "node_modules") || slices.Contains(deleted, ".git") {
+		t.Fatalf("want node_modules deleted before git and the .git file left to it, deleted %v", deleted)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) || isWorktreeRegistered(context.Background(), dir, wt) {
+		t.Fatalf("the tree must be gone and unregistered, stat err = %v", err)
+	}
+}
+
+// A directory with a .git directory is a repo, not a linked tree, and is never emptied.
+func TestClearTreeUnlockedLeavesARepoAlone(t *testing.T) {
+	dir := newGitRepo(t)
+	clearTreeUnlocked(context.Background(), dir)
+	if _, err := os.Stat(filepath.Join(dir, "base.txt")); err != nil {
+		t.Fatalf("a repo's files must stay, stat err = %v", err)
 	}
 }
 
