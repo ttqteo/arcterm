@@ -1827,8 +1827,9 @@ const HAT_TUFT: Record<PetCharacter, string> = { sprout: "d", minion: "s", spide
 const HAT_CROWN_MIN = 4;
 
 /** `rows` with the Santa hat on the head. `upsideDown` is for Spider-Man's hang and crawl: the crown is the head's
- *  last such row and the hat hangs below it, past the grid's bottom if need be (the renderer's svg overflows). */
-function wearHat(rows: readonly string[], character: PetCharacter, upsideDown = false): readonly string[] {
+ *  last such row and the hat hangs below it, past the grid's bottom if need be (the renderer's svg overflows).
+ *  Exported for the Office's Spider-Man entrance, whose grids are not poses. */
+export function wearHat(rows: readonly string[], character: PetCharacter, upsideDown = false): readonly string[] {
     const head = HAT_HEAD[character];
     const crownCells = (row: string) => [...row].filter((c) => head.includes(c)).length;
     const order = rows.map((_, y) => y);
