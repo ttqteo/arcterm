@@ -124,7 +124,7 @@ export function CanvasGallery({ model }: { model: AgentsViewModel }) {
         return <CanvasCleanup />;
     }
     if (g.view === "scan") {
-        return <CanvasScan />;
+        return <CanvasScan model={model} />;
     }
     return <CanvasGrid model={model} />;
 }
@@ -167,6 +167,51 @@ function GridSkeleton() {
     );
 }
 
+// the gallery's header row: its title and the count pill, then the actions the view passes. The grid and the scan
+// review share it, so the review opens under the same header (board C-scan-review)
+function GalleryHeader({ list, children }: { list: GalleryCanvas[] | null; children?: ReactNode }) {
+    const has = list != null && list.length > 0;
+    const totalBytes = (list ?? []).reduce((n, c) => n + c.bytes, 0);
+    return (
+        <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
+            <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Canvas gallery</h1>
+            {list != null ? (
+                <span
+                    data-canvas-gallery-count
+                    className="inline-flex flex-none items-center rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary"
+                >
+                    {has ? `${list.length} · ${formatSize(totalBytes)}` : "0"}
+                </span>
+            ) : null}
+            <div className="flex-1" />
+            {children}
+        </div>
+    );
+}
+
+function ScanOpenButton({ onClick, current = false }: { onClick?: () => void; current?: boolean }) {
+    return (
+        <button
+            type="button"
+            data-canvas-scan-open
+            aria-pressed={current}
+            title="Find canvases that look like a newer version of another"
+            onClick={onClick}
+            className={cn(SWAP_BTN, "border-edge-strong bg-surface-selected text-primary")}
+        >
+            Scan for versions
+        </button>
+    );
+}
+
+function CleanupOpenButton({ onClick }: { onClick: () => void }) {
+    return (
+        <button type="button" data-canvas-cleanup-open onClick={onClick} className={SWAP_BTN}>
+            Clean up
+        </button>
+    );
+}
+
 function CanvasGrid({ model }: { model: AgentsViewModel }) {
     const g = useAtomValue(canvasGalleryAtom);
     const list = useAtomValue(canvasListAtom);
@@ -196,7 +241,6 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
     }, [cursor, shown]);
 
     const has = list != null && list.length > 0;
-    const totalBytes = (list ?? []).reduce((n, c) => n + c.bytes, 0);
     const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Escape") {
             // a first Escape empties the box, the next gives the keys back to the grid
@@ -215,38 +259,11 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
     let index = 0;
     return (
         <div data-canvas-gallery className="flex min-h-0 flex-1 flex-col bg-background">
-            <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
-                <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Canvas gallery</h1>
-                {list != null ? (
-                    <span
-                        data-canvas-gallery-count
-                        className="inline-flex flex-none items-center rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary"
-                    >
-                        {has ? `${list.length} · ${formatSize(totalBytes)}` : "0"}
-                    </span>
-                ) : null}
-                <div className="flex-1" />
+            <GalleryHeader list={list}>
                 {has ? (
                     <>
-                        {!scanned && suggestions.length > 0 ? (
-                            <button
-                                type="button"
-                                data-canvas-scan-open
-                                title="Find canvases that look like a newer version of another"
-                                onClick={startScan}
-                                className={cn(SWAP_BTN, "border-edge-strong bg-surface-selected text-primary")}
-                            >
-                                Scan for versions
-                            </button>
-                        ) : null}
-                        <button
-                            type="button"
-                            data-canvas-cleanup-open
-                            onClick={() => startCleanup(now)}
-                            className={SWAP_BTN}
-                        >
-                            Clean up
-                        </button>
+                        {!scanned && suggestions.length > 0 ? <ScanOpenButton onClick={startScan} /> : null}
+                        <CleanupOpenButton onClick={() => startCleanup(now)} />
                         <label className="flex h-[28px] w-[240px] flex-none items-center gap-2 rounded-[6px] border border-edge-mid bg-surface-raised pl-[10px] pr-2 focus-within:border-edge-strong">
                             <Search size={13} strokeWidth={1.8} className="flex-none text-muted" aria-hidden />
                             <input
@@ -262,7 +279,7 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
                         </label>
                     </>
                 ) : null}
-            </div>
+            </GalleryHeader>
             {list == null ? (
                 error != null ? (
                     <EdgeState>
@@ -494,15 +511,24 @@ function CanvasCard({
 // pairs links the ticked and remembers the unticked as "not a version"; Cancel writes nothing. Either way the scan counts
 // as done. Escape cancels (bindings.ts). The rows are the pairs as the review opened (scanAtom), so a row does not
 // vanish under the person's eye when linking reads the list again.
-function CanvasScan() {
+function CanvasScan({ model }: { model: AgentsViewModel }) {
     const s = useAtomValue(scanAtom);
+    const list = useAtomValue(canvasListAtom);
+    const now = useAtomValue(model.nowAtom);
     const pairs = s.pairs;
     const ticked = pairs.filter((p) => s.ticked.has(p.newer.dir)).length;
     return (
         <div data-canvas-scan className="flex min-h-0 flex-1 flex-col bg-background">
-            <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
-                <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Scan for versions</h1>
-            </div>
+            <GalleryHeader list={list}>
+                <ScanOpenButton current />
+                {/* leaving the review for Clean up writes nothing, like Cancel */}
+                <CleanupOpenButton
+                    onClick={() => {
+                        cancelScan();
+                        startCleanup(now);
+                    }}
+                />
+            </GalleryHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[24px] pt-[18px]">
                 <div className="flex max-h-full flex-col overflow-hidden rounded-lg border border-edge-mid bg-surface">
                     <div className="flex-none border-b border-border px-[14px] py-[10px] text-[12px] text-secondary">
