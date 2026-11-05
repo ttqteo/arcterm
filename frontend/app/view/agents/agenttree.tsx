@@ -253,6 +253,7 @@ import {
     useRunInfo,
 } from "./runlineagestore";
 import { useChristmasDecor } from "./christmasstore";
+import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
 import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
@@ -923,6 +924,8 @@ function RunSubline({
             <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
+                ) : run.land?.state === "pending" ? (
+                    <LandLine model={model} run={run} className="text-muted" />
                 ) : (
                     <span
                         className="truncate text-muted"
@@ -960,6 +963,8 @@ function RunSubline({
                 />
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
+                ) : runStage(run).key === "landing" && run.land?.state === "pending" ? (
+                    <LandLine model={model} run={run} className={PROGRESS_TEXT[runStage(run).tone]} />
                 ) : (
                     <span className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])} title={progress.title}>
                         {progress.text}

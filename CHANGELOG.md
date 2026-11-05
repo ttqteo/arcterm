@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
+  waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
+  for an agent, to hand a stuck land to another agent.
+
 ### Changed
 
 - An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
