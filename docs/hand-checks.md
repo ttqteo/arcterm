@@ -1784,3 +1784,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   rounded └ into the last, the turn meeting the child's title line; unfold a council that is not the last child → the
   line runs on through its peek to the next child; a top-level council or run has no line. Unit tests and the typecheck
   only (`TreeLine` in `projecthistory.tsx`, `isLastChild`, 3fcd9c943); no dev app was up.
+- [ ] (arcterm) **Initiative "only" bar wraps.** Jarvis → an initiative with a long chunk title → Notes → click the
+  chunk → the "only" bar on top shows the whole title over several lines, the "only" label, tone dot and "show all"
+  sitting on its first line. Prettier only (`NotesFeed` in `effortdetailview.tsx`); no dev app was up.

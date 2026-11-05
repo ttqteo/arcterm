@@ -357,15 +357,19 @@ function NotesFeed({ feed }: { feed: FeedEntry[] }) {
                 </span>
             </div>
             {only != null ? (
-                <div className="mb-0.5 mt-1 flex items-center gap-2 rounded-lg bg-pill py-1.5 pl-2.5 pr-2">
-                    <span className={cn("flex-none", FAINT_TEXT)}>only</span>
-                    <Tone tone={only.tone} />
-                    <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink-hi">{only.chunk}</span>
+                <div className="mb-0.5 mt-1 flex items-start gap-2 rounded-lg bg-pill py-1.5 pl-2.5 pr-2">
+                    <span className={cn("flex-none leading-[18px]", FAINT_TEXT)}>only</span>
+                    <span className="flex h-[18px] flex-none items-center">
+                        <Tone tone={only.tone} />
+                    </span>
+                    <span className="min-w-0 flex-1 break-words text-[12px] font-semibold leading-[18px] text-ink-hi">
+                        {only.chunk}
+                    </span>
                     <button
                         type="button"
                         onClick={() => narrow(null)}
                         className={cn(
-                            "flex-none cursor-pointer px-1 py-0.5 text-[10.5px] text-accent hover:text-accenthover",
+                            "flex-none cursor-pointer px-1 text-[10.5px] leading-[18px] text-accent hover:text-accenthover",
                             FOCUS
                         )}
                     >
