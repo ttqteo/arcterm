@@ -155,10 +155,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   every state with the commands stubbed; the haiku checks, the seats' prompts in a live council and WebKit hover are
   untried (`councilmemory.tsx`, `pkg/council/memorycheck.go`, `prompts.go`; 925805200, 04614993b).
 
-- [ ] (arcterm) An asking agent's whole row breathes in the Agent tree: get an agent to ask (a permission prompt or a
-  brainstorm question) → its row, selected or not, pulses a faint amber wash and edge every ~2.4s alongside its glyph;
-  answer it → the row goes back to plain. With reduced motion on it rests at a faint amber wash. No dev app was up; the
-  pulse unit tests only (`.pulse-tint` in `tailwindsetup.css`, `pulse.ts`, `agenttree.tsx`).
+- [ ] (arcterm) An asking agent's row in the Agent tree is a steady box: get an agent to ask (a permission prompt or a
+  brainstorm question) → its row, selected or not, holds an amber wash and a 1px amber edge that never pulses (only its
+  glyph does), and no amber line or dots show outside its corners, even after the row moves or the tree scrolls;
+  answer it → the row goes back to plain. No dev app was up (`.asking-tint` in `tailwindsetup.css`, `agenttree.tsx`).
 - [ ] (arcterm) Running background tasks fold in the Agent tree: get an agent to leave three or more commands running
   in the background → its row shows a `3 running` chip and no task rows under it; click it → the rows list, click
   again → they fold. With one or two running, the rows show and no chip appears (`tasksShown` in `agenttreemodel.ts`,
