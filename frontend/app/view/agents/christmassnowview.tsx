@@ -3,23 +3,32 @@
 //
 // The Christmas snow: one fixed full-window canvas over the content and over an open dialog's backdrop (z-75, above
 // ModalShell's z-70, below the z-80 popovers), mounted beside
-// PulseDriver at the cockpit root. It keeps its own 12fps interval rather than hooking PulseDriver, which writes styles
-// to DOM nodes; this paints a canvas. The interval runs only while the motion gate is on, the window is visible and it
-// is neither in Float nor folded into Sprout; otherwise it is cleared and so is the canvas. A flake over a visible
-// terminal or an open dialog's panel is drawn at half opacity (christmassnow.ts flakeAlpha), so the text under it
-// stays readable. Nothing renders while the decor is off.
+// PulseDriver at the cockpit root. It keeps its own requestAnimationFrame loop rather than hooking PulseDriver, which
+// writes styles to DOM nodes; this paints a canvas, on the display's frames and at most about 90 a second
+// (snowFrameDue): a 12fps interval stepped each flake a pixel or more at a time and read as a stuttering, slow machine.
+// The loop runs
+// only while the motion gate is on, the window is visible and it is neither in Float nor folded into Sprout; otherwise
+// it is stopped and the canvas cleared. A flake over a visible terminal or an open dialog's panel is drawn at half
+// opacity (christmassnow.ts flakeAlpha), so the text under it stays readable; those rects are measured every
+// DIM_REFRESH_MS, not every frame, since measuring forces a layout whenever a terminal has printed since the last one.
+// Nothing renders while the decor is off or its Snow switch is (useChristmasSnow; off by default).
 
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 
-import { flakeAlpha, makeFlakes, stepFlake, type Flake, type SnowRect } from "./christmassnow";
-import { useChristmasDecor, useChristmasMotion } from "./christmasstore";
+import { flakeAlpha, makeFlakes, snowFrameDue, stepFlake, type Flake, type SnowRect } from "./christmassnow";
+import { useChristmasMotion, useChristmasSnow } from "./christmasstore";
 import { floatMiniAtom, floatModeAtom } from "./floatstore";
 import { themePresetAtom } from "./themestore";
 
-const SNOW_FRAME_MS = 1_000 / 12;
 // a longer gap (a stalled tab, a debugger) is stepped as this, so flakes never jump
 const MAX_STEP_S = 0.2;
+// how often the terminals' and dialogs' rects are measured again: a flake keeps its old opacity for at most this long
+// after one moves, which nobody sees
+const DIM_REFRESH_MS = 500;
+// how often the frame count reaches the canvas's data-frames: an attribute written every frame would invalidate the
+// canvas's style 60 times a second for a number only the CDP scenario reads
+const FRAMES_PUBLISH_MS = 250;
 
 function useDocumentVisible(): boolean {
     const [visible, setVisible] = useState(() => !document.hidden);
@@ -48,8 +57,8 @@ function dimRects(): SnowRect[] {
 }
 
 export function SnowLayer() {
-    const decorOn = useChristmasDecor();
-    if (!decorOn) {
+    const snowOn = useChristmasSnow();
+    if (!snowOn) {
         return null;
     }
     return <SnowCanvas />;
@@ -89,14 +98,21 @@ function SnowCanvas() {
         // the canvas carries text-xmas-snow, so its computed colour is the --color-xmas-snow token
         const color = getComputedStyle(canvas).color;
         let flakes: Flake[] = makeFlakes(width, height);
+        let rects: SnowRect[] = dimRects();
+        let rectsAt = performance.now();
         let last = performance.now();
         let frames = 0;
-        const paint = () => {
-            const now = performance.now();
-            const dt = Math.min(MAX_STEP_S, (now - last) / 1000);
+        let publishedAt = -Infinity;
+        let raf = 0;
+        const paint = (now: number) => {
+            // a frame's timestamp can sit a hair before the performance.now() of the first paint
+            const dt = Math.min(MAX_STEP_S, Math.max(0, now - last) / 1000);
             last = now;
             flakes = flakes.map((f) => stepFlake(f, dt, now, width, height));
-            const rects = dimRects();
+            if (now - rectsAt >= DIM_REFRESH_MS) {
+                rects = dimRects();
+                rectsAt = now;
+            }
             ctx.clearRect(0, 0, width, height);
             ctx.fillStyle = color;
             for (const f of flakes) {
@@ -108,17 +124,28 @@ function SnowCanvas() {
             ctx.globalAlpha = 1;
             // a frame count the CDP scenario reads to tell a running snow from a still one
             frames++;
-            canvas.dataset.frames = String(frames);
+            if (now - publishedAt >= FRAMES_PUBLISH_MS) {
+                canvas.dataset.frames = String(frames);
+                publishedAt = now;
+            }
+        };
+        const tick = (now: number) => {
+            raf = requestAnimationFrame(tick);
+            if (snowFrameDue(now - last)) {
+                paint(now);
+            }
         };
         const onResize = () => {
             size();
             flakes = makeFlakes(width, height);
+            rects = dimRects();
+            rectsAt = performance.now();
         };
         window.addEventListener("resize", onResize);
-        paint();
-        const timer = setInterval(paint, SNOW_FRAME_MS);
+        paint(performance.now());
+        raf = requestAnimationFrame(tick);
         return () => {
-            clearInterval(timer);
+            cancelAnimationFrame(raf);
             window.removeEventListener("resize", onResize);
             ctx.clearRect(0, 0, width, height);
         };

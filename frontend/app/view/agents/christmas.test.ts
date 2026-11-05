@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { CHRISTMAS_THEME, christmasMotionOn, GIFT_MAX, giftCount, hasChristmasDecor, santaHatBox } from "./christmas";
+import {
+    CHRISTMAS_THEME,
+    christmasMotionOn,
+    christmasSnowShows,
+    GIFT_MAX,
+    giftCount,
+    hasChristmasDecor,
+    santaHatBox,
+} from "./christmas";
 
 describe("hasChristmasDecor", () => {
     it("shows for the Christmas preset while its effects are on", () => {
@@ -34,6 +42,15 @@ describe("christmasMotionOn", () => {
     it("stops whenever the decor is off", () => {
         expect(christmasMotionOn(false, false)).toBe(false);
         expect(christmasMotionOn(false, true)).toBe(false);
+    });
+});
+
+describe("christmasSnowShows", () => {
+    it("shows only while the decor shows and the Snow switch is on", () => {
+        expect(christmasSnowShows(true, true)).toBe(true);
+        expect(christmasSnowShows(true, false)).toBe(false);
+        expect(christmasSnowShows(false, true)).toBe(false);
+        expect(christmasSnowShows(false, false)).toBe(false);
     });
 });
 

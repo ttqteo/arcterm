@@ -30,6 +30,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Santa hat reads as a hat, red with a cream trim, not a smudge. Turn Christmas effects off → the snow, lights and hats
   go, the colours stay. Checked by the `christmas-theme` CDP scenario in the dev app; the look itself, in the packaged
   build and at real sizes, was not judged by eye (`christmassnowview.tsx`, `christmaslights.tsx`, `petsprite.ts`).
+- [ ] (arcterm) **The Christmas Snow switch.** In the packaged app with the Christmas theme on → no snow falls, and
+  Settings → Appearance shows a Snow switch, off, under Christmas effects. Turn it on with an agent printing in its
+  terminal → the flakes glide on every frame instead of stepping 12 times a second, the snow still reads fainter over
+  the terminal, and typing and scrolling stay quick. The snow paints on requestAnimationFrame (up to ~90 fps) and
+  measures the terminals every 500 ms; measured in the dev app at 73 fps on a 75 Hz display, ~7–11% of the main thread
+  while it falls (the old 12 fps snow ~0%). Checked by the `christmas-theme` scenario; smoothness not judged by eye in
+  the packaged build (`christmassnowview.tsx`, `appearance.tsx`).
 
 - [ ] (arcterm) **Christmas: the empty cockpit's hat and a finished run's gift.** With the Christmas theme on, close
   every agent so the Cockpit shows "No agents running" → the terminal-window glyph wears the Santa hat on its top-left

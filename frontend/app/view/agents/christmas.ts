@@ -3,7 +3,7 @@
 //
 // The Christmas theme's two gates and its gift clamp. Pure; christmasstore.ts holds the hooks every view reads.
 // Static decor (trees, hats, gifts, the wreath, the lights lit and still) keys off hasChristmasDecor; the snow and
-// the lights' blink key off christmasMotionOn as well.
+// the lights' blink key off christmasMotionOn as well, and the snow off its own switch too (christmasSnowShows).
 
 export const CHRISTMAS_THEME = "christmas";
 
@@ -28,6 +28,12 @@ export function santaHatBox(iconSize: number): { size: number; left: number; top
         left: -Math.round(iconSize * 0.28),
         top: -Math.round(iconSize * 0.42),
     };
+}
+
+/** Whether the snow canvas shows: the decor shows and its own Snow switch is on (off by default). Whether it then
+ *  moves is christmasMotionOn's call. */
+export function christmasSnowShows(decorOn: boolean, snowOn: boolean): boolean {
+    return decorOn && snowOn;
 }
 
 /** Gift boxes under a room's tree: one per finished agent and per done task, between 0 and GIFT_MAX. */

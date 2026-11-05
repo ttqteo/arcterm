@@ -11686,6 +11686,7 @@ const XMAS_PROJECT = "verify-christmas";
 const XMAS_KEYS = {
     preset: "cockpit.theme.preset",
     effectsOff: "cockpit.theme.christmasEffectsOff",
+    snow: "cockpit.theme.christmasSnow",
     character: "jarvis.pet.character",
     outfit: "jarvis.pet.outfit",
     view: "cockpit.view",
@@ -11718,6 +11719,8 @@ const xmasPickPreset = (h, name) =>
     })()`);
 const XMAS_SWITCH = `document.querySelector("button[data-christmas-effects][role=switch]")`;
 const xmasSwitch = (h) => h.ev(`${XMAS_SWITCH}?.getAttribute("aria-checked") ?? null`);
+const XMAS_SNOW_SWITCH = `document.querySelector("button[data-christmas-snow-switch][role=switch]")`;
+const xmasSnowSwitch = (h) => h.ev(`${XMAS_SNOW_SWITCH}?.getAttribute("aria-checked") ?? null`);
 const xmasFrames = (h) =>
     h.ev(`(() => {
         const c = document.querySelector("canvas[data-christmas-snow]");
@@ -11952,6 +11955,7 @@ const christmasTheme = {
                 );
             await set(XMAS_KEYS.preset, null);
             await set(XMAS_KEYS.effectsOff, null);
+            await set(XMAS_KEYS.snow, null);
             await set(XMAS_KEYS.character, "sprout");
             await set(XMAS_KEYS.outfit, "shirt");
             await set(XMAS_KEYS.view, "office");
@@ -12008,6 +12012,22 @@ const christmasTheme = {
         const bg1 = await xmasVar(h, "--color-background");
         const accent1 = await xmasVar(h, "--color-accent");
         await h.shot("cdp-shots/christmas-theme-1-settings.png");
+        // 1b. the Snow switch sits under the effects switch, off by default with no snow canvas; turning it on puts
+        // the canvas up (the steps below run with the snow on)
+        const snowSwitch1b = await xmasSnowSwitch(h);
+        const canvas1b = await h.ev(`!!document.querySelector("canvas[data-christmas-snow]")`);
+        const clicked1b = await spClick(h, XMAS_SNOW_SWITCH);
+        const snowOn1b = await polishWaitFor(
+            h,
+            `${XMAS_SNOW_SWITCH}?.getAttribute("aria-checked") === "true" && !!document.querySelector("canvas[data-christmas-snow]")`,
+            3000
+        );
+        await h.shot("cdp-shots/christmas-theme-1b-snow-switch.png");
+        rec(
+            "1b. under Christmas effects a Snow switch starts off with no snow canvas, and turning it on puts the snow canvas up",
+            snowSwitch1b === "false" && !canvas1b && clicked1b && snowOn1b,
+            { snowSwitch1b, canvas1b, clicked1b, snowOn1b }
+        );
         await h.goto("agent");
         await h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
         await xmasNap(800);
@@ -12029,7 +12049,7 @@ const christmasTheme = {
             { picked1, switch1, bg1, accent1, asker1, term1, before1, after1 }
         );
 
-        // 2. the snow falls: one canvas, painting about 12 frames a second, with flakes on it
+        // 2. the snow falls: one canvas, painting on the display's frames (up to about 90 a second), with flakes on it
         const f2a = await xmasFrames(h);
         await xmasNap(1000);
         const f2b = await xmasFrames(h);
