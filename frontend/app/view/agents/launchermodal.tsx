@@ -133,6 +133,7 @@ import {
     hydrateRunConfigFromProfile,
     lightReviewerRouteAtom,
     parallelismAtom,
+    pickRunShape,
     planPathAtom,
     planPreviewAtom,
     resetRunConfigForChannel,
@@ -141,7 +142,6 @@ import {
     routeTouchedAtom,
     runRouteAtom,
     runShapeAtom,
-    setRunShape,
     startAtom,
     workerRouteAtom,
 } from "./runconfigstore";
@@ -545,7 +545,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         if (row.kind === "run") {
             globalStore.set(launcherKindAtom, "run");
-            setRunShape(row.id as RunShape);
+            pickRunShape(row.id as RunShape);
             return;
         }
         if (row.kind === "tool" || row.kind === "council") {

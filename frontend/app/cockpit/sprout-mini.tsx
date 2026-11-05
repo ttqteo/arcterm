@@ -20,6 +20,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import {
     foldOriginAtom,
     miniResizingAtom,
@@ -110,10 +111,12 @@ type MiniForce = {
     hover?: boolean;
 };
 
-// Spider-Man folded: the rooftop scene, 20x20 cells, in the same box as Sprout's 16x16
+// Spider-Man folded: the rooftop scene, 20x20 cells, in the same box as Sprout's 16x16; in the Santa hat while the
+// Christmas decor shows
 function SpideyRoof({ f }: { f: SpideyFoldLook }) {
     const px = 20 * PET_CELL_PX;
-    const cells = spriteOfRows(spideyFold(f.lit, f.swing), f.unread ? ["unread"] : []);
+    const hat = useChristmasDecor();
+    const cells = spriteOfRows(spideyFold(f.lit, f.swing, hat), f.unread ? ["unread"] : []);
     const cell = (c: PetCell, i: number) => (
         <rect
             key={i}
@@ -309,6 +312,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const terminals = useAtomValue(model.terminalsAtom);
     const focusId = useAtomValue(model.focusIdAtom);
     const outfitChoice = useAtomValue(petOutfitChoiceAtom);
+    const christmas = useChristmasDecor();
     const character = petCharacter(useAtomValue(petCharacterAtom));
     const frame = useBobFrame();
     const liveWaiting = useWaitingCount(model);
@@ -325,7 +329,12 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
         chatOpen,
         frame,
     });
-    const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
+    const sprite = spriteFor(
+        look.pose,
+        look.marks,
+        petOutfit(petOutfitChoice(outfitChoice), new Date(), christmas),
+        character
+    );
     // Spider-Man's rooftop: what it draws (lit windows, spider-sense, swinging legs, the unread mark) and the working dots
     const spidey = character === "spidey";
     const roofLook = spideyFoldLook(look, frame);

@@ -28,8 +28,11 @@ import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { workingCount } from "./agentsviewmodel";
 import { attentionAtom, cockpitWaitingCount, splitAttention } from "./attentionstore";
 import { channelMessagesAtom } from "./channelsstore";
+import { RailSantaHat } from "./christmashat";
 import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
+import { setupRailTitle } from "./memorymodel";
+import { ensureMemoryFeed, memoryToReviewAtom } from "./memorystore";
 import { navRailCollapsed } from "./navrailwidth";
 import { railDot, railItemTitle, railPins } from "./railapps";
 import { appSurfaceIdAtom, moveRailPin, railPinsAtom, setRailPinned } from "./railappsstore";
@@ -133,6 +136,7 @@ function RailAppItem({
             ) : null}
             <span className="relative z-[1]">
                 <AppWindow size={16} strokeWidth={1.8} />
+                <RailSantaHat iconSize={16} />
                 {dot ? (
                     <span
                         data-nav-app-dot={dot}
@@ -150,21 +154,31 @@ function RailAppItem({
     );
 }
 
+/** The Cockpit badge's count: every agent that needs you, plus the Cockpit's other attention items. The Christmas
+ *  lights (christmaslights.tsx) blink on the same number, so both read it here. */
+export function useCockpitWaitingCount(model: AgentsViewModel): number {
+    const split = splitAttention(useAtomValue(attentionAtom));
+    const agents = useAtomValue(model.agentsAtom);
+    const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
+    return cockpitWaitingCount(split.cockpit, agents, answered);
+}
+
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
     // Three disjoint "needs you" badges from one server-computed list: Cockpit counts the agents that need you
     // (its cards), Jarvis the rest of what waits on you (gates, runs to confirm or land, escalations: its Brief
     // queue), Radar the projects with untriaged findings. Each sits on the surface that clears it. Agent counts
-    // the agents that finished a turn you have not looked at yet (unreadagents.ts).
+    // the agents that finished a turn you have not looked at yet (unreadagents.ts). Setup, at the bottom, counts the
+    // projects whose memory has a change to review (memorystore.ts).
     const attention = useAtomValue(attentionAtom);
     const split = splitAttention(attention);
     const unread = useAtomValue(unreadAgentsAtom);
     // Agent also says how many agents are working, so a run doing its work is visible from Code or Diff, and the count
     // stays on Agent itself, where the focused terminal can hide the rows that show it
     const agents = useAtomValue(model.agentsAtom);
-    const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
+    const cockpitWaiting = useCockpitWaitingCount(model);
     const badges: Partial<Record<SurfaceKey, number>> = {
-        cockpit: cockpitWaitingCount(split.cockpit, agents, answered),
+        cockpit: cockpitWaiting,
         jarvis: split.jarvis.length,
         agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
         radar: split.radar.length,
@@ -192,8 +206,11 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const appId = useAtomValue(appSurfaceIdAtom);
     const translateOpen = useAtomValue(translateOpenAtom);
     const translateKeys = useBindingKeys("translate");
+    // Setup counts the projects whose memory has a change to review (Setup → Memory clears it)
+    const memoryToReview = useAtomValue(memoryToReviewAtom);
     useEffect(() => {
         ensureServicesFeed();
+        ensureMemoryFeed();
     }, []);
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
     useEffect(() => {
@@ -215,7 +232,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 onClick={() => setActive(key)}
                 // the label carries the item's name, so a 56px rail needs the accessible name here
                 aria-label={label}
-                title={busy > 0 ? `${label} — ${busy} working` : label}
+                title={busy > 0 ? `${label} — ${busy} working` : key === "setup" ? setupRailTitle(badge) : label}
                 className={cn(
                     "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent text-muted hover:text-muted-foreground",
                     tool ? "py-[8px]" : "py-[11px]",
@@ -232,6 +249,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     <DigitHint digit={digit}>
                         <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
                     </DigitHint>
+                    <RailSantaHat iconSize={tool ? 16 : 20} />
                     {badge > 0 ? (
                         <span
                             data-nav-badge={key}
@@ -304,10 +322,13 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     translateOpen && "bg-surface-selected text-primary hover:text-primary"
                 )}
             >
-                <Languages size={16} strokeWidth={1.8} />
+                <span className="relative">
+                    <Languages size={16} strokeWidth={1.8} />
+                    <RailSantaHat iconSize={16} />
+                </span>
                 {narrow ? null : <span className="text-[10px] font-semibold">Translate</span>}
             </button>
-            {renderItem("setup", "Setup")}
+            {renderItem("setup", "Setup", memoryToReview)}
             {renderItem("settings", "Settings")}
         </nav>
     );

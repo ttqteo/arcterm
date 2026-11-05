@@ -7,6 +7,8 @@ import { atoms, getSettingsKeyAtom, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { ChristmasLights } from "@/app/view/agents/christmaslights";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { foldToSprout, minimizeRequested, setSproutCorner, sproutSpotAtom } from "@/app/view/agents/floatstore";
 import { spotCorner, SPROUT_CORNER_LABEL, SPROUT_CORNERS } from "@/app/view/agents/floatwindow";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
@@ -94,6 +96,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const newAgentKeys = useBindingKeys("new-agent");
     // the Spider theme swaps the t> mark for its spider, in the suit's red against the theme's blue accent (themedecorview.tsx)
     const spider = useSpiderDecor();
+    // the Christmas theme hangs a string of lights under the bar (christmaslights.tsx)
+    const christmas = useChristmasDecor();
     return (
         <div
             data-app-bar
@@ -102,7 +106,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             // "deep": a bare attribute drags only on the bar's own pixels, not its children; buttons still opt out
             data-tauri-drag-region="deep"
             className={clsx(
-                "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
+                // relative: the Christmas lights hang from the bar's bottom edge
+                "relative flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
                 mac ? "pr-4" : null,
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}
@@ -177,6 +182,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
                 {mac ? null : <WindowControls />}
             </div>
+            {christmas ? <ChristmasLights model={model} /> : null}
         </div>
     );
 }

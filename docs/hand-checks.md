@@ -6,12 +6,38 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The Christmas theme in WebView2.** In the packaged app pick Settings → Appearance → Theme →
+  Christmas, with an agent's terminal open → snow falls over the whole window and reads clearly fainter over the
+  terminal, whose text stays readable; the lights hang under the app bar without moving it. Have an agent ask → the
+  string blinks in the asking colour, every other bulb half a beat behind, and goes back to lit and still once nothing
+  asks. Look at the pet at taskbar size, folded into Sprout (and as Spider-Man on his rooftop) and in the Office → the
+  Santa hat reads as a hat, red with a cream trim, not a smudge. Turn Christmas effects off → the snow, lights and hats
+  go, the colours stay. Checked by the `christmas-theme` CDP scenario in the dev app; the look itself, in the packaged
+  build and at real sizes, was not judged by eye (`christmassnowview.tsx`, `christmaslights.tsx`, `petsprite.ts`).
+
+- [ ] (arcterm) **New → Orchestrate follows the Profile's Approvals.** Jarvis → Profile → Global → Approvals:
+  Autonomous → Save. Open New, pick Orchestrate with arcterm picked → Approvals shows Autonomous. Pick another
+  project, then back → still Orchestrate. Change Workers by hand, switch project → your pick stays. (fix(launcher):
+  `pickRunShape` in `runconfigstore.ts`)
+- [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
+  one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
+  its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing
+  its own worktree under `arc-wt` is never asked. Tried only headless (`claude -p`, where the ask is a refusal with
+  that reason); the dialog itself is untried (`claude/arc-mod/hooks/foreignrepo-core.ts`, 4b5c0bc94).
+- [ ] (arcterm) **Council "N agree": avatars and a list on hover.** Open a council with an idea two or more seats
+  agreed with → the signal line under it shows their small avatars stacked before `✓ N agree`; hover it → a card under
+  it reads "Agreed, nothing to add" and lists each seat, avatar and name, one per line (it flips above near the bottom
+  of the window). One seat shows its avatar and `<Seat> agrees` with no hover. (main, 2026-11-05)
 - [ ] (arcterm) **Council composer: tinted @seat, and Ctrl+Z.** In the packaged app open a council, type `@` in the
   message box and pick a seat with a long name (`Reviewer 1 (area expert)`) → it shows tinted in the seat's colour,
   the caret and a selection sit where the letters are, also once the text wraps and once it scrolls past the box's
   height. Press `Ctrl`+`Z` → the pick goes back to the `@…` you typed; click an Ask next question → `Ctrl`+`Z` empties
   the box. Checked only in headless Chrome by `council-discussion` (undo there by `execCommand`, not the keys); not in
   WebView2 (`councilchat.tsx` ComposerMarks / editBox, aaad0bc86).
+- [ ] (arcterm) **Mark shows a ticked box when on.** Open a design canvas (Canvas pane, or a brainstorm board opened
+  large) → Mark shows a dashed square; click it or press `m` → it turns accent and its icon becomes a ticked square;
+  click again → back to the dashed square. (`canvaspane.tsx`, `brainstormrail.tsx`, main, 2026-11-05)
 
 - [ ] (arcterm) **Float and the fold on a scaled Windows display.** On the Windows PC at 125% or 150% scaling, with
   arcterm maximized: Float → the window leaves maximized and shrinks to the float's place at the float's size (not

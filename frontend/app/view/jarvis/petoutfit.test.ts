@@ -48,6 +48,21 @@ describe("petOutfit", () => {
     it("wears the shirt on a flag day even when it is off", () => {
         expect(petOutfit("off", on(4, 30))).toBe("vn-shirt");
     });
+
+    // the Christmas decor shows: the hat replaces whatever was chosen, until the effects go off
+    it("wears the Santa hat at Christmas, whatever the choice, flag days included", () => {
+        for (const c of ["shirt", "flag", "off"] as const) {
+            expect(petOutfit(c, ordinary, true)).toBe("santa-hat");
+            expect(petOutfit(c, on(9, 2), true)).toBe("santa-hat");
+        }
+    });
+
+    it("keeps the old outfits when it is not Christmas", () => {
+        expect(petOutfit("shirt", ordinary, false)).toBe("vn-shirt");
+        expect(petOutfit("flag", ordinary, false)).toBe("vn-flag");
+        expect(petOutfit("off", ordinary, false)).toBeNull();
+        expect(petOutfit("off", on(5, 1), false)).toBe("vn-shirt");
+    });
 });
 
 describe("petOutfitChoice", () => {

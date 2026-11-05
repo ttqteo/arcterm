@@ -8,6 +8,7 @@
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
+import { CHRISTMAS_THEME } from "../christmas";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
 import { ROW_FIELD_ROWS } from "../rowfields";
@@ -16,7 +17,7 @@ import { Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
 import { chipSwatches, SPIDER_THEME } from "../themedecor";
 import { SmallSpider } from "../themedecorview";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
-import { themeOverridesAtom, themePresetAtom } from "../themestore";
+import { christmasEffectsOffAtom, themeOverridesAtom, themePresetAtom } from "../themestore";
 
 export function AppearancePage() {
     return (
@@ -41,6 +42,37 @@ export function AppearancePage() {
 // changed dot and revert. `data-theme-presets` scopes the terminal-theme scenario's preset clicks.
 function ThemeChips() {
     const [preset, setPreset] = useAtom(themePresetAtom);
+    return (
+        <>
+            <ThemePresetGrid preset={preset} setPreset={setPreset} />
+            {preset === CHRISTMAS_THEME ? <ChristmasEffectsRow /> : null}
+        </>
+    );
+}
+
+// The Christmas preset's switch, under the chips only while it is the preset: off keeps the palette and drops every
+// decor and motion. A plain control, not a registered SettingRow, so the theme card keeps its one-row pin.
+function ChristmasEffectsRow() {
+    const [effectsOff, setEffectsOff] = useAtom(christmasEffectsOffAtom);
+    return (
+        <div className="flex items-center gap-4 border-t border-edge-mid px-4 py-3 transition-colors hover:bg-surface-hover">
+            <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-primary">Christmas effects</div>
+                <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
+                    Snow, the lights under the app bar, the Office&apos;s trees and gifts, and the Santa hats.
+                </div>
+            </div>
+            <Toggle
+                on={!effectsOff}
+                onToggle={() => setEffectsOff(!effectsOff)}
+                label="Christmas effects"
+                data-christmas-effects
+            />
+        </div>
+    );
+}
+
+function ThemePresetGrid({ preset, setPreset }: { preset: string; setPreset: (id: string) => void }) {
     return (
         <div data-theme-presets role="group" aria-label="Theme" className="grid grid-cols-3 gap-1.5 p-3">
             {THEMES.map((t) => {

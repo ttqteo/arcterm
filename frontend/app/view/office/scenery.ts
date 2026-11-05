@@ -8,7 +8,8 @@
 // plan holds (office floors spec, "A floor"): four rooms round the hall with the lift at its foot, G's facade or a
 // plain wall under it. Pure: no React, no DOM.
 
-import { HWALL, MEET_H, WALL, type Box, type Plan, type Point } from "@/app/view/agents/officeplanmodel";
+import { GIFT_MAX } from "@/app/view/agents/christmas";
+import { giftArea, HWALL, MEET_H, WALL, type Box, type Plan, type Point } from "@/app/view/agents/officeplanmodel";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors, OfficePhase, OfficeRole } from "./officepalette";
 import type { Rgb } from "./spritecache";
@@ -33,7 +34,7 @@ export type Op =
  *  that list (what comes after them there draws over it, the sofa's arm over the machine's counter). cockpitoffice.tsx
  *  draws it again over a body whose feet are behind its foot, on that body's own cells. */
 export interface Prop {
-    kind: "coffee" | "plant" | "board";
+    kind: "coffee" | "plant" | "board" | "tree" | "gifts";
     x: number;
     y: number;
     w: number;
@@ -54,6 +55,75 @@ export const CHAIR_ROLES: Record<string, OfficeRole> = { O: "ink", R: "chair", r
 const LEAF = ["..OOOOO..", ".OGGgGGO.", "OGgGGGGdO", "OGGGgGGdO", "OdGGGGddO", "OGdGGdGdO", ".OddGddO.", "..OOOOO.."];
 const LEAF_ROLES: Record<string, OfficeRole> = { O: "ink", G: "leaf", g: "leafHi", d: "leafDark" };
 const DIAL_ROLES: Record<string, OfficeRole> = { O: "ink", S: "screen" };
+// Christmas (christmas theme spec, "Office"): a pine in a plant's place, three tiers lit with red, gold and cream bulbs
+// under a gold star, in a pot; TREE_W x TREE_H plan px, its pot where a plant's is
+export const TREE = [
+    ".....A.....",
+    "....AAA....",
+    "....OAO....",
+    "...OPbPO...",
+    "..OPPPdPO..",
+    "..OOPaPOO..",
+    "..OPsPPPO..",
+    ".OPPPPbdPO.",
+    ".OOPbPPPOO.",
+    ".OPPPaPPdO.",
+    "OPPsPPPPbdO",
+    "OOOOOOOOOOO",
+    "...OkkkO...",
+    "...OKKKO...",
+    "...OOOOO...",
+];
+export const TREE_ROLES: Record<string, OfficeRole> = {
+    O: "ink",
+    A: "accent",
+    P: "xmasPine",
+    d: "xmasPineDark",
+    b: "xmasBulb",
+    a: "accent",
+    s: "xmasSnow",
+    K: "pot",
+    k: "potHi",
+};
+// the wreath on the notice board: a pine ring with red berries and a gold one, a crimson bow at its foot
+// prettier-ignore
+export const WREATH = [
+    "..OOO..",
+    ".OPbPO.",
+    "OdPOPdO",
+    "OPO.OaO",
+    "ObPOPPO",
+    ".OdCdO.",
+    "..CCC..",
+    ".C...C.",
+];
+export const WREATH_ROLES: Record<string, OfficeRole> = {
+    O: "ink",
+    P: "xmasPine",
+    d: "xmasPineDark",
+    b: "xmasBulb",
+    a: "accent",
+    C: "xmasCrimson",
+};
+// a gift is a GIFT x GIFT art px box with a cross ribbon; the six places, floor first, then the two stacked on them,
+// fill in order inside a fixed GIFTS_W x GIFTS_H footprint (GIFT_W x GIFT_H plan px)
+const GIFT = 5;
+export const GIFTS_W = 17;
+export const GIFTS_H = 9;
+export const GIFT_SPOTS: readonly [number, number][] = [
+    [0, 4],
+    [4, 4],
+    [8, 4],
+    [12, 4],
+    [4, 0],
+    [8, 0],
+];
+// paper and ribbon, by place: crimson, gold, pine, each with a ribbon that shows on it
+const GIFT_PAPER: readonly [OfficeRole, OfficeRole][] = [
+    ["xmasCrimson", "accent"],
+    ["accent", "xmasCrimson"],
+    ["xmasPine", "accent"],
+];
 // the sign's letters, a 5 x 5 pixel face
 const FONT: Record<string, string[]> = {
     A: [".###.", "#...#", "#####", "#...#", "#...#"],
@@ -183,6 +253,7 @@ export function outerWindows(plan: Plan): Point[] {
 const BOARD_ART_W = 26;
 const BOARD_ART_H = 17;
 const BOARD_ART_TOP = 10; // the bubble over the board takes the rows above its frame
+const WREATH_UP = 3; // the wreath's rows above the frame's top
 
 /** The notice board's parts in art px, from its box in the hall: the wood frame, the cork inside it and the two legs
  *  (their tops under the frame). The scenery draws them and cockpitoffice.tsx pins its slips over the cork. */
@@ -226,8 +297,9 @@ function needlePixels(len: number, deg: number): { dx: number; up: number }[] {
     }));
 }
 
-/** What the canvas under the people and the one over them draw, in order; sizes in art px. */
-export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery {
+/** What the canvas under the people and the one over them draw, in order; sizes in art px. Under `christmas` (the
+ *  Christmas decor shows) the plants are pines, each project room's tree spot has its gifts, and the board its wreath. */
+export function scenery(plan: Plan, phase: OfficePhase, tired: boolean, christmas = false): Scenery {
     const night = phase === "after";
     const W = Math.ceil(plan.width / CELL);
     const H = Math.ceil(plan.height / CELL);
@@ -299,7 +371,17 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         under.rect(sx + sw, by - 1, 1, 10, "shadow");
         under.rect(sx + 1, by + 9, sw, 1, "shadow");
     }
+    // under Christmas a pine stands in every plant's place, its pot where the plant's is
+    const tree = (x: number, y: number) => {
+        prop("tree", x, y, TREE[0].length, TREE.length, (o) => o.grid(TREE, x, y, TREE_ROLES));
+        under.rect(x + 11, y + 4, 1, 10, "shadow");
+        under.rect(x + 4, y + 15, 5, 1, "shadow");
+    };
     const plant = (x: number, y: number) => {
+        if (christmas) {
+            tree(x, y);
+            return;
+        }
         prop("plant", x + 1, y + 1, 9, 13, (o) => {
             o.box(x + 2, y + 9, 7, 5, "pot");
             o.rect(x + 3, y + 10, 5, 1, "potHi");
@@ -315,6 +397,37 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
             plant(art(p.x), art(p.y));
         }
     }
+    // under Christmas each project room's tree spot that is no plant gets a tree too, and the gifts lie beside it: up to
+    // GIFT_MAX boxes in a footprint that stays the same
+    if (christmas) {
+        for (const r of plan.rooms) {
+            const xs = r.xmas;
+            if (xs == null) {
+                continue;
+            }
+            if (!(r.plants ?? []).some((p) => p.x === xs.tree.x && p.y === xs.tree.y)) {
+                tree(art(xs.tree.x), art(xs.tree.y));
+            }
+            const area = giftArea(r);
+            const n = Math.min(GIFT_MAX, xs.gifts);
+            if (area == null || n <= 0) {
+                continue;
+            }
+            const gx = art(area.x);
+            const gy = art(area.y);
+            prop("gifts", gx, gy, GIFTS_W, GIFTS_H, (o) => {
+                GIFT_SPOTS.slice(0, n).forEach(([dx, dy], i) => {
+                    const [paper, ribbon] = GIFT_PAPER[i % GIFT_PAPER.length];
+                    const x = gx + dx;
+                    const y = gy + dy;
+                    o.box(x, y, GIFT, GIFT, paper);
+                    o.rect(x + 2, y + 1, 1, GIFT - 2, ribbon);
+                    o.rect(x + 1, y + 2, GIFT - 2, 1, ribbon);
+                });
+            });
+            under.rect(gx + 1, gy + GIFTS_H, GIFTS_W - 1, 1, "shadow");
+        }
+    }
 
     // the Needs you notice board in the hall under the lounge: cork in a wood frame on two legs. Its paper slips are
     // DOM (cockpitoffice.tsx), so a row coming or going never draws this again
@@ -322,7 +435,11 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         const { frame: f, cork: c, legs } = boardArt(plan.board.box);
         const foot = legs[0].y + legs[0].h;
         under.rect(f.x + 3, foot, f.w - 6, 1, "shadow");
-        prop("board", f.x, f.y, f.w, foot - f.y, (o) => {
+        // under Christmas the wreath hangs at the frame's top centre, its ring over the frame's top edge
+        const wx = f.x + Math.floor((f.w - WREATH[0].length) / 2);
+        const wy = f.y - WREATH_UP;
+        const py = christmas ? wy : f.y;
+        prop("board", f.x, py, f.w, foot - py, (o) => {
             for (const leg of legs) {
                 o.box(leg.x, leg.y, leg.w, leg.h, "deskFace");
             }
@@ -332,6 +449,9 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
                 for (let i = 0; i < 5; i++) {
                     o.px(c.x + 1 + i * 4 + (j % 2) * 2, c.y + 2 + j * 4, "seam");
                 }
+            }
+            if (christmas) {
+                o.grid(WREATH, wx, wy, WREATH_ROLES);
             }
         });
         under.shadow(f.x, f.y, f.w, f.h);
@@ -694,10 +814,12 @@ export function rasteriseProp(
  * What the canvases draw, as a string: they draw again only when it changes. The plan's geometry, the floor shown and
  * the floors there are (the dial's needle, G's facade), each room's light, plant, chip and run's screen, each desk's
  * light, tired, the phase and the theme (a run's screen and the laptops' lights are status tokens). Never a pose, a
- * walker or a label.
+ * walker or a label. Under `christmas`, each room's tree spot and gifts too, so a finished agent draws again only then.
  */
-export function sceneryKey(plan: Plan, phase: OfficePhase, tired: boolean, theme: string): string {
+export function sceneryKey(plan: Plan, phase: OfficePhase, tired: boolean, theme: string, christmas = false): string {
     return JSON.stringify([
+        christmas,
+        christmas ? plan.rooms.map((r) => r.xmas ?? 0) : 0,
         plan.width,
         plan.height,
         phase,

@@ -11,6 +11,7 @@ import {
     forgetConfiguredChannel,
     hydrateRunConfigFromProfile,
     parallelismAtom,
+    pickRunShape,
     planPathAtom,
     planPreviewAtom,
     requestRouteOpen,
@@ -27,6 +28,7 @@ import {
     setRunShape,
     setStart,
     setWorkerRoute,
+    shapePickedAtom,
     startAtom,
     stepParallelism,
     workerRouteAtom,
@@ -36,6 +38,7 @@ const pin = (model: string): RoutePin => ({ runtime: "claude", model }) as Route
 
 beforeEach(() => {
     forgetConfiguredChannel();
+    globalStore.set(shapePickedAtom, false);
     resetRunConfig();
 });
 
@@ -341,6 +344,39 @@ describe("autonomous", () => {
         setAutonomous(true);
         resetRunConfig();
         expect(globalStore.get(autonomousAtom)).toBe(false);
+    });
+});
+
+// The New dialog's Quick run / Orchestrate rows: picking one is a door, so the project's profile still fills the run.
+describe("pickRunShape", () => {
+    it("leaves the draft untouched, so the profile's Approvals still arrives", () => {
+        pickRunShape("orchestrator");
+        expect(globalStore.get(configTouchedAtom)).toBe(false);
+
+        hydrateRunConfigFromProfile({ playbook: [], autonomous: true, parallelism: 5 } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(true);
+        expect(globalStore.get(parallelismAtom)).toBe(5);
+    });
+
+    it("keeps the picked row over the profile's default shape", () => {
+        pickRunShape("orchestrator");
+        hydrateRunConfigFromProfile({ playbook: [], defaultmode: "quick" } as JarvisProfile);
+        expect(globalStore.get(runShapeAtom)).toBe("orchestrator");
+    });
+
+    it("keeps the picked row across a project switch", () => {
+        pickRunShape("orchestrator");
+        resetRunConfigForChannel("chan-a", true);
+        resetRunConfigForChannel("chan-b", true);
+        hydrateRunConfigFromProfile(null);
+        expect(globalStore.get(runShapeAtom)).toBe("orchestrator");
+    });
+
+    it("ends with the draft, back to the profile's shape", () => {
+        pickRunShape("orchestrator");
+        endRunConfigDraft({ playbook: [] } as JarvisProfile);
+        expect(globalStore.get(shapePickedAtom)).toBe(false);
+        expect(globalStore.get(runShapeAtom)).toBe("quick");
     });
 });
 
