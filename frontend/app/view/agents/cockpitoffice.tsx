@@ -233,8 +233,10 @@ import {
 } from "./officestore";
 import { themeOverridesAtom, themePresetAtom } from "./themestore";
 import { usePlanDonuts } from "./usagemeters";
+import { XmasTreeCard } from "./xmastreecard";
+import { cardPoints, openCard, treeCardStep, type CardAction, type CardState } from "./xmastreecardmodel";
 import { XmasTreeHall } from "./xmastreehall";
-import { xmasTreeAtom, xmasTreeGoAtom } from "./xmastreestore";
+import { moveXmasOrnament, xmasTreeAtom, xmasTreeGoAtom } from "./xmastreestore";
 
 /** What the CDP scenarios set through cockpitofficedevhooks.ts; always null in a real session. */
 export interface OfficeDev {
@@ -316,6 +318,10 @@ export interface OfficeHandle {
     drop(): void;
     /** Esc and g while a room is carried: it goes back where it was, riding back when the floor changed. */
     cancel(): void;
+    /** ← ↑ ↓ → on the lobby tree's close-up card (A at the tree): the cursor to the nearest spot that way. */
+    treeMove(dir: Dir): void;
+    /** ↵ on the tree's close-up card: lifts the ornament under the cursor, or puts the lifted one down (kept). */
+    treeLift(): void;
     /** A room's chip by its key: the room, and the cards its hidden ids name. */
     chipOf(key: string): { room: Room; agents: PlanAgent[]; runs: PlanRun[] } | undefined;
     /** ↵ on a row of a chip's dialog: that card opens beside the chip. */
@@ -413,6 +419,8 @@ const ACTS: readonly (keyof OfficeHandle)[] = [
     "carryFloor",
     "drop",
     "cancel",
+    "treeMove",
+    "treeLift",
     "openChipCard",
 ];
 function withInput(handle: OfficeHandle): OfficeHandle {
@@ -438,6 +446,9 @@ const propLooksAtom = atom<PropLook[]>([]) as PrimitiveAtom<PropLook[]>;
 // which the footer's m chip reads) opens over any of them
 const layerAtom = atom<OfficeLayer>("walk") as PrimitiveAtom<OfficeLayer>;
 const selAtom = atom(0) as PrimitiveAtom<number>;
+// the lobby tree's close-up card while the layer is "tree": its cursor's spot and the lifted ornament's
+// (xmastreecardmodel.ts), set afresh each time the card opens
+const treeCardAtom = atom<CardState>({ cursor: 0, lifted: null }) as PrimitiveAtom<CardState>;
 const menuSelAtom = atom(0) as PrimitiveAtom<number>;
 // the full card the box's Adjust opened: a run's card with its Adjust panel open
 const cardAdjustAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -1575,6 +1586,36 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         vm.run(it.id);
         globalStore.set(selAtom, selAfterActivate(vm.items, sel));
     };
+    // A at the lobby tree: its close-up card, the cursor on the first ornament (spec "Moving ornaments")
+    const openTreeCard = (): boolean => {
+        const view = globalStore.get(xmasTreeAtom);
+        if (!planRef.current.xmasTree || view == null || view.phase === "off") {
+            return false;
+        }
+        globalStore.set(treeCardAtom, openCard(view.arrangement));
+        globalStore.set(layerAtom, "tree");
+        return true;
+    };
+    // one step of the open card (xmastreecardmodel.ts): a put-down on another spot is kept through the tree store, and
+    // a lift or a put-down plays the office's chip
+    const treeStep = (act: CardAction) => {
+        const view = globalStore.get(xmasTreeAtom);
+        if (globalStore.get(layerAtom) !== "tree" || view == null) {
+            return;
+        }
+        const was = globalStore.get(treeCardAtom);
+        const { state, move } = treeCardStep(was, act, {
+            points: cardPoints(view.milestone, view.arrangement),
+            arrangement: view.arrangement,
+        });
+        if (move) {
+            moveXmasOrnament(move.from, move.to);
+        }
+        globalStore.set(treeCardAtom, state);
+        if (act.do === "treeLift" && (state.lifted != null) !== (was.lifted != null)) {
+            playOfficeUi("blip");
+        }
+    };
     // Esc, and f on the open panel: one step back
     const stepBack = (): boolean => {
         if (globalStore.get(officeMenuOpenAtom)) {
@@ -1582,6 +1623,12 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             return true;
         }
         const raw = globalStore.get(layerAtom);
+        if (raw === "tree") {
+            // B on the tree's card: a lifted ornament goes back to its spot, and the boss walks on
+            treeStep({ do: "close" });
+            globalStore.set(layerAtom, backFrom(raw));
+            return true;
+        }
         if (boxLayer(raw, boxShownRef.current) === "walk") {
             // a dialog layer with no box drawn is walking: shut it, so the box does not appear when the boss arrives
             if (raw !== "walk") {
@@ -1604,6 +1651,10 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         menuOpen: () => globalStore.get(officeMenuOpenAtom),
         talk: () => {
             const key = deskAtBoss();
+            // the hall's tree has no dialog box: A there opens its close-up card
+            if (key === TREE_KEY) {
+                return openTreeCard();
+            }
             return key != null && openDialog(key);
         },
         card: (opts) => {
@@ -1647,8 +1698,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         },
         back: stepBack,
         toggleMenu: () => {
-            // a carried room takes every key, and the menu waits for it to be put down
-            if (carrying()) {
+            // a carried room takes every key, and the menu waits for it to be put down; so does the tree's card
+            if (carrying() || globalStore.get(layerAtom) === "tree") {
                 return;
             }
             const open = !globalStore.get(officeMenuOpenAtom);
@@ -1714,6 +1765,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         },
         drop: dropCarry,
         cancel: cancelCarry,
+        treeMove: (dir) => treeStep({ do: "treeMove", dir }),
+        treeLift: () => treeStep({ do: "treeLift" }),
         chipOf: (key) => {
             const room = planRef.current.rooms.find((r) => r.chip?.key === key);
             return room ? { room, agents, runs } : undefined;
@@ -1741,13 +1794,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         }
     }, [props.boardRows, cursorId]);
 
-    // a blip when the dialog box, the full card or the office menu opens; carrying a room (g, layer "carry") is silent
+    // a blip when the dialog box, the full card, the tree's close-up card or the office menu opens; carrying a room (g,
+    // layer "carry") is silent
     useEffect(() => {
         let layer = globalStore.get(layerAtom);
         let menu = globalStore.get(officeMenuOpenAtom);
         const offLayer = globalStore.sub(layerAtom, () => {
             const next = globalStore.get(layerAtom);
-            if (next !== layer && (next === "dialog" || next === "card")) {
+            if (next !== layer && (next === "dialog" || next === "card" || next === "tree")) {
                 playOfficeUi("blip");
             }
             layer = next;
@@ -1810,6 +1864,17 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         treeGoSeen = treeGo;
         pickRef.current(TREE_KEY);
     }, [treeGo, hasTree, width > 0]);
+    // the tree gone (the decor turned off, the season over) shuts its card, which would otherwise keep every key
+    useEffect(() => {
+        if (!hasTree && globalStore.get(layerAtom) === "tree") {
+            globalStore.set(layerAtom, "walk");
+        }
+    }, [hasTree]);
+    // a click on a spot of the open card: the cursor goes there and A acts on it
+    const onTreeSpot = useCallback((spot: number) => {
+        globalStore.set(treeCardAtom, { ...globalStore.get(treeCardAtom), cursor: spot });
+        handleRef.current?.treeLift();
+    }, []);
     // office depth for the hall's tree: drawn over the boss while its feet are behind it. A boolean of the boss's spot,
     // so a walk step renders nothing unless it crosses the tree's foot
     const treeFrontAtom = useMemo(
@@ -2178,6 +2243,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                     handleRef.current?.activate();
                 }}
             />
+            <OfficeTreeCardLayer onSpot={onTreeSpot} />
             <RideDoors phase={phase} />
         </div>
     );
@@ -3548,6 +3614,25 @@ function OfficeMenuLayer({ items, onPick }: { items: OfficeMenuItem[]; onPick: (
     return (
         <div className="pointer-events-none absolute right-3 z-[10]" style={{ top: HUD_SPACE_PX }}>
             <OfficeMenuBox items={items} sel={sel} onPick={onPick} />
+        </div>
+    );
+}
+
+// the lobby tree's close-up card (A at the tree, layer "tree"), centred over the office under the HUD bar; the card's
+// root keeps its clicks from walking the boss, and a click on the office around it walks on and shuts it
+function OfficeTreeCardLayer({ onSpot }: { onSpot: (spot: number) => void }) {
+    const layer = useAtomValue(layerAtom);
+    const state = useAtomValue(treeCardAtom);
+    const view = useAtomValue(xmasTreeAtom);
+    if (layer !== "tree" || view == null || view.phase === "off") {
+        return null;
+    }
+    return (
+        <div
+            className="pointer-events-none absolute inset-x-3 bottom-3 z-[10] flex items-start justify-center overflow-auto"
+            style={{ top: HUD_SPACE_PX }}
+        >
+            <XmasTreeCard view={view} state={state} onSpot={onSpot} className="pointer-events-auto" />
         </div>
     );
 }

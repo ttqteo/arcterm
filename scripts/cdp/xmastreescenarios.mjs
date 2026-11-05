@@ -30,6 +30,33 @@ const HALL_TREE_READ = `(() => {
     };
 })()`;
 
+// the close-up card as drawn: each ornament's spot, tier and cell (its group's translate), the ring's cell, the lifted
+// ornament, the one under the ring (the lifted one is drawn raised, so it is never "under"), and the card's text
+const CARD_READ = `(() => {
+    const c = document.querySelector("[data-xmas-tree-card]");
+    if (!c) return null;
+    const ring = c.querySelector("[data-xmas-cursor]");
+    const rx = ring ? parseFloat(ring.getAttribute("cx")) - 0.5 : NaN;
+    const ry = ring ? parseFloat(ring.getAttribute("cy")) - 0.5 : NaN;
+    const spots = [...c.querySelectorAll("g[data-xmas-spot]")].map((g) => {
+        const m = /translate\\(([-\\d.]+)[ ,]+([-\\d.]+)\\)/.exec(g.getAttribute("transform") || "") || [];
+        return { spot: +g.dataset.xmasSpot, tier: +g.dataset.xmasTier, x: +m[1], y: +m[2], lifted: g.hasAttribute("data-xmas-lifted") };
+    });
+    const up = spots.find((s) => s.lifted);
+    const under = spots.find((s) => !s.lifted && Math.abs(s.x - rx) < 0.01 && Math.abs(s.y - ry) < 0.01);
+    return {
+        text: (c.textContent || "").replace(/\\s+/g, " "),
+        ring: { x: rx, y: ry },
+        spots,
+        lifted: up ? up.spot : null,
+        liftedTier: up ? up.tier : null,
+        atLifted: up ? Math.abs(up.x - rx) < 0.01 : null,
+        under: under ? under.spot : null,
+        underTier: under ? under.tier : null,
+        putHere: !!c.querySelector("[data-xmas-put-here]"),
+    };
+})()`;
+
 // a season ledger of n finished tasks, a minute apart from 8 November
 export function xmasTreeFixture(n, phase = "season") {
     const start = Date.UTC(SEASON, 10, 8, 9);
@@ -37,7 +64,7 @@ export function xmasTreeFixture(n, phase = "season") {
 }
 
 export function xmasTreeScenarios(kit) {
-    const { XMAS_KEYS, CHRISTMAS_ASKER, TREE_RAIL_FIXTURE, xmasRoster, xmasClip, polishWaitFor, ahReload, waitForOffice, probe, settleBoss } = kit;
+    const { XMAS_KEYS, CHRISTMAS_ASKER, TREE_RAIL_FIXTURE, xmasRoster, xmasClip, polishWaitFor, ahReload, key, waitForOffice, probe, settleBoss } = kit;
     const nap = (ms) => new Promise((r) => setTimeout(r, ms));
     const setKey = (h, key, raw) =>
         h.ev(raw == null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(raw)})`);
@@ -63,6 +90,24 @@ export function xmasTreeScenarios(kit) {
         })()`);
         if (r == null) return false;
         const clip = { x: r.x, y: r.y, width: Math.min(250, r.vw - r.x), height: Math.min(200, r.vh - r.y), scale: 2 };
+        const { data } = await h.cdp("Page.captureScreenshot", { format: "png", clip });
+        const path = `cdp-shots/${name}.png`;
+        mkdirSync("cdp-shots", { recursive: true });
+        writeFileSync(path, Buffer.from(data, "base64"));
+        h.shots.push({ name, png: `${name}.png`, path });
+        return true;
+    };
+
+    // the close-up card alone, at 2x
+    const cardShot = async (h, name) => {
+        const r = await h.ev(`(() => {
+            const c = document.querySelector("[data-xmas-tree-card]");
+            if (!c) return null;
+            const b = c.getBoundingClientRect();
+            return { x: Math.max(0, Math.floor(b.left)), y: Math.max(0, Math.floor(b.top)), w: Math.ceil(b.width), h: Math.ceil(b.height), vw: window.innerWidth, vh: window.innerHeight };
+        })()`);
+        if (r == null) return false;
+        const clip = { x: r.x, y: r.y, width: Math.min(r.w, r.vw - r.x), height: Math.min(r.h, r.vh - r.y), scale: 2 };
         const { data } = await h.cdp("Page.captureScreenshot", { format: "png", clip });
         const path = `cdp-shots/${name}.png`;
         mkdirSync("cdp-shots", { recursive: true });
@@ -239,6 +284,96 @@ export function xmasTreeScenarios(kit) {
                 'new-year. on 1 January with 1,632 tasks, fireworks go off over the hall and the sign under the tree reads "This season: 1,632 tasks"',
                 fired && ny?.sparks > 0 && ny.sign === "This season: 1,632 tasks" && ny.signUnderTree && ny.milestone === "7",
                 ny
+            );
+
+            // card-lifted: back in season at 214 tasks, the boss walks to the tree and Space opens its close-up card; an
+            // arrow and Space lift a big bauble ("Merged from 10 tasks", "▶ put here" by the ring); an arrow and Space
+            // put it down on another spot; Esc closes the card, and Space opens it again with the bauble on its new spot
+            await dismissAll(h);
+            await setTree(h, xmasTreeFixture(214));
+            await polishWaitFor(h, `${HALL_TREE}?.getAttribute("data-xmas-tree-milestone") === "4"`, 5000);
+            await h.ev(`document.querySelector("[data-cockpit-office] [data-xmas-tree-button]")?.click()`);
+            await polishWaitFor(h, `window.__cockpitOfficeProbe?.()?.cursor === "xmas-tree"`, 5000);
+            const atTree = await settleBoss(h, 8000);
+            const press = async (k) => {
+                await h.ev(`document.querySelector("[data-cockpit-surface]")?.focus()`);
+                await key(h, k);
+                await nap(150);
+            };
+            const opened = async () => {
+                await press(" ");
+                return polishWaitFor(h, `!!document.querySelector("[data-xmas-tree-card]")`, 3000);
+            };
+            const cardOpen = await opened();
+            const arrows = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+            // a big bauble one arrow from where the card opens: each arrow is tried from a freshly opened card
+            let liftArrow = null;
+            for (const a of arrows) {
+                await press(a);
+                if ((await h.ev(CARD_READ))?.underTier === 1) {
+                    liftArrow = a;
+                    break;
+                }
+                await press("Escape");
+                await opened();
+            }
+            await press(" ");
+            const lifted = await h.ev(CARD_READ);
+            await nap(300);
+            await cardShot(h, "office-xmas-tree-card-lifted-zoom");
+            await h.shot("cdp-shots/office-xmas-tree-card-lifted.png");
+            rec(
+                'card-lifted. at the tree Space opens the close-up card, and an arrow and Space lift a big bauble: it rises, "▶ put here" shows by the ring and the side column reads "Merged from 10 tasks"',
+                atTree?.cursor === "xmas-tree" &&
+                    cardOpen &&
+                    liftArrow != null &&
+                    lifted?.liftedTier === 1 &&
+                    lifted.putHere &&
+                    lifted.text.includes("Lifting") &&
+                    lifted.text.includes("Merged from 10 tasks"),
+                { cursor: atTree?.cursor, cardOpen, liftArrow, lifted: lifted && { ...lifted, text: undefined, spots: undefined } }
+            );
+
+            // the put-down: the first arrow (tried in turn) that takes the ring to a spot holding no big bauble, so the
+            // move cannot read as a swap of two alike
+            const from = lifted?.lifted ?? null;
+            let downArrow = null;
+            for (const a of arrows) {
+                await press(a);
+                const r = await h.ev(CARD_READ);
+                if (r?.lifted === from && r.atLifted === false && r.underTier !== 1) {
+                    downArrow = a;
+                    break;
+                }
+            }
+            await press(" ");
+            const putDown = await h.ev(CARD_READ);
+            const to = putDown?.underTier === 1 ? putDown.under : null;
+            await press("Escape");
+            const closed = await polishWaitFor(h, `!document.querySelector("[data-xmas-tree-card]")`, 3000);
+            const reopened = await opened();
+            const reread = await h.ev(CARD_READ);
+            const kept = await h.ev(`(() => {
+                try {
+                    const a = JSON.parse(localStorage.getItem("xmas.tree.${SEASON}") || "null");
+                    return a?.spots?.[${to ?? -1}]?.tier ?? null;
+                } catch { return "unreadable"; }
+            })()`);
+            const tierAt = (r, spot) => r?.spots?.find((s) => s.spot === spot)?.tier ?? null;
+            await press("Escape");
+            rec(
+                "card-lifted. an arrow and Space put the bauble down on another spot; Esc closes the card; Space opens it again with the bauble on its new spot",
+                downArrow != null &&
+                    putDown?.lifted == null &&
+                    !putDown.putHere &&
+                    to != null &&
+                    to !== from &&
+                    closed &&
+                    reopened &&
+                    tierAt(reread, to) === 1 &&
+                    tierAt(reread, from) !== 1 &&
+                    kept === 1,
+                { from, to, downArrow, closed, reopened, atTo: tierAt(reread, to), atFrom: tierAt(reread, from), kept }
             );
             return steps;
         },

@@ -554,6 +554,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             slot: (d) => officeRef.current?.slot(d),
             drop: () => officeRef.current?.drop(),
             cancel: () => officeRef.current?.cancel(),
+            treeMove: (d) => officeRef.current?.treeMove(d),
+            treeLift: () => officeRef.current?.treeLift(),
         }),
         []
     );
