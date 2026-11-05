@@ -5,6 +5,7 @@ package agentask
 
 import (
 	"errors"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -105,6 +106,136 @@ func TestDeliverAnswer_ConcurrentInjectsOnce(t *testing.T) {
 	// index 1 => exactly one full sequence (downArrow + enter = 2 writes), never doubled.
 	if writes != 2 {
 		t.Fatalf("keystroke writes = %d, want 2 (one full sequence)", writes)
+	}
+}
+
+// holdAnswersFor makes DeliverAnswer hold (held=true) or deliver (held=false) every answer, as jarvis's hook does for a
+// block of a paused run, and counts the keystrokes typed meanwhile.
+func holdAnswersFor(t *testing.T, held bool) *int {
+	t.Helper()
+	origHold, origSend := HoldAnswer, sendInput
+	HoldAnswer = func(string) bool { return held }
+	typed := 0
+	sendInput = func(string, []byte) error { typed++; return nil }
+	t.Cleanup(func() { HoldAnswer, sendInput = origHold, origSend })
+	return &typed
+}
+
+func TestDeliverAnswer_HoldKeepsTheAnswerInsteadOfTypingIt(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion()})
+	typed := holdAnswersFor(t, true)
+	var hooked []string
+	origHook := AnswerHook
+	AnswerHook = func(oref, askId string) { hooked = append(hooked, oref+"/"+askId) }
+	t.Cleanup(func() { AnswerHook = origHook })
+
+	delivered, err := DeliverAnswer("block:b1", "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{1}}})
+	if err != nil || !delivered {
+		t.Fatalf("a held answer is delivered: want (true,nil), got (%v,%v)", delivered, err)
+	}
+	if *typed != 0 {
+		t.Fatalf("a held answer must not be typed into the dead TUI, got %d keystrokes", *typed)
+	}
+	if _, ok := GlobalRegistry.Get("block:b1"); ok {
+		t.Fatal("the ask is claimed once its answer is held")
+	}
+	if GlobalRegistry.AnswerInFlight("block:b1") {
+		t.Fatal("a held answer waits for no clear: it must not stay in flight, or ExpireClears would restore the ask")
+	}
+	if len(hooked) != 1 || hooked[0] != "block:b1/a1" {
+		t.Fatalf("AnswerHook runs once for a held answer, got %v", hooked)
+	}
+	want := []HeldAnswer{{Question: "A or B?", Answers: []string{"B"}}}
+	if got := TakeHeldAnswers("block:b1"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("TakeHeldAnswers = %#v, want %#v", got, want)
+	}
+	if got := TakeHeldAnswers("block:b1"); len(got) != 0 {
+		t.Fatalf("a held answer is taken once, the second take got %#v", got)
+	}
+}
+
+func TestDeliverAnswer_HoldRecordsEveryQuestionWithItsPicksAndText(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: []baseds.AgentAskQuestion{
+		{Question: "Which db?", Options: []baseds.AgentAskOption{{Label: "pg"}, {Label: "sqlite"}}},
+		{Question: "Which checks?", MultiSelect: true, Options: []baseds.AgentAskOption{{Label: "unit"}, {Label: "e2e"}, {Label: "lint"}}},
+		{Question: "Anything else?", Options: []baseds.AgentAskOption{{Label: "no"}}},
+	}})
+	holdAnswersFor(t, true)
+
+	delivered, err := DeliverAnswer("block:b1", "", []baseds.AgentAnswerItem{
+		{SelectedIndexes: []int{1}},
+		{SelectedIndexes: []int{0, 2}},
+		{Text: "keep the diff small"},
+	})
+	if err != nil || !delivered {
+		t.Fatalf("want (true,nil), got (%v,%v)", delivered, err)
+	}
+	want := []HeldAnswer{
+		{Question: "Which db?", Answers: []string{"sqlite"}},
+		{Question: "Which checks?", Answers: []string{"unit", "lint"}},
+		{Question: "Anything else?", Answers: []string{"keep the diff small"}},
+	}
+	if got := TakeHeldAnswers("block:b1"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("TakeHeldAnswers = %#v, want %#v", got, want)
+	}
+}
+
+// the rules an answer passes before anything claims or types it hold for a held one too: a bad answer is refused and
+// the ask stays pending, so the person can answer again.
+func TestDeliverAnswer_HoldRefusesAnInvalidAnswerAndKeepsTheAsk(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion()})
+	holdAnswersFor(t, true)
+
+	delivered, err := DeliverAnswer("block:b1", "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{5}}})
+	if delivered || err == nil {
+		t.Fatalf("want (false, err) for an out-of-range pick, got (%v, %v)", delivered, err)
+	}
+	if _, ok := GlobalRegistry.Get("block:b1"); !ok {
+		t.Fatal("a refused answer must leave the ask pending")
+	}
+	if GlobalRegistry.AnswerInFlight("block:b1") {
+		t.Fatal("a refused answer must not stay in flight")
+	}
+	if got := TakeHeldAnswers("block:b1"); len(got) != 0 {
+		t.Fatalf("a refused answer must not be held, got %#v", got)
+	}
+}
+
+func TestDeliverAnswer_HoldHookFalseTypesTheAnswerAsBefore(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion()})
+	typed := holdAnswersFor(t, false)
+
+	delivered, err := DeliverAnswer("block:b1", "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{1}}})
+	if err != nil || !delivered {
+		t.Fatalf("want (true,nil), got (%v,%v)", delivered, err)
+	}
+	if *typed != 2 {
+		t.Fatalf("want the two keystrokes for index 1, got %d", *typed)
+	}
+	if got := TakeHeldAnswers("block:b1"); len(got) != 0 {
+		t.Fatalf("a typed answer is not held, got %#v", got)
+	}
+}
+
+func TestDeliverAnswer_HoldAnswersAreKeptPerBlock(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("block:b1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion()})
+	GlobalRegistry.Set("block:b2", PendingAsk{AskId: "a2", BlockId: "b2", Questions: oneQuestion()})
+	holdAnswersFor(t, true)
+	for _, oref := range []string{"block:b1", "block:b2"} {
+		if _, err := DeliverAnswer(oref, "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{0}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := TakeHeldAnswers("block:b1"); len(got) != 1 {
+		t.Fatalf("block b1 holds one answer, got %#v", got)
+	}
+	if got := TakeHeldAnswers("block:b2"); len(got) != 1 {
+		t.Fatalf("taking b1's answers must leave b2's, got %#v", got)
 	}
 }
 

@@ -37,6 +37,23 @@ func SetSendInputForTest(fn func(blockId string, data []byte) error) func() {
 // (or, for two of them, not at all). Wired once at server startup; nil = no-op.
 var AnswerHook func(oref, askId string)
 
+// HoldAnswer reports whether the agent behind oref is suspended, so its answer is held rather than typed (jarvis sets
+// it to "the block's run is paused"). nil = never held.
+var HoldAnswer func(oref string) bool
+
+// HeldAnswer is an answer kept for a suspended agent: one of the ask's questions and what the person answered, the
+// option labels they picked or the text they typed.
+type HeldAnswer struct {
+	Question string
+	Answers  []string
+}
+
+// TakeHeldAnswers returns the answers held for oref and forgets them, so each reaches the agent once: the resume
+// nudge carries them.
+func TakeHeldAnswers(oref string) []HeldAnswer {
+	return GlobalRegistry.takeHeld(oref)
+}
+
 // DeliverAnswer atomically claims the pending ask for oref, then injects its answers into the native
 // picker. It returns delivered=false with ErrNoPendingAsk when no ask is pending (already answered in the
 // terminal or cleared), or when askid != "" and no longer matches the pending ask — a caller that claimed
@@ -54,11 +71,48 @@ func DeliverAnswer(oref, askid string, answers []baseds.AgentAnswerItem) (bool, 
 	if !ok {
 		return false, fmt.Errorf("%w for %s", ErrNoPendingAsk, oref)
 	}
-	delivered, err := injectAnswer(oref, pending, answers)
+	var delivered bool
+	var err error
+	if HoldAnswer != nil && HoldAnswer(oref) {
+		delivered, err = holdAnswer(oref, pending, answers)
+	} else {
+		delivered, err = injectAnswer(oref, pending, answers)
+	}
 	if delivered && AnswerHook != nil {
 		AnswerHook(oref, pending.AskId)
 	}
 	return delivered, err
+}
+
+// holdAnswer keeps a claimed ask's answers for the resume nudge instead of typing them: the agent's process is gone,
+// and keystrokes into a dead TUI would vanish. It counts as delivered, since the person's answer is recorded and
+// will reach the agent. An answer that fails the rules a typed one must pass is refused and the ask restored, so
+// the person can answer again; nothing is in flight afterwards, because no clear will come.
+func holdAnswer(oref string, pending PendingAsk, answers []baseds.AgentAnswerItem) (bool, error) {
+	if err := ValidateAnswers(pending.Questions, answers, pending.Prose); err != nil {
+		GlobalRegistry.endAnswer(oref, &pending)
+		return false, err
+	}
+	held := make([]HeldAnswer, len(pending.Questions))
+	for i, q := range pending.Questions {
+		held[i] = HeldAnswer{Question: q.Question, Answers: answerTexts(q, answers[i])}
+	}
+	GlobalRegistry.hold(oref, held)
+	GlobalRegistry.endAnswer(oref, nil)
+	return true, nil
+}
+
+// answerTexts is what an answer says: its free text, or the labels of the options it picked. ValidateAnswers has
+// already checked every index is in range.
+func answerTexts(q baseds.AgentAskQuestion, a baseds.AgentAnswerItem) []string {
+	if a.Text != "" {
+		return []string{a.Text}
+	}
+	labels := make([]string, len(a.SelectedIndexes))
+	for i, idx := range a.SelectedIndexes {
+		labels[i] = q.Options[idx].Label
+	}
+	return labels
 }
 
 // injectAnswer delivers a claimed ask's answers, returning whether the agent actually received them.
