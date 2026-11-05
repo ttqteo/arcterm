@@ -25,6 +25,22 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **The run card's ⋯ menu.** `BlockedCard` in `runcards.tsx`, the one run card that carries a Cancel, is
   mounted by no screen, so the `run-paused` scenario has no step for its menu. When a screen mounts it: on a top-level
   active run its ⋯ menu holds Pause, on a paused one Resume, and neither sits beside Cancel.
+- [ ] (arcterm) **Skim folds a long reply.** After the next build, a new `claude` session (fullscreen) → ask something
+  that gets a reply longer than 10 lines → it shows the first paragraph and up to 4 one-sentence reasons, then
+  `▾ show more · N lines` → click it → the whole reply, highlighted as before, with `▴ show less` under it → click →
+  folded again; `/skim` off → replies draw in full. The fold was seen live through a dev-mod probe; the click and the
+  skim-mod build were not tried (`claude/skim-mod`, fold-core.ts).
+- [ ] (arcterm) **Filter box on the rail's Files tab.** Agent → an agent's side panel → Files → type `harn` in Filter
+  files (or press `/` with the tree focused) → only files whose name has it stay, their folders open, the part that
+  matches in bold, the count in the box, Pinned hidden; ↑/↓ move, Enter opens the file in the panel; Esc clears it and
+  the whole tree shows with the cursor on that file. Vitest and the typecheck only (`railtreepane.tsx`, d88315e3b);
+  no dev app was up.
+- [ ] (arcterm) **Close brainstorm and run.** A brainstorm whose run merged with its final unverified (the Christmas
+  tree one, run 983dcb44) → its Run step shows an amber line under the card and a "Close brainstorm and run" button →
+  click → a confirm names the unverified final and what of the run it closes → Close → the brainstorm folder goes, its
+  idle agent ends, the run leaves Needs you (accepted), its open sessions end, and its "Cleanup failed" line clears
+  unless a tree is still held. Unit tests and typecheck only (`brainstormrun.tsx`); no dev app was up, and the
+  `brainstorm-run-landed` CDP scenario was updated but not run.
 - [ ] (arcterm) **Your prompts stand out in a transcript.** Agent → a project's Overview → History → a session → Open →
   Transcript (or an ended session's transcript in the centre) → each of your messages is a box tinted in the accent
   colour with an accent border, clearly apart from the agent's prose; the prompt pinned at the top while you scroll
@@ -86,6 +102,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `pickRunShape` in `runconfigstore.ts`)
 - [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
   one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
   its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing
   its own worktree under `arc-wt` is never asked. Tried only headless (`claude -p`, where the ask is a refusal with

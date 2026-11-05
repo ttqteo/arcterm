@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { closeTarget, runStepView, runTreeText } from "./brainstormrunmodel";
+import { closesRun, closeTarget, runClose, runCloseText, runStepView, runTreeText } from "./brainstormrunmodel";
 import type { RunInfo } from "./runlineage";
 
 const BLOCKED_ID = "9c6eb723-1111-4222-8333-444455556666";
@@ -81,11 +81,11 @@ describe("runStepView", () => {
         expect(v.sha).toBe("7867142");
         expect(v.merged).toBe(true);
         expect(v.canClose).toBe(true);
-        expect(v.closeOff).toBeNull();
+        expect(v.closeWarn).toBeNull();
         expect(v.tree).toBe("merged");
     });
 
-    it("keeps the brainstorm when the run merged but its final is unverified", () => {
+    it("lets a merged run with an unverified final close, after a warning", () => {
         const run = runOf(LANDED_ID, {
             done: 11,
             total: 11,
@@ -96,8 +96,21 @@ describe("runStepView", () => {
         const v = runStepView(LANDED_ID, run, true);
         expect(v.state).toBe("merged");
         expect(v.merged).toBe(true);
-        expect(v.canClose).toBe(false);
-        expect(v.closeOff).toMatch(/could not verify/);
+        expect(v.canClose).toBe(true);
+        expect(v.closeWarn).toMatch(/could not verify everything/);
+    });
+
+    it("warns too when a merged run's final failed", () => {
+        const run = runOf(LANDED_ID, {
+            done: 11,
+            total: 11,
+            status: "done",
+            final: { state: "failed", round: 2 },
+            land: { state: "landed", commit: "7867142f00d" },
+        });
+        const v = runStepView(LANDED_ID, run, true);
+        expect(v.canClose).toBe(true);
+        expect(v.closeWarn).toMatch(/did not pass/);
     });
 
     it("never reads merged from a passed final alone: the land decides", () => {
@@ -180,6 +193,42 @@ describe("runStepView of a quick run", () => {
         expect(runStepView(LANDED_ID, quick("executing"), true).tree).toBe("working");
         expect(runStepView(LANDED_ID, quick("blocked"), true).tree).toBe("blocked");
         expect(runStepView(LANDED_ID, quick("cancelled"), true).tree).toBe("cancelled");
+    });
+});
+
+describe("runClose", () => {
+    const landed = (tasks: Partial<DagTaskDigest>[]) => {
+        const run = runOf(LANDED_ID, {
+            done: 2,
+            total: 2,
+            status: "done",
+            final: { state: "unverified", round: 1 },
+            land: { state: "landed", commit: "7867142f00d" },
+        });
+        run.digest = { tasks } as DagStatusDigest;
+        return run;
+    };
+
+    it("accepts a done run, names its left-behind trees and its open sessions", () => {
+        const run = landed([{ taskid: "t-1" }, { taskid: "t-2", humanactions: ["retry-cleanup"] }]);
+        const c = runClose(run, ["tab-a", "tab-b"]);
+        expect(c).toEqual({ ack: true, cleanup: ["t-2"], tabIds: ["tab-a", "tab-b"] });
+        expect(closesRun(c)).toBe(true);
+        expect(runCloseText(c)).toBe(
+            " It also ends the run’s 2 open sessions and removes the 1 worktree its cleanup left."
+        );
+    });
+
+    it("leaves the run alone, and the button's old name, when nothing of it is left open", () => {
+        const c = runClose(landed([{ taskid: "t-1" }]), []);
+        expect(c.ack).toBe(true);
+        expect(closesRun(c)).toBe(false);
+        expect(runCloseText(c)).toBe("");
+    });
+
+    it("never accepts a run that is not done, nor one it cannot read", () => {
+        expect(runClose(runOf(LANDED_ID, { done: 1, total: 2 }), []).ack).toBe(false);
+        expect(runClose(undefined, ["tab-a"])).toEqual({ ack: false, cleanup: [], tabIds: ["tab-a"] });
     });
 });
 

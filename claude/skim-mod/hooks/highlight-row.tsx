@@ -75,6 +75,42 @@ export function drawHighlighted(
     );
 }
 
+// a long reply folded to its summary, with the button that opens it, and the opened reply with the one that folds it
+export function drawFolded(
+    { Box, Text, Button }: Pick<Elements["terminal"], "Box" | "Text" | "Button">,
+    summary: RenderElement,
+    id: string,
+    lines: number,
+    onPress: () => void
+): RenderElement {
+    return (
+        <Box flexDirection="column">
+            {summary}
+            <Box marginLeft={2}>
+                <Button key={`fold-${id}`} plain onPress={onPress}>
+                    ▾ show more <Text dimColor>· {lines} lines</Text>
+                </Button>
+            </Box>
+        </Box>
+    );
+}
+
+export function drawOpened(
+    { Box, Button }: Pick<Elements["terminal"], "Box" | "Button">,
+    reply: RenderElement,
+    id: string,
+    onPress: () => void
+): RenderElement {
+    return (
+        <Box flexDirection="column">
+            {reply}
+            <Box marginLeft={2}>
+                <Button key={`fold-${id}`} plain label="▴ show less" onPress={onPress} />
+            </Box>
+        </Box>
+    );
+}
+
 // the line above the prompt while the question a reply asks is out of view, over whatever the band held
 export function drawAskLine(
     { Box, Text }: Pick<Elements["terminal"], "Box" | "Text">,

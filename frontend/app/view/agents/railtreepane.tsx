@@ -23,7 +23,17 @@ import { revealInList } from "@/app/view/code/treescroll";
 import { joinRepoPath, repoBasename } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, ChevronsDownUp, LocateFixed, Pin, PinOff, RefreshCw, X } from "lucide-react";
+import {
+    ChevronDown,
+    ChevronRight,
+    ChevronsDownUp,
+    LocateFixed,
+    Pin,
+    PinOff,
+    RefreshCw,
+    Search,
+    X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { openFileInPanel, railPanelsAtom } from "./agentrailstore";
 import { activeFile } from "./agentrailtabs";
@@ -31,6 +41,7 @@ import type { AgentsViewModel } from "./agents";
 import { encodePathsDrag, setDraggedPathsCount } from "./pathdrop";
 import { dropDirFor, dropHintLabel, type DropEntryLike } from "./railfiledrop";
 import { copyDropInto, railDropProgressAtom } from "./railfiledropstore";
+import { filterRows, matchSpan } from "./railfilter";
 import {
     clickRow,
     collapseAll,
@@ -98,6 +109,10 @@ export function RailTreePane({
     // the folder (repo-relative, "" the root) OS files over the tree would be copied into
     const [dropDir, setDropDir] = useState<string | null>(null);
     const copying = useAtomValue(railDropProgressAtom)[cwd];
+    // the filter box: while it holds text the tree lists only the files whose name has it, their folders open
+    const [query, setQuery] = useState("");
+    const filtering = query.trim() !== "";
+    const filterRef = useRef<HTMLInputElement>(null);
 
     // The pane only exists while the Files tab shows, so mounting is the tab being shown, and a later change of the
     // agent's state is one while it shows (a turn ending may have created files). The caller keys the pane by agent
@@ -111,7 +126,14 @@ export function RailTreePane({
     }, [agentState, cwd, agentId]);
 
     const tree = useMemo(() => railTree(listing, listed), [listing, listed]);
-    const rows = useMemo(() => visibleRows(tree, new Set(state.expanded)), [tree, state.expanded]);
+    const filtered = useMemo(
+        () => (filtering ? filterRows(listing?.files ?? [], query) : null),
+        [filtering, listing?.files, query]
+    );
+    const rows = useMemo(
+        () => filtered?.rows ?? visibleRows(tree, new Set(state.expanded)),
+        [filtered, tree, state.expanded]
+    );
 
     // an ignored directory git reported as one entry shows its contents once listed: this covers every way a directory
     // opens, and an opened one that a listing nested further
@@ -130,7 +152,7 @@ export function RailTreePane({
     // beat a re-render. The rows are recomputed from it, since a plain click on a directory flips `expanded` itself.
     const current = (): { s: RailTreeState; rows: TreeRow[] } => {
         const s = globalStore.get(stateAtom);
-        return { s, rows: visibleRows(tree, new Set(s.expanded)) };
+        return { s, rows: filtered?.rows ?? visibleRows(tree, new Set(s.expanded)) };
     };
     const openFile = (path: string) => openFileInPanel(model, agentId, { abs: joinRepoPath(cwd, path), root: cwd });
     const reload = () => fireAndForget(() => reloadTree(cwd, agentId));
@@ -145,7 +167,59 @@ export function RailTreePane({
         }
     };
 
+    // Esc leaves the filter with the cursor where it was, revealed in the whole tree
+    const clearFilter = () => {
+        setQuery("");
+        const s = globalStore.get(stateAtom);
+        if (s.cursor != null) {
+            globalStore.set(stateAtom, revealRow(s, s.cursor));
+            setLocate((n) => n + 1);
+        }
+        treeRef.current?.focus();
+    };
+    const onFilterKeyDown = (ev: React.KeyboardEvent) => {
+        if (ev.key === "Escape") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (filtering) {
+                clearFilter();
+            } else {
+                treeRef.current?.focus();
+            }
+            return;
+        }
+        if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp" && ev.key !== "Enter") {
+            return;
+        }
+        ev.preventDefault();
+        const { s, rows: now } = current();
+        if (ev.key === "Enter") {
+            const file =
+                now.find((r) => r.path === s.cursor && r.kind === "file") ?? now.find((r) => r.kind === "file");
+            if (file != null) {
+                globalStore.set(stateAtom, moveCursorTo(s, file.path));
+                openFile(file.path);
+            }
+            return;
+        }
+        const action = treeKeyAction(now, s.cursor, ev.key === "ArrowDown" ? "next" : "prev");
+        if (action.kind === "move") {
+            globalStore.set(stateAtom, moveCursorTo(s, action.path));
+        }
+    };
+
     const onKeyDown = (ev: React.KeyboardEvent) => {
+        if (ev.key === "/" && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+            ev.preventDefault();
+            filterRef.current?.focus();
+            return;
+        }
+        if (ev.key === "Escape" && filtering) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            clearFilter();
+            return;
+        }
         const key = KEYS[ev.key];
         if (key == null || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) {
             return;
@@ -288,7 +362,9 @@ export function RailTreePane({
                     expanded={row.kind === "dir" && row.expanded}
                     className={row.ignored ? "opacity-50" : undefined}
                 />
-                <span className="min-w-0 truncate">{row.name}</span>
+                <span className="min-w-0 truncate">
+                    {filtering ? <Highlighted name={row.name} query={query} /> : row.name}
+                </span>
                 {row.kind === "file" && pinned.includes(row.path) ? (
                     <span aria-label="Pinned" title="Pinned" className="ml-auto flex flex-none text-muted">
                         <Pin size={10} strokeWidth={1.8} />
@@ -332,7 +408,7 @@ export function RailTreePane({
                         Showing the first {listing.files.length.toLocaleString("en-US")} files
                     </div>
                 ) : null}
-                {pinned.length > 0 ? (
+                {pinned.length > 0 && !filtering ? (
                     <PinnedFiles
                         pinned={pinned}
                         cwd={cwd}
@@ -358,7 +434,11 @@ export function RailTreePane({
                     )}
                 >
                     {rows.map(renderRow)}
-                    {rows.length === 0 ? <div className="px-3 py-2 text-[11.5px] text-muted">No files</div> : null}
+                    {rows.length === 0 ? (
+                        <div data-rail-filter-empty className="px-3 py-2 text-[11.5px] text-muted">
+                            {filtering ? `No file name has “${query.trim()}”` : "No files"}
+                        </div>
+                    ) : null}
                 </div>
                 {dropDir != null || copying != null ? (
                     <div
@@ -423,8 +503,63 @@ export function RailTreePane({
                     />
                 </button>
             </div>
+            <div className="flex-none border-b border-border px-2.5 py-2">
+                <label
+                    className={cn(
+                        "flex h-7 items-center gap-1.5 rounded-[6px] border bg-background px-2",
+                        filtering ? "border-accent" : "border-edge-mid focus-within:border-edge-strong"
+                    )}
+                >
+                    <Search size={13} aria-hidden className="flex-none text-muted" />
+                    <input
+                        ref={filterRef}
+                        data-rail-filter
+                        aria-label="Filter files"
+                        placeholder="Filter files"
+                        value={query}
+                        onChange={(ev) => setQuery(ev.target.value)}
+                        onKeyDown={onFilterKeyDown}
+                        spellCheck={false}
+                        className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-primary outline-none placeholder:text-ink-faint"
+                    />
+                    {filtering ? (
+                        <>
+                            <span data-rail-filter-count className="flex-none text-[11px] tabular-nums text-muted">
+                                {filtered?.count === 1 ? "1 match" : `${filtered?.count ?? 0} matches`}
+                            </span>
+                            <button
+                                type="button"
+                                aria-label="Clear the filter"
+                                title="Clear the filter (Esc)"
+                                onClick={clearFilter}
+                                className="flex size-4 flex-none cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-muted hover:text-primary"
+                            >
+                                <X size={12} aria-hidden />
+                            </button>
+                        </>
+                    ) : (
+                        <kbd className="flex-none rounded-[4px] border border-edge-mid px-1 font-mono text-[10.5px] leading-4 text-muted">
+                            /
+                        </kbd>
+                    )}
+                </label>
+            </div>
             {body}
         </div>
+    );
+}
+
+function Highlighted({ name, query }: { name: string; query: string }) {
+    const span = matchSpan(name, query);
+    if (span == null) {
+        return <>{name}</>;
+    }
+    return (
+        <>
+            {name.slice(0, span[0])}
+            <span className="font-semibold text-primary">{name.slice(span[0], span[1])}</span>
+            {name.slice(span[1])}
+        </>
     );
 }
 
