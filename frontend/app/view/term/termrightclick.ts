@@ -3,9 +3,10 @@
 //
 // Right-click in a terminal (term:rightclickpaste): one click copies the selection, or pastes when nothing is
 // selected; a second click inside DOUBLE_RIGHT_CLICK_MS opens the terminal menu instead. The single action waits
-// that window out, so a double click never pastes before the menu opens.
+// that window out, so a double click never pastes before the menu opens. The window is Windows' default double-click
+// time (500 ms): at 300 ms a hand's double right-click often fell outside it and pasted twice.
 
-export const DOUBLE_RIGHT_CLICK_MS = 300;
+export const DOUBLE_RIGHT_CLICK_MS = 500;
 
 export type RightClickAction = "copy" | "paste";
 

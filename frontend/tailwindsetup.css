@@ -517,23 +517,25 @@ svg [aria-label="tip"] g path {
     );
 }
 
-/* An asking agent's row in the Agent tree holds a steady amber wash over the whole row: a background image, so a
-   selected row keeps its grey fill under it, and an edge drawn as a border on ::after (the row is `relative`). It does
-   not breathe (the glyph does): an inset box-shadow repainted at 12fps left WebView2 amber residue outside the row's
-   corners, a line that came and went beside the box. */
+/* An asking agent's whole row in the Agent tree breathes amber: a wash and a 1px edge, both on ::after (the row is
+   `relative`), under the row's text (`isolation` + z-index -1) and over its own fill, so a selected row keeps its grey.
+   pulsedriver.tsx sets --tint (1 at the peak) at 12fps and only the layer's opacity moves (will-change), so WebView2
+   composites it instead of repainting: the earlier breath, an inset box-shadow repainted each tick, left amber residue
+   outside the row's corners. Without the driver (reduced motion) it holds a steady wash. */
 .asking-tint {
-    background-image: linear-gradient(
-        color-mix(in oklab, var(--color-warning) 9%, transparent),
-        color-mix(in oklab, var(--color-warning) 9%, transparent)
-    );
+    isolation: isolate;
 }
 .asking-tint::after {
     content: "";
     position: absolute;
     inset: 0;
-    border: 1px solid color-mix(in oklab, var(--color-warning) 34%, transparent);
+    z-index: -1;
+    background-color: color-mix(in oklab, var(--color-warning) 14%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-warning) 50%, transparent);
     border-radius: inherit;
     pointer-events: none;
+    opacity: var(--tint, 0.65);
+    will-change: opacity;
 }
 
 /* Finished settle (moment 4): a single soft scale acknowledgement on working -> idle. */

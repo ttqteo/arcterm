@@ -48,7 +48,8 @@ export function radarDraftLanding(
 
 export interface RunConfig {
     shape: RunShape;
-    parallelism: number;
+    // null is auto: CreateRun leaves the width to the profile, then the lead
+    parallelism: number | null;
     workerRoute: RoutePin | null;
     start: StartFrom;
     planPath: string;
@@ -95,7 +96,7 @@ export function launchOptsFromConfig(config: RunConfig): LaunchOpts {
     }
     return {
         mode: shape,
-        parallelism,
+        ...(parallelism != null ? { parallelism } : {}),
         ...(workerRoute != null ? { workerRoute } : {}),
         ...(start === "plan" ? { planPath: planPath.trim() } : {}),
         reviewerPicks,

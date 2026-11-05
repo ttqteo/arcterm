@@ -20,7 +20,7 @@ import { Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
 import { chipSwatches, SPIDER_THEME } from "../themedecor";
 import { SmallSpider } from "../themedecorview";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
-import { christmasEffectsOffAtom, themeOverridesAtom, themePresetAtom } from "../themestore";
+import { christmasEffectsOffAtom, christmasSnowOnAtom, themeOverridesAtom, themePresetAtom } from "../themestore";
 
 export function AppearancePage() {
     return (
@@ -45,10 +45,12 @@ export function AppearancePage() {
 // changed dot and revert. `data-theme-presets` scopes the terminal-theme scenario's preset clicks.
 function ThemeChips() {
     const [preset, setPreset] = useAtom(themePresetAtom);
+    const decorOn = useChristmasDecor();
     return (
         <>
             <ThemePresetGrid preset={preset} setPreset={setPreset} />
             {preset === CHRISTMAS_THEME ? <ChristmasEffectsRow /> : null}
+            {preset === CHRISTMAS_THEME && decorOn ? <ChristmasSnowRow /> : null}
         </>
     );
 }
@@ -71,7 +73,7 @@ function ChristmasEffectsRow() {
             <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-primary">Christmas effects</div>
                 <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
-                    Snow, the lights under the app bar, the Office&apos;s trees and gifts, and the Santa hats.
+                    The lights under the app bar, the Office&apos;s trees and gifts, and the Santa hats.
                 </div>
             </div>
             <Toggle
@@ -80,6 +82,23 @@ function ChristmasEffectsRow() {
                 label="Christmas effects"
                 data-christmas-effects
             />
+        </div>
+    );
+}
+
+// The snow's own switch, under Christmas effects while they are on: off by default, since the snow is the one effect
+// that animates the whole window.
+function ChristmasSnowRow() {
+    const [snowOn, setSnowOn] = useAtom(christmasSnowOnAtom);
+    return (
+        <div className="flex items-center gap-4 border-t border-edge-mid px-4 py-3 transition-colors hover:bg-surface-hover">
+            <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-primary">Snow</div>
+                <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
+                    Snow falling over the whole window, fainter over terminals. Uses a little CPU while it falls.
+                </div>
+            </div>
+            <Toggle on={snowOn} onToggle={() => setSnowOn(!snowOn)} label="Snow" data-christmas-snow-switch />
         </div>
     );
 }

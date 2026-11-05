@@ -1524,6 +1524,12 @@ func ServiceStopCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts 
 	return err
 }
 
+// command "setcanvaslink", wshserver.SetCanvasLinkCommand
+func SetCanvasLinkCommand(w *wshutil.WshRpc, data wshrpc.CommandSetCanvasLinkData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "setcanvaslink", data, opts)
+	return err
+}
+
 // command "setchannelprofile", wshserver.SetChannelProfileCommand
 func SetChannelProfileCommand(w *wshutil.WshRpc, data wshrpc.CommandSetChannelProfileData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setchannelprofile", data, opts)

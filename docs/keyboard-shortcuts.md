@@ -277,7 +277,8 @@ gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a view
 | `/` | In the grid: search topic, board and project names. `Enter` in the box opens the first match, `Esc` empties it, and a second `Esc` gives the keys back to the grid |
 | `Esc` | In the grid: back to the terminal |
 | `←` / `→` | In an open canvas: previous / next board, round the ends. `[` / `]` step too, but the hints show only the arrows: a Vietnamese Telex input method turns `[` `]` into `ơ` `ư` |
-| `Esc` | In an open canvas: back to the grid |
+| `Esc` | In an open canvas: close the link picker (the header's **Link an older version…**) if it is open, else back to the grid. Inside the picker's search box the first `Esc` closes the picker too |
+| `Esc` | In the version scan's review (the grid's **Scan for versions** button): cancel, back to the grid. Nothing is linked, and the scan counts as done |
 | `←` / `↑` / `↓` / `→` | In Clean up (the grid's **Clean up** button): move the card cursor over the suggested group, then Newer |
 | `Space` | In Clean up: tick or untick the card under the cursor. A click does the same; **Untick all** and **Move to trash** are in the bar |
 | `Esc` | In Clean up: cancel, back to the grid |

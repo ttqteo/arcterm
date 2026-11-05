@@ -16,7 +16,7 @@ import { useBlobSrc } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft, Check, LayoutGrid, Search } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { changedLine } from "./canvascursor";
 import {
@@ -24,13 +24,21 @@ import {
     cardMeta,
     cleanupGroups,
     cleanupMeta,
+    declineWrite,
+    linkWrite,
+    scanLinkLabel,
     selectionLabel,
     selectionTotal,
     SUGGEST_AFTER_DAYS,
+    suggestVersions,
+    unlinkWrite,
+    versionInfo,
     type GalleryCanvas,
+    type VersionInfo,
 } from "./canvasgallery";
 import {
     cancelCleanup,
+    cancelScan,
     canvasBase,
     canvasGalleryAtom,
     canvasListAtom,
@@ -38,17 +46,24 @@ import {
     cleanupAtom,
     closeCanvas,
     galleryGroups,
+    linkScan,
     loadCanvases,
     moveSelectionToTrash,
     openCanvas,
     openCursorCanvas,
+    scanAtom,
+    setCanvasLink,
     setGalleryQuery,
     setViewerBoard,
     startCleanup,
+    startScan,
     stepViewerBoard,
     toggleCleanupCard,
+    toggleScanRow,
     untickAll,
+    versionsScanned,
 } from "./canvasgallerystore";
+import { LinkOlderVersion } from "./canvaslinkpicker";
 import {
     boardUrl,
     CANVAS_POLL_MS,
@@ -108,6 +123,9 @@ export function CanvasGallery({ model }: { model: AgentsViewModel }) {
     if (g.view === "cleanup") {
         return <CanvasCleanup />;
     }
+    if (g.view === "scan") {
+        return <CanvasScan model={model} />;
+    }
     return <CanvasGrid model={model} />;
 }
 
@@ -149,6 +167,51 @@ function GridSkeleton() {
     );
 }
 
+// the gallery's header row: its title and the count pill, then the actions the view passes. The grid and the scan
+// review share it, so the review opens under the same header (board C-scan-review)
+function GalleryHeader({ list, children }: { list: GalleryCanvas[] | null; children?: ReactNode }) {
+    const has = list != null && list.length > 0;
+    const totalBytes = (list ?? []).reduce((n, c) => n + c.bytes, 0);
+    return (
+        <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
+            <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Canvas gallery</h1>
+            {list != null ? (
+                <span
+                    data-canvas-gallery-count
+                    className="inline-flex flex-none items-center rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary"
+                >
+                    {has ? `${list.length} · ${formatSize(totalBytes)}` : "0"}
+                </span>
+            ) : null}
+            <div className="flex-1" />
+            {children}
+        </div>
+    );
+}
+
+function ScanOpenButton({ onClick, current = false }: { onClick?: () => void; current?: boolean }) {
+    return (
+        <button
+            type="button"
+            data-canvas-scan-open
+            aria-pressed={current}
+            title="Find canvases that look like a newer version of another"
+            onClick={onClick}
+            className={cn(SWAP_BTN, "border-edge-strong bg-surface-selected text-primary")}
+        >
+            Scan for versions
+        </button>
+    );
+}
+
+function CleanupOpenButton({ onClick }: { onClick: () => void }) {
+    return (
+        <button type="button" data-canvas-cleanup-open onClick={onClick} className={SWAP_BTN}>
+            Clean up
+        </button>
+    );
+}
+
 function CanvasGrid({ model }: { model: AgentsViewModel }) {
     const g = useAtomValue(canvasGalleryAtom);
     const list = useAtomValue(canvasListAtom);
@@ -161,15 +224,23 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
         void loadCanvases();
     }, []);
 
+    // chains, the Newer link and the suggestions are read over every canvas, not the few the search leaves: a filtered
+    // list would drop the newest canvas of a chain
+    const versions = useMemo(() => versionInfo(list ?? []), [list]);
+    const suggestions = useMemo(() => suggestVersions(list ?? []), [list]);
+    const olderOf = useMemo(() => new Map(suggestions.map((s) => [s.newer.dir, s.older])), [suggestions]);
+    // read on each render: Link or Cancel in the review comes back through a fresh grid
+    const scanned = versionsScanned();
+
     const groups = galleryGroups(list, g.query, now);
-    const shown = groups.reduce((n, grp) => n + grp.items.length, 0);
+    const flat = groups.flatMap((grp) => grp.items);
+    const shown = flat.length;
     const cursor = Math.min(Math.max(0, g.cursor), shown - 1);
     useEffect(() => {
         scrollRef.current?.querySelector("[data-cursor]")?.scrollIntoView({ block: "nearest" });
     }, [cursor, shown]);
 
     const has = list != null && list.length > 0;
-    const totalBytes = (list ?? []).reduce((n, c) => n + c.bytes, 0);
     const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Escape") {
             // a first Escape empties the box, the next gives the keys back to the grid
@@ -188,27 +259,11 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
     let index = 0;
     return (
         <div data-canvas-gallery className="flex min-h-0 flex-1 flex-col bg-background">
-            <div className="flex flex-none items-center gap-[10px] border-b border-border px-[24px] pb-[14px] pt-[18px]">
-                <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-primary">Canvas gallery</h1>
-                {list != null ? (
-                    <span
-                        data-canvas-gallery-count
-                        className="inline-flex flex-none items-center rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary"
-                    >
-                        {has ? `${list.length} · ${formatSize(totalBytes)}` : "0"}
-                    </span>
-                ) : null}
-                <div className="flex-1" />
+            <GalleryHeader list={list}>
                 {has ? (
                     <>
-                        <button
-                            type="button"
-                            data-canvas-cleanup-open
-                            onClick={() => startCleanup(now)}
-                            className={SWAP_BTN}
-                        >
-                            Clean up
-                        </button>
+                        {!scanned && suggestions.length > 0 ? <ScanOpenButton onClick={startScan} /> : null}
+                        <CleanupOpenButton onClick={() => startCleanup(now)} />
                         <label className="flex h-[28px] w-[240px] flex-none items-center gap-2 rounded-[6px] border border-edge-mid bg-surface-raised pl-[10px] pr-2 focus-within:border-edge-strong">
                             <Search size={13} strokeWidth={1.8} className="flex-none text-muted" aria-hidden />
                             <input
@@ -224,7 +279,7 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
                         </label>
                     </>
                 ) : null}
-            </div>
+            </GalleryHeader>
             {list == null ? (
                 error != null ? (
                     <EdgeState>
@@ -283,14 +338,25 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
                             >
                                 {grp.items.map((c) => {
                                     const at = index++;
+                                    const newest = versions.get(c.dir)?.newest ?? null;
                                     return (
                                         <CanvasCard
                                             key={c.dir}
                                             canvas={c}
+                                            info={versions.get(c.dir)}
+                                            // the dashed row is for after the scan; before it the button is the only prompt
+                                            suggested={scanned ? olderOf.get(c.dir) : undefined}
                                             base={bases.get(c.designdir)}
                                             now={now}
                                             cursor={at === cursor}
                                             onOpen={() => openCanvas(c.dir, at)}
+                                            // the cursor goes to the newest canvas' card when the search shows it
+                                            onOpenNewest={() => {
+                                                if (newest != null) {
+                                                    const place = flat.findIndex((x) => x.dir === newest.dir);
+                                                    openCanvas(newest.dir, place >= 0 ? place : at);
+                                                }
+                                            }}
                                         />
                                     );
                                 })}
@@ -314,42 +380,217 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
     );
 }
 
+// The wrapper is the card you see; its button is the part that opens the canvas, and what a version link adds sits
+// beside that button, never inside it (no nested interactive elements): the `Replaces` chip, `Outdated` with the
+// `Newer →` link, and the dashed suggestion. `suggested` is the older canvas this one looks like a version of, once the
+// scan has been done.
 function CanvasCard({
     canvas: c,
+    info,
+    suggested,
     base,
     now,
     cursor,
     onOpen,
+    onOpenNewest,
 }: {
     canvas: GalleryCanvas;
+    info: VersionInfo | undefined;
+    suggested: GalleryCanvas | undefined;
     base: string | undefined;
     now: number;
     cursor: boolean;
     onOpen: () => void;
+    onOpenNewest: () => void;
 }) {
+    const replaces = info?.replaces ?? null;
+    const newest = info?.newest ?? null;
+    const outdated = newest != null;
+    const extras = replaces != null || outdated || suggested != null;
     return (
-        <button
-            type="button"
-            data-canvas-card={c.topic}
-            data-cursor={cursor ? "" : undefined}
-            title={c.topic}
-            onClick={onOpen}
+        <div
+            data-canvas-card-wrap={c.topic}
+            data-canvas-outdated={outdated ? "" : undefined}
             className={cn(
-                "flex cursor-pointer flex-col overflow-hidden rounded-lg border border-edge-mid bg-surface-raised text-left hover:border-edge-strong",
+                "flex flex-col overflow-hidden rounded-lg border border-edge-mid bg-surface-raised hover:border-edge-strong",
                 cursor && "ring-2 ring-accent"
             )}
         >
-            <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-edge-mid bg-surface-code">
-                <CardPreview canvas={c} base={base} />
-                <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-[7px] py-[2px] text-[10.5px] tabular-nums text-secondary">
-                    {boardCountLabel(c.boards.length)}
-                </span>
+            <button
+                type="button"
+                data-canvas-card={c.topic}
+                data-cursor={cursor ? "" : undefined}
+                title={c.topic}
+                onClick={onOpen}
+                className="flex cursor-pointer flex-col text-left"
+            >
+                <div
+                    className={cn(
+                        "relative aspect-[16/10] w-full overflow-hidden border-b border-edge-mid bg-surface-code",
+                        outdated && "opacity-45"
+                    )}
+                >
+                    <CardPreview canvas={c} base={base} />
+                    <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-[7px] py-[2px] text-[10.5px] tabular-nums text-secondary">
+                        {boardCountLabel(c.boards.length)}
+                    </span>
+                </div>
+                <div
+                    className={cn(
+                        "flex w-full min-w-0 flex-col gap-[3px] px-3 pt-[10px]",
+                        extras ? "pb-[5px]" : "pb-[11px]"
+                    )}
+                >
+                    <span className={cn("truncate text-[13px] font-semibold text-primary", outdated && "opacity-45")}>
+                        {c.topic}
+                    </span>
+                    <span className="truncate text-[11.5px] tabular-nums text-muted">{cardMeta(c, now)}</span>
+                </div>
+            </button>
+            {extras ? (
+                <div className="flex min-w-0 flex-col gap-[6px] px-3 pb-[11px]">
+                    {replaces != null ? (
+                        <span
+                            data-canvas-replaces={replaces.topic}
+                            title={`Replaces ${replaces.topic}`}
+                            className="max-w-full self-start truncate rounded-full border border-edge-mid px-2 py-px text-[11px] text-secondary"
+                        >
+                            Replaces {replaces.topic}
+                        </span>
+                    ) : null}
+                    {newest != null ? (
+                        <span className="flex min-w-0 items-center gap-2 text-[11px]">
+                            <span className="flex-none rounded-full border border-edge-mid px-2 py-px text-muted">
+                                Outdated
+                            </span>
+                            <button
+                                type="button"
+                                data-canvas-newer={newest.topic}
+                                title={`Open ${newest.topic}`}
+                                onClick={onOpenNewest}
+                                className="min-w-0 cursor-pointer truncate text-accent hover:text-accenthover"
+                            >
+                                Newer: {newest.topic} →
+                            </button>
+                        </span>
+                    ) : null}
+                    {suggested != null ? (
+                        <div
+                            data-canvas-suggest={suggested.topic}
+                            className="flex items-center gap-2 rounded-[6px] border border-dashed border-edge-strong py-1 pl-2 pr-[6px] text-[11px]"
+                        >
+                            <span className="min-w-0 flex-1 truncate text-secondary">
+                                Looks like it replaces {suggested.topic}
+                            </span>
+                            <button
+                                type="button"
+                                data-canvas-suggest-link
+                                onClick={() => void setCanvasLink(linkWrite(c, suggested.topic))}
+                                className="flex-none cursor-pointer rounded-[5px] border border-edge-strong bg-surface-selected px-2 py-px text-primary hover:border-accent"
+                            >
+                                Link
+                            </button>
+                            <button
+                                type="button"
+                                data-canvas-suggest-no
+                                title="Not a version: don't suggest it again"
+                                onClick={() => void setCanvasLink(declineWrite(c, suggested.topic))}
+                                className="flex-none cursor-pointer px-1 text-muted hover:text-primary"
+                            >
+                                No
+                            </button>
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+// Scan for versions (board C-scan-review): every pair the scan suggests, all ticked, to untick the wrong ones. Link N
+// pairs links the ticked and remembers the unticked as "not a version"; Cancel writes nothing. Either way the scan counts
+// as done. Escape cancels (bindings.ts). The rows are the pairs as the review opened (scanAtom), so a row does not
+// vanish under the person's eye when linking reads the list again.
+function CanvasScan({ model }: { model: AgentsViewModel }) {
+    const s = useAtomValue(scanAtom);
+    const list = useAtomValue(canvasListAtom);
+    const now = useAtomValue(model.nowAtom);
+    const pairs = s.pairs;
+    const ticked = pairs.filter((p) => s.ticked.has(p.newer.dir)).length;
+    return (
+        <div data-canvas-scan className="flex min-h-0 flex-1 flex-col bg-background">
+            <GalleryHeader list={list}>
+                <ScanOpenButton current />
+                {/* leaving the review for Clean up writes nothing, like Cancel */}
+                <CleanupOpenButton
+                    onClick={() => {
+                        cancelScan();
+                        startCleanup(now);
+                    }}
+                />
+            </GalleryHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[24px] pt-[18px]">
+                <div className="flex max-h-full flex-col overflow-hidden rounded-lg border border-edge-mid bg-surface">
+                    <div className="flex-none border-b border-border px-[14px] py-[10px] text-[12px] text-secondary">
+                        Found {pairs.length} {pairs.length === 1 ? "pair" : "pairs"}. Untick the wrong ones, then Link.
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                        {pairs.map(({ newer, older }) => {
+                            const on = s.ticked.has(newer.dir);
+                            return (
+                                <button
+                                    key={newer.dir}
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={on}
+                                    data-canvas-scan-row={newer.topic}
+                                    data-checked={on ? "" : undefined}
+                                    disabled={s.linking}
+                                    onClick={() => toggleScanRow(newer.dir)}
+                                    className="flex w-full min-w-0 cursor-pointer items-center gap-[10px] border-b border-border px-[14px] py-[9px] text-left text-[12.5px] text-primary hover:bg-surface-hover disabled:cursor-default"
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={cn(
+                                            "flex h-[14px] w-[14px] flex-none items-center justify-center rounded-[3px] border",
+                                            on ? "border-accent bg-accent" : "border-edge-strong"
+                                        )}
+                                    >
+                                        {on ? <Check size={10} strokeWidth={3} className="text-background" /> : null}
+                                    </span>
+                                    <span className="min-w-0 truncate">{newer.topic}</span>
+                                    <span className="flex-none text-muted">replaces</span>
+                                    <span className="min-w-0 truncate">{older.topic}</span>
+                                    <span className="flex-1" />
+                                    <span className="flex-none text-[11px] text-muted">{newer.projectname}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex flex-none justify-end gap-2 px-[14px] py-[10px]">
+                        <button
+                            type="button"
+                            data-canvas-scan-cancel
+                            title="Leave the scan, linking nothing (Esc)"
+                            disabled={s.linking}
+                            onClick={cancelScan}
+                            className={SWAP_BTN}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            data-canvas-scan-link
+                            disabled={ticked === 0 || s.linking}
+                            onClick={() => void linkScan()}
+                            className={SWAP_PRIMARY_BTN}
+                        >
+                            {scanLinkLabel(ticked)}
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div className="flex min-w-0 flex-col gap-[3px] px-3 pb-[11px] pt-[10px]">
-                <span className="truncate text-[13px] font-semibold text-primary">{c.topic}</span>
-                <span className="truncate text-[11.5px] tabular-nums text-muted">{cardMeta(c, now)}</span>
-            </div>
-        </button>
+        </div>
     );
 }
 
@@ -662,6 +903,9 @@ function MakerButton({ model, session }: { model: AgentsViewModel; session: Live
 function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: GalleryCanvas }) {
     const g = useAtomValue(canvasGalleryAtom);
     const now = useAtomValue(model.nowAtom);
+    const list = useAtomValue(canvasListAtom);
+    // the canvas this one validly replaces: a raw `replaces` that names a missing topic, or loses a fork, has no chip
+    const replaces = useMemo(() => versionInfo(list ?? []).get(canvas.dir)?.replaces ?? null, [list, canvas.dir]);
     const s = useViewerState(canvas);
     const maker = useCanvasMaker(model, canvas.dir);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
@@ -710,6 +954,25 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
                     {canvas.topic}
                 </h1>
                 <span className="flex-none whitespace-nowrap text-[12px] text-muted">{changedLine(canvas, now)}</span>
+                {replaces != null ? (
+                    <span
+                        data-canvas-viewer-replaces={replaces.topic}
+                        className="flex min-w-0 flex-initial items-center gap-[6px] rounded-full border border-edge-mid py-[2px] pl-[9px] pr-[6px] text-[11.5px] text-secondary"
+                    >
+                        <span className="min-w-0 truncate">Replaces {replaces.topic}</span>
+                        <button
+                            type="button"
+                            data-canvas-viewer-unlink
+                            aria-label="Remove link"
+                            title="Remove the link: it is not a version"
+                            onClick={() => void setCanvasLink(unlinkWrite(canvas))}
+                            className="flex-none cursor-pointer text-[13px] leading-none text-muted hover:text-primary"
+                        >
+                            ×
+                        </button>
+                    </span>
+                ) : null}
+                <LinkOlderVersion canvas={canvas} list={list ?? []} />
                 {maker != null ? <MakerButton model={model} session={maker} /> : null}
                 <div className="flex-1" />
                 {canvas.boards.length > 0 ? (

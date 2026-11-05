@@ -152,6 +152,88 @@ func TestListCanvasesNewestFirstThenByTopic(t *testing.T) {
 	}
 }
 
+func TestListCanvasesReadsTheVersionLink(t *testing.T) {
+	a, topic := canvasProject(t, "mxc-home-fresh", "Main")
+	index := `{"v":3,"title":"Home, fresher","createdOnFiles":{"v":1,"at":"2026-11-01T17:00:00+07:00"},` +
+		`"replaces":"mxc-home","notreplaces":["mxc-menu","mxc-chat"],"order":["Main.dc.html"]}`
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ListCanvases([]string{a})
+	if len(got) != 1 {
+		t.Fatalf("got %+v, want one canvas", got)
+	}
+	c := got[0]
+	if c.Title != "Home, fresher" || c.Replaces != "mxc-home" || !reflect.DeepEqual(c.NotReplaces, []string{"mxc-menu", "mxc-chat"}) {
+		t.Fatalf("got title %q replaces %q notreplaces %v, want canvas.json's three keys", c.Title, c.Replaces, c.NotReplaces)
+	}
+	if want := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC).UnixMilli(); c.CreatedTs != want {
+		t.Fatalf("createdts = %d, want createdOnFiles.at as unix ms %d (an offset is the same instant)", c.CreatedTs, want)
+	}
+	if !reflect.DeepEqual(c.Boards, []string{"Main"}) {
+		t.Fatalf("boards = %v, want the order still read beside the link", c.Boards)
+	}
+}
+
+func TestListCanvasesCreatedTsFallsBackToModTs(t *testing.T) {
+	for name, index := range map[string]string{
+		"no canvas.json":            "",
+		"no createdOnFiles":         `{"v":3,"title":"t"}`,
+		"createdOnFiles without at": `{"createdOnFiles":{"v":1}}`,
+		"an unparsable at":          `{"createdOnFiles":{"v":1,"at":"last tuesday"}}`,
+		"an at of the wrong type":   `{"createdOnFiles":{"v":1,"at":5}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, topic := canvasProject(t, "t", "Main")
+			if index != "" {
+				if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := ListCanvases([]string{a})
+			if len(got) != 1 || got[0].ModTs == 0 || got[0].CreatedTs != got[0].ModTs {
+				t.Fatalf("got %+v, want createdts = a non-zero modts", got)
+			}
+		})
+	}
+}
+
+func TestListCanvasesLeavesTheLinkEmptyWithoutOne(t *testing.T) {
+	a, _ := canvasProject(t, "t", "Main")
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || got[0].Title != "" || got[0].Replaces != "" || got[0].NotReplaces != nil {
+		t.Fatalf("got %+v, want no title and no link", got)
+	}
+	raw, err := json.Marshal(got[0])
+	if err != nil || strings.Contains(string(raw), `"replaces"`) || strings.Contains(string(raw), `"notreplaces"`) || strings.Contains(string(raw), `"title"`) {
+		t.Fatalf("marshals to %s (%v), want the empty link keys left off the wire", raw, err)
+	}
+}
+
+func TestListCanvasesOneBadKeyDoesNotHideTheRest(t *testing.T) {
+	a, topic := canvasProject(t, "t", "Main", "Desk")
+	// replaces and title are the wrong type, notreplaces holds a number: only the keys that read are used
+	index := `{"title":7,"replaces":["x"],"notreplaces":["ok",3],"order":["Main.dc.html","Desk.dc.html"]}`
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Boards, []string{"Main", "Desk"}) {
+		t.Fatalf("got %+v, want the order read despite the bad keys", got)
+	}
+	if got[0].Title != "" || got[0].Replaces != "" || got[0].NotReplaces != nil {
+		t.Fatalf("got title %q replaces %q notreplaces %v, want a mistyped key to read as absent", got[0].Title, got[0].Replaces, got[0].NotReplaces)
+	}
+}
+
+func TestListCanvasesDoesNotWrite(t *testing.T) {
+	a, topic := canvasProject(t, "t", "Main")
+	ListCanvases([]string{a})
+	if fileExists(filepath.Join(topic, "project", "canvas.json")) {
+		t.Fatal("a list must never create a canvas.json")
+	}
+}
+
 // linkDir makes link point at target: a symlink, or on Windows without the privilege a junction, which is how a
 // project's folders are usually linked there
 func linkDir(t *testing.T, target, link string) {

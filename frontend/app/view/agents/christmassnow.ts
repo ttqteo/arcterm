@@ -31,6 +31,16 @@ export interface SnowRect {
 /** The most flakes a window holds, however large. */
 export const SNOW_MAX = 120;
 
+// The shortest gap between two painted frames: 90 fps, less 1 ms of slack, so a 60, 75 or 90 Hz display (frames 16.7,
+// 13.3 or 11.1 ms apart, give or take) paints every frame, and a 120 Hz one or faster every second frame or so, never
+// more than about 90 a second. A 60 fps cap halved a 75 Hz display to 37 fps.
+const SNOW_MIN_FRAME_MS = 1_000 / 90 - 1;
+
+/** Whether an animation frame `sinceLastMs` after the last painted one paints: at most about 90 a second. */
+export function snowFrameDue(sinceLastMs: number): boolean {
+    return sinceLastMs >= SNOW_MIN_FRAME_MS;
+}
+
 // One flake per this many square pixels: 90 over the spike's 1200x720 window, the density it settled on.
 const AREA_PER_FLAKE = 9_600;
 // The sway's amplitude (px/s) and period scale (ms per radian).

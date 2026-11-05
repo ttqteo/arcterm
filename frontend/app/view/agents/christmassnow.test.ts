@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { flakeAlpha, flakeCount, makeFlakes, SNOW_MAX, stepFlake, type Flake } from "./christmassnow";
+import { flakeAlpha, flakeCount, makeFlakes, SNOW_MAX, snowFrameDue, stepFlake, type Flake } from "./christmassnow";
 
 const term = { left: 100, top: 50, right: 300, bottom: 250 };
 
@@ -64,6 +64,21 @@ describe("flakeCount", () => {
             expect(f.alpha).toBeGreaterThanOrEqual(0.35);
             expect(f.alpha).toBeLessThanOrEqual(0.6);
         }
+    });
+});
+
+describe("snowFrameDue", () => {
+    it("paints every frame of a 60, 75 or 90 Hz display, jitter included", () => {
+        expect(snowFrameDue(16.7)).toBe(true);
+        expect(snowFrameDue(13.1)).toBe(true);
+        expect(snowFrameDue(10.6)).toBe(true);
+    });
+
+    it("paints every second frame at 120 and 144 Hz, so never far above 90 a second", () => {
+        expect(snowFrameDue(8.3)).toBe(false);
+        expect(snowFrameDue(16.7)).toBe(true);
+        expect(snowFrameDue(6.9)).toBe(false);
+        expect(snowFrameDue(13.9)).toBe(true);
     });
 });
 

@@ -5,7 +5,15 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import type { GalleryCanvas } from "@/app/view/agents/canvasgallery";
-import { canvasGalleryAtom, canvasListAtom, cleanupAtom, startCleanup } from "@/app/view/agents/canvasgallerystore";
+import {
+    canvasGalleryAtom,
+    canvasListAtom,
+    cleanupAtom,
+    linkPickerAtom,
+    openLinkPicker,
+    scanAtom,
+    startCleanup,
+} from "@/app/view/agents/canvasgallerystore";
 import type { LauncherKind } from "@/app/view/agents/launcher";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -2149,6 +2157,7 @@ describe("Agent → Canvas gallery keys", () => {
         modts,
         thumbts: 0,
         bytes: 1,
+        createdts: modts,
     });
     const DAY = 24 * 60 * 60 * 1000;
     const GRID_KEYS = [
@@ -2174,7 +2183,13 @@ describe("Agent → Canvas gallery keys", () => {
         "canvases:tick",
         "canvases:cleanup-cancel",
     ];
+    const SCAN_KEYS = ["canvases:scan-cancel"];
     const live = (ids: string[]) => ids.map((id) => find(id).when!(agentCtx));
+    // the Escape bindings of the Agent surface (and the global ones) that claim the key right now
+    const escapes = () =>
+        [...buildGlobalBindings(stubModel()), ...buildAgentBindings(stubModel())]
+            .filter((b) => b.keys === "Escape" && b.when?.(agentCtx) === true)
+            .map((b) => b.id);
 
     beforeEach(() => {
         globalStore.set(centerModeAtom, "canvases");
@@ -2220,6 +2235,48 @@ describe("Agent → Canvas gallery keys", () => {
         expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
         gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
         expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
+    });
+
+    it("gives the version scan's review its Escape and takes every other view's keys away", () => {
+        gallery({ view: "scan", dir: null });
+        expect(live(SCAN_KEYS)).toEqual([true]);
+        expect(live([...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS])).toEqual(
+            [...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS].map(() => false)
+        );
+        for (const view of ["grid", "viewer", "cleanup"] as const) {
+            gallery({ view, dir: "/p/.superpowers/design/alpha" });
+            expect(live(SCAN_KEYS)).toEqual([false]);
+        }
+        // not while a text field has focus: the Escape there is the field's own
+        gallery({ view: "scan", dir: null });
+        expect(find("canvases:scan-cancel").when!(typing)).toBe(false);
+    });
+
+    it("lets exactly one Escape claim the key in the viewer and in the scan's review, never the one that leaves the centre", () => {
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        expect(escapes()).toEqual(["canvases:back"]);
+        gallery({ view: "scan", dir: null });
+        expect(escapes()).toEqual(["canvases:scan-cancel"]);
+        gallery({ view: "grid", dir: null });
+        expect(escapes()).toEqual(["agent:leave-center"]);
+    });
+
+    it("cancels the scan's review on Escape: back to the grid, nothing ticked", () => {
+        gallery({ view: "scan", dir: null, cursor: 2 });
+        globalStore.set(scanAtom, { pairs: [], ticked: new Set(["/p/.superpowers/design/alpha"]), linking: false });
+        find("canvases:scan-cancel").run(agentCtx);
+        expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
+        expect(globalStore.get(scanAtom).ticked).toEqual(new Set());
+    });
+
+    it("closes the link picker on the first Escape in a canvas, and leaves the canvas on the second", () => {
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha", cursor: 0 });
+        openLinkPicker();
+        find("canvases:back").run(agentCtx);
+        expect(globalStore.get(linkPickerAtom).open).toBe(false);
+        expect(galleryNow()).toMatchObject({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        find("canvases:back").run(agentCtx);
+        expect(galleryNow()).toMatchObject({ view: "grid", dir: null });
     });
 
     describe("in clean up", () => {

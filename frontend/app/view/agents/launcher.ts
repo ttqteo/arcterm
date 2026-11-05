@@ -112,7 +112,8 @@ export function primaryLabel(kind: LauncherKind, runtime: Runtime, resuming = fa
 export interface FooterInput {
     kind: LauncherKind;
     shape: RunShape;
-    parallelism: number;
+    // null is auto: the lead (or a plan file) sets the width
+    parallelism: number | null;
     // for a tool, the folder it opens in (toolFolder)
     project: { name: string; path: string } | null;
     // "on main", "worktree on main-agent", or "" while the branch is unknown
@@ -156,7 +157,12 @@ export function footerLine(input: FooterInput): FooterLine {
     if (input.shape === "quick") {
         return { lead: "Quick run in ", strong: input.project.name, tail: "", blocked: false };
     }
-    return { lead: `Orchestrator × ${input.parallelism} in `, strong: input.project.name, tail: "", blocked: false };
+    return {
+        lead: `Orchestrator × ${input.parallelism ?? "auto"} in `,
+        strong: input.project.name,
+        tail: "",
+        blocked: false,
+    };
 }
 
 export function filterProjects<T extends { name: string }>(rows: T[], query: string): T[] {

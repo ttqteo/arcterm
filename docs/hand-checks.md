@@ -6,6 +6,22 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The pet runs while arcterm starts up.** Install a build, then open arcterm → while the agents and
+  terminals load, the Agent screen (and the Cockpit, if you land there) shows your pet (Sprout, the Minion or Spider-Man,
+  in its Santa hat under the Christmas decor) running left and right over a thin floor line, turning to face the way it
+  runs, with "Setting up arcterm" under it, instead of grey skeleton boxes; once the roster is read the usual screen
+  replaces it. With Windows' animation effects off the pet stands still in the middle. Unit tests (`startuprun.ts`) and
+  the typecheck only; never seen in the app (`startuploader.tsx`).
+- [ ] (arcterm) **A double right-click in a terminal opens the menu.** In the installed app, in an agent's or a shell
+  terminal, with nothing selected: right-click once → the clipboard pastes once after a short beat; right-click twice
+  at your usual double-click pace → the terminal menu opens and nothing pastes. With text selected, one right-click
+  copies it and clears the highlight. The double-click window went from 300 ms to Windows' default 500 ms, after a hand
+  check where a double right-click pasted twice; only the unit tests ran (`termrightclick.ts`).
+- [ ] (arcterm) **No Resume while an agent watches a Monitor.** Have a Claude agent start a Monitor (or a
+  `while …; sleep` loop) in the background and end its turn → the Overview panel's session line reads "waiting <1m ·
+  cache …" with the header's waiting dot and no Resume button; give it a build in the background instead → "working",
+  still no button and no Stop. Once nothing runs in the background → "idle" and Resume is back. Unit tests and the
+  typecheck only (`railAction` in `agentrailmodel.ts`, `agentdetailsrail.tsx`).
 - [ ] (arcterm) **The Christmas theme in WebView2.** In the packaged app pick Settings → Appearance → Theme →
   Christmas, with an agent's terminal open → snow falls over the whole window and reads clearly fainter over the
   terminal, whose text stays readable; the lights hang under the app bar without moving it. Have an agent ask → the
@@ -14,6 +30,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Santa hat reads as a hat, red with a cream trim, not a smudge. Turn Christmas effects off → the snow, lights and hats
   go, the colours stay. Checked by the `christmas-theme` CDP scenario in the dev app; the look itself, in the packaged
   build and at real sizes, was not judged by eye (`christmassnowview.tsx`, `christmaslights.tsx`, `petsprite.ts`).
+- [ ] (arcterm) **The Christmas Snow switch.** In the packaged app with the Christmas theme on → no snow falls, and
+  Settings → Appearance shows a Snow switch, off, under Christmas effects. Turn it on with an agent printing in its
+  terminal → the flakes glide on every frame instead of stepping 12 times a second, the snow still reads fainter over
+  the terminal, and typing and scrolling stay quick. The snow paints on requestAnimationFrame (up to ~90 fps) and
+  measures the terminals every 500 ms; measured in the dev app at 73 fps on a 75 Hz display, ~7–11% of the main thread
+  while it falls (the old 12 fps snow ~0%). Checked by the `christmas-theme` scenario; smoothness not judged by eye in
+  the packaged build (`christmassnowview.tsx`, `appearance.tsx`).
 
 - [ ] (arcterm) **Christmas: the empty cockpit's hat and a finished run's gift.** With the Christmas theme on, close
   every agent so the Cockpit shows "No agents running" → the terminal-window glyph wears the Santa hat on its top-left
@@ -160,10 +183,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   every state with the commands stubbed; the haiku checks, the seats' prompts in a live council and WebKit hover are
   untried (`councilmemory.tsx`, `pkg/council/memorycheck.go`, `prompts.go`; 925805200, 04614993b).
 
-- [ ] (arcterm) An asking agent's row in the Agent tree is a steady box: get an agent to ask (a permission prompt or a
-  brainstorm question) → its row, selected or not, holds an amber wash and a 1px amber edge that never pulses (only its
-  glyph does), and no amber line or dots show outside its corners, even after the row moves or the tree scrolls;
-  answer it → the row goes back to plain. No dev app was up (`.asking-tint` in `tailwindsetup.css`, `agenttree.tsx`).
+- [ ] (arcterm) An asking agent's whole row in the Agent tree breathes: get an agent to ask (a permission prompt or a
+  brainstorm question) → its row, selected or not, fades its amber wash and 1px amber edge up and down every ~2.4s
+  (never out entirely), the row's text stays sharp over the wash, and no amber line or dots show outside its corners,
+  even after the row moves or the tree scrolls; answer it → the row goes back to plain. No dev app was up
+  (`.asking-tint` in `tailwindsetup.css`, `pulse.ts`, `agenttree.tsx`).
 - [ ] (arcterm) Running background tasks fold in the Agent tree: get an agent to leave three or more commands running
   in the background → its row shows a `3 running` chip and no task rows under it; click it → the rows list, click
   again → they fold. With one or two running, the rows show and no chip appears (`tasksShown` in `agenttreemodel.ts`,
@@ -981,13 +1005,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   full-screen app, send those lines: the fallback is a fold that no longer follows onto a full-screen Space.
   `macwindow.rs` `take_to_desktop`, `check_unfold_space`. 2026-10-17.
 
-**2026-10-19 (prompts as markdown)**
-
-- [ ] (arcterm) Agent: open an engine worker's session (a task prompt with `## Context` and ```` ```ts ```` blocks): the
-  YOU bubble shows its first six lines fading out and Show more; opened, headings, line breaks and highlighted code
-  blocks. A short typed prompt of a few lines keeps its line breaks. Same in Conversation History's compact
-  transcript. `narrationtimeline.tsx` `PromptText`.
-
 **2026-10-16 (the Office's sounds)**
 
 - [ ] (arcterm) In the real app: Cockpit → Office with real agents and a run. Are the jingles pleasant and the default
@@ -1038,11 +1055,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   run's sheet with no blank frame between the two. The Final waited only on a quick run with no DAG and did not record
   frames across the switch. `briefqueuesheet.tsx`, `briefsheet.tsx`.
 
-**2026-10-16 (queued row says Queued)**
-
-- [ ] Queue a plan `--after` a running run: its row in the Agent tree reads `Queued · after <run title>`, and a narrow
-  sidebar still shows `Queued ·` before the cut. `runqueuemodel.ts` `queuedMeta`.
-
 **2026-10-16 (the Office's Needs you notice board, run 0e23de6a)**
 
 - [ ] (arcterm) With real Needs you rows (a plan to review, a run to land, a learned rule): Cockpit → Office. The
@@ -1062,8 +1074,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   its run sheet's config line. `launcherrunfields.tsx`, `launchermodal.tsx`.
 - [ ] (arcterm) A run's sheet → Adjust: the Approvals dial saves, turning it on with a lead question waiting hands that
   question back; the palette offers **Go autonomous** / **Ask me again** on the run. `briefrunsheet.tsx`.
-- [ ] (arcterm) A run's plan review: five reviewer rows in the Agent tree, each titled `Plan review · <lens>`, and one
-  chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
 - [ ] (arcterm) Agent sidebar → a project's Conversations: an ended orchestrator run whose lead landed in `arc-wt`
   shows as one run entry under that project, not missing (counted in "elsewhere") or under a key like `006c403f`.
   `agentsidebarmodel.ts` `projectKeyResolver`, `sessionruns.go` `fillEngineTreeRoots`.
@@ -1125,14 +1135,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   edge, the footer whole, one rounded edge at each corner (the system's, no CSS border inside it), and "free of
   31.8 GB" inside the Memory card on its own line.
 
-**2026-10-15 (an agent cut off by a restart carries on)**
-
-- [ ] (arcterm) Give a hand-launched claude agent a task that takes a while, and while it works quit arcterm (or let
-  `task install` close it). Reopen: the agent comes back on its session and starts a turn on its own with "The app
-  restarted while you were working…", and goes on with the task. An agent that was idle at the quit comes back at its
-  prompt with no new turn. Same for one waiting on a permission: it asks again. `agentrestore.go` NoteAgentState,
-  RestoreLiveAgents, restoreStartArgs.
-
 **2026-10-15 (arcterm stays on its own Desktop on a Mac)**
 
 - [ ] (arcterm) With **Fold when you leave** on and arcterm full on Desktop 1: switch to Desktop 2 (Ctrl+→) and wait
@@ -1173,17 +1175,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   tried only in unit tests with a scripted roster; neither has the `--queue` path (CLI → `RunQueueAdd` → the loop →
   `CreateRun`) been tried in the running app.
 
-**2026-10-14 (leadless run row)**
-
-- [ ] With one run whose lead tab is open and one whose lead tab is closed, in the Agent sidebar: both rows have the
-  mark beside the title, the same title weight and colour, and the chip line flush under the mark; only the lead's row
-  shows tokens. `agenttree.tsx` `RunRow`.
-
-**2026-10-14 (Cockpit / Jarvis badge split)**
-
-- [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need
-  you" tab, and Jarvis says 1. Confirm the run in Jarvis and its badge goes away. `attentionstore.ts` `splitAttention`.
-
 **2026-10-14 (Conversations rescan)**
 
 - [ ] In an agent tab run `/clear` (or quit claude and start it again in that terminal): within a second the session it
@@ -1193,8 +1184,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-14 (overflow fixes)**
 
-- [ ] Open the RAM popover (app bar) with an agent named past the column: the name ends in "…" before CPU, its
-  command shrinks first, and hovering the row shows the full name. `consumerspanel.tsx`.
 - [ ] Agent → Conversation History, a run of 20+ tasks: its strip thins to fit and "N/M landed" stays in the card.
   `conversationhistory.tsx`.
 
@@ -1214,12 +1203,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   staging zero projects would wipe the dev app's). Then press **Copy path** in the rail and paste: the file's full
   path (the scenario checks it through a clipboard stub, never the real clipboard). Commit dcdd1cac8.
 
-**2026-10-14 (Agent sidebar: a failed plan review's fold)**
-
-- [ ] With an engine run whose plan review just failed (lead revising), look under the run in the Agent sidebar: the
-  finished fold reads `1 review · 1 failed` with a red dot, not a green check. Once the lead resubmits and round 2
-  starts, the fold goes back to a check. Tried only in unit tests (`agenttreemodel.test.ts`).
-
 **2026-10-14 (Claude mod on a Team account: ask dialog, Token burn gate)**
 
 - [ ] After the next build and `task install`, in a Claude agent: have it ask a choice question; answer once in Claude's
@@ -1227,12 +1210,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   card shows, not two. Dismiss on the card with the dialog still open: about 1.5 s later Claude gets "dismissed". Ask it
   to start 3 subagents, pick allow-this-turn on the Token burn card, then a new prompt that starts 3 again: the card
   asks again. Tried only in unit tests, and the transcript path in a headless `claude -p`.
-
-**2026-10-14 (Heavy jobs: run steps named by the run's title)**
-
-- [ ] With an engine run whose Check, Verify or Setup step waits or runs in the heavy-job queue, open the app bar's Jobs
-  chip: that row's second line reads `<run title> · Check · base tree` (the plan's title, else the goal's first line),
-  not `Run 973afb · …`, and ↗ still opens the run. `frontend/app/cockpit/jobqueuepanel.tsx`.
 
 **2026-10-14 (What's new: highlight cards, the rest folded)**
 
@@ -1259,11 +1236,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   toast. Leave it unanswered 30 s: the Windows toast follows. Answer within 30 s, or click arcterm, and no toast
   comes. Commit "fix(notify): a folded Sprout says needs-you first, the OS toast only if it still waits".
 
-**2026-10-14 (Sprout names the project)**
-
-- [ ] In Float or folded, let an agent finish a turn: Sprout's bubble reads "NOTICE · <project>" above "<agent>
-  finished"; an agent stopped at a permission prompt reads "NEEDS YOU · <project>". Commit "fix(pet): Sprout names the project".
-
 **2026-10-14 (fold pause box)**
 
 - [ ] With "Fold when you leave arcterm" on, fold into Sprout and hover it: "Restore, don't fold for" shows only the
@@ -1280,25 +1252,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (kaeltran16 sync: cherry-picked fixes and features)**
 
-- [ ] A run with a Final stage: once Check/Verify finish, click the step in the final stage pane and in the run's
-  rail: its kept output opens. `finalstagepane.tsx`, `pkg/orchestrate/final.go` `<round>-steps/`.
-- [ ] Sessions → an ended session → Resume: the new agent tab is named after the session's task, not the project.
-  `sessionsruns.ts` `resumeLaunchOpts`.
 - [ ] `task dev` (Windows) while an editor is in front: the dev window opens behind it, restored, without taking
   focus. On a Mac the dev window still appears. `src-tauri/src/main.rs` `show_behind_foreground`.
 - [ ] Setup → shared instructions with a long line: the editor wraps it instead of scrolling sideways.
-
-**2026-10-13 (Initiative bar: the next chunk is no longer accent)**
-
-- [ ] Jarvis → Initiatives: a row whose chunks are all pending (e.g. Repo hygiene 0/2) shows an all-grey bar, no
-  accent segment; a chunk set to active is still accent. `effortmodel.ts` `buildEffortCard` segments.
-
-**2026-10-13 (one click on the folded Sprout holds its card; Mac: the Dock icon over a full-screen app)**
-
-- [ ] Fold into Sprout, click it once: after a beat the card of agents and terminals opens (no Jarvis chat) and stays
-  with the cursor moved off it; a click on a row floats on it. Click Sprout again, press Esc, or click another app:
-  the card closes and does not pop back while the cursor still rests on Sprout. A double-click restores.
-  `sprout-mini.tsx`, `miniclickthrough.ts`.
 
 **2026-10-13 (Jarvis popup: folded chat closes on a click away, no Ask while folded, compact composer)**
 
@@ -1324,25 +1280,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   grew to 320x336); and typing in the Custom… box keeps the card open when the cursor leaves it. (`sprout-mini.tsx`
   `FoldPauseRow`, `foldpause.ts`)
 
-**2026-10-13 (Sleeping and background-task rows in the sidebar)**
-
-- [ ] (arcterm) **Settings → Appearance → Agent sidebar hides row meta.** Turn off Model, then Tokens, then Age,
-  then Branch: each disappears from every agent row in the sidebar at once and comes back when turned on; the card's
-  changed dot shows while one is off, and Revert turns it back on. It survives a reload. `rowfields.ts`,
-  `rowfieldsstore.ts`, `settingspages/appearance.tsx`.
-
-**2026-10-13 (Classic-renderer Claude after a restart scrolls)**
-
-- [ ] (arcterm) **A Claude that comes back on the classic renderer scrolls.** Rebuild wavesrv, then restart arcterm twice
-  within ~10 s so a resumed Claude prints "fullscreen renderer didn't finish starting last time": its pane should
-  scroll with the wheel (normal screen, scrollback), not sit stuck. `pkg/util/shellutil` reset sequence (`?1047l`).
-
-**2026-10-13 (Usage cold first open)**
-
-- [ ] (arcterm) **Usage fills in after a fresh start.** Restart arcterm (the build with this fix), open Usage at once:
-  the stat tiles, By session and Subagent cost replace their placeholders within a few seconds and never stay on
-  them; switching 7 days / All time is not needed. commit "scans get a 60s RPC timeout and share in-flight reads".
-
 **2026-10-13 (close hands focus to the neighbour)**
 
 - [ ] (arcterm) **Closing the shown agent opens its neighbour.** In one pane, with three or more agents in a project,
@@ -1352,14 +1289,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (folder running count, Spider-Man web)**
 
-- [ ] (arcterm) **A project folder counts its running agents.** With an agent working in a project, its folder row in
-  the Agent sidebar reads a pulsing dot and `1` (hover: "1 running"), open or folded, and drops it when the agent goes
-  idle; hovering the folder shows no button (a terminal or a tool opens from New). commit "project folders count running agents"; the
-  dot and number, commit "folded folder stays inside the sidebar".
-- [ ] (arcterm) **A folded folder stays inside the sidebar.** Fold a project with 10+ agents while one runs and one
-  asks: the row reads its name (at least a few letters), the dot and number, `N asking`, then the agent and terminal
-  marks with their numbers (hover: "13 agents · 1 terminal"), all inside the sidebar. commit "folded folder stays
-  inside the sidebar".
 - [ ] (arcterm) **Spider-Man's web stays one piece.** Theme Spider-Man, restart on the Cockpit surface, then open
   Agent: the corner web runs across the rail and the tree as one, with no second corner at the tree's left edge.
   commit "project folders count running agents".
@@ -1371,19 +1300,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   Servers row reads `this agent` with a log button, and the footer's Servers popover badges it `claude · <agent>`,
   not `no owner`. `frontend/app/view/agents/devserversmodel.ts` (`matchEndedTask`).
 
-**2026-10-13 (sleeping agent title)**
-
-- [ ] (arcterm) **A sleeping agent's row keeps its title.** Open the Agent surface with agents asleep (or put one to
-  sleep from its row's menu): each row reads the conversation's title, as its Conversation History row does, not just
-  the project name ("portal"). Holds after an arcterm restart too, once the Conversations scan has loaded.
-
 **2026-10-13 (Alt+Tab grows Sprout back; Jarvis card link)**
 
-- [ ] (arcterm) **Alt+Tab grows any fold back, maximized (Windows).** Fold with the Sprout button (not Fold when you
-  leave) from a restored (not maximized) Full window, click into another app, Alt+Tab back to arcterm: the window opens
-  in Full, maximized. The same from Float: it comes back in Full, maximized, not as the float. A click on Sprout from
-  the other app leaves it folded; a toast click that opens the chat leaves it folded too. `waveapp.log` logs
-  "back in arcterm: growing back to Full, maximized".
 - [ ] (arcterm) **A long Open link ends in "…" in the folded Jarvis card.** With a run notice whose title is long (an
   installer build), open the card from Sprout: the "Open <title>" link stays inside the card, cut with "…", and its
   hover shows the whole title.
@@ -1394,13 +1312,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   Claude account, open New agent and pick Claude Code: the footer reads `Claude: <label>` (or the /login email while
   Default is active), for a new session and a resume alike; pick Codex or Terminal and it goes; with only /login it
   never shows. `launcher.ts` `footerLine` (since rewritten: it no longer names the path and branch).
-
-**2026-10-13 (App bar usage button)**
-
-- [ ] (arcterm) **RAM and plan meters, one button.** In the app bar, the free RAM and the 5h / wk meters sit in one
-  bordered button with a divider between them. Click the RAM figure: Consumers opens ranked by RAM; click a meter: it
-  opens ranked by tokens; a second click closes it. Hover a meter: the tooltip says "resets at HH:MM" for the 5-hour
-  window and "resets <Day> HH:MM" for the weekly one, not a countdown. Not yet seen in the running app.
 
 **2026-10-13 (Sync from the kaeltran16 fork)**
 
@@ -1415,9 +1326,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `frontend/app/cockpit/resmon.ts`.
 - [ ] (arcterm) **Review marks in the Diff surface's Log tab.** Open a commit's file, press `v`: the row's check fills and
   the next unreviewed file opens; the bar reads 1/n reviewed. `frontend/app/view/agents/changedfilelist.tsx`.
-- [ ] (arcterm) **Final verification row.** Start a plan run with a Final: once the dag is finalizing, the agent list
-  shows a Final verification row under the run, its pane shows the steps, and the Agent rail's Final section shows for
-  it. `frontend/app/view/agents/agenttree.tsx`, `agentsurface.tsx`.
 - [ ] (arcterm) **Bubble click opens the agent.** When Jarvis says a one-off line for an agent (a cache-miss notice),
   clicking the bubble opens that agent's terminal instead of the chat. `frontend/app/view/jarvis/petview.tsx`.
 
@@ -1474,35 +1382,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `wsh agents list`'s `working` rows, also past four, where the lit windows stop; with none working and Jarvis idle the
   pill is gone, and a waiting chip sits under the pill. `frontend/app/cockpit/sprout-mini.tsx`.
 
-**2026-10-13 (Sidebar: folds slide open and closed)**
-
-- [ ] (arcterm) **Sidebar folds animate.** Click the Conversations header and a project folder in Conversations: the
-  rows slide closed and open (~0.3 s) instead of vanishing; the first paint and a section reopened with its folders
-  open do not replay. Tab to a row after it opens: its focus ring is not clipped. (The Active and Terminals sections
-  became the one project tree, whose folders animate row by row.) `agenttree.tsx` FoldBody, `motiontokens.ts`
-  foldReveal, `agentsidebarmodel.ts` folderBlocks.
-
-**2026-10-13 (Sidebar: a plan run's line drops the lead suffix)**
-
-- [ ] (arcterm) **A run's line shows its count.** Start a run from a plan file and look at its row, and its lead's
-  row (with tokens and age), in a narrow sidebar: the line reads `⌄ 1  Plan review · 0/N` (later `Working · k/N`)
-  without being cut; widen the sidebar and the chip reads `1 worker` again. Hovering the progress shows
-  `… · lead starts if needed` (or `lead closed`), hovering the chip `1 worker`.
-
-**2026-10-13 (Click a file's path to copy it)**
-
-- [ ] (arcterm) **The path copies on click.** Open a file in an agent's File tab, hover its path (a grey fill, the
-  tooltip shows the full path and "Click to copy"), click it (a check shows after the path, the full path is on the
-  clipboard); no copy icon beside Pin. The same in Code's path bar above the editor.
-
-**2026-10-13 (Terminal: right-click copies or pastes)**
-
-- [ ] (arcterm) **Right-click copy/paste in a terminal.** In an agent's or a shell terminal: highlight text (it lands
-  on the clipboard), right-click once with it still selected (copies, the highlight clears); right-click with nothing
-  selected (the clipboard pastes after a short beat); right-click twice quickly (the menu opens, nothing pastes).
-  Settings → Terminal → Right-click to paste off: one right-click opens the menu again. Also try it on a Mac (no word
-  gets selected under the pointer). `term.tsx` handleContextMenu, `termrightclick.ts`.
-
 **2026-10-13 (Canvases reopen from the palette)**
 
 - [ ] (arcterm) **Open a canvas after a restart.** Restart arcterm, select an agent in this repo, open the palette
@@ -1512,48 +1391,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (Resume with a message; Transcript in the New dialog's footer)**
 
-- [ ] (arcterm) **Resume from the transcript with a message.** Open an ended session's transcript (History, or
-  Transcript in the New dialog), type a line, press Enter: a new tab resumes the session and the line arrives as its
-  next message. Shift+Enter is a newline, a Telex/IME Enter does not send, empty + Enter just resumes. A live session
-  shows Jump → in the header and no box. `sessionsdetail.tsx` ResumeComposer.
-- [ ] (arcterm) **Transcript sits beside Launch.** New dialog → pick a session under Resume: the footer reads Cancel ·
-  Transcript shift+enter · Resume enter and the row has no button. Shift+Enter from the Start or Project column
-  opens the transcript; in the Task box it is a newline. `launchermodal.tsx` footer, `launcher.ts` launcherKey.
 - [ ] (arcterm) **A resume pick lapses after 30 seconds closed.** New → pick a session under Resume, type a task,
   close; reopen at once: the session is still picked. Close, wait over 30 seconds, reopen: New session is picked
   and the task text is still there. `launcherstore.ts` RESUME_PICK_KEEP_MS.
-- [ ] (arcterm) **A sleeping agent's cell has a message box.** Sleep an idle agent (row menu → Sleep), select it: under
-  its conversation, a box reading "message <name> to wake it… (Enter)", lined up with the transcript. Type a line and
-  press Enter: the button reads Waking…, the agent wakes and the line arrives as its next message. In a 2x2 grid each
-  sleeping cell has its own box. `sleepingtranscript.tsx`. CDP `agent-sleep` step 4b passes (box, Waking…, the
-  message reaches agentswake) on a mocked wake; left by hand: a real wake delivering the line.
-- [ ] (arcterm) **Open asleep from the New dialog.** New → Claude → pick a session under Resume: the footer reads
-  Cancel · Open asleep shift+enter · Resume enter. Open asleep (or Shift+Enter): the dialog closes, the session is a
-  new row on the agent list with the moon, its cell shows the conversation and the card "Sleeping since <its last
-  activity>" (with the day when not today), and no claude process starts. Type in the box under it and press Enter:
-  it wakes on that session and the line arrives. Pick a codex session: the button is still Transcript.
-  `launchermodal.tsx` resumeSecondary, `agentsleep.ts` asleepLaunchMeta. CDP `launcher-resume` step 6 passes (the
-  button, the row with the moon, the cell, the block meta, the server lists it sleeping); left by hand: Wake or a
-  message starts claude on that session.
-- [ ] (arcterm) **A sleeping agent survives a restart.** Sleep an agent, quit arcterm and reopen it: the agent is still
-  on the agent list with the moon (not under Terminals) and its cell shows its conversation, not "No transcript
-  found". Same after a reload (Ctrl+R). `agentsleep.ts` sleepingStatus, `liveagents.ts`.
-
-**2026-10-13 (New: Ctrl+V pastes into the Task)**
-
-- [ ] (arcterm) **Ctrl+V in the New dialog lands in the Task.** Open New (an agent row picked, focus on the Start or
-  Project column), press Ctrl+V with text copied: focus moves to the Task box and the text lands at its end; with an
-  image copied, a thumbnail appears under it. On a run picked from a goal it lands in the Goal. `launcher.ts`
-  launcherKey `paste`, `launchermodal.tsx` onKeyDown.
-
-**2026-10-13 (Fold when you leave: stricter, on top; Sprout click opens the chat)**
-
-- [ ] (arcterm) **Auto fold only for a maximized or full-screen app, and Sprout on top of it.** Windows, Fold when you
-  leave on, arcterm maximized: switch to a maximized Chrome and wait 3 s: Sprout folds and sits above Chrome
-  (`waveapp.log`: `[fold] lifting Sprout on top: lifted, joined to the foreground`). A big unmaximized window, a dialog
-  or a popup that takes the focus does not fold it; neither does coming back within 3 s. Alt+Tab or click back to
-  arcterm: it grows back (`[fold] main window took the foreground`). `foreground.rs` covered_on_windows,
-  raise_topmost, main-foreground; `floatstore.ts` setupAutoSprout.
 
 **2026-10-12 (folded Sprout: a click restores, every Space)**
 
@@ -1566,17 +1406,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 **2026-10-12 (Spider-Man pet)**
 
 - [ ] (arcterm) Spider-Man pet: drag and rappel, the crawl and hang under the app bar (hover cuts it), the web-swing on fold and unfold, the rooftop's windows and spider-sense, and the Spider theme — look in the running app.
-
-**2026-10-12 (Fold when you leave: leave folds, return grows back)**
-
-- [ ] (arcterm) **Leaving folds, coming back grows back, overlays do nothing.** On Windows, with **Fold when you leave**
-  on and arcterm maximized: switch to an app covering over 80% of arcterm (maximized or a big window): Sprout folds
-  after ~1 s; one covering half or less leaves it be. Come back by Alt+Tab, by the taskbar button, or by clicking
-  arcterm: it grows back each way. Press Win+Shift+S, or lock the screen (Win+L): it does not fold. Hover Sprout and
-  click an agent while auto-folded: Float opens on it, the window does not grow back. Fold with `Ctrl+M`, switch away
-  and back: it stays folded; one click on the taskbar button grows it back, also when Sprout was already in front (it
-  does not minimize). `waveapp.log` shows `[fold] leaving…`, `[fold] back in arcterm…`, `[tauri] taskbar button…`.
-  `foreground.rs` is_overlay / watch_taskbar, `floatstore.ts` setupAutoSprout.
 
 **2026-10-12 (A lead-less run's row)**
 
@@ -1596,79 +1425,18 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   running tasks are rows under the agent now. `agenttree.tsx` RuntimeGlyph, `donesuggest.ts`; the `sidebar-agent-glyph`
   scenario covers the colours and Close on fixture rows.
 
-**2026-10-12 (Mouse wheel in a restored Claude fullscreen pane)**
-
-- [ ] (arcterm) **The wheel scrolls a Claude agent in fullscreen (`"tui": "fullscreen"`) after arcterm restarts.**
-  Start a Claude agent, have a few turns so it overflows, wait ~10 s (the pane's cache is saved when idle), restart
-  arcterm, then wheel over that agent: the conversation scrolls. Before, the restored pane sent X10 mouse reports
-  Claude ignores (the cache lost `ESC[?1006h`). A pane restored before this fix stays broken until its Claude is
-  relaunched. `termmodes.ts`, `termwrap.ts` processAndCacheData.
-
 **2026-10-12 (Run sheet with a long goal)**
 
-- [ ] (arcterm) **A long goal opened with Show more no longer swallows the run sheet.** In Jarvis, open a run whose
-  goal is several paragraphs and click Show more: the top (verb, meter, goal) scrolls on its own within half the
-  sheet, the tasks below still scroll, and the dock at the bottom (with the screenshots button) stays in view.
-  `runsheet.tsx` Reading.
 - [ ] (arcterm) **An earlier Final round's screenshots stay while the next round runs.** On a run whose Final is on
   round 2 or later and still running (reading says "final: running Verify"), the dock shows **Screenshots · N**, and
   the Final check row under the tasks reads "N shots · round 1"; both open round 1's shots. `finalshotsmodel.ts`.
 
-**2026-10-12 (Outline with many headings)**
-
-- [ ] (arcterm) **A long document's Outline scrolls instead of squeezing.** Open a markdown file with 30+ headings
-  in the Agent panel's File tab (Preview), click Outline: each row is full height and readable, and the list
-  scrolls. `docoutlineview.tsx`.
-
-**2026-10-12 (Final check viewer arrows)**
-
-- [ ] (arcterm) **← → walk every screenshot of a Final check round.** Open a run's Final check screenshots on a
-  round of plain PNGs (one tab per file): → and ← move tab to tab, and the selected tab scrolls into view; on a
-  manifest round, → past a scenario's last shot opens the next scenario's first. ↑ ↓ still step scenarios.
-
-**2026-10-12 (type into the task from the New dialog's Start column)**
-
-- [ ] (arcterm) **A letter in the Start column starts the task.** Mod+N, `1`, type `fix`: focus is in Task and it
-  reads `fix`, a saved draft kept before it. With Unikey/EVKey Telex, typing `vieets` from the Start column gives
-  `viết`, the first letter included; with the Windows Vietnamese IME the first key may do nothing (it is skipped on
-  purpose). Pick Orchestrate → A plan file: letters do nothing; pick Terminal: nothing; the footer shows `a–z task`
-  only when a letter would write. (`launcher.ts` `launcherKey` "write", `launchermodal.tsx`)
-
-**2026-10-12 (path links from another folder)**
-
-- [ ] (arcterm) **A path an agent names from a subfolder is a link.** In an agent that worked on
-  `docs/plans/cycle2/plan_rulegen.md` from the notes root and wrote it back as
-  `cycle2/plan_rulegen.md`: hovering the path underlines it, Ctrl+click opens the file in the
-  agent's File tab. A path two touched files both end in stays plain. (`pathlinks.ts` `matchKnownPath`,
-  `pathlinkroute.ts`, `termpathlinks.ts`)
-
-**2026-10-12 (images in File tab and Code)**
-
-- [ ] (arcterm) **An image opens instead of "Binary file", outside Code.** Open a `.png` from the Agent panel's Files
-  list and in Code's side column: it shows fitted with "W × H · size" under it; a click shows it at its own size, a
-  second click fits it again. Code itself does this for a PNG (tried 2026-11-02); an `.svg` is an Actionable bug.
-  (`imageframe.tsx`, `codeclassify.ts`)
-
-**2026-10-12 (File tab header)**
-
-- [ ] (arcterm) **Icon-only Outline, Wrap and Pin in the File tab.** Open a markdown file in the Agent panel's File
-  tab: the header shows Preview/Source then icons only (Outline, Pin, Copy path, Open in Code); Pin turns into a filled
-  accent pin when on, and its tooltip says "Unpin this file"; Outline still opens its list. In Source, the Wrap icon
-  toggles accent. On Code, the bar above the editor shows Wrap, Pin and Copy path as icons the same way, `Alt+Z`
-  still lights Wrap, and Copy path flashes a check. (`filetab.tsx`, `docoutlineview.tsx`, `codepathbar.tsx`)
-
 **2026-10-12 (shortcuts, window, terminal)**
 
-- [ ] (arcterm) **Plain Ctrl in a terminal, Windows.** In a Claude Code terminal: `Ctrl`+`P` opens Search, `Ctrl`+`G`
-  opens the go-to bar, `Ctrl`+`N` the New dialog, `Ctrl`+`M` folds into Sprout, `Ctrl`+`J` opens What's waiting
-  (Shift+Enter still makes a new line); `Ctrl`+`Shift`+`W` asks to close the agent. `d80e14b74` and the commit after it
 - [ ] (arcterm) **Mac chords.** `⌘=` / `⌘-` / `⌘0` zoom (not Control any more); `⌘⇧Enter` toggles terminal
   fullscreen from inside the terminal; `⌘K` clears the terminal (Mac only). `cc7a43629`
 - [ ] (arcterm, Mac) **The `?` button** at the bottom bar's right end on every surface opens the cheat sheet (tried on
   Windows 2026-11-02). `cc7a43629`
-- [ ] (arcterm) **Auto fold, Windows** (Settings → Jarvis & Office → Folding → Fold when you leave, on): a maximized or full-screen
-  app on arcterm's screen folds it after ~1 s; a small window, a half-screen snap, the Start menu or a window on the
-  other screen leaves it be. `d80e14b74`
 - [ ] (arcterm) **Auto fold, Mac.** `foreground.rs`'s macOS branch now reads the window list (`CGWindowListCopyWindowInfo`)
   and folds when the frontmost other window above arcterm covers 80% of it; the first one, `NSWindow.occlusionState`,
   never folded (a zoomed Chrome right over arcterm left it "visible"). Unit-tested, and checked once against the live
@@ -1679,28 +1447,12 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   shown one wears `[`, the one after it `]`. `d80e14b74`
 - [ ] (arcterm) **Double-click a sidebar row** (a run's lead row too): it selects the agent and typing goes into its
   terminal; it no longer folds the workers (the `N workers` chip does). `d80e14b74`
-- [ ] (arcterm) **Ctrl+C copies, Windows.** In a terminal, select text and press `Ctrl`+`C`: it is copied and the
-  selection clears, nothing is interrupted; press it again with nothing selected and it interrupts. After a restart
-  of `task dev` (the default lives in wavesrv), highlighting no longer copies unless Copy on select is on.
-  `6bb81dd0b`
 - [ ] (arcterm) **Tick a task box in a markdown Preview.** Open a `.md` with `- [ ]` lines in the Agent panel's File
   tab, Preview: click a box; it ticks, the file on disk now reads `- [x]` on that line, and the scroll stays put.
   Click again to clear it. `65179f6b8`
 - [ ] (arcterm) **Worktree facts in the Agent panel.** Select an agent working in a linked worktree (a run worker):
   Overview's session block reads `project · model`, then `⑂ wave/ae9e6a71 · 📁 ae9e6a71` (ids cut to 8 digits) with
   the full branch and path in the tooltips; an agent in the main checkout keeps `project · ⑂ branch · model`. `7c5074e8f`
-- [ ] (arcterm) **The redrawn RAM and tokens panel.** Open it from the app bar: a RAM bar (arcterm, other apps, free)
-  under the free-memory line, column heads, tokens and spend in their own columns, and a row's Stop, Sleep and
-  → Sonnet only while you point at it; arcterm's own processes on one line. `70bfd1cd9`
-- [ ] (arcterm) **Pasted images in the transcript.** Paste an image into the New dialog's Task and start the agent:
-  the image shows in the transcript, live and when the session is read back, not "no longer on disk". In the New
-  dialog a click on the thumbnail shows it larger under the row, and another click shrinks it. `78fad34cf`
-- [ ] (arcterm) In the installed app, right-click a project folder in the Agent tree → Open overview: the page shows that
-  project's asking agents and running work, and Show in Explorer opens the folder (project Overview, `45f8bd7da`).
-  Two things Final's shots raised: the branch pill and change count were missing in the shot with agents seeded
-  (`project-overview-8.png`; present in step 4), so check they come back each time the page opens; and the Cockpit's
-  Needs you rows inside the Overview's panel keep the strip's small type and fixed label columns, unlike the asking
-  rows above them. Say if either reads wrong.
 - [ ] (arcterm) **A real Brainstorm with a Claude agent.** In the dev app, start a Claude agent on a scratch project, ask
   it to brainstorm a small feature, and drive it only through the pane: the Brainstorm switch appears on the agent's
   first write of `brainstorm.json`; each answer is one write per turn, with a short terminal reply; an approach question shows "Judge's read" and
@@ -1843,3 +1595,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   across the message: no tip shows. Rest it on the Planner chip above the text → after about half a second "Router
   chose …" opens above the chips, never over the message; a short button name (Copy, Pin) still shows at once.
   Vitest and `task check:ts` only (`titletip.ts` `tipDelay`, `titletiphost.tsx`, `ReachRow`); no dev app was up.
+- [ ] (arcterm) **New run takes the profile's auto width.** Jarvis → Profile → Parallel workers "auto" → + Run →
+  Orchestrate: Workers at once reads `auto` (− disabled), the footer says "Orchestrator × auto in …"; Start run → the
+  run's DAG width is the lead's (or the plan's) pick, not 3. + steps to 3; − at 1 returns to auto. Set the profile to 5
+  → a fresh New run shows 5. Vitest and `task check:ts` only (`runconfigstore.ts`, `WorkerStepper` `unsettable`,
+  `newrun.ts`); no dev app was up.

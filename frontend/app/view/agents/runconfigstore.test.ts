@@ -54,7 +54,7 @@ describe("resetRunConfig", () => {
         expect(globalStore.get(runShapeAtom)).toBe("quick");
         expect(globalStore.get(runRouteAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
     });
 
     // carrying "orchestrator, 6 wide" onto the next channel would arm a dispatch the user
@@ -102,7 +102,7 @@ describe("stepParallelism", () => {
     // value for every click in the batch, so a fast double-click advanced one step. Measured over CDP
     // before the fix — twelve clicks moved 4 -> 5.
     it("accumulates every click in a batch", () => {
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        setParallelism(DEFAULT_PARALLELISM);
 
         stepParallelism(1);
         stepParallelism(1);
@@ -120,7 +120,21 @@ describe("stepParallelism", () => {
         for (let i = 0; i < 20; i++) {
             stepParallelism(-1);
         }
-        expect(globalStore.get(parallelismAtom)).toBe(1);
+        // below 1 is auto, and − at auto stays there rather than wrapping round
+        expect(globalStore.get(parallelismAtom)).toBeNull();
+    });
+
+    // the profile's Parallel workers "auto" (0) leaves the width to the lead; the launcher shows it as auto
+    it("starts at auto and steps up from it to the default width", () => {
+        expect(globalStore.get(parallelismAtom)).toBeNull();
+        stepParallelism(1);
+        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+    });
+
+    it("goes back to auto from a width of 1", () => {
+        setParallelism(1);
+        stepParallelism(-1);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
     });
 });
 
@@ -155,7 +169,7 @@ describe("resetRunConfigForChannel", () => {
         resetRunConfigForChannel("ch-2");
 
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
     });
 
     it("treats leaving a channel for a non-channel subject as a change", () => {
@@ -240,7 +254,7 @@ describe("endRunConfigDraft", () => {
         endRunConfigDraft(null);
 
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
         expect(globalStore.get(configTouchedAtom)).toBe(false);
     });
@@ -266,7 +280,7 @@ describe("hydrateRunConfigFromProfile", () => {
     it("leaves the launcher's defaults alone where the profile is silent", () => {
         hydrateRunConfigFromProfile({ playbook: [] } as JarvisProfile);
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
     });
 
@@ -302,7 +316,7 @@ describe("hydrateRunConfigFromProfile", () => {
         hydrateRunConfigFromProfile({ playbook: [], defaultmode: "quick" } as JarvisProfile);
 
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
     });
 

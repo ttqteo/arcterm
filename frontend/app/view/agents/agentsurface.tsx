@@ -20,7 +20,6 @@
 // cycle broken.
 
 import { CockpitFocusPane } from "@/app/cockpit/focus-pane";
-import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { restoringModalFocus, setModalFocusFallback } from "@/app/modals/modalfocus";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildAgentBindings } from "@/app/store/keybindings/bindings";
@@ -102,6 +101,7 @@ import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
 import { SleepingCard } from "./sleepingcard";
 import { SleepingTranscript } from "./sleepingtranscript";
+import { StartupLoader } from "./startuploader";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
 import { recentTabsAtom } from "./tabswitcherstore";
@@ -636,7 +636,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
 
     if (!agent) {
         if (holdForGrid || rosterLoadPhase(seeded, agents.length) === "loading") {
-            return <AgentSurfaceSkeleton />;
+            return <StartupLoader />;
         }
         // with no agent the centre is the launch hero, or History or a session read; the tree stays beside it, since it is
         // where conversations and terminals are opened from
@@ -910,24 +910,6 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
             ) : (
                 <SessionPane model={model} />
             )}
-        </div>
-    );
-}
-
-// the tree column and the terminal pane, so the first agent lands where the skeleton was
-function AgentSurfaceSkeleton() {
-    return (
-        <div aria-hidden="true" className="flex h-full w-full bg-background">
-            <div className="flex w-[248px] shrink-0 flex-col gap-3 border-r border-border bg-surface px-4 pt-4">
-                <SkeletonLine className="h-[12px] w-[90px]" />
-                {[0, 1, 2, 3].map((i) => (
-                    <SkeletonLine key={i} className="h-[30px] w-full rounded-[8px]" />
-                ))}
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
-                <SkeletonLine className="h-[18px] w-[220px]" />
-                <Skeleton className="min-h-0 flex-1 rounded-[10px]" />
-            </div>
         </div>
     );
 }

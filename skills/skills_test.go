@@ -4,7 +4,9 @@
 package skills
 
 import (
+	"encoding/json"
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -25,6 +27,38 @@ func frontmatterName(t *testing.T, doc string) string {
 		}
 	}
 	return ""
+}
+
+// canvasIndexExample is the one-line canvas.json shape the design skill documents (the code span that opens with {"v":).
+var canvasIndexExample = regexp.MustCompile("`(\\{\"v\":[^`]*)`")
+
+// TestDesignSkillVersions pins what the design skill teaches about canvas versions: the agent writes `replaces`
+// when a new canvas redraws an older one, and keeps `replaces` and `notreplaces` through every rewrite of canvas.json.
+// The documented index shape carries both keys and stays valid JSON, so an agent copying it writes a file Arc can read.
+func TestDesignSkillVersions(t *testing.T) {
+	doc, err := fs.ReadFile(FS, "design/SKILL.md")
+	if err != nil {
+		t.Fatalf("design/SKILL.md is not embedded: %v", err)
+	}
+	text := string(doc)
+	for _, want := range []string{"replaces", "notreplaces"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("design/SKILL.md does not mention %q", want)
+		}
+	}
+	m := canvasIndexExample.FindStringSubmatch(text)
+	if m == nil {
+		t.Fatalf("design/SKILL.md has no canvas.json index example (a code span opening with {\"v\":)")
+	}
+	var index map[string]any
+	if err := json.Unmarshal([]byte(m[1]), &index); err != nil {
+		t.Fatalf("the canvas.json index example in design/SKILL.md is not valid JSON: %v\n%s", err, m[1])
+	}
+	for _, key := range []string{"replaces", "notreplaces"} {
+		if _, ok := index[key]; !ok {
+			t.Errorf("the canvas.json index example in design/SKILL.md has no %q key", key)
+		}
+	}
 }
 
 func TestShippedSkills(t *testing.T) {

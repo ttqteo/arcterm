@@ -5,6 +5,7 @@
 // summary and the worktree line under its branch. No React.
 
 import { usageLevel, type AgentVM } from "./agentsviewmodel";
+import type { ShownState } from "./bgactivity";
 
 // a tool used this few times reads dimmer, so the verbs doing the work stand out
 const TOOL_DIM_AT = 3;
@@ -82,19 +83,28 @@ export function cacheRewriteTitle(pct: number | undefined, max: number | undefin
 
 export type RailAction = { kind: "resume" | "stop" };
 
-// railAction is the session block's one control: Resume nudges an idle agent, Stop interrupts a turn. An agent with
-// no live terminal has nothing to drive.
-export function railAction(state: AgentVM["state"], live: boolean): RailAction | null {
+// railAction is the session block's one control: Resume nudges an idle agent, Stop interrupts a turn. An idle agent
+// whose background work still runs (`activity`, bgactivity.ts: a Monitor, a build) wakes on its own when that work
+// reports, so it offers neither: Resume would only spend a turn re-reading the context, and there is no turn to stop.
+// An agent with no live terminal has nothing to drive.
+export function railAction(
+    state: AgentVM["state"],
+    activity: "working" | "waiting" | null,
+    live: boolean
+): RailAction | null {
     if (!live) {
         return null;
     }
-    return { kind: state === "idle" ? "resume" : "stop" };
+    if (state !== "idle") {
+        return { kind: "stop" };
+    }
+    return activity == null ? { kind: "resume" } : null;
 }
 
-// railStatusLine is the session block's state line: the session's state and how long it has held it, and how long the
-// prompt cache has left (formatCacheCountdown's "—" is a cache nobody has read yet, which the line leaves out). An
-// ended session has no cache to keep warm.
-export function railStatusLine(o: { state: AgentVM["state"]; age: string; ended: boolean; cache: string }): string {
+// railStatusLine is the session block's state line: the session's shown state and how long it has held it, and how
+// long the prompt cache has left (formatCacheCountdown's "—" is a cache nobody has read yet, which the line leaves out).
+// An ended session has no cache to keep warm.
+export function railStatusLine(o: { state: ShownState; age: string; ended: boolean; cache: string }): string {
     if (o.ended) {
         return `ended ${o.age} ago`;
     }

@@ -805,15 +805,15 @@ func councilStartData(t *testing.T) wshrpc.CommandCouncilStartData {
 	if err != nil {
 		t.Fatalf("ExpertsFor: %v", err)
 	}
-	// the canned round 1 cites pkg/<expert>.go:1; the file exists so the cite resolves and the evidence gate keeps the
-	// direction in the top instead of folding it as a guess
+	// the fake's proposals cite pkg/<expert>.go:1: give each a file there, so the cite check reads them (Read code) and
+	// a Review's evidence gate keeps their direction in the top instead of folding it as a guess
 	project := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(project, "pkg"), 0o755); err != nil {
-		t.Fatalf("mkdir pkg: %v", err)
+		t.Fatal(err)
 	}
 	for _, e := range experts {
 		if err := os.WriteFile(filepath.Join(project, "pkg", e.Id+".go"), []byte("package pkg\n"), 0o644); err != nil {
-			t.Fatalf("write cited file: %v", err)
+			t.Fatal(err)
 		}
 	}
 	return wshrpc.CommandCouncilStartData{Project: project, Feature: "Idle sleep for services", Experts: experts}
@@ -873,10 +873,19 @@ func TestCouncilStartRunsTheRoundsToDone(t *testing.T) {
 			t.Errorf("%s calls = %d, want %d", kind, got, want)
 		}
 	}
-	// round 2 runs early per seat: each seat reviews once, then a catch-up that makes a call only when something is left
-	// (pkg/council reviewPass), so which seats were ready first sets the count, between one and two passes per seat
-	if got := len(fake.calls("r2")); got < 4 || got > 8 {
-		t.Errorf("r2 calls = %d, want one early pass per seat and at most one catch-up each (4..8)", got)
+	// round 2 runs early: each seat makes an early pass over the ideas already checked and a catch-up after the
+	// barrier, or the catch-up alone when nothing was ready for it early, so it makes one or two reply calls
+	r2 := map[string]int{}
+	for _, req := range fake.calls("r2") {
+		r2[req.Expert.Id]++
+	}
+	if len(r2) != 4 {
+		t.Errorf("round 2 heard from %d seats (%v), want all 4", len(r2), r2)
+	}
+	for seat, n := range r2 {
+		if n < 1 || n > 2 {
+			t.Errorf("%s made %d round 2 calls, want an early pass and a catch-up, or the catch-up alone", seat, n)
+		}
 	}
 
 	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: started.Id})

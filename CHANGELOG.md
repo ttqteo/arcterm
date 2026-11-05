@@ -30,14 +30,30 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
+- The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and
+  falls smoothly instead of in jerky steps when you turn it on.
+- While arcterm starts up (a long wait after a reinstall), the Agent and Cockpit screens show your pet running back and forth with "Setting up arcterm" instead of blank grey boxes, so it no longer looks stuck.
+
+## 1.0.3 — 2026-11-05
+
+### Added
+
+- In the Canvas gallery, a canvas that redraws an older one now says `Replaces <topic>`, and the older card is dimmed with an Outdated chip and a Newer link to the latest version. Scan for versions finds the pairs already there for you to untick and link in one go, a card that looks like a new version offers Link or No, and an open canvas has Link an older version… (and × to undo a link). <!-- try: go:canvases -->
+
+### Changed
+
 - More of arcterm dresses up with the Christmas theme on: the snow keeps falling while a dialog is open (fainter over the dialog itself); New agent, New project, Keyboard shortcuts and Quick look hang a string of lights from their top edge; New agent's Start column, the cockpit's "No agents running" window and the Christmas theme chip wear Santa hats, as do the pet on the app bar's fold button and in What's new; a finished run's check becomes a gift; and the lights hang along the Christmas effects switch in Settings. A small Christmas tree stands in the bottom corner of an agent's Overview panel. <!-- try: new-agent -->
 - In a project's Overview, clicking a session in History opens it in Quick look, over the page, instead of leaving for the full session; Open in the dialog (or Open transcript in the row's right-click menu) still takes you there.
 
 ### Fixed
 
+- Right-clicking twice in a terminal opens its menu again instead of pasting twice; a double right-click at an ordinary pace no longer counts as two clicks.
+- An agent that finished its turn but is still watching a Monitor or a background command no longer offers Resume in its Overview panel: the panel says it is waiting, like the agent's header, since the agent picks up again on its own.
 - An agent asking you something in the Agent tree no longer flickers: its row keeps a steady amber box, and the stray amber line that came and went beside it is gone.
 - In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
 - Every orchestrator run no longer stalls for minutes while the engine deletes one task's worktree that holds a full `node_modules`.
+- New run now takes Jarvis's Parallel workers "auto": Workers at once reads auto and the lead picks the width, instead of always starting at 3. Press − at 1 to go back to auto.
 - A tooltip that explains something at length (the reason the council's router picked a seat, a source's note) no longer pops over the text you are reading as the pointer passes: it waits a moment before it shows. A control's short name still shows at once. In a council, the router's reason shows only when you point at the chips above your message, and it opens above them instead of over the message.
 
 ## 1.0.2 — 2026-11-05
