@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     cardModelTag,
+    dagCancellable,
     dagStatusPill,
     isWaiting,
     LIGHT_PICK,
@@ -453,6 +454,22 @@ describe("dagStatusPill", () => {
         expect(dagStatusPill({ status: "blocked" } as TaskGroup)).toEqual({ label: "blocked", tone: "waiting" });
         expect(dagStatusPill({ status: "cancelled" } as TaskGroup)).toEqual({ label: "cancelled", tone: "muted" });
         expect(dagStatusPill({ status: "running" } as TaskGroup)).toEqual({ label: "running", tone: "active" });
+    });
+    it("tones a paused dag muted, since nothing in it is moving", () => {
+        expect(dagStatusPill({ status: "paused" } as TaskGroup)).toEqual({ label: "paused", tone: "muted" });
+    });
+});
+
+describe("dagCancellable", () => {
+    it("holds for every status the run is still live in, a paused one included", () => {
+        for (const status of ["running", "awaiting-review", "awaiting-plan", "plan-review", "finalizing", "paused"]) {
+            expect(dagCancellable(status)).toBe(true);
+        }
+    });
+    it("does not hold for a dag that is over or stuck on the human", () => {
+        for (const status of ["done", "cancelled", "blocked", ""]) {
+            expect(dagCancellable(status)).toBe(false);
+        }
     });
 });
 

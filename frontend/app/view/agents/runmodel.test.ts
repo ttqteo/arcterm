@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import type { Lineage, RunInfo } from "./runlineage";
 import {
+    canPause,
     canResume,
+    canResumePaused,
     cancelSurvivors,
     currentPhaseIndex,
     dagProgressLabel,
@@ -79,6 +81,75 @@ describe("runStatusView", () => {
         expect(runStatusView("done", { state: "resolving", conflicts: ["CHANGELOG.md"] })).toEqual({
             label: "resolving",
             tone: "running",
+        });
+    });
+    it("maps paused to its own tone and the words that say when it resumes", () => {
+        expect(runStatusView("paused")).toEqual({ label: "Paused · resumes when memory frees", tone: "paused" });
+    });
+});
+
+describe("paused runs", () => {
+    it("is not terminal, so a paused run is still the live work a channel opens on", () => {
+        expect(isTerminal("paused")).toBe(false);
+        expect(defaultRunId([run({ id: "a", status: "done", createdts: 9 }), run({ id: "b", status: "paused" })])).toBe(
+            "b"
+        );
+    });
+
+    describe("canPause", () => {
+        it("holds for a top-level run that is under way", () => {
+            for (const status of ["planning", "awaiting-review", "plan-review", "executing", "finalizing", "blocked"]) {
+                expect(canPause(run({ status })), status).toBe(true);
+            }
+        });
+        it("does not hold for a run that is done, cancelled or already paused", () => {
+            for (const status of ["done", "cancelled", "paused"]) {
+                expect(canPause(run({ status })), status).toBe(false);
+            }
+        });
+        it("does not hold for a run the lead or the engine started", () => {
+            expect(canPause(run({ status: "executing", parentleadoref: "tab:lead" }))).toBe(false);
+            expect(canPause(run({ status: "executing", taskid: "t-1" }))).toBe(false);
+            expect(canPause(run({ status: "executing", stagerole: "verifier" }))).toBe(false);
+            expect(canPause(run({ status: "executing", review: true }))).toBe(false);
+        });
+        it("reads a run's tree row too, which carries only its status", () => {
+            expect(canPause({ status: "executing" })).toBe(true);
+            expect(canPause({ status: "paused" })).toBe(false);
+        });
+    });
+
+    describe("canResumePaused", () => {
+        it("holds for a paused run only", () => {
+            expect(canResumePaused(run({ status: "paused" }))).toBe(true);
+            for (const status of ["planning", "executing", "blocked", "done", "cancelled"]) {
+                expect(canResumePaused(run({ status })), status).toBe(false);
+            }
+        });
+        it("reads a run's tree row too", () => {
+            expect(canResumePaused({ status: "paused" })).toBe(true);
+            expect(canResumePaused({})).toBe(false);
+        });
+    });
+
+    describe("dagProgressLabel", () => {
+        const paused = (over: Partial<RunInfo> = {}): RunInfo => ({
+            runId: "r",
+            channelId: "ch",
+            title: "t",
+            project: "p",
+            status: "paused",
+            dag: { status: "paused", tasks: [{ state: "done" }, { state: "running" }] } as TaskGroup,
+            ...over,
+        });
+        it("says the run is paused instead of how far it got, and keeps the count in the tooltip", () => {
+            expect(dagProgressLabel(paused(), false)).toEqual({
+                text: "Paused · resumes when memory frees",
+                title: "Paused · resumes when memory frees · 1/2 tasks done",
+            });
+        });
+        it("says it for a leadless run too", () => {
+            expect(dagProgressLabel(paused(), true).text).toBe("Paused · resumes when memory frees");
         });
     });
 });

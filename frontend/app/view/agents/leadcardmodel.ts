@@ -25,6 +25,7 @@ import {
     type RunInfo,
 } from "./runlineage";
 import { finishedRunLabel, runComplete } from "./runmodel";
+import { PAUSED_LABEL, runStage } from "./runstage";
 import { taskStrip, taskStripLabel, type TaskStrip } from "./runstrip";
 import { detailOf } from "./runtimeline";
 import { modelLabel } from "./session-models/sessionviewmodel";
@@ -338,10 +339,14 @@ export const LEAD_MARK_CLASS: Record<LeadMarkTone, string> = {
 
 /** Pure: a run's Workflow mark, on its lead card and its agent tree row: green and still only when the run is complete. The
  *  pulse is the lead's own work; a lead that is down or standing by while the engine works leaves the mark green
- *  and still, so the run does not read as stopped. */
+ *  and still, so the run does not read as stopped. A paused run's is muted and still: its dag keeps its tasks marked
+ *  running (the run resumes them where they were), but nothing is moving. */
 export function leadMark(run: RunInfo, lead: AgentVM | undefined): { tone: LeadMarkTone; pulse: boolean } {
     if (runComplete(run)) {
         return { tone: "success", pulse: false };
+    }
+    if (runStage(run).paused) {
+        return { tone: "muted", pulse: false };
     }
     if (lead == null || leadStandingBy(lead, run)) {
         return { tone: runEngineBusy(run) ? "working" : "muted", pulse: false };
@@ -358,7 +363,7 @@ export function leadMark(run: RunInfo, lead: AgentVM | undefined): { tone: LeadM
 /** Pure: the flow bar under the lead card's header, a working agent card's sweep. It follows the run, not only
  *  the lead: the lead mostly stands by while the engine works, and the run is no less active for it. */
 export function runFlowing(run: RunInfo, lead: AgentVM | undefined): boolean {
-    if (runFinished(run)) {
+    if (runFinished(run) || runStage(run).paused) {
         return false;
     }
     return runEngineBusy(run) || (lead?.state === "working" && !leadStandingBy(lead, run));
@@ -369,6 +374,10 @@ export function runFlowing(run: RunInfo, lead: AgentVM | undefined): boolean {
 export function leadActivity(run: RunInfo, lead: AgentVM | undefined, leadDown: boolean): string {
     if (runFinished(run)) {
         return finishedRunLabel(run);
+    }
+    // its agents are suspended, so neither the engine's lanes nor a lead that is down are what to say
+    if (runStage(run).paused) {
+        return PAUSED_LABEL;
     }
     if (leadDown) {
         return "lead down · its events come to you";

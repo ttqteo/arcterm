@@ -452,6 +452,18 @@ describe("leadActivity", () => {
         const open = { ...run("done"), status: "executing" };
         expect(leadActivity(open, { ...lead, atPrompt: true } as AgentVM, false)).toBe("Wrapping up · lead");
     });
+    // a paused run's dag keeps its tasks running, so the engine's lanes would read as work going on
+    it("says a paused run is paused, not that the engine runs its lanes", () => {
+        const paused = { ...run(), status: "paused" };
+        const idle = { ...lead, state: "idle", atPrompt: true } as AgentVM;
+        expect(leadActivity(paused, idle, false)).toBe("Paused · resumes when memory frees");
+        expect(leadActivity(paused, undefined, false)).toBe("Paused · resumes when memory frees");
+        expect(leadActivity(paused, lead, true)).toBe("Paused · resumes when memory frees");
+    });
+    it("leaves a paused run's cancelled dag to read cancelled", () => {
+        const cancelled = { ...run("cancelled"), status: "paused" };
+        expect(leadActivity(cancelled, lead, false)).not.toBe("Paused · resumes when memory frees");
+    });
 });
 
 describe("leadMark", () => {
@@ -502,6 +514,14 @@ describe("leadMark", () => {
         expect(leadMark(run, leadOf({ state: "asking" }))).toEqual({ tone: "warning", pulse: true });
         expect(leadMark(run, leadOf({ state: "idle" }))).toEqual(MUTED);
     });
+    // a pause keeps the dag's tasks running (the resume picks them up), so the tasks alone would pulse the mark
+    it("is muted and still while the run is paused, whatever its tasks and lead say", () => {
+        const paused = { ...runInfo([task("t-1", "running")]), status: "paused" };
+        expect(leadMark(paused, undefined)).toEqual(MUTED);
+        expect(leadMark(paused, leadOf({ atPrompt: true }))).toEqual(MUTED);
+        expect(leadMark(paused, leadOf({ state: "working" }))).toEqual(MUTED);
+        expect(leadMark(paused, leadOf({ state: "asking" }))).toEqual(MUTED);
+    });
 });
 
 describe("runFlowing", () => {
@@ -521,6 +541,11 @@ describe("runFlowing", () => {
     it("is still once the run has finished", () => {
         const r = runInfo([task("t-1", "done")]);
         expect(runFlowing({ ...r, status: "done", dag: { ...r.dag!, status: "done" } }, leadOf())).toBe(false);
+    });
+    it("is still while the run is paused, though its dag keeps tasks running", () => {
+        const paused = { ...runInfo([task("t-1", "running")]), status: "paused" };
+        expect(runFlowing(paused, undefined)).toBe(false);
+        expect(runFlowing(paused, leadOf())).toBe(false);
     });
 });
 

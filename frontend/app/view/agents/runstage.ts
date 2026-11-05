@@ -31,8 +31,16 @@ export interface RunStageView {
     needsYou: boolean;
     outcome: "" | "passed" | "unverified" | "failed";
     complete: boolean;
+    /** the run is paused (PAUSED_LABEL): its label and tone say so, and its key is the stage it stopped in */
+    paused: boolean;
     tail: TailPip[];
 }
+
+/** What a paused run says wherever its stage is shown: the Agent tree, the Brief and the run sheet. A pause is not a
+ *  stage of its own: the run keeps the stage it stopped in (its dag, tasks and tail stand as they were), and only its
+ *  words and tone change, since nothing in it is moving. Only a top-level run reads paused (its status), and done and
+ *  cancelled win over it. */
+export const PAUSED_LABEL = "Paused · resumes when memory frees";
 
 const LABEL: Record<RunStageKey, string> = {
     planning: "Planning",
@@ -84,7 +92,8 @@ function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
     if (dagStatus === "plan-review" || status === "awaiting-review" || status === "plan-review") {
         return "plan-review";
     }
-    if (run.dag != null || status === "executing" || status === "blocked") {
+    // a paused run is mid-work, with or without a dag
+    if (run.dag != null || status === "executing" || status === "blocked" || status === "paused") {
         return "working";
     }
     return "planning";
@@ -97,8 +106,11 @@ export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking =
     const finalState = run.dag?.final?.state ?? "";
     const outcome = finalState === "passed" || finalState === "unverified" || finalState === "failed" ? finalState : "";
     const past = (k: RunStageKey) => key !== "cancelled" && ORDER.indexOf(key) > ORDER.indexOf(k);
+    // a paused run's agents are suspended, so a question one left is held for the resume, not waiting on the person
+    const paused = status === "paused" && key !== "cancelled";
     const needsYou =
         key !== "cancelled" &&
+        !paused &&
         (asking ||
             status === "awaiting-review" ||
             status === "blocked" ||
@@ -107,7 +119,7 @@ export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking =
             (key === "land-held" && run.land?.dismissed !== true));
     const complete = key === "landed" || key === "complete";
     const tone: StageTone =
-        key === "cancelled"
+        key === "cancelled" || paused
             ? "muted"
             : needsYou
               ? "asking"
@@ -161,7 +173,16 @@ export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking =
             { name: "Land", state: landPip },
         ];
     }
-    return { key, label: stageLabel(key, run.land?.state), tone, needsYou, outcome, complete, tail };
+    return {
+        key,
+        label: paused ? PAUSED_LABEL : stageLabel(key, run.land?.state),
+        tone,
+        needsYou,
+        outcome,
+        complete,
+        paused,
+        tail,
+    };
 }
 
 // a land in line or being resolved stays the landing stage (run office reads the key union), with its own words

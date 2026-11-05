@@ -39,7 +39,12 @@ import { useCouncils } from "@/app/view/agents/councilstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
-import { confirmCancelRun, pendingRunDraftAtom } from "@/app/view/agents/runactions";
+import {
+    confirmCancelRun,
+    pendingRunDraftAtom,
+    resumePausedRun,
+    resumingRunIdsAtom,
+} from "@/app/view/agents/runactions";
 import { leadAsker, leadWorker, liveWorkers } from "@/app/view/agents/runmodel";
 import { queuedRowsAtom, useRunQueueFeed } from "@/app/view/agents/runqueuestore";
 import { DagModal } from "@/app/view/orchestrate/dagmodal";
@@ -702,6 +707,7 @@ function BriefRunRow({
     const projects = useAtomValue(projectsAtom);
     const index = useAtomValue(briefEffortIndexAtom);
     const lineage = useAtomValue(model.lineageAtom);
+    const resuming = useAtomValue(resumingRunIdsAtom);
     const asking = run != null ? leadAsker(run, agents) != null : line.state === "asking";
     // the lineage holds a lead run's dag; a run outside it reads by its own status alone
     const dag = run != null ? lineage.runs[run.id]?.dag : undefined;
@@ -734,6 +740,12 @@ function BriefRunRow({
             onStop={() =>
                 run != null && confirmCancelRun(run.channeloid ?? "", run.id, liveWorkers(run, agents).length)
             }
+            onResume={() => {
+                if (run != null) {
+                    fireAndForget(() => resumePausedRun(run.channeloid ?? "", run.id));
+                }
+            }}
+            resuming={run != null && resuming.has(run.id)}
         />
     );
 }

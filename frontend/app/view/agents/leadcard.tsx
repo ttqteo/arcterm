@@ -60,6 +60,7 @@ import { NarrationTimeline } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { clampParallelism } from "./runconfig";
 import type { RunInfo } from "./runlineage";
+import { RunMenu } from "./runmenu";
 import { openRunDag } from "./runrailsections";
 import { SEG_FILL, type TaskStrip } from "./runstrip";
 import { SubLabel } from "./sectionlabel";
@@ -279,6 +280,7 @@ export function LeadCard(p: LeadCardProps) {
                         </svg>
                     </button>
                 ) : null}
+                <RunMenu channelId={run.channelId} runId={run.runId} run={run} className="rounded-sm" />
             </div>
 
             {runFlowing(run, lead) ? (

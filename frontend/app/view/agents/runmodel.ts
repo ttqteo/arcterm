@@ -9,9 +9,9 @@ import type { AgentVM } from "./agentsviewmodel";
 import { finalStageActivity } from "./finalstage";
 import { landPlace, type LandSlot } from "./landline";
 import { runProgress, type Lineage, type RunInfo } from "./runlineage";
-import { runStage } from "./runstage";
+import { PAUSED_LABEL, runStage } from "./runstage";
 
-export type RunStatusTone = "planning" | "review" | "running" | "blocked" | "done" | "failed" | "cancelled";
+export type RunStatusTone = "planning" | "review" | "running" | "blocked" | "done" | "failed" | "cancelled" | "paused";
 
 // a done run on its own branch is not in its base until the branch lands
 function landView(land: RunLand): { label: string; tone: RunStatusTone } | undefined {
@@ -49,6 +49,10 @@ export function dagProgressLabel(
     const same = (text: string) => ({ text, title: text });
     const { done, total } = runProgress(run.dag);
     const s = runStage(run);
+    if (s.paused) {
+        // nothing is moving: the words say so, and how far it got stays in the tooltip
+        return { text: PAUSED_LABEL, title: `${PAUSED_LABEL} · ${done}/${total} tasks done` };
+    }
     if (s.key === "final-check") {
         return same(`Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`);
     }
@@ -107,6 +111,8 @@ export function runStatusView(status: string, land?: RunLand): { label: string; 
             return { label: "failed", tone: "failed" };
         case "cancelled":
             return { label: "cancelled", tone: "cancelled" };
+        case "paused":
+            return { label: PAUSED_LABEL, tone: "paused" };
         default:
             return { label: status, tone: "planning" };
     }
@@ -282,6 +288,25 @@ export function canResume(run: Run, idx: number): boolean {
         !!run.sessionid &&
         RESUMABLE_RUNTIMES.includes(run.runtime ?? "")
     );
+}
+
+// Whether Pause is offered: a top-level run (not one the lead or the engine started: a task's worker, a stage's
+// session, a reviewer) that is not done, cancelled or already paused. Mirrors the backend's refusals, and is the one
+// rule every Pause button and menu item reads. It takes anything with a run's status, a tree row's RunInfo included.
+export function canPause(
+    run: Partial<Pick<Run, "status" | "parentleadoref" | "taskid" | "stagerole" | "review">>
+): boolean {
+    if (run.parentleadoref || run.taskid || run.stagerole || run.review) {
+        return false;
+    }
+    return run.status !== "done" && run.status !== "cancelled" && run.status !== "paused";
+}
+
+// Whether the Resume of a paused run is offered: its status reads paused, which only a top-level run's does (a child
+// run keeps its own status). Not canResume, which reopens a failed phase's stopped worker. The one rule every paused
+// run's Resume button and menu item reads.
+export function canResumePaused(run: Partial<Pick<Run, "status">>): boolean {
+    return run.status === "paused";
 }
 
 // True when the plan editor holds unsaved changes; Approve must flush these first so no edit is lost.
