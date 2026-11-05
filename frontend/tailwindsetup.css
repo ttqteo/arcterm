@@ -118,6 +118,9 @@
     --color-xmas-crimson: #a0061b;
     --color-xmas-bulb: #d0283c;
     --color-xmas-pine: #2f6b4a;
+    /* the app bar's Christmas mark (christmasmark.tsx): the pine lit up, since --color-xmas-pine stands 2.9:1 on the
+       theme's ground and a 25px mark needs 3:1 */
+    --color-xmas-pine-lit: #4f9a6c;
     --color-xmas-snow: #f2ead9;
     --color-peter-skin: #f0c19b;
     --color-peter-hair: #4a2f1c;

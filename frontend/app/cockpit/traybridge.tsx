@@ -19,6 +19,7 @@ import { showCanvases } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { consumersReadingAtom, loadConsumers, useConsumersPoll } from "@/app/view/agents/consumersstore";
 import { floatMiniAtom, restoreFromSprout } from "@/app/view/agents/floatstore";
 import { openSettingsSection } from "@/app/view/agents/settingsstore";
@@ -139,11 +140,17 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
 
     const badge = trayBadge(peekRows, pressure);
     const memFree = trayMemFree(memOn, memAvailable);
+    // a Mac's menu bar wears the Christmas mark while the decor shows (trayicon.rs mac_xmas_icon)
+    const xmas = useChristmasDecor();
     useEffect(() => {
-        void invoke("set_tray_status", { count: badge.count, alert: badge.alert, memFree, visible: trayOn }).catch(
-            () => {}
-        );
-    }, [badge.count, badge.alert, memFree, trayOn]);
+        void invoke("set_tray_status", {
+            count: badge.count,
+            alert: badge.alert,
+            memFree,
+            visible: trayOn,
+            xmas,
+        }).catch(() => {});
+    }, [badge.count, badge.alert, memFree, trayOn, xmas]);
 
     useEffect(() => {
         if (!open) {

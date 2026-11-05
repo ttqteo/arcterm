@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The app bar shows the t> mark alone, without the "arcterm" name beside it.
+- With the Christmas theme, the t> mark dresses for the season: the t a pine with a star and two baubles, the > a
+  string of red and gold lights. On a Mac the menu bar icon wears it too, in colour, in deeper tones on a light menu bar.
 - With the Christmas theme, the app bar's lights hang in swags between the search, the chips and New, hooked to their
   top corners, instead of one long string along the bar's bottom edge, so no bulb sits on a box.
 

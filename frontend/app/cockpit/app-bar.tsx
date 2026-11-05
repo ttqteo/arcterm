@@ -8,6 +8,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ChristmasLights } from "@/app/view/agents/christmaslights";
+import { ChristmasMark } from "@/app/view/agents/christmasmark";
 import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { foldToSprout, minimizeRequested, setSproutCorner, sproutSpotAtom } from "@/app/view/agents/floatstore";
 import { spotCorner, SPROUT_CORNER_LABEL, SPROUT_CORNERS } from "@/app/view/agents/floatwindow";
@@ -122,14 +123,17 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             {christmas ? <ChristmasLights model={model} /> : null}
             {/* shrink-0: the search in the middle gives way first; this group shrinking wrapped "All projects" */}
             <div data-tauri-drag-region data-xmas-start className="relative flex shrink-0 items-center gap-[9px]">
+                {/* the mark alone names the app: no "arcterm" wordmark beside it, only for a screen reader */}
                 <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}>
-                    {spider ? <SpiderMark /> : <ArctermMark />}
+                    {spider ? <SpiderMark /> : christmas ? <ChristmasMark /> : <ArctermMark />}
+                    <span className="sr-only">arcterm</span>
                 </span>
-                <span data-tauri-drag-region className="text-[14.5px] font-bold tracking-[-0.01em] text-primary">
-                    arcterm
-                    {/* a dev app beside the installed one must not pass for it (main.rs titles its window too) */}
-                    {isDev() ? <span className="ml-1 text-[13px] font-medium text-muted">(dev)</span> : null}
-                </span>
+                {/* a dev app beside the installed one must not pass for it (main.rs titles its window too) */}
+                {isDev() ? (
+                    <span data-tauri-drag-region className="text-[13px] font-medium text-muted">
+                        (dev)
+                    </span>
+                ) : null}
                 <span data-tauri-drag-region className="text-[13px] text-muted">
                     /
                 </span>
@@ -278,7 +282,7 @@ function RestoreGlyph() {
 // The arcterm "t>" mark (public/logos/arcterm.png) as vector pixel art on whole CSS pixels, so it stays
 // sharp where the downscaled PNG blurred. The source is a 12x9 cell grid; each cell sits at 2px steps
 // but is drawn 3px square, so neighbours overlap by 1px as the source's blocks do: the chevron reads
-// as one stroke and the strokes carry the weight of the bold wordmark beside it.
+// as one stroke and the strokes stand bold. The Christmas decor swaps it for ChristmasMark, on the same grid.
 // pointer-events-none: drag.js skips SVG elements, so the press must land on the parent span.
 function ArctermMark() {
     return (

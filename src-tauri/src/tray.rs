@@ -6,6 +6,8 @@
 //! dropped, and its 50-100 MB go back, at critical memory pressure and with the icon off (trayicon::keeps_popover).
 //! wavesrv's exit dims the icon here, since then no frontend can.
 
+#[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -26,6 +28,9 @@ const WIDTH: f64 = 360.0;
 const FIRST_HEIGHT: f64 = 480.0;
 // the click on the icon that blurred the popover shut must not open it again
 const REOPEN_GUARD: Duration = Duration::from_millis(250);
+// how often the Christmas mark looks at the menu bar's tone (watch_bar_tone)
+#[cfg(target_os = "macos")]
+const BAR_TONE_EVERY: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Default)]
 struct State {
@@ -35,6 +40,10 @@ struct State {
     mem: Option<u64>,
     visible: bool,
     offline: bool,
+    // the Christmas decor shows, so a Mac draws the Christmas mark in colour (trayicon::mac_xmas_icon)
+    xmas: bool,
+    // the menu bar was light when the icon was last drawn: the Christmas mark takes its deep tones there
+    light_bar: bool,
     icon: Option<R>,
     height: Option<f64>,
     // the popover is on screen; its window may be there hidden, kept for the next open
@@ -135,7 +144,12 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 
 fn icon_image(app: &AppHandle, st: &State) -> Image<'static> {
     let img = if cfg!(target_os = "macos") {
-        trayicon::mac_icon(st.offline, !trayicon::mac_title(st.count, st.alert, st.offline, st.mem).is_empty())
+        let titled = !trayicon::mac_title(st.count, st.alert, st.offline, st.mem).is_empty();
+        if st.xmas {
+            trayicon::mac_xmas_icon(st.offline, titled, !st.light_bar)
+        } else {
+            trayicon::mac_icon(st.offline, titled)
+        }
     } else {
         let scale = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
         trayicon::win_icon(trayicon::win_icon_size(scale), st.count, st.alert, st.offline)
@@ -147,10 +161,13 @@ fn apply(app: &AppHandle, st: &State) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
+    #[cfg(target_os = "macos")]
+    let st = &with_bar_tone(&tray, st);
     let _ = tray.set_icon(Some(icon_image(app, st)));
     #[cfg(target_os = "macos")]
     {
-        let _ = tray.set_icon_as_template(true);
+        // a template is tinted all one colour, which would leave the Christmas mark plain
+        let _ = tray.set_icon_as_template(!st.xmas);
         let title = trayicon::mac_title(st.count, st.alert, st.offline, st.mem);
         // Some(""), never None: tray-icon 0.24.1's set_title(None) leaves the old title on the button
         let _ = tray.set_title(Some(title.clone()));
@@ -163,17 +180,68 @@ fn apply(app: &AppHandle, st: &State) {
     let _ = tray.set_visible(st.visible);
 }
 
+// The Christmas mark's tones follow the menu bar, which macOS draws light or dark after the appearance and the wallpaper
+// behind it: read off the status item each time the icon is drawn, and kept for watch_bar_tone.
+#[cfg(target_os = "macos")]
+fn with_bar_tone(tray: &tauri::tray::TrayIcon, st: &State) -> State {
+    let mut st = st.clone();
+    if st.xmas {
+        if let Some(dark) = crate::macwindow::tray_bar_is_dark(tray) {
+            st.light_bar = !dark;
+            state().lock().unwrap().light_bar = !dark;
+        }
+    }
+    st
+}
+
+// While the Christmas mark shows, look at the menu bar's tone every BAR_TONE_EVERY and redraw the icon when it turns:
+// a new wallpaper or appearance turns it with no status from the cockpit. One property read on the main thread; the
+// thread ends once the mark goes.
+#[cfg(target_os = "macos")]
+fn watch_bar_tone(app: &AppHandle) {
+    static WATCHING: AtomicBool = AtomicBool::new(false);
+    if WATCHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(BAR_TONE_EVERY);
+        if !state().lock().unwrap().xmas {
+            WATCHING.store(false, Ordering::SeqCst);
+            // a status that brought the mark back meanwhile found WATCHING still set and started no watch
+            if !state().lock().unwrap().xmas || WATCHING.swap(true, Ordering::SeqCst) {
+                return;
+            }
+        }
+        let a = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let st = state().lock().unwrap().clone();
+            let Some(tray) = a.tray_by_id(TRAY_ID) else {
+                return;
+            };
+            if st.xmas && st.visible && crate::macwindow::tray_bar_is_dark(&tray) == Some(st.light_bar) {
+                apply(&a, &st);
+            }
+        });
+    });
+}
+
 #[tauri::command]
-pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, mem_free: Option<u64>, visible: bool) {
+pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, mem_free: Option<u64>, visible: bool, xmas: bool) {
     let st = {
         let mut s = state().lock().unwrap();
         s.count = count;
         s.alert = alert;
         s.mem = mem_free;
         s.visible = visible;
+        s.xmas = xmas;
         s.clone()
     };
     apply(&app, &st);
+    #[cfg(target_os = "macos")]
+    if xmas {
+        watch_bar_tone(&app);
+    }
     if !visible {
         hide(&app, "the icon is off");
     }
