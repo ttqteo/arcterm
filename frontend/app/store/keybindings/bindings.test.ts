@@ -2149,6 +2149,7 @@ describe("Agent → Canvas gallery keys", () => {
         modts,
         thumbts: 0,
         bytes: 1,
+        createdts: modts,
     });
     const DAY = 24 * 60 * 60 * 1000;
     const GRID_KEYS = [

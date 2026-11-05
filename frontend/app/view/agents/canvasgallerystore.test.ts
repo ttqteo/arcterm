@@ -44,6 +44,7 @@ function canvas(topic: string, modts: number): GalleryCanvas {
         modts,
         thumbts: 0,
         bytes: 1024,
+        createdts: modts,
     };
 }
 
