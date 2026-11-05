@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Reply to a seat's message in a council.** In the installed app, open a council's Discussion, hover a
+  seat's message in the chat → Reply (the arrow before Copy) puts "Replying to <seat> · <first words>" above the box,
+  the caret in it, and the line under the box reads Answered by: <seat>; a click on the line goes back to the message, ×
+  or Esc clears it. Send → your post shows the seat's message quoted at its top, and only that seat answers it. The same
+  in an idea's thread (its own box). Then switch the rail Ideas → Memory → Ideas: each keeps where it was scrolled.
+  Unit tests and the typecheck only (1678c53c5, 16781ddb0).
 - [ ] (arcterm) **The council sheet's actions do what they say.** In the dev or installed app, open a finished council
   from Jarvis → Activity → its Earlier line, so the report opens in the Brief's sheet → Add to initiative… lists the
   initiatives and adds the chosen direction as a chunk (the initiative's plan shows it); Ask in chat opens the council's
