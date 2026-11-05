@@ -22,6 +22,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/wavetermdev/waveterm/pkg/xmastree"
 )
 
 // DagEvent kinds published on the wps broker. The names live in wps (the event hub's single source
@@ -640,7 +641,13 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 			}
 			afterCommit = append(afterCommit, func() {
 				publishDagEvent(DagEventChildDone, g, taskID)
-				appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskDone, nil, map[string]any{"taskid": taskID, "runid": childRunID})
+				// one timestamp for the run event and the Christmas tree's ledger, so the backfill and the live write
+				// agree on when the task finished
+				now := time.Now().UnixMilli()
+				appendRunEventAt(ctx, now, g.ChannelId, g.RunID, waveobj.RunEventKindTaskDone, nil, map[string]any{"taskid": taskID, "runid": childRunID})
+				if err := recordXmasTaskDone(ctx, g.RunID, taskID, now); err != nil {
+					log.Printf("xmastree: run %s task %s: %v", g.RunID, taskID, err)
+				}
 				if unreviewed != "" {
 					PostQuiet(ctx, g.ChannelId, g.RunID, unreviewed)
 				}
@@ -1230,6 +1237,10 @@ var appendRunEventAt = func(ctx context.Context, ts int64, channelId, runId, kin
 		})
 	}
 }
+
+// recordXmasTaskDone adds a finished task to the Christmas tree's season ledger. Best-effort like the run event beside
+// it: the caller logs a failure and the run goes on. Var so a test can capture the call.
+var recordXmasTaskDone = xmastree.RecordTaskDone
 
 var appendRunEvent = func(ctx context.Context, channelId, runId, kind string, phaseIdx *int, detail any) {
 	appendRunEventAt(ctx, time.Now().UnixMilli(), channelId, runId, kind, phaseIdx, detail)

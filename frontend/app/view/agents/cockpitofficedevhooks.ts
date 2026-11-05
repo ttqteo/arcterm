@@ -18,6 +18,7 @@ import { officeDevAtom, readOfficeProbe, type OfficeDev } from "./cockpitoffice"
 import { officeSoundLog, setOfficeSoundLog } from "./officeaudio";
 import { officeAnimationAtom, officeFloorAtom, officeSoundMusicAtom, officeSoundUiAtom } from "./officestore";
 import { themePresetAtom } from "./themestore";
+import { xmasTreeFixtureAtom } from "./xmastreestore";
 
 declare global {
     interface Window {
@@ -33,6 +34,7 @@ declare global {
         __cockpitOfficeSound?: (on: boolean) => void;
         __cockpitOfficeSoundLog?: () => string[] | null;
         __cockpitOfficeSoundSet?: (o: { ui?: boolean; music?: boolean }) => void;
+        __cockpitOfficeTree?: (data: XmasTreeData | null) => void;
     }
 }
 
@@ -95,6 +97,8 @@ export function installCockpitOfficeDevHooks(model: AgentsViewModel): void {
             globalStore.set(officeSoundMusicAtom, o.music);
         }
     };
+    // the lobby tree's season ledger in place of wavesrv's answer (the office-xmas-tree scenario); null is live again
+    window.__cockpitOfficeTree = (data) => globalStore.set(xmasTreeFixtureAtom, data);
     window.__cockpitOfficeProbe = () => {
         const cursor = globalStore.get(model.cursorIdAtom);
         const sel = cursor ? (globalStore.get(model.answerSelAtom)[cursor] ?? {}) : {};

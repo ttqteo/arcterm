@@ -86,6 +86,74 @@ func TestScheduleEmitsTaskDone(t *testing.T) {
 	}
 }
 
+func TestTaskDoneRecordsXmasLedger(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "ev-task-done-xmas", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := jarvis.NewRun("owner", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewTaskGroup(owner.ID, ch.OID, "g", 1, false, []waveobj.TaskNode{{ID: "t-0", Label: "a"}}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.AppendDag(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	old := spawnWorker
+	spawnWorker = func(context.Context, runroute.Capability, string, string, string, string, jarvis.RunWorkerOptions) (string, error) {
+		return waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String(), nil
+	}
+	defer func() { spawnWorker = old }()
+	type ledgerCall struct {
+		runID, taskID string
+		ts            int64
+	}
+	var calls []ledgerCall
+	oldRecord := recordXmasTaskDone
+	recordXmasTaskDone = func(_ context.Context, runID, taskID string, ts int64) error {
+		calls = append(calls, ledgerCall{runID, taskID, ts})
+		return nil
+	}
+	defer func() { recordXmasTaskDone = oldRecord }()
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("ledger written before the task finished: %+v", calls)
+	}
+	if err := wstore.UpdateRun(ctx, ch.OID, g.Tasks[0].RunID, func(r *waveobj.Run) error {
+		r.Status = jarvis.RunStatus_Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	// a later tick with the task still done records nothing more
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	var doneTs int64
+	for _, ev := range lifecycleEvents(t, ch.OID, owner.ID) {
+		if ev.Kind == waveobj.RunEventKindTaskDone {
+			doneTs = ev.Ts
+		}
+	}
+	if doneTs == 0 {
+		t.Fatal("missing task-done event")
+	}
+	want := []ledgerCall{{owner.ID, "t-0", doneTs}}
+	if len(calls) != 1 || calls[0] != want[0] {
+		t.Fatalf("ledger calls = %+v, want %+v", calls, want)
+	}
+}
+
 func TestScheduleEmitsTaskFailed(t *testing.T) {
 	allowWorkerHarnessForTest(t)
 	ctx := context.Background()

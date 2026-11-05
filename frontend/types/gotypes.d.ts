@@ -5168,6 +5168,13 @@ declare global {
         commandtype: string;
     };
 
+    // wshrpc.XmasTreeData
+    type XmasTreeData = {
+        season: number;
+        phase: string;
+        done: number[];
+    };
+
 }
 
 export {}

@@ -44,8 +44,10 @@ import {
     clipShot as officeClipShot,
     dev as officeDev,
     floorsRun,
+    key as officeKey,
     makeCockpitOfficeScenarios,
     probe as officeProbe,
+    settleBoss as officeSettleBoss,
     waitForOffice,
 } from "./cockpitofficescenarios.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
@@ -56,6 +58,7 @@ import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
+import { xmasTreeFixture, xmasTreeScenarios } from "./xmastreescenarios.mjs";
 import {
     arrangeSetupFixture,
     assertSetupFixtureInstalled,
@@ -11705,6 +11708,8 @@ const XMAS_GIFT_RUN = floorsRun(1, "Sleigh route", "north-pole", { tasks: ["done
 // the snow's measured hold
 const XMAS_HOLD_MS = 10_000;
 const xmasNap = (ms) => new Promise((r) => setTimeout(r, ms));
+// the lobby tree's stored arrangement and announced milestone, every season's
+const XMAS_TREE_KEYS_READ = `Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith("xmas.tree.")).map((k) => [k, localStorage.getItem(k)]))`;
 const xmasVar = (h, name) =>
     h.ev(`getComputedStyle(document.documentElement).getPropertyValue(${JSON.stringify(name)}).trim().toLowerCase()`);
 // the theme chip, scoped to the preset grid (terminal-theme's reason: an unscoped query finds the app bar's search)
@@ -12317,6 +12322,15 @@ const christmasTheme = {
 
         // 8e. the pine in the bottom right corner of the asker's Agent details rail, Overview tab: whole, right-aligned
         // in the scroll column and below its last section, never over one
+        // on a fixture season of 214 tasks (milestone 4), so the pine shows in any month; teardown clears it and the
+        // tree's stored keys
+        ctx.prevTree = await h.ev(XMAS_TREE_KEYS_READ);
+        if (!(await h.ev(`typeof window.__cockpitOfficeTree === "function"`))) {
+            await h.goto("cockpit");
+            await polishWaitFor(h, `typeof window.__cockpitOfficeTree === "function"`, 10000);
+        }
+        await h.ev(`window.__cockpitOfficeTree?.(${JSON.stringify(xmasTreeFixture(214))})`);
+        ctx.treeFixture = true;
         await h.goto("agent");
         const prevRail8e = await h.ev(`localStorage.getItem("agent.rail.visible")`);
         await h.ev(`document.querySelector('[data-agent-row="${CHRISTMAS_ASKER}"]')?.click()`);
@@ -12469,6 +12483,15 @@ const christmasTheme = {
         await step("lift the media emulation", () => h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET));
         if (ctx.narrowed) await step("restore the viewport", () => h.cdp("Emulation.setDeviceMetricsOverride", XMAS_VIEWPORT));
         await step("clear the Office's seeded run", () => h.ev("window.__cockpitOffice?.(null)"));
+        if (ctx.treeFixture) {
+            await step("clear the tree fixture and restore the tree's stored keys", async () => {
+                await h.ev("window.__cockpitOfficeTree?.(null)");
+                await h.ev(`Object.keys(localStorage).filter((k) => k.startsWith("xmas.tree.")).forEach((k) => localStorage.removeItem(k))`);
+                for (const [key, v] of Object.entries(ctx.prevTree ?? {})) {
+                    await h.ev(`localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(v)})`);
+                }
+            });
+        }
         await step("restore the stored theme, effects, pet and Office view", async () => {
             for (const [k, key] of Object.entries(XMAS_KEYS)) {
                 const v = ctx.prev?.[k];
@@ -52512,6 +52535,23 @@ const RT_KIT = {
     MOD_BIT,
 };
 
+// what the lobby tree's scenario (xmastreescenarios.mjs) needs of this file and of cockpitofficescenarios.mjs: the
+// Christmas preset's keys, the christmas-office roster with its asker, the clip, the wait, the reload and the Office's
+// helpers
+const XMAS_TREE_KIT = {
+    XMAS_KEYS,
+    CHRISTMAS_ASKER,
+    TREE_RAIL_FIXTURE,
+    xmasRoster,
+    xmasClip,
+    polishWaitFor,
+    ahReload,
+    key: officeKey,
+    probe: officeProbe,
+    waitForOffice,
+    settleBoss: officeSettleBoss,
+};
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -61642,6 +61682,7 @@ export const SCENARIOS = [
     agentUploads,
     agentRailTabs,
     ...railTranscriptScenarios(RT_KIT),
+    ...xmasTreeScenarios(XMAS_TREE_KIT),
     ...monitorTasksScenarios(RT_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,

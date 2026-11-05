@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     advance,
+    behindXmasTree,
     bossLook,
     canStand,
     canWalk,
@@ -26,6 +27,7 @@ import {
     giftArea,
     HWALL,
     LIFT_KEY,
+    TREE_KEY,
     type Plan,
     type PlanAgent,
     type Point,
@@ -571,6 +573,65 @@ describe("officeboss", () => {
                 expect(offFloor(full, pathBetween(full, full.board.spot, spotOf(full, key)!)), key).toEqual([]);
             }
             expect(canWalk(full, full.board.spot)).toBe(true);
+        });
+    });
+
+    describe("the hall's Christmas tree", () => {
+        const treed = buildPlan({ ...merryInput(true), xmasTree: true });
+        const tree = treed.xmasTree!;
+        const spot = tree.spot;
+        const centre = { x: tree.box.x + tree.box.w / 2, y: tree.box.y + tree.box.h / 2 };
+
+        it("is furniture the boss's feet stay off, with its spot in front of it", () => {
+            expect(canWalk(treed, centre)).toBe(false);
+            expect(canStand(treed, centre)).toBe(true);
+            expect(canWalk(treed, spot)).toBe(true);
+        });
+
+        it("is the nearest stop from its spot, and only there", () => {
+            expect(deskAt(treed, spot)).toBe(TREE_KEY);
+            expect(deskAt(treed, { x: spot.x - 12, y: spot.y + 12 })).toBe(TREE_KEY);
+            expect(deskAt(treed, treed.board.spot)).toBe(BOARD_KEY);
+            expect(deskAt(treed, treed.lift.spot)).toBe(LIFT_KEY);
+            // no tree: its spot is no stop
+            expect(deskAt(merry, spot)).toBeUndefined();
+        });
+
+        it("is where spotOf stands for its key, and has none without the tree", () => {
+            expect(spotOf(treed, TREE_KEY)).toEqual(spot);
+            expect(spotOf(merry, TREE_KEY)).toBeUndefined();
+        });
+
+        it("answers { tree: true } only while the boss stands still at it with the cursor on it", () => {
+            expect(cardAt(treed, { at: spot, path: [] }, TREE_KEY)).toEqual({ tree: true });
+            expect(cardAt(treed, { at: treed.board.spot, path: [] }, TREE_KEY)).toBeUndefined();
+            expect(cardAt(treed, { at: spot, path: [spot, treed.board.spot] }, TREE_KEY)).toBeUndefined();
+            expect(cardAt(treed, { at: spot, path: [], holding: "left" }, TREE_KEY)).toBeUndefined();
+        });
+
+        it("stands before the boss only while its feet are above the tree's foot beside it", () => {
+            const foot = tree.box.y + tree.box.h;
+            // in the lane on its left, feet above its foot: behind it
+            expect(behindXmasTree(treed, { x: tree.box.x - 12, y: foot - 6 })).toBe(true);
+            // at its spot, below its foot: in front
+            expect(behindXmasTree(treed, spot)).toBe(false);
+            // far off to the left: no overlap
+            expect(behindXmasTree(treed, { x: tree.box.x - 2 * BOSS_HALF_W - 6, y: foot - 6 })).toBe(false);
+            // no tree, never behind it
+            expect(behindXmasTree(merry, { x: tree.box.x - 12, y: foot - 6 })).toBe(false);
+        });
+
+        it("walks the boss to the tree from every desk, seat, the board and the lift, round the furniture", () => {
+            const keys = [...treed.desks.map((d) => d.key), ...treed.seats.map((s) => s.key), BOARD_KEY, LIFT_KEY];
+            for (const key of keys) {
+                const path = pathBetween(treed, spotOf(treed, key)!, spot);
+                expect(path[path.length - 1], key).toEqual(spot);
+                expect(offFloor(treed, path), key).toEqual([]);
+                expect(overFurniture(treed, path), key).toEqual([]);
+                const back = pathBetween(treed, spot, spotOf(treed, key)!);
+                expect(back[back.length - 1], key).toEqual(spotOf(treed, key));
+                expect(overFurniture(treed, back), key).toEqual([]);
+            }
         });
     });
 

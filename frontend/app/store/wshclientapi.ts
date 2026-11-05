@@ -1782,6 +1782,12 @@ export class RpcApiType {
         return client.wshRpcCall("writetempfile", data, opts);
     }
 
+    // command "xmastree" [call]
+    XmasTreeCommand(client: WshClient, opts?: RpcOpts): Promise<XmasTreeData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "xmastree", null, opts);
+        return client.wshRpcCall("xmastree", null, opts);
+    }
+
 }
 
 export const RpcApi = new RpcApiType();
