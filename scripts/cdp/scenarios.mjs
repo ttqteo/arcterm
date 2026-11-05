@@ -55232,6 +55232,38 @@ async function setupMemoryAssert(h, ctx) {
         }
     );
 
+    // the nav rail's Setup badge and the Memory tab's count both read the toolbar's number, and the badge holds it
+    // with Setup closed, which only the always-on feed can (the tab's own list is not read off Setup)
+    const setupBadge = () => h.ev(`(document.querySelector('[data-nav-badge="setup"]')?.textContent ?? "").trim()`);
+    const setupTitle = () => h.ev(`document.querySelector('nav button[aria-label="Setup"]')?.title ?? ""`);
+    const tabCount = () => h.ev(`(document.querySelector("[data-setup-tab-count]")?.textContent ?? "").trim()`);
+    const badgeLabel = (n) => (n > 9 ? "9+" : String(n));
+    await run("1b. The Setup badge and the tab count say the projects to review, also from another surface", async () => {
+        const toReview = Number(/^(\d+) projects? to review$/.exec(await toolbarStatus())?.[1] ?? 0);
+        const onSetup = { badge: await setupBadge(), tab: await tabCount(), title: await setupTitle() };
+        // a reload starts on Cockpit, so the Memory tab never mounts before the badge is read
+        await polishReload(h);
+        await h.goto("cockpit");
+        const shown = await polishWaitFor(h, `!!document.querySelector('[data-nav-badge="setup"]')`, 10000);
+        const offSetup = { badge: await setupBadge(), title: await setupTitle() };
+        await h.shot("cdp-shots/setup-memory-rail-badge.png");
+        await h.goto("setup");
+        await click("#setup-tab-memory");
+        await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+        const want = badgeLabel(toReview);
+        const plural = toReview === 1 ? "project" : "projects";
+        return {
+            ok:
+                toReview > 0 &&
+                onSetup.badge === want &&
+                onSetup.tab === `· ${toReview}` &&
+                onSetup.title === `Setup — memory to review in ${toReview} ${plural}` &&
+                shown &&
+                offSetup.badge === want,
+            detail: JSON.stringify({ toReview, onSetup, offSetup }),
+        };
+    });
+
     await run(
         "2. Split: split-a shows the split text, two index cards, three labelled groups and a move-here",
         async () => {
@@ -55706,9 +55738,10 @@ async function setupMemoryAssert(h, ctx) {
                     ownOneLine: own?.hasAttribute("data-memory-empty") === true,
                 };
             })()`);
-            // an empty index reads 0 KB, not 0.0
+            // an empty index reads 0 KB, not 0.0. the card's numbers draw in Inter since ca8ba000d, so the card's whole
+            // text is read and the size picked out of it
             const size = await h.ev(
-                `[...document.querySelectorAll("[data-memory-card] .font-mono")].map((e) => e.textContent.trim())`
+                `[...document.querySelectorAll("[data-memory-card]")].flatMap((e) => e.textContent.match(/(?<![\\d.])[\\d.]+ of 25 KB/g) ?? [])`
             );
             await h.shot("cdp-shots/setup-memory-rail.png");
             return {
@@ -55739,14 +55772,22 @@ async function setupMemoryAssert(h, ctx) {
             .filter((p) => p.changes.some((c) => c.status !== "applied" && c.status !== "kept"))
             .map((p) => p.project);
         const toolbar = await toolbarStatus();
+        // with nothing left the badge and the tab count go; a store's own reviews keep them at its own number
+        const marks = { badge: await setupBadge(), tab: await tabCount() };
         await h.shot("cdp-shots/setup-memory-all-checked.png");
         if (others.length > 0) {
             return {
-                ok: toolbar === `${others.length} project${others.length === 1 ? "" : "s"} to review`,
-                detail: `toolbar="${toolbar}"; this store's own projects to review: ${others.join(", ")}`,
+                ok:
+                    toolbar === `${others.length} project${others.length === 1 ? "" : "s"} to review` &&
+                    marks.badge === badgeLabel(others.length) &&
+                    marks.tab === `· ${others.length}`,
+                detail: `toolbar="${toolbar}" ${JSON.stringify(marks)}; this store's own projects to review: ${others.join(", ")}`,
             };
         }
-        return { ok: toolbar === "Every project checked", detail: `toolbar="${toolbar}"` };
+        return {
+            ok: toolbar === "Every project checked" && marks.badge === "" && marks.tab === "",
+            detail: `toolbar="${toolbar}" ${JSON.stringify(marks)}`,
+        };
     });
 
     await run("14. Landing: memhygiene:<project> opens Setup → Memory with the project selected", async () => {

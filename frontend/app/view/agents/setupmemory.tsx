@@ -45,6 +45,7 @@ import {
     applyMemoryGroup,
     checkMemory,
     decideMemory,
+    ensureMemoryFeed,
     loadMemory,
     memoryBulkAtom,
     memoryBusyAtom,
@@ -55,7 +56,6 @@ import {
     memorySelectedProjectAtom,
     selectMemoryChange,
     selectMemoryProject,
-    subscribeMemory,
 } from "./memorystore";
 import { PathTail } from "./pathtail";
 import { fmtClock } from "./runcompletion";
@@ -670,12 +670,12 @@ export function MemoryTab() {
     const selectedName = useAtomValue(memorySelectedProjectAtom);
     const selectedChange = useAtomValue(memorySelectedChangeAtom);
     const error = useAtomValue(memoryErrorAtom);
-    // re-read on every visit, and on every state write while the tab is open. a failure from an earlier
-    // visit must not leave its banner over fresh data.
+    // re-read on every visit; the feed the nav rail started re-reads on every state write. a failure from an
+    // earlier visit must not leave its banner over fresh data.
     useEffect(() => {
         globalStore.set(memoryErrorAtom, null);
+        ensureMemoryFeed();
         fireAndForget(loadMemory);
-        return subscribeMemory();
     }, []);
     const bindings = useMemo(() => buildMemoryBindings(), []);
     useKeybindings(bindings);
