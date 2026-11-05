@@ -11,6 +11,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   matches in bold, the count in the box, Pinned hidden; ↑/↓ move, Enter opens the file in the panel; Esc clears it and
   the whole tree shows with the cursor on that file. Vitest and the typecheck only (`railtreepane.tsx`, d88315e3b);
   no dev app was up.
+- [ ] (arcterm) **Close brainstorm and run.** A brainstorm whose run merged with its final unverified (the Christmas
+  tree one, run 983dcb44) → its Run step shows an amber line under the card and a "Close brainstorm and run" button →
+  click → a confirm names the unverified final and what of the run it closes → Close → the brainstorm folder goes, its
+  idle agent ends, the run leaves Needs you (accepted), its open sessions end, and its "Cleanup failed" line clears
+  unless a tree is still held. Unit tests and typecheck only (`brainstormrun.tsx`); no dev app was up, and the
+  `brainstorm-run-landed` CDP scenario was updated but not run.
 - [ ] (arcterm) **Your prompts stand out in a transcript.** Agent → a project's Overview → History → a session → Open →
   Transcript (or an ended session's transcript in the centre) → each of your messages is a box tinted in the accent
   colour with an accent border, clearly apart from the agent's prose; the prompt pinned at the top while you scroll

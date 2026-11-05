@@ -30,8 +30,8 @@ export interface RunStepView {
     tree: string;
     merged: boolean;
     canClose: boolean;
-    // why a merged run cannot close the brainstorm, null otherwise
-    closeOff: string | null;
+    // a merged run whose final check did not pass: Close asks first, saying this; null otherwise
+    closeWarn: string | null;
     sha?: string;
     done: number;
     total: number;
@@ -62,7 +62,7 @@ type Base = Omit<RunStepView, "state" | "headline" | "detail" | "tree">;
 export function runStepView(runId: string, run: RunInfo | undefined, loaded: boolean): RunStepView {
     const id8 = shortRunId(runId);
     if (run == null) {
-        const base: Base = { merged: false, canClose: false, closeOff: null, done: 0, total: 0 };
+        const base: Base = { merged: false, canClose: false, closeWarn: null, done: 0, total: 0 };
         return loaded
             ? {
                   ...base,
@@ -80,7 +80,7 @@ export function runStepView(runId: string, run: RunInfo | undefined, loaded: boo
     // a run on its own branch lands its tasks there; one without lands them straight on its base
     const where = run.landPath ? `wave/${id8}` : into;
     const notMerged = run.landPath ? `, so nothing has merged into ${into} yet` : "";
-    const base: Base = { merged: false, canClose: false, closeOff: null, done, total, round: final?.round };
+    const base: Base = { merged: false, canClose: false, closeWarn: null, done, total, round: final?.round };
 
     // a done run's cancelled dag is the dag the engine closed when the run ended (endedRunSettles): it reads by its land
     if (run.status === "cancelled" || (run.dag?.status === "cancelled" && run.status !== "done")) {
@@ -109,12 +109,13 @@ export function runStepView(runId: string, run: RunInfo | undefined, loaded: boo
                   : "The final check did not pass.",
             tree: "merged",
             merged: true,
-            canClose: passed,
-            closeOff: passed
+            // the run is in its base either way: an unpassed final asks first rather than keeping the brainstorm
+            canClose: true,
+            closeWarn: passed
                 ? null
                 : finalState === "unverified"
-                  ? "The final check could not verify everything, so the brainstorm stays until you have seen what went unverified."
-                  : "The final check did not pass, so the brainstorm stays.",
+                  ? "The final check could not verify everything. Open the run first to see what went unverified; closing accepts it as it is."
+                  : "The final check did not pass, though the run merged. Open the run first to see what failed; closing accepts it as it is.",
             sha,
         };
     }
@@ -230,6 +231,52 @@ function quickStepView(run: RunInfo, base: Base): RunStepView {
 export function runTreeText(runId: string, view: Pick<RunStepView, "tree">): string {
     const id = `run ${shortRunId(runId)}`;
     return view.tree ? `${view.tree} · ${id}` : id;
+}
+
+// RunClose is what closing the brainstorm also closes of its run: a done run's outcome is accepted (the run's
+// Accept, which clears its unverified item), the worktrees its cleanup left behind are removed, and the sessions it
+// still holds end.
+export interface RunClose {
+    ack: boolean;
+    // task ids whose worktree the run's cleanup could not remove
+    cleanup: string[];
+    tabIds: string[];
+}
+
+export function runClose(run: RunInfo | undefined, tabIds: string[]): RunClose {
+    if (run == null) {
+        return { ack: false, cleanup: [], tabIds };
+    }
+    const cleanup = (run.digest?.tasks ?? [])
+        .filter((t) => t.humanactions?.includes("retry-cleanup"))
+        .map((t) => t.taskid);
+    return { ack: run.status === "done", cleanup, tabIds };
+}
+
+// whether Close touches the run at all, which names the button "Close brainstorm and run"
+export function closesRun(c: RunClose): boolean {
+    return c.cleanup.length > 0 || c.tabIds.length > 0;
+}
+
+// runCloseText is the run's half of the Close line, "" when Close leaves the run as it is
+export function runCloseText(c: RunClose): string {
+    const parts: string[] = [];
+    if (c.tabIds.length > 0) {
+        parts.push(
+            c.tabIds.length === 1 ? "ends the run’s 1 open session" : `ends the run’s ${c.tabIds.length} open sessions`
+        );
+    }
+    if (c.cleanup.length > 0) {
+        parts.push(
+            c.cleanup.length === 1
+                ? "removes the 1 worktree its cleanup left"
+                : `removes the ${c.cleanup.length} worktrees its cleanup left`
+        );
+    }
+    if (parts.length === 0) {
+        return "";
+    }
+    return ` It also ${parts.join(" and ")}.`;
 }
 
 // one plain folder name: the topic and canvas come from an agent-written file, and Close deletes what they name
