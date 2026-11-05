@@ -11751,6 +11751,7 @@ const XMAS_LIGHTS_READ = `(() => {
     return {
         asking: row.hasAttribute("data-asking"),
         top: r.top,
+        bottom: r.bottom,
         barBottom: document.querySelector("[data-app-bar]")?.getBoundingClientRect().bottom ?? null,
         bulbs: [...row.querySelectorAll("[data-bulb]")].map((b) => ({
             cls: String(b.className),
@@ -12059,13 +12060,14 @@ const christmasTheme = {
         await h.shot("cdp-shots/christmas-theme-4-lights-lit.png");
         await xmasClip(h, "christmas-theme-4-lights-lit-zoom", "[data-app-bar]", 480, 60, 3);
         rec(
-            "4. with no agent asking, the lights hang under the app bar lit and still: every bulb red, gold, green or cream, no PULSES class, no opacity written across 4 reads",
+            "4. with no agent asking, the lights run along the inside of the app bar's bottom edge (nothing hangs below the bar) lit and still: every bulb red, gold, green or cream, no PULSES class, no opacity written across 4 reads",
             l4 != null &&
                 l4.barBottom != null &&
-                Math.abs(l4.top - l4.barBottom) <= 1 &&
+                l4.bottom <= l4.barBottom &&
+                l4.barBottom - l4.bottom <= 2 &&
                 l4.bulbs.length >= Math.floor(1600 / 30) &&
                 lit4.every((s) => s && !s.asking && s.bulbs.every(xmasBulbLit)),
-            { top: l4?.top, barBottom: l4?.barBottom, bulbs: l4?.bulbs.length, first: l4?.bulbs.slice(0, 4) }
+            { top: l4?.top, bottom: l4?.bottom, barBottom: l4?.barBottom, bulbs: l4?.bulbs.length, first: l4?.bulbs.slice(0, 4) }
         );
 
         // 5. an agent asks: every bulb turns asking and blinks, every other one half a period behind

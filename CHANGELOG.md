@@ -62,6 +62,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and
   falls smoothly instead of in jerky steps when you turn it on.
 - The Christmas theme's green is a shade darker, so text, code and cards on it read more easily.
+- The Christmas lights run along the bottom of the app bar, behind its search and buttons, instead of hanging over the top of the screen below, where they sat on buttons and made them look disabled.
 - While arcterm starts up (a long wait after a reinstall), the Agent and Cockpit screens show your pet running back and forth with "Setting up arcterm" instead of blank grey boxes, so it no longer looks stuck.
 
 ### Fixed

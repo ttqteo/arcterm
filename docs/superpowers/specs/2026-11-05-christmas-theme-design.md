@@ -81,8 +81,9 @@ unit-tested.
 
 ### App bar lights
 
-A string of red, gold, green and cream bulbs hangs under the app bar's bottom edge. Normally the bulbs are lit and
-still, so they cost no frames. When an agent needs you (the same signal as the Cockpit nav badge, `navrail.tsx`), the
+A string of red, gold, green and cream bulbs runs along the inside of the app bar's bottom edge, behind the bar's
+controls (it first hung below the bar, where its bulbs sat on the headers' buttons and made them look disabled).
+Normally the bulbs are lit and still, so they cost no frames. When an agent needs you (the same signal as the Cockpit nav badge, `navrail.tsx`), the
 string blinks in the `asking` colour until nothing is asking. The blink is driven by a `PULSES` class
 (`element/pulse.ts`) that `PulseDriver` already ticks at 12fps, not by a CSS animation. Under reduced motion it stays
 lit in `asking` without blinking.

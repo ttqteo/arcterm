@@ -100,7 +100,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const newAgentKeys = useBindingKeys("new-agent");
     // the Spider theme swaps the t> mark for its spider, in the suit's red against the theme's blue accent (themedecorview.tsx)
     const spider = useSpiderDecor();
-    // the Christmas theme hangs a string of lights under the bar (christmaslights.tsx)
+    // the Christmas theme strings lights along the bar's bottom edge, behind its controls (christmaslights.tsx)
     const christmas = useChristmasDecor();
     return (
         <div
@@ -110,14 +110,17 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             // "deep": a bare attribute drags only on the bar's own pixels, not its children; buttons still opt out
             data-tauri-drag-region="deep"
             className={clsx(
-                // relative: the Christmas lights hang from the bar's bottom edge
+                // relative: the Christmas lights run along the bar's bottom edge
                 "relative flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
                 mac ? "pr-4" : null,
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}
         >
+            {/* first, and every group after it positioned (relative): the groups then paint over the lights in tree
+                order, so a bulb never sits on a button (christmaslights.tsx) */}
+            {christmas ? <ChristmasLights model={model} /> : null}
             {/* shrink-0: the search in the middle gives way first; this group shrinking wrapped "All projects" */}
-            <div data-tauri-drag-region className="flex shrink-0 items-center gap-[9px]">
+            <div data-tauri-drag-region className="relative flex shrink-0 items-center gap-[9px]">
                 <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}>
                     {spider ? <SpiderMark /> : <ArctermMark />}
                 </span>
@@ -134,7 +137,10 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
             {/* the padding is drag room: at a narrow window the search otherwise fills the whole middle, and
                 the bar leaves nothing to grab but the wordmark and the 16px gaps */}
-            <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-center px-[clamp(24px,5vw,72px)]">
+            <div
+                data-tauri-drag-region
+                className="relative flex min-w-0 flex-1 justify-center px-[clamp(24px,5vw,72px)]"
+            >
                 <button
                     type="button"
                     onClick={() => globalStore.set(model.paletteOpenAtom, true)}
@@ -186,7 +192,6 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
                 {mac ? null : <WindowControls />}
             </div>
-            {christmas ? <ChristmasLights model={model} /> : null}
         </div>
     );
 }

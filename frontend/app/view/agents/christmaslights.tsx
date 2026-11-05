@@ -1,11 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Christmas theme's string of lights, hanging from the app bar's bottom edge (spike: .superpowers/design/
-// christmas-theme/spike/lights.html, option D). Lit and still, the bulbs carry no PULSES class, so they cost no frames.
+// The Christmas theme's string of lights, strung along the inside of the app bar's bottom edge, behind the bar's own
+// controls (spike: .superpowers/design/christmas-theme/spike/lights.html, option D). It first hung below the bar, over
+// the top of every surface's header, where its bulbs sat on buttons and made them look disabled; inside the bar the
+// search, the chips and New paint over it, and nothing under the bar is covered.
+// Lit and still, the bulbs carry no PULSES class, so they cost no frames.
 // While an agent needs you (the Cockpit badge's own count) every bulb turns `asking` and blinks through PulseDriver's
 // `pulse-blink`, every other one half a period behind, so the string chases; under reduced motion PulseDriver writes
-// nothing, so they stay lit in `asking`. Absolutely placed under the bar: the bar's height and layout never change.
+// nothing, so they stay lit in `asking`. Absolutely placed in the bar: the bar's height and layout never change.
 // LightString is the string alone, which a dialog (ModalShell christmasLights) and the Christmas effects row in
 // Settings → Appearance also hang from their top edge, lit and still.
 
@@ -26,11 +29,12 @@ function bulbCount(): number {
 
 export function ChristmasLights({ model }: { model: AgentsViewModel }) {
     const asking = useCockpitWaitingCount(model) > 0;
-    return <LightString place="bar" asking={asking} className="top-full z-10" />;
+    // no z-index: the bar renders this first and its groups are positioned, so they paint over it in tree order
+    return <LightString place="bar" asking={asking} className="bottom-0" />;
 }
 
-/** The string of bulbs, absolutely placed across its positioned parent; `className` sets where (top-full, top-0).
- *  `place` names it for the CDP scenarios: data-christmas-lights under the app bar, data-decor-lights elsewhere. */
+/** The string of bulbs, absolutely placed across its positioned parent; `className` sets where (bottom-0, top-0).
+ *  `place` names it for the CDP scenarios: data-christmas-lights in the app bar, data-decor-lights elsewhere. */
 export function LightString({
     place,
     asking = false,
