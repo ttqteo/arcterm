@@ -764,6 +764,10 @@ func useCouncilRig(t *testing.T, fake *councilFake) *councilEvents {
 	prevWatch := startCouncilWatch
 	startCouncilWatch = func() {}
 	t.Cleanup(func() { startCouncilWatch = prevWatch })
+	// nor may a project's instruction file be rewritten after the test's temp folders are gone
+	prevNote, prevDocs := noteCouncilDoc, startCouncilDocs
+	noteCouncilDoc, startCouncilDocs = func(*council.Council) {}, func() {}
+	t.Cleanup(func() { noteCouncilDoc, startCouncilDocs = prevNote, prevDocs })
 
 	events := &councilEvents{}
 	prevClient := wps.Broker.GetClient()

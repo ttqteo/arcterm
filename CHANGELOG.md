@@ -30,6 +30,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - `wsh effort pin <initiative>` and `wsh effort unpin <initiative>` pin an initiative to the Brief's cards from a terminal. Pinning a seventh says six are pinned and offers to unpin the oldest (`--replace-oldest` in the terminal).
 - A council's report opens in the Brief's side sheet from its line in Activity: the verdict, the ranked directions with their first steps, Work on (it opens the New agent dialog filled in and never starts an agent by itself), Add to initiative…, and what to ask next. <!-- try: go:jarvis -->
 - Reply to one seat's message in a council: Reply beside Copy and Pin puts "Replying to …" above the message box, and what you send goes to the seat that wrote it, with its message quoted on yours. It works in the chat and in an idea's thread; × or Esc stops replying.
+- A project's CLAUDE.md (or its AGENTS.md when it has no CLAUDE.md) keeps a "Council decisions" block: the direction,
+  Agreed, Ruled out and Open of each of its councils' Memory, newest first, rewritten a few seconds after a Memory
+  changes. Every agent of the project starts from what the councils settled. Arcterm writes only that block; the rest
+  of the file stays yours.
 
 ### Changed
 

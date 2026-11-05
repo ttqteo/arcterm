@@ -40,17 +40,20 @@ func newCouncilRunner(caller council.Caller) *council.Runner {
 // publishCouncilChanged tells the cockpit and `wsh council wait` that a council was saved.
 func publishCouncilChanged(c *council.Council) {
 	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: c.Id, Project: c.Project}})
+	noteCouncilDoc(c) // what it settled may have changed: its project's instruction file follows
 }
 
 // StartCouncilRunner is called once at startup: a council left running when wavesrv last quit has no run behind it, so
 // it is marked stopped. A council with a live run is left alone. A council that was queued when wavesrv quit stays
 // queued, and the oldest one starts now. Then the councils folder is watched, so a council synced in from another
-// machine, or a file changed or removed by hand, shows in the cockpit without waiting for an unrelated change.
+// machine, or a file changed or removed by hand, shows in the cockpit without waiting for an unrelated change, and each
+// project's instruction file gets what its councils settled (startCouncilDocs).
 func StartCouncilRunner() {
 	councilRunner.MarkStale()
 	stopQueuedBenchCouncils()
 	councilRunner.StartNext()
 	startCouncilWatch()
+	startCouncilDocs()
 }
 
 // startCouncilWatch watches the councils folder for the life of wavesrv, publishing council:changed for each file
@@ -273,6 +276,7 @@ func (ws *WshServer) CouncilDeleteCommand(ctx context.Context, data wshrpc.Comma
 		return err
 	}
 	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: c.Id, Project: c.Project, Deleted: true}})
+	councilDocs.forget(c)
 	return nil
 }
 
