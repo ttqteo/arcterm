@@ -62,6 +62,25 @@ describe("PULSES", () => {
     });
 });
 
+describe("pulse-blink", () => {
+    const blink = PULSES["pulse-blink"];
+
+    it("dips to its low mid-cycle and is back at full at the cycle's end", () => {
+        expect(blink.prop).toBeUndefined();
+        expect(blink.low).toBeLessThan(0.5);
+        expect(pulseOpacity(blink, 0)).toBeCloseTo(1, 5);
+        expect(pulseOpacity(blink, blink.periodMs / 2)).toBeCloseTo(blink.low, 5);
+        expect(pulseOpacity(blink, blink.periodMs)).toBeCloseTo(1, 5);
+    });
+
+    it("starts a bulb lagged half a period at the bottom, so every other bulb is dark while its neighbours are lit", () => {
+        const half = String(blink.periodMs / 2);
+        const start = pulseStart(5_000, blink, half);
+        expect(pulseOpacity(blink, 5_000 - start)).toBeCloseTo(blink.low, 5);
+        expect(pulseOpacity(blink, 5_000 + blink.periodMs / 2 - start)).toBeCloseTo(1, 5);
+    });
+});
+
 describe("pulseStart", () => {
     const spec = PULSES["pulse-typing"];
 

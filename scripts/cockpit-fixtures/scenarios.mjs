@@ -519,7 +519,53 @@ function officeBench(now) {
     return out;
 }
 
+// the christmas-theme scenario's roster (scripts/cdp/scenarios.mjs, docs/superpowers/specs/2026-11-05-christmas-theme-design.md):
+// one project room, north-pole, with one agent finished (idle inside the Finished window, asleep at its desk) and one
+// asking. Two desks leave the room's desk row a free place, so it has a tree spot. The run whose done tasks add gifts
+// at the room's table is handed to the office through its dev hook (floorsRun in scripts/cdp/cockpitofficescenarios.mjs).
+export const CHRISTMAS_ASKER = "fx-xmas-rudolph";
+function christmasOffice(now) {
+    return [
+        {
+            id: "fx-xmas-elf",
+            name: "elf",
+            project: "north-pole",
+            task: "wrap the release notes",
+            state: "idle",
+            agent: "claude",
+            model: "sonnet",
+            idleSince: now - 60_000,
+            blockId: "fx-blk-xmas-elf",
+            previousInfo: [{ kind: "message", text: "Wrapped the release notes." }],
+        },
+        {
+            id: CHRISTMAS_ASKER,
+            name: "rudolph",
+            project: "north-pole",
+            task: "route the sleigh",
+            state: "asking",
+            agent: "claude",
+            model: "opus",
+            blockedMs: 120_000,
+            blockId: "fx-blk-xmas-rudolph",
+            previousInfo: [{ kind: "message", text: "Two routes over the fjord. Need a pick." }],
+            ask: {
+                askId: "fx-xmas-rudolph-ask",
+                oref: "block:fx-blk-xmas-rudolph",
+                questions: [
+                    {
+                        header: "Route",
+                        question: "Fly the coast or cross the fjord?",
+                        options: [{ label: "The coast (Recommended)" }, { label: "The fjord" }],
+                    },
+                ],
+            },
+        },
+    ];
+}
+
 export const SCENARIOS = {
+    "christmas-office": christmasOffice,
     office,
     "office-controls": officeControls,
     "office-floors": officeFloors,

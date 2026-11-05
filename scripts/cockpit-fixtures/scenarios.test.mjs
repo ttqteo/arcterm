@@ -29,7 +29,7 @@ describe("validateScenario", () => {
     });
 });
 
-import { SCENARIOS } from "./scenarios.mjs";
+import { CHRISTMAS_ASKER, SCENARIOS } from "./scenarios.mjs";
 
 const FIXED_NOW = 1_700_000_000_000;
 
@@ -52,6 +52,20 @@ describe("SCENARIOS", () => {
         const roster = SCENARIOS["all-asking"](FIXED_NOW);
         expect(roster.length).toBeGreaterThan(0);
         expect(roster.every((a) => a.state === "asking")).toBe(true);
+    });
+
+    test("christmas-office is valid: one room, one agent finished inside the Finished window and one asking", () => {
+        const roster = SCENARIOS["christmas-office"](FIXED_NOW);
+        const r = validateScenario(roster);
+        expect(r.ok, r.errors.join("; ")).toBe(true);
+        expect(new Set(roster.map((a) => a.project))).toEqual(new Set(["north-pole"]));
+        const finished = roster.filter((a) => a.state === "idle");
+        expect(finished).toHaveLength(1);
+        // the Finished window is 5 minutes: idle inside it is asleep at its desk, past it the lounge
+        expect(FIXED_NOW - finished[0].idleSince).toBeLessThan(5 * 60_000);
+        const asking = roster.filter((a) => a.state === "asking");
+        expect(asking.map((a) => a.id)).toEqual([CHRISTMAS_ASKER]);
+        expect(asking[0].ask.questions.length).toBeGreaterThan(0);
     });
 
     test("empty is an empty array", () => {

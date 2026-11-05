@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the pet wears in Vietnam's colours (petsprite.ts draws it). Pure: petview.tsx hands in the Settings choice and
-// the clock.
+// What the pet wears in Vietnam's colours, or its Santa hat at Christmas (petsprite.ts draws it). Pure: petview.tsx
+// hands in the Settings choice, the clock and whether the Christmas decor shows.
 
 import type { PetOutfit } from "./petsprite";
 
@@ -28,8 +28,12 @@ export function petOutfitChoice(value: unknown): PetOutfitChoice {
     return value === "shirt" || value === "flag" || value === "off" ? value : DEFAULT_PET_OUTFIT;
 }
 
-/** What the pet wears: the choice, and the shirt on a flag day when the choice is off. */
-export function petOutfit(choice: PetOutfitChoice, now: Date): PetOutfit | null {
+/** What the pet wears: the Santa hat while the Christmas decor shows (`christmas`, useChristmasDecor), whatever the
+ *  choice and flag days included; otherwise the choice, and the shirt on a flag day when the choice is off. */
+export function petOutfit(choice: PetOutfitChoice, now: Date, christmas = false): PetOutfit | null {
+    if (christmas) {
+        return "santa-hat";
+    }
     if (choice === "flag") {
         return "vn-flag";
     }

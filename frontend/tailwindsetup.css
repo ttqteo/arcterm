@@ -111,6 +111,14 @@
     --color-spidey-seam: #2a0a0d;
     --color-spidey-eye: #f4f6fb;
     --color-spidey-web: #c9ced8;
+
+    /* The Christmas theme's decor (christmas.ts): crimson for the hats, ribbons, the wreath's bow and the gift paper,
+       a lit red bulb, pine for the trees and the wreath, and snow for the flakes, the hat's trim and a cream bulb.
+       The star and the gold bulb use the accent. Decor, never theme-derived */
+    --color-xmas-crimson: #a0061b;
+    --color-xmas-bulb: #d0283c;
+    --color-xmas-pine: #2f6b4a;
+    --color-xmas-snow: #f2ead9;
     --color-peter-skin: #f0c19b;
     --color-peter-hair: #4a2f1c;
     --color-peter-glasses: #3a3a40;
