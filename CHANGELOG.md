@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Pause a run from its ⋯ menu (the run sheet, the lead card on the Cockpit, the DAG view's header) or with `wsh runs pause <run>`, to free its memory without losing it: the lead, the workers and any running Verify or Final stop, the worktrees, commits and sessions stay, and a paused run reads "Paused · resumes when memory frees" in the Agent tree and the run list. Resume it from the same menu, from the small Resume button on its row, or with `wsh runs resume <run>`, and each agent carries on in its own session.
+- Arc pauses a run by itself when memory stays tight, the one with the fewest tasks done, never one in its Final stage or mid-merge, and resumes it once memory has been free for a while, so a crowded machine slows down instead of stalling. It does nothing while the heavy-job queue is switched off, and it leaves a notice only in the run itself, never a card or a toast.
 - A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
   waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
   for an agent, to hand a stuck land to another agent.

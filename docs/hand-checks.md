@@ -6,6 +6,25 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Pause and Resume keep each agent's session (claude, pi, agy, codex).** In the installed app, for each
+  of the four harnesses, start an orchestrator run whose worker uses it (a run per harness is fine; a quick run works
+  too) → while a worker is mid-task, the run's ⋯ menu → Pause → the lead and every worker stop (their processes leave
+  Task Manager or Activity Monitor), the run reads "Paused · resumes when memory frees", and the worktrees and commits
+  stay. Answer a question the worker had open while the run is paused. Resume → each agent reopens in its own tab and
+  session with the "Arc paused this run…" nudge, still holding its earlier conversation (no fresh session), carries on
+  from where it stopped, and gets the answer you gave while paused. Go tests only; the CDP `run-paused` scenario seeds a
+  paused run and never suspends a session.
+- [ ] (arcterm) **A run pauses itself under real memory pressure and resumes when it frees (Windows and macOS).** On
+  each OS, with two or three runs going, fill RAM (several `node -e` allocating a few GB each, or a few big builds)
+  until the app bar's RAM chip is amber and stays so for about a minute → the run with the fewest tasks done (not one in
+  its Final stage or mid-merge, and holding over 1 GB) pauses by itself, the RAM drops, and its `run-paused` event
+  reads `auto` with the RAM it held; no card and no toast. Free the RAM → about five minutes later, once the free RAM is
+  over what the run held plus 4 GB, it resumes by itself. On Windows the pressure reading (commit charge) is never
+  "normal", only unknown: check it resumes there all the same. Only the pure rules (`runregulator.Decide`) are unit
+  tested.
+- [ ] (arcterm) **The run card's ⋯ menu.** `BlockedCard` in `runcards.tsx`, the one run card that carries a Cancel, is
+  mounted by no screen, so the `run-paused` scenario has no step for its menu. When a screen mounts it: on a top-level
+  active run its ⋯ menu holds Pause, on a paused one Resume, and neither sits beside Cancel.
 - [ ] (arcterm) **Your prompts stand out in a transcript.** Agent → a project's Overview → History → a session → Open →
   Transcript (or an ended session's transcript in the centre) → each of your messages is a box tinted in the accent
   colour with an accent border, clearly apart from the agent's prose; the prompt pinned at the top while you scroll
