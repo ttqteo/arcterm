@@ -695,11 +695,6 @@ export function clampRailWidth(stored: number | null, paneWidth: number, min: nu
     return Math.min(max, Math.max(min, width));
 }
 
-// "widened" is the rail's largest: all the pane but the question's 360px, and never under the smallest rail
-export function railMaxWidth(paneWidth: number, min: number): number {
-    return Math.max(min, paneWidth - QUESTION_MIN_W);
-}
-
 // the pane cannot hold the question and the smallest rail side by side (640px in the design, 820px in the check): the
 // rail goes under the question. The pane's container query says the same; this is the one place the cutoffs are tested
 export function railStacks(paneWidth: number, min: number): boolean {
@@ -738,6 +733,25 @@ export function railBoardHeads(f: BrainstormFile, partId: string, boards: Canvas
         const title = boards.find((b) => b.name === name)?.title?.trim();
         return { name, letter: null, label: title ? title : name, option: null };
     });
+}
+
+// The answer a board opened large offers under it: the option the board shows, while the question is on screen (an
+// open question in the design is answered from the question, so the design's board offers none). label is what the pick
+// sends, as the option's row does; leaning names whose pick the option is, as the row's tag does, or is null
+export type BoardPick = { option: number; letter: string; label: string; leaning: string | null };
+
+export function boardPick(
+    f: BrainstormFile,
+    head: { option: number | null },
+    questionShown: boolean
+): BoardPick | null {
+    const q = f.question;
+    const o = head.option != null ? q?.options?.[head.option] : undefined;
+    if (!questionShown || q == null || head.option == null || o == null) {
+        return null;
+    }
+    const leaning = o.pick ? (judgeWork(q)?.judged ? "Judge’s pick" : "Agent’s pick") : null;
+    return { option: head.option, letter: optionLetter(head.option), label: o.label, leaning };
 }
 
 // a part's boards and spikes as the rail lists them: the spikes are links under the group's boards
@@ -1718,8 +1732,8 @@ export function procExited(exit: { code: number; at: number } | undefined, sleep
 
 export type PaneView = "error" | "removed" | "exited" | "run" | "check" | "design";
 
-// `board` is the board widened in the rail (openBrainstormBoard): the pane keeps its view while one is, since the
-// question stays on screen beside it
+// `board` is the board open in its dialog over the pane (openBrainstormBoard): the pane keeps its view while one is, since
+// the question is still there under the dialog
 export function paneView(s: {
     file: BrainstormFile | null;
     error: string | null;
@@ -1743,8 +1757,8 @@ export function paneView(s: {
     return s.file?.check != null ? "check" : "design";
 }
 
-// The one level the pane's back control steps up, or null where it draws none: a widened board shrinks back to the
-// rail's width, and the design opened over the question or the working note goes back to it. Esc takes the same
+// The one level the pane's back control steps up, or null where it draws none: an open board's dialog closes, and the
+// design opened over the question or the working note goes back to it. Esc takes the same
 // step (agent:brainstorm-back), so the key and the controls cannot disagree on when there is one
 export type PaneBack = "board" | "design";
 
@@ -1753,7 +1767,7 @@ export function paneBack(
     f: BrainstormFile | null
 ): PaneBack | null {
     const view = paneView(s);
-    // the rail draws a widened board in the design and in the check, and nowhere else
+    // the rail opens a board in the design and in the check, and nowhere else
     if (s.board != null && (view === "design" || view === "check")) {
         return "board";
     }

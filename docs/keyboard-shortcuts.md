@@ -375,11 +375,11 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `b` | Show the agent's brainstorm; from the brainstorm, back to the terminal (while the question offers a B, `b` picks it instead) |
 | `Ctrl`+`Shift`+`B` | The same switch, and it also works while typing in the terminal or while `b` picks an answer |
 | `Alt`+`C` | Next of Terminal, Brainstorm, Review |
-| `a` / `b` / `c` / `d` | While the brainstorm asks a question with answers to pick from: focus that answer; `Enter` sends it. They stay live while a board is widened in the rail, and stand down while that board is being marked |
-| `[` / `]`, `←` / `→` | Previous / next board, while a board is widened in the rail |
+| `a` / `b` / `c` / `d` | While the brainstorm asks a question with answers to pick from: focus that answer; `Enter` sends it. Over a board open in its dialog they close the dialog first; they stand down while that board is being marked |
+| `[` / `]`, `←` / `→` | Previous / next board, while a board is open in its dialog |
 | `Enter` / `Shift`+`Enter` | In the answer box or an edit box: send / a new line |
-| `Esc` | Back one level, as the pane's back control does: a board widened in the rail shrinks back to the rail's width; from the design opened over the question (or over the agent writing) back to it. A focused field keeps its own `Esc`, and on a widened board with a drawn mark `Esc` stays the mark note's |
-| `j` / `k` | In the builder check's review: next / previous decision (also over a widened board, but not while it is being marked) |
+| `Esc` | Back one level, as the pane's back control does: an open board's dialog closes; from the design opened over the question (or over the agent writing) back to it. A focused field keeps its own `Esc`, and on an open board with a drawn mark `Esc` stays the mark note's |
+| `j` / `k` | In the builder check's review: next / previous decision (also under an open board, but not while it is being marked) |
 | `Enter` | In the review: show or hide what the cursor decision was (a focused button keeps its own `Enter`) |
 | `y` | In the review: keep the cursor decision's change; on a guess, confirm it |
 | `u` | In the review: put mine back |

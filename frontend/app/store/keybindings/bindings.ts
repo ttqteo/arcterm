@@ -271,7 +271,7 @@ const brainstormBoardOpen = (model: AgentsViewModel): boolean => {
     return view === "design" || view === "check";
 };
 
-// The widened board is being marked: the question's own keys (a letter picks an answer, the check review's j k y u
+// The open board is being marked: the question's own keys (a letter picks an answer, the check review's j k y u
 // Enter) stand down, as they do over any canvas in marking mode, so a stray key does not answer for a mark.
 const brainstormBoardMarking = (model: AgentsViewModel): boolean =>
     brainstormBoardOpen(model) && focusedCanvas(model)?.marking === true;
@@ -1182,8 +1182,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return agent != null && globalStore.get(getProcExitAtom(agent.blockId ?? "")) != null;
     };
     // the check's review fills the main area: j and k move its cursor instead of the agents, and y, u and Enter act
-    // on the cursor row. A board widened in the rail leaves the review on screen, so they stay live; marking that board
-    // holds them (as it holds a letter's pick), and j and k move the agents then
+    // on the cursor row. They stay live while a board is open in its dialog over the review; marking that board holds
+    // them (as it holds a letter's pick), and j and k move the agents then
     const inBrainstormReview = (ctx: KeyContext) => {
         if (!inBrainstorm(ctx) || brainstormBoardMarking(model)) {
             return false;
@@ -1225,7 +1225,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return s == null ? 0 : pickableOptions(shownBrainstormFile(s), s);
     };
     // the step the brainstorm pane's back control takes, which Esc takes too. A drawn mark's note owns Esc on the
-    // widened board (it drops the mark there), so the board's step waits for it even while the note's field is unfocused
+    // open board (it drops the mark there), so the board's step waits for it even while the note's field is unfocused
     const paneStep = () => {
         const s = brainstorm();
         if (s?.mode !== "brainstorm") {
@@ -1351,7 +1351,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             id: "agent:brainstorm-back",
             keys: "Escape",
             group: "Agent",
-            label: "Back in the brainstorm: from a widened board, or from the design to the question",
+            label: "Back in the brainstorm: close an open board, or from the design to the question",
             when: (ctx) => agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && paneStep() != null,
             run: () => {
                 const step = paneStep();
@@ -1858,8 +1858,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 document.activeElement?.closest?.("[data-brainstorm-pane]") != null,
             run: () => false, // never consume: the field sends itself
         },
-        // a letter focuses its answer row, so Enter, the row's own key, sends it. It stays live over a board widened in the
-        // rail (the question is still on screen), and stands down while that board is being marked
+        // a letter focuses its answer row, so Enter, the row's own key, sends it. Over a board open in its dialog it closes
+        // the dialog first, so the focused row is on screen when Enter sends it; it stands down while that board is being
+        // marked
         ...OPTION_KEYS.map(
             (key, i): Binding => ({
                 id: `agent:brainstorm-option-${key}`,
@@ -1874,6 +1875,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     );
                     if (row == null) {
                         return false;
+                    }
+                    if (brainstormBoardOpen(model)) {
+                        openBrainstormBoard(focusId(), null);
                     }
                     row.focus();
                 },

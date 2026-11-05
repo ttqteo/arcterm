@@ -30329,8 +30329,8 @@ const BS_RAIL_READ = `(() => {
         spikes: g.querySelectorAll("[data-brainstorm-spike]").length,
         box: box(g),
     }));
-    const wide = rail?.querySelector("[data-brainstorm-rail-widened]");
-    const mark = rail?.querySelector("[data-brainstorm-rail-mark]");
+    const wide = pane?.querySelector("[data-brainstorm-rail-widened]");
+    const mark = pane?.querySelector("[data-brainstorm-rail-mark]");
     const body = rail?.querySelector(":scope > div > .overflow-y-auto");
     const frameEl = wide?.querySelector("[data-canvas-frame]");
     return {
@@ -30349,6 +30349,8 @@ const BS_RAIL_READ = `(() => {
         columns: new Set(tiles.filter((t) => t.box).map((t) => t.box.x)).size,
         scrollTop: Math.round(body?.scrollTop ?? 0),
         widened: !!wide,
+        dialog: box(pane?.querySelector("[data-brainstorm-board-dialog]")),
+        pick: flat(pane?.querySelector("[data-brainstorm-board-pick]")),
         widenedBoard: frameEl?.getAttribute("data-canvas-frame") ?? null,
         widenedSrc: frameEl?.querySelector("iframe")?.getAttribute("src") ?? null,
         widenedHead: flat(wide?.querySelector("[data-brainstorm-rail-board-head]")),
@@ -31046,30 +31048,59 @@ const brainstormMode = {
             { options: hovA.options.map((o) => o.linked), tiles: hovATile.tiles.map((t) => t.lit), off: hovOff.options.map((o) => o.linked) }
         );
 
-        // click a board: the rail widens to its largest and shows only that board, the question and its answers stay on
-        // screen, a letter key picks an answer as it does without a board, and Esc returns the rail to its width
+        // click a board: it opens large in a dialog over the question and the rail, which keep their widths under it; the
+        // board tied to answer B offers B's pick under it, and the pick sends B's label as the answer and closes the dialog
         const widthBefore = (await bsRailRead(h)).rail.w;
-        const openedBoard = await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
-        const wid = await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
+        const openedBoard = await bsMouseClick(h, `${bsTileSel(BS_BOARDS[1])}?.querySelector("button")`);
+        const wid = await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[1] && r.pick !== "", 5000);
         const sWid = await bsRead(h, ctx);
         await h.shot("cdp-shots/brainstorm-mode-2-widened.png");
         const lineB = BS_Q5_LAYOUT.options[1].label;
         mark = await bsMark(h, ctx, lineB);
-        await bsMouseClick(h, `${BS_PANE}?.querySelector("h1")`);
-        // pickKeys: whether CDP key events reach the page, read at 2s
-        let focusedB = null;
-        if (pickKeys) {
-            await pressCanvasKey(h, BS_B_KEY);
-            focusedB = await h.ev(`document.activeElement?.getAttribute("data-brainstorm-option") ?? null`);
-            await bsKey(h, `${BS_PANE}?.querySelector('[data-brainstorm-option="1"]')`, "Enter", "keys");
-        } else {
-            await h.ev(`${BS_PANE}?.querySelector('[data-brainstorm-option="1"]')?.click()`);
-        }
+        await bsMouseClick(h, `${BS_PANE}?.querySelector("[data-brainstorm-board-pick]")`);
         const pickedB = await bsTyped(h, ctx, mark, lineB);
         await bsAgentTook(h, ctx);
-        const stillWide = await bsRailRead(h);
-        // the page's focus is the question's, as the user's is after reading it
-        await bsMouseClick(h, `${BS_PANE}?.querySelector("h1")`);
+        const closedByPick = await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
+        rec(
+            "2l4. board dialog: clicking board B opens it in a dialog over the question and the rail, which keep their widths; its Pick B sends B's label as the answer and closes the dialog",
+            openedBoard !== false &&
+                wid.ok &&
+                wid.handle != null &&
+                Math.abs(wid.rail.w - widthBefore) <= 3 &&
+                wid.dialog != null &&
+                wid.question != null &&
+                wid.dialog.x <= wid.question.x + 2 &&
+                wid.dialog.r >= wid.rail.r - 2 &&
+                wid.pick.startsWith("Pick B") &&
+                wid.pick.includes(lineB) &&
+                sWid.options.length === 2 &&
+                sWid.view === "design" &&
+                wid.mark != null &&
+                pickedB.ok &&
+                closedByPick.ok &&
+                Math.abs(closedByPick.rail.w - widthBefore) <= 3,
+            { widthBefore, rail: wid.rail, dialog: wid.dialog, question: wid.question, board: wid.widenedBoard, pick: wid.pick, ...pickedB.detail, closed: closedByPick.ok }
+        );
+
+        // a letter key over the open board closes the dialog and focuses its answer row, so Enter would send it on screen
+        if (pickKeys) {
+            await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
+            const openA = await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
+            await pressCanvasKey(h, BS_B_KEY);
+            const byLetter = await bsRailUntil(h, (r) => !r.widened, 3000);
+            const focusedB = await h.ev(`document.activeElement?.getAttribute("data-brainstorm-option") ?? null`);
+            rec(
+                "2l4b. a letter over the open board: b closes the dialog and focuses answer B",
+                openA.ok && byLetter.ok && focusedB === "1",
+                { opened: openA.ok, closed: byLetter.ok, focused: focusedB }
+            );
+        } else {
+            steps.push(skipStep("2l4b. a letter over the open board", "CDP key events never reached the page"));
+        }
+
+        // Esc closes the dialog, and a second Esc there leaves the question be
+        await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
+        await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
         const escVia = await bsEscape(h);
         const shrunk = await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
         await h.shot("cdp-shots/brainstorm-mode-2-esc-board-to-question.png");
@@ -31077,32 +31108,8 @@ const brainstormMode = {
         await polishNap(500);
         const s2stay = await bsRead(h, ctx);
         rec(
-            pickKeys
-                ? "2l4. widened board: clicking board A widens the rail to its largest with the question and its answers still on screen; b focuses answer B and Enter sends its label as the answer; Esc returns the rail to its width"
-                : "2l4. widened board: clicking board A widens the rail to its largest with the question and its answers still on screen; clicking answer B sends its label as the answer; Esc returns the rail to its width",
-            openedBoard !== false &&
-                wid.ok &&
-                wid.handle == null &&
-                Math.abs(wid.rail.w - (wid.pane.w - 360)) <= 4 &&
-                wid.rail.w > widthBefore + 100 &&
-                wid.question != null &&
-                wid.question.r <= wid.rail.x + 2 &&
-                sWid.options.length === 2 &&
-                sWid.view === "design" &&
-                wid.mark != null &&
-                (!pickKeys || focusedB === "1") &&
-                pickedB.ok &&
-                stillWide.widened &&
-                shrunk.ok &&
-                Math.abs(shrunk.rail.w - widthBefore) <= 3,
-            { widthBefore, widened: wid.rail, pane: wid.pane, question: wid.question, board: wid.widenedBoard, focused: focusedB, ...pickedB.detail, shrunk: shrunk.rail }
-        );
-        if (!pickKeys) {
-            steps.push(skipStep("2l4b. the letter key itself", "CDP key events never reached the page; clicked the answer instead"));
-        }
-        rec(
-            `2l5. Esc on the widened board returns the rail to its width, the question stays; a second Esc there leaves the question be (${escVia === "keys" ? "a real Esc key" : "a keydown on the document: CDP keys did not reach the page"})`,
-            shrunk.ok && s2stay.view === "design" && s2stay.question.includes(BS_Q5_LAYOUT.text),
+            `2l5. Esc closes the open board's dialog, the question stays; a second Esc there leaves the question be (${escVia === "keys" ? "a real Esc key" : "a keydown on the document: CDP keys did not reach the page"})`,
+            shrunk.ok && Math.abs(shrunk.rail.w - widthBefore) <= 3 && s2stay.view === "design" && s2stay.question.includes(BS_Q5_LAYOUT.text),
             { via: escVia, rail: shrunk.rail, again: bsBrief(s2stay) }
         );
 
@@ -31125,7 +31132,7 @@ const brainstormMode = {
                 stepBack = await bsRailUntil(h, (r) => r.widenedBoard === BS_BOARDS[0], 1500);
             }
             rec(
-                "2l8. step boards while widened: ] shows the next board (PageB) in the widened rail, [ the one before, the question still on screen",
+                "2l8. step boards in the dialog: ] shows the next board (PageB) in the open board's dialog, [ the one before, the question still under it",
                 stepped?.widened === true &&
                     stepped.widenedBoard === BS_BOARDS[1] &&
                     stepped.widenedSrc?.includes(BS_BOARDS[1]) === true &&
@@ -31134,16 +31141,16 @@ const brainstormMode = {
                 { next: stepped?.widenedBoard, src: stepped?.widenedSrc, back: stepBack?.widenedBoard }
             );
         } else {
-            steps.push(skipStep("2l8. step boards while widened", "CDP key events never reached the page"));
+            steps.push(skipStep("2l8. step boards in the dialog", "CDP key events never reached the page"));
         }
 
-        // mark in the widened rail: Mark, a box dragged over the board with real mouse events, a note, and Send, which
+        // mark on the open board: Mark, a box dragged over the board with real mouse events, a note, and Send, which
         // saves a picture through the host and types one line into the agent. A browser build has no host to capture the
         // window, so there the step stops before Send
-        await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-mark]")?.click()`);
-        const layerUp = await polishWaitFor(h, `!!${BS_RAIL}?.querySelector("[data-canvas-mark-layer]")`, 3000);
+        await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-rail-mark]")?.click()`);
+        const layerUp = await polishWaitFor(h, `!!${BS_PANE}?.querySelector("[data-canvas-mark-layer]")`, 3000);
         const layerBox = await h.ev(`(() => {
-            const r = ${BS_RAIL}?.querySelector("[data-canvas-mark-layer]")?.getBoundingClientRect();
+            const r = ${BS_PANE}?.querySelector("[data-canvas-mark-layer]")?.getBoundingClientRect();
             return r && r.width > 0 ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null;
         })()`);
         if (layerBox != null) {
@@ -31174,41 +31181,43 @@ const brainstormMode = {
         }
         const noted = await polishWaitFor(h, `document.querySelector(${JSON.stringify(NOTE)})?.value === ${JSON.stringify(noteText)}`, 2000);
         const markRead = await h.ev(`(() => {
-            const rail = ${BS_RAIL};
-            const send = rail?.querySelector("[data-canvas-send]");
+            const dialog = ${BS_PANE}?.querySelector("[data-brainstorm-board-dialog]");
+            const send = dialog?.querySelector("[data-canvas-send]");
             return {
-                pressed: rail?.querySelector("[data-brainstorm-rail-mark]")?.getAttribute("aria-pressed") ?? null,
-                tray: !!rail?.querySelector("[data-canvas-tray]"),
+                pressed: dialog?.querySelector("[data-brainstorm-rail-mark]")?.getAttribute("aria-pressed") ?? null,
+                tray: !!dialog?.querySelector("[data-canvas-tray]"),
                 send: !!send && !send.disabled,
-                chip: (rail?.querySelector("[data-canvas-mark='1'] span")?.textContent ?? "").trim(),
-                widened: !!rail?.querySelector("[data-brainstorm-rail-widened]"),
+                chip: (dialog?.querySelector("[data-canvas-mark='1'] span")?.textContent ?? "").trim(),
+                widened: !!dialog?.querySelector("[data-brainstorm-rail-widened]"),
+                // the tray takes the pick's place while marking
+                pickBar: !!dialog?.querySelector("[data-brainstorm-board-pick-bar]"),
             };
         })()`);
         await h.shot("cdp-shots/brainstorm-mode-2-rail-mark.png");
         rec(
-            "2l9. mark in rail: Mark on the widened board, a box dragged over it draws mark 1, and the tray under the board holds its note field and Send",
-            layerUp && layerBox != null && marked && noted && markRead.pressed === "true" && markRead.tray && markRead.send && markRead.chip === "1" && markRead.widened,
+            "2l9. mark on the open board: Mark in the board's dialog, a box dragged over it draws mark 1, and the tray under the board holds its note field and Send in the pick's place",
+            layerUp && layerBox != null && marked && noted && markRead.pressed === "true" && markRead.tray && markRead.send && markRead.chip === "1" && markRead.widened && !markRead.pickBar,
             { layerUp, layerBox, marked, noted, noteVia, ...markRead }
         );
         const host = await h.ev(`!!window.__TAURI_INTERNALS__`);
         if (!host) {
             steps.push(skipStep("2l10. Send in the rail", "no Tauri host to capture the window in (the picture Send saves); the marks stay for the next step"));
-            await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-mark]")?.click()`);
+            await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-rail-mark]")?.click()`);
         } else {
             const sentLine = `marks on ${BS_BOARDS[0]}: 1 ${noteText}`;
             const termBefore = bsCount(await bsTermText(h, ctx).catch(() => ""), sentLine);
-            await h.ev(`${BS_RAIL}?.querySelector("[data-canvas-send]")?.click()`);
-            const cleared = await polishWaitFor(h, `!${BS_RAIL}?.querySelector("[data-canvas-tray]") && !document.querySelector("[data-canvas-mark]")`, 8000);
+            await h.ev(`${BS_PANE}?.querySelector("[data-canvas-send]")?.click()`);
+            const cleared = await polishWaitFor(h, `!${BS_PANE}?.querySelector("[data-canvas-tray]") && !document.querySelector("[data-canvas-mark]")`, 8000);
             let reached = false;
             for (let waited = 0; waited < BS_TYPED_WAIT_MS && !reached; waited += 250) {
                 reached = bsCount(await bsTermText(h, ctx).catch(() => ""), sentLine) > termBefore;
                 if (!reached) await polishNap(250);
             }
             const after = await h.ev(`(() => {
-                const rail = ${BS_RAIL};
+                const pane = ${BS_PANE};
                 return {
-                    pressed: rail?.querySelector("[data-brainstorm-rail-mark]")?.getAttribute("aria-pressed") ?? null,
-                    error: (rail?.querySelector("[data-canvas-tray] .text-error")?.textContent ?? "").trim(),
+                    pressed: pane?.querySelector("[data-brainstorm-rail-mark]")?.getAttribute("aria-pressed") ?? null,
+                    error: (pane?.querySelector("[data-canvas-tray] .text-error")?.textContent ?? "").trim(),
                 };
             })()`);
             await h.shot("cdp-shots/brainstorm-mode-2-rail-sent.png");
@@ -31219,7 +31228,7 @@ const brainstormMode = {
             );
         }
         // back to the tiles: the close control (Esc is the same step)
-        await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-close]")?.click()`);
+        await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-rail-close]")?.click()`);
         await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
 
         // the rail's width is kept on this machine: dragged to a width of its own, the reloaded page opens it there. The page
@@ -31309,24 +31318,25 @@ const brainstormMode = {
         bsWrite(ctx, BS_FILES.answered);
         await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5.text));
 
-        // 3. a board widened from the design: the design opens on the Boards tab, a click on a board widens the rail over the
-        // design without leaving it (Mark is there, the design's way back to question 5 stays), and its close control returns
-        // the rail to the tiles
+        // 3. a board opened from the design: the design opens on the Boards tab, a click on a board opens its dialog over the
+        // design without leaving it (Mark is there, the design's way back to question 5 stays), and its close control closes
+        // it
         await bsOpenDesign(h);
         const d3 = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.tabs[0]?.selected === true, 5000);
         await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
         const w3 = await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
         const s3 = await bsRead(h, ctx);
         await h.shot("cdp-shots/brainstorm-mode-3.png");
-        await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-close]")?.click()`);
+        await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-rail-close]")?.click()`);
         const s3back = await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
         const s3design = await bsRead(h, ctx);
         rec(
-            "3. a board widened from the design: the rail widens over the Boards tab with Mark and the board's head, the design stays open beside it with Back to question 5; the close control returns the rail to its tiles, and the design is still open",
+            "3. a board opened from the design: its dialog has Mark and the board's head and no pick (the question is not on screen), the design stays open under it with Back to question 5; the close control closes it, and the design is still open",
             d3.ok &&
                 w3.ok &&
                 w3.mark != null &&
                 w3.widenedHead === BS_BOARDS[0] &&
+                w3.pick === "" &&
                 s3.view === "design" &&
                 s3.back === "Back to question 5" &&
                 s3.parts.length > 0 &&
