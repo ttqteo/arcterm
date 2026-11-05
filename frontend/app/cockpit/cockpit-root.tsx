@@ -15,6 +15,7 @@ import { bootSurface, lastSurfaceAtom, rememberSurface, startupSurfaceAtom } fro
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { useApplyCockpitFonts } from "@/app/view/agents/fontstore";
 import { CockpitShell } from "@/app/view/agents/cockpitshell";
+import { SnowLayer } from "@/app/view/agents/christmassnowview";
 import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
 import { MachineServersPanel } from "@/app/view/agents/machineserverspanel";
 import { NowTicker } from "@/app/view/agents/nowticker";
@@ -208,6 +209,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <AttentionPoller model={model} />
             <BrainstormPoller model={model} />
             <PulseDriver />
+            {/* the Christmas snow: a fixed canvas over the window, nothing unless the Christmas decor is on */}
+            <SnowLayer />
             <PetSources model={model} />
             {/* folded into Sprout: everything else stays mounted under display:none, so the terminal never refits to
                 the small window (floatstore.ts foldToSprout). The fold scales this into Sprout; it paints its own
