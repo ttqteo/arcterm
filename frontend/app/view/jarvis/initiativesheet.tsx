@@ -405,7 +405,6 @@ export function InitiativeChunkList({
     }
     return (
         <InitiativeDetail
-            variant="sheet"
             rows={rows}
             cursor={cursor != null ? chunkRowId(oref, cursor) : undefined}
             edits={edits}
