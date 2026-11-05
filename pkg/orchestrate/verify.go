@@ -69,7 +69,8 @@ func releaseProject(projectPath string, l *landing) {
 	}
 }
 
-// stopDagVerify kills a cancelled dag's running Verify: nothing will read its result.
+// stopDagVerify kills a cancelled or paused dag's running Verify: nothing will read its result. A paused dag's tips
+// stay verifying, and the resume runs the Verify again (resumeVerify).
 func stopDagVerify(dagID string) {
 	landings.Lock()
 	defer landings.Unlock()
@@ -477,7 +478,11 @@ func startVerify(channelID, dagID, runID, projectPath, command string, l *landin
 		ordered := false
 		setup := ""
 		stepLabel := "Verify"
+		paused := false
 		if g, err := wstore.GetDag(bg, dagID); err == nil {
+			// read after l.cancel was set above: a pause that commits after this read finds the cancel and stops the
+			// command, and one that committed before it is seen here
+			paused = dagPaused(g)
 			batch, ordered = verifyBatch(bg, g, projectPath)
 			setup = g.Setup
 			if len(batch) > 0 {
@@ -489,7 +494,9 @@ func startVerify(channelID, dagID, runID, projectPath, command string, l *landin
 			first = batch[0].id
 		}
 		defer verifyFinished(dagID, first)
-		if len(batch) == 0 {
+		// a Verify started for a dag that is paused (a merge that landed before the pause) leaves its tips verifying
+		// for the resume to judge
+		if len(batch) == 0 || paused {
 			cancel()
 			releaseProject(projectPath, l)
 			return
@@ -523,6 +530,11 @@ func startVerify(channelID, dagID, runID, projectPath, command string, l *landin
 			setup: setup, command: command, progress: progress}
 		// judged on the claim's context, so a cancelled dag also stops whatever judging runs
 		out := judgeBatch(ctx, batch, ordered, output, flaky, verr, run)
+		// the claim is cancelled by nothing but stopDagVerify, so a claim that is done here was cut off by a cancel or a
+		// pause: the command judged nothing, and a resume that came before this record must not read it as a failure
+		if ctx.Err() != nil {
+			out = batchOutcome{batch: out.batch, cancelled: true}
+		}
 		cancel()
 		if err := WithDagMutation(dagID, func() error {
 			return recordBatchVerifyLocked(bg, dagID, out, time.Since(start).Milliseconds())
@@ -580,7 +592,8 @@ func recordBatchVerifyLocked(ctx context.Context, dagID string, out batchOutcome
 	if err != nil {
 		return err
 	}
-	if g.Status == DagStatus_Cancelled || out.cancelled {
+	// a paused dag's Verify was cut off by the pause: its tips stay verifying and the resume judges them
+	if g.Status == DagStatus_Cancelled || out.cancelled || dagPaused(g) {
 		return nil
 	}
 	verifying := func(id string) *waveobj.TaskNode {

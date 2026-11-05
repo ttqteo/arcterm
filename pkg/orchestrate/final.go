@@ -195,6 +195,11 @@ func advanceFinal(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *wa
 			default:
 				// the verifier reads a detached tree, never the shared checkout; releaseFinalTree removes it
 				tree, _, err := finalTree(ctx, g, owner)
+				if errors.Is(err, errSetupPaused) {
+					// the pause cut the tree's Setup off, which judged nothing: the round starts over after the resume
+					*f = waveobj.FinalStage{Round: f.Round}
+					return
+				}
 				if err != nil {
 					f.Unverified = append(f.Unverified, finalTreeFailed+err.Error())
 					break
@@ -241,6 +246,10 @@ func startFinalCommands(dagID string, owner *waveobj.Run) {
 	goStage("final "+dagID, func() {
 		defer finalFinished(dagID)
 		res := runFinalSteps(ctx, dagID, owner)
+		// nothing but stopDagFinal cancels the commands before this point: a cancel, the human ending the stage, or a
+		// pause. The first two are decided before the record is read; for a pause the command judged nothing, and a
+		// resume that came before this record must not read it as a failure
+		res.cutOff = ctx.Err() != nil
 		cancel()
 		bg := context.Background()
 		spawnCtx, spawnCancel := context.WithTimeout(bg, jarvis.RunWorkerSpawnTimeout)
@@ -277,6 +286,7 @@ type finalResult struct {
 	unverified    []string
 	onStage       bool
 	killed        bool // the failed step was killed from outside
+	cutOff        bool // stopDagFinal ended the commands before they finished: nothing they found is a result
 	shots         []waveobj.FinalShot
 	shotsManifest bool
 }
@@ -579,6 +589,11 @@ func recordFinalLocked(ctx, spawnCtx context.Context, dagID string, owner *waveo
 	if g.Status == DagStatus_Cancelled {
 		return true, nil
 	}
+	// a paused dag's commands were cut off by the pause: the stage stays as it was, and the resume starts them again.
+	// A tree the stage took stays with it; one only the commands made is theirs to remove.
+	if dagPaused(g) || res.cutOff {
+		return !res.onStage, nil
+	}
 	if f == nil || f.Round != res.round || (f.State != FinalState_Checking && f.State != FinalState_Final) {
 		return !res.onStage, nil
 	}
@@ -858,8 +873,16 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 			log.Printf("dag %s: removing the final tree: %v", g.OID, err)
 		}
 	}
-	if _, _, err := PrepareTree(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), owner.ID, PlanCmd_Setup, ""), wt, g.Setup); err != nil {
+	// advanceFinal runs this under the dag lock, so a pause cuts the Setup off like a task's
+	setupCtx, endSetup := dagSetupCtx(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), owner.ID, PlanCmd_Setup, ""), g.OID)
+	_, _, err = PrepareTree(setupCtx, wt, g.Setup)
+	pausedMidSetup := setupCut(setupCtx)
+	endSetup()
+	if err != nil {
 		cleanup()
+		if pausedMidSetup {
+			return "", nil, errSetupPaused
+		}
 		return "", nil, fmt.Errorf("Setup failed in the final tree: %s", failureDetail(err))
 	}
 	return wt, cleanup, nil

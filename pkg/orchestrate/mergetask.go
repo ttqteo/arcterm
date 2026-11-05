@@ -247,6 +247,10 @@ func landAfterMerge(channelID string, owner *waveobj.Run, verify string, l *land
 // holds, so a human's staged edits would land inside the task's commit.
 var errIndexNotClean = errors.New("project index is not clean")
 
+// errDagPaused is a merge refused because the dag is paused: its lanes land after the resume. A merge that was
+// already under way when the pause came finished first, since the pause waits on the same dag lock.
+var errDagPaused = errors.New("the dag is paused")
+
 // mergeTaskLocked lands the lane holding taskID and returns the plan's Verify command when the landed merge
 // now waits on it. A lane lands as one squash commit recorded on its tip, whichever of its tasks was named,
 // and only once every task in it is done or skipped. batch is the lane tips the caller merged before this one
@@ -255,6 +259,10 @@ func mergeTaskLocked(ctx context.Context, channelID string, owner *waveobj.Run, 
 	g, err := wstore.GetDag(ctx, owner.DagORef)
 	if err != nil {
 		return "", err
+	}
+	// checked under the dag lock the pause waits on: a batch's later lanes must not land after the pause
+	if dagPaused(g) {
+		return "", errDagPaused
 	}
 	if taskByID(g, taskID) == nil {
 		return "", fmt.Errorf("no task %q", taskID)
@@ -447,7 +455,7 @@ func persistMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID
 // waiting for --continue holds every later merge until the lead acts.
 func AutoMergeReady(ctx context.Context, dagID string) {
 	g, err := wstore.GetDag(ctx, dagID)
-	if err != nil || g.Status == DagStatus_Cancelled || !g.MergeRequired {
+	if err != nil || g.Status == DagStatus_Cancelled || !g.MergeRequired || dagPaused(g) {
 		return
 	}
 	if len(tasksInState(g, TaskState_VerifyFailed)) > 0 || conflictAwaitingContinue(g, "") != "" {
@@ -501,6 +509,11 @@ func mergeBatch(ctx context.Context, channelID string, owner *waveobj.Run, ready
 		}
 		if v != "" {
 			verify = v
+		}
+		if errors.Is(err, errDagPaused) {
+			// a pause came after the lanes before this one landed: they stay verifying, and the resume judges them
+			err = nil
+			break
 		}
 		if errors.Is(err, ErrMergeConflict) || errors.Is(err, errIndexNotClean) {
 			break

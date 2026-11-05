@@ -33,6 +33,10 @@ func MarkInterruptedRuns(ctx context.Context) {
 		return
 	}
 	for _, run := range runs {
+		// a paused run's workers were suspended, not killed by the stop: the resume reopens them (runpause.ResumeAtBoot)
+		if jarvis.RunPaused(run) {
+			continue
+		}
 		if run.DagORef != "" {
 			cancelOrphanedDagRun(ctx, run)
 			continue
@@ -64,6 +68,9 @@ func MarkInterruptedRuns(ctx context.Context) {
 // starts a second worker for the task. A land resolver is the land driver's (tendResolver), which holds the land
 // when it ends without a merge.
 func cancelOrphanedDagRun(ctx context.Context, run *waveobj.Run) {
+	if jarvis.RunPaused(run) {
+		return
+	}
 	g, err := wstore.GetDag(ctx, run.DagORef)
 	if err != nil {
 		log.Printf("run %s: reading its dag %s at boot: %v", run.ID, run.DagORef, err)
@@ -111,7 +118,8 @@ func ResumeInterruptedLeads(ctx context.Context) {
 	}
 	for _, run := range runs {
 		// a dag's task runs carry its DagORef too, and the watchdog restarts those
-		if run.Mode != jarvis.RunMode_Orchestrator || run.DagORef == "" || run.SessionId == "" || !workerControllerGone(ctx, run) {
+		// a paused lead has no controller by design: the resume reopens it, not this boot pass
+		if run.Mode != jarvis.RunMode_Orchestrator || run.DagORef == "" || run.SessionId == "" || jarvis.RunPaused(run) || !workerControllerGone(ctx, run) {
 			continue
 		}
 		if err := jarvis.ResumeRunWorker(ctx, "tab:"+runTabID(run), run.Runtime, run.SessionId, leadResumeNudge); err != nil {

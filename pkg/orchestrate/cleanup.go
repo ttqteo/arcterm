@@ -305,7 +305,8 @@ func RetryCleanupDebt(ctx context.Context, dagID string) {
 // uncommitted work the cancel has yet to dump: an unmerged task's debt is its left-behind directories, and
 // removeTaskTree leaves a tree the dag was cancelled under since to the cancel.
 func retryCleanupDebt(ctx context.Context, g *waveobj.TaskGroup) {
-	if !HasCleanupDebt(g) {
+	// a paused dag's trees are its suspended workers': their debt is retried after the resume
+	if dagPaused(g) || !HasCleanupDebt(g) {
 		return
 	}
 	for _, task := range PendingCleanupTasks(g) {

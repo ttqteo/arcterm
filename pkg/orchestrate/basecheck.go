@@ -70,8 +70,16 @@ func startBaseCheck(dagID, runID, project, commit, setup, check string) {
 	goStage("basecheck "+dagID, func() {
 		defer baseCheckFinished(dagID)
 		defer baseCheckRuns.Delete(dagID)
-		ctx := context.Background()
+		// a pause cancels the whole base Check, its Setup and its Check alike
+		ctx, endSetup := dagSetupCtx(context.Background(), dagID)
 		state, detail := runBaseCheck(ctx, runID, project, commit, setup, check)
+		pausedMidCheck := setupCut(ctx)
+		endSetup()
+		if pausedMidCheck {
+			// it judged nothing about the base: the state stays running, and the tick after the resume checks again
+			return
+		}
+		ctx = context.Background()
 		if err := WithDagMutation(dagID, func() error { return recordBaseCheckLocked(ctx, dagID, setup, check, state, detail) }); err != nil {
 			log.Printf("dag %s: recording the base Check: %v", dagID, err)
 		}
@@ -153,7 +161,7 @@ func recordBaseCheckLocked(ctx context.Context, dagID, setup, check, state, deta
 	if err != nil {
 		return err
 	}
-	if g.Status == DagStatus_Cancelled || g.BaseCheck == nil || g.BaseCheck.State != BaseCheckState_Running {
+	if g.Status == DagStatus_Cancelled || dagPaused(g) || g.BaseCheck == nil || g.BaseCheck.State != BaseCheckState_Running {
 		return nil
 	}
 	// a revised plan changed the commands while this ran; the next tick checks the new ones

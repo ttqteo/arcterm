@@ -282,6 +282,10 @@ func autoRetryStalled(ctx context.Context, dagID string, s stalledTask) bool {
 		if g, err = wstore.GetDag(ctx, dagID); err != nil {
 			return nil, fmt.Errorf("loading dag: %w", err)
 		}
+		// a pause that landed since the tick found the stall: the worker is suspended, not hung, and the resume reopens it
+		if g.PausedTs != 0 {
+			return nil, nil
+		}
 		if task := taskByID(g, s.taskID); task != nil && task.State == TaskState_Stalled && task.RunID == s.runID {
 			return task, nil
 		}
@@ -465,6 +469,11 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		return fmt.Errorf("loading dag: %w", err)
 	}
 	if g.Status == DagStatus_Cancelled {
+		return nil
+	}
+	// a paused dag's agents are suspended, not dead: nothing is spawned, merged, retried or judged stalled until the
+	// resume has reopened them (ResumeDag)
+	if g.PausedTs != 0 {
 		return nil
 	}
 	// the sessions the dag records before this tick starts any: a tick that cannot commit stops the rest
@@ -770,14 +779,23 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
 				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
+				// a pause cuts Setup off at once (PauseDag): it holds this lock, which the pause waits on
+				setupCtx, endSetup := dagSetupCtx(setupCtx, g.OID)
 				var serr error
 				_, notLinked, serr = PrepareTree(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup)
 				setupMs = time.Since(setupStart).Milliseconds()
+				pausedMidSetup := setupCut(setupCtx)
+				endSetup()
 				if serr != nil {
 					// only a new tree is set up, so a retry must not reuse this half-prepared one. The branch
 					// stays: it holds the lane's earlier commits, and the retry checks it out again.
 					if rerr := removeWorktreeDir(context.WithoutCancel(ctx), owner.ProjectPath, wt); rerr != nil {
 						log.Printf("schedule dag %s task %s: removing worktree after setup failure: %v", g.OID, taskID, rerr)
+					}
+					if pausedMidSetup {
+						// the pause cut Setup off, which says nothing about the task: it stays pending, and the
+						// tick after the resume dispatches it again. Nothing after it is started either.
+						break
 					}
 					failDispatch(ctx, g, taskID, FailureKindSetup, serr, &afterCommit)
 					continue
