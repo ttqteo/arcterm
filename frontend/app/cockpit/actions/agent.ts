@@ -80,7 +80,8 @@ const actions: ThingAction<AgentThing>[] = [
         id: "agent:nudge",
         label: "Nudge (continue)",
         group: "steer",
-        applies: ({ agent }) => railAction(agent.state, live(agent))?.kind === "resume",
+        // asked for by name, so offered to any idle agent, even one the rail leaves alone while its Monitor runs
+        applies: ({ agent }) => railAction(agent.state, null, live(agent))?.kind === "resume",
         run: ({ agent }) => driveAgent(agent.blockId, NUDGE_INPUT),
     },
     {
