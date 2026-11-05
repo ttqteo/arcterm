@@ -1379,8 +1379,8 @@ function ParentRow({
                 {...dragSource(agent, !renaming)}
                 className={cn(
                     "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
-                    // selection is the one filled row; an asking agent's whole row holds a steady amber wash and edge
-                    // over it (.asking-tint), so one waiting on you is seen from across the tree; its glyph pulses
+                    // selection is the one filled row; an asking agent's whole row breathes an amber wash and edge
+                    // over it (.asking-tint, driven by pulsedriver), so one waiting on you is seen from across the tree
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
                     asking && "asking-tint",
                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none",
