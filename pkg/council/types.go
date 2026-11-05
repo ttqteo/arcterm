@@ -243,6 +243,11 @@ type CouncilProposal struct {
 	Runs []CouncilRun `json:"runs,omitempty"`
 	// Label is the claim's check label, one of the Label* values; empty when nothing labels it.
 	Label string `json:"label,omitempty"`
+	// Checker is the seat the cross-check sends this proposal to in full (the other seats read its title and first line):
+	// ParseRound1 leaves the one its author named, and the runner replaces it with the seat routeChecker settles on. Empty
+	// on a proposal from before checkers, which every seat reads in full. CheckWhy is the author's line on why that seat.
+	Checker  string `json:"checker,omitempty"`
+	CheckWhy string `json:"checkwhy,omitempty"`
 }
 
 // The person's thumb on a seat's sent idea or reply. The seats' later prompts and the summary read it (writeThumbs),

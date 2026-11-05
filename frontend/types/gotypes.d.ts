@@ -2745,6 +2745,8 @@ declare global {
         thumb?: string;
         runs?: CouncilRun[];
         label?: string;
+        checker?: string;
+        checkwhy?: string;
     };
 
     // council.CouncilRegion

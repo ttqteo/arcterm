@@ -36,6 +36,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A session or run opened from a project's Overview (or from History, Councils or the Canvas gallery) now goes back there with its Back button and Escape, and the button says where ("Back to Overview"), instead of always going back to the terminal.
 - In a council's message box, an `@seat` you pick or type is tinted in that seat's colour (and an `@file` as a link) as you write, as the sent message shows it, instead of sitting in the text as plain words.
 - In a brainstorm, clicking a board in the Boards rail opens it large in a dialog over the question, instead of stretching the rail and squeezing the question into a thin column. A board tied to an answer has a Pick button for that answer under it.
+- A Review council's report now leads with up to five ranked, evidence-backed findings and folds the rest under Also raised (a brainstorm folds its wild ideas kept aside the same way); click the heading to open them. A Review council also finishes sooner, because its seats start reviewing each other's ideas as they arrive instead of waiting for every seat to finish.
 - In a council, an idea's "4 agree" shows the avatars of the seats that agreed, and hovering it lists them one per line with their avatars, instead of a plain tooltip with their names run together.
 - Setup in the nav rail now carries a badge counting the projects whose memory has something to review, and its Memory tab reads `Memory · N`, so a stale or oversized memory gets noticed without opening Setup to look.
 

@@ -626,10 +626,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Compacted divider. The card opens on "1. Primary Request and Intent" as a formatted list, with no
   `<system-reminder>` text and no "Continue the conversation…" lines at the end (`transcriptprojection.ts`
   `compactSummaryText`). (commit "fix: council refusals say why; a sleeping brainstorm stays; clean compaction summary")
-- [ ] (arcterm) A council review holds three directions: start a Review council (or wait for the next one) and open
-  its report. At most three direction cards, each with a "First step:" line, then an "Also raised" heading with one row
-  each for the rest (`from <expert>` under the title, no stances); its saved doc has `## Also raised` between the
-  directions and the Matrix, and those proposals' Outcome reads Also raised. `councilsummary.tsx` `KeptCard`, bc7a8f934.
+- [ ] (arcterm) A council review holds five directions: start a Review council (or wait for the next one) and open
+  its report. At most five direction cards, each with a "First step:" line, none of them resting only on a Guess or a
+  Disproved claim, then a folded "Also raised" heading with its count; clicking it opens one row each for the rest
+  (`from <expert>` under the title, no stances). Its saved doc has `## Also raised` between the directions and the
+  Matrix, and those proposals' Outcome reads Also raised. `councilsummary.tsx` `KeptSection`, `pkg/council/fill.go`.
+- [ ] (arcterm) A Review council reviews early: start a Review council of three or more seats on a project with files
+  listed. While it runs, a seat that has finished round 1 starts reviewing (its avatar's activity says so, and the view
+  switches to the cross-review round) before the slowest seat has posted; each seat's round-2 prompt holds the ideas
+  routed to it in full and the rest as one line each. Then run `wsh council bench --variant council --runs 1` (about
+  25M tokens) and compare wall time and top-5 hits with the last bench. `pkg/council/runner.go` `earlyRounds`.
 - [ ] (arcterm) A council's row copies its id: right-click a running council in the Agent tree. The menu holds Copy id
   with the 16-character id beside it, and pasting gives that id (`wsh council show <id>` takes it). A queued or ended
   council's menu holds Copy id, a separator, then Remove. `agenttree.tsx` `CouncilRow`, 6eb54c303.
