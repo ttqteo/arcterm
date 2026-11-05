@@ -5,7 +5,8 @@
 // Sheet.dc.html). The head names it (title, project · status · updated, Pin, Previous/Next through the page's order,
 // ×), reads its progress (done/total, percent, the segment bar) and offers its moves (Work on / Go to agent, the
 // agent's state, Activity ↗, ⋯). The body is its plan, edited in place (inlinetrackerview.tsx variant "sheet"), then
-// its sub-initiatives and linked ideas; or its Activity feed (EffortDetailView) with a link back.
+// its sub-initiatives and linked ideas; or its Activity feed (EffortDetailView) with a link back. A chunk picked from
+// the plan takes the head and body over (chunkview.tsx, decision 9) until its back goes to the plan again.
 //
 // InitiativeSheetHead and InitiativeChunkList are exported for the review pass, which draws them in place rather than
 // opening the sheet. What the body shows lives in initiativesheetstore.ts; the edits in initiativeedits.ts.
@@ -41,6 +42,7 @@ import { SheetShell } from "./briefrunsheet";
 import { sheetPosition } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
 import { chunkKey, effortKey, noteKey, pendingDeleteKeysAtom } from "./briefundo";
+import { ChunkView, ChunkViewHead } from "./chunkview";
 import { EffortCreateForm } from "./effortcreateform";
 import { EffortDetailView } from "./effortdetailview";
 import { effortFeed, feedNoteCounts } from "./effortfeed";
@@ -519,7 +521,7 @@ function PlanView({
                 card={card}
                 cursor={cursor}
                 onCursor={setCursor}
-                // Task 7 draws the chunk the sheet then holds (initiativeSheetAtom.chunk) in place of this plan
+                // the sheet then draws the chunk (InitiativeSheet, chunkview.tsx) in place of this plan
                 onOpenChunk={openSheetChunk}
             />
             <LinkedInitiatives
@@ -645,15 +647,45 @@ export function InitiativeSheet({
     const state = useInitiativeEdits(oref, opts);
     const cards = useCards();
     const card = cards.find((c) => c.oref === oref) ?? null;
+    const sheet = useAtomValue(initiativeSheetAtom);
+    // a chunk open in the sheet (decision 9) takes its head and body; until the detail holds it, the plan shows
+    const chunk = sheet.view === "plan" ? state.selectedChunk : null;
+    // a chunk that was open and went (deleted, here or elsewhere) returns the sheet to its plan
+    const shownChunk = useRef<string | null>(null);
+    useEffect(() => {
+        if (chunk != null) {
+            shownChunk.current = chunk.label;
+        } else if (sheet.chunk != null && shownChunk.current === sheet.chunk && state.effort != null) {
+            shownChunk.current = null;
+            backToPlan();
+        }
+    }, [chunk, sheet.chunk, state.effort]);
     return (
         <SheetShell
             face="effort"
             label="initiative"
             title={state.effort?.title ?? card?.title ?? ""}
-            head={<InitiativeSheetHead model={model} oref={oref} state={state} card={card} onClose={onClose} />}
+            head={
+                chunk != null ? (
+                    <ChunkViewHead
+                        model={model}
+                        oref={oref}
+                        state={state}
+                        card={card}
+                        chunk={chunk}
+                        onClose={onClose}
+                    />
+                ) : (
+                    <InitiativeSheetHead model={model} oref={oref} state={state} card={card} onClose={onClose} />
+                )
+            }
             onClose={onClose}
         >
-            <InitiativeSheetBody model={model} oref={oref} state={state} card={card} />
+            {chunk != null ? (
+                <ChunkView key={chunk.label} model={model} oref={oref} state={state} chunk={chunk} />
+            ) : (
+                <InitiativeSheetBody model={model} oref={oref} state={state} card={card} />
+            )}
         </SheetShell>
     );
 }

@@ -285,6 +285,182 @@ const initiativeSheet = (kit) => ({
     },
 });
 
+// jarvis-chunk-sheet (Task 7; spec decision 9, board Chunk.dc.html): a three-chunk initiative whose middle chunk holds
+// three notes (two the person's, one with no author: the server takes "agent" only from a block, so a scenario cannot
+// write one) and two bare status changes, opened in the sheet and its middle chunk clicked. The head
+// (back to the initiative, chunk 2 / 3), the trail's blocks and thin lines; s opens the status menu; 3 picks blocked,
+// whose reason becomes the change's note, a block tagged → blocked; Notes only hides the thin lines and holds on the
+// next chunk; Esc goes back to the initiative's plan.
+const CHUNK_TITLE = "verify-chunk-sheet";
+const TRAIL = "Trail chunk";
+const REASON = "waiting on the API key from ops";
+
+const chunkSheet = (kit) => ({
+    name: "jarvis-chunk-sheet",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = {};
+        await h.goto("jarvis");
+        await h.rpc("effortlist", {}).then(async (r) => {
+            for (const e of (r?.efforts ?? []).filter((x) => x.title === CHUNK_TITLE)) {
+                await h.rpc("effortdelete", { effortoid: e.oref.replace(/^effort:/, "") }).catch(() => {});
+            }
+        });
+        try {
+            const made = await h.rpc("effortcreate", {
+                title: CHUNK_TITLE,
+                chunks: [{ label: "First chunk" }, { label: TRAIL }, { label: "Last chunk" }],
+            });
+            ctx.oid = made.effortoid;
+            // one op per call, so each entry has its own time and the trail's order is the order written here
+            const op = async (o, author = "you") => {
+                await h.rpc("effortmutate", { effortoid: ctx.oid, ...(author ? { author } : {}), ops: [o] });
+                await sleep(30);
+            };
+            await op({ op: "appendNote", chunk: TRAIL, note: "the oldest note: scoped the chunk" });
+            await op({ op: "setChunkStatus", chunk: TRAIL, status: "active" });
+            await op({ op: "appendNote", chunk: TRAIL, note: "a note of mine in the middle" });
+            await op({ op: "setChunkStatus", chunk: TRAIL, status: "pending" });
+            await op({ op: "appendNote", chunk: TRAIL, note: "the newest note, with no author" }, "");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the initiative was made", ok: false, detail: ctx.arrangeError }];
+        }
+        await kit.briefReload(h);
+        const steps = [];
+        const step = async (name, run) => {
+            try {
+                const r = await run();
+                steps.push({ step: name, ok: r.ok === true, detail: r.detail });
+            } catch (e) {
+                steps.push({ step: name, ok: false, detail: String(e?.message ?? e) });
+            }
+        };
+        const VIEW = `${SHEET} [data-jarvis-chunk-view]`;
+        const readChunk = () =>
+            h.ev(`(() => {
+                const sheet = document.querySelector(${q(SHEET)});
+                const view = sheet?.querySelector("[data-jarvis-chunk-view]");
+                if (!view) return null;
+                const t = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+                return {
+                    label: view.getAttribute("data-jarvis-chunk-view"),
+                    back: t(sheet.querySelector("[data-jarvis-chunk-back]")),
+                    position: t(sheet.querySelector("[data-jarvis-chunk-position]")),
+                    status: sheet.querySelector("[data-jarvis-chunk-status]")?.getAttribute("data-jarvis-chunk-status") ?? null,
+                    move: sheet.querySelector("[data-jarvis-chunk-move]")?.getAttribute("data-jarvis-chunk-move") ?? null,
+                    blocks: [...view.querySelectorAll("[data-jarvis-trail-block]")].map((b) => ({
+                        tag: b.getAttribute("data-jarvis-trail-tag"),
+                        text: t(b.querySelector("[data-jarvis-trail-text]")),
+                    })),
+                    lines: [...view.querySelectorAll("[data-jarvis-trail-line]")].map((l) => t(l)),
+                    notesOnly: view.querySelector("[data-jarvis-notes-only]")?.getAttribute("data-jarvis-notes-only") ?? null,
+                    menu: sheet.querySelector("[data-jarvis-chunk-status-menu]")?.getAttribute("data-jarvis-chunk-status-menu") ?? null,
+                    options: sheet.querySelectorAll("[data-jarvis-chunk-status-option]").length,
+                };
+            })()`);
+
+        await step("chunk open", async () => {
+            await until(h, `typeof window.__openAddress === "function"`, 5_000);
+            await h.ev(`window.__openAddress(${q("effort:" + ctx.oid)})`);
+            if (!(await until(h, `!!${chunkRow(TRAIL)}`))) {
+                return { ok: false, detail: "the sheet drew no plan with the trail chunk" };
+            }
+            await mouse(h, chunkRow(TRAIL));
+            if (!(await until(h, `!!document.querySelector(${q(VIEW)})`, 5_000))) {
+                return { ok: false, detail: "clicking the chunk opened no chunk view" };
+            }
+            await sleep(400);
+            await h.shot("cdp-shots/jarvis-chunk-sheet.png");
+            const r = await readChunk();
+            const problems = [];
+            if (r.label !== TRAIL) problems.push(`label "${r.label}"`);
+            if (r.back !== CHUNK_TITLE) problems.push(`back "${r.back}"`);
+            if (r.position !== "chunk 2 / 3") problems.push(`position "${r.position}"`);
+            if (r.status !== "pending" || r.move !== "Start") problems.push(`status ${r.status}, move ${r.move}`);
+            const texts = r.blocks.map((b) => b.text);
+            if (texts.length !== 3 || !texts[0].includes("newest") || !texts[2].includes("oldest")) {
+                problems.push(`blocks ${JSON.stringify(texts)}`);
+            }
+            if (r.lines.length !== 2 || !r.lines[0].includes("→ pending") || !r.lines[1].includes("→ active")) {
+                problems.push(`lines ${JSON.stringify(r.lines)}`);
+            }
+            return { ok: problems.length === 0, detail: problems.join("; ") || `${r.blocks.length} blocks, ${r.lines.length} lines, ${r.position}` };
+        });
+
+        await step("status menu", async () => {
+            await press(h, "s", { code: "KeyS", vk: 83 });
+            const open = await until(h, `document.querySelector('[data-jarvis-chunk-status-menu]')?.getAttribute("data-jarvis-chunk-status-menu") === "open"`, 3_000);
+            await sleep(200);
+            await h.shot("cdp-shots/jarvis-chunk-sheet-menu.png");
+            const r = await readChunk();
+            return { ok: open && r.options === 6, detail: `menu ${r?.menu}, ${r?.options} statuses` };
+        });
+
+        await step("blocked reason", async () => {
+            // 3 is blocked (pending, active, blocked, deferred, skipped, done): it asks why before it changes anything
+            await press(h, "3", { code: "Digit3", vk: 51 });
+            if (!(await until(h, `document.activeElement?.hasAttribute("data-jarvis-blocked-reason")`, 3_000))) {
+                const r = await readChunk();
+                return { ok: false, detail: `no reason box after 3 (menu ${r?.menu})` };
+            }
+            await h.cdp("Input.insertText", { text: REASON });
+            await press(h, "Enter", { vk: 13 });
+            const tagged = await until(
+                h,
+                `[...document.querySelectorAll(${q(`${VIEW} [data-jarvis-trail-block]`)})].some((b) => b.getAttribute("data-jarvis-trail-tag") === "blocked" && b.innerText.includes(${q(REASON)}))`
+            );
+            await sleep(300);
+            await h.shot("cdp-shots/jarvis-chunk-sheet-blocked.png");
+            const r = await readChunk();
+            const server = (await serverChunks(h, ctx.oid)).find((c) => c.label === TRAIL);
+            return {
+                ok: tagged && r.status === "blocked" && r.move === "Unblock" && r.menu == null && server?.status === "blocked",
+                detail: `tagged block ${tagged}, status ${r.status}, move ${r.move}, menu ${r.menu}, server ${server?.status}`,
+            };
+        });
+
+        await step("notes only", async () => {
+            await h.ev(`document.querySelector(${q(`${VIEW} [data-jarvis-notes-only]`)})?.click()`);
+            const hidden = await until(h, `document.querySelectorAll(${q(`${VIEW} [data-jarvis-trail-line]`)}).length === 0`, 3_000);
+            const r = await readChunk();
+            await h.shot("cdp-shots/jarvis-chunk-sheet-notes-only.png");
+            // j steps to the next chunk; Notes only is the viewer's, so it holds there
+            await press(h, "j", { code: "KeyJ", vk: 74 });
+            const moved = await until(h, `document.querySelector(${q(VIEW)})?.getAttribute("data-jarvis-chunk-view") === "Last chunk"`, 3_000);
+            const next = await readChunk();
+            const ok = hidden && r.blocks.length === 4 && moved && next.notesOnly === "on" && next.position === "chunk 3 / 3";
+            // back off, so the next scenario's chunk shows its whole trail
+            await h.ev(`document.querySelector(${q(`${VIEW} [data-jarvis-notes-only]`)})?.click()`);
+            return {
+                ok,
+                detail: `lines hidden ${hidden}, ${r.blocks.length} blocks; j -> ${next?.label} (${next?.position}), notes only ${next?.notesOnly}`,
+            };
+        });
+
+        await step("back", async () => {
+            await press(h, "Escape", { code: "Escape", vk: 27 });
+            const back = await until(h, `!document.querySelector(${q(VIEW)}) && !!document.querySelector(${q(PLAN)})`, 3_000);
+            const head = await h.ev(`!!document.querySelector(${q(`${SHEET} [data-jarvis-initiative-sheet-head]`)})`);
+            await h.shot("cdp-shots/jarvis-chunk-sheet-back.png");
+            return { ok: back && head, detail: `plan shown ${back}, initiative head ${head}` };
+        });
+
+        return steps;
+    },
+
+    async teardown(h, ctx) {
+        await h.ev(`document.querySelector(${q(`${SHEET} button[aria-label="Close (Esc)"]`)})?.click()`).catch(() => {});
+        if (ctx.oid != null) await h.rpc("effortdelete", { effortoid: ctx.oid }).catch(() => {});
+    },
+});
+
 export default function (kit) {
-    return [initiativeSheet(kit)];
+    return [initiativeSheet(kit), chunkSheet(kit)];
 }

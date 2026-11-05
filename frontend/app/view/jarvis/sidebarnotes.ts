@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Chunk sidebar's note cards (design L367-397, model L1508-1542). Pure.
+// A chunk's note cards (design L367-397, model L1508-1542), read by the Chunk sidebar and by the chunk view's trail
+// (chunktrail.ts). Pure.
 
 import { noteBody, stamp, type FeedEntry } from "./effortfeed";
 
@@ -20,7 +21,26 @@ export type NoteCard = {
     editable: boolean;
     runOid: string;
     sessionTab: string;
+    // the status this entry set, when it is a status change that carries text (changedTo); null for a plain note
+    changed: string | null;
 };
+
+const MARKED = /^marked (\w+)$/;
+
+/**
+ * The status a feed entry set, when it is a status change: read off its `marked …` line, a `chunk-done` reading done
+ * even when its note went unlocated. Null for a note, a chunk added, or a status change whose status went unrecorded.
+ */
+export function changedTo(f: FeedEntry): string | null {
+    if (f.kind !== "chunk-status" && f.kind !== "chunk-done") {
+        return null;
+    }
+    const m = MARKED.exec(f.marked);
+    if (m != null) {
+        return m[1];
+    }
+    return f.kind === "chunk-done" ? "done" : null;
+}
 
 // a note's run read: WOS settles a missing object as no value and no error, so "not loading" is what says gone
 export function noteRunFace(r: {
@@ -55,6 +75,7 @@ export function sidebarNotes(feed: FeedEntry[], label: string, now: number, expa
             editable: f.noteAt != null && who !== "agent",
             runOid: (f.run ?? "").replace(/^run:/, ""),
             sessionTab: (f.session ?? "").replace(/^agent:/, ""),
+            changed: changedTo(f),
         };
     });
 }

@@ -18,7 +18,7 @@ import { activeSubjectAtom, selectSubject } from "./jarvissubjectstore";
 
 export type InitiativeSheetView = "plan" | "activity";
 
-// `chunk` is the label of the chunk open in the sheet's body (Task 7 draws it), null on the plan
+// `chunk` is the label of the chunk open in the sheet (chunkview.tsx draws it over the plan), null on the plan
 export type InitiativeSheetState = { view: InitiativeSheetView; chunk: string | null };
 
 const PLAN: InitiativeSheetState = { view: "plan", chunk: null };
