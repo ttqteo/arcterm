@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The Files tab in an agent's side panel has a filter box: type part of a file name (or press `/` in the tree) and
+  the tree keeps only the files that match, their folders open. Enter opens the file, Esc shows it in the whole tree.
 - A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
   waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
   for an agent, to hand a stuck land to another agent.
