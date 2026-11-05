@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -967,5 +968,178 @@ func TestRunsShowLinesAutonomous(t *testing.T) {
 	run.Autonomous = true
 	if out := strings.Join(runsShowLines(ch, run, nil, 2, nil, nil), "\n"); !strings.Contains(out, "autonomous") {
 		t.Fatalf("an autonomous run does not say so:\n%s", out)
+	}
+}
+
+// fakeRunsServer is fakeRunsRpc for a call that sends several requests, as a command that resolves a run first
+// does. serve answers each request with its data, or with an error message that comes back as the call's error;
+// the requests come back in the order they were sent, with the error the call returned.
+func fakeRunsServer(t *testing.T, call func() error, serve func(req wshutil.RpcMessage) (any, string)) ([]wshutil.RpcMessage, error) {
+	t.Helper()
+	inputCh := make(chan baseds.RpcInputChType, 1)
+	outputCh := make(chan []byte, 1)
+	prev := RpcClient
+	RpcClient = wshutil.MakeWshRpcWithChannels(inputCh, outputCh, wshrpc.RpcContext{}, nil, "test")
+	t.Cleanup(func() { RpcClient = prev })
+	done := make(chan error, 1)
+	go func() { done <- call() }()
+	var reqs []wshutil.RpcMessage
+	for {
+		select {
+		case msg := <-outputCh:
+			var req wshutil.RpcMessage
+			if err := json.Unmarshal(msg, &req); err != nil {
+				t.Fatalf("request is not an rpc message: %v", err)
+			}
+			reqs = append(reqs, req)
+			data, errMsg := serve(req)
+			resp, _ := json.Marshal(wshutil.RpcMessage{ResId: req.ReqId, Data: data, Error: errMsg})
+			inputCh <- baseds.RpcInputChType{MsgBytes: resp}
+		case err := <-done:
+			return reqs, err
+		case <-time.After(2 * time.Second):
+			t.Fatal("the call neither sent a request nor returned")
+		}
+	}
+}
+
+// runsActionCmd is a bare command with the flags runsFind reads, pointed at channel, and its output.
+func runsActionCmd(t *testing.T, channel string) (*cobra.Command, *strings.Builder) {
+	t.Helper()
+	c := &cobra.Command{Use: "x"}
+	c.Flags().String("project", "", "")
+	c.Flags().String("channel", "", "")
+	if err := c.Flags().Set("channel", channel); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	c.SetOut(&out)
+	return c, &out
+}
+
+// runsTwoChannelServer holds r-1 and r-2 in ch-1 and r-3 in ch-2, and answers a pause or resume with refuse
+// (an error message), or with nothing when refuse is empty.
+func runsTwoChannelServer(refuse string) func(req wshutil.RpcMessage) (any, string) {
+	return func(req wshutil.RpcMessage) (any, string) {
+		switch req.Command {
+		case "getchannels":
+			return wshrpc.CommandGetChannelsRtnData{Channels: []*waveobj.Channel{{OID: "ch-1", Name: "waveterm"}, {OID: "ch-2", Name: "other"}}}, ""
+		case "getchannelruns":
+			var d wshrpc.CommandGetChannelRunsData
+			b, _ := json.Marshal(req.Data)
+			json.Unmarshal(b, &d)
+			if d.ChannelId == "ch-1" {
+				return wshrpc.CommandGetChannelRunsRtnData{Runs: []*waveobj.Run{{ID: "r-1"}, {ID: "r-2"}}}, ""
+			}
+			return wshrpc.CommandGetChannelRunsRtnData{Runs: []*waveobj.Run{{ID: "r-3"}}}, ""
+		case "pauserun", "resumerun":
+			return nil, refuse
+		}
+		return nil, "unexpected command " + req.Command
+	}
+}
+
+// the two commands, side by side: each is its RunE, the rpc it sends and the line it prints on success
+var runsPauseResumeCases = []struct {
+	name string
+	cmd  *cobra.Command
+	run  func(*cobra.Command, []string) error
+	rpc  string
+	line string
+}{
+	{"pause", runsPauseCmd, runsPauseRun, "pauserun", "paused run %s\n"},
+	{"resume", runsResumeCmd, runsResumeRun, "resumerun", "resumed run %s\n"},
+}
+
+func TestRunsPauseAndResumeCmdArguments(t *testing.T) {
+	for _, c := range runsPauseResumeCases {
+		if err := c.cmd.Args(c.cmd, nil); err == nil {
+			t.Errorf("%s: no run id must be refused", c.name)
+		}
+		if err := c.cmd.Args(c.cmd, []string{"r-1"}); err != nil {
+			t.Errorf("%s: one run id must be accepted, got %v", c.name, err)
+		}
+		if err := c.cmd.Args(c.cmd, []string{"r-1", "r-2"}); err == nil {
+			t.Errorf("%s: two run ids must be refused", c.name)
+		}
+		if got, _, err := rootCmd.Find([]string{"runs", c.name}); err != nil || got != c.cmd {
+			t.Errorf("%s: `wsh runs %s` finds %v (%v), want the command", c.name, c.name, got, err)
+		}
+		if c.cmd.PreRunE == nil {
+			t.Errorf("%s: it needs the rpc client set up before it runs", c.name)
+		}
+		for _, f := range []string{"project", "channel"} {
+			if c.cmd.Flags().Lookup(f) == nil {
+				t.Errorf("%s: no --%s flag, which cancel has to name the project", c.name, f)
+			}
+		}
+	}
+}
+
+func TestRunsPauseAndResumeSendTheirRpcs(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		call func(channelId, runId string) error
+		rpc  string
+	}{{"pause", runsPause, "pauserun"}, {"resume", runsResume, "resumerun"}} {
+		req := fakeRunsRpc(t, func() error { return c.call("ch-1", "r-1") }, nil)
+		var data wshrpc.CommandPauseRunData
+		b, _ := json.Marshal(req.Data)
+		json.Unmarshal(b, &data)
+		if req.Command != c.rpc || data != (wshrpc.CommandPauseRunData{ChannelId: "ch-1", RunId: "r-1"}) {
+			t.Errorf("%s: request = %s %+v, want %s for r-1 in ch-1", c.name, req.Command, data, c.rpc)
+		}
+	}
+}
+
+func TestRunsPauseAndResumeFindTheRunLikeCancel(t *testing.T) {
+	for _, c := range runsPauseResumeCases {
+		// r-3 is not in --channel's project: it is found by walking the others, and the rpc names the channel it was found in
+		cmd, out := runsActionCmd(t, "ch-1")
+		reqs, err := fakeRunsServer(t, func() error { return c.run(cmd, []string{"r-3"}) }, runsTwoChannelServer(""))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		last := reqs[len(reqs)-1]
+		var data wshrpc.CommandPauseRunData
+		b, _ := json.Marshal(last.Data)
+		json.Unmarshal(b, &data)
+		if last.Command != c.rpc || data != (wshrpc.CommandPauseRunData{ChannelId: "ch-2", RunId: "r-3"}) {
+			t.Errorf("%s: last request = %s %+v, want %s for r-3 in ch-2", c.name, last.Command, data, c.rpc)
+		}
+		if want := strings.Replace(c.line, "%s", "r-3", 1); out.String() != want {
+			t.Errorf("%s: printed %q, want one line %q", c.name, out.String(), want)
+		}
+
+		// the id is matched whole, as cancel does: a prefix or an unknown id finds no run and sends no pause or resume
+		for _, id := range []string{"r-", "r-9"} {
+			cmd, out := runsActionCmd(t, "ch-1")
+			reqs, err := fakeRunsServer(t, func() error { return c.run(cmd, []string{id}) }, runsTwoChannelServer(""))
+			if err == nil || !strings.Contains(err.Error(), "no run "+id+" in any project") {
+				t.Errorf("%s %q: err = %v, want the no-such-run refusal", c.name, id, err)
+			}
+			for _, r := range reqs {
+				if r.Command == c.rpc {
+					t.Errorf("%s %q: sent %s for a run that was not found", c.name, id, r.Command)
+				}
+			}
+			if out.String() != "" {
+				t.Errorf("%s %q: printed %q for a run that was not found", c.name, id, out.String())
+			}
+		}
+	}
+}
+
+func TestRunsPauseAndResumeReportTheServersRefusal(t *testing.T) {
+	for _, c := range runsPauseResumeCases {
+		refusal := "run r-2 is not top-level"
+		cmd, out := runsActionCmd(t, "ch-1")
+		_, err := fakeRunsServer(t, func() error { return c.run(cmd, []string{"r-2"}) }, runsTwoChannelServer(refusal))
+		if err == nil || !strings.Contains(err.Error(), refusal) {
+			t.Errorf("%s: err = %v, want the server's reason %q", c.name, err, refusal)
+		}
+		if out.String() != "" {
+			t.Errorf("%s: printed %q after a refusal, want no success line", c.name, out.String())
+		}
 	}
 }

@@ -36,6 +36,7 @@ const (
 	// + Run launcher's budget (CREATE_RUN_TIMEOUT_MS), and the server derives its handler deadline from it
 	runsStartTimeoutMs  = 180_000
 	runsCancelTimeoutMs = 60_000 // cancel stops each live worker gracefully before it returns
+	runsPauseTimeoutMs  = 120_000
 	runsLandTimeoutMs   = int64(orchestrate.LandTimeout/time.Millisecond) + 10_000
 	runsReadTimeoutMs   = 10_000
 	runsListDefault     = 20
@@ -137,6 +138,29 @@ is passed.`,
 	RunE:    runsCancelRun,
 }
 
+var runsPauseCmd = &cobra.Command{
+	Use:   "pause <run-id>",
+	Short: "pause a top-level run and everything under it, freeing the RAM it holds",
+	Long: `Pause a top-level run: every agent and command under it stops and its RAM comes back, while every
+worktree, commit and session is kept. 'wsh runs resume' reopens each agent in its own session. A run that
+is not top-level, is done or cancelled, or is already paused is refused, and the reason is printed. The
+RAM regulator pauses runs the same way when memory is tight, and resumes any paused run, one paused here
+included, once memory has been free for a while.`,
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    runsPauseRun,
+}
+
+var runsResumeCmd = &cobra.Command{
+	Use:   "resume <run-id>",
+	Short: "resume a paused run: every agent reopens in its own session",
+	Long: `Resume a paused top-level run now, rather than when the RAM regulator would: every agent reopens in
+its own session and carries on. A run that is not paused is refused, and the reason is printed.`,
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    runsResumeRun,
+}
+
 var runsEndFinalCmd = &cobra.Command{
 	Use:   "end-final <run-id> unverified|failed <reason>",
 	Short: "end a run's stuck final stage as unverified or failed, with the reason recorded",
@@ -214,7 +238,7 @@ func init() {
 	f.Bool("queue", false, "queue the start: arcterm starts it when fewer than runs:maxactive runs are active")
 	f.String("after", "", "run id or queue entry id (a unique prefix of either) to wait for: starts once that run has landed; implies --queue")
 	f.Bool("json", false, "JSON output")
-	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsRerunFinalCmd, runsLandCmd, runsAckCmd} {
+	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsLandCmd, runsAckCmd} {
 		c.Flags().String("project", "", "project directory (default: the current directory)")
 		channelUsage := "channel id, instead of resolving the project"
 		if c == runsStartCmd {
@@ -232,7 +256,7 @@ func init() {
 	runsLandCmd.Flags().Bool("force", false, "land even though the final stage failed")
 	runsAckCmd.Flags().Bool("land", false, "dismiss the run's held land instead, as the cockpit's Dismiss does: the branch stays")
 	runsAttentionCmd.Flags().Bool("json", false, "JSON output")
-	runsCmd.AddCommand(runsStartCmd, runsStartNowCmd, runsRunNextCmd, runsDequeueCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsRerunFinalCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
+	runsCmd.AddCommand(runsStartCmd, runsStartNowCmd, runsRunNextCmd, runsDequeueCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
 	rootCmd.AddCommand(runsCmd)
 }
 
@@ -1218,6 +1242,40 @@ func runsCancelRun(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("cancelled run %s\n", run.ID)
 	return nil
+}
+
+func runsPauseRun(cmd *cobra.Command, args []string) error {
+	return runsPauseOrResume(cmd, args[0], "paused", runsPause)
+}
+
+func runsResumeRun(cmd *cobra.Command, args []string) error {
+	return runsPauseOrResume(cmd, args[0], "resumed", runsResume)
+}
+
+// runsPauseOrResume finds the run the way cancel does (its whole id, in the project or any other) and sends act for
+// it. The server's refusal (a run that is not top-level, is done or cancelled, is already paused or is not paused)
+// comes back as the error, so the command exits non-zero with the reason; on success it prints one line.
+func runsPauseOrResume(cmd *cobra.Command, runId, did string, act func(channelId, runId string) error) error {
+	ch, run, err := runsFind(cmd, runId)
+	if err != nil {
+		return err
+	}
+	if err := act(ch.OID, run.ID); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s run %s\n", did, run.ID)
+	return nil
+}
+
+// runsPause and runsResume wait runsPauseTimeoutMs: a pause stops every agent under the run and waits out a merge under
+// way, and a resume reopens each agent's session. The server finishes either after this stops waiting (its context is
+// cut loose from the caller's), so a timeout here is not a failed pause or resume.
+func runsPause(channelId, runId string) error {
+	return wshclient.PauseRunCommand(RpcClient, wshrpc.CommandPauseRunData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: runsPauseTimeoutMs})
+}
+
+func runsResume(channelId, runId string) error {
+	return wshclient.ResumeRunCommand(RpcClient, wshrpc.CommandPauseRunData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: runsPauseTimeoutMs})
 }
 
 // runsEndFinalAction is the dag action for end-final's outcome word.
