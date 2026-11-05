@@ -15,13 +15,19 @@ export type SheetFace =
     | { kind: "none" }
     | { kind: "channel"; channelId: string; body: "run" | "launcher" }
     | { kind: "effort"; effortId: string }
-    | { kind: "queued"; entryId: string };
+    | { kind: "queued"; entryId: string }
+    | { kind: "council"; councilId: string };
 
 export function sheetFace(
     subject: ActiveSubject | null,
     run: Run | null,
-    queuedEntryId: string | null = null
+    queuedEntryId: string | null = null,
+    councilId: string | null = null
 ): SheetFace {
+    // a council is no subject either (councilsheetstore.ts): the three ways in clear one another, so at most one is set
+    if (councilId != null) {
+        return { kind: "council", councilId };
+    }
     // a queue entry is no subject (briefqueuestore.ts); opening one clears the subject, and opening a subject clears it
     if (queuedEntryId != null) {
         return { kind: "queued", entryId: queuedEntryId };

@@ -69,6 +69,8 @@ import { SHEET_BTN, SheetShell } from "./briefrunsheet";
 import { sheetFace, type SheetFace } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
 import { briefUndo } from "./briefundo";
+import { CouncilSheetBody, CouncilSheetHead } from "./councilsheet";
+import { councilSheetAtom, yieldToSubject } from "./councilsheetstore";
 import { EffortDetailView } from "./effortdetailview";
 import { briefRunListAtom, briefSheetOpenAtom } from "./jarvisstore";
 import {
@@ -329,6 +331,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const projects = useAtomValue(projectsAtom);
     const runList = useAtomValue(briefRunListAtom);
     const queuedId = useAtomValue(briefQueueSheetAtom);
+    const councilId = useAtomValue(councilSheetAtom);
     const entries = useAtomValue(runQueueAtom);
     const started = useAtomValue(runQueueStartedAtom);
 
@@ -346,11 +349,12 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
 
     // memoized because the latch below has it in a dep array: sheetFace builds a fresh object each call,
     // so an unmemoized face would refire the latch every render and setState its way into a loop
-    const face = useMemo(() => sheetFace(subject, run, queuedId), [subject, run, queuedId]);
-    // opening a subject closes the queue face (a queue entry is no subject: briefqueuestore.ts)
+    const face = useMemo(() => sheetFace(subject, run, queuedId, councilId), [subject, run, queuedId, councilId]);
+    // opening a subject closes the queue and council faces (neither is a subject: briefqueuestore.ts,
+    // councilsheetstore.ts)
     useEffect(() => {
         if (subject != null) {
-            globalStore.set(briefQueueSheetAtom, null);
+            yieldToSubject();
         }
     }, [subject]);
     // the entry's title is the header's, and the last one seen outlives the entry: the latch below and the toast
@@ -400,6 +404,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const close = () => {
         globalStore.set(briefSheetOpenAtom, false);
         globalStore.set(briefQueueSheetAtom, null);
+        globalStore.set(councilSheetAtom, null);
         clearSubject();
         returnToOrigin("sheet");
     };
@@ -445,7 +450,16 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                                 ? "initiative"
                                 : shown.face.kind === "queued"
                                   ? "queued"
-                                  : "project"
+                                  : shown.face.kind === "council"
+                                    ? "council"
+                                    : "project"
+                        }
+                        // the council's head is its own (its mode, question, project and age); the latched
+                        // face keeps it drawn through the exit animation
+                        head={
+                            shown.face.kind === "council" ? (
+                                <CouncilSheetHead councilId={shown.face.councilId} onClose={close} />
+                            ) : undefined
                         }
                         title={shown.title}
                         meta={shown.meta}
@@ -523,6 +537,9 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                             </div>
                         ) : null}
                         {face.kind === "queued" ? <QueueSheet model={model} entryId={face.entryId} /> : null}
+                        {shown.face.kind === "council" ? (
+                            <CouncilSheetBody model={model} councilId={shown.face.councilId} />
+                        ) : null}
                     </SheetShell>
                 </div>
             )}
