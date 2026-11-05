@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
+  one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
+  first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →
+  its next edits in arcterm go through without asking; say no → the file is untouched. An engine run's worker editing
+  its own worktree under `arc-wt` is never asked. Tried only headless (`claude -p`, where the ask is a refusal with
+  that reason); the dialog itself is untried (`claude/arc-mod/hooks/foreignrepo-core.ts`, 4b5c0bc94).
 - [ ] (arcterm) **Council "N agree": avatars and a list on hover.** Open a council with an idea two or more seats
   agreed with → the signal line under it shows their small avatars stacked before `✓ N agree`; hover it → a card under
   it reads "Agreed, nothing to add" and lists each seat, avatar and name, one per line (it flips above near the bottom
