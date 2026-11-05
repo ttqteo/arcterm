@@ -106,6 +106,53 @@ func TestShippedFiltersDoneWithEvidenceAndWindow(t *testing.T) {
 	}
 }
 
+func cancelled(id string, created, cancelledTs int64) *waveobj.Run {
+	r := trun(id, "cancelled", created, 0, nil)
+	r.CancelledTs = cancelledTs
+	return r
+}
+
+// Earlier lists the runs that ended without shipping: a cancelled run in the window is listed, newest
+// first; a done run, an in-flight run, a DAG worker and a run that ended before the window are not
+func TestEndedListsCancelledRunsInWindow(t *testing.T) {
+	older := cancelled("c1", 100, 700)
+	older.Mode = "quick"
+	newer := cancelled("c2", 100, 900)
+	newer.Mode = "orchestrator"
+	worker := cancelled("w1", 100, 950)
+	worker.Mode, worker.DagORef = "quick", "dag:d1"
+	runs := []*waveobj.Run{
+		older,
+		newer,
+		worker,
+		cancelled("old", 100, 500),            // ended before the window
+		trun("d1", "done", 100, 800, ev("x")), // shipped, not ended
+		trun("x1", "executing", 650, 0, nil),  // in flight
+	}
+	items := Ended(runs, 600)
+	if len(items) != 2 || items[0].RunOID != "c2" || items[1].RunOID != "c1" {
+		t.Fatalf("items=%+v want c2 then c1", items)
+	}
+	want := wshrpc.EndedItem{Project: "/p/one", RunOID: "c2", Goal: "goal-c2", Status: "cancelled", Mode: "orchestrator", CompletedTs: 900}
+	if items[0] != want {
+		t.Fatalf("item=%+v want %+v", items[0], want)
+	}
+	if all := Ended(runs, 0); len(all) != 3 {
+		t.Fatalf("all=%+v want the three non-worker cancelled runs when unbounded", all)
+	}
+}
+
+// a run cancelled before CancelledTs was recorded is dated by its last phase activity, else its creation
+func TestEndedDatesLegacyCancelledRuns(t *testing.T) {
+	phased := cancelled("p1", 100, 0)
+	phased.Phases = []waveobj.RunPhase{{Kind: "plan", StartedTs: 200, DoneTs: 300}, {Kind: "execute", StartedTs: 400}}
+	bare := cancelled("b1", 150, 0)
+	items := Ended([]*waveobj.Run{phased, bare}, 0)
+	if len(items) != 2 || items[0].RunOID != "p1" || items[0].CompletedTs != 400 || items[1].CompletedTs != 150 {
+		t.Fatalf("items=%+v want p1@400 then b1@150", items)
+	}
+}
+
 func TestTimelineMergesAndSortsDesc(t *testing.T) {
 	runs := []*waveobj.Run{
 		trun("r1", "done", 100, 500, ev("shipped a")),

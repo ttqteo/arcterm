@@ -114,6 +114,14 @@ func TestCancelRunSkipsOpenPhases(t *testing.T) {
 	if r.Phases[1].State != PhaseState_Skipped || r.Phases[2].State != PhaseState_Skipped {
 		t.Errorf("open phases should be skipped: %+v", r.Phases)
 	}
+	if r.CancelledTs == 0 {
+		t.Errorf("cancel should record CancelledTs")
+	}
+	first := r.CancelledTs
+	r.CancelledTs = 42
+	if r = CancelRun(r); r.CancelledTs != 42 {
+		t.Errorf("a second cancel should keep CancelledTs, got %d (first %d)", r.CancelledTs, first)
+	}
 }
 
 // the lead hands the engine a plan, so its one phase names no skill and never gates.

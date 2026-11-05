@@ -260,6 +260,52 @@ describe("briefing projection", () => {
         expect(m.shipped.map((s) => s.oref)).toEqual(["run:r-new"]);
     });
 
+    it("maps the runs that ended without shipping, across projects, windowed to seven days, newest first", () => {
+        const ended = (project: string, runoid: string, completedts: number, mode?: string): EndedItem => ({
+            project,
+            runoid,
+            goal: "goal " + runoid,
+            status: "cancelled",
+            ...(mode != null ? { mode } : {}),
+            completedts,
+        });
+        const m = projectBriefing(
+            input(
+                workState([
+                    {
+                        project: "/p/one",
+                        ended: [
+                            ended("/p/one", "r-a", T0 - 3 * DAY, "orchestrator"),
+                            ended("/p/one", "r-old", T0 - 8 * DAY),
+                        ],
+                    },
+                    { project: "/p/two", ended: [ended("/p/two", "r-b", T0 - HOUR, "quick")] },
+                ])
+            )
+        );
+        expect(m.ended).toEqual([
+            {
+                oref: "run:r-b",
+                oid: "r-b",
+                goal: "goal r-b",
+                project: "/p/two",
+                status: "cancelled",
+                mode: "quick",
+                endedTs: T0 - HOUR,
+            },
+            {
+                oref: "run:r-a",
+                oid: "r-a",
+                goal: "goal r-a",
+                project: "/p/one",
+                status: "cancelled",
+                mode: "orchestrator",
+                endedTs: T0 - 3 * DAY,
+            },
+        ]);
+        expect(projectBriefing(input(workState([{ project: "/p/one" }]))).ended).toEqual([]);
+    });
+
     it("projects efforts, non-archived only, and leaves the display window to the view", () => {
         const state = workState([{ project: "waveterm", active: [], shipped: [], events: [], delta: [] }]);
         state.efforts = EFFORT_FIXTURES;

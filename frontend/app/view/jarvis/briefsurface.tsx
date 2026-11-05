@@ -990,6 +990,36 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 ...(face != null ? { face: { stage: face.state, stageTone: face.stateTone, meta: face.meta } } : {}),
             };
         });
+        // the runs that ended without shipping: their status files them under Earlier, and a line opens the run
+        // sheet as a live run's card does (target and runOid)
+        const ended: ActivityRunInput[] = (model_?.ended ?? []).map((e) => ({
+            line: {
+                id: "sessions:ended:" + e.oref,
+                kind: "· run",
+                kindTone: "muted",
+                title: e.goal,
+                note: "",
+                meta: projectName(e.project, councilProjects),
+                state: e.status,
+                stateTone: "error",
+                progress: null,
+                target: { oref: e.oref },
+                why: "",
+                age: "",
+                detail: "",
+                runOid: e.oid,
+            },
+            mode: e.mode,
+            status: e.status,
+            ts: e.endedTs,
+        }));
+        const endedKept = new Set(
+            filterLines(
+                ended.map((r) => r.line),
+                query
+            )
+        );
+        runs.push(...ended.filter((r) => endedKept.has(r.line)));
         const councils = activityCouncils(councilList, councilProjects, now).filter(
             (c) => filterLines([c.line], query).length > 0
         );

@@ -3189,6 +3189,16 @@ declare global {
         lastnote?: EffortLastNote;
     };
 
+    // wshrpc.EndedItem
+    type EndedItem = {
+        project: string;
+        runoid: string;
+        goal: string;
+        status: string;
+        mode?: string;
+        completedts: number;
+    };
+
     // waveobj.EvidenceArtifact
     type EvidenceArtifact = {
         path: string;
@@ -3891,6 +3901,7 @@ declare global {
         project: string;
         active?: ActiveWorkItem[];
         shipped?: ShippedItem[];
+        ended?: EndedItem[];
         events?: TimelineEvent[];
         delta?: TimelineEvent[];
     };
@@ -4155,6 +4166,7 @@ declare global {
         radarorigin?: RunRadarOrigin;
         createdts: number;
         completedts?: number;
+        cancelledts?: number;
         evidence?: RunEvidence;
         land?: RunLand;
         verificationackts?: number;

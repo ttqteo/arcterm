@@ -250,6 +250,7 @@ type Run struct {
 	RadarOrigin *RunRadarOrigin `json:"radarorigin,omitempty"` // set when started from a Radar finding
 	CreatedTs   int64           `json:"createdts"`
 	CompletedTs int64           `json:"completedts,omitempty"` // set at seal, when Status becomes done
+	CancelledTs int64           `json:"cancelledts,omitempty"` // set by CancelRun; 0 on a run cancelled before it was recorded
 	Evidence    *RunEvidence    `json:"evidence,omitempty"`    // sealed once at completion; immutable
 	// Land is the merge of a branch-landed run's wave/<runId> back into BaseBranch, which runs after the seal.
 	// It lives beside the evidence, not in it, because a held land is retried after the seal is frozen.

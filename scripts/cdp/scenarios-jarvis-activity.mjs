@@ -2,10 +2,10 @@
 // (docs/superpowers/specs/2026-11-05-jarvis-revamp-design.md decision 5, plan docs/superpowers/plans/2026-11-05-jarvis-revamp.md
 // Task 5). kit is scenarios.mjs's JARVIS_KIT.
 //
-// Seeds a live run (a real orchestrator run held in planning), a running council and two ended ones (the done and the
-// failed fixtures). The two ended councils are the Earlier lines: no run reaches the Brief ended without shipping today
-// (jarvisstate.ActiveWork drops cancelled runs, and no run status reads "failed"), so briefactivity.test.ts covers a
-// failed or cancelled run's Earlier line. Passes once briefsurface.tsx mounts ActivityRegion (Task 8).
+// Seeds a live run (a real orchestrator run held in planning), a second run it then cancels, a running council and two
+// ended ones (the done and the failed fixtures). The cancelled run and the two ended councils are the Earlier lines: a
+// cancelled run reaches the Brief through jarvisstate.Ended (fix round, plan
+// docs/superpowers/plans/2026-11-05-jarvis-revamp-round.md Task 1), and its line opens the run sheet on it.
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +15,8 @@ import { arrangeCouncilProject, teardownCouncilProject, writeCouncil } from "./c
 const RUN_LABEL = "activity-run";
 const RUN_GOAL = `verify ${RUN_LABEL}: do nothing`;
 const RUN_LEAD = "activity lead";
+const ENDED_LABEL = "activity-ended";
+const ENDED_GOAL = `verify ${ENDED_LABEL}: do nothing`;
 const TITLES = {
     live: "Activity live council",
     done: "Activity done council",
@@ -45,11 +47,39 @@ export default function (kit) {
 
     const tab = (h, f) => h.ev(`document.querySelector('[data-jarvis-activity-tab="${f}"]')?.click()`);
 
+    // a run that ended without shipping: created held, as arrangeFixtureRun creates one, then cancelled. Its own
+    // channel, and no roster fixture (arrangeFixtureRun's roster names the live run's lead), so teardownFixtureRun
+    // takes it apart like the live one.
+    async function arrangeEndedRun(h, ctx) {
+        const wslist = await h.rpc("workspacelist", null);
+        const ch = await h.rpc("createchannel", { name: `verify-${ENDED_LABEL}`, projectpath: ctx.cwd });
+        ctx.channelId = ch.oid;
+        const created = await h.rpc(
+            "createrun",
+            {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: ENDED_GOAL,
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            },
+            { timeout: 30000 }
+        );
+        ctx.runId = created.run.id;
+        ctx.landPath = created.run.landpath;
+        await h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId });
+    }
+
     const jarvisBriefActivity = {
         name: "jarvis-brief-activity",
         surface: "jarvis",
         async arrange(h) {
-            const ctx = { run: { cwd: mkdtempSync(join(tmpdir(), "verify-activity-")) }, council: null };
+            const ctx = {
+                run: { cwd: mkdtempSync(join(tmpdir(), "verify-activity-")) },
+                ended: { cwd: mkdtempSync(join(tmpdir(), "verify-activity-ended-")) },
+                council: null,
+            };
             // a throw past this point still returns ctx, so teardown removes whatever was already made
             try {
                 ctx.council = await arrangeCouncilProject(h, kit);
@@ -66,6 +96,7 @@ export default function (kit) {
                     failed: writeCouncil(ctx.council, "failed", titled(TITLES.failed)),
                 };
                 await arrangeFixtureRun(h, ctx.run, RUN_LABEL, RUN_LEAD);
+                await arrangeEndedRun(h, ctx.ended);
                 await briefViewport(h, 1600, 1000);
                 // the roster fixture is read once at boot, and the councils are read on the first list
                 await briefReload(h);
@@ -82,12 +113,13 @@ export default function (kit) {
                 return steps;
             }
 
-            // activity: the live run and the running council are cards, the done and failed councils Earlier lines
+            // activity: the live run and the running council are cards; the cancelled run and the done and failed
+            // councils Earlier lines
             const seeded = `(() => {
                 const r = ${ACTIVITY};
                 if (!r) return false;
                 const t = r.innerText;
-                return ${JSON.stringify([RUN_GOAL, ...Object.values(TITLES)])}.every((s) => t.includes(s));
+                return ${JSON.stringify([RUN_GOAL, ENDED_GOAL, ...Object.values(TITLES)])}.every((s) => t.includes(s));
             })()`;
             await polishWaitFor(h, seeded, 20000);
             await h.ev(`${ACTIVITY}?.scrollIntoView({ block: "start" })`);
@@ -95,18 +127,41 @@ export default function (kit) {
             await h.shot("cdp-shots/jarvis-brief-activity.png");
             const all = await h.ev(READ_ACTIVITY);
             rec(
-                "activity: the live run and the running council are live cards, the done and failed councils Earlier lines",
+                "activity: the live run and the running council are live cards, the cancelled run and the done and failed councils Earlier lines",
                 all != null &&
                     all.cards.some((c) => c.source === "run" && c.text.includes(RUN_GOAL)) &&
                     all.cards.some((c) => c.source === "council" && c.text.includes(TITLES.live)) &&
+                    all.lines.some((l) => l.source === "run" && l.text.includes(ENDED_GOAL)) &&
                     all.lines.some((l) => l.source === "council" && l.text.includes(TITLES.done)) &&
                     all.lines.some((l) => l.source === "council" && l.text.includes(TITLES.failed)) &&
                     !has(all.lines, RUN_GOAL) &&
+                    !has(all.cards, ENDED_GOAL) &&
                     !has(all.cards, TITLES.done) &&
                     !has(all.cards, TITLES.failed),
                 JSON.stringify(all)
             );
             if (all == null) return steps;
+
+            // open ended run: the cancelled run's Earlier line opens the run sheet on that run
+            await h.ev(`[...(${ACTIVITY}?.querySelectorAll('[data-jarvis-activity-line="run"]') ?? [])]
+                .find((l) => l.innerText.includes(${JSON.stringify(ENDED_GOAL)}))?.click()`);
+            const runSheet = `document.querySelector('[data-jarvis-brief-sheet] [data-run-id]')?.getAttribute('data-run-id') === ${JSON.stringify(ctx.ended.runId)}`;
+            const runOpened = await polishWaitFor(h, runSheet, 10000);
+            await briefNap(300);
+            await h.shot("cdp-shots/jarvis-brief-activity-ended-run.png");
+            rec(
+                "open ended run: clicking the cancelled run's Earlier line opens the run sheet on it",
+                runOpened,
+                JSON.stringify({
+                    runId: ctx.ended.runId,
+                    sheetRunId: await h.ev(
+                        `document.querySelector('[data-jarvis-brief-sheet] [data-run-id]')?.getAttribute('data-run-id') ?? null`
+                    ),
+                })
+            );
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            await polishWaitFor(h, `!document.querySelector('[data-jarvis-brief-sheet]')`, 5000);
 
             // councils tab: only councils show, and Shipped narrows to its no-match sentence
             await tab(h, "councils");
@@ -154,6 +209,11 @@ export default function (kit) {
             const errors = [];
             try {
                 await teardownFixtureRun(h, ctx.run, "jarvis-brief-activity");
+            } catch (e) {
+                errors.push(String(e?.message ?? e));
+            }
+            try {
+                await teardownFixtureRun(h, ctx.ended, "jarvis-brief-activity (ended run)");
             } catch (e) {
                 errors.push(String(e?.message ?? e));
             }

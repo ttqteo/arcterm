@@ -307,6 +307,7 @@ type ProjectWork struct {
 	Project string           `json:"project"`
 	Active  []ActiveWorkItem `json:"active,omitempty"`
 	Shipped []ShippedItem    `json:"shipped,omitempty"`
+	Ended   []EndedItem      `json:"ended,omitempty"`
 	Events  []TimelineEvent  `json:"events,omitempty"`
 	Delta   []TimelineEvent  `json:"delta,omitempty"`
 }
@@ -336,6 +337,17 @@ type ShippedItem struct {
 	EffortOID   string                  `json:"effortoid,omitempty"` // the chunk the run executed, when attributed
 	ChunkLabel  string                  `json:"chunklabel,omitempty"`
 	Mode        string                  `json:"mode,omitempty"` // the Run's mode (quick | pipeline | orchestrator)
+}
+
+// EndedItem is one run that ended without shipping (cancelled) within the window. CompletedTs is when it
+// ended: the run's CancelledTs, or for a run cancelled before that was recorded, its last phase activity.
+type EndedItem struct {
+	Project     string `json:"project"`
+	RunOID      string `json:"runoid"`
+	Goal        string `json:"goal"`
+	Status      string `json:"status"`
+	Mode        string `json:"mode,omitempty"` // the Run's mode (quick | pipeline | orchestrator)
+	CompletedTs int64  `json:"completedts"`
 }
 
 // TimelineEvent is one merged, timestamp-descending "what happened when" event.

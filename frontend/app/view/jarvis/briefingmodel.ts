@@ -96,6 +96,16 @@ export interface ShippedRow {
     chunkLabel: string;
     mode: string;
 }
+// a run that ended without shipping (cancelled), which Activity files under Earlier
+export interface EndedRow {
+    oref: string;
+    oid: string;
+    goal: string;
+    project: string;
+    status: string;
+    mode: string;
+    endedTs: number;
+}
 // one recency-sorted list across runs, blockers and direct agents; the kind badge tells the
 // story the old per-leg sub-headers told, so the section reads as one triage queue.
 export type ActiveWorkKind = "run" | "blocker" | "agent";
@@ -509,6 +519,8 @@ export interface BriefingModel {
     directAgents: AgentRow[];
     delta: DeltaRow[];
     shipped: ShippedRow[];
+    // newest first, within the seven-day window
+    ended: EndedRow[];
     efforts: EffortCardModel[];
     health: SourceHealthSummary;
     counts: { runs: number; agents: number; delta: number; shipped: number };
@@ -669,6 +681,21 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
         mode: s.mode ?? "",
     }));
 
+    // ended without shipping: the same seven-day window as shipped (the server windows by the cursor)
+    const ended: EndedRow[] = projects
+        .flatMap((p) => p.ended ?? [])
+        .filter((e) => e.completedts >= input.sevenDaysAgo)
+        .sort((a, b) => b.completedts - a.completedts)
+        .map((e) => ({
+            oref: "run:" + e.runoid,
+            oid: e.runoid,
+            goal: e.goal,
+            project: e.project,
+            status: e.status,
+            mode: e.mode ?? "",
+            endedTs: e.completedts,
+        }));
+
     const missingLegs: string[] = [];
     if (state.sources.runs !== true) {
         missingLegs.push("Runs");
@@ -690,6 +717,7 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
         directAgents,
         delta,
         shipped,
+        ended,
         efforts: effortCards,
         health: { complete: missingLegs.length === 0, missingLegs, attentionState: state.sources.attention },
         counts: { runs: activeRuns.length, agents: directAgents.length, delta: delta.length, shipped: shipped.length },
