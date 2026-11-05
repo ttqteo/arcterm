@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **A double right-click in a terminal opens the menu.** In the installed app, in an agent's or a shell
+  terminal, with nothing selected: right-click once → the clipboard pastes once after a short beat; right-click twice
+  at your usual double-click pace → the terminal menu opens and nothing pastes. With text selected, one right-click
+  copies it and clears the highlight. The double-click window went from 300 ms to Windows' default 500 ms, after a hand
+  check where a double right-click pasted twice; only the unit tests ran (`termrightclick.ts`).
 - [ ] (arcterm) **The Christmas theme in WebView2.** In the packaged app pick Settings → Appearance → Theme →
   Christmas, with an agent's terminal open → snow falls over the whole window and reads clearly fainter over the
   terminal, whose text stays readable; the lights hang under the app bar without moving it. Have an agent ask → the

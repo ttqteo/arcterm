@@ -31,6 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Right-clicking twice in a terminal opens its menu again instead of pasting twice; a double right-click at an ordinary pace no longer counts as two clicks.
 - An agent asking you something in the Agent tree no longer flickers: its row keeps a steady amber box, and the stray amber line that came and went beside it is gone.
 - In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
 - Every orchestrator run no longer stalls for minutes while the engine deletes one task's worktree that holds a full `node_modules`.
