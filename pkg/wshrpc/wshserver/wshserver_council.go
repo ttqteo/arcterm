@@ -336,7 +336,12 @@ func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.Com
 		if err != nil {
 			return nil, err
 		}
-		est = council.EstimateFollowup(data.Followup, seats, data.Tools)
+		// a file the person attached earlier in the Discussion keeps the answers' tools on, whatever the composer says
+		tools := data.Tools
+		if c, err := council.Load(data.Id); err == nil && council.DiscussionReads(c) {
+			tools = true
+		}
+		est = council.EstimateFollowup(data.Followup, seats, tools)
 	case data.Id != "":
 		c, err := council.Load(data.Id)
 		if err != nil {

@@ -292,6 +292,11 @@ func TestEstimateRouted(t *testing.T) {
 			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 220_000, Minutes: 2}},
 		{"Auto beats the guess the composer sent in tools", &Council{Experts: panel3}, true, true,
 			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 20_000, TokensMax: r + 220_000, Minutes: 2}},
+		{"a file in the Discussion since the report: both ends at the tools price, Auto or not",
+			&Council{Experts: panel3, Summary: &CouncilSummary{At: 1}, Replies: []CouncilReply{
+				{Id: "r1", Author: YouId, Text: "@paper.pdf", To: []string{"ux"}, Tools: true, Attachments: []string{"paper.pdf"}, Ts: 2},
+			}}, false, true,
+			CouncilEstimate{Calls: 3, CallsMax: 4, Tokens: r + 110_000, TokensMax: r + 220_000, Minutes: 2}},
 
 		{"a chat of 300k is the dearest at the high end and absent from the low end",
 			&Council{Experts: append(roles("ux", "ram"), chat("tab-1", 300_000), chair)}, false, false,

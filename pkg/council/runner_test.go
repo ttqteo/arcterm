@@ -4851,7 +4851,8 @@ func TestLinkMentioned(t *testing.T) {
 }
 
 // A message with a link is stored with tools on whatever the composer sent, its router leaves them alone, and the calls
-// that answer it have WebFetch and are told so; the next message with no link has neither.
+// that answer it have WebFetch and are told so. The next message has no link, but it carries the one that had it (the
+// discussion since the report), so its answers keep both and may open the page again.
 func TestReplyWithLinkGetsWebFetch(t *testing.T) {
 	h := newHarness(t)
 	h.run(testCouncil("c1"))
@@ -4877,11 +4878,15 @@ func TestReplyWithLinkGetsWebFetch(t *testing.T) {
 		t.Fatalf("Reply: %v", err)
 	}
 	h.wait("c1")
-	for _, req := range h.f.calls("ans")[len(ans):] {
-		if req.Web {
-			t.Errorf("a follow-up with no link ran %s with WebFetch", req.Expert.Id)
+	next := h.f.calls("ans")[len(ans):]
+	if len(next) == 0 {
+		t.Fatal("no answer calls for the follow-up")
+	}
+	for _, req := range next {
+		if !req.Tools || !req.Web {
+			t.Errorf("a follow-up carrying the link ran %s with tools %v, web %v, want both", req.Expert.Id, req.Tools, req.Web)
 		}
-		mustNotContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, webNote)
+		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, webNote, "The update is live at https://blackdiamond.biglabs.net/")
 	}
 }
 
@@ -4987,16 +4992,22 @@ func TestCallAddDirsFromAttachments(t *testing.T) {
 			"The person's reply ["+asked+"]: @all Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
 	}
 
-	// the next follow-up has no attachment: no folder, and the tools are off as the client sent
+	// the next follow-up has no attachment, but it carries the message that had them (the discussion since the report):
+	// the tools stay on, with the same folders, so a question about the images can open them again
 	if _, err := h.r.Reply("c1", "", "", "@all Thanks, and without them?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	h.wait("c1")
-	for _, req := range h.f.calls("ans")[4:] {
-		if req.Tools || len(req.AddDirs) != 0 {
-			t.Errorf("a follow-up with no attachment ran with tools %v and folders %v, want neither", req.Tools, req.AddDirs)
+	next := h.f.calls("ans")[4:]
+	if len(next) == 0 {
+		t.Fatal("no answer calls for the follow-up")
+	}
+	for _, req := range next {
+		if !req.Tools || !slices.Equal(req.AddDirs, want) {
+			t.Errorf("a follow-up carrying the attachments ran with tools %v and folders %v, want tools and %v", req.Tools, req.AddDirs, want)
 		}
-		mustNotContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, "read these files", "arc-attachments")
+		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt,
+			"@all Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
 	}
 }
 

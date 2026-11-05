@@ -68,6 +68,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council seat you ask again in the Discussion remembers the chat since the report, its own earlier answers
+  included: it no longer says it has not read a paper it answered about one message up, and a file or link you gave
+  earlier in the chat stays open to it.
 - A council's Ideas and Memory tabs keep where you scrolled them: switching between them, or to an idea's thread, and
   back no longer returns the list to the top.
 - A run no longer logs "Cleanup failed" every 30 seconds when a dev server a worker started and left behind holds a

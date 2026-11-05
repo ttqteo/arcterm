@@ -17,7 +17,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-05.3"
+const HarnessVersion = "2026-11-05.4"
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -962,14 +962,22 @@ func personText(r CouncilReply, reads bool) string {
 	return text
 }
 
-// personRepliesIn are the person's replies a prompt that answers replies carries: each of them, and the person's replies
-// in the branch above each (the ones AnswersPrompt writes under "The replies above it"), once each, in the order met.
+// personRepliesIn are the person's replies a prompt that answers replies carries: theirs in the discussion before them
+// (discussionBefore), each of them, and the person's replies in the branch above each (the ones AnswersPrompt writes
+// under "The replies above it"), once each, in the order met. A message of the discussion keeps its Tools only when it
+// points at something to open (pointsAtMaterial): a file attached or an address given earlier in the chat keeps the
+// call's tools on, so a follow-up about it can open it again, while Let them read files alone was the person's choice
+// for that one message.
 func personRepliesIn(c *Council, replies []CouncilReply) []CouncilReply {
 	var out []CouncilReply
 	add := func(r CouncilReply) {
 		if r.Author == YouId && !slices.ContainsFunc(out, func(x CouncilReply) bool { return x.Id == r.Id }) {
 			out = append(out, r)
 		}
+	}
+	for _, r := range discussionBefore(c, replies) {
+		r.Tools = r.Tools && pointsAtMaterial(r)
+		add(r)
 	}
 	for _, r := range replies {
 		for _, above := range branchOf(c, r) {
@@ -979,6 +987,61 @@ func personRepliesIn(c *Council, replies []CouncilReply) []CouncilReply {
 	}
 	return out
 }
+
+// discussionRecent is how many messages of the Discussion an answer carries at most, the latest.
+const discussionRecent = 12
+
+// discussionBefore are the sent messages of the Discussion after the council's latest report that came before the first
+// of replies, the last discussionRecent of them, oldest first: the person's messages whoever they went to, and the seats'
+// answers, the answering seat's own included, since a call remembers nothing of the one before it. A message in the
+// branch above one of replies is left out (AnswersPrompt writes it there), and so are a held or dropped draft and a
+// message with no words and no file. A council with no report has none: its seats met in rounds, which the prompts
+// replay. With no replies it is the whole chat since the report, what a new message would carry.
+func discussionBefore(c *Council, replies []CouncilReply) []CouncilReply {
+	if c.Summary == nil {
+		return nil
+	}
+	end, skip := len(c.Replies), map[string]bool{}
+	for _, r := range replies {
+		skip[r.Id] = true
+		for _, a := range ancestorsOf(c, r) {
+			skip[a.Id] = true
+		}
+		if i := slices.IndexFunc(c.Replies, func(x CouncilReply) bool { return x.Id == r.Id }); i >= 0 {
+			end = min(end, i)
+		}
+	}
+	var out []CouncilReply
+	for _, r := range c.Replies[:end] {
+		if r.Ts <= c.Summary.At || !Sent(r.Draft) || skip[r.Id] || (strings.TrimSpace(r.Text) == "" && len(r.Attachments) == 0) {
+			continue
+		}
+		out = append(out, r)
+	}
+	if len(out) > discussionRecent {
+		out = out[len(out)-discussionRecent:]
+	}
+	return out
+}
+
+// pointsAtMaterial says a message of the person's names something to open: a file it attaches, an @ file or a web
+// address (locksTools).
+func pointsAtMaterial(r CouncilReply) bool { return len(r.Attachments) > 0 || locksTools(r.Text) }
+
+// DiscussionReads says a new message in the Discussion is answered with the read-only tools on whatever the person sets
+// for it: the chat it carries (discussionBefore) holds a message of theirs that points at a file or a page. The
+// follow-up estimates price it so.
+func DiscussionReads(c *Council) bool {
+	tools, _ := readsOf(personRepliesIn(c, nil))
+	return tools
+}
+
+// discussionIntro heads the discussion an answer carries; %s is the answering seat's name. A seat called again remembers
+// none of its earlier calls, and once answered a follow-up about a paper it had read with "I have not read it".
+const discussionIntro = "The messages sent in the Discussion after the report and before the replies below, the first " +
+	"one first. Lines by %s are your own earlier answers, from calls you do not remember: what one says you read or " +
+	"found stands, so build on it and never say you have not read it. When an answer needs the file itself and you have " +
+	"tools, open it again.\n\n"
 
 // readsOf says what the call for a prompt that carries these replies of the person's may read. It has tools when any of
 // them asked for them: Let them read files, or an attachment or an @ file, which store Tools on. Then it may also read the
@@ -1580,11 +1643,13 @@ func branchOf(c *Council, r CouncilReply) []CouncilReply {
 	return up
 }
 
-// AnswersPrompt asks one expert to answer the person's replies, the pass after the synthesis and a follow-up. For
-// each reply it carries only the branch the reply sits in (its proposal and the replies above it), then the
-// expert's own proposals. The expert has tools when any of the person's replies it carries asked for them (Let them read
-// files, or an attachment or an @ file), the ones above an owed reply included, and is told to open a file only when an
-// answer needs it (readWhenNeeded). With tools, each of the person's replies it carries ends with its attachment block.
+// AnswersPrompt asks one expert to answer the person's replies, the pass after the synthesis and a follow-up. It carries
+// the expert's own proposals, the discussion since the report that came before the replies (discussionBefore, the
+// expert's own earlier answers included), then for each reply only the branch the reply sits in (its proposal and the
+// replies above it). The expert has tools when any of the person's replies it carries asked for them (Let them read
+// files, or an attachment or an @ file), the ones in the discussion and above an owed reply included, and is told to open
+// a file only when an answer needs it (readWhenNeeded). With tools, each of the person's replies it carries ends with its
+// attachment block.
 func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	carried := personRepliesIn(c, replies)
 	tools, _ := readsOf(carried)
@@ -1623,6 +1688,19 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		}
 	}
 	writeThumbs(&b, c)
+
+	if talk := discussionBefore(c, replies); len(talk) > 0 {
+		b.WriteString("## The discussion since the report\n\n")
+		fmt.Fprintf(&b, discussionIntro, speaker(c, e.Id))
+		for _, r := range talk {
+			if r.Author == YouId {
+				b.WriteString(personLine(c, r, tools))
+			} else {
+				b.WriteString(saidLine(c, r))
+			}
+		}
+		b.WriteString("\n")
+	}
 
 	for _, r := range replies {
 		fmt.Fprintf(&b, "## Reply %s\n\n", r.Id)
@@ -2008,7 +2086,7 @@ func writeSinceReport(b *strings.Builder, c *Council, e CouncilExpert, round int
 	b.WriteString("## What was said since the report\n\n")
 	for _, r := range sent {
 		if r.Author == YouId {
-			b.WriteString(personLine(c, r))
+			b.WriteString(personLine(c, r, true))
 		} else {
 			b.WriteString(saidLine(c, r))
 		}
@@ -2017,8 +2095,9 @@ func writeSinceReport(b *strings.Builder, c *Council, e CouncilExpert, round int
 }
 
 // personLine is one of the person's messages as a seat it was not put to is shown it: who it went to, what it is on, and
-// its words, with the attachment block when it has files (only a live agent is shown one, and reads with its own tools).
-func personLine(c *Council, r CouncilReply) string {
+// its words, with the attachment block when it has files and the seat reads (a live agent reads with its own tools; an
+// expert answering the person, when its call has them).
+func personLine(c *Council, r CouncilReply, reads bool) string {
 	to := "the whole council"
 	if len(r.To) > 0 {
 		names := make([]string, len(r.To))
@@ -2034,7 +2113,7 @@ func personLine(c *Council, r CouncilReply) string {
 	if parent := findReply(c, r.ParentId); parent != nil {
 		where += fmt.Sprintf(", replying to %s's %s", speaker(c, parent.Author), parent.Id)
 	}
-	return fmt.Sprintf("- [%s] the person to %s%s: %s\n", r.Id, to, where, personText(r, true))
+	return fmt.Sprintf("- [%s] the person to %s%s: %s\n", r.Id, to, where, personText(r, reads))
 }
 
 // saidLine is one reply another seat sent, as a seat is shown it: who, its stance, what it is on, and its words.

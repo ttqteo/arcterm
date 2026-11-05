@@ -607,6 +607,108 @@ func TestAnswersPromptCarriesTheReport(t *testing.T) {
 		"2. Sleep sooner\n", "- Wake on hover")
 }
 
+// discussionCouncil is promptCouncil after its report (At 100), with a chat in the Discussion after it, the way council
+// c65d51f5457dd6d4 had one: the person attaches a paper to UX (r10), UX answers that it read it (r11), RAM's answer is
+// dropped (r12), and the person asks UX about the paper again in a new message with no attachment (r13).
+func discussionCouncil() (*Council, string) {
+	c := promptCouncil()
+	c.Summary = &CouncilSummary{At: 100, Answer: "Show the state first.", Directions: []CouncilDirection{{Title: "Show the state"}}}
+	paper := filepath.Join("home", "related", "paper.pdf")
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r10", Author: YouId, Text: "Text-r10 @paper.pdf", To: []string{"ux"}, Tools: true, Attachments: []string{paper}, Answered: true, Ts: 200},
+		CouncilReply{Id: "r11", ParentId: "r10", Author: "ux", Text: "Text-r11 I read it: it compares with a hand-written harness", Round: 5, Ts: 210},
+		CouncilReply{Id: "r12", ParentId: "r10", Author: "ram", Text: "Text-r12 dropped", Round: 5, Ts: 211, Draft: DraftDropped},
+		CouncilReply{Id: "r13", Author: YouId, Text: "Text-r13 what does human-engineered mean in that paper?", To: []string{"ux"}, Ts: 300},
+	)
+	return c, paper
+}
+
+// A new message in the Discussion sits in no branch, so the seat answering it is shown the chat since the report: its own
+// earlier answers included, which a fresh call does not remember. Before this it answered r13 as if r10 and r11 had
+// never been said.
+func TestAnswersPromptCarriesTheDiscussionSinceTheReport(t *testing.T) {
+	c, paper := discussionCouncil()
+	ux := c.Experts[0]
+	r13 := c.Replies[len(c.Replies)-1]
+	p := AnswersPrompt(c, ux, []CouncilReply{r13})
+
+	talk := section(t, p, "## The discussion since the report")
+	mustContain(t, "discussion section", talk,
+		"- [r10] the person to UX: Text-r10 @paper.pdf\n"+attachmentBlockOf(paper),
+		"- [r11] UX to the whole council, replying to the person's r10: Text-r11 I read it",
+		"Lines by UX are your own earlier answers")
+	mustNotContain(t, "discussion section", talk, "Text-r12 dropped", "Text-r13", "Text-r1 it breaks", "Text-r4 what about Mac?")
+	if i, j := strings.Index(p, "## The discussion since the report"), strings.Index(p, "## Reply r13"); i < 0 || j < i {
+		t.Errorf("the discussion should come before the reply it leads to: at %d, reply at %d", i, j)
+	}
+	// the paper attached earlier in the chat turns the call's tools on, so the seat can open it again
+	mustContain(t, "answers prompt", p, readWhenNeeded)
+	mustNotContain(t, "answers prompt", p, "You have no tools this time")
+	tools, dirs := readsOf(personRepliesIn(c, []CouncilReply{r13}))
+	if !tools || !slices.Equal(dirs, []string{filepath.Dir(paper)}) {
+		t.Errorf("readsOf = %v %v, want tools on and the paper's folder", tools, dirs)
+	}
+	if !DiscussionReads(c) {
+		t.Error("DiscussionReads = false, want true: a new message would carry the paper")
+	}
+
+	// Let them read files alone on an earlier message was the person's choice for that message: it does not carry
+	toggled, _ := discussionCouncil()
+	toggled.Replies[len(toggled.Replies)-4].Attachments, toggled.Replies[len(toggled.Replies)-4].Text = nil, "Text-r10 look it up" // r10
+	if tools, _ := readsOf(personRepliesIn(toggled, []CouncilReply{r13})); tools || DiscussionReads(toggled) {
+		t.Error("an earlier message with tools on and nothing to open turned the follow-up's tools on")
+	}
+
+	// a call with no tools in the chat shows the words alone
+	c.Replies[len(c.Replies)-4].Tools = false // r10
+	plain := AnswersPrompt(c, ux, []CouncilReply{r13})
+	mustNotContain(t, "answers prompt with no tools", plain, "read these files", paper)
+	mustContain(t, "answers prompt with no tools", section(t, plain, "## The discussion since the report"), "Text-r11 I read it")
+	if DiscussionReads(c) {
+		t.Error("DiscussionReads = true with no tools in the chat")
+	}
+}
+
+// The discussion holds only what came before the replies being answered, never a message of their own branch twice, and
+// at most discussionRecent messages, the latest; a council with no report has none.
+func TestAnswersPromptDiscussionBounds(t *testing.T) {
+	c, _ := discussionCouncil()
+	ux := c.Experts[0]
+	// answering r10 (owed again for the test): nothing of the chat came before it
+	r10 := c.Replies[len(c.Replies)-4]
+	if strings.Contains(AnswersPrompt(c, ux, []CouncilReply{r10}), "## The discussion since the report") {
+		t.Error("a reply with nothing sent before it since the report got a discussion section")
+	}
+
+	// a reply under r11 carries r10 and r11 in its branch, not in the discussion
+	c.Replies = append(c.Replies, CouncilReply{Id: "r14", ParentId: "r11", Author: YouId, Text: "Text-r14 and then?", To: []string{"ux"}, Ts: 400})
+	p := AnswersPrompt(c, ux, []CouncilReply{c.Replies[len(c.Replies)-1]})
+	talk := section(t, p, "## The discussion since the report")
+	mustContain(t, "discussion section", talk, "Text-r13")
+	mustNotContain(t, "discussion section", talk, "Text-r10", "Text-r11")
+	mustContain(t, "reply r14", section(t, p, "## Reply r14"), "Text-r10", "Text-r11")
+
+	// a long chat keeps its last discussionRecent messages
+	long, _ := discussionCouncil()
+	for i := range discussionRecent + 3 {
+		long.Replies = append(long.Replies, CouncilReply{Id: fmt.Sprintf("x%d", i), Author: YouId, Text: fmt.Sprintf("Text-x%d.", i), To: []string{"ram"}, Answered: true, Ts: int64(500 + i)})
+	}
+	long.Replies = append(long.Replies, CouncilReply{Id: "r99", Author: YouId, Text: "Text-r99 last", To: []string{"ux"}, Ts: 900})
+	lp := AnswersPrompt(long, ux, []CouncilReply{long.Replies[len(long.Replies)-1]})
+	talk = section(t, lp, "## The discussion since the report")
+	if n := len(regexp.MustCompile(`(?m)^- \[`).FindAllString(talk, -1)); n != discussionRecent {
+		t.Errorf("the discussion holds %d messages, want %d:\n%s", n, discussionRecent, talk)
+	}
+	mustContain(t, "long discussion", talk, fmt.Sprintf("Text-x%d.", discussionRecent+2))
+	mustNotContain(t, "long discussion", talk, "Text-x0.", "Text-r10", "Text-r13")
+
+	// no report, no discussion
+	c.Summary = nil
+	if strings.Contains(AnswersPrompt(c, ux, []CouncilReply{c.Replies[len(c.Replies)-1]}), "## The discussion since the report") {
+		t.Error("a council with no report got a discussion section")
+	}
+}
+
 // brainstormCouncil is promptCouncil as a Brainstorm: the same ideas, the third one wild, and a build among the replies.
 func brainstormCouncil() *Council {
 	c := promptCouncil()
