@@ -37,6 +37,17 @@ export function splitTitle(title: string): TipText {
     return { label: text };
 }
 
+// A short title names a control and shows the moment the pointer arrives. A detail (a sentence, or more than one line:
+// a router's reason, a source's note) waits DETAIL_TIP_DELAY_MS: shown at once, a pointer passing over it while the
+// person reads drops a block of text over the very lines they are reading.
+export const DETAIL_TIP_CHARS = 60;
+export const DETAIL_TIP_DELAY_MS = 600;
+
+export function tipDelay(text: string): number {
+    const t = text.trim();
+    return t.length > DETAIL_TIP_CHARS || t.includes("\n") ? DETAIL_TIP_DELAY_MS : 0;
+}
+
 // A modifier pressed alone is not the user moving on: it is the start of a chord, and on macOS the screenshot
 // chords (⌘⇧4, ⌘⇧5) deliver their modifiers to the page before the system takes the last key. Dismissing on
 // those made a tooltip impossible to capture.

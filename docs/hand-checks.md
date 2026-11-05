@@ -1834,3 +1834,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   names the key, and the table lists Review rows (`feedback_no-co-author-trailer.md` among them, untouched 30+ days);
   Still true on one → it reads "Marked still true at …", and the next session start no longer lints that memory.
   Go and vitest tests only (`pkg/memhygiene/review.go`); no dev app was up.
+- [ ] (arcterm) **Detail tooltips wait.** A council → send a message the router sends to one seat → sweep the pointer
+  across the message: no tip shows. Rest it on the Planner chip above the text → after about half a second "Router
+  chose …" opens above the chips, never over the message; a short button name (Copy, Pin) still shows at once.
+  Vitest and `task check:ts` only (`titletip.ts` `tipDelay`, `titletiphost.tsx`, `ReachRow`); no dev app was up.

@@ -33,6 +33,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent asking you something in the Agent tree no longer flickers: its row keeps a steady amber box, and the stray amber line that came and went beside it is gone.
 - In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
 - Every orchestrator run no longer stalls for minutes while the engine deletes one task's worktree that holds a full `node_modules`.
+- A tooltip that explains something at length (the reason the council's router picked a seat, a source's note) no longer pops over the text you are reading as the pointer passes: it waits a moment before it shows. A control's short name still shows at once. In a council, the router's reason shows only when you point at the chips above your message, and it opens above them instead of over the message.
 
 ## 1.0.2 — 2026-11-05
 
