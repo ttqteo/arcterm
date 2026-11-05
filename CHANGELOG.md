@@ -34,6 +34,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Agreed, Ruled out and Open of each of its councils' Memory, newest first, rewritten a few seconds after a Memory
   changes. Every agent of the project starts from what the councils settled. Arcterm writes only that block; the rest
   of the file stays yours.
+- Update CLAUDE.md at the foot of a council's Memory tab hands a Claude agent of the project a prompt to bring the rest
+  of its CLAUDE.md in line with what the council settled (a stale status line, the next steps, an outdated direction),
+  showing you the diff before it commits. With several agents open you pick one; with none it copies the prompt.
 
 ### Changed
 
