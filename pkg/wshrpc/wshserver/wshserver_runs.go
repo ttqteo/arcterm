@@ -1120,6 +1120,9 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 					log.Printf("CancelRun: recording radar investigation (cancelled) failed: %v", rerr)
 				}
 			}
+			if cerr == nil {
+				clearPauseAfterCancel(ctx, data.ChannelId, data.RunId)
+			}
 			publishRunUpdate(data.ChannelId, data.RunId)
 			if cerr == nil {
 				if dag, err := wstore.GetDag(ctx, linkedRun.DagORef); err == nil {
@@ -1161,6 +1164,7 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 	} else {
 		log.Printf("CancelRun: reload for worker stop failed: %v", gerr)
 	}
+	clearPauseAfterCancel(ctx, data.ChannelId, data.RunId)
 	publishRunUpdate(data.ChannelId, data.RunId)
 	if run, err := wstore.GetRun(ctx, data.ChannelId, data.RunId); err == nil && run.DagORef != "" {
 		if dag, err := wstore.GetDag(ctx, run.DagORef); err == nil {
@@ -1168,6 +1172,16 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 		}
 	}
 	return nil
+}
+
+// clearPauseAfterCancel is what a cancel of a paused run leaves to do (runpause.ClearOnCancel): the marks left under
+// it are cleared and the runs its lead spawned, whose agents are suspended, are cancelled with it. Best effort: the
+// cancel itself has already happened, so a failure is logged. It can cancel a child's whole dag, so it must outlast the
+// caller's RPC budget.
+func clearPauseAfterCancel(ctx context.Context, channelId, runId string) {
+	if err := runpause.ClearOnCancel(context.WithoutCancel(ctx), channelId, runId); err != nil {
+		log.Printf("CancelRun: clearing what the pause of run %s left: %v", runId, err)
+	}
 }
 
 // PauseRunCommand pauses a top-level run and everything under it, the way the person's Pause does (the run's menu,
