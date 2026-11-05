@@ -191,6 +191,17 @@ func taskKillSet(rows []treeRow, root int, group []int) []int {
 	return out
 }
 
+// terminateOutside kills a process with no job check. A var so tests kill nothing real.
+var terminateOutside = jobobject.TerminateOutside
+
+func pidSet(pids []int) map[int]bool {
+	out := make(map[int]bool, len(pids))
+	for _, p := range pids {
+		out[p] = true
+	}
+	return out
+}
+
 func rowPids(rows []treeRow) []int {
 	out := make([]int, len(rows))
 	for i, r := range rows {
@@ -217,21 +228,28 @@ func KillShellTask(ctx context.Context, resolve Resolver, data wshrpc.CommandRes
 		}
 		layout := readLayout(table, j, info.Agent)
 		tree := append([]int{root}, rowPids(subtree(layout.rows, root))...)
-		return terminateTask(j.Owner, taskKillSet(layout.rows, root, msysGroup(ctx, table, tree)), layout.core)
+		group := msysGroup(ctx, table, tree)
+		return terminateTask(j.Owner, taskKillSet(layout.rows, root, group), layout.core, pidSet(group))
 	}
 	return wshrpc.ResMonKillRtnData{Outcome: wshrpc.ResMonKill_Gone}
 }
 
-// terminateTask terminates pids that are not core, in order. A pid outside the job (an MSYS process of
-// another owner) or already exited is passed over.
-func terminateTask(o jobobject.Owner, pids []int, core map[int]string) wshrpc.ResMonKillRtnData {
+// terminateTask terminates pids that are not core, in order. A pid outside the job or already exited is passed
+// over, except one in msys: a member of an MSYS process group the task's own shell leads. Git Bash starts what a
+// task runs out of the agent's job (jobobject.TerminateOutside), so the job check alone left a task's forked sleep
+// running after Stop (2026-11-03); the group, read from MSYS's own table moments ago, ties it to the task.
+func terminateTask(o jobobject.Owner, pids []int, core map[int]string, msys map[int]bool) wshrpc.ResMonKillRtnData {
 	killed := 0
 	var failure error
 	for _, pid := range pids {
 		if core[pid] != "" {
 			continue
 		}
-		switch err := jobobject.TerminateMember(o, pid); {
+		err := jobobject.TerminateMember(o, pid)
+		if errors.Is(err, jobobject.ErrNotMember) && msys[pid] {
+			err = terminateOutside(pid)
+		}
+		switch {
 		case err == nil:
 			killed++
 		case errors.Is(err, jobobject.ErrGone), errors.Is(err, jobobject.ErrNotMember):

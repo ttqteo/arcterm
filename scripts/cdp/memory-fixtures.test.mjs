@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
     buildMemoryFixture,
     indexStats,
@@ -22,6 +22,18 @@ function tempRoot(prefix = "memory-fixtures-test-") {
 }
 afterEach(() => {
     for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
+});
+
+// one fixture for the file: every case only reads it, and each build runs several git inits, ~0.6 s idle but past
+// vitest's 5 s case timeout under a final stage's load (run 32878721, 2026-11-02); the hook gets the 120 s instead
+let fxRoot;
+let fx;
+beforeAll(() => {
+    fxRoot = mkdtempSync(join(tmpdir(), "memory-fixtures-test-"));
+    fx = buildMemoryFixture(fxRoot);
+}, 120_000);
+afterAll(() => {
+    if (fxRoot) rmSync(fxRoot, { recursive: true, force: true });
 });
 
 const under = (root, path) => {
@@ -60,8 +72,7 @@ describe("memoryFileName mirrors pkg/memhygiene FileName", () => {
 
 describe("buildMemoryFixture", () => {
     it("writes only under its temp root and names no path outside it", () => {
-        const root = tempRoot();
-        const fx = buildMemoryFixture(root);
+        const root = fxRoot;
         expect(fx.written.length).toBeGreaterThan(0);
         for (const p of fx.written) expect(under(root, p), p).toBe(true);
         for (const { path } of fx.projects) expect(under(root, path), path).toBe(true);
@@ -72,7 +83,6 @@ describe("buildMemoryFixture", () => {
     });
 
     it("hashes every file a change names as it is on disk, and ids the change the way the backend does", () => {
-        const fx = buildMemoryFixture(tempRoot());
         const changes = Object.values(fx.states).flatMap((s) => s.changes);
         expect(changes.length).toBe(12);
         for (const c of changes) {
@@ -89,7 +99,6 @@ describe("buildMemoryFixture", () => {
     });
 
     it("measures each index the way the backend does", () => {
-        const fx = buildMemoryFixture(tempRoot());
         const own = fx.states[MEMORY_PROJECTS.own];
         expect(own.index).toEqual(indexStats(fx.paths.ownIndex));
         expect(own.index).toEqual({ exists: true, lines: 7, bytes: readFileSync(fx.paths.ownIndex).length });
@@ -97,7 +106,6 @@ describe("buildMemoryFixture", () => {
     });
 
     it("gives the own project five changes and split-a the split's three groups", () => {
-        const fx = buildMemoryFixture(tempRoot());
         expect(fx.states[MEMORY_PROJECTS.own].changes.map((c) => c.kind)).toEqual([
             "trim",
             "delete",
@@ -117,7 +125,6 @@ describe("buildMemoryFixture", () => {
     });
 
     it("has a trim whose passage occurs once in a crlf file", () => {
-        const fx = buildMemoryFixture(tempRoot());
         const text = readFileSync(fx.paths.trim, "utf8");
         expect(text).toContain("\r\n");
         expect(text.split(fx.trim.old).length).toBe(2);
@@ -126,7 +133,6 @@ describe("buildMemoryFixture", () => {
 
 describe("writeMemoryStates", () => {
     it("writes each state under <data dir>/memhygiene and nothing else", () => {
-        const fx = buildMemoryFixture(tempRoot());
         const dataDir = tempRoot("memory-fixtures-data-");
         const paths = writeMemoryStates(dataDir, fx.states);
         expect(readdirSync(dataDir)).toEqual(["memhygiene"]);
@@ -141,7 +147,6 @@ describe("writeMemoryStates", () => {
 
 describe("settleMemoryStates", () => {
     it("leaves no change to review and keeps decided ones as they were", () => {
-        const fx = buildMemoryFixture(tempRoot());
         const settled = settleMemoryStates(fx.states, 1234);
         for (const s of Object.values(settled)) {
             for (const c of s.changes) expect(["applied", "kept"]).toContain(c.status);
