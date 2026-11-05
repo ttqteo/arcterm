@@ -49,16 +49,16 @@ The palette is built from the reference: forest ground, moss edges, an antique-g
 
 | Role | Value | Role | Value |
 |---|---|---|---|
-| bg | `#0e1612` | text | `#f2ead9` |
-| surface | `#14201a` | secondary | `#d2cbb8` |
-| surfaceRaised | `#1c2c24` | muted | `#a8b3a4` |
-| surfaceHover | `#21332a` | inkFaint | `#86958a` |
-| surfaceSelected | `#283d32` | accent | `#d4a26a` |
-| code | `#0a100d` | success | `#7cc98e` |
-| border | `#1f3028` | warning | `#f0904a` |
-| edgeMid | `#283c31` | error | `#ff6f7d` |
-| edgeStrong | `#385041` | ansiBlue | `#88b4dc` |
-| edgeFaint | `#192820` | | |
+| bg | `#0a100d` | text | `#f2ead9` |
+| surface | `#0f1814` | secondary | `#d2cbb8` |
+| surfaceRaised | `#16241d` | muted | `#a8b3a4` |
+| surfaceHover | `#1a2a22` | inkFaint | `#86958a` |
+| surfaceSelected | `#21342a` | accent | `#d4a26a` |
+| code | `#070b09` | success | `#7cc98e` |
+| border | `#1a2922` | warning | `#f0904a` |
+| edgeMid | `#22362b` | error | `#ff6f7d` |
+| edgeStrong | `#32493a` | ansiBlue | `#88b4dc` |
+| edgeFaint | `#14211a` | | |
 
 `surfaceHover`, `edgeMid` and `edgeFaint` were not on the board; the values above are interpolated between their
 neighbours. Decor colours are new tokens alongside the `--color-spidey-*` ones: crimson `#A0061B` for fills (hats,
