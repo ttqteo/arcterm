@@ -289,6 +289,35 @@ export const THEMES: ThemeDef[] = [
             ansiBlue: "#5b8cf0",
         },
     },
+    {
+        id: "christmas",
+        name: "Christmas",
+        // A forest ground with moss edges and an antique-gold accent, lifted from the reference #b27f49 (4.39:1 on
+        // the surface) to read as text. Red stays in the decor (bulbs, hats, gifts, the wreath: --color-xmas-*),
+        // never the accent, and the error keeps the familiar red-pink so a failure never reads as decor. No
+        // claudeMark: the accent is not Claude's clay. The terminal's blue is a soft sky blue, since gold is no blue.
+        palette: {
+            bg: "#131d18",
+            surface: "#1a2821",
+            surfaceRaised: "#22342b",
+            surfaceHover: "#283b31",
+            surfaceSelected: "#2f4539",
+            code: "#0d1511",
+            border: "#24362d",
+            edgeMid: "#2d4237",
+            edgeStrong: "#3e5647",
+            edgeFaint: "#1e2e26",
+            text: "#f2ead9",
+            secondary: "#d2cbb8",
+            muted: "#a8b3a4",
+            inkFaint: "#86958a",
+            accent: "#d4a26a",
+            success: "#7cc98e",
+            warning: "#f0904a",
+            error: "#ff6f7d",
+            ansiBlue: "#88b4dc",
+        },
+    },
 ];
 
 // Accent quick-picks for the Custom colors card (ports the mockup accentPalette; the first
