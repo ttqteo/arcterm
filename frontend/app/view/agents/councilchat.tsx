@@ -30,6 +30,7 @@
 import { useCopyFeedback, type CopyState } from "@/app/element/copyfeedback";
 import { MOTION, computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { Tooltip } from "@/app/element/tooltip";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { reloadFileIndex } from "@/app/view/code/codestore";
@@ -105,6 +106,7 @@ import {
     textEdit,
     threadAsks,
     toolsOfChoice,
+    type AgreeSignal,
     type AnswerQuote,
     type AskChip,
     type ChannelItem,
@@ -856,6 +858,68 @@ function IdeaMore({ c, id, acts }: { c: Council; id: string; acts: Actions }) {
     );
 }
 
+// who agreed with an idea and had nothing to add: their avatars stacked, then the word (`Skeptic agrees`, `4 agree`); a
+// hover lists each seat, avatar and name, one per line. The avatars sit outside the reaction element, whose words stay
+// just the signal's.
+function AgreedSignal({ agreed, seats }: { agreed: AgreeSignal; seats: Who[] }) {
+    const word = (
+        <span
+            data-council-reaction
+            tabIndex={0}
+            aria-label={agreed.title === "" ? agreed.word : `${agreed.word}: ${agreed.title}`}
+            className="inline-flex items-center gap-[4px] rounded-[4px] font-semibold text-success-soft outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            <Check size={11} strokeWidth={3} aria-hidden />
+            {agreed.word}
+        </span>
+    );
+    const stack = seats.length > 0 && (
+        <span className="flex" aria-hidden>
+            {seats.map((w, i) => (
+                <CouncilAvatar
+                    key={w.author}
+                    tone={w.tone}
+                    name={w.name}
+                    initials={w.initials}
+                    small
+                    data-council-agreer={w.author}
+                    className={i > 0 ? "-ml-[5px]" : undefined}
+                />
+            ))}
+        </span>
+    );
+    // one seat's name is already in the word: no list to show
+    if (seats.length < 2) {
+        return (
+            <span className="inline-flex items-center gap-[6px]">
+                {stack}
+                {word}
+            </span>
+        );
+    }
+    return (
+        <Tooltip
+            placement="bottom"
+            openDelay={150}
+            divClassName="inline-flex items-center gap-[6px]"
+            content={
+                <div data-council-agreers className="flex flex-col gap-[5px] py-[3px]">
+                    <div className="text-[11px] font-semibold text-success-soft">Agreed, nothing to add</div>
+                    {seats.map((w) => (
+                        <div key={w.author} className="flex items-center gap-[7px] whitespace-nowrap text-[12px]">
+                            <CouncilAvatar tone={w.tone} name={w.name} initials={w.initials} small />
+                            <span className="text-primary">{w.name}</span>
+                        </div>
+                    ))}
+                </div>
+            }
+        >
+            {stack}
+            {word}
+        </Tooltip>
+    );
+}
+
 // an idea's one line under its words (board A-details-line in .superpowers/design/council-card-calm): what came of it on
 // the left (its replies, who agreed, how many picked it, what in its claim needs a second look), each with its details in
 // its hover, then what the person does to it on the right: like, dislike, Chốt, its sources, ⋯. `replies` is the button
@@ -868,18 +932,7 @@ function IdeaSignals({ c, idea, acts, replies }: { c: Council; idea: IdeaPost; a
             className="flex min-w-0 flex-wrap items-center gap-x-[12px] gap-y-[4px] text-[12.5px]"
         >
             {replies}
-            {agreed != null && (
-                <span
-                    data-council-reaction
-                    tabIndex={0}
-                    title={agreed.title === "" ? undefined : agreed.title}
-                    aria-label={agreed.title === "" ? agreed.word : `${agreed.word}: ${agreed.title}`}
-                    className="inline-flex items-center gap-[4px] rounded-[4px] font-semibold text-success-soft outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <Check size={11} strokeWidth={3} aria-hidden />
-                    {agreed.word}
-                </span>
-            )}
+            {agreed != null && <AgreedSignal agreed={agreed} seats={idea.agreers} />}
             {idea.picks != null && (
                 <span data-council-picks title={idea.picks.title} className="text-secondary">
                     {idea.picks.label}

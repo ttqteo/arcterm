@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council "N agree": avatars and a list on hover.** Open a council with an idea two or more seats
+  agreed with → the signal line under it shows their small avatars stacked before `✓ N agree`; hover it → a card under
+  it reads "Agreed, nothing to add" and lists each seat, avatar and name, one per line (it flips above near the bottom
+  of the window). One seat shows its avatar and `<Seat> agrees` with no hover. (main, 2026-11-05)
 - [ ] (arcterm) **Council composer: tinted @seat, and Ctrl+Z.** In the packaged app open a council, type `@` in the
   message box and pick a seat with a long name (`Reviewer 1 (area expert)`) → it shows tinted in the seat's colour,
   the caret and a selection sit where the letters are, also once the text wraps and once it scrolls past the box's
