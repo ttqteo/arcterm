@@ -41,13 +41,17 @@ import { versionInfoAtom } from "./versioninfo";
 // Window dragging: a bare data-tauri-drag-region only fires on a press directly on its own element,
 // so every non-interactive piece carries one. Not "deep" on the bar: the switchers' click-away
 // backdrops and dropdowns render inside it and would start a drag instead of closing.
-// the creature sitting, on the button that folds the window into it
-const FOLD_SPRITE = {
-    sprout: spriteFor("sit", [], null, "sprout"),
-    minion: spriteFor("sit", [], null, "minion"),
-    // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
-    spidey: spriteFor("stand", [], null, "spidey"),
-};
+// the creature sitting, on the button that folds the window into it; in its Santa hat while the Christmas decor shows
+function foldSprites(outfit: "santa-hat" | null) {
+    return {
+        sprout: spriteFor("sit", [], outfit, "sprout"),
+        minion: spriteFor("sit", [], outfit, "minion"),
+        // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
+        spidey: spriteFor("stand", [], outfit, "spidey"),
+    };
+}
+const FOLD_SPRITE = foldSprites(null);
+const FOLD_SPRITE_HAT = foldSprites("santa-hat");
 
 // The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
 export function useFoldTitle(): string {
@@ -177,7 +181,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     onContextMenu={showFoldMenu}
                     className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-mid bg-surface-raised hover:bg-surface-hover"
                 >
-                    <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
+                    <SproutSvg sprite={(christmas ? FOLD_SPRITE_HAT : FOLD_SPRITE)[character]} cellPx={1} />
                 </button>
 
                 {mac ? null : <WindowControls />}

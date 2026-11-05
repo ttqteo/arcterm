@@ -43,6 +43,7 @@ import {
     CornerUpLeft,
     ExternalLink,
     FileDiff,
+    Gift,
     Folder,
     FolderOpen,
     GitBranch,
@@ -251,6 +252,7 @@ import {
     useRunDigests,
     useRunInfo,
 } from "./runlineagestore";
+import { useChristmasDecor } from "./christmasstore";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
 import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
@@ -812,16 +814,19 @@ function TaskStripBar({ run }: { run: RunInfo }) {
 }
 
 // a finished run's check and word; a run that landed with its final check unverified says so, in the amber a held
-// land uses, so "Complete" does not claim more than the engine could check
+// land uses, so "Complete" does not claim more than the engine could check. While the Christmas decor shows a verified
+// run's check is a gift, as its done tasks are gifts under the Office's tree; an unverified one keeps its check
 function RunCompleteLabel({ run }: { run: RunInfo }) {
     const unverified = runStage(run).outcome === "unverified";
     const label = `${finishedRunLabel(run)}${unverified ? " · unverified" : ""}`;
+    const gift = useChristmasDecor() && !unverified;
+    const Mark = gift ? Gift : Check;
     return (
         <span
             data-run-complete={unverified ? "unverified" : "done"}
             className={cn("flex min-w-0 items-center gap-[5px]", unverified ? "text-warning" : "text-success")}
         >
-            <Check size={11} aria-hidden className="flex-none" />
+            <Mark size={11} aria-hidden data-run-gift={gift ? "" : undefined} className="flex-none" />
             <span className="truncate" title={label}>
                 {label}
             </span>

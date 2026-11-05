@@ -8,6 +8,7 @@ import { ModalShell } from "@/app/modals/modalshell";
 import { displayKeys } from "@/app/store/keybindings/matcher";
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
@@ -264,9 +265,14 @@ function MoreNotes({
 }
 
 // The pet the person picked, telling the news, in the sheet's corner.
+// no outfit (not even the Settings shirt), except the Santa hat while the Christmas decor shows
 function HeaderPet() {
     const character = petCharacter(useAtomValue(petCharacterAtom));
-    const sprite = useMemo(() => spriteFor("speak", [], null, character), [character]);
+    const christmas = useChristmasDecor();
+    const sprite = useMemo(
+        () => spriteFor("speak", [], christmas ? "santa-hat" : null, character),
+        [character, christmas]
+    );
     return <SproutSvg sprite={sprite} cellPx={2} />;
 }
 

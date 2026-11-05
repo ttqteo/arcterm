@@ -135,3 +135,21 @@ choice in `petoutfit.ts`. It is drawn only over the plain poses, never over the 
   pet stay as they are: both draw the pet with no outfit today, the Vietnam shirt included.
 - **The effects switch** is a plain control under the theme chips in Settings → Appearance, not a registered setting
   row, so it shows only while Christmas is the preset.
+
+## Changes after it shipped (2026-11-05, the decor beyond the Office)
+
+The person asked for the decor in more places, starting from the New agent dialog, where only the palette showed.
+
+- **Snow over dialogs.** The snow canvas moves from z-45 (under every modal) to z-75: above ModalShell's z-70 backdrop,
+  below the z-80 popovers. A flake over an open dialog's panel (`[role="dialog"][aria-modal]`) is halved as over a
+  terminal. This replaces "below popovers and modals" in Snow above.
+- **Lights in dialogs.** `ModalShell` takes `christmasLights`: the string hangs from the panel's top edge, lit and
+  still, only in a dialog whose header leaves its 16px clear (New agent, New project, Keyboard shortcuts, Quick look).
+  The lights also hang along the Christmas effects row in Settings → Appearance.
+- **More hats.** The nav rail's hat goes on New agent's Start column marks and on the cockpit's "No agents running"
+  window glyph. The Christmas theme chip always wears one, as the Spider chip shows its spider.
+- **The pet's hat in two more places.** The fold button's sprite in the app bar and What's new's pet now wear the
+  Santa hat while the decor shows, which reverses "stay as they are" in the plan review above. They still wear no
+  other outfit.
+- **Gifts for finished runs.** A run's Complete check in the agent tree becomes a gift while the decor shows; an
+  unverified run keeps its check.

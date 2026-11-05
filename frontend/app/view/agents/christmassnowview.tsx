@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Christmas snow: one fixed full-window canvas over the content (below popovers and modals), mounted beside
+// The Christmas snow: one fixed full-window canvas over the content and over an open dialog's backdrop (z-75, above
+// ModalShell's z-70, below the z-80 popovers), mounted beside
 // PulseDriver at the cockpit root. It keeps its own 12fps interval rather than hooking PulseDriver, which writes styles
 // to DOM nodes; this paints a canvas. The interval runs only while the motion gate is on, the window is visible and it
 // is neither in Float nor folded into Sprout; otherwise it is cleared and so is the canvas. A flake over a visible
-// terminal is drawn at half opacity (christmassnow.ts flakeAlpha). Nothing renders while the decor is off.
+// terminal or an open dialog's panel is drawn at half opacity (christmassnow.ts flakeAlpha), so the text under it
+// stays readable. Nothing renders while the decor is off.
 
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
@@ -30,10 +32,13 @@ function useDocumentVisible(): boolean {
     return visible;
 }
 
-// The rects of the terminals on screen; a hidden one (display:none somewhere above it) measures zero and is skipped.
-function terminalRects(): SnowRect[] {
+// Where a flake dims: the terminals on screen and the panels of the open dialogs (ModalShell's role="dialog"). A
+// hidden one (display:none somewhere above it) measures zero and is skipped.
+const DIM_SELECTOR = '.term-connectelem, [role="dialog"][aria-modal="true"]';
+
+function dimRects(): SnowRect[] {
     const rects: SnowRect[] = [];
-    for (const el of document.querySelectorAll(".term-connectelem")) {
+    for (const el of document.querySelectorAll(DIM_SELECTOR)) {
         const r = el.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) {
             rects.push(r);
@@ -91,7 +96,7 @@ function SnowCanvas() {
             const dt = Math.min(MAX_STEP_S, (now - last) / 1000);
             last = now;
             flakes = flakes.map((f) => stepFlake(f, dt, now, width, height));
-            const rects = terminalRects();
+            const rects = dimRects();
             ctx.clearRect(0, 0, width, height);
             ctx.fillStyle = color;
             for (const f of flakes) {
@@ -124,7 +129,7 @@ function SnowCanvas() {
             ref={canvasRef}
             aria-hidden
             data-christmas-snow=""
-            className="pointer-events-none fixed inset-0 z-[45] h-full w-full text-xmas-snow"
+            className="pointer-events-none fixed inset-0 z-[75] h-full w-full text-xmas-snow"
         />
     );
 }

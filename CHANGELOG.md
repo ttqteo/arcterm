@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- More of arcterm dresses up with the Christmas theme on: the snow keeps falling while a dialog is open (fainter over the dialog itself); New agent, New project, Keyboard shortcuts and Quick look hang a string of lights from their top edge; New agent's Start column, the cockpit's "No agents running" window and the Christmas theme chip wear Santa hats, as do the pet on the app bar's fold button and in What's new; a finished run's check becomes a gift; and the lights hang along the Christmas effects switch in Settings. <!-- try: new-agent -->
 - In a project's Overview, clicking a session in History opens it in Quick look, over the page, instead of leaving for the full session; Open in the dialog (or Open transcript in the row's right-click menu) still takes you there.
 
 ### Fixed

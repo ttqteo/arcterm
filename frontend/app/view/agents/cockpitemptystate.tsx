@@ -6,6 +6,7 @@
 import { cardVariants } from "@/app/element/motiontokens";
 import { formatChordString } from "@/util/keysym";
 import { motion } from "motion/react";
+import { RailSantaHat } from "./christmashat";
 
 export function CockpitEmptyState({ onNewAgent }: { onNewAgent: () => void }) {
     return (
@@ -34,6 +35,8 @@ export function CockpitEmptyState({ onNewAgent }: { onNewAgent: () => void }) {
                             <span className="cockpit-empty-caret h-5 w-[9px] rounded-[1px] bg-accent" />
                         </div>
                     </div>
+                    {/* the Christmas decor's hat on the window's top-left corner, as the nav rail's icons wear it */}
+                    <RailSantaHat iconSize={64} />
                 </div>
 
                 <h2 className="mb-2.5 text-[25px] font-bold tracking-[-0.02em] text-primary">No agents running</h2>
