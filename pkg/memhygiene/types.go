@@ -19,6 +19,7 @@ type Memory struct {
 	Evidence           []wshrpc.MemEvidence // filled by evidence.go
 	Reads              int                  // sessions with a Read tool call on the file
 	LastRead           int64
+	Touched            int64 // unix ms: its frontmatter `modified:` date, else the file's mtime
 }
 
 type Inventory struct {

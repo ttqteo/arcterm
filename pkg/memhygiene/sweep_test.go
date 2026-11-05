@@ -71,8 +71,9 @@ func TestSweepWaitsAWeekAfterAFailedCheck(t *testing.T) {
 
 	sweepOnce(context.Background(), now)
 	st := checkTestLoad(t, "p")
-	if st.LastError == "" || st.CheckedAt != old.UnixMilli() {
-		t.Fatalf("the sweep's check didn't fail: lasterror %q, checkedat %d", st.LastError, st.CheckedAt)
+	// the judge failed, but what code found is stored, so the check counts as run
+	if st.LastError == "" || st.CheckedAt <= old.UnixMilli() {
+		t.Fatalf("the sweep's check didn't record its failed judge: lasterror %q, checkedat %d", st.LastError, st.CheckedAt)
 	}
 	if n := len(env.judgePrompts()); n != 1 {
 		t.Fatalf("want one judge call from the failed check, got %d", n)

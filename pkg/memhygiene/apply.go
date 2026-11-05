@@ -97,7 +97,7 @@ func Apply(change wshrpc.MemChange, backupRoot string, now time.Time) (applyID s
 			return "", f.Path, nil
 		}
 	}
-	plan, err := applyBuild(change)
+	plan, err := applyBuild(change, now)
 	if c := (applyConflict{}); errors.As(err, &c) {
 		return "", c.path, nil
 	}
@@ -283,7 +283,7 @@ func applyExecute(path string, w applyWrite) error {
 	return nil
 }
 
-func applyBuild(change wshrpc.MemChange) (*applyPlan, error) {
+func applyBuild(change wshrpc.MemChange, now time.Time) (*applyPlan, error) {
 	op := change.Op
 	p := &applyPlan{writes: map[string]applyWrite{}}
 	var err error
@@ -304,6 +304,8 @@ func applyBuild(change wshrpc.MemChange) (*applyPlan, error) {
 		}
 	case "move-here", "copy-here":
 		err = applyCopyMemories(p, op, change.Kind == "move-here")
+	case reviewKind:
+		return p, applyReview(p, op, now)
 	case "settings":
 		var data []byte
 		if data, err = settingsEdit(op.SettingsPath, op.SettingsValue); err == nil {

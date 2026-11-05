@@ -1787,3 +1787,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Initiative "only" bar wraps.** Jarvis → an initiative with a long chunk title → Notes → click the
   chunk → the "only" bar on top shows the whole title over several lines, the "only" label, tone dot and "show all"
   sitting on its first line. Prettier only (`NotesFeed` in `effortdetailview.tsx`); no dev app was up.
+- [ ] (arcterm) **Memory tab without a model.** After the next build, Setup → Memory → arcterm → Check now, with
+  `headless:runtime` still unset (no OpenRouter key) → the index card shows its lines and size, "Last check failed" still
+  names the key, and the table lists Review rows (`feedback_no-co-author-trailer.md` among them, untouched 30+ days);
+  Still true on one → it reads "Marked still true at …", and the next session start no longer lints that memory.
+  Go and vitest tests only (`pkg/memhygiene/review.go`); no dev app was up.

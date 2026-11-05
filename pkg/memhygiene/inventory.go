@@ -99,6 +99,10 @@ func inventoryReadMemory(path string) (*Memory, error) {
 		return nil, err
 	}
 	fm, bodyLines := inventoryFrontmatter(tf.Lines)
+	touched, err := reviewTouched(path, fm)
+	if err != nil {
+		return nil, err
+	}
 	return &Memory{
 		Name:        filepath.Base(path),
 		Path:        path,
@@ -107,6 +111,7 @@ func inventoryReadMemory(path string) (*Memory, error) {
 		Frontmatter: fm,
 		Description: fm["description"],
 		Body:        strings.Join(bodyLines, "\n"),
+		Touched:     touched,
 	}, nil
 }
 

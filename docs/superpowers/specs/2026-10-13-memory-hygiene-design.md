@@ -107,6 +107,7 @@ until they restart.
 | Add to index | Adds an index line for a file the index doesn't link, and drops harvester frontmatter (`source`, `source_hash`, `harvested_at`). Creates `MEMORY.md` if missing. |
 | Move here / Copy here / Remove from SIEM | The split's file moves, above. |
 | Settings | Inserts or replaces the one `autoMemoryDirectory` key, leaving every other byte of the file as it was. Refuses a file that isn't a JSON object. |
+| Review | Built in code, not by the judge (added 2026-11-05). Proposed for a memory untouched for 30 days (its frontmatter `modified:` date, else its mtime: the arc mod's session-start lint reads the same) and, when the judge failed, for a memory with a warning in its evidence; never for one another open change acts on. **Still true** changes nothing but the date: it moves a `modified:` line to today, or rewrites the same bytes to move the mtime, so neither this check nor the lint flags it for another 30 days. |
 
 ## The check
 
@@ -148,6 +149,9 @@ waits a week rather than calling the model every hour) and on **Check now**, whi
 6. **Store** the result, with each touched file's sha256 at check time.
 
 A failed judge run keeps the last good result and shows "Last check failed: <reason>" on the project.
+Since 2026-11-05 a failed judge (outside a split) still stores what code found: the index's size, the
+memory count and the Reviews, beside the earlier changes that still fit their files. The hash gate keeps
+its last fingerprints, so the next check judges the same memories again.
 
 ## Apply, keep, undo
 

@@ -613,6 +613,13 @@ describe("closedText", () => {
         expect(closedText(project(), c, NOW)).toBe("Applied yesterday at 17:42.");
     });
 
+    it("reads a review marked still true, with no backup to mention", () => {
+        const c = change("1", { kind: "review", status: "applied", decidedat: decided, backupuntil: until });
+        expect(closedText(project(), c, NOW)).toBe(
+            "Marked still true at 17:42. It comes back for review if it goes untouched another 30 days."
+        );
+    });
+
     it("reads a kept change, and nothing for an undecided one", () => {
         expect(closedText(project(), change("1", { status: "kept" }), NOW)).toBe(
             "Kept as is. The next check skips it unless the memory changes."
@@ -640,6 +647,7 @@ describe("kindLabel and fileLabel", () => {
         expect(kindLabel(p, change("1", { kind: "remove-shared" }))).toBe("Remove from SIEM");
         expect(kindLabel(p, change("1", { kind: "add-to-index" }))).toBe("Add to index");
         expect(kindLabel(p, settings())).toBe("Settings");
+        expect(kindLabel(p, change("1", { kind: "review" }))).toBe("Review");
     });
 
     it("names the shared repo for a removal after the switch-over moved the folder", () => {

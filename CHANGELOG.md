@@ -30,6 +30,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Setup → Memory now shows each project's memory size even when its model check fails, and lists the memories worth a second look without a model: one untouched for 30 days, or (when the model check failed) one naming a file that is gone. Each comes up as a Review; Still true marks it reviewed, so neither this tab nor the session-start memory check flags it again for 30 days.
 - Ctrl+Z in a council's message box takes back a seat or file picked from the `@` list, a suggested question put in with a click, and text pasted beside an image; before, any of these wiped the box's undo, so Ctrl+Z did nothing after them.
 - After you click a chunk in an initiative's Notes to show only that chunk, the bar on top shows the chunk's whole title, wrapping onto more lines, instead of cutting it off with "…".
 
