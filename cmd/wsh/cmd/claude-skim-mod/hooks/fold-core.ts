@@ -6,7 +6,10 @@ export const FOLD_LINES = 10;
 
 // at most this many reasons, each cut to its bold lead and first sentence
 export const MAX_REASONS = 4;
+// a lead takes the sentence after it only when both fit in this many characters
 export const MAX_REASON_CHARS = 160;
+// a sentence is never cut short of this; past it, at a space, since a reason cut mid-word reads as broken
+export const MAX_SENTENCE_CHARS = 320;
 
 // the opened replies kept, newest last
 export const MAX_OPENED = 200;
@@ -24,14 +27,25 @@ export function canFold(text: string): boolean {
     return lineCount(text) > FOLD_LINES;
 }
 
-// the lead in bold and the sentence after it, or the first sentence
+// the lead in bold and the sentence after it, the lead alone when that sentence would not fit, or the first sentence;
+// whole sentences only, as the fixed cut it replaced fell mid-word on a long sentence after a lead
 export function firstSentence(item: string): string {
+    const sentenceOf = (text: string) => (text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text).trim();
     const lead = item.match(/^(\*\*[^*]+\*\*:?)\s*(.*)$/);
-    const head = lead ? `${lead[1]} ` : "";
-    const rest = lead ? (lead[2] ?? "") : item;
-    const sentence = rest.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? rest;
-    const out = (head + sentence).trim();
-    return out.length > MAX_REASON_CHARS ? `${out.slice(0, MAX_REASON_CHARS - 1).trimEnd()}…` : out;
+    if (lead) {
+        const withNext = `${lead[1]} ${sentenceOf(lead[2] ?? "")}`.trim();
+        return withNext.length <= MAX_REASON_CHARS ? withNext : clip(lead[1]);
+    }
+    return clip(sentenceOf(item));
+}
+
+function clip(text: string): string {
+    if (text.length <= MAX_SENTENCE_CHARS) {
+        return text;
+    }
+    const cut = text.slice(0, MAX_SENTENCE_CHARS - 1);
+    const space = cut.lastIndexOf(" ");
+    return `${(space > 0 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 const LEAD = /^(\*\*[^*]+\*\*:?)\s/;

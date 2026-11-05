@@ -6,6 +6,7 @@ import {
     folded,
     MAX_OPENED,
     MAX_REASON_CHARS,
+    MAX_SENTENCE_CHARS,
     summary,
     toggleOpened,
 } from "./fold-core";
@@ -24,10 +25,24 @@ describe("firstSentence", () => {
         );
     });
 
-    it("cuts a long sentence with an ellipsis", () => {
-        const out = firstSentence("x".repeat(400));
-        expect(out.length).toBe(MAX_REASON_CHARS);
-        expect(out.endsWith("…")).toBe(true);
+    it("drops the sentence after the lead rather than cut it mid-word", () => {
+        const next =
+            "Ta đã thấy: harness tự sinh thua bản người dựng (HarnessDev), " + "tự cập nhật không bằng ".repeat(6);
+        const item = `**Vì cái năng lực đó chưa chạy đủ tốt để đóng thành tool.** ${next}tốt hơn.`;
+        expect(`**x** ${next}`.length).toBeGreaterThan(MAX_REASON_CHARS);
+        expect(firstSentence(item)).toBe("**Vì cái năng lực đó chưa chạy đủ tốt để đóng thành tool.**");
+    });
+
+    it("keeps a long first sentence whole when it has no lead", () => {
+        const sentence = `${"word ".repeat(40).trim()}.`;
+        expect(sentence.length).toBeGreaterThan(MAX_REASON_CHARS);
+        expect(firstSentence(`${sentence} Next one.`)).toBe(sentence);
+    });
+
+    it("cuts only a sentence past the sentence limit, at a space", () => {
+        const out = firstSentence("word ".repeat(100));
+        expect(out.length).toBeLessThanOrEqual(MAX_SENTENCE_CHARS);
+        expect(out.endsWith("word…")).toBe(true);
     });
 });
 
