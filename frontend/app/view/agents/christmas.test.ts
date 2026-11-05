@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { CHRISTMAS_THEME, christmasMotionOn, GIFT_MAX, giftCount, hasChristmasDecor } from "./christmas";
+import { CHRISTMAS_THEME, christmasMotionOn, GIFT_MAX, giftCount, hasChristmasDecor, santaHatBox } from "./christmas";
 
 describe("hasChristmasDecor", () => {
     it("shows for the Christmas preset while its effects are on", () => {
@@ -53,5 +53,23 @@ describe("giftCount", () => {
         expect(giftCount(-2, 0)).toBe(0);
         expect(giftCount(0, -5)).toBe(0);
         expect(giftCount(-1, 3)).toBe(3);
+    });
+});
+
+describe("santaHatBox", () => {
+    // board A (christmas-nav-icons/A-rail-hats.dc.html) draws these two sizes
+    it("draws a 20px icon's hat at 14px, 6px left and 8px up", () => {
+        expect(santaHatBox(20)).toEqual({ size: 14, left: -6, top: -8 });
+    });
+
+    it("draws a 16px icon's hat at 11px, 4px left and 7px up", () => {
+        expect(santaHatBox(16)).toEqual({ size: 11, left: -4, top: -7 });
+    });
+
+    it("keeps clear of the top-right badge: the hat ends left of the icon's right edge", () => {
+        for (const icon of [16, 20]) {
+            const b = santaHatBox(icon);
+            expect(b.left + b.size).toBeLessThan(icon * 0.5);
+        }
     });
 });

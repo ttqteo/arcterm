@@ -28,6 +28,7 @@ import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { workingCount } from "./agentsviewmodel";
 import { attentionAtom, cockpitWaitingCount, splitAttention } from "./attentionstore";
 import { channelMessagesAtom } from "./channelsstore";
+import { RailSantaHat } from "./christmashat";
 import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
 import { setupRailTitle } from "./memorymodel";
@@ -135,6 +136,7 @@ function RailAppItem({
             ) : null}
             <span className="relative z-[1]">
                 <AppWindow size={16} strokeWidth={1.8} />
+                <RailSantaHat iconSize={16} />
                 {dot ? (
                     <span
                         data-nav-app-dot={dot}
@@ -247,6 +249,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     <DigitHint digit={digit}>
                         <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
                     </DigitHint>
+                    <RailSantaHat iconSize={tool ? 16 : 20} />
                     {badge > 0 ? (
                         <span
                             data-nav-badge={key}
@@ -319,7 +322,10 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     translateOpen && "bg-surface-selected text-primary hover:text-primary"
                 )}
             >
-                <Languages size={16} strokeWidth={1.8} />
+                <span className="relative">
+                    <Languages size={16} strokeWidth={1.8} />
+                    <RailSantaHat iconSize={16} />
+                </span>
                 {narrow ? null : <span className="text-[10px] font-semibold">Translate</span>}
             </button>
             {renderItem("setup", "Setup", memoryToReview)}

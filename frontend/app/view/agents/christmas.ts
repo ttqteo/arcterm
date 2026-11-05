@@ -20,6 +20,16 @@ export function christmasMotionOn(decorOn: boolean, reducedMotion: boolean): boo
     return decorOn && !reducedMotion;
 }
 
+/** Where a nav rail icon's Santa hat sits, in px from the icon's top-left corner: about 70% of the icon's size, 28%
+ *  left and 42% up (board A of christmas-nav-icons), so it stays clear of the badge at the icon's top right. */
+export function santaHatBox(iconSize: number): { size: number; left: number; top: number } {
+    return {
+        size: Math.round(iconSize * 0.7),
+        left: -Math.round(iconSize * 0.28),
+        top: -Math.round(iconSize * 0.42),
+    };
+}
+
 /** Gift boxes under a room's tree: one per finished agent and per done task, between 0 and GIFT_MAX. */
 export function giftCount(finished: number, done: number): number {
     const n = Math.max(0, finished) + Math.max(0, done);
