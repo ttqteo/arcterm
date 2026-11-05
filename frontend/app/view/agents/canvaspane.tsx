@@ -11,7 +11,7 @@ import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronLeft, ChevronRight, SquareDashed } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, SquareCheck, SquareDashed } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
@@ -183,7 +183,11 @@ export function CanvasPane({
                     onClick={() => setMarking(agent.id, !s.marking)}
                     className={cn(SWAP_BTN, marking && SWAP_BTN_ON)}
                 >
-                    <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
+                    {marking ? (
+                        <SquareCheck size={14} strokeWidth={1.8} aria-hidden />
+                    ) : (
+                        <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
+                    )}
                     Mark
                 </button>
                 {!marking ? (

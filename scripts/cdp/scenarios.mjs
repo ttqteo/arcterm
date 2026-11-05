@@ -148,6 +148,7 @@ const surfaceSmoke = {
         // B3: a notify (wsh notify / wave_notify) is spoken by the avatar, which is its only voice: the
         // bubble carries the title and leaves after 6s, and no corner toast repeats it underneath.
         await h.goto("cockpit");
+        await parkPointer(h);
         await h.rpc("notify", { title: "cdp surface-smoke", level: "info" });
         await h.ev("new Promise((r) => setTimeout(r, 600))");
         const spoken = await h.ev(`(() => ({
@@ -185,6 +186,13 @@ const surfaceSmoke = {
         await h.goto("cockpit"); // leave the app where a human expects it
     },
 };
+
+// A pointer resting on the pet's bubble holds it (petbubble.tsx keeps a hovered bubble up), and the dev app is a real
+// window: wherever the mouse sits, or the last point CDP moved it to, can be over the bottom-right corner where the
+// bubble shows. A step that waits for the bubble to leave moves the pointer to the nav rail's empty middle first.
+// Round 2 of run 1a544042 failed "the said-once bubble leaves" this way: the bubble stayed, and the pet click that
+// should open the popup landed on the bubble and opened its agent.
+const parkPointer = (h) => h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 38, y: 600 });
 
 // A said-once notice from an agent's block (the cache miss notice): the bubble names the agent, nothing is kept
 // once it leaves, and a click on it opens the agent. The titles and the long name are the canvas's own
@@ -258,6 +266,7 @@ async function cacheMissNoticeSteps(h, ctx) {
     }
     await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
     await h.goto("cockpit");
+    await parkPointer(h);
 
     // a kept notice first, opened and shut: it clears the marker, and gives step 2 a title the popup does list
     const KEPT = "cdp surface-smoke kept";
