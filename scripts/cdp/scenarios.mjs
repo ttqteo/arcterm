@@ -11527,26 +11527,57 @@ const codeBlame = {
 };
 
 // --- terminal palette follows the cockpit theme -------------------------------------------------
-// Asserts against window.term (term.tsx assigns it) + the resolved custom properties, NOT pixels:
-// reading the applied xterm theme is exact, where a screenshot sample is not. The shots are for a
-// human to judge whether Claude Code's own diff colors read well, which no assertion can decide.
+// Asserts against the live xterm (term.tsx's DEV-only window.__arcTerms, keyed by block id) + the resolved custom
+// properties, NOT pixels: reading the applied xterm theme is exact, where a screenshot sample is not. The shots are for a
+// human to judge whether Claude Code's own diff colors read well, which no assertion can decide. The scenario opens its
+// own terminal, so a fresh store with no terminal on the Agent surface still has one to read.
+const TERMINAL_THEME_PROJECT = "verify-terminal-theme";
+const TERMINAL_THEME_PRESET_KEY = "cockpit.theme.preset";
 const terminalTheme = {
     name: "terminal-theme",
     surface: "agent",
     async arrange(h) {
-        // step 4 reads window.term, which an HMR can leave pointing at a detached TermWrap — see freshBoot
-        return { booted: await freshBoot(h) };
+        const ctx = { terminals: [] };
+        ctx.prevPreset = await h.ev(`localStorage.getItem(${JSON.stringify(TERMINAL_THEME_PRESET_KEY)})`);
+        // a throw past this point still returns ctx, so teardown puts back whatever was already changed
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, TERMINAL_THEME_PROJECT);
+            // start from the default preset, so step 4's Monokai is a change whatever was stored
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TERMINAL_THEME_PRESET_KEY)})`);
+            // a reload, so the registry holds the mounted terminal and not one an HMR detached (see freshBoot)
+            ctx.booted = await freshBoot(h);
+            await h.goto("agent");
+            const t = ctx.terminals[0];
+            await polishWaitFor(h, `!!document.querySelector('[data-tree-terminal-row="${t.tabId}"]')`, 20000);
+            await h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
+            ctx.termShown = await polishWaitFor(
+                h,
+                `!!window.__arcTerms?.[${JSON.stringify(t.blockId)}]?.terminal && [...document.querySelectorAll(".term-connectelem")].some((e) => e.getBoundingClientRect().width > 0)`,
+                15000
+            );
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
     async assert(h, ctx) {
         const steps = [];
+        const t = ctx.terminals?.[0];
         steps.push({
-            step: "0. fresh boot, so window.term is the mounted terminal",
-            ok: ctx.booted === true,
-            detail: `reloaded=${ctx.booted}`,
+            step: "0. fresh boot, and the scenario's terminal is shown with its xterm in window.__arcTerms",
+            ok: ctx.booted === true && ctx.termShown === true && !ctx.arrangeError,
+            detail: `reloaded=${ctx.booted} termShown=${ctx.termShown} block=${t?.blockId ?? null}${ctx.arrangeError ? ` error=${ctx.arrangeError}` : ""}`,
         });
+        if (!t?.blockId) return steps;
         const readVar = (name) =>
             h.ev(`getComputedStyle(document.documentElement).getPropertyValue(${JSON.stringify(name)}).trim()`);
-        const readTheme = (field) => h.ev(`window.term?.terminal?.options?.theme?.${field} ?? null`);
+        const readTheme = (field) =>
+            h.ev(`window.__arcTerms?.[${JSON.stringify(t.blockId)}]?.terminal?.options?.theme?.${field} ?? null`);
+        const showTerm = () => h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
         // Scoped to the theme grid: a document-wide button query picks the app bar's global search
         // button instead of the preset the name belongs to (see cdp-scenario-unscoped-button-query).
         const pickPreset = (name) =>
@@ -11559,6 +11590,7 @@ const terminalTheme = {
             })()`);
 
         await h.goto("agent");
+        await showTerm();
         const bg = await readTheme("background");
         const cssBg = await readVar("--color-background");
         steps.push({
@@ -11568,11 +11600,11 @@ const terminalTheme = {
         });
 
         const blue = await readTheme("blue");
-        const cssAccent = await readVar("--color-accent");
+        const cssBlue = await readVar("--ansi-blue");
         steps.push({
-            step: "2. xterm ANSI blue === --color-accent (palette derives from theme roles)",
-            ok: !!blue && blue.toLowerCase() === cssAccent.toLowerCase(),
-            detail: `blue=${blue} accent=${cssAccent}`,
+            step: "2. xterm ANSI blue === --ansi-blue (the palette's ansiBlue, else its accent)",
+            ok: !!blue && blue.toLowerCase() === cssBlue.toLowerCase(),
+            detail: `blue=${blue} --ansi-blue=${cssBlue}`,
         });
 
         steps.push({
@@ -11580,12 +11612,20 @@ const terminalTheme = {
             ok: typeof bg === "string" && /^#[0-9a-f]{6}$/i.test(bg),
             detail: `background=${bg}`,
         });
-        await h.shot("cdp-shots/terminal-theme-midnight.png");
+        await h.shot("cdp-shots/terminal-theme-default.png");
 
         // switch presets in Settings, return to the Agent surface, and confirm the TUI re-skinned
         await h.goto("settings");
+        await spOpen(h, "appearance");
         const picked = await pickPreset("Monokai");
         await h.goto("agent");
+        await showTerm();
+        // TermThemeUpdater applies the new palette on the next render; give it a moment rather than read mid-switch
+        await polishWaitFor(
+            h,
+            `(window.__arcTerms?.[${JSON.stringify(t.blockId)}]?.terminal?.options?.theme?.background ?? "").toLowerCase() !== ${JSON.stringify(String(bg ?? "").toLowerCase())}`,
+            5000
+        );
         const bg2 = await readTheme("background");
         steps.push({
             step: "4. switching preset re-skins the live TUI with no remount",
@@ -11595,16 +11635,30 @@ const terminalTheme = {
         await h.shot("cdp-shots/terminal-theme-monokai.png");
         return steps;
     },
-    async teardown(h) {
-        // restore the default preset so a later scenario is not judged against Monokai
-        await h.goto("settings");
-        await h.ev(`(() => {
-            const scope = document.querySelector('[data-theme-presets]') || document;
-            const b = [...scope.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Midnight');
-            if (b) b.click();
-            return true;
-        })()`);
-        await h.goto("cockpit");
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`terminal-theme teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // put back the preset stored before, so a later scenario is not judged against Monokai
+        await step("restore the stored preset", () =>
+            h.ev(
+                ctx?.prevPreset == null
+                    ? `localStorage.removeItem(${JSON.stringify(TERMINAL_THEME_PRESET_KEY)})`
+                    : `localStorage.setItem(${JSON.stringify(TERMINAL_THEME_PRESET_KEY)}, ${JSON.stringify(ctx.prevPreset)})`
+            )
+        );
+        for (const t of ctx?.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
+        // the restored preset is read at boot
+        await step("reload onto the restored preset", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
     },
 };
 
@@ -12219,7 +12273,7 @@ const focusTui = async (h) => {
 //     consumption probe below is valid only when the dispatcher registered first. Boot registers it;
 //     an HMR of a keybinding file re-registers it at the BACK of the queue, after the probe, and every
 //     "consumed" step then reports a leak that is not real.
-//  2. window.term freshness. term.tsx assigns window.term on mount. After an HMR the global can point
+//  2. Terminal freshness. term.tsx's DEV-only window.__arcTerms[blockId] is set on mount. After an HMR it can point
 //     at a DETACHED TermWrap whose TermThemeUpdater is gone, so its options.theme never changes again
 //     and "switching preset re-skins the TUI" fails against a terminal that is no longer on screen.
 //
