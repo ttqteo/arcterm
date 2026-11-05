@@ -241,14 +241,14 @@ export function inlineRuns(line: string, marked: readonly [number, number][]): R
 const RUN_COMMAND = /^!\s+\S/;
 
 // the code spans of a line holding a command for the person to type, backticks included
-function commandSpans(line: string): [number, number][] {
+export function commandSpans(line: string): [number, number][] {
     return [...line.matchAll(/`([^`]+)`/g)]
         .filter((m) => RUN_COMMAND.test(m[1] ?? ""))
         .map((m) => [m.index, m.index + m[0].length] as [number, number]);
 }
 
 // the closing line of the fence opening at `from` when every line it holds is a command, -1 for any other fence
-function commandFenceEnd(lines: readonly string[], from: number): number {
+export function commandFenceEnd(lines: readonly string[], from: number): number {
     let at = from + 1;
     while (at < lines.length && !FENCE.test(lines[at] ?? "")) {
         if (!RUN_COMMAND.test((lines[at] ?? "").trim())) return -1;

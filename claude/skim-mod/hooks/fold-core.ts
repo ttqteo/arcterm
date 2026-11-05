@@ -1,6 +1,8 @@
 // a long reply folds to its verdict and the lead of each top reason, behind a button that opens it in full; a marked
 // reply folds to its verdict and the sentences claude marked. register.ts draws it; this is the cut.
 
+import { commandFenceEnd, commandSpans } from "./highlight-core";
+
 // a reply longer than this many lines folds
 export const FOLD_LINES = 10;
 
@@ -25,6 +27,19 @@ export function lineCount(text: string): number {
 
 export function canFold(text: string): boolean {
     return lineCount(text) > FOLD_LINES;
+}
+
+// whether the reply's last line asks the person something. such a reply draws in full, like a turn whose last mark is
+// the question: folded, it hid the question and the options it asks between, as a reply claude left unmarked did
+export function endsOnQuestion(text: string): boolean {
+    const last = text.trim().split("\n").at(-1) ?? "";
+    return !/^\s*(```|~~~)/.test(last) && /[?？]$/.test(last.replace(/[\s*_)"'”’]+$/, ""));
+}
+
+// a fence holding only commands for the person to type, `! task install`
+function isCommandFence(block: string): boolean {
+    const lines = block.trim().split("\n");
+    return commandFenceEnd(lines, 0) === lines.length - 1;
 }
 
 // the lead in bold and the sentence after it, the lead alone when that sentence would not fit, or the first sentence;
@@ -57,17 +72,21 @@ export type Folded = { text: string; marks: string[] };
 // the first prose paragraph, then the lead of each item of the first list; or, when claude marked the reply, the
 // first prose paragraph and the marked sentences in the reply's order, since the marks are what must be read and a
 // cut by position drops most of them. code blocks, headings and tables are left out: the summary is to be read at a
-// glance, and a cut fence would swallow the rest of it
+// glance, and a cut fence would swallow the rest of it. a fence of commands for the person to type stays in the
+// marked fold, as the mark before it so often ends on a colon pointing at it
 export function folded(text: string, marks: readonly string[]): Folded {
     const blocks = text
-        .replace(FENCED, "")
+        .replace(FENCED, (fence) => (isCommandFence(fence) ? `\n\n${fence.trim()}\n\n` : ""))
         .split(/\n\s*\n/)
         .map((block) => block.trim())
         .filter((block) => block !== "");
     const lines = (block: string) => block.split("\n");
     const isList = (block: string) => lines(block).some((line) => ITEM.test(line));
     const isProse = (block: string) =>
-        !isList(block) && !lines(block).every((line) => HEADING.test(line)) && !TABLE_ROW.test(block);
+        !isList(block) &&
+        !lines(block).every((line) => HEADING.test(line)) &&
+        !TABLE_ROW.test(block) &&
+        !isCommandFence(block);
     const at = blocks.findIndex(isProse);
     const wanted = marks.filter((mark) => mark.trim() !== "");
     if (wanted.length > 0) {
@@ -81,7 +100,8 @@ export function summary(text: string, marks: readonly string[] = []): string {
 }
 
 // the verdict whole, then each line holding a mark as its marks alone: an item's behind its bullet and bold lead,
-// the items of a run kept as one list
+// the items of a run kept as one list. a command for the person to type is as much a must-read as a mark, so a
+// command fence stays whole and a command's code span stays beside its line's marks
 function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonly string[]): Folded {
     const left = [...marks];
     const kept: string[] = [];
@@ -98,19 +118,29 @@ function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonl
             parts.push({ text: block, isItem: false });
             return;
         }
+        if (isCommandFence(block)) {
+            parts.push({ text: block, isItem: false });
+            return;
+        }
         for (const line of block.split("\n")) {
             const found = take(line);
-            if (found.length === 0) {
+            const commands = commandSpans(line)
+                .map(([from, to]) => ({ at: from, text: line.slice(from, to) }))
+                .filter(({ text }) => !found.some((mark) => mark.includes(text)));
+            const shown = [...found.map((mark) => ({ at: line.indexOf(mark), text: mark })), ...commands]
+                .sort((a, b) => a.at - b.at)
+                .map(({ text }) => text);
+            if (shown.length === 0) {
                 continue;
             }
             const item = line.match(ITEM)?.[1];
             if (item === undefined) {
-                parts.push({ text: found.join(" "), isItem: false });
+                parts.push({ text: shown.join(" "), isItem: false });
                 continue;
             }
             const lead = item.match(LEAD)?.[1];
-            const head = lead && !(found[0] ?? "").includes(lead) ? `${lead} ` : "";
-            parts.push({ text: `- ${head}${found.join(" ")}`, isItem: true });
+            const head = lead && !(shown[0] ?? "").includes(lead) ? `${lead} ` : "";
+            parts.push({ text: `- ${head}${shown.join(" ")}`, isItem: true });
         }
     });
     const text = parts

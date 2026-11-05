@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     canFold,
+    endsOnQuestion,
     firstSentence,
     FOLD_LINES,
     folded,
@@ -139,6 +140,50 @@ describe("summary of a marked reply", () => {
         expect(summary(fenced, ["a mark in code", "gone", "Marked."])).toBe("Verdict.\n\nMarked.");
     });
 
+    it("keeps a fence of commands for the person to type, which the mark before it points at", () => {
+        const install = [
+            "Built 1.0.3.",
+            "",
+            "Not tried on the real app. A note went to hand-checks.",
+            "",
+            "To install, type the command below. It closes arcterm and reopens the new build:",
+            "",
+            "```",
+            "! task install",
+            "```",
+        ].join("\n");
+        expect(summary(install, ["Not tried on the real app.", "It closes arcterm and reopens the new build:"])).toBe(
+            [
+                "Built 1.0.3.",
+                "",
+                "Not tried on the real app.",
+                "",
+                "It closes arcterm and reopens the new build:",
+                "",
+                "```",
+                "! task install",
+                "```",
+            ].join("\n")
+        );
+    });
+
+    it("keeps a command on a line with no mark, in the reply's order", () => {
+        const text = ["Verdict.", "", "Rebuild first. It takes a while.", "", "Then run `! task install` here."].join("\n");
+        expect(summary(text, ["Rebuild first."])).toBe("Verdict.\n\nRebuild first.\n\n`! task install`");
+    });
+
+    it("keeps a command beside the marks of its line, once when a mark holds it", () => {
+        const text = ["Verdict.", "", "Type `! task install` now. It closes arcterm. Or `! task dev`."].join("\n");
+        expect(summary(text, ["Type `! task install` now.", "It closes arcterm."])).toBe(
+            "Verdict.\n\nType `! task install` now. It closes arcterm. `! task dev`"
+        );
+    });
+
+    it("never takes a command fence for the verdict", () => {
+        const text = ["```", "! task install", "```", "", "Verdict.", "", "Marked."].join("\n");
+        expect(summary(text, ["Marked."])).toBe("```\n! task install\n```\n\nVerdict.\n\nMarked.");
+    });
+
     // layout draws marks in order and waits on one it cannot find, so the fold hands back only those it kept
     it("hands back the marks it kept, in the order they show", () => {
         expect(folded("- **A.** Item mark.\n- B.\n\nVerdict here. More.", ["gone", "Item mark.", "More."])).toEqual({
@@ -149,6 +194,20 @@ describe("summary of a marked reply", () => {
 
     it("hands back no marks for a reply with none", () => {
         expect(folded("First.\n\nSecond.", [])).toEqual({ text: "First.", marks: [] });
+    });
+});
+
+describe("endsOnQuestion", () => {
+    it("is true for a reply whose last line asks the person, marked or not", () => {
+        expect(endsOnQuestion("Three ways.\n\n- **A.** One.\n- **B.** Two.\n\nWhich way: A or B?")).toBe(true);
+        expect(endsOnQuestion("Done.\n\n**Commit it?**\n")).toBe(true);
+        expect(endsOnQuestion("Done.\n\n- Push it too?")).toBe(true);
+    });
+
+    it("is false when the reply ends on a statement or in code", () => {
+        expect(endsOnQuestion("Why did it fail? The cache.\n\nFixed now.")).toBe(false);
+        expect(endsOnQuestion("Run it:\n\n```\nwhy?\n```")).toBe(false);
+        expect(endsOnQuestion("")).toBe(false);
     });
 });
 

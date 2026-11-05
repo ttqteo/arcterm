@@ -82,6 +82,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Stop on an agent's background shell task on Windows also stops the command the task started (a `sleep`, a dev
   server), which kept running before.
 - A finished run no longer waits on you to land because its spec was edited in your checkout after it started: the land keeps the run's version, moves your newer draft into the repo's `.git/arc-drafts/<run>/`, and says so in the land's notes.
+- In a `claude` session, a folded reply keeps the command Claude asks you to type (`! task install`), highlighted,
+  instead of ending on "type the command below:" with the command hidden under show more; and a reply that ends on a
+  question for you (which way, A, B or C?) is drawn in full, so the question and its options are never folded away.
 
 ## 1.0.3 — 2026-11-05
 

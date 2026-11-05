@@ -19,7 +19,7 @@ import {
     shownMarks,
     submitContext,
 } from "./highlight-core";
-import { canFold, folded, lineCount, toggleOpened } from "./fold-core";
+import { canFold, endsOnQuestion, folded, lineCount, toggleOpened } from "./fold-core";
 import { drawAskLine, drawFolded, drawHighlighted, drawOpened, paletteFor } from "./highlight-row";
 import type { Palette } from "./highlight-row";
 
@@ -200,9 +200,9 @@ export const register: Register = (on) => {
         const isTerminal = e.surface === "terminal" && !e.props.isSummary;
         const isOff = await read($, isSkimOff);
         // a brainstorm turn, its last mark the question waiting on the person, draws in full: its options are to be
-        // read. so does a reply marked through most of its length
+        // read. so does a reply ending on a question it left unmarked, and one marked through most of its length
         const isAsk = askOf(all) !== null;
-        const isFoldable = isTerminal && !isOff && !isAsk && canFold(clean);
+        const isFoldable = isTerminal && !isOff && !isAsk && !endsOnQuestion(clean) && canFold(clean);
         const isOpen = isFoldable && (await read($, opened)).includes(hash);
         const toggle = () => void update($, opened, (list) => toggleOpened(list, hash));
         if (isFoldable && !isOpen) {
