@@ -30,6 +30,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Quick translate on Windows keeps translating when Google turns it away for too many requests: it falls back to MyMemory's free translator (up to about 500 characters at a time and a few thousand a day) instead of failing until Google lets it back in. On a Mac it is tried after Apple Translation.
 - Ctrl+Z in a council's message box takes back a seat or file picked from the `@` list, a suggested question put in with a click, and text pasted beside an image; before, any of these wiped the box's undo, so Ctrl+Z did nothing after them.
 - After you click a chunk in an initiative's Notes to show only that chunk, the bar on top shows the chunk's whole title, wrapping onto more lines, instead of cutting it off with "…".
 

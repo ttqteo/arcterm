@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Quick translate's engine switch (docs/superpowers/specs/2026-10-29-rail-translate-design.md): who answers a request.
-// A CDP scenario's stub first (dev builds only), else wavesrv's Translate command, which asks Google and, on a Mac,
-// falls back to Apple Translation on the device when Google cannot answer (pkg/translate/engine.go). Called by
+// A CDP scenario's stub first (dev builds only), else wavesrv's Translate command, which asks Google and, when Google
+// cannot answer, falls back to Apple Translation on a Mac, then MyMemory (pkg/translate/engine.go). Called by
 // translatestore.ts.
 
 import { RpcApi } from "@/app/store/wshclientapi";

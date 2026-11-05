@@ -5,9 +5,9 @@ package wshrpc
 
 import "context"
 
-// TranslateCommands is the rail's Quick translate: wavesrv asks Google for the text's translation, or Apple
-// Translation on a Mac when Google cannot answer (pkg/translate.Engine), and answers it with the source language
-// detected.
+// TranslateCommands is the rail's Quick translate: wavesrv asks Google for the text's translation, or, when Google
+// cannot answer, Apple Translation on a Mac and then MyMemory (pkg/translate.Engine), and answers it with the source
+// language detected.
 type TranslateCommands interface {
 	TranslateCommand(ctx context.Context, data CommandTranslateData) (*CommandTranslateRtnData, error)
 }
