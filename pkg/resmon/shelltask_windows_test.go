@@ -54,7 +54,10 @@ func helperClaude() {
 		}
 		fmt.Printf("bash %s %d\n", name, task.Process.Pid)
 	}
-	select {}
+	// stay up until the test closes stdin or kills the job. Not `select {}`: with no other goroutine the runtime
+	// calls that a deadlock and exits, and a test that read the process table after that found no claude.exe parent
+	// for the task and failed with "gone" (flaky under load, 2026-11-05)
+	_, _ = io.Copy(io.Discard, os.Stdin)
 }
 
 func gitBash(t *testing.T) string {
