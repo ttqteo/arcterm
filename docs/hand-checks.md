@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Skim folds a long reply.** After the next build, a new `claude` session (fullscreen) → ask something
+  that gets a reply longer than 10 lines → it shows the first paragraph and up to 4 one-sentence reasons, then
+  `▾ show more · N lines` → click it → the whole reply, highlighted as before, with `▴ show less` under it → click →
+  folded again; `/skim` off → replies draw in full. The fold was seen live through a dev-mod probe; the click and the
+  skim-mod build were not tried (`claude/skim-mod`, fold-core.ts).
 - [ ] (arcterm) **Filter box on the rail's Files tab.** Agent → an agent's side panel → Files → type `harn` in Filter
   files (or press `/` with the tree focused) → only files whose name has it stay, their folders open, the part that
   matches in bold, the count in the box, Pinned hidden; ↑/↓ move, Enter opens the file in the panel; Esc clears it and
