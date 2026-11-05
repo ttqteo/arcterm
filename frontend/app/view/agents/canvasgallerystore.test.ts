@@ -8,6 +8,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         ListCanvasesCommand: vi.fn(),
         CleanStorageCommand: vi.fn(),
         CanvasServeCommand: vi.fn(),
+        SetCanvasLinkCommand: vi.fn(),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -20,13 +21,27 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import type { GalleryCanvas } from "./canvasgallery";
 import {
     cancelCleanup,
+    cancelScan,
     canvasGalleryAtom,
     canvasListAtom,
     cleanupAtom,
+    closeCanvas,
+    closeLinkPicker,
+    linkPickerAtom,
+    linkScan,
+    markVersionsScanned,
     moveSelectionToTrash,
+    openCanvas,
+    openLinkPicker,
+    scanAtom,
+    setCanvasLink,
+    setLinkPickerQuery,
     startCleanup,
+    startScan,
     toggleCleanupCard,
+    toggleScanRow,
     untickAll,
+    versionsScanned,
 } from "./canvasgallerystore";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -44,6 +59,7 @@ function canvas(topic: string, modts: number): GalleryCanvas {
         modts,
         thumbts: 0,
         bytes: 1024,
+        createdts: modts,
     };
 }
 
@@ -54,23 +70,44 @@ const NEW = canvas("new", NOW - DAY);
 
 const list = vi.mocked(RpcApi.ListCanvasesCommand);
 const clean = vi.mocked(RpcApi.CleanStorageCommand);
+const link = vi.mocked(RpcApi.SetCanvasLinkCommand);
 const toast = vi.mocked(pushToast);
 
 const gallery = () => globalStore.get(canvasGalleryAtom);
 const cleanup = () => globalStore.get(cleanupAtom);
+const scan = () => globalStore.get(scanAtom);
+const picker = () => globalStore.get(linkPickerAtom);
+
+const SCANNED_KEY = "canvasgallery.versionsScanned";
+
+// a localStorage that remembers, so a test reads back what the store wrote
+function stubStorage(): Map<string, string> {
+    const kept = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+        getItem: (k: string) => kept.get(k) ?? null,
+        setItem: (k: string, v: string) => void kept.set(k, v),
+        removeItem: (k: string) => void kept.delete(k),
+    });
+    return kept;
+}
 
 beforeEach(() => {
     globalStore.set(canvasGalleryAtom, { view: "grid", dir: null, board: 0, query: "", cursor: 0 });
     globalStore.set(canvasListAtom, [OLD_A, OLD_B, NEW]);
+    globalStore.set(scanAtom, { pairs: [], ticked: new Set<string>(), linking: false });
+    globalStore.set(linkPickerAtom, { open: false, query: "" });
     cancelCleanup();
     list.mockReset();
     clean.mockReset();
+    link.mockReset();
     toast.mockReset();
+    stubStorage();
 });
 
 afterEach(() => {
     cancelCleanup();
     globalStore.set(canvasListAtom, null);
+    vi.unstubAllGlobals();
 });
 
 describe("startCleanup", () => {
@@ -233,5 +270,197 @@ describe("moveSelectionToTrash", () => {
         expect(gallery().view).toBe("cleanup");
         expect(cleanup().skipped).toEqual({});
         expect(cleanup().moving).toBe(false);
+    });
+});
+
+// two pairs the scan suggests (a topic that continues the older one at a dash), the newer of each created later
+const HOME = canvas("home", NOW - 9 * DAY);
+const HOME_FRESH = canvas("home-fresh", NOW - 8 * DAY);
+const NOTES = canvas("notes", NOW - 5 * DAY);
+const NOTES_V2 = canvas("notes-v2", NOW - 4 * DAY);
+const PAIRS = [HOME, HOME_FRESH, NOTES, NOTES_V2];
+
+describe("the scanned flag", () => {
+    it("is false until the scan has been done, then true, under one localStorage key", () => {
+        const kept = stubStorage();
+        expect(versionsScanned()).toBe(false);
+        markVersionsScanned();
+        expect(kept.get(SCANNED_KEY)).toBe("1");
+        expect(versionsScanned()).toBe(true);
+        kept.delete(SCANNED_KEY);
+        expect(versionsScanned()).toBe(false);
+    });
+
+    it("counts a localStorage that throws as not scanned, and never throws itself", () => {
+        vi.stubGlobal("localStorage", {
+            getItem: () => {
+                throw new Error("blocked");
+            },
+            setItem: () => {
+                throw new Error("blocked");
+            },
+        });
+        expect(versionsScanned()).toBe(false);
+        expect(() => markVersionsScanned()).not.toThrow();
+        expect(versionsScanned()).toBe(false);
+    });
+
+    it("counts a window with no localStorage as not scanned", () => {
+        vi.stubGlobal("localStorage", undefined);
+        expect(versionsScanned()).toBe(false);
+        expect(() => markVersionsScanned()).not.toThrow();
+    });
+});
+
+describe("setCanvasLink", () => {
+    const write = { dir: dirOf("home-fresh"), replaces: "home", notreplaces: [] as string[] };
+
+    it("sends both fields whole, then reads the list again", async () => {
+        link.mockResolvedValue(undefined);
+        list.mockResolvedValue([HOME]);
+        await setCanvasLink(write);
+        expect(link).toHaveBeenCalledTimes(1);
+        expect(link.mock.calls[0][1]).toEqual(write);
+        expect(list).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(canvasListAtom)).toEqual([HOME]);
+        expect(toast).not.toHaveBeenCalled();
+    });
+
+    it("shows the server's message in an error toast, and reads the list again to show what is on disk", async () => {
+        link.mockRejectedValue(new Error("home does not exist in this design folder"));
+        list.mockResolvedValue([HOME_FRESH]);
+        await setCanvasLink(write);
+        expect(toast).toHaveBeenCalledTimes(1);
+        expect(toast.mock.calls[0][0]).toMatchObject({ title: "Canvas gallery", level: "error" });
+        expect(toast.mock.calls[0][0].message).toContain("home does not exist in this design folder");
+        expect(list).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(canvasListAtom)).toEqual([HOME_FRESH]);
+    });
+});
+
+describe("the scan review", () => {
+    beforeEach(() => {
+        globalStore.set(canvasListAtom, PAIRS);
+    });
+
+    it("opens with every suggested pair ticked, at the first row", () => {
+        globalStore.set(canvasGalleryAtom, { ...gallery(), cursor: 3 });
+        startScan();
+        expect(gallery()).toMatchObject({ view: "scan", cursor: 0 });
+        // newest first, as the review draws them
+        expect(scan().pairs.map((p) => [p.newer.topic, p.older.topic])).toEqual([
+            ["notes-v2", "notes"],
+            ["home-fresh", "home"],
+        ]);
+        expect(scan().ticked).toEqual(new Set([dirOf("home-fresh"), dirOf("notes-v2")]));
+        expect(scan().linking).toBe(false);
+    });
+
+    it("keeps the pairs it opened with when the list changes under it", () => {
+        startScan();
+        globalStore.set(canvasListAtom, [OLD_A]);
+        expect(scan().pairs).toHaveLength(2);
+    });
+
+    it("does not open when there is nothing to suggest", () => {
+        globalStore.set(canvasListAtom, [OLD_A, NEW]);
+        startScan();
+        expect(gallery().view).toBe("grid");
+        globalStore.set(canvasListAtom, null);
+        startScan();
+        expect(gallery().view).toBe("grid");
+    });
+
+    it("ticks and unticks one row", () => {
+        startScan();
+        toggleScanRow(dirOf("notes-v2"));
+        expect(scan().ticked).toEqual(new Set([dirOf("home-fresh")]));
+        toggleScanRow(dirOf("notes-v2"));
+        expect(scan().ticked).toEqual(new Set([dirOf("home-fresh"), dirOf("notes-v2")]));
+    });
+
+    it("writes nothing on cancel, marks the scan done and goes back to the grid", () => {
+        const kept = stubStorage();
+        startScan();
+        cancelScan();
+        expect(link).not.toHaveBeenCalled();
+        expect(kept.get(SCANNED_KEY)).toBe("1");
+        expect(gallery()).toMatchObject({ view: "grid", cursor: 0 });
+        expect(scan().ticked).toEqual(new Set());
+    });
+
+    it("links the ticked pairs and remembers the unticked ones, in the suggestions' order", async () => {
+        const kept = stubStorage();
+        link.mockResolvedValue(undefined);
+        list.mockResolvedValue(PAIRS);
+        startScan();
+        toggleScanRow(dirOf("home-fresh"));
+        await linkScan();
+        expect(link.mock.calls.map((c) => c[1])).toEqual([
+            { dir: dirOf("notes-v2"), replaces: "notes", notreplaces: [] },
+            { dir: dirOf("home-fresh"), replaces: "", notreplaces: ["home"] },
+        ]);
+        expect(kept.get(SCANNED_KEY)).toBe("1");
+        expect(list).toHaveBeenCalledTimes(1);
+        expect(gallery()).toMatchObject({ view: "grid", cursor: 0 });
+        expect(scan()).toEqual({ pairs: [], ticked: new Set(), linking: false });
+        expect(toast).not.toHaveBeenCalled();
+    });
+
+    it("reports a failed write and still writes the rest", async () => {
+        const kept = stubStorage();
+        link.mockRejectedValueOnce(new Error("notes is not a canvas here")).mockResolvedValue(undefined);
+        list.mockResolvedValue(PAIRS);
+        startScan();
+        await linkScan();
+        expect(link).toHaveBeenCalledTimes(2);
+        expect(toast).toHaveBeenCalledTimes(1);
+        expect(toast.mock.calls[0][0]).toMatchObject({ level: "error" });
+        expect(toast.mock.calls[0][0].message).toContain("notes is not a canvas here");
+        expect(kept.get(SCANNED_KEY)).toBe("1");
+        expect(gallery().view).toBe("grid");
+    });
+
+    it("takes no second Link and no tick while the writes are under way", async () => {
+        let release: () => void = () => {};
+        link.mockImplementation(() => new Promise<void>((resolve) => (release = resolve)));
+        list.mockResolvedValue(PAIRS);
+        startScan();
+        const first = linkScan();
+        expect(scan().linking).toBe(true);
+        toggleScanRow(dirOf("notes-v2"));
+        await linkScan();
+        expect(scan().ticked).toEqual(new Set([dirOf("home-fresh"), dirOf("notes-v2")]));
+        expect(link).toHaveBeenCalledTimes(1);
+        link.mockResolvedValue(undefined);
+        release();
+        await first;
+        expect(link).toHaveBeenCalledTimes(2);
+        expect(gallery().view).toBe("grid");
+    });
+});
+
+describe("the link picker", () => {
+    it("opens empty, keeps what is typed, and closes", () => {
+        openLinkPicker();
+        expect(picker()).toEqual({ open: true, query: "" });
+        setLinkPickerQuery("board");
+        expect(picker()).toEqual({ open: true, query: "board" });
+        expect(closeLinkPicker()).toBe(true);
+        expect(picker()).toEqual({ open: false, query: "" });
+    });
+
+    it("says whether there was a picker to close, so Escape knows what it closed", () => {
+        expect(closeLinkPicker()).toBe(false);
+    });
+
+    it("is gone when a canvas opens or closes, so the next one starts without it", () => {
+        openLinkPicker();
+        openCanvas(dirOf("new"), 0);
+        expect(picker().open).toBe(false);
+        openLinkPicker();
+        setLinkPickerQuery("x");
+        closeCanvas();
+        expect(picker()).toEqual({ open: false, query: "" });
     });
 });

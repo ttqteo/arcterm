@@ -93,7 +93,8 @@ func (s *Scanner) ScanNow(ctx context.Context) StorageReport {
 
 // landed publishes a scan's categories as each one lands, since build output and the package caches can take minutes
 // and the rest seconds. A category not measured yet keeps the last scan's, and the report keeps the last scan's time
-// until the scan ends, so a head that sums them never reads a half total.
+// until the scan ends, so a head that sums them never reads a half total. Clean also lands the one category it
+// re-measured through here: that entry replaces the report's, or is added in its provider's place.
 func (s *Scanner) landed(done []StorageCategoryReport) {
 	s.mu.Lock()
 	cats := make([]StorageCategoryReport, 0, len(s.providers))
@@ -137,13 +138,17 @@ func (s *Scanner) scan(ctx context.Context, landed func([]StorageCategoryReport)
 	return r
 }
 
-// Clean cleans the named items of one category, each re-checked by its provider, then rescans.
+// Clean cleans the named items of one category, each re-checked by its provider, then re-measures that category alone
+// and publishes it at once, then rescans. The full rescan can take minutes, and until it ends the report would still
+// list what was just cleaned. The re-measure leaves the report's time as the last full scan's; a scan already running
+// that measures the category later overwrites it with its own fresher result.
 func (s *Scanner) Clean(ctx context.Context, category StorageCategory, ids []string, opts CleanOpts) (StorageCleanResult, error) {
 	for _, p := range s.providers {
 		if p.category() != category {
 			continue
 		}
 		res := p.clean(ctx, s.env, ids, opts)
+		s.landed([]StorageCategoryReport{p.measure(ctx, s.env)})
 		s.Rescan(context.Background())
 		return res, nil
 	}

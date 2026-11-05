@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// State of Agent → Canvas gallery (agentcenter.ts' `canvases` mode): where the gallery is (the grid, one open canvas, or the
-// clean-up selection), and the list of canvases it shows. Module-level atoms, like railstore.ts, so the place survives a
-// surface switch (the mode's components unmount, like History's) and the key bindings can read and move it.
+// State of Agent → Canvas gallery (agentcenter.ts' `canvases` mode): where the gallery is (the grid, one open canvas, the
+// clean-up selection, or the version scan's review), the list of canvases it shows, and the link picker of an open
+// canvas. Module-level atoms, like railstore.ts, so the place survives a surface switch (the mode's components unmount,
+// like History's) and the key bindings can read and move it.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -17,16 +18,20 @@ import {
     cleanupOrder,
     groupByDay,
     initialSelection,
+    scanWrites,
     searchCanvases,
     selectionAfterClean,
     stepIndex,
+    suggestVersions,
     toggled,
     trashMessage,
+    type CanvasLinkWrite,
     type GalleryCanvas,
     type GalleryGroup,
+    type VersionSuggestion,
 } from "./canvasgallery";
 
-export type GalleryView = "grid" | "viewer" | "cleanup";
+export type GalleryView = "grid" | "viewer" | "cleanup" | "scan";
 
 // `dir` is the open canvas' topic folder (the list's clean id), `board` an index into its boards, `cursor` an index into
 // the flat order of the cards the grid shows (groups in order)
@@ -115,6 +120,7 @@ export function setGalleryCursor(cursor: number): void {
 }
 
 export function openCanvas(dir: string, cursor: number): void {
+    resetLinkPicker();
     setGallery({ view: "viewer", dir, board: 0, cursor });
 }
 
@@ -123,7 +129,142 @@ export function setViewerBoard(board: number): void {
 }
 
 export function closeCanvas(): void {
+    resetLinkPicker();
     setGallery({ view: "grid", dir: null, board: 0 });
+}
+
+// Versions (spec 2026-11-05-canvas-related-design.md). Every write is one SetCanvasLinkCommand that sets both fields of
+// a canvas.json whole: canvasgallery.ts' write helpers work out the values, wavesrv only guards and writes.
+
+// the topic folder's name, for a toast: dir is the list's clean id, with either slash
+function topicOfDir(dir: string): string {
+    return dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
+}
+
+function errorMessage(e: unknown): string {
+    return e instanceof Error ? e.message : String(e);
+}
+
+// One write. A refusal (a target that is gone, a topic another canvas already replaces) is the server's own words in
+// an error toast, never swallowed; false then.
+async function sendCanvasLink(w: CanvasLinkWrite): Promise<boolean> {
+    try {
+        await RpcApi.SetCanvasLinkCommand(TabRpcClient, w);
+        return true;
+    } catch (e) {
+        pushToast({
+            title: "Canvas gallery",
+            message: `Couldn't link ${topicOfDir(w.dir)}: ${errorMessage(e)}`,
+            level: "error",
+        });
+        return false;
+    }
+}
+
+// the list is read again whether or not the write went through, so the cards show what is on disk
+export async function setCanvasLink(w: CanvasLinkWrite): Promise<void> {
+    await sendCanvasLink(w);
+    await loadCanvases();
+}
+
+// Whether the scan has been done is kept in localStorage, read through try/catch: a window without it, or one that
+// throws, counts as not scanned, so on another machine or after the dev data is cleared the button shows once more.
+const SCANNED_KEY = "canvasgallery.versionsScanned";
+
+export function versionsScanned(): boolean {
+    try {
+        return localStorage.getItem(SCANNED_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
+export function markVersionsScanned(): void {
+    try {
+        localStorage.setItem(SCANNED_KEY, "1");
+    } catch {
+        // not kept: the button shows again next time
+    }
+}
+
+// The scan's review list. `pairs` are the suggestions as the review opened, kept so a row does not vanish when the list
+// is read again while linking, and so Link writes exactly what was shown; `ticked` holds the newer canvases' dirs (the
+// pairs to link); `linking` blocks a second Link and the ticks while writing.
+export type ScanState = { pairs: VersionSuggestion[]; ticked: Set<string>; linking: boolean };
+
+const NO_SCAN: ScanState = { pairs: [], ticked: new Set(), linking: false };
+export const scanAtom = atom<ScanState>(NO_SCAN) as PrimitiveAtom<ScanState>;
+
+export function startScan(): void {
+    const list = globalStore.get(canvasListAtom);
+    const pairs = list == null ? [] : suggestVersions(list);
+    if (pairs.length === 0) {
+        return;
+    }
+    globalStore.set(scanAtom, { pairs, ticked: new Set(pairs.map((p) => p.newer.dir)), linking: false });
+    setGallery({ view: "scan", cursor: 0 });
+}
+
+export function toggleScanRow(dir: string): void {
+    if (!globalStore.get(scanAtom).linking) {
+        globalStore.set(scanAtom, (s) => ({ ...s, ticked: toggled(s.ticked, dir) }));
+    }
+}
+
+function leaveScan(): void {
+    markVersionsScanned();
+    globalStore.set(scanAtom, NO_SCAN);
+    // the grid's cursor counts its own cards, not the review's rows
+    setGallery({ view: "grid", cursor: 0 });
+}
+
+// Cancel writes nothing; it still counts as the scan done, so the button is gone for good
+export function cancelScan(): void {
+    leaveScan();
+}
+
+// Link N pairs: a link for each ticked row and a "not a version" for each unticked one, one by one. A write that fails
+// is reported and the rest are still written; the list is read once at the end.
+export async function linkScan(): Promise<void> {
+    const s = globalStore.get(scanAtom);
+    if (s.linking) {
+        return;
+    }
+    const writes = scanWrites(s.pairs, s.ticked);
+    globalStore.set(scanAtom, { ...s, linking: true });
+    for (const w of writes) {
+        await sendCanvasLink(w);
+    }
+    await loadCanvases();
+    leaveScan();
+}
+
+// The link picker under the viewer header's `Link an older version…`: open, and what is typed in its search box. It
+// belongs to the open canvas, so opening or closing a canvas puts it away.
+export type LinkPickerState = { open: boolean; query: string };
+
+const NO_PICKER: LinkPickerState = { open: false, query: "" };
+export const linkPickerAtom = atom<LinkPickerState>(NO_PICKER) as PrimitiveAtom<LinkPickerState>;
+
+export function openLinkPicker(): void {
+    globalStore.set(linkPickerAtom, { open: true, query: "" });
+}
+
+export function setLinkPickerQuery(query: string): void {
+    globalStore.set(linkPickerAtom, (p) => ({ ...p, query }));
+}
+
+function resetLinkPicker(): void {
+    if (globalStore.get(linkPickerAtom).open || globalStore.get(linkPickerAtom).query !== "") {
+        globalStore.set(linkPickerAtom, NO_PICKER);
+    }
+}
+
+// false when no picker was open, so Escape knows whether it closed one or has to leave the viewer
+export function closeLinkPicker(): boolean {
+    const was = globalStore.get(linkPickerAtom).open;
+    resetLinkPicker();
+    return was;
 }
 
 // Clean up. `now` is read once when the mode opens and kept, so a card does not hop between the two groups while the
