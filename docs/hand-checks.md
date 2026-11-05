@@ -547,6 +547,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   System Settings → Translation Languages, and no macOS download sheet opens over arcterm. Not seen in the app: Google's
   429 path and the helper were only run from Go tests and the shell. (commit "feat(translate): fall back to Apple
   Translation on the device when Google cannot answer")
+- [ ] (arcterm) Translate's MyMemory fallback, on Windows after a build: while Google answers 429 (the error used to read
+  "Google turned away too many requests…"), type "drift" (English → Vietnamese) → "trôi" comes back with no phonetic or
+  word class, and Detect language names English for "good morning". Run live only from a Go test through the Engine
+  with Google faked to 429, never in the app. (commit "fix(translate): fall back to MyMemory when Google cannot answer")
 - [ ] (arcterm) A council's chat as a messenger, after a build: in a done council's thread, send a follow-up. The thread
   scrolls to it; your bubble has no name line, its time shows on hover beside it; under it Sent turns to Seen with the
   seat's small avatar about a second later, then the seat's bubble of three dots rising in turn shows (still with
