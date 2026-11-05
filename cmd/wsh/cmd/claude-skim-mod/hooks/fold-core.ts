@@ -6,7 +6,8 @@ import { commandFenceEnd, commandSpans } from "./highlight-core";
 // a reply longer than this many lines folds
 export const FOLD_LINES = 10;
 
-// at most this many reasons, each cut to its bold lead and first sentence
+// at most this many reasons, each cut to its bold lead and first sentence. a list one longer shows whole: its
+// "… 1 more" line would take the line the item takes
 export const MAX_REASONS = 4;
 // a lead takes the sentence after it only when both fit in this many characters
 export const MAX_REASON_CHARS = 160;
@@ -17,6 +18,7 @@ export const MAX_SENTENCE_CHARS = 320;
 export const MAX_OPENED = 200;
 
 const ITEM = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
+const NUMBERED = /^\s*(\d+[.)])\s/;
 const HEADING = /^\s*(#{1,6}\s|\*\*[^*]+\*\*:?\s*$)/;
 const TABLE_ROW = /^\s*\|/;
 const FENCED = /^\s*(```|~~~)[^\n]*\n[\s\S]*?^\s*\1[^\n]*$/gm;
@@ -154,12 +156,15 @@ function byPosition(blocks: readonly string[], verdict: string, list: string | u
     if (!list) {
         return verdict;
     }
-    const items = lines(list)
-        .map((line) => line.match(ITEM)?.[1])
-        .filter((item): item is string => item !== undefined);
-    const shown = items.slice(0, MAX_REASONS).map((item) => `- ${firstSentence(item)}`);
-    if (items.length > MAX_REASONS) {
-        shown.push(`- … ${items.length - MAX_REASONS} more`);
+    const items = lines(list).filter((line) => ITEM.test(line));
+    const keep = items.length <= MAX_REASONS + 1 ? items.length : MAX_REASONS;
+    // a numbered item keeps its number, so a reply's "type 2" still points at it; the items kept run from the first,
+    // so the numbers stay in order
+    const shown = items
+        .slice(0, keep)
+        .map((line) => `${line.match(NUMBERED)?.[1] ?? "-"} ${firstSentence(line.match(ITEM)?.[1] ?? "")}`);
+    if (items.length > keep) {
+        shown.push(`- … ${items.length - keep} more`);
     }
     return verdict === "" ? shown.join("\n") : `${verdict}\n\n${shown.join("\n")}`;
 }

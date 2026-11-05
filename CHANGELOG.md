@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- A folded `claude` reply whose list has one item past the four it shows draws all of them, rather than four and
+  "… 1 more", and a numbered list keeps its numbers, so "type 2" in the reply still points at its item.
+
 ## 1.0.4 — 2026-11-06
 
 ### Added

@@ -82,7 +82,39 @@ describe("summary", () => {
         const text = ["## Title", "", "```", "- not an item", "", "code", "```", "", "| a |", "", "Verdict.", "", "1. Item."].join(
             "\n"
         );
-        expect(summary(text)).toBe("Verdict.\n\n- Item.");
+        expect(summary(text)).toBe("Verdict.\n\n1. Item.");
+    });
+
+    it("shows a list one past the cap whole: a '… 1 more' line takes the line its item would", () => {
+        const five = ["Verdict.", "", "- One.", "- Two.", "- Three.", "- Four.", "- Five. More words."].join("\n");
+        expect(summary(five)).toBe(["Verdict.", "", "- One.", "- Two.", "- Three.", "- Four.", "- Five."].join("\n"));
+    });
+
+    it("keeps a numbered list's numbers, so a reply's 'type 2' still points at its item", () => {
+        const text = [
+            "There are five kinds.",
+            "",
+            "1. **Tool.** You build it.",
+            "2. **Study.** You measure it.",
+            "3. **Benchmark.** Others use it.",
+            "4. **SoK.** You map a field.",
+            "5. **Replication.** You rerun it.",
+            "",
+            "Type 2 is yours.",
+        ].join("\n");
+        expect(summary(text)).toBe(
+            [
+                "There are five kinds.",
+                "",
+                "1. **Tool.** You build it.",
+                "2. **Study.** You measure it.",
+                "3. **Benchmark.** Others use it.",
+                "4. **SoK.** You map a field.",
+                "5. **Replication.** You rerun it.",
+            ].join("\n")
+        );
+        const seven = text.replace("You rerun it.", "You rerun it.\n6. Six.\n7. Seven.");
+        expect(summary(seven).split("\n").slice(-2)).toEqual(["4. **SoK.** You map a field.", "- … 3 more"]);
     });
 
     it("is the list alone when the reply opens with it", () => {
