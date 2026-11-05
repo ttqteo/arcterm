@@ -11662,7 +11662,7 @@ const XMAS_KEYS = {
     layout: "cockpit.office.layout",
 };
 // the Christmas palette's ground and accent (themes.ts), which the effects switch keeps
-const XMAS_BG = "#131d18";
+const XMAS_BG = "#0e1612";
 const XMAS_ACCENT = "#d4a26a";
 const XMAS_CRIMSON = "var(--color-xmas-crimson)";
 const XMAS_SNOW = "var(--color-xmas-snow)";
@@ -12009,7 +12009,7 @@ const christmasTheme = {
         );
         await h.shot("cdp-shots/christmas-theme-1-agent.png");
         rec(
-            "1. picking Christmas in Settings sets its palette (bg #131d18, accent #d4a26a) and shows the effects switch on; the Agent surface shows the christmas-office asker in the tree and a terminal, with the app bar and content where they were",
+            "1. picking Christmas in Settings sets its palette (bg #0e1612, accent #d4a26a) and shows the effects switch on; the Agent surface shows the christmas-office asker in the tree and a terminal, with the app bar and content where they were",
             picked1 &&
                 switch1 === "true" &&
                 bg1 === XMAS_BG &&
@@ -12397,7 +12397,7 @@ const christmasTheme = {
         const accent10 = await xmasVar(h, "--color-accent");
         await h.shot("cdp-shots/christmas-theme-10-effects-off.png");
         rec(
-            "10. turning Christmas effects off removes the snow canvas and the lights and keeps the palette (bg #131d18, accent #d4a26a)",
+            "10. turning Christmas effects off removes the snow canvas and the lights and keeps the palette (bg #0e1612, accent #d4a26a)",
             clicked10 && off10 && !gone10.snow && !gone10.lights && bg10 === XMAS_BG && accent10 === XMAS_ACCENT,
             { clicked10, off10, gone10, bg10, accent10, measure }
         );

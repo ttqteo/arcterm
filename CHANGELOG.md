@@ -60,6 +60,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
 - The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and
   falls smoothly instead of in jerky steps when you turn it on.
+- The Christmas theme's green is a shade darker, so text, code and cards on it read more easily.
 - While arcterm starts up (a long wait after a reinstall), the Agent and Cockpit screens show your pet running back and forth with "Setting up arcterm" instead of blank grey boxes, so it no longer looks stuck.
 
 ### Fixed
