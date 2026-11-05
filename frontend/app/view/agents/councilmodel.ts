@@ -657,8 +657,9 @@ function namedExperts(c: Council, text: string, joining: readonly SeatableAgent[
 
 /** Pure: the experts a reply of the person's reaches (pkg/council's `To`, worked out the same way): every expert for an
  *  `@all` or `@everyone` (`mentionsAll`); else the ones it @-mentions by name or id (a chat seat also by its mention key,
- *  `mentionsChat`), else the proposal's author and every expert on the path to the reply it answers; with no proposal
- *  (Ask the whole council), every non-coordinator expert. The coordinator never answers. Whether the router narrows
+ *  `mentionsChat`), else the proposal's author and every expert on the path to the reply it answers (a channel message
+ *  replied to, with no proposal, too); with no proposal and no reply (Ask the whole council), every non-coordinator
+ *  expert. The coordinator never answers. Whether the router narrows
  *  that last case to one seat or two is `routedMessage`: this is who it is addressed to.
  *
  *  `joining` are the live chats the message adds to the council (the ones its @ picked): they count as named, after the
@@ -680,11 +681,11 @@ export function answerers(
         return named;
     }
     const proposal = (c.proposals ?? []).find((p) => p.id === proposalId);
-    if (proposal == null) {
+    if (proposal == null && parentId === "") {
         return pool;
     }
     const byId = new Map((c.replies ?? []).map((r) => [r.id, r]));
-    const path = new Set<string>([proposal.author]);
+    const path = new Set<string>(proposal == null ? [] : [proposal.author]);
     const seen = new Set<string>();
     for (let r = byId.get(parentId); r != null && !seen.has(r.id); r = r.parentid ? byId.get(r.parentid) : undefined) {
         seen.add(r.id);

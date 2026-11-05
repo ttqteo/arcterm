@@ -86,6 +86,7 @@ import {
     retryExpert,
     saveCouncilDoc,
     saveCouncilGroup,
+    setDraftReplyTo,
     startCouncil,
     startSavedCouncil,
     stopCouncil,
@@ -598,6 +599,19 @@ describe("UI state", () => {
         globalStore.set(councilSetupDraftAtom("D:\\code\\z"), draft);
         expect(globalStore.get(councilSetupDraftAtom("d:/code/z"))?.feature).toBe("Rail apps");
         expect(globalStore.get(councilSetupDraftAtom("D:\\code\\other"))).toBeNull();
+    });
+});
+
+describe("the message a council's box replies to", () => {
+    it("is kept per box, and an empty id clears that box alone, leaving the texts and images", () => {
+        const start = { texts: { "": "hi" }, images: {}, tools: null };
+        let d = setDraftReplyTo(start, "", "r4");
+        d = setDraftReplyTo(d, "P1", "r9");
+        expect(d.replyTo).toEqual({ "": "r4", P1: "r9" });
+        d = setDraftReplyTo(d, "", "");
+        expect(d.replyTo).toEqual({ P1: "r9" });
+        expect(d.texts).toEqual({ "": "hi" });
+        expect(start).not.toHaveProperty("replyTo");
     });
 });
 

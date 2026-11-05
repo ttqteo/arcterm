@@ -29,6 +29,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Jarvis's Brief opens on the initiatives you pinned, as cards: up to six, each with its progress bar, its next chunk and Work on. Pin one from a card's ⋯ menu, a list row, the open initiative's Pin, or `p` under the cursor; every other initiative sits in one compact list under the cards, and with nothing pinned the six that most need you show as cards. <!-- try: go:jarvis --> <!-- big -->
 - `wsh effort pin <initiative>` and `wsh effort unpin <initiative>` pin an initiative to the Brief's cards from a terminal. Pinning a seventh says six are pinned and offers to unpin the oldest (`--replace-oldest` in the terminal).
 - A council's report opens in the Brief's side sheet from its line in Activity: the verdict, the ranked directions with their first steps, Work on (it opens the New agent dialog filled in and never starts an agent by itself), Add to initiative…, and what to ask next. <!-- try: go:jarvis -->
+- Reply to one seat's message in a council: Reply beside Copy and Pin puts "Replying to …" above the message box, and what you send goes to the seat that wrote it, with its message quoted on yours. It works in the chat and in an idea's thread; × or Esc stops replying.
 
 ### Changed
 

@@ -34,6 +34,7 @@ import {
     readsFiles,
     readsNote,
     replyReach,
+    replyTarget,
     routerLine,
     seatChips,
     seatLink,
@@ -2413,6 +2414,39 @@ describe("an answer quotes the person's post it answers, when it is not right un
     it("keeps the quote with no jump in one seat's view, which leaves the person's posts out", () => {
         const c = done([post("q1", 100), answer("a1", "ux", "q1", 110)]);
         expect(byId(councilChannel(c, "ux"), "a1")).toMatchObject({ quote: { id: "q1", jump: false } });
+    });
+
+    it("quotes the seat's message on the person's reply to it, named, and keeps it right under that message too", () => {
+        const c = done([
+            post("q1", 100, { text: "Read the paper?" }),
+            answer("a1", "ux", "q1", 110, { text: "Done.\n\n| a | b |\n==Cite it as a benchmark.==" }),
+            post("q2", 120, { parentid: "a1", text: "Which page?" }),
+            answer("a2", "ram", "q1", 130),
+            post("q3", 140, { parentid: "a2", text: "And you?" }),
+        ]);
+        const items = councilChannel(c);
+        expect(byId(items, "q2")).toMatchObject({
+            quote: { id: "a1", name: "UX", text: "Done. | a | b | Cite it as a benchmark.", jump: true },
+        });
+        // the person chose the message: the quote shows even when the reply sits right under it
+        expect(byId(items, "q3")).toMatchObject({ quote: { id: "a2", name: "RAM", jump: true } });
+        // a seat's answer still names the person in its quote
+        expect(byId(items, "a2")).toMatchObject({ quote: { id: "q1", name: "You" } });
+    });
+
+    it("finds the message a box replies to: a seat's sent message, on one line, else none", () => {
+        const c = done([
+            post("q1", 100),
+            answer("a1", "ux", "q1", 110, { text: "Line one\nline two" }),
+            answer("a2", "ram", "q1", 120, { text: "", stance: "accept" }), // agrees, no words: no message
+            answer("a3", "nu", "q1", 130, { draft: "held" }),
+        ]);
+        expect(replyTarget(c, "a1")).toEqual({ id: "a1", name: "UX", text: "Line one line two", proposalid: "" });
+        expect(replyTarget(c, "q1")).toBeNull();
+        expect(replyTarget(c, "a2")).toBeNull();
+        expect(replyTarget(c, "a3")).toBeNull();
+        expect(replyTarget(c, "gone")).toBeNull();
+        expect(replyTarget(c, undefined)).toBeNull();
     });
 
     it("quotes in an idea's thread too, and nothing on a seat's reply that answers no post of the person's", () => {
