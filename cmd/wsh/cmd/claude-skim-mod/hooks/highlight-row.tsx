@@ -75,7 +75,10 @@ export function drawHighlighted(
     );
 }
 
-// a long reply folded to its summary, with the button that opens it, and the opened reply with the one that folds it
+// a long reply folded to its summary, with the button that opens it, and the opened reply with the one that folds it:
+// a line below the text, in claude's colour, so the button never reads as the reply's last dimmed item
+const FOLD_COLOR = "claude";
+
 export function drawFolded(
     { Box, Text, Button }: Pick<Elements["terminal"], "Box" | "Text" | "Button">,
     summary: RenderElement,
@@ -86,9 +89,9 @@ export function drawFolded(
     return (
         <Box flexDirection="column">
             {summary}
-            <Box marginLeft={2}>
+            <Box marginLeft={2} marginTop={1}>
                 <Button key={`fold-${id}`} plain onPress={onPress}>
-                    ▾ show more <Text dimColor>· {lines} lines</Text>
+                    <Text color={FOLD_COLOR}>▾ show more</Text> <Text dimColor>· {lines} lines</Text>
                 </Button>
             </Box>
         </Box>
@@ -96,7 +99,7 @@ export function drawFolded(
 }
 
 export function drawOpened(
-    { Box, Button }: Pick<Elements["terminal"], "Box" | "Button">,
+    { Box, Text, Button }: Pick<Elements["terminal"], "Box" | "Text" | "Button">,
     reply: RenderElement,
     id: string,
     onPress: () => void
@@ -104,8 +107,10 @@ export function drawOpened(
     return (
         <Box flexDirection="column">
             {reply}
-            <Box marginLeft={2}>
-                <Button key={`fold-${id}`} plain label="▴ show less" onPress={onPress} />
+            <Box marginLeft={2} marginTop={1}>
+                <Button key={`fold-${id}`} plain label="▴ show less" onPress={onPress}>
+                    <Text color={FOLD_COLOR}>▴ show less</Text>
+                </Button>
             </Box>
         </Box>
     );
