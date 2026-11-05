@@ -1530,6 +1530,12 @@ export class RpcApiType {
         return client.wshRpcCall("servicestop", data, opts);
     }
 
+    // command "setcanvaslink" [call]
+    SetCanvasLinkCommand(client: WshClient, data: CommandSetCanvasLinkData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setcanvaslink", data, opts);
+        return client.wshRpcCall("setcanvaslink", data, opts);
+    }
+
     // command "setchannelprofile" [call]
     SetChannelProfileCommand(client: WshClient, data: CommandSetChannelProfileData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setchannelprofile", data, opts);

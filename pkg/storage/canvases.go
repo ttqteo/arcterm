@@ -46,6 +46,11 @@ type StorageCanvas struct {
 	ModTs       int64    `json:"modts"`       // unix ms of the newest board (the topic folder's own when it has none)
 	ThumbTs     int64    `json:"thumbts"`     // unix ms of thumb.png, 0 when there is none
 	Bytes       int64    `json:"bytes"`
+	// canvas.json's version links, read by ListCanvases and written by SetCanvasLink
+	Title       string   `json:"title,omitempty"`       // canvas.json's "title"
+	CreatedTs   int64    `json:"createdts"`             // unix ms the canvas was made (createdOnFiles.at); ModTs when canvas.json has none
+	Replaces    string   `json:"replaces,omitempty"`    // the topic of the older canvas this one replaces
+	NotReplaces []string `json:"notreplaces,omitempty"` // topics the person said this canvas does not replace
 }
 
 func designDirOf(project string) string {

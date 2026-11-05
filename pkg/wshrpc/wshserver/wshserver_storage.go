@@ -211,6 +211,11 @@ func (ws *WshServer) ListCanvasesCommand(ctx context.Context) ([]storage.Storage
 	return storage.ListCanvases(configProjectPaths()), nil
 }
 
+// SetCanvasLinkCommand writes the link; pkg/storage holds every guard
+func (ws *WshServer) SetCanvasLinkCommand(ctx context.Context, data wshrpc.CommandSetCanvasLinkData) error {
+	return storage.SetCanvasLink(configProjectPaths(), data.Dir, data.Replaces, data.NotReplaces)
+}
+
 // ListCanvasSessionsCommand reads the transcripts touched since the canvas's oldest file, once per change to each: the
 // viewer asks when it opens
 func (ws *WshServer) ListCanvasSessionsCommand(ctx context.Context, dir string) ([]wshrpc.SessionActivity, error) {

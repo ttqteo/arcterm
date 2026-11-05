@@ -2181,6 +2181,13 @@ declare global {
         ids: string[];
     };
 
+    // wshrpc.CommandSetCanvasLinkData
+    type CommandSetCanvasLinkData = {
+        dir: string;
+        replaces: string;
+        notreplaces: string[];
+    };
+
     // wshrpc.CommandSetChannelProfileData
     type CommandSetChannelProfileData = {
         channelid: string;
@@ -4529,6 +4536,10 @@ declare global {
         modts: number;
         thumbts: number;
         bytes: number;
+        title?: string;
+        createdts: number;
+        replaces?: string;
+        notreplaces?: string[];
     };
 
     // storage.StorageCategoryReport
