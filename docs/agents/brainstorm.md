@@ -137,14 +137,16 @@ board or spike to show there is no tab strip, and the rail is Decided so far alo
   `brainstorm.railWidth`, one number for the design and the check) and the rail opens at 32% of the pane until then.
   The largest leaves the question 360px. Two columns once the rail's inner width fits two 380px tiles and their gap
   (776px); a quiet readout beside the tabs says `2 columns · 52%`. The sizes are pure functions in
-  `brainstormmodel.ts` (`clampRailWidth`, `railMaxWidth`, `railColumns`).
-- **A board opens large without leaving the question.** Clicking a tile widens the rail to its largest and shows only
-  that board, drawn from the agent's canvas state (`attachCanvas`, then `openBrainstormBoard`, whose board now means
-  "widened in the rail"). The question stays on screen and live, so an option can be picked while the board is large.
-  Clicking the board again, the close button, the Boards tab or `Esc` returns the rail to its width; `[` `]` and ← →
-  step the boards. **Mark** draws marks on the widened board with the layer `CanvasPane` shares
-  (`canvasmarking.tsx`), and its Send button sends them to the agent as one line (`sendCanvasMarks`), as on an agent's
-  canvas.
+  `brainstormmodel.ts` (`clampRailWidth`, `railColumns`).
+- **A board opens large in a dialog.** Clicking a tile opens that one board in a dialog over the question and the rail
+  (inside the brainstorm pane, not over the app), drawn from the agent's canvas state (`attachCanvas`, then
+  `openBrainstormBoard`). The question and the rail keep their widths under it. A board tied to an option has that
+  option's pick under it (`Pick B · <label>`, `boardPick`), sent as the option's row sends it; the dialog closes once it
+  is sent. A letter key closes the dialog and focuses its answer row, so Enter sends it as without a board. Clicking
+  the board again, the scrim, the close button or `Esc` closes it; `[` `]` and ← → step the boards. It is not one of
+  the app's modals, so the pane's keys stay live under it. **Mark** draws marks on the open board with the layer
+  `CanvasPane` shares (`canvasmarking.tsx`), and its Send button sends them to the agent as one line
+  (`sendCanvasMarks`), as on an agent's canvas; while marking, the tray takes the pick's place.
 - **A narrow pane.** Below 640px (820px in the builder check) the rail goes under the question at full width, without
   its handle, from one container query on `RailRow`. In the check this holds with no Boards tab too: the spec kept that
   rail at 460px beside the question, but a pane under 820px would leave the question under 360px, so the rail stacks.
@@ -354,7 +356,7 @@ to the judge**). The judge rides the builder check's machinery.
 | Polling, re-attach after a restart, settling a sent line | `frontend/app/view/agents/brainstormpoller.ts` |
 | Sending lines, opening the launcher, run id handback | `frontend/app/view/agents/brainstormsend.ts` |
 | The pane (frame, question, design) | `frontend/app/view/agents/brainstormpane.tsx`, `brainstormui.tsx` |
-| The right rail: Boards tab, drag handle, widened board, the narrow-pane row | `frontend/app/view/agents/brainstormrail.tsx`, `canvasmarking.tsx` (the shared marking layer) |
+| The right rail: Boards tab, drag handle, the open board's dialog, the narrow-pane row | `frontend/app/view/agents/brainstormrail.tsx`, `canvasmarking.tsx` (the shared marking layer) |
 | The builder check's review and the Run step | `frontend/app/view/agents/brainstormcheck.tsx`, `brainstormreview.tsx`, `brainstormrun.tsx` |
 | The first-open hint card and the start line | `frontend/app/view/agents/brainstormhints.ts`, `brainstormhintscard.tsx` |
 | The pane's keys | `frontend/app/store/keybindings/bindings.ts` (`inBrainstorm…` predicates), `whenstate.ts` |

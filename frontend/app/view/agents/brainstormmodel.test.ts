@@ -18,6 +18,7 @@ import {
     withStartingRun,
     asksUser,
     awaitsReview,
+    boardPick,
     bodyBeyondGist,
     brainstormAttention,
     brainstormCounts,
@@ -75,7 +76,6 @@ import {
     railBoardHeads,
     railColumns,
     railGroups,
-    railMaxWidth,
     railReadout,
     railStacks,
     railTabs,
@@ -2677,18 +2677,6 @@ describe("the rail's width", () => {
         expect(clampRailWidth(Number.POSITIVE_INFINITY, 1000, RAIL_MIN_W)).toBeCloseTo(320);
     });
 
-    it("widens to what leaves the question 360px", () => {
-        expect(railMaxWidth(1200, RAIL_MIN_W)).toBe(840);
-        expect(railMaxWidth(1200, RAIL_MIN_W_CHECK)).toBe(840);
-        expect(railMaxWidth(1000, RAIL_MIN_W)).toBe(640);
-    });
-
-    it("widens no narrower than the smallest rail, however narrow the pane", () => {
-        expect(railMaxWidth(500, RAIL_MIN_W)).toBe(280);
-        expect(railMaxWidth(700, RAIL_MIN_W_CHECK)).toBe(460);
-        expect(railMaxWidth(0, RAIL_MIN_W)).toBe(280);
-    });
-
     it("stacks under the question below 640px in the design and 820px in the check", () => {
         expect(railStacks(639, RAIL_MIN_W)).toBe(true);
         expect(railStacks(640, RAIL_MIN_W)).toBe(false);
@@ -2821,6 +2809,28 @@ describe("the rail's board heads", () => {
     it("links nothing with no question open", () => {
         const f = file({ canvas: "topic", parts: [part("layout", "yours", { boards: names })] });
         expect(railBoardHeads(f, "layout", BOARDS).every((h) => h.letter == null && h.option == null)).toBe(true);
+    });
+
+    it("offers the option a board shows as the pick under it while the question is on screen", () => {
+        const f = asked(3);
+        f.question!.options![1].pick = true;
+        const heads = railBoardHeads(f, "layout", BOARDS);
+        expect(boardPick(f, heads[1], true)).toEqual({
+            option: 1,
+            letter: "B",
+            label: "Option 1 label",
+            leaning: "Agent’s pick",
+        });
+        expect(boardPick(f, heads[0], true)).toMatchObject({ letter: "A", leaning: null });
+    });
+
+    it("offers no pick in the design, for a board tied to no option, or for an option the question no longer has", () => {
+        const f = asked(3);
+        const heads = railBoardHeads(f, "layout", BOARDS);
+        expect(boardPick(f, heads[0], false)).toBeNull();
+        expect(boardPick(asked(2), railBoardHeads(asked(2), "layout", BOARDS)[0], true)).toBeNull();
+        expect(boardPick(asked(null), { option: 0 }, true)).toBeNull();
+        expect(boardPick(asked(3), { option: 5 }, true)).toBeNull();
     });
 
     it("heads an unlinked board with its title from canvas.json", () => {

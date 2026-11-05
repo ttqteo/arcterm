@@ -5,9 +5,11 @@
 // The pure rules (widths, columns, tabs, board heads) are in brainstormmodel.ts; this file draws them.
 //
 // Boards tab: every board of the open question's part (or of every part, with no question open) as a scaled live tile
-// headed by its option, tied to that option by optionHoverAtom. Clicking a tile widens the rail to its largest and shows
-// that one board from the agent's canvas state, so the question stays on screen and the canvas's own marking works.
+// headed by its option, tied to that option by optionHoverAtom. Clicking a tile opens that one board large, from the
+// agent's canvas state, in a dialog over the brainstorm pane (the question and the rail keep their widths under it); the
+// canvas's own marking works there, and a board tied to an option offers that option's pick under it.
 
+import { modalBackdrop, modalPanel } from "@/app/element/motiontokens";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
@@ -15,6 +17,7 @@ import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { SquareDashed, X } from "lucide-react";
+import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
     useEffect,
     useLayoutEffect,
@@ -24,8 +27,10 @@ import {
     type ReactNode,
     type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    boardPick,
     clampRailWidth,
     RAIL_MIN_W,
     RAIL_MIN_W_CHECK,
@@ -33,16 +38,17 @@ import {
     railBoardHeads,
     railColumns,
     railGroups,
-    railMaxWidth,
     railReadout,
     railStacks,
     railTabs,
     spikeUrl,
+    type BoardPick,
     type BrainstormFile,
     type RailBoardHead,
     type RailGroup,
     type RailTab,
 } from "./brainstormmodel";
+import { sendBrainstorm } from "./brainstormsend";
 import { openBrainstormBoard, type BrainstormState } from "./brainstormstore";
 import { MarkLayer, MarkTray } from "./canvasmarking";
 import {
@@ -58,7 +64,7 @@ import {
 } from "./canvasmodel";
 import { BoardFrameView, CANVAS_TOP_PAD, ServerDown, useContentHeights, useSteadyFitWidth } from "./canvaspane";
 import { attachCanvas, canvasStateAtom, setMarking, type CanvasState } from "./canvasstore";
-import { SWAP_BTN, SWAP_BTN_ON } from "./swapbar";
+import { SWAP_BTN, SWAP_BTN_ON, SWAP_PRIMARY_BTN } from "./swapbar";
 
 // The option index hovered or ticked in the question, or null. The options set it (and clear it), and so does a board's
 // tile in the rail: the option lights up beside the board it is tied to, and the board beside its option.
@@ -140,8 +146,8 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
     }
     const shownTab: RailTab = tabs.includes(tab) ? tab : first;
 
-    // a widened board needs the Boards tab, one of the shown boards and its canvas: [ ] and Esc act on it, so it never
-    // stays set while it is not on screen (the next question has no boards, or the user went to the other tab)
+    // a board opened large needs the Boards tab, one of the shown boards and its canvas: [ ] and Esc act on it, so it
+    // never stays set while it is not on screen (the next question has no boards, or the user went to the other tab)
     const canvas = useAtomValue(canvasStateAtom(agent.id));
     const widened = s.board != null && shownTab === "boards" && canvas != null && shownNames.includes(s.board);
     useEffect(() => {
@@ -149,14 +155,19 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
             openBrainstormBoard(agent.id, null);
         }
     }, [s.board, widened, agent.id]);
-    const tilesShown = shownTab === "boards" && !widened;
+    // the tiles stay drawn under the open board's dialog, but are not for pointing at or scrolling to there
+    const tilesDrawn = shownTab === "boards";
+    const tilesShown = tilesDrawn && !widened;
 
     // the pane is the rail's parent: its width bounds the rail, and the measure before first paint keeps the rail from
-    // opening at the smallest width and jumping
+    // opening at the smallest width and jumping. The row around the question and the rail (RailRow) holds the open
+    // board's dialog, so it covers both and nothing above them
     const rootRef = useRef<HTMLElement>(null);
     const bodyRef = useRef<HTMLDivElement>(null);
     const [paneW, setPaneW] = useState(0);
+    const [dialogHost, setDialogHost] = useState<HTMLElement | null>(null);
     useLayoutEffect(() => {
+        setDialogHost(rootRef.current?.closest<HTMLElement>("[data-brainstorm-rail-row]") ?? null);
         const pane = rootRef.current?.parentElement;
         if (pane == null) {
             return;
@@ -170,7 +181,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
     const [stored, setStored] = useState<number | null>(readStoredWidth);
     const [live, setLive] = useState<number | null>(null);
     const stacked = paneW > 0 && railStacks(paneW, minWidth);
-    const width = widened ? railMaxWidth(paneW, minWidth) : clampRailWidth(live ?? stored, paneW, minWidth);
+    const width = clampRailWidth(live ?? stored, paneW, minWidth);
     const drag = useRef<{ x: number; start: number; last: number } | null>(null);
     const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
         e.preventDefault();
@@ -198,7 +209,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
     // the tiles' columns follow the inner width of the groups' box, which the drag changes every frame
     const [measureRef, , innerRect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const innerW = innerRect?.width ?? 0;
-    const columns = widened ? 1 : (Math.max(1, ...groups.map((g) => railColumns(innerW, g.boards.length))) as 1 | 2);
+    const columns = Math.max(1, ...groups.map((g) => railColumns(innerW, g.boards.length))) as 1 | 2;
     const tileW = (innerW - RAIL_TILE_GAP * (columns - 1)) / columns;
 
     // hovering a tile lights the option it shows, and the option's hover lights its tile (and brings it into view,
@@ -210,7 +221,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
         setHovered(option);
     };
     useEffect(() => {
-        // a tile that goes away under the pointer (widened, other tab) never sends its leave
+        // a tile that goes away under the pointer (covered by the open board, other tab) never sends its leave
         if (!tilesShown && tileHover.current != null) {
             hoverTile(null);
         }
@@ -259,7 +270,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
 
     const close = () => openBrainstormBoard(agent.id, null);
     const pick = (t: RailTab) => {
-        // the Boards tab again leaves a widened board for the tiles
+        // the Boards tab again leaves an open board for the tiles
         if (t === "boards" && s.board != null) {
             close();
         }
@@ -280,7 +291,7 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
                 stack.aside
             )}
         >
-            {hasBoards && !widened ? (
+            {hasBoards ? (
                 <div
                     role="separator"
                     aria-orientation="vertical"
@@ -326,10 +337,8 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
                     </div>
                 ) : null}
                 <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto">
-                    {shownTab !== "boards" ? (
+                    {!tilesDrawn ? (
                         second.render(hasBoards)
-                    ) : widened && canvas != null ? (
-                        <WidenedBoard agent={agent} s={s} cs={canvas} head={headOf} onClose={close} />
                     ) : (
                         <div role="tabpanel" className="px-[16px] pb-[16px] pt-[2px]">
                             <div ref={measureRef} className="flex flex-col gap-[22px]">
@@ -365,7 +374,62 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
                     )}
                 </div>
             </div>
+            {dialogHost != null
+                ? createPortal(
+                      <BoardDialog open={widened} onClose={close}>
+                          {canvas != null ? (
+                              <WidenedBoard
+                                  agent={agent}
+                                  s={s}
+                                  f={f}
+                                  cs={canvas}
+                                  question={question}
+                                  head={headOf}
+                                  onClose={close}
+                              />
+                          ) : null}
+                      </BoardDialog>,
+                      dialogHost
+                  )
+                : null}
         </aside>
+    );
+}
+
+// The open board's dialog: over the question and the rail, inside the brainstorm pane rather than over the app, so the
+// pane's own keys stay live under it (Esc closes it, [ ] and ← → step the boards, through agent:brainstorm-back and the
+// canvas keys; it is not one of the app's modals, which would stand those keys down). A click on the scrim closes it.
+function BoardDialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+    return (
+        <MotionConfig reducedMotion="user">
+            <AnimatePresence>
+                {open ? (
+                    <motion.div
+                        key="board-dialog"
+                        data-brainstorm-board-dialog
+                        variants={modalBackdrop}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        onMouseDown={(e) => {
+                            if (e.target === e.currentTarget) {
+                                onClose();
+                            }
+                        }}
+                        className="absolute inset-0 z-20 flex items-stretch justify-center bg-black/60 p-[20px] backdrop-blur-sm"
+                    >
+                        <motion.div
+                            variants={modalPanel}
+                            role="dialog"
+                            aria-label="Board"
+                            className="flex min-h-0 w-full min-w-0 max-w-[1600px] flex-col overflow-hidden rounded-[14px] border border-edge-strong bg-modalbg shadow-popover"
+                        >
+                            {children}
+                        </motion.div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
+        </MotionConfig>
     );
 }
 
@@ -565,17 +629,23 @@ function RailSpikes({ base, canvas, spikes }: { base: string; canvas: string; sp
 
 // The board the agent's canvas has selected, so [ and ] stepping it moves this view. It sits alone in the element
 // sendCanvasMarks reads for its picture (data-canvas-scroll around one data-canvas-board). The canvas poller fills the
-// state a beat after the tile's click, so the brainstorm's own board list and base stand in until it has.
+// state a beat after the tile's click, so the brainstorm's own board list and base stand in until it has. A board tied
+// to an option of the question on screen offers that option's pick under it (boardPick), sent as the option's row sends
+// it; the dialog closes once it is sent.
 function WidenedBoard({
     agent,
     s,
+    f,
     cs,
+    question,
     head,
     onClose,
 }: {
     agent: AgentVM;
     s: BrainstormState;
+    f: BrainstormFile;
     cs: CanvasState;
+    question: boolean;
     head: (name: string) => RailBoardHead | null;
     onClose: () => void;
 }) {
@@ -596,6 +666,7 @@ function WidenedBoard({
         label: board.title ?? boardLabel(board.name),
         option: null,
     };
+    const offer = boardPick(f, shown, question);
     return (
         <div data-brainstorm-rail-widened className="flex h-full min-h-0 flex-col">
             <div className="flex flex-none items-center gap-[8px] border-b border-border px-[16px] py-[8px]">
@@ -617,8 +688,8 @@ function WidenedBoard({
                 <button
                     type="button"
                     data-brainstorm-rail-close
-                    aria-label="Back to the boards"
-                    title="Back to the boards (Esc)"
+                    aria-label="Close the board"
+                    title="Close the board (Esc)"
                     onClick={onClose}
                     className={cn(SWAP_BTN, "px-[6px]")}
                 >
@@ -656,8 +727,8 @@ function WidenedBoard({
                                 <button
                                     type="button"
                                     data-brainstorm-rail-unwiden
-                                    aria-label="Back to the boards"
-                                    title="Back to the boards (Esc)"
+                                    aria-label="Close the board"
+                                    title="Close the board (Esc)"
                                     onClick={onClose}
                                     className="absolute inset-0 cursor-zoom-out border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                                 />
@@ -666,7 +737,57 @@ function WidenedBoard({
                     </div>
                 </div>
             )}
-            {marking ? <MarkTray agent={agent} marks={cs.marks} /> : null}
+            {marking ? (
+                <MarkTray agent={agent} marks={cs.marks} />
+            ) : offer != null ? (
+                <BoardPickBar agent={agent} offer={offer} onSent={onClose} />
+            ) : null}
+        </div>
+    );
+}
+
+// under a board tied to an option: that option's pick, the one send the dialog offers. Marking replaces it with the
+// marks' tray, so the bottom of the dialog holds one send at a time
+function BoardPickBar({ agent, offer, onSent }: { agent: AgentVM; offer: BoardPick; onSent: () => void }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const send = async () => {
+        setBusy(true);
+        setError(null);
+        try {
+            await sendBrainstorm(agent, { kind: "answer", text: offer.label });
+            onSent();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <div
+            data-brainstorm-board-pick-bar
+            className="flex flex-none items-center gap-[12px] border-t border-border px-[16px] py-[10px]"
+        >
+            <button
+                type="button"
+                data-brainstorm-board-pick={offer.option}
+                disabled={busy}
+                onClick={() => void send()}
+                title={offer.label}
+                className={cn(SWAP_PRIMARY_BTN, "min-w-0 max-w-[60%]")}
+            >
+                <span className="min-w-0 truncate">
+                    Pick {offer.letter} · {offer.label}
+                </span>
+            </button>
+            {offer.leaning != null ? (
+                <span className="flex-none text-[12px] text-accent-soft">{offer.leaning}</span>
+            ) : null}
+            {error != null ? (
+                <span role="alert" className="min-w-0 truncate text-[12px] text-error" title={error}>
+                    {error}
+                </span>
+            ) : null}
         </div>
     );
 }
@@ -675,7 +796,8 @@ function WidenedBoard({
 // question's smallest width plus the rail's (640px in the design, 820px in the check, railStacks) the rail goes under the
 // question at full width, and the row scrolls as a whole. The container is the outer div, because a container query
 // reaches only what is inside the container; `question` is what fills the column, which keeps what the question has
-// always had: the rest of the row, the background, and room to shrink.
+// always had: the rest of the row, the background, and room to shrink. The outer div also holds the open board's dialog
+// (BoardDialog), which covers the whole row.
 const ROW_STACKED = {
     design: { row: "@max-[640px]:flex-col @max-[640px]:overflow-y-auto", question: "@max-[640px]:flex-none" },
     check: { row: "@max-[820px]:flex-col @max-[820px]:overflow-y-auto", question: "@max-[820px]:flex-none" },
@@ -693,7 +815,7 @@ export function RailRow({
 }) {
     const stack = minWidth === RAIL_MIN_W_CHECK ? ROW_STACKED.check : ROW_STACKED.design;
     return (
-        <div className="@container flex min-h-0 flex-1 flex-col">
+        <div data-brainstorm-rail-row className="@container relative flex min-h-0 flex-1 flex-col">
             <div className={cn("flex min-h-0 flex-1", stack.row)}>
                 <div className={cn("flex min-w-0 flex-1 flex-col bg-background", stack.question)}>{question}</div>
                 {rail}
