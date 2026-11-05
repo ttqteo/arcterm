@@ -1,7 +1,6 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Skeleton } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
@@ -119,6 +118,7 @@ import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { useCardStreams } from "./usecardstreams";
 import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
+import { StartupLoader } from "./startuploader";
 import { useSubagentTracking } from "./subagenttracking";
 import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
 import { openLauncher } from "./launcherstore";
@@ -1095,7 +1095,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                 onNewAgent={() => openLauncher(model, "agent")}
                             />
                         ) : overlay === "loading" ? (
-                            <CockpitGridSkeleton key="loading" />
+                            <StartupLoader key="loading" className="absolute inset-0 z-[1]" />
                         ) : null}
                     </AnimatePresence>
 
@@ -1177,21 +1177,5 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             ) : null}
         </div>
         </MotionConfig>
-    );
-}
-
-// Card-shaped placeholders in the grid's own gutters, so the first cards land where the skeleton was.
-// Columns that fill the viewport, as the real cards do (cardgridlayout.ts).
-function CockpitGridSkeleton() {
-    return (
-        <div aria-hidden="true" className="absolute inset-0 z-[1] flex gap-2.5 px-5 pb-5 pt-2.5">
-            {[2, 2, 1].map((cards, col) => (
-                <div key={col} className="flex min-w-0 flex-1 flex-col gap-2.5">
-                    {Array.from({ length: cards }, (_, i) => (
-                        <Skeleton key={i} className="min-h-0 flex-1 rounded-[13px]" />
-                    ))}
-                </div>
-            ))}
-        </div>
     );
 }
