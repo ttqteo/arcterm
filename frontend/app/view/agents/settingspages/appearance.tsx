@@ -9,6 +9,9 @@ import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
 import { CHRISTMAS_THEME } from "../christmas";
+import { SantaHatSvg } from "../christmashat";
+import { LightString } from "../christmaslights";
+import { useChristmasDecor } from "../christmasstore";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
 import { ROW_FIELD_ROWS } from "../rowfields";
@@ -54,8 +57,17 @@ function ThemeChips() {
 // decor and motion. A plain control, not a registered SettingRow, so the theme card keeps its one-row pin.
 function ChristmasEffectsRow() {
     const [effectsOff, setEffectsOff] = useAtom(christmasEffectsOffAtom);
+    const decorOn = useChristmasDecor();
     return (
-        <div className="flex items-center gap-4 border-t border-edge-mid px-4 py-3 transition-colors hover:bg-surface-hover">
+        <div
+            className={cn(
+                "relative flex items-center gap-4 overflow-hidden border-t border-edge-mid px-4 pb-3 transition-colors hover:bg-surface-hover",
+                // room for the bulbs above the label
+                decorOn ? "pt-5" : "pt-3"
+            )}
+        >
+            {/* while the effects are on, the lights hang along the row's top edge, lit and still */}
+            {decorOn ? <LightString place="settings" className="top-0" /> : null}
             <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-primary">Christmas effects</div>
                 <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
@@ -99,6 +111,7 @@ function ThemePresetGrid({ preset, setPreset }: { preset: string; setPreset: (id
                         </span>
                         <span className="min-w-0 flex-1 truncate">{t.name}</span>
                         {t.id === SPIDER_THEME ? <SmallSpider /> : null}
+                        {t.id === CHRISTMAS_THEME ? <SantaHatSvg size={15} className="block flex-none" /> : null}
                         {on ? <Check size={13} className="flex-none" aria-hidden /> : null}
                     </button>
                 );

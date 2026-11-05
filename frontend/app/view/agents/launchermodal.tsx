@@ -35,6 +35,7 @@ import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } fr
 import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
+import { RailSantaHat } from "./christmashat";
 import { launchAccountName, projectLaunchAccount } from "./claudeaccount";
 import { councilAtom, councilListAtom, councilSelAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
@@ -959,8 +960,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 className={cn(rowTone(selected, startFocused), "shrink-0 gap-[9px] py-2")}
             >
                 <Keycap k={row.key} lit={startFocused} />
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
                     <StartMark id={row.id} />
+                    {/* the Christmas decor's hat, as on the nav rail's icons; nothing off the theme */}
+                    <RailSantaHat iconSize={16} />
                 </span>
                 <span
                     className={cn(
@@ -981,6 +984,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             onClose={close}
             onSubmit={launch}
             className="flex max-h-[86vh] w-[min(840px,93vw)] flex-col"
+            christmasLights
         >
             {open ? (
                 // tabIndex -1: a click on blank space (or on a button, in WebKit) focuses the nearest focusable

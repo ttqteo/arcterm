@@ -9,6 +9,8 @@
 import { modalBackdrop, modalPanel, sheetPanel } from "@/app/element/motiontokens";
 import { shellOwnsEscape, takeModalFocus } from "@/app/modals/modalfocus";
 import { isTopModal, registerModal } from "@/app/modals/modalstack";
+import { LightString } from "@/app/view/agents/christmaslights";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { cn } from "@/util/util";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
@@ -38,6 +40,9 @@ interface ModalShellProps {
     topClass?: string; // backdrop top offset when align="top"; default pt-[11vh]
     dismissOnBackdrop?: boolean; // default true
     variant?: ModalVariant; // "dialog" (centered, default) or "sheet" (right-pinned, surface-scoped)
+    // the Christmas lights hang from the panel's top edge while the decor shows, lit and still. Only for a dialog whose
+    // header leaves the bulbs' 16px clear above its text (New agent, New project, the cheatsheet, Quick look)
+    christmasLights?: boolean;
     children: ReactNode;
 }
 
@@ -50,8 +55,10 @@ export function ModalShell({
     topClass = "pt-[11vh]",
     dismissOnBackdrop = true,
     variant = "dialog",
+    christmasLights = false,
     children,
 }: ModalShellProps) {
+    const lights = useChristmasDecor() && christmasLights;
     const panelRef = useRef<HTMLDivElement>(null);
     const shellId = useId();
     // Registration and focus-taking are one effect, not two: closing must check "am I still the top
@@ -140,8 +147,9 @@ export function ModalShell({
                             aria-modal="true"
                             tabIndex={-1} // focus target for a dialog with no field of its own (alerts, the cheatsheet)
                             onMouseDown={(e) => e.stopPropagation()}
-                            className={cn(PANEL[variant], className)}
+                            className={cn(PANEL[variant], lights && "relative", className)}
                         >
+                            {lights ? <LightString place="dialog" className="top-0 z-[1]" /> : null}
                             {children}
                         </motion.div>
                     </motion.div>

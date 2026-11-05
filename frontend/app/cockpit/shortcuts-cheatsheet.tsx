@@ -58,7 +58,7 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
     }, [bindings, query, surface]);
 
     return (
-        <ModalShell open={open} onClose={close} className="flex flex-col w-[min(680px,93vw)] max-h-[74vh]" topClass="pt-[10vh]">
+        <ModalShell open={open} onClose={close} className="flex flex-col w-[min(680px,93vw)] max-h-[74vh]" topClass="pt-[10vh]" christmasLights>
             {open ? (
                 <>
                 <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-[13px]">

@@ -46,6 +46,7 @@ export function SessionPeek({
             onClose={onClose}
             align="center"
             className="flex h-[min(80vh,820px)] w-[min(920px,92vw)] flex-col"
+            christmasLights
         >
             {s != null && rt != null ? (
                 <div data-session-peek={s.id} className="flex min-h-0 flex-1 flex-col">

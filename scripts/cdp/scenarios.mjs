@@ -12179,6 +12179,161 @@ const christmasTheme = {
         );
         const pickedSprout8 = await xmasPickCharacter(h, "Sprout");
 
+        // 8c. the New agent dialog with the decor on: the snow falls over it (above the backdrop, dimmed over the
+        // panel), the lights hang from its top edge clear of the title, and every Start mark wears the rail's hat
+        await h.goto("cockpit");
+        await h.ev(OPEN_NEW_AGENT);
+        const opened8c = await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await xmasNap(800);
+        const dialog8c = await h.ev(`(() => {
+            const root = ${LAUNCHER};
+            const panel = root?.closest('[role="dialog"]');
+            const backdrop = panel?.parentElement;
+            const canvas = document.querySelector("canvas[data-christmas-snow]");
+            const lights = panel?.querySelector('[data-decor-lights="dialog"]');
+            const bulbs = [...(lights?.querySelectorAll("[data-bulb]") ?? [])].map((b) => b.getBoundingClientRect());
+            const h2 = root?.querySelector("h2");
+            const title = h2?.getBoundingClientRect();
+            // the glyphs' top: the line box less its half-leading
+            const fontPx = h2 ? parseFloat(getComputedStyle(h2).fontSize) : 0;
+            const rows = [...(root?.querySelectorAll("[data-start-row]") ?? [])].map((r) => {
+                const hat = r.querySelector("svg[data-rail-hat]")?.getBoundingClientRect();
+                return { id: r.getAttribute("data-start-row"), hat: hat != null && hat.width > 0 };
+            });
+            const pr = panel?.getBoundingClientRect();
+            return {
+                snowZ: canvas ? Number(getComputedStyle(canvas).zIndex) : null,
+                backdropZ: backdrop ? Number(getComputedStyle(backdrop).zIndex) : null,
+                bulbs: bulbs.length,
+                bulbTop: bulbs.length ? Math.min(...bulbs.map((b) => b.top)) - pr.top : null,
+                bulbBottom: bulbs.length ? Math.max(...bulbs.map((b) => b.bottom)) - pr.top : null,
+                titleTop: title && pr ? title.top + (title.height - fontPx) / 2 - pr.top : null,
+                rows,
+            };
+        })()`);
+        // the snow over the dialog: the strongest alpha well inside the panel and well outside it, over a few frames
+        const snow8c = await xmasSamples(
+            h,
+            `(() => {
+                const c = document.querySelector("canvas[data-christmas-snow]");
+                const r = ${LAUNCHER}?.closest('[role="dialog"]')?.getBoundingClientRect();
+                if (!c || !r || c.width === 0) return null;
+                const s = c.width / window.innerWidth;
+                const m = 3;
+                const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+                let inPainted = 0, inMax = 0, outMax = 0;
+                for (let i = 3; i < data.length; i += 4) {
+                    const a = data[i];
+                    if (a === 0) continue;
+                    const p = (i - 3) / 4;
+                    const x = (p % c.width) / s;
+                    const y = Math.floor(p / c.width) / s;
+                    if (x >= r.left + m && x <= r.right - m && y >= r.top + m && y <= r.bottom - m) {
+                        inPainted++;
+                        inMax = Math.max(inMax, a);
+                    } else if (x < r.left - m || x > r.right + m || y < r.top - m || y > r.bottom + m) {
+                        outMax = Math.max(outMax, a);
+                    }
+                }
+                return { inPainted, inMax, outMax };
+            })()`,
+            3,
+            300
+        );
+        await h.shot("cdp-shots/christmas-theme-8c-launcher.png");
+        await xmasClip(h, "christmas-theme-8c-launcher-zoom", '[role="dialog"]', 420, 260, 2).catch(() => false);
+        await h.ev(`${LAUNCHER}?.querySelector('[aria-label="Close"]')?.click()`);
+        await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        const snowOk8c = snow8c.some((s) => s != null && s.inPainted > 0 && s.outMax > 0 && s.inMax < s.outMax);
+        rec(
+            "8c. in New agent the snow sits above the dialog's backdrop and is dimmer over the panel than around it, the lights hang from the panel's top edge above the title's glyphs, and every Start mark wears a Santa hat",
+            opened8c &&
+                dialog8c != null &&
+                dialog8c.snowZ > dialog8c.backdropZ &&
+                snowOk8c &&
+                dialog8c.bulbs > 0 &&
+                dialog8c.bulbTop >= 0 &&
+                dialog8c.bulbBottom <= dialog8c.titleTop &&
+                dialog8c.rows.length > 0 &&
+                dialog8c.rows.every((r) => r.hat),
+            { opened8c, dialog8c, snow8c }
+        );
+
+        // 8d. the rest of the decor beyond the Office: the fold button's pet and What's new's pet wear the hat, the
+        // Christmas theme chip wears one, and the lights hang along the Christmas effects row
+        const hatted = (sel) =>
+            `(() => { const s = document.querySelector(${JSON.stringify(sel)}); return s == null ? null : s.innerHTML.includes("--color-xmas-crimson"); })()`;
+        const fold8d = await h.ev(hatted("[data-app-sprout] svg"));
+        await h.ev(`document.querySelector("[data-app-version]")?.click()`);
+        await polishWaitFor(h, `!!document.querySelector("[data-whats-new] [data-release]")`, 8000);
+        await xmasNap(400);
+        const whatsNew8d = await h.ev(`(() => {
+            const panel = document.querySelector("[data-whats-new]")?.closest('[role="dialog"]');
+            const svg = panel?.querySelector("svg");
+            return svg == null ? null : svg.innerHTML.includes("--color-xmas-crimson");
+        })()`);
+        await h.shot("cdp-shots/christmas-theme-8d-whats-new.png");
+        await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
+        await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 3000);
+        await h.goto("settings");
+        await spOpen(h, "appearance");
+        await xmasNap(400);
+        const settings8d = await h.ev(`(() => {
+            const chip = [...(document.querySelector("[data-theme-presets]")?.querySelectorAll("button") ?? [])].find(
+                (x) => (x.textContent || "").trim() === "Christmas"
+            );
+            const row = document.querySelector("button[data-christmas-effects]")?.closest("div.relative");
+            return {
+                chipHat: !!chip?.querySelector("svg .fill-xmas-bulb"),
+                rowLights: row?.querySelectorAll('[data-decor-lights="settings"] [data-bulb]').length ?? 0,
+            };
+        })()`);
+        await h.shot("cdp-shots/christmas-theme-8d-settings.png");
+        rec(
+            "8d. the app bar's fold button pet and What's new's pet wear the Santa hat, the Christmas theme chip wears one, and the lights hang along the Christmas effects row",
+            fold8d === true && whatsNew8d === true && settings8d.chipHat && settings8d.rowLights > 0,
+            { fold8d, whatsNew8d, settings8d }
+        );
+
+        // 8e. the pine in the bottom right corner of the asker's Agent details rail, Overview tab: whole, right-aligned
+        // in the scroll column and below its last section, never over one
+        await h.goto("agent");
+        const prevRail8e = await h.ev(`localStorage.getItem("agent.rail.visible")`);
+        await h.ev(`document.querySelector('[data-agent-row="${CHRISTMAS_ASKER}"]')?.click()`);
+        await polishWaitFor(h, `!!document.querySelector('aside[aria-label="Agent details"] button[aria-label="Overview"]')`, 5000);
+        await h.ev(`document.querySelector('aside[aria-label="Agent details"] button[aria-label="Overview"]')?.click()`);
+        const shown8e = await polishWaitFor(h, `!!document.querySelector('aside[aria-label="Agent details"] svg[data-rail-tree]')`, 5000);
+        await xmasNap(600);
+        const tree8e = await h.ev(`(() => {
+            const t = document.querySelector('aside[aria-label="Agent details"] svg[data-rail-tree]');
+            const scroll = t?.closest("[data-rail-scroll]");
+            const foot = t?.parentElement;
+            const prev = foot?.previousElementSibling;
+            if (!t || !scroll || !foot) return { tree: !!t, scroll: !!scroll };
+            const r = t.getBoundingClientRect();
+            const sb = scroll.getBoundingClientRect();
+            const pb = prev?.getBoundingClientRect();
+            return {
+                tree: true,
+                w: r.width,
+                h: r.height,
+                rightGap: Math.round(sb.right - r.right),
+                within: r.left >= sb.left && r.right <= sb.right,
+                belowLast: pb == null || r.top >= pb.bottom - 0.5,
+            };
+        })()`);
+        await h.shot("cdp-shots/christmas-theme-8e-rail-tree.png");
+        await xmasClip(h, "christmas-theme-8e-rail-tree-zoom", 'aside[aria-label="Agent details"] svg[data-rail-tree]', 120, 100, 3).catch(() => false);
+        await h.ev(
+            prevRail8e == null ? `localStorage.removeItem("agent.rail.visible")` : `localStorage.setItem("agent.rail.visible", ${JSON.stringify(prevRail8e)})`
+        );
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
+        rec(
+            "8e. the asker's Agent details rail, on Overview, shows the pine whole in its bottom right corner, inside the column and below its last section",
+            shown8e && tree8e.tree && tree8e.w > 0 && tree8e.within && tree8e.belowLast && tree8e.rightGap <= 24,
+            tree8e
+        );
+
         // 9. reduced motion: the snow stops and clears, the lights stay lit in asking without blinking, the static
         // decor (the canvas's place, the lights, the pet's hat, the Office's hats) stays
         await h.cdp("Emulation.setEmulatedMedia", PET_REDUCE);
