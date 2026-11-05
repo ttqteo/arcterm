@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council report (docs/superpowers/specs/2026-10-22-council-agent-team-design.md "UI", board M-report-cover.dc.html):
-// one scroll box under a cover. The cover holds the title and its `⋯` menu, what was asked, the answer in one bold
-// sentence with the coordinator's text under it, and a glance box beside them: the state, three figures, the panel with
-// each model and what each seat did (a click opens the Discussion on that seat's messages alone), and where the council
-// saved itself, docs/council/, a click or the `⋯` menu opening that document. Under the cover a tab bar sticks to the top
-// (Report / Discussion / Map, and jump links to the sections below), then the body: the directions as cards (one open at a
+// one scroll box. A tab bar heads it and sticks to the top (Report / Discussion / Map, jump links to the sections below,
+// and the one `⋯` menu: Save as doc or Open the document, Create initiative, Run again, then Resume and Pin), then the
+// cover: the title, what was asked, the answer in one bold sentence with the coordinator's text under it, and a glance
+// box beside them: the state, three figures, the panel with each model and what each seat did (a click opens the
+// Discussion on that seat's messages alone), and where the council saved itself, docs/council/, a click or the `⋯` menu
+// opening that document. Under the cover the body: the directions as cards (one open at a
 // time, its detail under the grid: the coordinator's reasoning and each expert's position), and at the bottom one line that
 // opens the Map tab, where every idea stands against every expert. A finished council opens on it; Summarize on the
 // Discussion opens it too, and the Discussion tab goes back. A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first
@@ -40,7 +41,6 @@ import {
     Contrast,
     Copy,
     CornerDownRight,
-    Ellipsis,
     FileText,
     LayoutGrid,
     Loader2,
@@ -49,15 +49,7 @@ import {
     TriangleAlert,
 } from "lucide-react";
 import { motion } from "motion/react";
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type KeyboardEvent as ReactKeyboardEvent,
-    type ReactNode,
-    type RefObject,
-} from "react";
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
@@ -552,88 +544,6 @@ function MapLink({ c }: { c: Council }) {
     );
 }
 
-// The report's less-used actions behind a `⋯`: Save as doc, Create initiative, Run again. Arrow keys move through them,
-// Escape closes and gives the focus back, a click outside closes.
-function ActionsMenu({ items }: { items: { id: string; label: string; disabled?: boolean; onPick: () => void }[] }) {
-    const [open, setOpen] = useState(false);
-    const wrap = useRef<HTMLDivElement>(null);
-    const trigger = useRef<HTMLButtonElement>(null);
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-        const onDown = (e: MouseEvent) => {
-            if (!wrap.current?.contains(e.target as Node)) {
-                setOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", onDown, true);
-        wrap.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
-        return () => document.removeEventListener("mousedown", onDown, true);
-    }, [open]);
-    const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (!open) {
-            return;
-        }
-        if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            setOpen(false);
-            trigger.current?.focus();
-        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            const els = Array.from(
-                wrap.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []
-            );
-            if (els.length > 0) {
-                const at = els.indexOf(document.activeElement as HTMLElement);
-                els[(at + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length].focus();
-            }
-        }
-    };
-    return (
-        <div ref={wrap} onKeyDown={onKeyDown} className="relative flex-none">
-            <button
-                ref={trigger}
-                type="button"
-                data-council-menu
-                aria-haspopup="menu"
-                aria-expanded={open}
-                aria-label="More actions"
-                onClick={() => setOpen((o) => !o)}
-                className={cn(BUTTON, "w-[28px] justify-center px-0")}
-            >
-                <Ellipsis size={14} aria-hidden />
-            </button>
-            {open ? (
-                <div
-                    role="menu"
-                    aria-label="More actions"
-                    className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[190px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md"
-                >
-                    {items.map((item) => (
-                        <button
-                            key={item.id}
-                            type="button"
-                            role="menuitem"
-                            data-council-action={item.id}
-                            disabled={item.disabled}
-                            onClick={() => {
-                                setOpen(false);
-                                trigger.current?.focus();
-                                item.onPick();
-                            }}
-                            className="flex h-[28px] w-full cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[13px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
 // the dot before the state word in the side column: the word is the status, the dot only draws it
 function StateMark({ state }: { state: string }) {
     if (state === "done") {
@@ -1098,8 +1008,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const scroller = useRef<HTMLDivElement>(null);
     const tabBar = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
-    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself: the tab bar
-    // at the top of the box, where it sticks (the cover is the only thing above it)
+    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself, just under
+    // the tab bar that heads the box and sticks there
     const toReport = () => {
         const box = scroller.current;
         const cover = box?.querySelector<HTMLElement>("[data-council-cover]");
@@ -1217,31 +1127,33 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const kept = useMemo(() => keptRows(c), [c]);
     const dropped = droppedLine(c);
     const doc = docAction(c);
-    const menuItems = [
+    // the report's own rows of the tab bar's `⋯` menu, ahead of Resume and Pin (CouncilActions)
+    const menuItems: ContextMenuItem[] = [
         doc.id === "open-doc"
             ? {
-                  id: doc.id,
                   label: doc.label,
-                  disabled: busy === "open-doc",
-                  onPick: () => void openDocument(c.docpath ?? ""),
+                  enabled: busy !== "open-doc",
+                  click: () => void openDocument(c.docpath ?? ""),
+                  attrs: { "data-council-action": doc.id },
               }
             : {
-                  id: doc.id,
                   label: doc.label,
-                  disabled: summary == null || busy === "doc",
-                  onPick: () => void saveDoc(),
+                  enabled: summary != null && busy !== "doc",
+                  click: () => void saveDoc(),
+                  attrs: { "data-council-action": doc.id },
               },
         {
-            id: "initiative",
             label: "Create initiative",
-            disabled: summary == null || directions.length === 0 || busy === "initiative" || initiative != null,
-            onPick: () => void createInitiative(),
+            enabled: summary != null && directions.length > 0 && busy !== "initiative" && initiative == null,
+            click: () => void createInitiative(),
+            attrs: { "data-council-action": "initiative" },
         },
         {
-            id: "run-again",
             label: "Run again",
-            onPick: () => showCouncilSetup(c.project, draftFromCouncil(c)),
+            click: () => showCouncilSetup(c.project, draftFromCouncil(c)),
+            attrs: { "data-council-action": "run-again" },
         },
+        { type: "separator" },
     ];
     const finalSection =
         pinned != null ? (
@@ -1298,18 +1210,24 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                 </Banner>
             ) : null}
             <div ref={scroller} data-council-scroll onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+                <div
+                    ref={tabBar}
+                    data-council-tabbar
+                    className="@container sticky top-0 z-10 border-b border-border bg-surface"
+                >
+                    <div className="mx-auto flex h-[46px] max-w-[1180px] items-stretch gap-6 px-10 @max-[900px]:gap-3 @max-[900px]:px-4">
+                        <CouncilTabs c={c} view="summary" onCurrent={toReport} className="self-center" />
+                        <span className="flex-1" />
+                        <JumpLinks c={c} scroller={scroller} bar={tabBar} />
+                        <CouncilActions c={c} items={menuItems} className="self-center" />
+                    </div>
+                </div>
                 <div data-council-cover className="bg-surface">
                     <div className="mx-auto flex max-w-[1180px] flex-col gap-[22px] px-10 pt-[26px]">
                         <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-[10px]">
-                                <span
-                                    data-council-eyebrow
-                                    className="min-w-0 flex-1 text-[13px] font-medium text-muted"
-                                >
-                                    Council · {modeWord(c)}
-                                </span>
-                                <ActionsMenu items={menuItems} />
-                            </div>
+                            <span data-council-eyebrow className="text-[13px] font-medium text-muted">
+                                Council · {modeWord(c)}
+                            </span>
                             {initiative != null || error != null ? (
                                 <div className="flex flex-col gap-1 text-[12.5px]">
                                     {initiative != null ? (
@@ -1396,18 +1314,6 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 onOpenDoc={(path) => void openDocument(path)}
                             />
                         </div>
-                    </div>
-                </div>
-                <div
-                    ref={tabBar}
-                    data-council-tabbar
-                    className="@container sticky top-0 z-10 border-b border-border bg-surface"
-                >
-                    <div className="mx-auto flex h-[46px] max-w-[1180px] items-stretch gap-6 px-10 @max-[900px]:gap-3 @max-[900px]:px-4">
-                        <CouncilTabs c={c} view="summary" onCurrent={toReport} className="self-center" />
-                        <span className="flex-1" />
-                        <JumpLinks c={c} scroller={scroller} bar={tabBar} />
-                        <CouncilActions c={c} className="self-center" />
                     </div>
                 </div>
                 {summary != null ? (

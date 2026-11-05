@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **A council report's tab bar on top, one `⋯`.** Open a finished council's Report: the bar with the
+  Report / Discussion / Map tabs, the jump links (Ideas worth trying · Wild ideas kept aside) and one `⋯` sits at the
+  top, above "Council · Brainstorm" and the title, and stays there as you scroll. The `⋯` lists Save as doc (or Open the
+  document), Create initiative and Run again, a divider, then Resume (an old council) and Pin; the cover has no `⋯` of
+  its own. A click on Report while it shows glides to the ideas, just under the bar. Typecheck only, and the
+  `council-summary` scenario, updated for it, has not run.
+
 - [ ] (arcterm) **Council decisions in CLAUDE.md, and Update CLAUDE.md.** After installing a build, open the thesis
   project's CLAUDE.md: within a few seconds of arcterm starting it ends with a Council decisions block (the 11-04
   council's Direction, two Agreed, one Open) between `arc:council-decisions` markers, and the rest of the file is as it

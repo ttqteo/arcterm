@@ -96,13 +96,29 @@ async function openKept(h) {
     return until(h, `!!document.querySelector(${q(`${SUMMARY} [data-council-kept-idea]`)})`);
 }
 
-// an action behind the `⋯` menu: open the menu, then click the item (false when it is missing or disabled)
+// the tab bar's `⋯`, the report's one menu: the app's context menu, whose report rows carry data-council-action. It
+// takes the focus as it opens, so Escape goes to it
+const MENU_BUTTON = `${SUMMARY} [data-council-tabbar] [data-council-actions]`;
+const menuRow = (action) => `[data-menu-item][data-council-action="${action}"]`;
+async function openMenu(h) {
+    await click(h, MENU_BUTTON);
+    return until(h, `!!document.querySelector("[data-menu-item]")`);
+}
+async function closeMenu(h) {
+    await h.ev(`document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    return until(h, `!document.querySelector("[data-menu-item]")`);
+}
+
+// an action behind the `⋯` menu: open the menu, then click the row (false, the menu closed, when it is missing or off)
 async function menuClick(h, action) {
-    await click(h, "[data-council-menu]");
-    if (!(await until(h, `!!document.querySelector(${q(`[role="menuitem"][data-council-action="${action}"]`)})`))) {
+    await openMenu(h);
+    const row = menuRow(action);
+    const on = `!!document.querySelector(${q(row)}) && document.querySelector(${q(row)}).getAttribute("aria-disabled") !== "true"`;
+    if (!(await until(h, on, 2_000))) {
+        await closeMenu(h);
         return false;
     }
-    return click(h, `[role="menuitem"][data-council-action="${action}"]`);
+    return click(h, row);
 }
 
 // the first sentence of the fixture's summary text: what the report's bold line reads for a council with no answer
@@ -130,14 +146,13 @@ async function callSeen(h, name, pred, ms = 5_000) {
     }
 }
 
-// the `⋯` menu's items as `action=label`, opened and closed again (a click on its button toggles it)
+// the `⋯` menu's report rows as `action=label`, opened and closed again
 async function menuItems(h) {
-    await click(h, "[data-council-menu]");
-    await until(h, `!!document.querySelector('[role="menu"]')`);
+    await openMenu(h);
     const items = await h.ev(
-        `[...document.querySelectorAll('[role="menuitem"][data-council-action]')].map((b) => b.dataset.councilAction + "=" + b.innerText.trim())`
+        `[...document.querySelectorAll('[data-menu-item][data-council-action]')].map((b) => b.dataset.councilAction + "=" + b.dataset.menuItem)`
     );
-    await click(h, "[data-council-menu]");
+    await closeMenu(h);
     return items;
 }
 
@@ -270,17 +285,19 @@ export const councilSummary = {
         };
         await openSummary(h, ctx);
 
-        await step("the cover: the title, the tabs and the ⋯ menu; the glance: the state, its figures and each expert with its model and what it did", async () => {
+        await step("the tab bar heads the page with the tabs and the one ⋯ menu; the cover: the title; the glance: the state, its figures and each expert with its model and what it did", async () => {
             const cover = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const t = (s) => root.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
                 const bar = root.querySelector("[data-council-tabbar]");
+                const coverEl = root.querySelector("[data-council-cover]");
                 return {
                     title: t("h1"),
                     eyebrow: t("[data-council-cover] [data-council-eyebrow]"),
-                    summaryTab: !!root.querySelector("[data-council-tab='summary'][aria-selected='true']"),
-                    discussionTab: !!root.querySelector("[data-council-tab='discussion']"),
-                    menu: !!root.querySelector("[data-council-cover] [data-council-menu]"),
+                    summaryTab: !!bar?.querySelector("[data-council-tab='summary'][aria-selected='true']"),
+                    discussionTab: !!bar?.querySelector("[data-council-tab='discussion']"),
+                    barOnTop: !!bar && !!coverEl && bar.getBoundingClientRect().bottom <= coverEl.getBoundingClientRect().top + 1,
+                    menu: root.querySelectorAll("[data-council-actions]").length === 1 && !!bar?.querySelector("[data-council-actions]"),
                     state: t("[data-council-glance] [data-council-state]"),
                     facts: root.querySelector("[data-council-glance] [data-council-facts]")?.getAttribute("aria-label") ?? null,
                     inBar: !!bar?.querySelector("[data-council-expert], [data-council-state], [data-council-facts]"),
@@ -301,6 +318,7 @@ export const councilSummary = {
                 cover.eyebrow === `Council · ${mode}` &&
                 cover.summaryTab &&
                 cover.discussionTab &&
+                cover.barOnTop &&
                 cover.menu &&
                 cover.state === "Done" &&
                 /^4 experts · \d+ min · [\d.]+M tokens$/.test(cover.facts ?? "") &&
@@ -371,7 +389,7 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ entries, sticky, expected, midway, placed, chevrons }) };
         });
 
-        await step("the Report tab, clicked while shown, glides the box down past the cover to the tab bar", async () => {
+        await step("the Report tab, clicked while shown, glides the box down past the cover to the body under the tab bar", async () => {
             const BAR = `${SUMMARY} [data-council-tabbar]`;
             const BOX = `${SUMMARY} [data-council-scroll]`;
             // direction 1 open gives the box room to scroll the bar to its top, as in the step above
