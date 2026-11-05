@@ -11743,17 +11743,27 @@ async function xmasClip(h, name, selector, w, hgt, scale) {
     h.shots.push({ name, png: `${name}.png`, path });
     return true;
 }
-// the lights: whether they ask, where they hang against the app bar, and each bulb's class, inline opacity and lag
+// the lights: whether they ask, where they hang against the app bar, each bulb's class, inline opacity and lag, and
+// how many bulbs overlap one of the boxes they hang between (christmasswag.ts) or poke out of the bar
 const XMAS_LIGHTS_READ = `(() => {
     const row = document.querySelector("[data-christmas-lights]");
     if (!row) return null;
     const r = row.getBoundingClientRect();
+    const bar = document.querySelector("[data-app-bar]")?.getBoundingClientRect();
+    const boxes = [...document.querySelectorAll("[data-xmas-post], [data-xmas-posts] > :not([data-window-controls])")]
+        .map((el) => el.getBoundingClientRect())
+        .filter((b) => b.width > 0);
+    const bulbs = [...row.querySelectorAll("[data-bulb]")];
+    const rects = bulbs.map((b) => b.getBoundingClientRect());
     return {
         asking: row.hasAttribute("data-asking"),
         top: r.top,
         bottom: r.bottom,
-        barBottom: document.querySelector("[data-app-bar]")?.getBoundingClientRect().bottom ?? null,
-        bulbs: [...row.querySelectorAll("[data-bulb]")].map((b) => ({
+        barBottom: bar?.bottom ?? null,
+        boxes: boxes.length,
+        onBox: rects.filter((b) => boxes.some((x) => b.left < x.right && b.right > x.left && b.top < x.bottom && b.bottom > x.top)).length,
+        outOfBar: bar ? rects.filter((b) => b.top < bar.top || b.bottom > bar.bottom).length : null,
+        bulbs: bulbs.map((b) => ({
             cls: String(b.className),
             op: b.style.opacity,
             lag: b.dataset.pulseLag ?? null,
@@ -12050,8 +12060,9 @@ const christmasTheme = {
             { inMax: inMax3, outMax: outMax3, ratio: outMax3 ? Math.round((inMax3 / outMax3) * 100) / 100 : null }
         );
 
-        // 4. with nobody asking, the lights hang under the bar lit and still: each bulb one of the four colours, no
-        // PULSES class, nothing written on its opacity across four reads
+        // 4. with nobody asking, the lights swag in the gaps between the bar's boxes lit and still: no bulb on a box
+        // or out of the bar, each bulb one of the four colours, no PULSES class, nothing written on its opacity across
+        // four reads
         await xmasRoster(h, false);
         await polishWaitFor(h, `!!document.querySelector("[data-christmas-lights]:not([data-asking])")`, 8000);
         await xmasNap(300);
@@ -12060,14 +12071,17 @@ const christmasTheme = {
         await h.shot("cdp-shots/christmas-theme-4-lights-lit.png");
         await xmasClip(h, "christmas-theme-4-lights-lit-zoom", "[data-app-bar]", 480, 60, 3);
         rec(
-            "4. with no agent asking, the lights run along the inside of the app bar's bottom edge (nothing hangs below the bar) lit and still: every bulb red, gold, green or cream, no PULSES class, no opacity written across 4 reads",
+            "4. with no agent asking, the lights swag in the gaps between the app bar's boxes (no bulb on a box, none out of the bar) lit and still: every bulb red, gold, green or cream, no PULSES class, no opacity written across 4 reads",
             l4 != null &&
                 l4.barBottom != null &&
                 l4.bottom <= l4.barBottom &&
                 l4.barBottom - l4.bottom <= 2 &&
-                l4.bulbs.length >= Math.floor(1600 / 30) &&
+                l4.boxes >= 3 &&
+                l4.bulbs.length >= 8 &&
+                l4.onBox === 0 &&
+                l4.outOfBar === 0 &&
                 lit4.every((s) => s && !s.asking && s.bulbs.every(xmasBulbLit)),
-            { top: l4?.top, bottom: l4?.bottom, barBottom: l4?.barBottom, bulbs: l4?.bulbs.length, first: l4?.bulbs.slice(0, 4) }
+            { top: l4?.top, bottom: l4?.bottom, barBottom: l4?.barBottom, boxes: l4?.boxes, bulbs: l4?.bulbs.length, onBox: l4?.onBox, outOfBar: l4?.outOfBar, first: l4?.bulbs.slice(0, 4) }
         );
 
         // 5. an agent asks: every bulb turns asking and blinks, every other one half a period behind

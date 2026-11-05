@@ -100,7 +100,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const newAgentKeys = useBindingKeys("new-agent");
     // the Spider theme swaps the t> mark for its spider, in the suit's red against the theme's blue accent (themedecorview.tsx)
     const spider = useSpiderDecor();
-    // the Christmas theme strings lights along the bar's bottom edge, behind its controls (christmaslights.tsx)
+    // the Christmas theme swags lights in the gaps between the bar's boxes, behind them (christmaslights.tsx)
     const christmas = useChristmasDecor();
     return (
         <div
@@ -110,17 +110,18 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             // "deep": a bare attribute drags only on the bar's own pixels, not its children; buttons still opt out
             data-tauri-drag-region="deep"
             className={clsx(
-                // relative: the Christmas lights run along the bar's bottom edge
+                // relative: the Christmas lights hang across the bar
                 "relative flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
                 mac ? "pr-4" : null,
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}
         >
             {/* first, and every group after it positioned (relative): the groups then paint over the lights in tree
-                order, so a bulb never sits on a button (christmaslights.tsx) */}
+                order, and the wire tucks behind the boxes' corners (christmaslights.tsx); data-xmas-* name the boxes
+                it hangs between */}
             {christmas ? <ChristmasLights model={model} /> : null}
             {/* shrink-0: the search in the middle gives way first; this group shrinking wrapped "All projects" */}
-            <div data-tauri-drag-region className="relative flex shrink-0 items-center gap-[9px]">
+            <div data-tauri-drag-region data-xmas-start className="relative flex shrink-0 items-center gap-[9px]">
                 <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}>
                     {spider ? <SpiderMark /> : <ArctermMark />}
                 </span>
@@ -143,6 +144,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             >
                 <button
                     type="button"
+                    data-xmas-post
                     onClick={() => globalStore.set(model.paletteOpenAtom, true)}
                     className="flex h-[26px] w-full max-w-[360px] cursor-text items-center gap-2 rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-muted hover:border-edge-strong hover:bg-surface-hover"
                 >
@@ -155,7 +157,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </button>
             </div>
 
-            <div data-tauri-drag-region className="relative flex h-full shrink-0 items-center gap-2.5">
+            <div data-tauri-drag-region data-xmas-posts className="relative flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
                 <JobQueueChip />
                 {/* the free RAM and the plan meters: one button, since both open the one Consumers panel */}
@@ -213,7 +215,11 @@ export function WindowControls() {
     const toSprout = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize"))) === "sprout";
     const character = petCharacter(useAtomValue(petCharacterAtom));
     return (
-        <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
+        <div
+            data-tauri-drag-region
+            data-window-controls
+            className="flex h-full shrink-0 items-center border-l border-border"
+        >
             <button
                 onClick={minimizeRequested}
                 aria-label={toSprout ? `Fold into ${PET_CHARACTER_NAME[character]}` : "Minimize"}

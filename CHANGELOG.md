@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- With the Christmas theme, the app bar's lights hang in swags between the search, the chips and New, hooked to their
+  top corners, instead of one long string along the bar's bottom edge, so no bulb sits on a box.
+
 ### Fixed
 
 - A folded `claude` reply whose list has one item past the four it shows draws all of them, rather than four and
