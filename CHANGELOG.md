@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A run no longer logs "Cleanup failed" every 30 seconds when a dev server a worker started and left behind holds a
   finished task's folder: the engine stops what holds the folder and deletes it.
+- Stop on an agent's background shell task on Windows also stops the command the task started (a `sleep`, a dev
+  server), which kept running before.
 
 ## 1.0.3 — 2026-11-05
 

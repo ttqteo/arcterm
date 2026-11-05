@@ -279,6 +279,30 @@ func hasExited(h windows.Handle) bool {
 	return err == nil && ev == windows.WAIT_OBJECT_0
 }
 
+// TerminateOutside terminates pid with no job check, for a process the caller tied to an owner some other way: a
+// command Git Bash ran for a task leaves the job (MSYS's spawn asks for CREATE_BREAKAWAY_FROM_JOB, which the job's
+// BREAKAWAY_OK grants), so only MSYS's process group still links it to the task's shell.
+func TerminateOutside(pid int) error {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return ErrGone
+		}
+		return fmt.Errorf("OpenProcess(%d): %w", pid, err)
+	}
+	defer windows.CloseHandle(h)
+	if hasExited(h) {
+		return ErrGone
+	}
+	if err := windows.TerminateProcess(h, terminateExitCode); err != nil {
+		if hasExited(h) {
+			return ErrGone
+		}
+		return fmt.Errorf("TerminateProcess(%d): %w", pid, err)
+	}
+	return nil
+}
+
 // TerminateMember opens pid, checks IsProcessInJob against a live job registered for o on that same
 // handle, then terminates through it. The open handle pins the process, so a reused pid cannot be hit.
 func TerminateMember(o Owner, pid int) error {

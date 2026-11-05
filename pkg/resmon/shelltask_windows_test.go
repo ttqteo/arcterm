@@ -141,9 +141,8 @@ func copyFile(from, to string) error {
 }
 
 func TestKillShellTaskKillsForkedCommand(t *testing.T) {
-	// the shell exits but the sleep it forked keeps running (Git for Windows' msys-2.0.dll of 2024-05, 2026-11-03);
-	// it fails on main as well. Tracked in docs/open-issues.md, Actionable
-	t.Skip("the forked sleep outlives KillShellTask on this Git Bash; see docs/open-issues.md")
+	// Git Bash starts the sleep out of the job (MSYS asks for CREATE_BREAKAWAY_FROM_JOB), so only its MSYS process
+	// group ties it to the task: the job check alone left it running (2026-11-03)
 	ct := startClaude(t, "a", "b")
 	resolve := agentResolver(wshrpc.ResMonOwner_AgentTab)
 
