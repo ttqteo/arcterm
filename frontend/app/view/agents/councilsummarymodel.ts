@@ -290,14 +290,14 @@ export interface KeptRow {
     meta: string; // a Brainstorm's `Had it: New user` (`· built on by …` when any reply built on it), a Review's `from UX`
 }
 
-/** Pure: what heads the one-line rows under the directions: a Brainstorm's wild ideas kept aside, or a Review's
- *  directions past the first three. */
+/** Pure: what heads the rows under the directions: a Brainstorm's wild ideas kept aside, or a Review's directions
+ *  also raised. The report folds them behind this heading and their count (keptRows.length). */
 export function keptHeading(c: Council): string {
     return isBrainstorm(c) ? "Wild ideas kept aside" : "Also raised";
 }
 
-/** Pure: the one-line rows under the directions, by rank: a Brainstorm's wild ideas kept aside, a Review's directions
- *  also raised; empty when there are none. */
+/** Pure: the rows under the directions, by rank: a Brainstorm's wild ideas kept aside, a Review's directions also
+ *  raised; empty when there are none. Every one is returned: the report's fold hides them, the model does not cap. */
 export function keptRows(c: Council): KeptRow[] {
     const brainstorm = isBrainstorm(c);
     return [...(c.summary?.kept ?? [])]

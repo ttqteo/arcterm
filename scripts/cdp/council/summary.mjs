@@ -19,6 +19,8 @@
 //
 // The last two steps are the Brainstorm report (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5): a done
 // fixture seeded as a Brainstorm, with a saved document written into the temp project first so Open the document opens it.
+// The kept ideas of both (Also raised, Wild ideas kept aside) start folded behind their heading and count: openKept opens
+// them, and one step seeds a Review of five directions and four ideas also raised to check the fold itself.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -73,14 +75,25 @@ async function mouseClick(h, sel) {
 
 // the Summary of the council (or of another seeded from the same fixture, by id), reopened (a step that left it for the
 // Discussion or Setup comes back this way) and drawn
-async function openSummary(h, ctx, id = ctx.councilId) {
+async function openSummary(h, ctx, id = ctx.councilId, count = 4) {
     await openCouncil(h, id, "summary");
     // the root of an earlier council's Summary may still be up for a moment, so the council it shows is named too
     const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(id)} &&
-        document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === 4`;
+        document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === ${count}`;
     if (!(await until(h, drawn))) {
-        throw new Error("the Summary did not draw its four directions");
+        throw new Error(`the Summary did not draw its ${count} directions`);
     }
+}
+
+// the kept section's fold (Also raised, or Wild ideas kept aside), which starts folded: opened, and its ideas drawn.
+// False when the report has no kept section or its ideas did not draw.
+async function openKept(h) {
+    const toggle = `${SUMMARY} [data-council-kept-toggle]`;
+    if (!(await exists(h, toggle))) return false;
+    if ((await h.ev(`document.querySelector(${q(toggle)}).getAttribute("aria-expanded")`)) !== "true") {
+        await click(h, toggle);
+    }
+    return until(h, `!!document.querySelector(${q(`${SUMMARY} [data-council-kept-idea]`)})`);
 }
 
 // an action behind the `⋯` menu: open the menu, then click the item (false when it is missing or disabled)
@@ -148,7 +161,7 @@ const BRAINSTORM_FACTS = `(() => {
         titles: all("[data-council-direction] [data-council-title]").map(t),
         steps: all("[data-council-direction] [data-council-first-step]").map(t),
         meta: all("[data-council-direction] [data-council-meta]").map(t),
-        keptHeading: t(root.querySelector("[data-council-kept] h2")),
+        keptHeading: t(root.querySelector("[data-council-kept] [data-council-kept-heading]")),
         kept: all("[data-council-kept-idea]").map((k) => ({
             title: t(k.querySelector("[data-council-title]")),
             meta: t(k.querySelector("[data-council-meta]")),
@@ -165,6 +178,46 @@ const BRAINSTORM_FACTS = `(() => {
         docSaved: !!root.querySelector("[data-council-doc-saved]"),
     };
 })()`;
+
+// what the kept section's fold and the directions above it show: the direction cards, the toggle (its heading, count and
+// state) and, while it is open, the ideas in their grid
+const KEPT_FOLD_FACTS = `(() => {
+    const root = document.querySelector(${q(SUMMARY)});
+    const t = (el) => el?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+    const shown = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    };
+    const toggle = root.querySelector("[data-council-kept] [data-council-kept-toggle]");
+    const cards = [...root.querySelectorAll("[data-council-direction]")];
+    const ideas = [...root.querySelectorAll("[data-council-kept-idea]")];
+    return {
+        directions: cards.map((d) => t(d.querySelector("[data-council-title]"))),
+        directionsShown: cards.every(shown),
+        jumps: [...root.querySelectorAll("[data-council-jump]")].map((j) => j.dataset.councilJump).join(","),
+        heading: t(toggle?.querySelector("[data-council-kept-heading]")),
+        count: t(toggle?.querySelector("[data-council-kept-count]")),
+        toggleTag: toggle?.tagName ?? null,
+        expanded: toggle?.getAttribute("aria-expanded") ?? null,
+        controls: toggle?.getAttribute("aria-controls") ?? null,
+        ideas: ideas.map((k) => t(k.querySelector("[data-council-title]"))),
+        ideasShown: ideas.every(shown),
+        grid: ideas[0]?.parentElement ? getComputedStyle(ideas[0].parentElement).display : null,
+    };
+})()`;
+
+// scrolls the report's box so the element the selector `sel` matches first sits just under the sticky bar (as far as the
+// box scrolls), then says whether the first match of `inView` (default: the same element) is wholly between the bar and
+// the box's bottom
+const frameOn = (h, sel, inView = sel) =>
+    h.ev(`(() => {
+        const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+        const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
+        const at = document.querySelector(${q(sel)});
+        box.scrollTop += at.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+        const view = document.querySelector(${q(inView)}).getBoundingClientRect();
+        return view.top >= bar.getBoundingClientRect().bottom && view.bottom <= box.getBoundingClientRect().bottom;
+    })()`);
 
 // the "Was this useful?" row under the report, and what it shows: its question or thanks line, its buttons as
 // `rate=label`, and its Change link (null where it has none); null for the facts when the row is not drawn
@@ -1123,6 +1176,8 @@ export const councilSummary = {
                 },
             });
             await openBrainstormSummary(h, id);
+            // the kept ideas start folded: open them so the facts read them
+            await openKept(h);
             const facts = await h.ev(BRAINSTORM_FACTS);
             // frame the shot on the cards: the directions heading goes just under the sticky bar, so the First step
             // boxes are in view
@@ -1213,6 +1268,81 @@ export const councilSummary = {
                 review.docpath == null &&
                 reviewItems.includes("save-doc=Save as doc");
             return { ok, detail: JSON.stringify({ facts, items, review, reviewItems }) };
+        });
+
+        // The done fixture as the fullest Review (docs/superpowers/specs/2026-11-05-council-faster-sharper-design.md, "Report
+        // view"): a fifth direction, from the Skeptic's P6, and four more ideas also raised. The top shows in full; the four
+        // sit behind their heading and count until a click opens them.
+        const FIFTH = "Drop the cap of 3 apps";
+        const RAISED = [
+            { title: "Name the app in the rail icon's tooltip", why: "Cheap, but nobody asked for it." },
+            { title: "Let a pinned app be dragged to reorder", why: "Pins are few enough to reorder in settings." },
+            { title: "Show a woken app's memory beside its icon", why: "Waits on the measurement of a woken app." },
+            { title: "Group the pins by project", why: "Three pins do not need groups." },
+        ];
+        await step("a Review report shows five directions in full and folds the four also raised behind their heading and count: a click opens them, a second click folds them", async () => {
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-review-five",
+                edit: (c) => {
+                    const ds = c.summary.directions;
+                    c.summary.directions = [
+                        ...ds,
+                        { ...ds[3], rank: 5, title: FIFTH, from: ["P6"], stances: { ram: "accept", newuser: "accept" }, agreed: true },
+                    ];
+                    c.summary.kept = RAISED.map((r, i) => ({
+                        rank: i + 1,
+                        title: r.title,
+                        reasoning: r.why,
+                        from: [`P${i + 1}`],
+                        stances: {},
+                        agreed: true,
+                    }));
+                },
+            });
+            await openSummary(h, ctx, id, 5);
+            const toggle = `${SUMMARY} [data-council-kept-toggle]`;
+            const ideas = `${SUMMARY} [data-council-kept-idea]`;
+            // the directions' top at the sticky bar, the folded heading in the same frame
+            const foldedInFrame = await frameOn(h, DIRECTION(1), toggle);
+            await sleep(300);
+            await h.shot("cdp-shots/council-summary-also-raised-folded.png");
+            const folded = await h.ev(KEPT_FOLD_FACTS);
+            await click(h, toggle);
+            const drew = await until(h, `document.querySelectorAll(${q(ideas)}).length === ${RAISED.length}`);
+            const open = await h.ev(KEPT_FOLD_FACTS);
+            const openInFrame = await frameOn(h, toggle, `${ideas}[data-council-kept-idea="${RAISED.length}"]`);
+            await sleep(300);
+            await h.shot("cdp-shots/council-summary-also-raised-open.png");
+            await click(h, toggle);
+            const gone = await until(h, `!document.querySelector(${q(ideas)})`);
+            const refolded = await h.ev(KEPT_FOLD_FACTS);
+            // back on the Agent surface for the steps that follow
+            await h.goto("agent");
+            await openSummary(h, ctx);
+            const ok =
+                folded.directions.join("|") === [...TITLES, FIFTH].join("|") &&
+                folded.directionsShown &&
+                foldedInFrame &&
+                folded.jumps === "directions,kept" &&
+                folded.heading === "Also raised" &&
+                folded.count === String(RAISED.length) &&
+                folded.toggleTag === "BUTTON" &&
+                folded.expanded === "false" &&
+                folded.controls == null &&
+                folded.ideas.length === 0 &&
+                drew &&
+                open.expanded === "true" &&
+                open.controls === "council-kept-ideas" &&
+                open.directions.length === 5 &&
+                open.ideas.join("|") === RAISED.map((r) => r.title).join("|") &&
+                open.ideasShown &&
+                open.grid === "grid" &&
+                openInFrame &&
+                gone &&
+                refolded.expanded === "false" &&
+                refolded.ideas.length === 0 &&
+                refolded.directions.length === 5;
+            return { ok, detail: JSON.stringify({ folded, foldedInFrame, drew, open, openInFrame, gone, refolded }) };
         });
 
         await step("on a narrow pane the glance wraps under the text and the cards keep their width", async () => {
