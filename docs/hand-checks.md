@@ -20,6 +20,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   or Esc clears it. Send → your post shows the seat's message quoted at its top, and only that seat answers it. The same
   in an idea's thread (its own box). Then switch the rail Ideas → Memory → Ideas: each keeps where it was scrolled.
   Unit tests and the typecheck only (1678c53c5, 16781ddb0).
+- [ ] (arcterm) **A council chat with a diagram keeps still.** Open a council whose ideas hold a ```mermaid diagram
+  (thesis: "Chốt bài toán…", ideas 17 and 27), scroll to near the end, open another agent and come back, and switch
+  the header to Summary and back: the chat lands where you left it, and scrolling up glides with no jump of a
+  screen. Quit and reopen arcterm and do it once more (the first drawing holds its room from the size kept last
+  session). WebKit check of the drawing cache only; never tried in the app.
 - [ ] (arcterm) **The council sheet's actions do what they say.** In the dev or installed app, open a finished council
   from Jarvis → Activity → its Earlier line, so the report opens in the Brief's sheet → Add to initiative… lists the
   initiatives and adds the chosen direction as a chunk (the initiative's plan shows it); Ask in chat opens the council's

@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A ```mermaid block drawn as its diagram. mermaid (~3 MB) is imported the first time a diagram shows, never before.
+// The diagram keeps its height from the first paint (mermaidcache.ts): a drawing made this session goes in at once, and
+// the first one of a session holds the room it took last time while mermaid works, so the lines around it never move
+// when it lands (a council's chat lost the reader's place to that).
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
+import { keepDrawing, keepSize, keptDrawing, keptSize, normalizeChart, reservedHeight } from "./mermaidcache";
 
 let mermaidInitialized = false;
 let mermaidInstance: any = null;
@@ -19,54 +23,64 @@ const initializeMermaid = async () => {
 
 export const Mermaid = ({ chart }: { chart: string }) => {
     const ref = useRef<HTMLDivElement>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const source = normalizeChart(chart);
 
-    useEffect(() => {
-        const renderMermaid = async () => {
+    // before the first paint: the kept drawing, or the room the diagram took last time with its loading line in it
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (el == null) {
+            return;
+        }
+        el.className = "mermaid";
+        const kept = keptDrawing(source);
+        if (kept != null) {
+            el.style.minHeight = "";
+            el.innerHTML = kept;
+            el.setAttribute("data-processed", "true");
+            return;
+        }
+        const size = keptSize(source);
+        const room = size == null ? null : reservedHeight(size, el.clientWidth);
+        el.style.minHeight = room == null ? "" : `${room}px`;
+        el.textContent = "Loading diagram...";
+        let live = true;
+        void (async () => {
             try {
-                setIsLoading(true);
-                setError(null);
-
                 await initializeMermaid();
-                if (!ref.current || !mermaidInstance) {
+                if (!live || mermaidInstance == null) {
                     return;
                 }
-
-                // Normalize the chart text
-                const normalizedChart = chart
-                    .replace(/<br\s*\/?>/gi, "\n") // Convert <br/> and <br> to newlines
-                    .replace(/\r\n?/g, "\n") // Normalize \r \r\n to \n
-                    .replace(/\n+$/, ""); // Remove final newline
-
-                ref.current.removeAttribute("data-processed");
-                ref.current.textContent = normalizedChart;
-                // console.log("mermaid", normalizedChart);
-                await mermaidInstance.run({ nodes: [ref.current] });
-                setIsLoading(false);
+                el.removeAttribute("data-processed");
+                el.textContent = source;
+                await mermaidInstance.run({ nodes: [el] });
+                if (!live) {
+                    return;
+                }
+                const svg = el.querySelector("svg");
+                if (svg != null) {
+                    keepDrawing(source, el.innerHTML, svg.id);
+                    const box = svg.getBoundingClientRect();
+                    // mermaid caps the svg at its natural width and scales it down in a narrower box
+                    const natural = parseFloat(svg.style.maxWidth) || box.width;
+                    if (box.width > 0 && box.height > 0) {
+                        keepSize(source, { w: natural, r: box.height / box.width });
+                    }
+                }
+                el.style.minHeight = "";
             } catch (err) {
+                if (!live) {
+                    return;
+                }
                 console.error("Error rendering mermaid diagram:", err);
-                setError(`Failed to render diagram: ${err.message || err}`);
-                setIsLoading(false);
+                el.style.minHeight = "";
+                el.textContent = `Error: Failed to render diagram: ${err?.message || err}`;
+                el.className = "mermaid error";
             }
+        })();
+        return () => {
+            live = false;
         };
-
-        renderMermaid();
-    }, [chart]);
-
-    useEffect(() => {
-        if (!ref.current) return;
-
-        if (error) {
-            ref.current.textContent = `Error: ${error}`;
-            ref.current.className = "mermaid error";
-        } else if (isLoading) {
-            ref.current.textContent = "Loading diagram...";
-            ref.current.className = "mermaid";
-        } else {
-            ref.current.className = "mermaid";
-        }
-    }, [isLoading, error]);
+    }, [source]);
 
     return <div className="mermaid" ref={ref} />;
 };
