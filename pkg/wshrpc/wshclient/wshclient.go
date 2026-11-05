@@ -1769,4 +1769,10 @@ func WriteTempFileCommand(w *wshutil.WshRpc, data wshrpc.CommandWriteTempFileDat
 	return resp, err
 }
 
+// command "xmastree", wshserver.XmasTreeCommand
+func XmasTreeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.XmasTreeData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.XmasTreeData](w, "xmastree", nil, opts)
+	return resp, err
+}
+
 

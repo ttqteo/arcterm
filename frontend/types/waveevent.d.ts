@@ -35,6 +35,7 @@ declare global {
         | "runqueue:changed"
         | "memhygiene:update"
         | "services:changed"
+        | "xmastree:changed"
     ;
 
     type WaveEvent = {
@@ -71,7 +72,8 @@ declare global {
         { event: "run:event"; data?: RunEventData; } | 
         { event: "runqueue:changed"; data?: RunQueueChangedData; } | 
         { event: "memhygiene:update"; data?: null; } | 
-        { event: "services:changed"; data?: ServicesData; }
+        { event: "services:changed"; data?: ServicesData; } | 
+        { event: "xmastree:changed"; data?: XmasTreeData; }
     );
 
 }
