@@ -366,6 +366,44 @@ func TestRunVerifiesRecordsTheResult(t *testing.T) {
 	}
 }
 
+// RunVerifiesBy handles one seat's requests and leaves the others open, for a later call to run: that is how each seat's
+// claims are checked as its own round 1 lands, and it makes no tree for a seat that asked for nothing.
+func TestRunVerifiesByRunsOnlyThatSeatsCommands(t *testing.T) {
+	g := newVerifyRig(t)
+	trees := &fakeTrees{dir: "TREE"}
+	c := vCouncil("snap",
+		vProposal("P1", "ux", goReq("TestA", RunPass)),
+		vProposal("P2", "skeptic", goReq("TestB", RunPass), goReq("TestC", RunPass), goReq("TestD", RunPass)),
+	)
+
+	RunVerifiesBy(context.Background(), trees, c, "skeptic", nil)
+	if got, want := g.commands(), []string{"go test ./pkg/x -run TestB", "go test ./pkg/x -run TestC"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands run for skeptic = %q, want its two kept ones %q", got, want)
+	}
+	if r := c.Proposals[0].Runs[0]; r.State != "" {
+		t.Errorf("ux's request = %+v after skeptic's call, want it still open", r)
+	}
+	if r := c.Proposals[1].Runs[2]; r.State != RunNotRun || r.Reason != verifyReasonCap {
+		t.Errorf("skeptic's third = %+v, want not-run over the cap", r)
+	}
+
+	RunVerifiesBy(context.Background(), trees, c, "ux", nil)
+	if got, want := g.commands(), []string{"go test ./pkg/x -run TestB", "go test ./pkg/x -run TestC", "go test ./pkg/x -run TestA"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("commands run after ux's call = %q, want ux's added and skeptic's not run again", got)
+	}
+	if r := c.Proposals[0].Runs[0]; r.State != RunPass {
+		t.Errorf("ux's request = %+v, want its result", r)
+	}
+	if len(trees.makes) != 2 {
+		t.Errorf("%d trees made, want one for each seat's call", len(trees.makes))
+	}
+
+	RunVerifiesBy(context.Background(), trees, c, "ghost", nil) // nothing asked: no tree
+	if len(trees.makes) != 2 {
+		t.Errorf("%d trees made, want none for a seat that asked for nothing", len(trees.makes))
+	}
+}
+
 func TestRunVerifiesKeepsTwoPerExpert(t *testing.T) {
 	g := newVerifyRig(t)
 	trees := &fakeTrees{}
