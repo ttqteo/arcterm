@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { canFold, FOLD_LINES, firstSentence, MAX_OPENED, MAX_REASON_CHARS, summary, toggleOpened } from "./fold-core";
+import {
+    canFold,
+    firstSentence,
+    FOLD_LINES,
+    folded,
+    MAX_OPENED,
+    MAX_REASON_CHARS,
+    summary,
+    toggleOpened,
+} from "./fold-core";
 
 describe("canFold", () => {
     it("folds past the line limit only", () => {
@@ -62,6 +71,69 @@ describe("summary", () => {
 
     it("is the list alone when the reply opens with it", () => {
         expect(summary("- One.\n- Two.")).toBe("- One.\n- Two.");
+    });
+});
+
+describe("summary of a marked reply", () => {
+    const text = [
+        "It is fixed. The button moved.",
+        "",
+        "- **One.** First reason. The marked one.",
+        "- **Two.** Second reason.",
+        "- Three.",
+        "",
+        "A middle paragraph. You must rebuild to see it.",
+        "",
+        "A closing paragraph.",
+    ].join("\n");
+
+    it("is the verdict and the marked sentences, in place of the top reasons", () => {
+        expect(summary(text, ["The marked one.", "You must rebuild to see it."])).toBe(
+            ["It is fixed. The button moved.", "", "- **One.** The marked one.", "", "You must rebuild to see it."].join(
+                "\n"
+            )
+        );
+    });
+
+    it("draws a mark inside the verdict once, with the verdict", () => {
+        expect(summary(text, ["It is fixed."])).toBe("It is fixed. The button moved.");
+    });
+
+    it("keeps an item's marks on one line, its lead given once", () => {
+        expect(summary(text, ["**One.** First reason.", "The marked one."])).toBe(
+            ["It is fixed. The button moved.", "", "- **One.** First reason. The marked one."].join("\n")
+        );
+    });
+
+    it("keeps marks from several items as one list", () => {
+        expect(summary(text, ["The marked one.", "Second reason.", "Three."])).toBe(
+            ["It is fixed. The button moved.", "", "- **One.** The marked one.", "- **Two.** Second reason.", "- Three."].join(
+                "\n"
+            )
+        );
+    });
+
+    it("keeps the reply's order when a marked list comes before the verdict", () => {
+        expect(summary("- **A.** Item mark.\n- B.\n\nVerdict here. More.\n\nLast.", ["Item mark.", "More."])).toBe(
+            "- **A.** Item mark.\n\nVerdict here. More."
+        );
+    });
+
+    it("leaves out a mark it cannot find, and the code a fence holds", () => {
+        const fenced = ["Verdict.", "", "```", "a mark in code", "```", "", "Later. Marked."].join("\n");
+        expect(summary(fenced, ["a mark in code", "gone", "Marked."])).toBe("Verdict.\n\nMarked.");
+    });
+
+    // layout draws marks in order and waits on one it cannot find, so the fold hands back only those it kept
+    it("hands back the marks it kept, in the order they show", () => {
+        expect(folded("- **A.** Item mark.\n- B.\n\nVerdict here. More.", ["gone", "Item mark.", "More."])).toEqual({
+            text: "- **A.** Item mark.\n\nVerdict here. More.",
+            marks: ["Item mark.", "More."],
+        });
+    });
+
+    it("hands back no marks for a reply with none", () => {
+        expect(folded("First.\n\nSecond.", [])).toEqual({ text: "First.", marks: [] });
     });
 });
 

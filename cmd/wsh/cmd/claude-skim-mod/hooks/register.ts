@@ -1,6 +1,7 @@
 // skim: highlights the sentences of a reply worth reading (highlight-core.ts). claude marks them, the mod strips the
 // marks before the reply is stored and draws them in the terminal alone, dimming the rest of an explanation. a long
-// reply folds to its verdict and top reasons behind a show more button (fold-core.ts).
+// reply folds to its verdict and top reasons, or to the sentences claude marked, behind a show more button
+// (fold-core.ts).
 // arcterm ships it beside its own mods (`wsh install-agent-hooks`); it is also published on its own as claude-skim.
 import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, RenderElement } from "claude-code";
@@ -18,7 +19,7 @@ import {
     shownMarks,
     submitContext,
 } from "./highlight-core";
-import { canFold, lineCount, summary, toggleOpened } from "./fold-core";
+import { canFold, folded, lineCount, toggleOpened } from "./fold-core";
 import { drawAskLine, drawFolded, drawHighlighted, drawOpened, paletteFor } from "./highlight-row";
 import type { Palette } from "./highlight-row";
 
@@ -206,7 +207,9 @@ export const register: Register = (on) => {
         const toggle = () => void update($, opened, (list) => toggleOpened(list, hash));
         if (isFoldable && !isOpen) {
             const els = $.ui.resolve(e);
-            const short = drawHighlighted(els, layout(summary(clean), marks, false), false, palette, e.props.isFirstOfReply);
+            const fold = folded(clean, marks);
+            const segments = layout(fold.text, fold.marks, false);
+            const short = drawHighlighted(els, segments, false, palette, e.props.isFirstOfReply);
             return drawFolded(els, short, hash, lineCount(clean), toggle);
         }
         let reply: RenderElement;

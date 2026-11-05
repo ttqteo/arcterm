@@ -1,5 +1,5 @@
-// a long reply folds to its verdict and the lead of each top reason, behind a button that opens it in full.
-// register.ts draws it; this is the cut.
+// a long reply folds to its verdict and the lead of each top reason, behind a button that opens it in full; a marked
+// reply folds to its verdict and the sentences claude marked. register.ts draws it; this is the cut.
 
 // a reply longer than this many lines folds
 export const FOLD_LINES = 10;
@@ -34,9 +34,17 @@ export function firstSentence(item: string): string {
     return out.length > MAX_REASON_CHARS ? `${out.slice(0, MAX_REASON_CHARS - 1).trimEnd()}…` : out;
 }
 
-// the first prose paragraph, then the lead of each item of the first list. code blocks, headings and tables are
-// left out: the summary is to be read at a glance, and a cut fence would swallow the rest of it
-export function summary(text: string): string {
+const LEAD = /^(\*\*[^*]+\*\*:?)\s/;
+
+// the folded text, and the marks it holds in the order they show: layout draws marks in order and waits on one it
+// cannot find, so a mark the fold left out would hold back every mark after it
+export type Folded = { text: string; marks: string[] };
+
+// the first prose paragraph, then the lead of each item of the first list; or, when claude marked the reply, the
+// first prose paragraph and the marked sentences in the reply's order, since the marks are what must be read and a
+// cut by position drops most of them. code blocks, headings and tables are left out: the summary is to be read at a
+// glance, and a cut fence would swallow the rest of it
+export function folded(text: string, marks: readonly string[]): Folded {
     const blocks = text
         .replace(FENCED, "")
         .split(/\n\s*\n/)
@@ -46,8 +54,59 @@ export function summary(text: string): string {
     const isList = (block: string) => lines(block).some((line) => ITEM.test(line));
     const isProse = (block: string) =>
         !isList(block) && !lines(block).every((line) => HEADING.test(line)) && !TABLE_ROW.test(block);
-    const verdict = blocks.find(isProse) ?? "";
-    const list = blocks.find(isList);
+    const at = blocks.findIndex(isProse);
+    const wanted = marks.filter((mark) => mark.trim() !== "");
+    if (wanted.length > 0) {
+        return foldMarked(blocks, at, wanted);
+    }
+    return { text: byPosition(blocks, blocks[at] ?? "", blocks.find(isList)), marks: [] };
+}
+
+export function summary(text: string, marks: readonly string[] = []): string {
+    return folded(text, marks).text;
+}
+
+// the verdict whole, then each line holding a mark as its marks alone: an item's behind its bullet and bold lead,
+// the items of a run kept as one list
+function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonly string[]): Folded {
+    const left = [...marks];
+    const kept: string[] = [];
+    const take = (line: string): string[] => {
+        const found = left.filter((mark) => line.includes(mark));
+        found.forEach((mark) => left.splice(left.indexOf(mark), 1));
+        kept.push(...found);
+        return found;
+    };
+    const parts: { text: string; isItem: boolean }[] = [];
+    blocks.forEach((block, i) => {
+        if (i === verdictAt) {
+            block.split("\n").forEach(take);
+            parts.push({ text: block, isItem: false });
+            return;
+        }
+        for (const line of block.split("\n")) {
+            const found = take(line);
+            if (found.length === 0) {
+                continue;
+            }
+            const item = line.match(ITEM)?.[1];
+            if (item === undefined) {
+                parts.push({ text: found.join(" "), isItem: false });
+                continue;
+            }
+            const lead = item.match(LEAD)?.[1];
+            const head = lead && !(found[0] ?? "").includes(lead) ? `${lead} ` : "";
+            parts.push({ text: `- ${head}${found.join(" ")}`, isItem: true });
+        }
+    });
+    const text = parts
+        .map((part, i) => (i === 0 ? "" : part.isItem && parts[i - 1]?.isItem ? "\n" : "\n\n") + part.text)
+        .join("");
+    return { text, marks: kept };
+}
+
+function byPosition(blocks: readonly string[], verdict: string, list: string | undefined): string {
+    const lines = (block: string) => block.split("\n");
     if (!list) {
         return verdict;
     }
