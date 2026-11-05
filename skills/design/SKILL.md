@@ -22,13 +22,19 @@ terminal: a question about a UI topic is not automatically a visual question.
 
 ## Starting a canvas
 
-1. `<topic>` is a short kebab-case name from the brief; `<root>` is
-   `.superpowers/design/<topic>/project/` in the working directory.
-2. `git check-ignore -q .superpowers/design`. Not ignored: tell the user and ask to add
+1. Before naming `<topic>`, list the canvases already there: the `title` in each
+   `.superpowers/design/*/project/canvas.json`. `<topic>` is a short kebab-case name from the brief;
+   `<root>` is `.superpowers/design/<topic>/project/` in the working directory.
+2. When the new canvas redraws a screen one of those designed, it is that canvas's next version: write
+   `"replaces": "<that topic>"` in the new `canvas.json` at once, naming the newest canvas of that screen (one no
+   other canvas's `replaces` names yet: versions form a line, never a fork). Say one line in your reply ("this canvas
+   replaces `<topic>`"; the person undoes a wrong link with × in the gallery viewer's header). A new question about
+   the same feature adds boards to its canvas (**Options**) instead.
+3. `git check-ignore -q .superpowers/design`. Not ignored: tell the user and ask to add
    `.superpowers/` to `.gitignore` before writing anything.
-3. Copy `support.js` from this skill's directory to `<root>/support.js`, so each artboard's
+4. Copy `support.js` from this skill's directory to `<root>/support.js`, so each artboard's
    `./support.js` line resolves.
-4. Read the design system (below) before choosing any look.
+5. Read the design system (below) before choosing any look.
 
 ## The loop
 
@@ -106,12 +112,17 @@ accents sharing chroma and lightness. State the look you chose in a line.
 ## The files
 
 - **`<root>/canvas.json`**, the index, which keeps the canvas importable into claude.ai Design:
-  `{"v":3,"createdOnFiles":{"v":1,"at":"<now, RFC 3339>"},"title":"<canvas name>","launch":{"view":"canvas"},"pages":[],"boards":{"Main.dc.html":{"x":0,"y":0,"w":1440,"h":900,"title":"<what it shows>"}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`.
+  `{"v":3,"createdOnFiles":{"v":1,"at":"<now, RFC 3339>"},"title":"<canvas name>","replaces":"<older topic, if it redraws one>","notreplaces":[],"launch":{"view":"canvas"},"pages":[],"boards":{"Main.dc.html":{"x":0,"y":0,"w":1440,"h":900,"title":"<what it shows>"}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`.
   One `boards` entry and one `order` slot per artboard, `Main.dc.html` first. `x`,`y`,`w`,`h` are
   the frame in CSS px: 80 px between frames in a row, 120 between rows. Add `"is_interactive":
   true` to an artboard with working controls, and `"expand": "fill"` to a fluid one. Arc reads
-  only the frame, `title` and `order`; the other keys take effect when the canvas is imported
-  into claude.ai Design. When revising, keep every key you are not changing.
+  the frame, `title`, `order`, `createdOnFiles.at`, `replaces` and `notreplaces`; the other keys
+  take effect when the canvas is imported into claude.ai Design. `at` is when the canvas was
+  made (Arc orders versions by it): set it once, never on a rewrite. Leave `replaces` out unless
+  the canvas redraws an older one (**Starting a canvas**); `notreplaces` lists the topics the
+  person said are not older versions of this canvas: Arc writes it, you keep it. When revising,
+  keep every key you are not changing, those two included: the gallery's Link and × write them
+  too, so read the file before you rewrite it.
 - **`<root>/<Name>.dc.html`**, one self-contained file per artboard. Names start with a letter,
   digit or `_`, then only those and `.` `-`; no spaces. Sizes: desktop 1280–1440 wide, phone
   390×844.
