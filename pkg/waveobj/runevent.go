@@ -162,6 +162,13 @@ const (
 	//   plan-reviewed          the plan review reached a verdict ("state", "round", "findings")
 	RunEventKindStageSessionStarted = "stage-session-started"
 	RunEventKindPlanReviewed        = "plan-reviewed"
+
+	// the pause of a whole run tree (spec 2026-11-05-run-pause-design), recorded on the top-level run after its
+	// agents are suspended / reopened:
+	//   run-paused   "by": auto | manual | boot, "heldbytes": the RAM the tree held when it paused
+	//   run-resumed  "by"
+	RunEventKindRunPaused  = "run-paused"
+	RunEventKindRunResumed = "run-resumed"
 )
 
 // Detail payload keys per kind (values are built as map[string]any by writers):

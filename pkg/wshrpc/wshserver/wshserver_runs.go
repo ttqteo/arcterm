@@ -21,6 +21,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jarvisvolunteer"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
+	"github.com/wavetermdev/waveterm/pkg/runpause"
 	"github.com/wavetermdev/waveterm/pkg/runroute"
 	"github.com/wavetermdev/waveterm/pkg/util/keyedmutex"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -1165,6 +1166,41 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 		if dag, err := wstore.GetDag(ctx, run.DagORef); err == nil {
 			_, _ = orchestrate.MaybeCloseOrchestratorLead(ctx, run, dag)
 		}
+	}
+	return nil
+}
+
+// PauseRunCommand pauses a top-level run and everything under it, the way the person's Pause does (the run's menu,
+// `wsh runs pause`). The refusal reasons (a run that is not top-level, is done, cancelled or already paused) come
+// back as the error.
+func (ws *WshServer) PauseRunCommand(ctx context.Context, data wshrpc.CommandPauseRunData) error {
+	if data.ChannelId == "" || data.RunId == "" {
+		return fmt.Errorf("channelid and runid are required")
+	}
+	// a pause waits out a merge under way, and one cut off after it marked the run but before it stopped the agents
+	// would leave them running under a paused run: it must finish after its caller stops waiting
+	ctx = context.WithoutCancel(ctx)
+	err := runpause.Pause(ctx, data.ChannelId, data.RunId, runpause.By_Manual)
+	// a pause that failed part way may still have moved the run
+	publishRunUpdate(data.ChannelId, data.RunId)
+	if err != nil {
+		return fmt.Errorf("pausing run: %w", err)
+	}
+	return nil
+}
+
+// ResumeRunCommand resumes a paused top-level run: every agent reopens in its own session. It is the person's
+// resume, sooner than the regulator's would be.
+func (ws *WshServer) ResumeRunCommand(ctx context.Context, data wshrpc.CommandPauseRunData) error {
+	if data.ChannelId == "" || data.RunId == "" {
+		return fmt.Errorf("channelid and runid are required")
+	}
+	// like a pause, a resume cut off halfway leaves some agents reopened under a run still marked paused
+	ctx = context.WithoutCancel(ctx)
+	err := runpause.Resume(ctx, data.ChannelId, data.RunId, runpause.By_Manual)
+	publishRunUpdate(data.ChannelId, data.RunId)
+	if err != nil {
+		return fmt.Errorf("resuming run: %w", err)
 	}
 	return nil
 }

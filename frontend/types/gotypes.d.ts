@@ -1974,6 +1974,12 @@ declare global {
         body?: string;
     };
 
+    // wshrpc.CommandPauseRunData
+    type CommandPauseRunData = {
+        channelid: string;
+        runid: string;
+    };
+
     // wshrpc.CommandPostChannelMessageData
     type CommandPostChannelMessageData = {
         channelid: string;
@@ -3740,6 +3746,14 @@ declare global {
         openexternal: boolean;
     };
 
+    // waveobj.PausedSession
+    type PausedSession = {
+        runid: string;
+        workeroref: string;
+        runtime: string;
+        sessionid: string;
+    };
+
     // waveobj.PhaseTriage
     type PhaseTriage = {
         verdict: string;
@@ -4162,6 +4176,9 @@ declare global {
         planfeedback?: string;
         workflowscan?: WorkflowScan;
         consultsessions?: ConsultSession[];
+        pause?: RunPause;
+        pausedunder?: string;
+        lastresumedts?: number;
     };
 
     // waveobj.RunEffortRef
@@ -4222,6 +4239,15 @@ declare global {
         resolvertried?: boolean;
         conflicts?: string[];
         fixture?: boolean;
+    };
+
+    // waveobj.RunPause
+    type RunPause = {
+        pausedts: number;
+        by: string;
+        heldbytes?: number;
+        sessions?: PausedSession[];
+        noautoresumeuntil?: number;
     };
 
     // waveobj.RunPhase
@@ -4653,6 +4679,7 @@ declare global {
         plangate?: boolean;
         planapprovedts?: number;
         notifiedcondition?: string;
+        pausedts?: number;
         usage?: UsageRow[];
         verify?: string;
         setup?: string;

@@ -59,6 +59,16 @@ func StopRunWorker(ctx context.Context, workerORef string) error {
 	return errors.Join(errs...)
 }
 
+// SuspendRunWorker ends the process tree of the worker in tab workerORef to free its memory, but keeps the tab, its
+// scrollback and its session, and leaves the block disarmed so no resync starts it again: a pause, where
+// StopRunWorker abandons the worker. A closed tab is no error. ResumeRunWorker reopens it. A var, like
+// ResumeRunWorker, so the engine's and the run tree's tests stub it.
+//
+// The body is a stub until the task that builds it (spec 2026-11-05-run-pause-design, decision 4).
+var SuspendRunWorker = func(ctx context.Context, workerORef string) error {
+	return fmt.Errorf("suspending worker %s: not built yet", workerORef)
+}
+
 func StopRunWorkers(ctx context.Context, run *waveobj.Run) error {
 	var errs []error
 	for i := range run.Phases {
