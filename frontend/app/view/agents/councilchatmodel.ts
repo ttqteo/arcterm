@@ -1508,3 +1508,37 @@ export function messageSegments(text: string, c?: Council): MessageSegment[] {
     }
     return out;
 }
+
+/** Pure: the one edit that turns `before` into `after`: the characters from `start` to `end` of `before` replaced by
+ *  `insert`, the text both share at the front and at the back left alone. The composer puts a pick or a suggested
+ *  question in as that edit, through the browser, so Ctrl+Z takes it back; a value set from code clears the undo. */
+export function textEdit(before: string, after: string): { start: number; end: number; insert: string } {
+    const most = Math.min(before.length, after.length);
+    let start = 0;
+    while (start < most && before[start] === after[start]) {
+        start++;
+    }
+    let back = 0;
+    while (back < most - start && before[before.length - 1 - back] === after[after.length - 1 - back]) {
+        back++;
+    }
+    return { start, end: before.length - back, insert: after.slice(start, after.length - back) };
+}
+
+/** A piece of the composer's text as the layer behind it draws it: `text` exactly as typed, and the seat (`who`, null
+ *  for `@all`) or file it names, if any. */
+export type ComposerMark =
+    | { kind: "text"; text: string }
+    | { kind: "file"; text: string }
+    | { kind: "seat"; text: string; who: Who | null };
+
+/** Pure: the composer's text cut at the seats and files it names (`messageSegments`), each piece holding its text exactly
+ *  as typed, so the pieces joined are `text` again, character for character: the layer behind the textarea lines up with
+ *  it only then. Null when the text names no seat and no file, and the textarea draws its own text. */
+export function composerMarks(text: string, c: Council): ComposerMark[] | null {
+    const segments = messageSegments(text, c);
+    if (!segments.some((s) => s.kind !== "text")) {
+        return null;
+    }
+    return segments.map((s) => (s.kind === "file" ? { kind: "file", text: `@${s.path}` } : s));
+}

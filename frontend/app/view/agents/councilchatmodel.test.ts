@@ -8,6 +8,7 @@ import {
     askTooSeats,
     chatMentionKeys,
     chipShort,
+    composerMarks,
     contextLabel,
     councilChannel,
     councilThread,
@@ -38,6 +39,7 @@ import {
     seatLink,
     stackSeats,
     stepChip,
+    textEdit,
     threadAsks,
     toolsOfChoice,
     type ChannelItem,
@@ -2535,6 +2537,58 @@ describe("messageSegments with its council: the seats it names are chips", () =>
             { kind: "seat", text: "@UX", who: { author: "ux" } },
         ]);
         expect(parts.map((p) => (p.kind === "file" ? `@${p.path}` : p.text)).join("")).toBe(text);
+    });
+});
+
+describe("textEdit: the one edit from a box's text to the next", () => {
+    const apply = (before: string, e: { start: number; end: number; insert: string }) =>
+        before.slice(0, e.start) + e.insert + before.slice(e.end);
+
+    it("replaces only what a pick changed: the typed @query becomes the seat's name", () => {
+        const e = textEdit("ask @rev what", "ask @Reviewer 1 (area expert) what");
+        expect(e).toEqual({ start: 5, end: 8, insert: "Reviewer 1 (area expert)" });
+        expect(apply("ask @rev what", e)).toBe("ask @Reviewer 1 (area expert) what");
+    });
+
+    it("fills an empty box, replaces a whole one, and clears one", () => {
+        expect(textEdit("", "@RAM How much?")).toEqual({ start: 0, end: 0, insert: "@RAM How much?" });
+        expect(textEdit("W", "@UX Why?")).toEqual({ start: 0, end: 1, insert: "@UX Why?" });
+        expect(textEdit("abc", "")).toEqual({ start: 0, end: 3, insert: "" });
+        expect(textEdit("same", "same")).toEqual({ start: 4, end: 4, insert: "" });
+    });
+
+    it("never lets the front and the back overlap on repeated letters", () => {
+        for (const [a, b] of [
+            ["aa", "aaa"],
+            ["aaa", "aa"],
+            ["@a @a", "@a @all @a"],
+        ]) {
+            expect(apply(a, textEdit(a, b))).toBe(b);
+        }
+    });
+});
+
+describe("composerMarks: the layer behind the composer that draws its seats and files", () => {
+    it("is null while the text names no seat and no file, so the textarea draws its own text", () => {
+        const c = council({ experts: oldExperts });
+        expect(composerMarks("", c)).toBeNull();
+        expect(composerMarks("just a question", c)).toBeNull();
+    });
+
+    it("cuts at seats and files with each piece as typed, and joins back to the text", () => {
+        const c = council({ experts: oldExperts });
+        const text = "@RAM see @a.ts,\n@all and @UX";
+        const marks = composerMarks(text, c)!;
+        expect(marks).toMatchObject([
+            { kind: "seat", text: "@RAM", who: { author: "ram" } },
+            { kind: "text", text: " see " },
+            { kind: "file", text: "@a.ts" },
+            { kind: "text", text: ",\n" },
+            { kind: "seat", text: "@all", who: null },
+            { kind: "text", text: " and " },
+            { kind: "seat", text: "@UX", who: { author: "ux" } },
+        ]);
+        expect(marks.map((m) => m.text).join("")).toBe(text);
     });
 });
 

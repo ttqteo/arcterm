@@ -1147,6 +1147,23 @@ async function done(h, ctx, rec) {
     const box = sel(`${CHANNEL_COMPOSER} [data-council-composer-input]`);
     await until(h, `document.querySelector(${box})?.value !== ""`).catch(() => {});
     const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
+    // the fill is an edit the box can take back: Ctrl+Z (the browser's undo) empties it again, and redo brings it back
+    const undone = await h.ev(`(() => { const t = document.querySelector(${box}); t.focus(); document.execCommand("undo"); return t.value; })()`);
+    await new Promise((r) => setTimeout(r, 100));
+    const undoneKept = await h.ev(`document.querySelector(${box})?.value ?? null`);
+    const redone = await h.ev(`(() => { const t = document.querySelector(${box}); document.execCommand("redo"); return t.value; })()`);
+    // a word typed after it (the browser's own insert, as a keystroke is) is taken back alone: the render that stores
+    // it does not clear the undo
+    await h.ev(`(() => { const t = document.querySelector(${box}); t.focus(); t.setSelectionRange(t.value.length, t.value.length); document.execCommand("insertText", false, " now"); })()`);
+    await new Promise((r) => setTimeout(r, 100));
+    const typedUndo = await h.ev(`(() => { const t = document.querySelector(${box}); document.execCommand("undo"); return t.value; })()`);
+    await new Promise((r) => setTimeout(r, 100));
+    const typedKept = await h.ev(`document.querySelector(${box})?.value ?? null`);
+    rec(
+        "done: Ctrl+Z takes an Ask next fill back out of the box, redo puts it back, and a word typed after it is undone alone",
+        undone === "" && undoneKept === "" && redone === filled && typedUndo === filled && typedKept === filled,
+        { undone, undoneKept, redone, typedUndo, typedKept }
+    );
     // the box now holds text, and the questions stay: Ask next no longer hides while the person types
     const staysAfterFill = await count(h, "[data-council-channel] [data-council-ask]");
     rec(
@@ -1179,6 +1196,25 @@ async function done(h, ctx, rec) {
         "done: a question that names a file turns Read files (on Auto) on by itself and says which file",
         state === "auto" && readsNow === "true" && why === "rail-apps.json",
         { state, readsNow, why }
+    );
+    // the @UX it starts with is tinted in the seat's colour by the layer behind the box, which holds the box's text
+    // exactly and is as tall, while the box's own text is transparent
+    const layer = await h.ev(`(() => {
+        const m = document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-composer-marks]`)});
+        const t = document.querySelector(${box});
+        if (m == null || t == null) return null;
+        const mark = m.querySelector("[data-council-composer-mark]");
+        return {
+            same: m.textContent.replace(/\\u200b$/, "") === t.value,
+            mark: mark?.textContent ?? "",
+            tall: Math.abs(m.scrollHeight - t.scrollHeight) <= 1,
+            clear: getComputedStyle(t).color === "rgba(0, 0, 0, 0)",
+        };
+    })()`);
+    rec(
+        "done: a seat the box's text names is tinted in its colour as it is typed, the layer holding the box's text and lined up with it",
+        layer != null && layer.same && layer.mark === "@UX" && layer.tall && layer.clear,
+        layer
     );
     await h.shot("cdp-shots/council-discussion-readsfiles.png");
     await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "");
@@ -2455,18 +2491,25 @@ async function attachPicker(h, ctx, rec) {
     await typeInto(h, CHAT_INPUT, "");
     await openFor();
     await arrowToRow(ATTACH_FILE);
+    const beforePick = await valueOf(h, CHAT_INPUT);
     await pressTab();
     const byTab = await valueOf(h, CHAT_INPUT);
     const closedByTab = !(await exists(h, "[data-council-mentions]"));
+    // the pick is an edit Ctrl+Z (the browser's undo) takes back to what was typed, the stored draft with it
+    const undone = await h.ev(`(() => { const t = document.querySelector(${sel(CHAT_INPUT)}); t.focus(); document.execCommand("undo"); return t.value; })()`);
+    await new Promise((r) => setTimeout(r, 100));
+    const undoneKept = await valueOf(h, CHAT_INPUT);
     rec(
-        "attach-file-picker: Enter on the file row inserts `@docs/recap-notes.md ` and closes the list, and Tab on it does the same",
+        "attach-file-picker: Enter on the file row inserts `@docs/recap-notes.md ` and closes the list, Tab on it does the same, and Ctrl+Z takes the pick back to what was typed",
         onFile &&
             fileKind === "file" &&
             byEnter === `@${ATTACH_FILE} ` &&
             closedByEnter &&
             byTab === `@${ATTACH_FILE} ` &&
-            closedByTab,
-        { onFile, fileKind, byEnter, closedByEnter, byTab, closedByTab }
+            closedByTab &&
+            undone === beforePick &&
+            undoneKept === beforePick,
+        { onFile, fileKind, byEnter, closedByEnter, byTab, closedByTab, beforePick, undone, undoneKept }
     );
 
     // a message that names a file is sent with the seats reading it, in a round as in a follow-up, and it names no seat

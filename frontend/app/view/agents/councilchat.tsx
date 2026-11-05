@@ -72,6 +72,7 @@ import {
     type KeyboardEvent,
     type MouseEvent,
     type ReactNode,
+    type Ref,
     type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
@@ -79,6 +80,7 @@ import type { Actions } from "./councilactions";
 import {
     DRAFT_WAIT,
     askChips,
+    composerMarks,
     contextLabel,
     councilChannel,
     councilThread,
@@ -100,6 +102,7 @@ import {
     replyReach,
     seatChips,
     seatLink,
+    textEdit,
     threadAsks,
     toolsOfChoice,
     type AnswerQuote,
@@ -107,6 +110,7 @@ import {
     type ChannelItem,
     type ChatPick,
     type ChatThread,
+    type ComposerMark,
     type DraftPost,
     type FailureLine,
     type IdeaOut,
@@ -1176,6 +1180,75 @@ function SeatChip({ who, text, className }: { who: Who | null; text: string; cla
     );
 }
 
+// the composer's text, drawn behind its textarea (whose own text is then transparent) so each seat it names is tinted in
+// the seat's colour and each file as a link, as the sent message's chips are. It holds the textarea's text character
+// for character, in the same font, padding and wrapping, so it lines up: a mark changes no width (its padding is taken
+// back by an equal negative margin) and no weight. It never takes a pointer; syncMarks keeps its scroll and the width
+// the textarea's scrollbar takes.
+function ComposerMarks({ marks, ref }: { marks: ComposerMark[]; ref: Ref<HTMLDivElement> }) {
+    return (
+        <div
+            ref={ref}
+            aria-hidden
+            data-council-composer-marks
+            className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words py-[4.5px] text-[14px] leading-[1.5] text-primary"
+        >
+            {marks.map((m, i) =>
+                m.kind === "text" ? (
+                    <span key={i}>{m.text}</span>
+                ) : (
+                    <span
+                        key={i}
+                        data-council-composer-mark={m.kind === "file" ? "file" : (m.who?.author ?? "all")}
+                        className={cn(
+                            "-mx-[2px] rounded-[4px] px-[2px] [box-decoration-break:clone]",
+                            m.kind === "file"
+                                ? "bg-surface-hover text-link"
+                                : m.who == null
+                                  ? "bg-pill text-secondary"
+                                  : cn(TONE_FILL[m.who.tone], TONE_TEXT[m.who.tone])
+                        )}
+                    >
+                        {m.text}
+                    </span>
+                )
+            )}
+            {/* a text that ends in a newline holds an empty last line, which a div drops without something on it */}
+            {"​"}
+        </div>
+    );
+}
+
+// puts `next` in a composer as an edit the person could have typed, so Ctrl+Z takes it back (a value React sets from
+// code clears the box's undo): only the part that differs (textEdit) is selected and replaced through the browser's
+// insertText, whose input event lands in onChange like a keystroke, and the caret goes to `caret`. False when the
+// browser would not make the edit, and the caller writes the text itself.
+function editBox(el: HTMLTextAreaElement, next: string, caret: number): boolean {
+    const { start, end, insert } = textEdit(el.value, next);
+    el.focus();
+    el.setSelectionRange(start, end);
+    const done =
+        start === end && insert === ""
+            ? true
+            : insert === ""
+              ? document.execCommand("delete")
+              : document.execCommand("insertText", false, insert);
+    if (done && el.value === next) {
+        el.setSelectionRange(caret, caret);
+        return true;
+    }
+    return false;
+}
+
+// the marks layer follows the textarea: its scroll, and the width a scrollbar takes once the text outgrows the box
+function syncMarks(el: HTMLTextAreaElement, marks: HTMLDivElement | null) {
+    if (marks == null) {
+        return;
+    }
+    marks.style.paddingRight = `${el.offsetWidth - el.clientWidth}px`;
+    marks.scrollTop = el.scrollTop;
+}
+
 // the person's own message: Markdown like a seat's, except one that names files or seats, which is cut at them so each
 // `@path` and `@UX` is a chip in the line (a chip cannot sit inside a Markdown paragraph)
 function PersonText({ councilId, item }: { councilId: string; item: ReplyPost }) {
@@ -1974,6 +2047,9 @@ function Composer({
     const text = drafts.texts[proposalId] ?? "";
     const setText = (t: string) => setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } }));
     const box = useRef<HTMLTextAreaElement>(null);
+    // the layer behind the textarea that draws the seats and files the text names in their colours (ComposerMarks)
+    const marksRef = useRef<HTMLDivElement>(null);
+    const marks = composerMarks(text, c);
     const list = useRef<HTMLUListElement>(null);
     const projects = useAtomValue(projectsAtom);
     const [caret, setCaret] = useState(0);
@@ -2061,6 +2137,12 @@ function Composer({
     };
     // a seat is put in by its name, a chat by its mention key (`@82faafca`), the word wavesrv reaches its seat by
     const put = (next: { text: string; caret: number }) => {
+        const el = box.current;
+        if (el != null && editBox(el, next.text, next.caret)) {
+            setCaret(next.caret);
+            setPick(0);
+            return;
+        }
         setText(next.text);
         setCaret(next.caret);
         setPick(0);
@@ -2147,7 +2229,8 @@ function Composer({
         e.preventDefault();
         addCouncilImages(c.id, proposalId, pasted, "paste");
         const beside = e.clipboardData.getData("text/plain");
-        if (beside !== "") {
+        // the text goes in as the browser's own insert, which Ctrl+Z takes back and onChange stores
+        if (beside !== "" && !document.execCommand("insertText", false, beside)) {
             const el = e.currentTarget;
             el.setRangeText(beside, el.selectionStart, el.selectionEnd, "end");
             setText(el.value);
@@ -2183,6 +2266,7 @@ function Composer({
         const want = el.scrollHeight + el.offsetHeight - el.clientHeight;
         el.style.height = `${Math.min(want, COMPOSER_MAX_H)}px`;
         el.style.overflowY = want > COMPOSER_MAX_H ? "auto" : "hidden";
+        syncMarks(el, marksRef.current);
     }, [text]);
     // the rows count across All seats (one, first), the seats, the files and the chats, as pickerRows lists them
     const allRows = picker?.all ? 1 : 0;
@@ -2383,27 +2467,35 @@ function Composer({
             <div className="flex flex-col gap-[8px] rounded-[23px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
                 <DraftImages councilId={c.id} boxKey={proposalId} images={images} />
                 <div className="flex items-end gap-[8px]">
-                    <textarea
-                        ref={box}
-                        data-council-composer-input
-                        rows={1}
-                        value={text}
-                        aria-labelledby={labelledBy}
-                        placeholder={placeholder}
-                        onChange={(e) => {
-                            setText(e.target.value);
-                            setCaret(e.target.selectionStart);
-                            setPick(0);
-                        }}
-                        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-                        onKeyDown={onKeyDown}
-                        onPaste={onPaste}
-                        className={cn(
-                            // a line (21px) padded to the send button's 30px, so one line sits level with it and
-                            // not at the foot of the row; more lines grow above the button, which stays at the foot
-                            "box-border min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted"
-                        )}
-                    />
+                    <div className="relative flex min-w-0 flex-1">
+                        {marks != null && <ComposerMarks ref={marksRef} marks={marks} />}
+                        <textarea
+                            ref={box}
+                            data-council-composer-input
+                            rows={1}
+                            value={text}
+                            aria-labelledby={labelledBy}
+                            placeholder={placeholder}
+                            onChange={(e) => {
+                                setText(e.target.value);
+                                setCaret(e.target.selectionStart);
+                                setPick(0);
+                            }}
+                            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+                            onScroll={(e) => syncMarks(e.currentTarget, marksRef.current)}
+                            onKeyDown={onKeyDown}
+                            onPaste={onPaste}
+                            className={cn(
+                                // a line (21px) padded to the send button's 30px, so one line sits level with it and
+                                // not at the foot of the row; more lines grow above the button, which stays at the foot
+                                "relative box-border min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
+                                // the layer behind draws the text while it names a seat or a file; the textarea keeps
+                                // the caret and the selection
+                                marks != null &&
+                                    "text-transparent caret-primary selection:bg-accent/30 selection:text-transparent"
+                            )}
+                        />
+                    </div>
                     {/* a round send button, as a messenger has: the icon alone, its name for a screen reader and the tooltip */}
                     <button
                         type="button"
@@ -2502,20 +2594,31 @@ function Composer({
 
 // ---- the report's questions to ask next ----
 
+// puts a suggested question in the channel's or the thread's box in place of what it holds, caret at its end, as an
+// edit Ctrl+Z takes back (editBox); with no box on the page, or one the browser will not edit, `write` stores it
+function fillComposer(which: "channel" | "thread", t: string, write: () => void) {
+    const box = document.querySelector<HTMLTextAreaElement>(
+        `[data-council-composer="${which}"] [data-council-composer-input]`
+    );
+    if (box != null && editBox(box, t, t.length)) {
+        return;
+    }
+    write();
+    requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLTextAreaElement>(
+            `[data-council-composer="${which}"] [data-council-composer-input]`
+        );
+        el?.focus();
+        el?.setSelectionRange(t.length, t.length);
+    });
+}
+
 // the last line of the channel, under the newest message, so it shows to a reader at the latest and scrolls away with
 // the rest; a click puts the question in the channel's box, `@` seat and all, to edit and send
 function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
     const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
-    const fill = (t: string) => {
-        setDrafts((d) => ({ ...d, texts: { ...d.texts, [""]: t } }));
-        requestAnimationFrame(() => {
-            const box = document.querySelector<HTMLTextAreaElement>(
-                '[data-council-composer="channel"] [data-council-composer-input]'
-            );
-            box?.focus();
-            box?.setSelectionRange(t.length, t.length);
-        });
-    };
+    const fill = (t: string) =>
+        fillComposer("channel", t, () => setDrafts((d) => ({ ...d, texts: { ...d.texts, [""]: t } })));
     return (
         <div role="group" aria-label="Ask next" data-council-asks className="flex flex-wrap items-center gap-[6px]">
             <span className="text-[12px] text-muted">Ask next</span>
@@ -2539,16 +2642,8 @@ function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
 // puts it in the box to edit and send, as Ask next does; sending at once would spend a seat's turn on a guess
 function ThreadAsks({ c, proposalId, asks }: { c: Council; proposalId: string; asks: string[] }) {
     const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
-    const fill = (t: string) => {
-        setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } }));
-        requestAnimationFrame(() => {
-            const box = document.querySelector<HTMLTextAreaElement>(
-                '[data-council-composer="thread"] [data-council-composer-input]'
-            );
-            box?.focus();
-            box?.setSelectionRange(t.length, t.length);
-        });
-    };
+    const fill = (t: string) =>
+        fillComposer("thread", t, () => setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } })));
     return (
         <div
             role="group"
