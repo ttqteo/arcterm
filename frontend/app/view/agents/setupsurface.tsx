@@ -25,6 +25,7 @@ import type { AgentsViewModel } from "./agents";
 import { formatAgo } from "./agentsviewmodel";
 import { skillLines } from "./learnedmodel";
 import { LearnedLine, LearnedTab } from "./learnedtab";
+import { memoryToReviewAtom } from "./memorystore";
 import { PathTail } from "./pathtail";
 import { ProjectContextHeader, ProjectContextTab } from "./projectcontexttab";
 import { RuntimeMark } from "./runtimemark";
@@ -149,6 +150,8 @@ function HarnessMark({ runtime }: { runtime: string }) {
 
 function Tabs() {
     const tab = useAtomValue(setupTabAtom);
+    // the projects whose memory has a change to review, as the nav rail's Setup badge counts them
+    const memoryToReview = useAtomValue(memoryToReviewAtom);
     const onKey = (e: KeyboardEvent) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") {
             return;
@@ -185,6 +188,11 @@ function Tabs() {
                     )}
                 >
                     {t.label}
+                    {t.key === "memory" && memoryToReview > 0 ? (
+                        <span data-setup-tab-count className="tabular-nums text-warning-soft">
+                            {` · ${memoryToReview}`}
+                        </span>
+                    ) : null}
                 </button>
             ))}
         </div>

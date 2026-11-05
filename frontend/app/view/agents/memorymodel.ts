@@ -115,6 +115,11 @@ export function projectsToReview(projects: MemHygieneProject[]): number {
     return projects.filter(hasPending).length;
 }
 
+// the nav rail's Setup item, which counts the projects to review: its title says what the badge counts
+export function setupRailTitle(toReview: number): string {
+    return toReview > 0 ? `Setup — memory to review in ${count(toReview, "project")}` : "Setup";
+}
+
 // projects with something to review lead the rail, each half in the backend's order
 export function railOrder(projects: MemHygieneProject[]): MemHygieneProject[] {
     return [...projects.filter(hasPending), ...projects.filter((p) => !hasPending(p))];
