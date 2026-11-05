@@ -109,6 +109,11 @@ Everything else is optional and read leniently, but write every field as describ
 | `runShape` | The run you suggest building it with, written with the spec (below): `"quick"` or `"orchestrator"`. Leave it out and Arc offers an orchestrator run. |
 | `compacted` | Unix milliseconds of your last re-read after a compaction (below). |
 
+Every string Arc shows (`title`, a part's `title`, `gist` and `body`, the question's text and options) is prose for the
+user, written in their language and spelled the way they spell it, including inside a `node -e` or `python3 -c` script:
+a Vietnamese title keeps its diacritics (`Quy mô chạy`, never `Quy mo chay`). Only `id` is a key; nothing reads a
+title as a file name.
+
 Part states:
 
 - `yours`: the user said it or confirmed it.

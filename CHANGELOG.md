@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A folded `claude` reply whose list has one item past the four it shows draws all of them, rather than four and
   "… 1 more", and a numbered list keeps its numbers, so "type 2" in the reply still points at its item.
+- A brainstorm's decision titles are written with their diacritics in Vietnamese, as the rest of the pane is, instead
+  of sometimes showing as "Quy mo chay".
 
 ## 1.0.4 — 2026-11-06
 
