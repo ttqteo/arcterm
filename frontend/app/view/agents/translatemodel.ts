@@ -149,9 +149,9 @@ export const PAIR_KEY = "translate.pair";
 // how long after the last keystroke the text is sent
 export const TRANSLATE_DEBOUNCE_MS = 400;
 
-// how long a request may take: Google's 10 s, then Apple Translation's 15 s when Google could not answer
-// (pkg/translate/engine.go); with no timeout wavesrv gives the call 5 s, which a cold Apple start outlasts
-export const TRANSLATE_TIMEOUT_MS = 25_000;
+// how long a request may take: Google's 10 s, then Apple Translation's 15 s and MyMemory's 8 s when Google could not
+// answer (pkg/translate/engine.go); with no timeout wavesrv gives the call 5 s, which a cold Apple start outlasts
+export const TRANSLATE_TIMEOUT_MS = 35_000;
 
 // Google's limit; text over it is still sent, and wavesrv's refusal is the panel's error line
 export const MAX_CHARS = 5000;

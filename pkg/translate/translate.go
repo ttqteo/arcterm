@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package translate asks Google Translate for a text's translation and reads its answer. The rail's Quick translate
-// (wavesrv's translate command) goes through an Engine: Google first, then Apple Translation on the device when Google
-// cannot answer (engine.go, apple.go). `wsh trans` fetches through translate-shell and reads the same answer with
+// (wavesrv's translate command) goes through an Engine: Google first, then, when Google cannot answer, Apple
+// Translation on the device (a Mac) and MyMemory's public API (engine.go, apple.go, mymemory.go). `wsh trans` fetches through translate-shell and reads the same answer with
 // Parse.
 package translate
 

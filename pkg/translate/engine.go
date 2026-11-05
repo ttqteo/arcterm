@@ -27,21 +27,24 @@ type translateFunc func(ctx context.Context, source, target, text string) (Answe
 
 // Engine answers the rail's Quick translate. Google goes first: it answers in well under a second and adds the
 // phonetics and word classes, where Apple Translation takes one to six seconds on the device. When Google cannot answer
-// (offline, an error, a 429), Apple Translation does, on a Mac whose bin dir holds the helper. After a 429 the engine
-// leaves Google alone for a while and goes straight to Apple, so typing on does not keep the block going; with no Apple
-// helper (Windows), the request fails at once and says when Google is asked again.
+// (offline, an error, a 429), Apple Translation does, on a Mac whose bin dir holds the helper, and then MyMemory's
+// public API (mymemory.go), the one fallback on Windows. After a 429 the engine leaves Google alone for a while and goes
+// straight to the fallbacks, so typing on does not keep the block going; when they fail too, the error says when Google
+// is asked again.
 type Engine struct {
-	google translateFunc
-	apple  translateFunc // nil: no on-device translator
-	now    func() time.Time
+	google   translateFunc
+	apple    translateFunc // nil: no on-device translator
+	mymemory translateFunc // nil: no online fallback
+	now      func() time.Time
 
 	mu        sync.Mutex
 	restUntil time.Time // Google is not asked before this
 }
 
-// NewEngine translates through Google, and on a Mac through the Apple helper in binDir too when it is there.
+// NewEngine translates through Google, then on a Mac through the Apple helper in binDir when it is there, then through
+// MyMemory.
 func NewEngine(binDir string) *Engine {
-	e := &Engine{google: Google, now: time.Now}
+	e := &Engine{google: Google, mymemory: MyMemory, now: time.Now}
 	if runtime.GOOS != "darwin" || binDir == "" {
 		return e
 	}
@@ -74,14 +77,24 @@ func (e *Engine) Translate(ctx context.Context, source, target, text string) (An
 		}
 		googleErr = e.refused(err)
 	}
-	if e.apple == nil {
-		return Answer{}, googleErr
+	why := googleErr.Error()
+	for _, fb := range []struct {
+		name string
+		fn   translateFunc
+	}{{"Apple Translation", e.apple}, {"MyMemory", e.mymemory}} {
+		if fb.fn == nil {
+			continue
+		}
+		if ctx.Err() != nil {
+			return Answer{}, ctx.Err()
+		}
+		a, err := fb.fn(ctx, source, target, text)
+		if err == nil {
+			return a, nil
+		}
+		why += "; " + fb.name + ": " + err.Error()
 	}
-	a, err := e.apple(ctx, source, target, text)
-	if err != nil {
-		return Answer{}, fmt.Errorf("%v; Apple Translation: %v", googleErr, err)
-	}
-	return a, nil
+	return Answer{}, errors.New(why)
 }
 
 // resting answers why Google is not asked now, or nil when it is.

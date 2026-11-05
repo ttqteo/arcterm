@@ -19,13 +19,14 @@ import (
 // fakeEngine is an Engine on a clock the test moves, whose Google and Apple answer what the test sets and count calls
 type fakeEngine struct {
 	*Engine
-	clock                   time.Time
-	googleErr, appleErr     error
-	googleCalls, appleCalls int
+	clock                            time.Time
+	googleErr, appleErr, mmErr       error
+	googleCalls, appleCalls, mmCalls int
 }
 
 var googleSays = Answer{Translation: "vàng", Source: "en", Phonetics: "ɡōld"}
 var appleSays = Answer{Translation: "vàng (Apple)", Source: "en"}
+var mmSays = Answer{Translation: "vàng (MyMemory)", Source: "en"}
 
 func newFakeEngine(withApple bool) *fakeEngine {
 	f := &fakeEngine{clock: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
@@ -45,6 +46,18 @@ func newFakeEngine(withApple bool) *fakeEngine {
 			}
 			return appleSays, nil
 		}
+	}
+	return f
+}
+
+// withMyMemory gives the engine its MyMemory fallback
+func (f *fakeEngine) withMyMemory() *fakeEngine {
+	f.mymemory = func(ctx context.Context, source, target, text string) (Answer, error) {
+		f.mmCalls++
+		if f.mmErr != nil {
+			return Answer{}, f.mmErr
+		}
+		return mmSays, nil
 	}
 	return f
 }
@@ -180,6 +193,53 @@ func TestEngine_emptyAndTooLong(t *testing.T) {
 	}
 }
 
+func TestEngine_myMemoryWithoutApple(t *testing.T) {
+	// Windows: Google, then MyMemory
+	f := newFakeEngine(false).withMyMemory()
+	if a, err := f.translate(t); err != nil || a.Translation != googleSays.Translation || f.mmCalls != 0 {
+		t.Fatalf("Google answering: %+v, %v, %d MyMemory calls", a, err, f.mmCalls)
+	}
+	f.googleErr = tooMany
+	if a, err := f.translate(t); err != nil || a.Translation != mmSays.Translation {
+		t.Fatalf("the 429: %+v, %v", a, err)
+	}
+	// while Google rests MyMemory answers without Google being asked
+	f.googleErr = nil
+	f.clock = f.clock.Add(time.Minute)
+	if a, err := f.translate(t); err != nil || a.Translation != mmSays.Translation {
+		t.Fatalf("resting: %+v, %v", a, err)
+	}
+	if f.googleCalls != 2 || f.mmCalls != 2 {
+		t.Errorf("%d Google and %d MyMemory calls", f.googleCalls, f.mmCalls)
+	}
+}
+
+func TestEngine_myMemoryAfterApple(t *testing.T) {
+	f := newFakeEngine(true).withMyMemory()
+	f.googleErr = errors.New("couldn't reach Google: offline")
+	if a, err := f.translate(t); err != nil || a.Translation != appleSays.Translation || f.mmCalls != 0 {
+		t.Fatalf("Apple answering: %+v, %v, %d MyMemory calls", a, err, f.mmCalls)
+	}
+	f.appleErr = errors.New("the English → Thai language pack isn't downloaded")
+	if a, err := f.translate(t); err != nil || a.Translation != mmSays.Translation {
+		t.Fatalf("Apple failing: %+v, %v", a, err)
+	}
+}
+
+func TestEngine_allFailSaysWhen(t *testing.T) {
+	f := newFakeEngine(true).withMyMemory()
+	f.googleErr = tooMany
+	f.appleErr = errors.New("it doesn't translate English into Latin")
+	f.mmErr = errors.New("today's free translations are used up")
+	_, err := f.translate(t)
+	want := []string{"429 Too Many Requests", "after 12:05", "Apple Translation: it doesn't", "MyMemory: today's free"}
+	for _, w := range want {
+		if err == nil || !strings.Contains(err.Error(), w) {
+			t.Fatalf("err = %v, want %q in it", err, w)
+		}
+	}
+}
+
 func TestNewEngine_findsHelper(t *testing.T) {
 	dir := t.TempDir()
 	if NewEngine(dir).apple != nil {
@@ -193,5 +253,8 @@ func TestNewEngine_findsHelper(t *testing.T) {
 	}
 	if NewEngine("").apple != nil {
 		t.Error("Apple with no bin dir")
+	}
+	if NewEngine("").mymemory == nil {
+		t.Error("no MyMemory fallback")
 	}
 }

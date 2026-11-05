@@ -18,8 +18,8 @@ var translateEngine = sync.OnceValue(func() *translate.Engine {
 	return translate.NewEngine(wavebase.GetWaveAppBinPath())
 })
 
-// TranslateCommand translates through Google, or through Apple Translation on a Mac when Google cannot answer
-// (translate.Engine). Source answers the language detected, or, when none was named and the request did not say
+// TranslateCommand translates through Google, or, when Google cannot answer, through Apple Translation on a Mac and
+// then MyMemory (translate.Engine). Source answers the language detected, or, when none was named and the request did not say
 // "auto", the request's own.
 func (ws *WshServer) TranslateCommand(ctx context.Context, data wshrpc.CommandTranslateData) (*wshrpc.CommandTranslateRtnData, error) {
 	a, err := translateEngine().Translate(ctx, data.Source, data.Target, data.Text)
