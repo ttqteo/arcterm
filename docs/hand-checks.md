@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council decisions in CLAUDE.md, and Update CLAUDE.md.** After installing a build, open the thesis
+  project's CLAUDE.md: within a few seconds of arcterm starting it ends with a Council decisions block (the 11-04
+  council's Direction, two Agreed, one Open) between `arc:council-decisions` markers, and the rest of the file is as it
+  was. Add an entry in that council's Memory tab → the block shows it about 3 s later. At the foot of the Memory tab,
+  under the list: one Claude agent open in the project → "Update CLAUDE.md with <agent>" pastes a one-line prompt into
+  its terminal and submits it, the status reading "Sent to <agent>…"; several → "Update CLAUDE.md…" shows Send to and
+  their names; none → "Copy the CLAUDE.md prompt" copies it. A council with an empty Memory shows no bar. Unit tests
+  and the typecheck only (db3ebe8f4, 14f8da9c8).
 - [ ] (arcterm) **Reply to a seat's message in a council.** In the installed app, open a council's Discussion, hover a
   seat's message in the chat → Reply (the arrow before Copy) puts "Replying to <seat> · <first words>" above the box,
   the caret in it, and the line under the box reads Answered by: <seat>; a click on the line goes back to the message, ×
