@@ -35,6 +35,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A brainstorm whose run merged can now be closed even when the run's final check could not verify everything (it
+  asks first), and Close also closes what is left of the run: accepts its outcome, ends its open sessions and removes
+  the worktrees its cleanup left.
 - Your own messages in a session's transcript sit in an accent-tinted box, so they stand out from the agent's replies.
 - An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
 - The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and

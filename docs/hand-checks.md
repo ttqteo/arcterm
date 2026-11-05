@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Close brainstorm and run.** A brainstorm whose run merged with its final unverified (the Christmas
+  tree one, run 983dcb44) → its Run step shows an amber line under the card and a "Close brainstorm and run" button →
+  click → a confirm names the unverified final and what of the run it closes → Close → the brainstorm folder goes, its
+  idle agent ends, the run leaves Needs you (accepted), its open sessions end, and its "Cleanup failed" line clears
+  unless a tree is still held. Unit tests and typecheck only (`brainstormrun.tsx`); no dev app was up, and the
+  `brainstorm-run-landed` CDP scenario was updated but not run.
 - [ ] (arcterm) **Your prompts stand out in a transcript.** Agent → a project's Overview → History → a session → Open →
   Transcript (or an ended session's transcript in the centre) → each of your messages is a box tinted in the accent
   colour with an accent border, clearly apart from the agent's prose; the prompt pinned at the top while you scroll
