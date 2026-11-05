@@ -62,10 +62,15 @@ func (f *mergeFixture) seedLand(t *testing.T, runID string, land *waveobj.RunLan
 	}
 }
 
+// landLineWait is how long driveLandLineUntil lets real git lands run. Three take about 4.5 s on an idle machine and
+// took 33 s while another run's workers and tests shared the CPU; the test checks their order and outcome, not their
+// speed, so the wait is generous.
+const landLineWait = 2 * time.Minute
+
 // driveLandLineUntil drives the line until none of ids is queued or pending, then waits for the lands it started.
 func (f *mergeFixture) driveLandLineUntil(t *testing.T, ids ...string) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(landLineWait)
 	for {
 		driveLandLine(f.ctx)
 		waiting := false
@@ -78,7 +83,7 @@ func (f *mergeFixture) driveLandLineUntil(t *testing.T, ids ...string) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("lands still waiting after 30s: %v", ids)
+			t.Fatalf("lands still waiting after %v: %v", landLineWait, ids)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
