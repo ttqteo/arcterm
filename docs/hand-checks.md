@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council composer: tinted @seat, and Ctrl+Z.** In the packaged app open a council, type `@` in the
+  message box and pick a seat with a long name (`Reviewer 1 (area expert)`) → it shows tinted in the seat's colour,
+  the caret and a selection sit where the letters are, also once the text wraps and once it scrolls past the box's
+  height. Press `Ctrl`+`Z` → the pick goes back to the `@…` you typed; click an Ask next question → `Ctrl`+`Z` empties
+  the box. Checked only in headless Chrome by `council-discussion` (undo there by `execCommand`, not the keys); not in
+  WebView2 (`councilchat.tsx` ComposerMarks / editBox, aaad0bc86).
+
 - [ ] (arcterm) **Float and the fold on a scaled Windows display.** On the Windows PC at 125% or 150% scaling, with
   arcterm maximized: Float → the window leaves maximized and shrinks to the float's place at the float's size (not
   1.25× or 1.5× off); Full again → it is maximized. Fold into Sprout, switch to another app and back → Sprout lands in
