@@ -153,3 +153,9 @@ The person asked for the decor in more places, starting from the New agent dialo
   other outfit.
 - **Gifts for finished runs.** A run's Complete check in the agent tree becomes a gift while the decor shows; an
   unverified run keeps its check.
+- **A pine in the Agent rail's Overview.** In the bottom right corner of the Agent details rail's Overview tab
+  (`CollapsibleRail`'s footer: in the corner while the sections leave room, after them once they scroll), a small
+  pixel pine drawn after the Office lobby's tree of the Christmas tree game (`.superpowers/design/christmas-tree-game`): four
+  tiers in alternating shades, red and gold baubles, one rare cream piece, a gold star (`christmasrailtree.ts`). It
+  is static and drawn full: the game's season count is not built, and when it is, the rail pine is the place to show
+  the lobby tree's stage.

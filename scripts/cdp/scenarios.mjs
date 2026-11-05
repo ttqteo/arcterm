@@ -12295,6 +12295,45 @@ const christmasTheme = {
             { fold8d, whatsNew8d, settings8d }
         );
 
+        // 8e. the pine in the bottom right corner of the asker's Agent details rail, Overview tab: whole, right-aligned
+        // in the scroll column and below its last section, never over one
+        await h.goto("agent");
+        const prevRail8e = await h.ev(`localStorage.getItem("agent.rail.visible")`);
+        await h.ev(`document.querySelector('[data-agent-row="${CHRISTMAS_ASKER}"]')?.click()`);
+        await polishWaitFor(h, `!!document.querySelector('aside[aria-label="Agent details"] button[aria-label="Overview"]')`, 5000);
+        await h.ev(`document.querySelector('aside[aria-label="Agent details"] button[aria-label="Overview"]')?.click()`);
+        const shown8e = await polishWaitFor(h, `!!document.querySelector('aside[aria-label="Agent details"] svg[data-rail-tree]')`, 5000);
+        await xmasNap(600);
+        const tree8e = await h.ev(`(() => {
+            const t = document.querySelector('aside[aria-label="Agent details"] svg[data-rail-tree]');
+            const scroll = t?.closest("[data-rail-scroll]");
+            const foot = t?.parentElement;
+            const prev = foot?.previousElementSibling;
+            if (!t || !scroll || !foot) return { tree: !!t, scroll: !!scroll };
+            const r = t.getBoundingClientRect();
+            const sb = scroll.getBoundingClientRect();
+            const pb = prev?.getBoundingClientRect();
+            return {
+                tree: true,
+                w: r.width,
+                h: r.height,
+                rightGap: Math.round(sb.right - r.right),
+                within: r.left >= sb.left && r.right <= sb.right,
+                belowLast: pb == null || r.top >= pb.bottom - 0.5,
+            };
+        })()`);
+        await h.shot("cdp-shots/christmas-theme-8e-rail-tree.png");
+        await xmasClip(h, "christmas-theme-8e-rail-tree-zoom", 'aside[aria-label="Agent details"] svg[data-rail-tree]', 120, 100, 3).catch(() => false);
+        await h.ev(
+            prevRail8e == null ? `localStorage.removeItem("agent.rail.visible")` : `localStorage.setItem("agent.rail.visible", ${JSON.stringify(prevRail8e)})`
+        );
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${t.tabId}"]')?.click()`);
+        rec(
+            "8e. the asker's Agent details rail, on Overview, shows the pine whole in its bottom right corner, inside the column and below its last section",
+            shown8e && tree8e.tree && tree8e.w > 0 && tree8e.within && tree8e.belowLast && tree8e.rightGap <= 24,
+            tree8e
+        );
+
         // 9. reduced motion: the snow stops and clears, the lights stay lit in asking without blinking, the static
         // decor (the canvas's place, the lights, the pet's hat, the Office's hats) stays
         await h.cdp("Emulation.setEmulatedMedia", PET_REDUCE);

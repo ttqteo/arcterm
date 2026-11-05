@@ -59,6 +59,7 @@ import { setAgentView } from "./agentview";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
+import { RailTree } from "./christmasrailtreeview";
 import { commitListAtom, loadCommitList, showInLog } from "./commitstore";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
@@ -1393,6 +1394,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ) : undefined
             }
             edge={!fixedWidth ? <RailResizeGrip tab={wideTab} width={wide.width} max={wide.max} /> : undefined}
+            // the Overview tab's bottom corner: the Christmas pine, nothing off the theme
+            footer={<RailTree />}
             stripTabs={[
                 {
                     key: "overview",
