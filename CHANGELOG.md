@@ -39,6 +39,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The New dialog's Orchestrate and Quick run now start from the project's saved Profile (Approvals, workers, workers at once): picking the row used to count as changing the run by hand, so an Autonomous default never showed and it stayed on Ask me.
 - Quick translate on Windows keeps translating when Google turns it away for too many requests: it falls back to MyMemory's free translator (up to about 500 characters at a time and a few thousand a day) instead of failing until Google lets it back in. On a Mac it is tried after Apple Translation.
 - Setup → Memory now shows each project's memory size even when its model check fails, and lists the memories worth a second look without a model: one untouched for 30 days, or (when the model check failed) one naming a file that is gone. Each comes up as a Review; Still true marks it reviewed, so neither this tab nor the session-start memory check flags it again for 30 days.
 - Ctrl+Z in a council's message box takes back a seat or file picked from the `@` list, a suggested question put in with a click, and text pasted beside an image; before, any of these wiped the box's undo, so Ctrl+Z did nothing after them.

@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **New → Orchestrate follows the Profile's Approvals.** Jarvis → Profile → Global → Approvals:
+  Autonomous → Save. Open New, pick Orchestrate with arcterm picked → Approvals shows Autonomous. Pick another
+  project, then back → still Orchestrate. Change Workers by hand, switch project → your pick stays. (fix(launcher):
+  `pickRunShape` in `runconfigstore.ts`)
 - [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
   one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →

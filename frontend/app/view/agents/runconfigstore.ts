@@ -61,6 +61,16 @@ export function setRunShape(next: RunShape): void {
     globalStore.set(runShapeAtom, next);
 }
 
+// Whether the New dialog's Quick run / Orchestrate row picked the shape. That row is a door, not a hand edit of
+// the run's defaults: it must not mark the draft touched, or the project's saved profile (Approvals, workers,
+// width) never fills the dialog, and a profile arriving or a project switch must not move the shape off it.
+export const shapePickedAtom = atom(false) as PrimitiveAtom<boolean>;
+
+export function pickRunShape(next: RunShape): void {
+    globalStore.set(shapePickedAtom, true);
+    globalStore.set(runShapeAtom, next);
+}
+
 export function setStart(next: StartFrom): void {
     globalStore.set(configTouchedAtom, true);
     globalStore.set(startAtom, next);
@@ -114,7 +124,9 @@ export function hydrateRunConfigFromProfile(profile: JarvisProfile | null | unde
         return;
     }
     const defaults = profileRunDefaults(profile);
-    globalStore.set(runShapeAtom, defaults.shape ?? LAUNCH_SHAPE);
+    if (!globalStore.get(shapePickedAtom)) {
+        globalStore.set(runShapeAtom, defaults.shape ?? LAUNCH_SHAPE);
+    }
     globalStore.set(parallelismAtom, defaults.parallelism ?? DEFAULT_PARALLELISM);
     globalStore.set(startAtom, DEFAULT_START);
     globalStore.set(planPathAtom, "");
@@ -134,6 +146,7 @@ export function hydrateRunConfigFromProfile(profile: JarvisProfile | null | unde
 // launch never consumed the user's choice of it.
 export function endRunConfigDraft(profile: JarvisProfile | null | undefined): void {
     globalStore.set(configTouchedAtom, false);
+    globalStore.set(shapePickedAtom, false);
     hydrateRunConfigFromProfile(profile);
 }
 
@@ -166,7 +179,10 @@ export function requestRouteOpen(): void {
 // Every control is per-channel: carrying an orchestrator-with-6-workers setup onto the next channel
 // would silently arm a dispatch the user configured somewhere else.
 export function resetRunConfig(): void {
-    globalStore.set(runShapeAtom, LAUNCH_SHAPE);
+    // the row picked in the New dialog stays across its project switch, which resets the rest
+    if (!globalStore.get(shapePickedAtom)) {
+        globalStore.set(runShapeAtom, LAUNCH_SHAPE);
+    }
     globalStore.set(runRouteAtom, null);
     globalStore.set(workerRouteAtom, null);
     globalStore.set(reviewerPicksAtom, false);
