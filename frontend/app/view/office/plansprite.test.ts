@@ -5,10 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import {
     ARM_PAD,
+    HAT_ROWS,
     MARKS,
     markUrl,
     mirrorOf,
+    outfitGrid,
     PLAN_SPRITES,
+    PLAN_TOKENS,
     planColor,
     planGrid,
     planSpriteUrl,
@@ -126,6 +129,70 @@ describe("plansprite", () => {
         markUrl("!", "day");
         markUrl("!", "after");
         expect(spriteCacheStats("plan").entries).toBe(7);
+        clearSprites("plan");
+        vi.unstubAllGlobals();
+    });
+
+    it("puts a Santa hat on the head's top rows of every sprite, and leaves every other cell as it was", () => {
+        // the head starts on row 0, a row lower on a nod, and under the three rows a raised hand takes
+        const headTop = (s: PlanSprite) => (ARMS.includes(s) ? 3 : s === "nod" ? 1 : 0);
+        for (const look of LOOKS) {
+            for (const s of ALL) {
+                const plain = planGrid(s, look);
+                const hat = planGrid(s, look, true);
+                const top = headTop(s);
+                expect(hat.length, `${s} ${look}`).toBe(plain.length);
+                for (const row of hat) {
+                    expect(row.length, `${s} ${look}`).toBe(plain[0].length);
+                    expect(row, `${s} ${look}`).toMatch(/^[OHhSsETtPpKCRr_XxW.]+$/);
+                }
+                expect(hat.slice(0, top), `${s} ${look}`).toEqual(plain.slice(0, top));
+                expect(hat.slice(top + HAT_ROWS), `${s} ${look}`).toEqual(plain.slice(top + HAT_ROWS));
+                const crown = hat.slice(top, top + HAT_ROWS).join("");
+                expect(crown, `${s} ${look}`).toMatch(/X/);
+                expect(crown, `${s} ${look}`).toMatch(/W/);
+                expect(plain.join(""), `${s} ${look}`).not.toMatch(/[XxW]/);
+            }
+        }
+    });
+
+    it("draws the hat from the outfit, and none without it", () => {
+        for (const s of ALL) {
+            expect(outfitGrid(s, { shirt: "--color-office-shirt-pi", look: 3 })).toEqual(planGrid(s, 3));
+            expect(outfitGrid(s, { shirt: "--color-office-shirt-pi", look: 3, hat: false })).toEqual(planGrid(s, 3));
+            expect(outfitGrid(s, { shirt: "--color-office-shirt-pi", look: 3, hat: true })).toEqual(
+                planGrid(s, 3, true)
+            );
+        }
+    });
+
+    it("colours the hat crimson with a snow trim", () => {
+        const read = (t: string) => {
+            const n = t.length;
+            return [n, n + 1, n + 2] as [number, number, number];
+        };
+        const o = { shirt: "--color-office-shirt-pi", look: 1, hat: true };
+        expect(planColor("X", o, "day", read)).toEqual(read("--color-xmas-crimson"));
+        expect(planColor("W", o, "after", read)).toEqual(read("--color-xmas-snow"));
+        expect(planColor("x", o, "day", read)).toBeDefined();
+        expect(planColor("x", o, "day", read)).not.toEqual(read("--color-xmas-crimson"));
+    });
+
+    it("lists the hat's tokens for the probe's unresolved check", () => {
+        expect(PLAN_TOKENS).toContain("--color-xmas-crimson");
+        expect(PLAN_TOKENS).toContain("--color-xmas-snow");
+    });
+
+    it("caches a sprite with a hat apart from the same sprite without", () => {
+        vi.stubGlobal("document", { documentElement: {}, createElement: () => ({ getContext: () => null }) });
+        vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "#010203" }));
+        clearSprites("plan");
+        const o = { shirt: "--color-office-shirt-pi", look: 2 };
+        planSpriteUrl("sit", o, "day");
+        planSpriteUrl("sit", { ...o, hat: false }, "day"); // no hat is today's sprite: no new entry
+        planSpriteUrl("sit", { ...o, hat: true }, "day");
+        planSpriteUrl("sit", { ...o, hat: true }, "day");
+        expect(spriteCacheStats("plan").entries).toBe(2);
         clearSprites("plan");
         vi.unstubAllGlobals();
     });
