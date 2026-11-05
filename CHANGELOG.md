@@ -22,6 +22,16 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- In a project's Overview, clicking a session in History opens it in Quick look, over the page, instead of leaving for the full session; Open in the dialog (or Open transcript in the row's right-click menu) still takes you there.
+
+### Fixed
+
+- In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
+
 ## 1.0.2 — 2026-11-05
 
 ### Added

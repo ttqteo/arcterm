@@ -85,7 +85,7 @@ export function SessionPeek({
                             <X size={14} aria-hidden />
                         </button>
                     </div>
-                    <SessionBody model={model} session={s} empty="" className="px-5 pb-3" />
+                    <SessionBody model={model} session={s} empty="" className="px-5 pb-3" pinBg="bg-modalbg" />
                 </div>
             ) : null}
         </ModalShell>,
