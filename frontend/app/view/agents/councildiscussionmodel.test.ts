@@ -6,6 +6,7 @@ import {
     coordinatorFailure,
     councilDetails,
     discussionBody,
+    drawsLater,
     evidenceChip,
     expertCard,
     expertDoing,
@@ -485,6 +486,19 @@ describe("failures", () => {
         expect(retriedOut({ ...c, failed: {} })).toBe(true);
         expect(retriedOut({ ...c, failed: undefined })).toBe(true);
         expect(retriedOut({ ...c, state: "done", failed: {} })).toBe(false);
+    });
+});
+
+describe("drawsLater", () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => reply(`r${i}`, "ram"));
+
+    it("draws a big council's chat after a skeleton, counting its ideas and replies", () => {
+        expect(drawsLater(council({ proposals: [prop("P1", "ux")], replies: many(40) }))).toBe(true);
+        expect(drawsLater(council({ proposals: [prop("P1", "ux")], replies: many(39) }))).toBe(false);
+    });
+
+    it("draws a small council's chat at once", () => {
+        expect(drawsLater(council({ replies: undefined }))).toBe(false);
     });
 });
 

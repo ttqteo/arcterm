@@ -40,6 +40,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A big council (more than forty ideas and replies) opens at once: its header and an outline of the chat show while the chat draws, instead of arcterm pausing on the click.
 - The Brief shows what is waiting on you as one strip at the top (Show all opens the full queue under it), and runs and councils together in one Activity column on the right: live ones as cards, the last week's finished councils and failed or cancelled runs under Earlier, with tabs for all, orchestrator, quick and councils. <!-- try: go:jarvis -->
 - An initiative opens in the side sheet instead of expanding in place, and its plan is still editable there (add, rename, move and remove chunks). `j`/`k` step its chunks, Previous and Next step the initiatives, and Activity ↗ shows its feed. A run's ↳ link opens its initiative on that chunk.
 - A chunk opens inside its initiative's sheet instead of a separate side panel: one status button (`s`, then `1`–`6`; blocked asks why and keeps the reason as a note) beside the move it most needs (Start, Done, Reopen, Unblock), and its trail newest first, where Notes only hides the bare status changes. Esc goes back to the initiative.

@@ -25,6 +25,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the header to Summary and back: the chat lands where you left it, and scrolling up glides with no jump of a
   screen. Quit and reopen arcterm and do it once more (the first drawing holds its room from the size kept last
   session). WebKit check of the drawing cache only; never tried in the app.
+- [ ] (arcterm) **A big council opens at once.** Open the thesis council "Chốt bài toán…" (158 messages) from the Agent
+  tree → the tree row and the header answer the click at once, a skeleton of message bubbles shows, and the chat
+  replaces it within about a second, landing where you left it. A small council (a CDP fixture) opens with no
+  skeleton. Unit tests and a WebKit bench of the markdown only; never tried in the app.
 - [ ] (arcterm) **The council sheet's actions do what they say.** In the dev or installed app, open a finished council
   from Jarvis → Activity → its Earlier line, so the report opens in the Brief's sheet → Add to initiative… lists the
   initiatives and adds the chosen direction as a chunk (the initiative's plan shows it); Ask in chat opens the council's

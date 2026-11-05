@@ -19,12 +19,13 @@
 import { reopenSession } from "@/app/cockpit/cockpit-actions";
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { viewFade } from "@/app/element/motiontokens";
+import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
 import { Check, ListChecks, Square, X } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
@@ -36,6 +37,7 @@ import {
     canContinue,
     coordinatorFailure,
     discussionBody,
+    drawsLater,
     expertCard,
     failedExperts,
     failedWhile,
@@ -147,10 +149,53 @@ function useLiveChats(model: AgentsViewModel, project: string): readonly Seatabl
     return useAtomValue(chatsAtom);
 }
 
+// the chat's place while it is drawn: a few message bubbles, the seat's on the left and the person's on the right
+const CHAT_SKELETON = [
+    { mine: false, lines: ["w-[92%]", "w-[84%]", "w-[60%]"] },
+    { mine: true, lines: ["w-[70%]"] },
+    { mine: false, lines: ["w-[88%]", "w-[76%]", "w-[90%]", "w-[45%]"] },
+    { mine: false, lines: ["w-[80%]", "w-[52%]"] },
+];
+
+function ChatSkeleton() {
+    return (
+        <div
+            role="status"
+            aria-label="Loading the discussion"
+            data-council-chat-loading
+            className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-5"
+        >
+            <div className="mx-auto flex w-full max-w-[860px] flex-col gap-[22px]">
+                {CHAT_SKELETON.map((m, i) => (
+                    <div key={i} className={cn("flex gap-[8px]", m.mine && "flex-row-reverse")}>
+                        {!m.mine && <Skeleton className="size-[24px] flex-none rounded-full" />}
+                        <div className={cn("flex w-full max-w-[560px] flex-col gap-[8px]", m.mine && "items-end")}>
+                            {!m.mine && <SkeletonLine className="w-[96px]" />}
+                            {m.lines.map((w, j) => (
+                                <SkeletonLine key={j} className={w} />
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
     const acts = useActions();
     const chats = useLiveChats(model, c.project);
     const body = discussionBody(c);
+    // a big council's chat (a hundred and more messages, each its markdown) takes a moment to draw: it draws in a
+    // transition, so the click that opened it is answered at once with the header and a skeleton, and the chat takes the
+    // skeleton's place when it is drawn. A small one draws at once (drawsLater). Discussion is keyed by the council, so
+    // each big one opened starts on the skeleton.
+    const [chatReady, setChatReady] = useState(() => !drawsLater(c));
+    useEffect(() => {
+        if (!chatReady) {
+            startTransition(() => setChatReady(true));
+        }
+    }, [chatReady]);
     return (
         <div data-council-discussion={c.id} data-council-id={c.id} data-council-state={c.state} className={ROOT}>
             <Header c={c} body={body} acts={acts} onOpenTerminal={(tab) => model.openTerminal(tab)} />
@@ -169,6 +214,8 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
                     <PauseBody c={c} acts={acts} />
                 ) : body === "experts" ? (
                     <ExpertsBody c={c} acts={acts} />
+                ) : !chatReady ? (
+                    <ChatSkeleton />
                 ) : (
                     <CouncilChat
                         c={c}
