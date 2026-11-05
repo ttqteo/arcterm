@@ -27,6 +27,12 @@ import "./xterm.css";
 
 const dlog = debug("wave:term");
 
+declare global {
+    interface Window {
+        __arcTerms?: Record<string, TermWrap>;
+    }
+}
+
 const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => {
     const viewRef = React.useRef<HTMLDivElement>(null);
     const connectElemRef = React.useRef<HTMLDivElement>(null);
@@ -179,6 +185,11 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         );
         model.termRef.current = termWrap;
         setTermWrapInst(termWrap);
+        // DEV-only: the terminal-theme CDP scenario (scripts/cdp/scenarios.mjs) reads the live xterm's theme here
+        if (import.meta.env.DEV) {
+            window.__arcTerms ??= {};
+            window.__arcTerms[blockId] = termWrap;
+        }
         const rszObs = new ResizeObserver(() => {
             termWrap.handleResize_debounced();
         });
@@ -197,6 +208,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             termWrap.dispose();
             rszObs.disconnect();
             setTermWrapInst(null);
+            if (import.meta.env.DEV && window.__arcTerms?.[blockId] === termWrap) {
+                delete window.__arcTerms[blockId];
+            }
         };
     }, [blockId, termSettings, termFontSize, connFontFamily]);
 

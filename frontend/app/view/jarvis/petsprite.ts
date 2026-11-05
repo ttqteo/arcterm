@@ -31,8 +31,8 @@ export type PetPose =
 export type PetMark = "gate" | "escalation" | "blocked" | "z" | "drop" | "unread";
 
 // What it wears in Vietnam's colours, chosen in Settings (petoutfit.ts): the flag shirt over a pose, or the flag in
-// its hand behind one.
-export type PetOutfit = "vn-shirt" | "vn-flag";
+// its hand behind one. The Santa hat replaces either while the Christmas decor shows (petoutfit.ts).
+export type PetOutfit = "vn-shirt" | "vn-flag" | "santa-hat";
 
 // Which creature Jarvis is drawn as, chosen in Settings (petcharacter.ts). Each has every pose, and the marks and
 // outfits fit any.
@@ -75,6 +75,8 @@ export const PET_TOKENS = {
     N: "--color-city-brick-light",
     Q: "--color-city-window",
     L: "--color-city-window-lit",
+    A: "--color-xmas-crimson", // the Santa hat's cap
+    F: "--color-xmas-snow", // its trim and bobble
 } as const satisfies Record<string, `--color-${string}`>;
 
 type PetCode = keyof typeof PET_TOKENS;
@@ -1695,14 +1697,16 @@ const FOLD_WINDOWS = [3, 7, 11, 15];
 // the brick rows above and below the windows
 const FOLD_TOP_WALL = ["..MMMMMMMMMMMMMMMMM.", "..MMMNMMMMMMMNMMMMM."];
 
-/** The rooftop scene: the first min(lit, 4) windows lit, the legs in the swing's first or second frame. */
-export function spideyFold(lit: number, swing: boolean): readonly string[] {
+/** The rooftop scene: the first min(lit, 4) windows lit, the legs in the swing's first or second frame, and with
+ *  `hat` the Santa hat on his head. */
+export function spideyFold(lit: number, swing: boolean, hat = false): readonly string[] {
     const windows = [..."..MMMMMMMMMMMMMMMMM."];
     FOLD_WINDOWS.forEach((x, i) => {
         windows[x] = windows[x + 1] = i < lit ? "L" : "Q";
     });
     const row = windows.join("");
-    return [...FOLD_TOP, ...FOLD_LEGS[swing ? 1 : 0], FOLD_TOP_WALL[0], row, row, FOLD_TOP_WALL[1]];
+    const rows = [...FOLD_TOP, ...FOLD_LEGS[swing ? 1 : 0], FOLD_TOP_WALL[0], row, row, FOLD_TOP_WALL[1]];
+    return hat ? wearHat(rows, "spidey") : rows;
 }
 
 // Spider-sense: amber jags either side of the head and over it, drawn in --color-asking when something waits on you
@@ -1814,12 +1818,111 @@ for (const pose of Object.keys(POSES) as PetPose[]) {
     SPIDEY_DRESSED[pose] = dressSpideyInFlag(SPIDEY_POSES[pose]);
 }
 
-/** A pose's grid in an outfit: dressed in the shirt, else the pose itself (the flag is held, not worn). */
+// The Santa hat (the Christmas preset). The head's crown is its first row of at least four head cells (a hair tuft or
+// a strand above it is narrower); the hat sits on it: the trim covers that row, the cap fills the row above with the
+// bobble beside it at the left, and the tip folds over to the left on the row above that. The sprout, the Minion's
+// hair and Peter's tufts above the crown go under the hat; nothing below the crown changes.
+const HAT_HEAD: Record<PetCharacter, string> = { sprout: "bl", minion: "jh", spidey: "SH" };
+const HAT_TUFT: Record<PetCharacter, string> = { sprout: "d", minion: "s", spidey: "H" };
+const HAT_CROWN_MIN = 4;
+
+/** `rows` with the Santa hat on the head. `upsideDown` is for Spider-Man's hang and crawl: the crown is the head's
+ *  last such row and the hat hangs below it, past the grid's bottom if need be (the renderer's svg overflows).
+ *  Exported for the Office's Spider-Man entrance, whose grids are not poses. */
+export function wearHat(rows: readonly string[], character: PetCharacter, upsideDown = false): readonly string[] {
+    const head = HAT_HEAD[character];
+    const crownCells = (row: string) => [...row].filter((c) => head.includes(c)).length;
+    const order = rows.map((_, y) => y);
+    const top = (upsideDown ? order.reverse() : order).find((y) => crownCells(rows[y]) >= HAT_CROWN_MIN);
+    if (top == null) {
+        return rows;
+    }
+    const width = rows[top].length;
+    const g = rows.map((row) => [...row]);
+    while (upsideDown && g.length < top + 3) {
+        g.push([...".".repeat(width)]);
+    }
+    const tuft = HAT_TUFT[character];
+    g.forEach((row, y) => {
+        if (upsideDown ? y > top : y < top) {
+            row.forEach((c, x) => tuft.includes(c) && (row[x] = "."));
+        }
+    });
+    const crown = [...rows[top]];
+    const a = crown.findIndex((c) => head.includes(c));
+    const b = crown.length - 1 - [...crown].reverse().findIndex((c) => head.includes(c));
+    const tip = Math.max(1, Math.floor((b - a + 1) / 2) - 1);
+    const up = upsideDown ? 1 : -1;
+    const put = (x: number, y: number, code: string) => {
+        if (x >= 0 && x < width && y >= 0 && y < g.length) {
+            g[y][x] = code;
+        }
+    };
+    for (let x = a; x <= b; x++) {
+        put(x, top, "F");
+    }
+    put(a - 1, top + up, "F");
+    for (let x = a; x < b; x++) {
+        put(x, top + up, "A");
+    }
+    for (let x = a; x < a + tip; x++) {
+        put(x, top + 2 * up, "A");
+    }
+    return g.map((row) => row.join(""));
+}
+
+const HATTED = {} as Record<PetCharacter, Record<PetPose, readonly string[]>>;
+const PLAIN: Record<PetCharacter, Record<PetPose, readonly string[]>> = {
+    sprout: POSES,
+    minion: MINION_POSES,
+    spidey: SPIDEY_POSES,
+};
+const PETER_BOSS_HATTED = {} as Record<PetPose, readonly string[]>;
+for (const character of Object.keys(PLAIN) as PetCharacter[]) {
+    HATTED[character] = {} as Record<PetPose, readonly string[]>;
+    for (const pose of Object.keys(POSES) as PetPose[]) {
+        HATTED[character][pose] = wearHat(PLAIN[character][pose], character);
+    }
+}
+for (const pose of Object.keys(POSES) as PetPose[]) {
+    PETER_BOSS_HATTED[pose] = wearHat(PETER_BOSS_POSES[pose], "spidey");
+}
+const BOSS_FACING_HATTED = {} as Record<
+    PetCharacter,
+    Record<"side" | "back", readonly [readonly string[], readonly string[]]>
+>;
+for (const character of Object.keys(BOSS_FACING) as PetCharacter[]) {
+    const hat = ([one, two]: readonly [readonly string[], readonly string[]]) =>
+        [wearHat(one, character), wearHat(two, character)] as const;
+    BOSS_FACING_HATTED[character] = {
+        side: hat(BOSS_FACING[character].side),
+        back: hat(BOSS_FACING[character].back),
+    };
+}
+const SPIDEY_HANG_HATTED = wearHat(SPIDEY_HANG, "spidey", true);
+const SPIDEY_CRAWL_HATTED = SPIDEY_CRAWL.map((rows) => wearHat(rows, "spidey", true));
+
+/** Spider-Man's hang grid in an outfit: the Santa hat hangs off his head, which is at the bottom; nothing else is worn
+ *  in the hang. */
+export function spideyHangRows(outfit: PetOutfit | null): readonly string[] {
+    return outfit === "santa-hat" ? SPIDEY_HANG_HATTED : SPIDEY_HANG;
+}
+
+/** One of Spider-Man's two crawl frames in an outfit, as spideyHangRows. */
+export function spideyCrawlRows(frame: number, outfit: PetOutfit | null): readonly string[] {
+    return (outfit === "santa-hat" ? SPIDEY_CRAWL_HATTED : SPIDEY_CRAWL)[frame];
+}
+
+/** A pose's grid in an outfit: dressed in the shirt, the Santa hat over the plain pose, else the pose itself (the flag
+ *  is held, not worn). */
 export function outfitRows(
     pose: PetPose,
     outfit: PetOutfit | null,
     character: PetCharacter = "sprout"
 ): readonly string[] {
+    if (outfit === "santa-hat") {
+        return HATTED[character][pose];
+    }
     if (character === "spidey") {
         return outfit === "vn-shirt" ? SPIDEY_DRESSED[pose] : SPIDEY_POSES[pose];
     }
@@ -1923,7 +2026,11 @@ export function bossRows(
     if (turned) {
         return turned;
     }
-    return character === "spidey" ? PETER_BOSS_POSES[pose] : outfitRows(pose, outfit, character);
+    if (character === "spidey") {
+        // the Santa hat goes on over the shirt and tie
+        return outfit === "santa-hat" ? PETER_BOSS_HATTED[pose] : PETER_BOSS_POSES[pose];
+    }
+    return outfitRows(pose, outfit, character);
 }
 
 // The Sprout's back in the flag shirt: no face to measure the shirt from, so it starts where the front's does, starless
@@ -1941,6 +2048,9 @@ function facingRows(
         return null;
     }
     const rows = BOSS_FACING[character][facing][pose === "walk1" ? 0 : 1];
+    if (outfit === "santa-hat") {
+        return BOSS_FACING_HATTED[character][facing][pose === "walk1" ? 0 : 1];
+    }
     // Peter the boss is always in his shirt and tie
     if (outfit !== "vn-shirt" || character === "spidey") {
         return rows;

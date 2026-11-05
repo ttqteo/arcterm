@@ -6,6 +6,7 @@
 // content. Pure: the cells, the paths and when each shows; themedecorview.tsx draws them.
 
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
+import { CHRISTMAS_THEME } from "./christmas";
 import type { ThemePalette } from "./themes";
 
 export const SPIDER_THEME = "spider";
@@ -62,10 +63,11 @@ export const SPIDER_SMALL: readonly string[] = [
 
 /**
  * The four swatches a theme chip shows: background, surface, accent and success. The Spider chip shows the suit's
- * red (its decor) and blue (its accent) instead.
+ * red (its decor) and blue (its accent) instead, and the Christmas chip its decor crimson and its gold accent.
  */
 export function chipSwatches(id: string, palette: ThemePalette): [string, string, string, string] {
     if (hasSpiderDecor(id)) return [palette.bg, palette.surface, "var(--color-spidey-red)", palette.accent];
+    if (id === CHRISTMAS_THEME) return [palette.bg, palette.surface, "var(--color-xmas-crimson)", palette.accent];
     return [palette.bg, palette.surface, palette.accent, palette.success];
 }
 

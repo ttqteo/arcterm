@@ -48,6 +48,9 @@ export const PULSES: Record<string, PulseSpec> = {
     // a council seat's typing bubble (councilchat.tsx TypingDots): three dots, each a step behind the one before it
     // (data-pulse-lag); tailwindsetup.css's .pulse-typing reads the curve as each dot's lift and brightness
     "pulse-typing": { periodMs: 1_200, low: 0.35, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--typing" },
+    // the Christmas lights under the app bar while an agent asks (christmaslights.tsx): every other bulb lags half a
+    // period (data-pulse-lag), so the string chases; lit and still otherwise, with no class and no frames
+    "pulse-blink": { periodMs: 1_200, low: 0.25, ease: cubicBezier(0.42, 0, 0.58, 1) },
 };
 
 /** When a pulse that runs `lag` ms (an element's data-pulse-lag) behind one seen at `now` started: already that far

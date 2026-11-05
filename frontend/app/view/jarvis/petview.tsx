@@ -20,6 +20,7 @@ import { deriveKeyContext } from "@/app/store/keybindings/dispatcher";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
+import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { floatMiniAtom, floatModeAtom } from "@/app/view/agents/floatstore";
 import { workingCount } from "@/app/view/agents/sproutroster";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
@@ -67,8 +68,8 @@ import {
 import {
     PET_CELL_PX,
     PET_PX,
-    SPIDEY_CRAWL,
-    SPIDEY_HANG,
+    spideyCrawlRows,
+    spideyHangRows,
     spriteFor,
     spriteOfRows,
     type PetCell,
@@ -780,16 +781,18 @@ function PetSprite({
     );
 
     const marks: PetMark[] = frame == null ? [] : unread ? [...frame.step.marks, "unread"] : frame.step.marks;
-    // read per frame, so a flag day dresses it on the first step past midnight
-    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
+    // read per frame, so a flag day dresses it on the first step past midnight; the Santa hat while the Christmas
+    // decor shows
+    const christmas = useChristmasDecor();
+    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date(), christmas);
     // the crawl and the hang are grids of their own, not poses; the crawl's two frames alternate with each cell crawled
     const sprite =
         frame == null
             ? null
             : hangPhase === "crawl"
-              ? spriteOfRows(SPIDEY_CRAWL[Math.abs(Math.round(frame.step.x / STEP_PX)) % 2], marks)
+              ? spriteOfRows(spideyCrawlRows(Math.abs(Math.round(frame.step.x / STEP_PX)) % 2, outfit), marks)
               : hangPhase === "hang"
-                ? spriteOfRows(SPIDEY_HANG, marks)
+                ? spriteOfRows(spideyHangRows(outfit), marks)
                 : spriteFor(frame.step.pose, marks, outfit, character);
 
     // Dev-only: the CDP harness asserts on this (sprout spec §4, "The DEV contract"). Folded out of production

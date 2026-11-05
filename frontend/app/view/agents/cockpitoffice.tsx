@@ -25,6 +25,7 @@ import {
     SPIDEY_SWING,
     SPIDEY_UNMASK,
     spriteOfRows,
+    wearHat,
     type PetCell,
     type PetSprite,
 } from "@/app/view/jarvis/petsprite";
@@ -112,6 +113,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { AgentsViewModel } from "./agents";
+import { useChristmasDecor } from "./christmasstore";
 import { playOfficeUi } from "./officeaudio";
 import {
     admitWalkers,
@@ -831,14 +833,29 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         }
     }, [layoutRaw, placed.layout]);
     const floorWanted = useAtomValue(officeFloorAtom);
+    // the Christmas decor (christmas theme spec, "Office"): trees for plants, gifts and the wreath, and the boss walks
+    // round them only while they are drawn
+    const christmas = useChristmasDecor();
     const plan = useMemo(
-        () => buildPlan({ agents, runs, width, height, floor: floorWanted, at: placed.at, now, away: planAway, night }),
-        [agents, runs, width, height, floorWanted, placed.at, now, planAway, night]
+        () =>
+            buildPlan({
+                agents,
+                runs,
+                width,
+                height,
+                floor: floorWanted,
+                at: placed.at,
+                now,
+                away: planAway,
+                night,
+                christmas,
+            }),
+        [agents, runs, width, height, floorWanted, placed.at, now, planAway, night, christmas]
     );
     lastPlan = plan;
-    const sceneKey = sceneryKey(plan, phase, tired, theme);
+    const sceneKey = sceneryKey(plan, phase, tired, theme, christmas);
     // the plan is rebuilt on every coarse tick with new objects; the ops only when what they draw has changed
-    const scene = useMemo(() => scenery(plan, phase, tired), [sceneKey]);
+    const scene = useMemo(() => scenery(plan, phase, tired, christmas), [sceneKey]);
     // one draw of the building per scene: both canvases paint in their own effects, which run before this one
     useEffect(() => {
         sceneryDraws++;
@@ -1346,6 +1363,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             now,
             away: planAway,
             night,
+            christmas,
         });
         // the boss goes with the room: to the stop it stood at when that is in the room, else the room's first
         const stop = carriedStop(there, `room:${c.project}`, cursorRef.current);
@@ -2180,13 +2198,17 @@ function Person(p: {
     lounger?: string;
 }) {
     const h = spriteH(p.sprite);
+    // the Santa hat is put on here, where the sprite is drawn, never in a stored outfit: turning the effects off takes
+    // every hat off at once
+    const hat = useChristmasDecor();
     return (
         <img
             alt=""
             draggable={false}
             data-office-sprite={p.sprite}
             data-office-lounger={p.lounger}
-            src={planSpriteUrl(p.sprite, p.outfit, p.phase, p.shade ?? "")}
+            data-office-hat={hat ? "" : undefined}
+            src={planSpriteUrl(p.sprite, { ...p.outfit, hat }, p.phase, p.shade ?? "")}
             className="pointer-events-none absolute [image-rendering:pixelated]"
             style={{
                 left: p.left + spriteLeft(p.sprite) * PLAN_CELL,
@@ -2834,6 +2856,9 @@ function Mover(p: {
     const ref = useRef<HTMLImageElement>(null);
     const w = spriteWidth(p.sprite) * PLAN_CELL;
     const h = spriteH(p.sprite);
+    // the Santa hat as Person puts it on; the clip below takes the same outfit, so the hat is in front of a prop too
+    const hat = useChristmasDecor();
+    const outfit = useMemo<PlanOutfit>(() => ({ ...p.outfit, hat }), [p.outfit, hat]);
     // whole art cells on both axes: a person never sits between two pixels of the canvases
     const origin = (at: Point): Point => ({
         x: Math.round((at.x - w / 2) / PLAN_CELL) * PLAN_CELL,
@@ -2848,8 +2873,8 @@ function Mover(p: {
         return `translate(${o.x}px, ${o.y}px)${p.mirror ? " scaleX(-1)" : ""}`;
     });
     const clip = useMemo(
-        () => cellsClip(gridCells(outfitGrid(p.sprite, p.outfit)), PLAN_CELL, w, p.mirror),
-        [p.sprite, p.outfit, p.mirror, w]
+        () => cellsClip(gridCells(outfitGrid(p.sprite, outfit)), PLAN_CELL, w, p.mirror),
+        [p.sprite, outfit, p.mirror, w]
     );
     return (
         <>
@@ -2858,7 +2883,8 @@ function Mover(p: {
                 alt=""
                 draggable={false}
                 data-office-sprite={p.sprite}
-                src={planSpriteUrl(p.sprite, p.outfit, p.phase)}
+                data-office-hat={hat ? "" : undefined}
+                src={planSpriteUrl(p.sprite, outfit, p.phase)}
                 className={cn(
                     "pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]",
                     p.walking && "will-change-transform"
@@ -2960,14 +2986,21 @@ const petCells = (cells: readonly PetCell[]) =>
         />
     ));
 
-// Spider-Man's entrance after the swing: the suit sits, stands, unmasks, and the puff turns it into Peter
-const ENTRANCE_SPRITES: Record<"swing" | "land" | "stand" | "unmask" | "puff", PetSprite> = {
-    swing: spriteOfRows(SPIDEY_SWING, []),
-    land: spriteOfRows(SPIDEY_POSES.sit, []),
-    stand: spriteOfRows(SPIDEY_POSES.stand, []),
-    unmask: spriteOfRows(SPIDEY_UNMASK, []),
-    puff: spriteOfRows(SPIDEY_PUFF, []),
+// Spider-Man's entrance after the swing: the suit sits, stands, unmasks, and the puff turns it into Peter; each frame
+// also in the Santa hat, worn while the Christmas decor shows (the unmask lifts it off with the mask)
+type EntranceFrame = "swing" | "land" | "stand" | "unmask" | "puff";
+const ENTRANCE_ROWS: Record<EntranceFrame, readonly string[]> = {
+    swing: SPIDEY_SWING,
+    land: SPIDEY_POSES.sit,
+    stand: SPIDEY_POSES.stand,
+    unmask: SPIDEY_UNMASK,
+    puff: SPIDEY_PUFF,
 };
+const entranceSprites = (hat: boolean) =>
+    Object.fromEntries(
+        Object.entries(ENTRANCE_ROWS).map(([k, rows]) => [k, spriteOfRows(hat ? wearHat(rows, "spidey") : rows, [])])
+    ) as Record<EntranceFrame, PetSprite>;
+const ENTRANCE_SPRITES = { plain: entranceSprites(false), hat: entranceSprites(true) };
 // the entrance redraws at 12 frames a second, and the swing takes this long
 const ENTRANCE_FRAME_MS = 83;
 const SWING_MS = 700;
@@ -2994,8 +3027,10 @@ function BossPet({
 }) {
     const frame = useAtomValue(walkFrameAtom);
     const character = petCharacter(useAtomValue(petCharacterAtom));
-    // read per render, so a flag day dresses it as the footer's creature is dressed
-    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
+    // read per render, so a flag day dresses it as the footer's creature is dressed; the Santa hat while the Christmas
+    // decor shows
+    const christmas = useChristmasDecor();
+    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date(), christmas);
     const bubble = useAtomValue(petBubbleAtom);
     const unread = useAtomValue(petUnreadAtom);
     const mood = useAtomValue(bossMoodAtom);
@@ -3236,7 +3271,7 @@ function BossPet({
             />
         );
     } else if (entrance != null) {
-        const body = ENTRANCE_SPRITES[entrance].body;
+        const body = ENTRANCE_SPRITES[outfit === "santa-hat" ? "hat" : "plain"][entrance].body;
         // the strand from the window to his raised hand, in this svg's coordinates (the button is where the swing has him)
         const strand = swing ? (
             <line
