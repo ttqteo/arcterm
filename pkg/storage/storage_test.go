@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -178,8 +180,144 @@ func TestCleanDispatchesToItsCategoryAndRescans(t *testing.T) {
 	if err != nil || len(res.Cleaned) != 1 || len(f.cleaned) != 1 {
 		t.Fatalf("got %+v, %v; want the provider to clean trash", res, err)
 	}
-	waitFor(t, func() bool { return published.Load() == 1 })
+	// Clean publishes the re-measured category at once, then the rescan publishes when it ends.
+	waitFor(t, func() bool { return published.Load() == 2 && !s.Report().Scanning })
 	if _, err := s.Clean(context.Background(), "nope", nil, CleanOpts{}); err == nil {
 		t.Fatal("an unknown category must be an error")
+	}
+}
+
+// shrinkingProvider measures `after` once it has cleaned, like a category whose cleaned items are gone.
+type shrinkingProvider struct {
+	fakeProvider
+	after StorageCategoryReport
+}
+
+func (p *shrinkingProvider) clean(ctx context.Context, env *Env, ids []string, opts CleanOpts) StorageCleanResult {
+	res := p.fakeProvider.clean(ctx, env, ids, opts)
+	p.rep = p.after
+	return res
+}
+
+// publishedReports records what a scanner published, in order.
+type publishedReports struct {
+	mu   sync.Mutex
+	reps []StorageReport
+}
+
+func (p *publishedReports) add(r StorageReport) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reps = append(p.reps, r)
+}
+
+func (p *publishedReports) all() []StorageReport {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.reps)
+}
+
+func categoryNames(cats []StorageCategoryReport) []StorageCategory {
+	names := make([]StorageCategory, len(cats))
+	for i, c := range cats {
+		names[i] = c.Category
+	}
+	return names
+}
+
+// cleanWithBlockedRescan seeds a report, cleans category `cleaned` of providers (the first one's measure blocks, so
+// the rescan Clean starts cannot end), and returns the scanner and what it published, the rescan still running.
+func cleanWithBlockedRescan(t *testing.T, providers []provider, gate chan struct{}, seed StorageReport, cleaned StorageCategory) (*Scanner, *publishedReports) {
+	t.Helper()
+	pub := &publishedReports{}
+	s := &Scanner{env: testEnv(t), providers: providers, publish: pub.add, report: seed}
+	t.Cleanup(func() {
+		select {
+		case <-gate:
+		default:
+			close(gate)
+		}
+		waitFor(t, func() bool { return !s.Report().Scanning })
+	})
+	if _, err := s.Clean(context.Background(), cleaned, []string{"x"}, CleanOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	first, ok := providers[0].(*fakeProvider)
+	if !ok {
+		t.Fatal("the first provider must be the blocking fakeProvider")
+	}
+	waitFor(t, func() bool { return first.scans.Load() == 1 })
+	if !s.Report().Scanning {
+		t.Fatal("the rescan must still be running: nothing below proves the point otherwise")
+	}
+	return s, pub
+}
+
+func TestCleanReMeasuresTheCleanedCategoryBeforeTheRescanEnds(t *testing.T) {
+	gate := make(chan struct{})
+	a := &fakeProvider{cat: CategoryRunWorktrees, gate: gate, rep: report(CategoryRunWorktrees, []StorageItem{{ID: "a", Bytes: 1}}, nil)}
+	oldB := report(CategorySessions, []StorageItem{{ID: "x", Bytes: 50, Cleanable: true}}, nil)
+	newB := report(CategorySessions, []StorageItem{{ID: "y", Bytes: 7}}, nil)
+	b := &shrinkingProvider{fakeProvider: fakeProvider{cat: CategorySessions, rep: oldB}, after: newB}
+	seed := StorageReport{ScannedTs: 123, Categories: []StorageCategoryReport{
+		report(CategoryRunWorktrees, []StorageItem{{ID: "old-a", Bytes: 9}}, nil), oldB,
+	}}
+	s, pub := cleanWithBlockedRescan(t, []provider{a, b}, gate, seed, CategorySessions)
+
+	got := s.Report()
+	if want := []StorageCategory{CategoryRunWorktrees, CategorySessions}; !slices.Equal(categoryNames(got.Categories), want) {
+		t.Fatalf("categories %v, want %v (provider order)", categoryNames(got.Categories), want)
+	}
+	if gotA := got.Categories[0]; gotA.Bytes != 9 {
+		t.Fatalf("category A = %+v, want the last scan's entry kept, not the blocked rescan's", gotA)
+	}
+	if gotB := got.Categories[1]; gotB.Bytes != 7 || len(gotB.Items) != 1 || gotB.Items[0].ID != "y" {
+		t.Fatalf("category B = %+v, want its new measure (7 bytes, item y)", gotB)
+	}
+	reps := pub.all()
+	if len(reps) != 1 {
+		t.Fatalf("published %d reports before the rescan ended, want exactly the re-measure's", len(reps))
+	}
+	if cats := reps[0].Categories; len(cats) != 2 || cats[1].Bytes != 7 {
+		t.Fatalf("published %+v, want B's new measure in the re-measure's report", cats)
+	}
+}
+
+func TestCleanAddsTheCleanedCategoryInItsPlaceWhenTheReportHadNone(t *testing.T) {
+	gate := make(chan struct{})
+	a := &fakeProvider{cat: CategoryRunWorktrees, gate: gate, rep: report(CategoryRunWorktrees, nil, nil)}
+	newB := report(CategorySessions, []StorageItem{{ID: "y", Bytes: 7}}, nil)
+	b := &shrinkingProvider{fakeProvider: fakeProvider{cat: CategorySessions}, after: newB}
+	c := &fakeProvider{cat: CategoryHousekeeping, rep: report(CategoryHousekeeping, nil, nil)}
+	seed := StorageReport{ScannedTs: 123, Categories: []StorageCategoryReport{
+		report(CategoryRunWorktrees, []StorageItem{{ID: "old-a", Bytes: 9}}, nil),
+		report(CategoryHousekeeping, []StorageItem{{ID: "old-c", Bytes: 3}}, nil),
+	}}
+	s, _ := cleanWithBlockedRescan(t, []provider{a, b, c}, gate, seed, CategorySessions)
+
+	got := s.Report().Categories
+	if want := []StorageCategory{CategoryRunWorktrees, CategorySessions, CategoryHousekeeping}; !slices.Equal(categoryNames(got), want) {
+		t.Fatalf("categories %v, want %v (B added between A and C)", categoryNames(got), want)
+	}
+	if got[1].Bytes != 7 {
+		t.Fatalf("category B = %+v, want its new measure", got[1])
+	}
+	if got[0].Bytes != 9 || got[2].Bytes != 3 {
+		t.Fatalf("categories A, C = %+v, %+v; want the last scan's entries kept", got[0], got[2])
+	}
+}
+
+func TestCleanKeepsTheLastFullScansTime(t *testing.T) {
+	gate := make(chan struct{})
+	a := &fakeProvider{cat: CategoryRunWorktrees, gate: gate, rep: report(CategoryRunWorktrees, nil, nil)}
+	b := &shrinkingProvider{fakeProvider: fakeProvider{cat: CategorySessions}, after: report(CategorySessions, []StorageItem{{ID: "y", Bytes: 7}}, nil)}
+	seed := StorageReport{ScannedTs: 123}
+	s, pub := cleanWithBlockedRescan(t, []provider{a, b}, gate, seed, CategorySessions)
+
+	if ts := s.Report().ScannedTs; ts != 123 {
+		t.Fatalf("ScannedTs = %d after Clean's re-measure, want the last full scan's 123", ts)
+	}
+	if reps := pub.all(); len(reps) != 1 || reps[0].ScannedTs != 123 {
+		t.Fatalf("published %+v, want one report still stamped 123", reps)
 	}
 }

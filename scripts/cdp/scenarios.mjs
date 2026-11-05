@@ -33240,19 +33240,26 @@ const canvasGallery = {
         );
 
         // 6. board Storage: the Design canvases summary card and the canvas row of Auto-clean
-        const scanFrom = Date.now();
-        await h.rpc("rescanstorage", null);
-        // the first scan of a fresh store measures build output and the package caches (pkg/storage/scanner.go: "can take
-        // minutes"), and the throw discards the steps before it: it took more than 60 s on a cold Final, and more than 180 s
-        // on a machine with large build and package caches, so the scan gets 600 s
-        const scanBy = Date.now() + 600_000;
+        const listed = (await h.rpc("listcanvases", null)) ?? [];
+        // step 5's Move to trash re-measures the canvases category at once (Scanner.Clean), so wait for that category to
+        // match the gallery, not for a whole scan: a scan measures build output and the package caches, which takes more
+        // than 10 minutes on a machine with large caches, and canvases is its last provider
+        const catBy = Date.now() + 60_000;
+        let lastCanvases = null;
         for (;;) {
             const r = await h.rpc("getstorage", null);
-            if (r?.scannedts >= scanFrom && !r.scanning) break;
-            if (Date.now() > scanBy) throw new Error("no storage scan within 600 s");
+            const c = (r?.categories ?? []).find((x) => x.category === "canvases");
+            lastCanvases = c == null ? null : (c.items ?? []).length;
+            if (lastCanvases === listed.length) break;
+            if (Date.now() > catBy) {
+                throw new Error(
+                    `no canvases category matching the gallery within 60 s (last saw ${
+                        lastCanvases == null ? "no canvases category" : `${lastCanvases} rows`
+                    }, ${r?.scanning ? "scanning" : "not scanning"}, ${listed.length} listed)`
+                );
+            }
             await polishNap(500);
         }
-        const listed = (await h.rpc("listcanvases", null)) ?? [];
         const onShip = (await h.rpc("getfullconfig", null))?.settings?.["storage:canvasonship"] === true;
         await h.goto("settings");
         await polishWaitFor(h, `document.querySelector('button[data-section="storage"]') != null`, 5000);
