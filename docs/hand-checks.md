@@ -26,6 +26,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   height. Press `Ctrl`+`Z` → the pick goes back to the `@…` you typed; click an Ask next question → `Ctrl`+`Z` empties
   the box. Checked only in headless Chrome by `council-discussion` (undo there by `execCommand`, not the keys); not in
   WebView2 (`councilchat.tsx` ComposerMarks / editBox, aaad0bc86).
+- [ ] (arcterm) **Mark shows a ticked box when on.** Open a design canvas (Canvas pane, or a brainstorm board opened
+  large) → Mark shows a dashed square; click it or press `m` → it turns accent and its icon becomes a ticked square;
+  click again → back to the dashed square. (`canvaspane.tsx`, `brainstormrail.tsx`, main, 2026-11-05)
 
 - [ ] (arcterm) **Float and the fold on a scaled Windows display.** On the Windows PC at 125% or 150% scaling, with
   arcterm maximized: Float → the window leaves maximized and shrinks to the float's place at the float's size (not

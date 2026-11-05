@@ -16,7 +16,7 @@ import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { SquareDashed, X } from "lucide-react";
+import { SquareCheck, SquareDashed, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
     useEffect,
@@ -682,7 +682,12 @@ function WidenedBoard({
                     onClick={() => setMarking(agent.id, !cs.marking)}
                     className={cn(SWAP_BTN, marking && SWAP_BTN_ON)}
                 >
-                    <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
+                    {/* on, the toggle reads as a ticked box, so it no longer looks like the same button turned orange */}
+                    {marking ? (
+                        <SquareCheck size={14} strokeWidth={1.8} aria-hidden />
+                    ) : (
+                        <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
+                    )}
                     Mark
                 </button>
                 <button
