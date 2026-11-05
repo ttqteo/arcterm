@@ -39,6 +39,10 @@ export const launcherBranchAtom = atom<string | null>(null) as PrimitiveAtom<str
 // the open one on Escape wherever focus is (the flag menu opens while focus sits in the Task box).
 export const launcherFlagMenuAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBranchListAtom = atom(false) as PrimitiveAtom<boolean>;
+// The footer's Claude account menu, and its pick for this launch (DEFAULT_ACCOUNT_PICK or an account id); null follows
+// the project's account, else the active one (claudeaccount.ts pickedLaunchAccount).
+export const launcherAccountMenuAtom = atom(false) as PrimitiveAtom<boolean>;
+export const launcherAccountAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // the recent sessions the agent half offers to resume; null until this open's load lands
 export const launcherSessionsAtom = atom<SessionInfo[] | null>(null) as PrimitiveAtom<SessionInfo[] | null>;
 // The Resume list's paging: the scope (launcherresume.ts resumeScopeKey) the list was last loaded for, the cursor of
@@ -119,6 +123,7 @@ export function closeLauncher(model: LauncherModel): void {
     closedAt = Date.now();
     globalStore.set(launcherFlagMenuAtom, false);
     globalStore.set(launcherBranchListAtom, false);
+    globalStore.set(launcherAccountMenuAtom, false);
     globalStore.set(launcherHandbackAtom, null);
     globalStore.set(model.launcherAtom, null);
 }
@@ -133,6 +138,7 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherWorktreeAtom, false);
     globalStore.set(launcherBranchAtom, null);
     globalStore.set(launcherResumeAtom, null);
+    globalStore.set(launcherAccountAtom, null);
     for (const img of globalStore.get(launcherImagesAtom)) {
         URL.revokeObjectURL(img.previewUrl);
     }
@@ -182,6 +188,8 @@ export function pickLauncherProject(name: string, current: string): void {
     }
     globalStore.set(launcherProjectAtom, name);
     globalStore.set(launcherBranchAtom, null);
+    // another project may run on an account of its own: the footer starts on it again
+    globalStore.set(launcherAccountAtom, null);
     // a session belongs to one project: coming back to this one starts on "New session"
     globalStore.set(launcherResumeAtom, null);
 }

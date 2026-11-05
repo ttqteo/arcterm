@@ -52,6 +52,8 @@ export interface LaunchAgentOpts {
     // false leaves a terminal in the background (a tool opened into the panel under the agent). Every other launch, a
     // plain terminal's too, takes the Agent surface's focus (see below).
     focus?: boolean;
+    // block meta for the Claude account the New dialog picked for this launch (claudeaccount.ts accountLaunchMeta)
+    accountMeta?: Record<string, string>;
 }
 
 // A new tab and the id of the term block it opens with, for the caller to configure with SetMeta before the block
@@ -120,6 +122,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
                 toolId: opts.toolId,
             }),
             ...(opts.asleep ? asleepLaunchMeta(opts.asleep) : {}),
+            ...opts.accountMeta,
         },
     });
     // Refresh the frontend's cached block object. getWaveObjectAtom does a one-time fetch and does

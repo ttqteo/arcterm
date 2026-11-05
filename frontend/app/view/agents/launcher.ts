@@ -335,7 +335,7 @@ export function draftShown(draft: LauncherDraft): boolean {
 export type FocusZone = "start" | "project" | "tools" | "resume" | "task" | "textarea" | "input" | "other";
 
 // What an Escape can close before the dialog, innermost first
-export type LauncherInner = "flags" | "branches" | "filter";
+export type LauncherInner = "flags" | "branches" | "account" | "filter";
 
 export interface LauncherKeyCtx {
     zone: FocusZone;
@@ -353,6 +353,8 @@ export interface LauncherKeyCtx {
     // shown on screen, not just set: a branch list with no branches draws nothing
     flagMenuOpen: boolean;
     branchListOpen: boolean;
+    // the footer's Claude account menu; optional, as only a claude launch with accounts to pick has one
+    accountMenuOpen?: boolean;
     // a session row of the Resume list is picked, not New session: only a session has a transcript to read
     resumePicked: boolean;
     // the pick has a Task box (an agent that takes one) or a Goal box (a run started from a goal)
@@ -407,6 +409,9 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         }
         if (ctx.branchListOpen) {
             return { kind: "dismiss-inner", what: "branches" };
+        }
+        if (ctx.accountMenuOpen) {
+            return { kind: "dismiss-inner", what: "account" };
         }
         // the filter clears when focus leaves the Project column, so a filter means focus is there
         return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };

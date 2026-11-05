@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **New agent: pick the Claude account for one launch.** After the next build, with two or more Claude
+  accounts in Settings → Claude account, open New agent on Claude Code → the footer reads `Claude: <account> ⌄`;
+  click it → a menu above lists your /login account then each token account, the one in use ticked, `active` (or
+  `project`) beside the usual one; pick another, Launch → the new agent's usage meters and `/status` show the picked
+  account, and the active account in Settings is unchanged. Escape closes the menu, not the dialog. Only unit tests and
+  the typecheck ran; the menu was never drawn (`launchermodal.tsx` AccountPicker, `blockcontroller` MetaKey_ClaudeAccount).
 - [ ] (arcterm) **An agent asks before it edits another repo.** After the next build, in a Claude agent started in
   one project (mit-thesis) and in auto mode, ask it to change a file in arcterm → Claude's permission dialog comes up
   first, reading "arcterm: <file> is in another repo (D:/src/arcterm), not this session's project (…)"; say yes →

@@ -179,6 +179,47 @@ export function launchAccountName(activeId: string, identity: ClaudeIdentity): s
     return account != null ? account.label : defaultAccountName(identity.loginEmail);
 }
 
+// The New dialog's pick of Default for one launch (claudeaccount.DefaultPick in Go); account ids start with "a".
+export const DEFAULT_ACCOUNT_PICK = "login";
+
+// The block meta key a launch's account pick rides on, read by wavesrv at spawn (blockcontroller MetaKey_ClaudeAccount).
+export const CLAUDE_ACCOUNT_META = "agent:claudeaccount";
+
+export interface AccountChoice {
+    pick: string; // DEFAULT_ACCOUNT_PICK or an account id
+    id: string; // the account it runs on, "" for Default
+    label: string;
+}
+
+// The accounts the New dialog's footer offers a claude launch: Default, then each account that still holds its token.
+// Empty while /login is the only account, so there is nothing to pick.
+export function launchAccountChoices(identity: ClaudeIdentity): AccountChoice[] {
+    const own = identity.accounts.filter((a) => !a.notoken);
+    if (own.length === 0) {
+        return [];
+    }
+    return [
+        { pick: DEFAULT_ACCOUNT_PICK, id: "", label: defaultAccountName(identity.loginEmail) },
+        ...own.map((a) => ({ pick: a.id, id: a.id, label: a.label })),
+    ];
+}
+
+// The account id ("" for Default) a launch runs on: the dialog's pick while it is still on offer, else `fallbackId`
+// (the project's account or the active one, projectLaunchAccount).
+export function pickedLaunchAccount(pick: string | null, choices: AccountChoice[], fallbackId: string): string {
+    const choice = pick == null ? undefined : choices.find((c) => c.pick === pick);
+    return choice != null ? choice.id : fallbackId;
+}
+
+// The meta a launch writes for its account: the pick only when it moves the launch off what it would run on anyway,
+// so an agent on the usual account stays free to follow a later switch.
+export function accountLaunchMeta(accountId: string, fallbackId: string): Record<string, string> {
+    if (accountId === fallbackId) {
+        return {};
+    }
+    return { [CLAUDE_ACCOUNT_META]: accountId === "" ? DEFAULT_ACCOUNT_PICK : accountId };
+}
+
 // The account a launch into a project runs on: the project's own account (ProjectKeywords.claudeaccount) while it is
 // still on this machine with its token, else the active one. wavesrv makes the same choice at spawn time
 // (blockcontroller projectClaudeEnv).
@@ -301,10 +342,12 @@ export async function restartOnAccount(c: RestartCandidate): Promise<void> {
     // read before the destroy: the old process's exit clears the mark
     const nudge = accountSwitchNudge(c.state, block.meta?.["agent:inturn"] === true);
     const baseArgs = (block.meta?.["agent:baseargs"] as string[] | undefined) ?? [];
-    await RpcApi.SetMetaCommand(TabRpcClient, {
-        oref,
-        meta: { "cmd:args": resumeArgsForClaude(c.sessionId, baseArgs) },
-    });
+    // a restart moves it to the new account, so an account picked at its launch goes
+    const meta: Record<string, unknown> = {
+        "cmd:args": resumeArgsForClaude(c.sessionId, baseArgs),
+        [CLAUDE_ACCOUNT_META]: null,
+    };
+    await RpcApi.SetMetaCommand(TabRpcClient, { oref, meta });
     await RpcApi.ControllerDestroyCommand(TabRpcClient, c.blockId);
     await RpcApi.ControllerResyncCommand(TabRpcClient, {
         tabid: c.tabId,

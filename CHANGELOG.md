@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In the New agent dialog, the `Claude: <account>` line at the bottom is now a menu: pick another of your Claude accounts (or your /login one) and that one agent runs on it, without switching the active account or the project's. A resumed session started this way keeps its account; a later account switch's restart moves it to the new one.
 - In a project's Overview, each session in History has a Quick look button (and a Quick look item in its right-click menu) that opens its transcript in a dialog over the page, with Resume and Open, so you can read a session without leaving the Overview.
 
 ### Changed

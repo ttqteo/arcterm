@@ -5,13 +5,18 @@ import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     ACCOUNT_SWITCH_NUDGE,
+    accountLaunchMeta,
     accountSwitchNudge,
     addAccountStep,
+    CLAUDE_ACCOUNT_META,
+    DEFAULT_ACCOUNT_PICK,
     defaultAccountName,
     groupCheckState,
     groupRestartCandidates,
     knownClaudeEmails,
+    launchAccountChoices,
     launchAccountName,
+    pickedLaunchAccount,
     projectLaunchAccount,
     projectsWithOwnAccount,
     quotaLine,
@@ -281,6 +286,40 @@ describe("launchAccountName", () => {
         expect(launchAccountName("a1", identity)).toBe("Max 2");
         expect(launchAccountName("", identity)).toBe("user@example.com");
         expect(launchAccountName("", { ...identity, loginEmail: "" })).toBe("Claude login");
+    });
+});
+
+describe("launch account pick", () => {
+    const identity = {
+        loginEmail: "user@example.com",
+        accounts: [
+            { id: "a1", label: "Max 2" },
+            { id: "a2", label: "Gone", notoken: true },
+        ],
+    };
+    const choices = launchAccountChoices(identity);
+    it("offers Default then each account still holding its token, nothing while /login is the only one", () => {
+        expect(choices).toEqual([
+            { pick: DEFAULT_ACCOUNT_PICK, id: "", label: "user@example.com" },
+            { pick: "a1", id: "a1", label: "Max 2" },
+        ]);
+        expect(
+            launchAccountChoices({ loginEmail: "", accounts: [{ id: "a2", label: "Gone", notoken: true }] })
+        ).toEqual([]);
+    });
+    it("runs on the pick while it is on offer, else on the project's or the active account", () => {
+        expect(pickedLaunchAccount(null, choices, "a1")).toBe("a1");
+        expect(pickedLaunchAccount(DEFAULT_ACCOUNT_PICK, choices, "a1")).toBe("");
+        expect(pickedLaunchAccount("a1", choices, "")).toBe("a1");
+        // a token gone since the pick, or no account to pick at all
+        expect(pickedLaunchAccount("a2", choices, "a1")).toBe("a1");
+        expect(pickedLaunchAccount("a1", [], "")).toBe("");
+    });
+    it("writes the pick on the block only when it moves the launch off its usual account", () => {
+        expect(accountLaunchMeta("a1", "a1")).toEqual({});
+        expect(accountLaunchMeta("", "")).toEqual({});
+        expect(accountLaunchMeta("a1", "")).toEqual({ [CLAUDE_ACCOUNT_META]: "a1" });
+        expect(accountLaunchMeta("", "a1")).toEqual({ [CLAUDE_ACCOUNT_META]: DEFAULT_ACCOUNT_PICK });
     });
 });
 
