@@ -131,6 +131,7 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { CouncilDetailsFoot } from "./councildetails";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
+import { useKeptScroll } from "./councilkeptscroll";
 import { councilList, newestReplyOn, railMeta, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import { MemoryPanel, type AddDraft } from "./councilmemory";
@@ -156,26 +157,19 @@ import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import { councilRevealAtom } from "./councilreveal";
 import {
     NO_PILLS,
-    followsEnd,
     glideAt,
     glideMs,
     jumpPills,
-    keepPlace,
-    keptPlace,
     ownPosts,
-    placeOf,
     readingRow,
     returnTop,
     revealTop,
-    sentSince,
     stillLanded,
-    topFor,
     type JumpPills,
     type Landing,
     type ReadingPlace,
     type RevealBlock,
     type RowBox,
-    type ScrollPlace,
 } from "./councilscroll";
 import { sendState, shownItems, type SendState, type SendStatus } from "./councilseen";
 import { basename } from "./councilsetupmodel";
@@ -2953,25 +2947,32 @@ const GROUP_BAR: Record<StanceTone, string> = {
  *  header with a dot in its colour, its name in words and a count; per idea a bar in its group's colour, its number and
  *  author, its title, and a quiet line with its replies and the stances on it. The grouping is derived on every render,
  *  so an idea moves group as a stance changes. A click scrolls the channel to the idea and puts the j / k cursor on it;
- *  the idea's own replies button opens its thread. */
+ *  the idea's own replies button opens its thread. The list is drawn again each time its tab shows (after Memory or a
+ *  thread), so it keeps its place under `ideas:<council>` (useKeptScroll). */
 function IdeasList({
+    councilId,
     ideas,
     on,
     freshOnly,
     onPick,
     onFreshOnly,
 }: {
+    councilId: string;
     ideas: readonly IdeaRow[];
     on: string | null; // the idea under the cursor or with its thread open
     freshOnly: boolean; // only the ideas with new replies (the caption's toggle); all of them once none has any
     onPick: (row: IdeaRow) => void;
     onFreshOnly: (only: boolean) => void;
 }) {
+    const scroller = useRef<HTMLDivElement>(null);
+    const onScroll = useKeptScroll(scroller, `ideas:${councilId}`);
     const withFresh = ideas.filter((r) => r.fresh > 0).length;
     const filtering = freshOnly && withFresh > 0;
     const groups = stanceGroups(filtering ? ideas.filter((r) => r.fresh > 0) : ideas);
     return (
         <div
+            ref={scroller}
+            onScroll={onScroll}
             id="council-rail-ideas"
             role="tabpanel"
             aria-label="Ideas"
@@ -3239,7 +3240,14 @@ function CouncilRail({
                     onAdding={setAdding}
                 />
             ) : (
-                <IdeasList ideas={ideas} on={on} freshOnly={freshOnly} onPick={onPick} onFreshOnly={onFreshOnly} />
+                <IdeasList
+                    councilId={c.id}
+                    ideas={ideas}
+                    on={on}
+                    freshOnly={freshOnly}
+                    onPick={onPick}
+                    onFreshOnly={onFreshOnly}
+                />
             )}
             <CouncilDetailsFoot c={c} />
         </aside>
@@ -3247,79 +3255,6 @@ function CouncilRail({
 }
 
 // ---- the chat ----
-
-/** Keeps a council scroller where the reader left it, under `key` (councilscroll.ts): back there after a remount (another
- *  council, the Summary, another agent) and after the surface comes back from display:none, which drops an element's
- *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows. A scroller with nothing kept
- *  starts at `start`: the end by default when it follows, else the top. One more of the person's own posts (`sent`,
- *  councilscroll.ownPosts) brings the end into view wherever the reader was, so what they just sent shows. Returns the
- *  scroller's onScroll. */
-export function useKeptScroll(
-    ref: RefObject<HTMLElement | null>,
-    key: string,
-    {
-        follow = false,
-        count = 0,
-        start,
-        sent = 0,
-    }: { follow?: boolean; count?: number; start?: "top" | "end"; sent?: number } = {}
-): () => void {
-    const startAtEnd = (start ?? (follow ? "end" : "top")) === "end";
-    const place = useRef<ScrollPlace | undefined>(undefined);
-    const restore = useCallback(() => {
-        const el = ref.current;
-        if (el != null && el.clientHeight > 0) {
-            el.scrollTop = topFor(place.current, el, startAtEnd);
-            // measured where it opened, so one that opens at the top follows new lines only once the reader is at the end
-            place.current ??= placeOf(el);
-        }
-    }, [ref, startAtEnd]);
-    useLayoutEffect(() => {
-        place.current = keptPlace(key);
-        restore();
-    }, [key, restore]);
-    useLayoutEffect(() => {
-        if (followsEnd(place.current, follow)) {
-            restore();
-        }
-    }, [count, follow, restore]);
-    const sentWas = useRef({ key, n: sent });
-    useLayoutEffect(() => {
-        const was = sentWas.current;
-        sentWas.current = { key, n: sent };
-        const el = ref.current;
-        if (sentSince(was, key, sent) && el != null && el.clientHeight > 0) {
-            el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
-            place.current = placeOf(el);
-            keepPlace(key, place.current);
-        }
-    }, [ref, key, sent]);
-    // shown again (its offset is gone), or resized while following (the thread opening rewraps the channel)
-    useEffect(() => {
-        const el = ref.current;
-        if (el == null || typeof ResizeObserver === "undefined") {
-            return;
-        }
-        let shown = el.clientHeight > 0;
-        const ro = new ResizeObserver(() => {
-            const now = el.clientHeight > 0;
-            if (now && (!shown || followsEnd(place.current, follow))) {
-                restore();
-            }
-            shown = now;
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, [ref, follow, restore]);
-    return useCallback(() => {
-        const el = ref.current;
-        // a hidden scroller has no height and clamps to the top: not the reader's place
-        if (el != null && el.clientHeight > 0) {
-            place.current = placeOf(el);
-            keepPlace(key, place.current);
-        }
-    }, [ref, key]);
-}
 
 // where a row of the channel sits in its scroller's content, as scrollTop counts
 function contentBox(row: Element, el: HTMLElement): RowBox {

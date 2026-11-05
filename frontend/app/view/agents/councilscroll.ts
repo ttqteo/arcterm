@@ -3,8 +3,9 @@
 //
 // Pure: where the reader left each council scroller (the chat's channel, an idea's thread, the Summary), so opening
 // another council, the Summary, another agent or another surface and coming back lands where they were, not at the
-// newest line or the top. Kept in memory per key (`channel:<council>`, `thread:<council>:<idea>`, `summary:<council>`),
-// like a preview's place in codescroll.ts; useKeptScroll (councilchat.tsx) reads and writes it. A reader at the bottom
+// newest line or the top. Kept in memory per key (`channel:<council>`, `thread:<council>:<idea>`, `summary:<council>`, and
+// the rail's tabs `ideas:<council>` and `memory:<council>`), like a preview's place in codescroll.ts; useKeptScroll
+// (councilkeptscroll.ts) reads and writes it. A reader at the bottom
 // is kept as `bottom`, not an offset, so new lines that came meanwhile still show when they return.
 
 export interface ScrollPlace {

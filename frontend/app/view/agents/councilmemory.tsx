@@ -17,8 +17,9 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { ChevronDown, ChevronRight, Info, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Actions } from "./councilactions";
+import { useKeptScroll } from "./councilkeptscroll";
 import {
     ADD_KINDS,
     cardKicker,
@@ -118,6 +119,9 @@ export function MemoryPanel({
     const [pinning, setPinning] = useState<string | null>(null); // the entry whose Chốt is being checked
     const [earlierOpen, setEarlierOpen] = useState(false);
     const [seen, setSeen] = useAtom(memorySeenAtom);
+    // the tab is drawn again each time it shows (after Ideas or a thread): it keeps its place under `memory:<council>`
+    const scroller = useRef<HTMLDivElement>(null);
+    const onScroll = useKeptScroll(scroller, `memory:${c.id}`);
     // the time the tab was last open, taken as it opens: what came in after it carries a dot for as long as the tab shows
     const [since] = useState(() => seen[c.id]);
     const card = shownCard(c);
@@ -206,6 +210,8 @@ export function MemoryPanel({
 
     return (
         <div
+            ref={scroller}
+            onScroll={onScroll}
             id="council-rail-memory"
             role="tabpanel"
             aria-label="Memory"

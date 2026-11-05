@@ -61,12 +61,13 @@ import {
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
-import { CouncilAvatar, CouncilText, useKeptScroll } from "./councilchat";
+import { CouncilAvatar, CouncilText } from "./councilchat";
 import { askChips } from "./councilchatmodel";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import { finalProposal, type FinalProposal } from "./councilfinalmodel";
 import { CouncilActions } from "./councilheader";
+import { useKeptScroll } from "./councilkeptscroll";
 import { mapWords } from "./councilmapmodel";
 import {
     STANCE_WORD,
