@@ -16,6 +16,7 @@ import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { useApplyCockpitFonts } from "@/app/view/agents/fontstore";
 import { CockpitShell } from "@/app/view/agents/cockpitshell";
 import { SnowLayer } from "@/app/view/agents/christmassnowview";
+import { XmasTreeNotifier } from "@/app/view/agents/xmastreenotifier";
 import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
 import { MachineServersPanel } from "@/app/view/agents/machineserverspanel";
 import { NowTicker } from "@/app/view/agents/nowticker";
@@ -211,6 +212,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <PulseDriver />
             {/* the Christmas snow: a fixed canvas over the window, nothing unless the Christmas decor is on */}
             <SnowLayer />
+            {/* the lobby tree's feed and its milestone toasts (only while the Christmas decor shows) */}
+            <XmasTreeNotifier model={model} />
             <PetSources model={model} />
             {/* folded into Sprout: everything else stays mounted under display:none, so the terminal never refits to
                 the small window (floatstore.ts foldToSprout). The fold scales this into Sprout; it paints its own

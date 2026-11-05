@@ -12,10 +12,12 @@ import { PET_GRID } from "@/app/view/jarvis/petsprite";
 import type { WalkDir } from "@/app/view/office/plansprite";
 import {
     BOARD_KEY,
+    BOSS_H,
     BOSS_HALF_W,
     BOSS_HEADROOM,
     giftArea,
     LIFT_KEY,
+    TREE_KEY,
     type Box,
     type Desk,
     type Plan,
@@ -85,6 +87,8 @@ export function canStand(plan: Plan, p: Point): boolean {
 
 const furnitureCache = new WeakMap<Plan, Box[]>();
 
+const pad = (b: Box, n: number): Box => ({ x: b.x - n, y: b.y - n, w: b.w + 2 * n, h: b.h + 2 * n });
+
 // a plant drawn at (x, y) by scenery.ts: its pot, so one may pass behind its leaves
 const pot = (x: number, y: number): Box => ({ x: x + 6, y: y + 26, w: 22, h: 18 });
 // the gifts' boxes on the floor: the footprint's lower rows (the two stacked stand on them), so one may pass behind
@@ -106,7 +110,7 @@ function xmasFurniture(r: Room): Box[] {
 /** What the boss's feet stay off: each desk with the person at it and its name, each meeting table with its chairs,
  *  and what scenery.ts draws on the floor: the lounge's sofa with the people on it, its coffee machine, and the
  *  plants (each room's, where it has them; under Christmas each room's tree and its gifts too), and the Needs you notice
- *  board and the lift in the hall. A desk's spot and a
+ *  board, the lift and, while it stands, the lobby Christmas tree in the hall. A desk's spot and a
  *  table's stay clear, so the boss stands in front of a desk, never on it; so do the board's and the lift's, above
  *  the lift's dial and the strip over it that holds `Floor n`. */
 function furniture(plan: Plan): Box[] {
@@ -133,6 +137,8 @@ function furniture(plan: Plan): Box[] {
             ...plan.rooms.flatMap((r) => (r.plants ?? []).map((p) => pot(p.x, p.y))),
             // under Christmas each room's tree (its pot, where it is no plant) and the gifts beside it
             ...(plan.christmas ? plan.rooms.flatMap(xmasFurniture) : []),
+            // the hall's Christmas tree, its spot under it kept clear as the board's is
+            ...(plan.xmasTree ? [pad(plan.xmasTree.box, 8)] : []),
         ];
         furnitureCache.set(plan, boxes);
     }
@@ -538,13 +544,30 @@ export function facing(a: Point, b: Point, was: Dir = "down"): Dir {
     return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
 }
 
-/** Where the boss stands for a desk, seat or chip key, or the notice board's, or the lift's. */
+/** Whether the hall's Christmas tree stands before the boss with its feet at `feet`: the feet are above the tree's
+ *  foot and the boss's body (its widest half either side of its feet, BOSS_H tall) overlaps the tree. The office draws
+ *  the tree over the boss then, as officedepth.ts does a prop. False with no tree. */
+export function behindXmasTree(plan: Plan, feet: Point): boolean {
+    const t = plan.xmasTree?.box;
+    if (t == null) {
+        return false;
+    }
+    const left = feet.x - BOSS_HALF_W;
+    const top = feet.y - BOSS_H;
+    return feet.y < t.y + t.h && left < t.x + t.w && t.x < left + 2 * BOSS_HALF_W && top < t.y + t.h && t.y < feet.y;
+}
+
+/** Where the boss stands for a desk, seat or chip key, or the notice board's, the lift's, or the hall's Christmas
+ *  tree's (none while the plan has no tree). */
 export function spotOf(plan: Plan, key: string): Point | undefined {
     if (key === BOARD_KEY) {
         return plan.board.spot;
     }
     if (key === LIFT_KEY) {
         return plan.lift.spot;
+    }
+    if (key === TREE_KEY) {
+        return plan.xmasTree?.spot;
     }
     return (
         plan.desks.find((d) => d.key === key)?.spot ??
@@ -554,7 +577,8 @@ export function spotOf(plan: Plan, key: string): Point | undefined {
 }
 
 /** The desk, seat or chip the boss stands in front of: the nearest whose spot is within reach, in the room it stands
- *  in (a seat is in its project's room, not its table zone); the notice board's or the lift's key in the hall, within
+ *  in (a seat is in its project's room, not its table zone); the notice board's, the lift's or the Christmas tree's key
+ *  in the hall, within
  *  reach of its spot; undefined anywhere else, in the lounge too. */
 export function deskAt(plan: Plan, p: Point): string | undefined {
     const room = roomAt(plan, p);
@@ -572,6 +596,9 @@ export function deskAt(plan: Plan, p: Point): string | undefined {
     if (room === "hall") {
         consider(BOARD_KEY, plan.board.spot);
         consider(LIFT_KEY, plan.lift.spot);
+        if (plan.xmasTree) {
+            consider(TREE_KEY, plan.xmasTree.spot);
+        }
         return best;
     }
     for (const s of plan.desks) {
@@ -593,12 +620,15 @@ export function deskAt(plan: Plan, p: Point): string | undefined {
 
 /** The desk, seat or chip whose card or dialog the boss can open: the cursor's, while the boss stands still at it. The
  *  notice board and the lift have no card: they answer `{ board: true }` and `{ lift: true }`, which open their dialog
- *  boxes and nothing else; a chip answers `{ room, chip: true }`, its dialog box lists what did not fit the room. */
+ *  boxes and nothing else; a chip answers `{ room, chip: true }`, its dialog box lists what did not fit the room. The
+ *  hall's Christmas tree answers `{ tree: true }`, which opens no dialog box (its close-up card is its own layer). */
 export function cardAt(
     plan: Plan,
     boss: { at: Point; path: readonly Point[]; holding?: Dir } | null,
     cursorId: string | undefined
-): { desk?: Desk; seat?: Seat; room?: Room; board?: boolean; chip?: boolean; lift?: boolean } | undefined {
+):
+    | { desk?: Desk; seat?: Seat; room?: Room; board?: boolean; chip?: boolean; lift?: boolean; tree?: boolean }
+    | undefined {
     if (boss == null || cursorId == null || boss.path.length > 1 || boss.holding != null) {
         return undefined;
     }
@@ -610,6 +640,9 @@ export function cardAt(
     }
     if (cursorId === LIFT_KEY) {
         return { lift: true };
+    }
+    if (cursorId === TREE_KEY) {
+        return { tree: true };
     }
     const chipRoom = plan.rooms.find((r) => r.chip?.key === cursorId);
     if (chipRoom) {

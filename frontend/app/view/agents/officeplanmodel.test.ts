@@ -28,12 +28,14 @@ import {
     TREE_H,
     TREE_W,
     WALL,
+    XMAS_TREE_PX,
     type Box,
     type PlanAgent,
     type PlanInput,
     type PlanRun,
     type PlanTask,
 } from "./officeplanmodel";
+import { XMAS_TREE_H, XMAS_TREE_W } from "./xmastreegrid";
 
 const NOW = 1_000_000_000;
 const ag = (id: string, o: Partial<PlanAgent> = {}): PlanAgent => ({
@@ -939,6 +941,84 @@ describe("officeplanmodel", () => {
             const agents = [ag("a"), ag("h", { project: undefined })];
             const a = plan(agents).board;
             const b = plan([{ ...agents[0], state: "asking" }, agents[1]]).board;
+            expect(b).toEqual(a);
+        });
+    });
+
+    describe("the hall's Christmas tree", () => {
+        const homeAgents = (n: number) => Array.from({ length: n }, (_, i) => ag(`h${i}`, { project: undefined }));
+        const idle = ag("i1", { state: "idle", idleSince: NOW - 700_000 });
+        const many = [...["a", "b", "c", "d"].map((x) => ag(`${x}1`, { project: x })), ...homeAgents(5), idle];
+        const manyRuns = [run("r1", { project: "a", tasks: [task("t1"), task("t2")] }), run("r2", { project: "d" })];
+        const plans: [string, ReturnType<typeof plan>][] = [
+            ["one project, one agent", plan([ag("a")], [], { xmasTree: true })],
+            ["Home and a project", plan([ag("a"), ...homeAgents(1)], [], { xmasTree: true })],
+            [
+                "a full ground floor, runs and a lounger",
+                plan(many, manyRuns, { away: { i1: "sofa" }, xmasTree: true, christmas: true }),
+            ],
+            ["a short, narrow view", plan(many, manyRuns, { width: 900, height: 400, xmasTree: true })],
+            ["a wide, tall view", plan(many, manyRuns, { width: 1600, height: 1400, xmasTree: true })],
+        ];
+        const tree = (p: ReturnType<typeof plan>) => p.xmasTree!;
+
+        it.each(plans)("stands in the hall against its right wall, level with the board: %s", (_, p) => {
+            const { box } = tree(p);
+            expect(box.w).toBe(XMAS_TREE_W * XMAS_TREE_PX);
+            expect(box.h).toBe(XMAS_TREE_H * XMAS_TREE_PX);
+            expect(within(box, p.hall)).toBe(true);
+            expect(box.y).toBe(p.board.box.y);
+            // against the right wall: nearer it than the hall's middle
+            expect(box.x).toBeGreaterThan(p.hall.x + p.hall.w / 2);
+        });
+
+        it.each(plans)("overlaps neither the board, the lift, the lounge, a room nor a right-hand door: %s", (_, p) => {
+            const { box } = tree(p);
+            const { doors, dial } = p.lift;
+            expect(overlaps(box, p.board.box)).toBe(false);
+            expect(overlaps(box, doors)).toBe(false);
+            expect(overlaps(box, dial)).toBe(false);
+            expect(overlaps(box, { x: dial.x, y: dial.y - 24, w: dial.w, h: 24 })).toBe(false);
+            expect(overlaps(box, p.lounge)).toBe(false);
+            for (const r of p.rooms.filter((r) => r.kind !== "lounge")) {
+                expect(overlaps(box, r.box), r.key).toBe(false);
+            }
+            // each right-hand room's door, and the hall floor a boss's width in front of it
+            for (const r of p.rooms.filter((r) => r.door != null && r.doorSide === "left")) {
+                const d = r.door!;
+                expect(
+                    overlaps(box, { x: d.x - 2 * BOSS_HALF_W, y: d.y, w: d.w + 2 * BOSS_HALF_W, h: d.h }),
+                    r.key
+                ).toBe(false);
+            }
+        });
+
+        it.each(plans)("leaves a lane at least as wide as the boss between the board and it: %s", (_, p) => {
+            expect(tree(p).box.x - (p.board.box.x + p.board.box.w)).toBeGreaterThanOrEqual(2 * BOSS_HALF_W);
+        });
+
+        it.each(plans)("has its spot under it, on the hall's floor, above the lift: %s", (_, p) => {
+            const { box, spot } = tree(p);
+            expect(spot).toEqual({ x: box.x + box.w / 2, y: box.y + box.h + 22 });
+            expect(canStand(p, spot)).toBe(true);
+            expect(canWalk(p, spot)).toBe(true);
+            expect(inside(spot, p.hallFloor)).toBe(true);
+            expect(spot.y).toBeLessThan(p.lift.dial.y - 24 - BOSS_H);
+        });
+
+        it("is absent when the flag is off or on a floor above G", () => {
+            const at: Placements = { a: { floor: 0, slot: 0 }, b: { floor: 1, slot: 0 } };
+            const two = [ag("a", { project: "a" }), ag("b", { project: "b" })];
+            expect(plan(two, [], { at }).xmasTree).toBeUndefined();
+            expect(plan(two, [], { at, xmasTree: false }).xmasTree).toBeUndefined();
+            expect(plan(two, [], { at, floor: 1, xmasTree: true }).xmasTree).toBeUndefined();
+            expect(plan(two, [], { at, floor: 0, xmasTree: true }).xmasTree).toBeDefined();
+        });
+
+        it("is the same tree whatever the room's people do", () => {
+            const agents = [ag("a"), ag("h", { project: undefined })];
+            const a = plan(agents, [], { xmasTree: true }).xmasTree;
+            const b = plan([{ ...agents[0], state: "asking" }, agents[1]], [], { xmasTree: true }).xmasTree;
             expect(b).toEqual(a);
         });
     });

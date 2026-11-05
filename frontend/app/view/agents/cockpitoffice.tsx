@@ -132,6 +132,7 @@ import {
 import { boardPage } from "./officeboardmodel";
 import {
     advance,
+    behindXmasTree,
     BOSS_CELL_PX,
     BOSS_PX,
     BOSS_RUN,
@@ -199,6 +200,7 @@ import {
     LIFT_KEY,
     peopleDrawn,
     projectsOf,
+    TREE_KEY,
     type Box,
     type Desk,
     type FloorSummary,
@@ -231,6 +233,8 @@ import {
 } from "./officestore";
 import { themeOverridesAtom, themePresetAtom } from "./themestore";
 import { usePlanDonuts } from "./usagemeters";
+import { XmasTreeHall } from "./xmastreehall";
+import { xmasTreeAtom, xmasTreeGoAtom } from "./xmastreestore";
 
 /** What the CDP scenarios set through cockpitofficedevhooks.ts; always null in a real session. */
 export interface OfficeDev {
@@ -492,6 +496,13 @@ const probe = {
     boardRows: 0,
 };
 let lastPlan: Plan | null = null;
+// the lobby Christmas tree stands while its season's phase is not off (the decor is the plan's other half)
+const xmasTreeSeasonAtom = atom((get) => {
+    const phase = get(xmasTreeAtom)?.phase;
+    return phase != null && phase !== "off";
+});
+// the last "go to the tree" (xmasTreeGoAtom) the Office walked to: a bump made before it mounted is still walked to
+let treeGoSeen = 0;
 let lastWalking: ReadonlySet<string> = new Set();
 let lastRoot: HTMLElement | null = null;
 // what the boss pet was last drawn as, for the probe
@@ -551,6 +562,8 @@ export function readOfficeProbe() {
             : [],
         // the lift: its doors and where the boss stands at them, the amber lines drawn beside it, and whether a ride is on
         lift: lastPlan ? { doors: lastPlan.lift.doors, spot: lastPlan.lift.spot } : null,
+        // the hall's Christmas tree, and where the boss stands at it; null while it does not stand
+        xmasTree: lastPlan?.xmasTree ?? null,
         liftAsks: lastPlan ? liftAskLines(lastPlan.floors, lastPlan.floor).map((l) => l.text) : [],
         riding: globalStore.get(rideAtom) != null,
         // the room carried: which, where a drop would put it (a slot of some floor, "new", or null while the pointer is over
@@ -836,6 +849,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     // the Christmas decor (christmas theme spec, "Office"): trees for plants, gifts and the wreath, and the boss walks
     // round them only while they are drawn
     const christmas = useChristmasDecor();
+    // the lobby Christmas tree in the hall: on G only (the plan's rule), while the decor shows and its season runs
+    const xmasSeason = useAtomValue(xmasTreeSeasonAtom);
+    const xmasTree = christmas && xmasSeason;
     const plan = useMemo(
         () =>
             buildPlan({
@@ -849,8 +865,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                 away: planAway,
                 night,
                 christmas,
+                xmasTree,
             }),
-        [agents, runs, width, height, floorWanted, placed.at, now, planAway, night, christmas]
+        [agents, runs, width, height, floorWanted, placed.at, now, planAway, night, christmas, xmasTree]
     );
     lastPlan = plan;
     const sceneKey = sceneryKey(plan, phase, tired, theme, christmas);
@@ -1646,9 +1663,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             }
             globalStore.set(officeMenuOpenAtom, open);
         },
-        // the board is a stop while rows wait; plan.order and plan.asks stay the floor's desks'. j k walk this floor; n
-        // goes on to the asks on the other floors, whose walk rides the lift first (goTo)
-        order: () => (props.boardRows > 0 ? [...planRef.current.order, BOARD_KEY] : planRef.current.order),
+        // the board is a stop while rows wait, and the hall's Christmas tree after it while it stands; plan.order and
+        // plan.asks stay the floor's desks'. j k walk this floor; n goes on to the asks on the other floors, whose walk
+        // rides the lift first (goTo)
+        order: () => [
+            ...planRef.current.order,
+            ...(props.boardRows > 0 ? [BOARD_KEY] : []),
+            ...(planRef.current.xmasTree ? [TREE_KEY] : []),
+        ],
         asks: () => [
             ...planRef.current.asks,
             ...planRef.current.otherAsks.map((a) => a.key),
@@ -1776,6 +1798,29 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             goTo(cursorId);
         }
     }, [cursorId, width > 0]);
+
+    // "go to the tree" (the milestone toast): the boss walks to the hall's tree as the board's open walks to the board,
+    // once the tree stands and the boss is on the floor; a bump made before the Office mounted is walked to on mount
+    const treeGo = useAtomValue(xmasTreeGoAtom);
+    const hasTree = plan.xmasTree != null;
+    useEffect(() => {
+        if (treeGo === treeGoSeen || !hasTree || width === 0 || globalStore.get(bossAtom) == null) {
+            return;
+        }
+        treeGoSeen = treeGo;
+        pickRef.current(TREE_KEY);
+    }, [treeGo, hasTree, width > 0]);
+    // office depth for the hall's tree: drawn over the boss while its feet are behind it. A boolean of the boss's spot,
+    // so a walk step renders nothing unless it crosses the tree's foot
+    const treeFrontAtom = useMemo(
+        () =>
+            atom((get) => {
+                const b = get(bossAtom);
+                return b != null && behindXmasTree(plan, b.at);
+            }),
+        [plan.xmasTree?.box.x, plan.xmasTree?.box.y, plan.xmasTree != null]
+    );
+    const treeFront = useAtomValue(treeFrontAtom);
 
     // idle people walk to the lounge and back, at most three at once
     useEffect(() => {
@@ -2084,6 +2129,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             still={!moving}
                         />
                         <PathDots />
+                        {plan.xmasTree ? (
+                            <XmasTreeHall tree={plan.xmasTree} hall={plan.hall} front={treeFront} onPick={onPick} />
+                        ) : null}
                         <OfficeTalkPrompt
                             plan={plan}
                             cursorId={cursorId}
@@ -3600,8 +3648,8 @@ function OfficeTalkPrompt({
     const layer = useAtomValue(layerAtom);
     const found = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
     // the notice board, the lift and a room's chip have no card and no "Space Talk" prompt: their dialog boxes are
-    // OfficeDialogLayer's
-    const at = found?.board || found?.lift || found?.chip ? undefined : found;
+    // OfficeDialogLayer's; nor has the hall's Christmas tree, whose close-up card is its own layer
+    const at = found?.board || found?.lift || found?.chip || found?.tree ? undefined : found;
     const kind = at?.desk ? "agent" : "run";
     // the board offers "Space Read" while the boss stands still at it, with rows waiting or none
     const readBoard = found?.board === true && layer === "walk";
@@ -3655,7 +3703,7 @@ function OfficeCardPanel({
     const chipCard = useAtomValue(chipCardAtom);
     const found =
         layer === "card" ? cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId) : undefined;
-    const at = found?.board || found?.lift || found?.chip ? undefined : found;
+    const at = found?.board || found?.lift || found?.chip || found?.tree ? undefined : found;
     // a room's chip opens the card of one of the agents or runs it lists
     const chipId = found?.chip ? chipCard?.id : undefined;
     const card =
