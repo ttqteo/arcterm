@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Your prompts stand out in a transcript.** Agent → a project's Overview → History → a session → Open →
+  Transcript (or an ended session's transcript in the centre) → each of your messages is a box tinted in the accent
+  colour with an accent border, clearly apart from the agent's prose; the prompt pinned at the top while you scroll
+  wears the same tint. Typecheck only (`compacttranscript.tsx`, `pinnedpromptbar.tsx`); no dev app was up.
+- [ ] (arcterm) **Mark for later from History.** Agent → a project's Overview → History → right-click a session →
+  Mark for later → an accent bookmark shows after its title (hover: since when), and the same session carries the mark
+  in the Agent tree's Conversations; right-click again → Done (clear later) → the bookmark goes. Typecheck only
+  (`projecthistory.tsx`); no dev app was up.
 - [ ] (arcterm) **Stop on a background shell task stops what it ran (Windows).** In the installed app, have a Claude
   agent run `sleep 300` (or `npm run dev`) with `run_in_background`, then press Stop on that task in the agent's rail →
   the task leaves the rail and no `sleep.exe` (or the server's `node.exe`) is left in Task Manager. Before, the bash

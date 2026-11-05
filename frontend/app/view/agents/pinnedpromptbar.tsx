@@ -98,7 +98,7 @@ export function PinnedPromptBar({
                     type="button"
                     onClick={jump}
                     title="Back to this prompt"
-                    className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-faint bg-surface-raised px-3 py-[5px] text-left hover:border-edge-mid"
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-[5px] text-left hover:border-accent/50"
                 >
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
                     <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />

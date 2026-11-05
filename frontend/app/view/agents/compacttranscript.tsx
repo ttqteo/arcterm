@@ -74,7 +74,7 @@ function UserMessage({
             data-compact-user
             data-user-prompt
             onContextMenu={onContextMenu}
-            className="mt-4 rounded-[8px] border border-edge-faint bg-surface-raised px-3 py-2"
+            className="mt-4 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-2"
         >
             {said.text ? (
                 <div className="text-[13px] leading-[1.55] text-primary">

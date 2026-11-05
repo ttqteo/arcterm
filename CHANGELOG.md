@@ -29,10 +29,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
   waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
   for an agent, to hand a stuck land to another agent.
+- Right-click a session in a project's History to mark it for later: a bookmark shows on its row, the same mark the
+  Agent tree's Conversations carry, and Done clears it.
 - A Christmas tree stands in the Office's lobby from 1 November to New Year and grows as your orchestrator runs finish tasks: every finished task hangs an ornament, ten small ones merge into a big bauble, and the tree gains tiers of branches, then its lights, then its star, with a notice each time it reaches a new stage. Walk the boss to the tree and press `Space` for a close-up: pick an ornament with the arrows, lift it and hang it somewhere else, and the tree keeps your arrangement. <!-- big -->
 
 ### Changed
 
+- Your own messages in a session's transcript sit in an accent-tinted box, so they stand out from the agent's replies.
 - An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
 - The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and
   falls smoothly instead of in jerky steps when you turn it on.
