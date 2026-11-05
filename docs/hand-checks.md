@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The pet runs while arcterm starts up.** Install a build, then open arcterm → while the agents and
+  terminals load, the Agent screen (and the Cockpit, if you land there) shows your pet (Sprout, the Minion or Spider-Man,
+  in its Santa hat under the Christmas decor) running left and right over a thin floor line, turning to face the way it
+  runs, with "Setting up arcterm" under it, instead of grey skeleton boxes; once the roster is read the usual screen
+  replaces it. With Windows' animation effects off the pet stands still in the middle. Unit tests (`startuprun.ts`) and
+  the typecheck only; never seen in the app (`startuploader.tsx`).
 - [ ] (arcterm) **A double right-click in a terminal opens the menu.** In the installed app, in an agent's or a shell
   terminal, with nothing selected: right-click once → the clipboard pastes once after a short beat; right-click twice
   at your usual double-click pace → the terminal menu opens and nothing pastes. With text selected, one right-click
