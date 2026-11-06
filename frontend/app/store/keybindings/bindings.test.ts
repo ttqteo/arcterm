@@ -42,10 +42,13 @@ import {
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
 import { setAgentView } from "@/app/view/agents/agentview";
+import { compareRefsAtom, setCompareRefs } from "@/app/view/agents/comparestore";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewAtom } from "@/app/view/agents/docreview";
 import { addComment, getDocReview, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
-import { graphOnAtom, historyFiltersAtom, historyScrollAtom } from "@/app/view/agents/githistorystore";
+import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
+import { treeModeAtom } from "@/app/view/agents/filetree";
+import { graphOnAtom, historyFiltersAtom, historyScrollAtom, refreshHistory } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
@@ -59,7 +62,7 @@ import {
 } from "@/app/view/agents/railstore";
 import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
-import { activeReviewAtom } from "@/app/view/agents/reviewmarks";
+import { activeReviewAtom, reviewMarksAtom } from "@/app/view/agents/reviewmarks";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { START_DEFS } from "@/app/cockpit/palette-commands";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
@@ -113,6 +116,25 @@ vi.mock("@/app/view/jarvis/openref", async (orig) => ({
 vi.mock("@/app/view/jarvis/effortstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/jarvis/effortstore")>()),
     togglePin: vi.fn(async () => {}),
+}));
+
+// r's re-reads go to the backend; the Diff key tests only ask which of them ran
+vi.mock("@/app/view/agents/comparestore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/comparestore")>()),
+    setCompareRefs: vi.fn(async () => {}),
+}));
+vi.mock("@/app/view/agents/githistorystore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/githistorystore")>()),
+    refreshHistory: vi.fn(),
+}));
+vi.mock("@/app/view/agents/filesstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/filesstore")>()),
+    reloadChanges: vi.fn(async () => {}),
+}));
+// it reads the project list from the app's global atoms, which this node suite does not set up
+vi.mock("@/app/view/agents/worktreesidebarstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/worktreesidebarstore")>()),
+    refreshSidebar: vi.fn(async () => {}),
 }));
 
 vi.mock("@/app/view/agents/floatstore", async (orig) => ({
@@ -1008,6 +1030,169 @@ describe("diff-surface history bindings", () => {
         });
         vi.stubGlobal("document", { querySelector: () => null });
         expect(find("files:change-refs").run(ctx)).toBe(false);
+    });
+
+    // r's re-reads go to the backend; the mocks above tell which of them ran
+    it("r re-reads the changes and history, and in compare the comparison instead of history", () => {
+        globalStore.set(filesStateAtom, { cwd: "/repo" } as any);
+        globalStore.set(compareRefsAtom, { base: "main", head: "feat" });
+        vi.mocked(reloadChanges).mockClear();
+        vi.mocked(refreshHistory).mockClear();
+        vi.mocked(setCompareRefs).mockClear();
+        try {
+            find("files:refresh").run(ctx);
+            expect(reloadChanges).toHaveBeenLastCalledWith("/repo");
+            expect(refreshHistory).toHaveBeenCalledOnce();
+            expect(setCompareRefs).not.toHaveBeenCalled();
+
+            globalStore.set(diffScopeAtom, {
+                repo: { origin: { kind: "agent", id: "a1" }, label: "a1" },
+                range: { kind: "compare", base: "main", head: "feat", form: "mergebase", from: { kind: "working" } },
+            });
+            find("files:refresh").run(ctx);
+            expect(reloadChanges).toHaveBeenCalledTimes(2);
+            expect(setCompareRefs).toHaveBeenCalledExactlyOnceWith("/repo", "main", "feat");
+            expect(refreshHistory).toHaveBeenCalledOnce();
+
+            // no pair read yet: there is no comparison to re-read
+            vi.mocked(setCompareRefs).mockClear();
+            globalStore.set(compareRefsAtom, null);
+            find("files:refresh").run(ctx);
+            expect(setCompareRefs).not.toHaveBeenCalled();
+        } finally {
+            globalStore.set(compareRefsAtom, null);
+            globalStore.set(filesStateAtom, null);
+        }
+    });
+
+    describe("n / p step the file list", () => {
+        // git's order differs from the tree's, so a step that follows `files` would be caught
+        const files = ["README.md", "retry/policy.go", "a.go", "retry/budget.go"].map((path) => ({
+            path,
+            status: "M",
+            adds: 1,
+            dels: 0,
+        }));
+        const select = vi.fn();
+        const review = (open: string | null, list = files) =>
+            globalStore.set(activeReviewAtom, { subject: "/repo|commit:abc", files: list, open, select });
+
+        beforeEach(() => {
+            select.mockClear();
+            globalStore.set(treeModeAtom, true);
+        });
+        afterEach(() => {
+            globalStore.set(activeReviewAtom, null);
+            globalStore.set(treeModeAtom, true);
+        });
+
+        it("are the Diff group's Next file / Previous file on bare n and p", () => {
+            expect(find("files:next-file")).toMatchObject({ keys: "n", group: "Diff", label: "Next file" });
+            expect(find("files:prev-file")).toMatchObject({ keys: "p", group: "Diff", label: "Previous file" });
+            expect(find("files:next-file").when?.(ctx)).toBe(true);
+            expect(find("files:prev-file").when?.(ctx)).toBe(true);
+            // typing in a box, or a modal over the surface, keeps the letters
+            expect(find("files:next-file").when?.({ ...ctx, editable: true })).toBe(false);
+            expect(find("files:prev-file").when?.({ ...ctx, modalOpen: true })).toBe(false);
+        });
+
+        it("open the next and previous file in the order the list draws", () => {
+            review("retry/policy.go");
+            expect(find("files:next-file").run(ctx)).toBeUndefined();
+            expect(select).toHaveBeenLastCalledWith("a.go");
+            expect(find("files:prev-file").run(ctx)).toBeUndefined();
+            expect(select).toHaveBeenLastCalledWith("retry/budget.go");
+        });
+
+        it("follow git's order when the list is flat", () => {
+            globalStore.set(treeModeAtom, false);
+            review("retry/policy.go");
+            find("files:next-file").run(ctx);
+            expect(select).toHaveBeenLastCalledWith("a.go");
+            find("files:prev-file").run(ctx);
+            expect(select).toHaveBeenLastCalledWith("README.md");
+        });
+
+        it("decline at the ends without wrapping", () => {
+            review("README.md");
+            expect(find("files:next-file").run(ctx)).toBe(false);
+            review("retry/budget.go");
+            expect(find("files:prev-file").run(ctx)).toBe(false);
+            expect(select).not.toHaveBeenCalled();
+        });
+
+        it("n with nothing open opens the first file; p declines", () => {
+            review(null);
+            expect(find("files:prev-file").run(ctx)).toBe(false);
+            expect(select).not.toHaveBeenCalled();
+            expect(find("files:next-file").run(ctx)).toBeUndefined();
+            expect(select).toHaveBeenCalledExactlyOnceWith("retry/budget.go");
+        });
+
+        it("decline with no file list and with no active review", () => {
+            review(null, []);
+            expect(find("files:next-file").run(ctx)).toBe(false);
+            expect(find("files:prev-file").run(ctx)).toBe(false);
+            globalStore.set(activeReviewAtom, null);
+            expect(find("files:next-file").run(ctx)).toBe(false);
+            expect(find("files:prev-file").run(ctx)).toBe(false);
+            expect(select).not.toHaveBeenCalled();
+        });
+
+        it("do not mark the file they leave or the one they open", () => {
+            review("retry/policy.go");
+            const before = globalStore.get(reviewMarksAtom);
+            find("files:next-file").run(ctx);
+            find("files:prev-file").run(ctx);
+            expect(globalStore.get(reviewMarksAtom)).toBe(before);
+        });
+    });
+
+    // n and p are bare letters: the Files surface must not hand either, nor any other key, to two bindings at once.
+    // Compare and a history filter each turn some of the surface's own bindings on, so the check runs in each state.
+    describe("no key clash on the Files surface", () => {
+        const model = { ...stubModel(), surfaceAtom: {}, paletteOpenAtom: {}, launcherAtom: {} };
+        const compare = {
+            repo: { origin: { kind: "agent", id: "a1" }, label: "a1" },
+            range: { kind: "compare", base: "main", head: "feat", form: "mergebase", from: { kind: "working" } },
+        } as any;
+        const clashes = (): string[] => {
+            const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildFilesBindings()];
+            const out: string[] = [];
+            for (const editable of [false, true]) {
+                for (const modalOpen of [false, true]) {
+                    for (const leader of [null, "g"] as const) {
+                        const c = { surface: "files", editable, modalOpen, leader } as KeyContext;
+                        const seen = new Map<string, string>();
+                        for (const b of all.filter((x) => (x.when ? x.when(c) : true))) {
+                            const prev = seen.get(b.keys);
+                            if (prev != null) {
+                                out.push(
+                                    `${b.keys}: ${prev} and ${b.id} (editable=${editable} modal=${modalOpen} leader=${leader})`
+                                );
+                            }
+                            seen.set(b.keys, b.id);
+                        }
+                    }
+                }
+            }
+            return out;
+        };
+
+        afterEach(() => {
+            globalStore.set(diffScopeAtom, null);
+            globalStore.set(historyFiltersAtom, NO_FILTERS);
+        });
+
+        it("gives n and p to the file keys alone", () => {
+            globalStore.set(listNavAtom, null);
+            expect(clashes()).toEqual([]);
+            globalStore.set(diffScopeAtom, compare);
+            expect(clashes()).toEqual([]);
+            globalStore.set(diffScopeAtom, null);
+            globalStore.set(historyFiltersAtom, { author: "dana", path: "", text: "" });
+            expect(clashes()).toEqual([]);
+        });
     });
 });
 

@@ -12,7 +12,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { diffPairAtom } from "./diffcontentstore";
 import { rangeKey, type DiffRange } from "./diffscope";
-import { buildFileTree, treeModeAtom } from "./filetree";
+import { listOrder, treeModeAtom } from "./filetree";
 import type { GitChange } from "./gitstatus";
 
 // `${cwd}|${key}`, where key is `commit:<sha>` or the range's rangeKey
@@ -83,13 +83,7 @@ export function reviewProgress(marks: SubjectMarks | undefined, files: GitChange
 }
 
 export function reviewOrder(files: GitChange[], tree: boolean): string[] {
-    if (!tree) {
-        return files.map((c) => c.path);
-    }
-    // no collapsed set: a collapsed directory's files are still next in line
-    return buildFileTree(files, new Set())
-        .filter((r) => r.kind === "file")
-        .map((r) => r.id);
+    return listOrder(files, tree);
 }
 
 export function nextUnreviewed(order: string[], from: string, reviewed: (path: string) => boolean): string | null {

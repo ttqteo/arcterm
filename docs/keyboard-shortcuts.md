@@ -450,6 +450,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `j` / `k` (or `↓` / `↑`) | Next / previous commit. In a file list, `↓` / `↑` open the next / previous file at once |
 | `Space` | In the Commit tab's list: tick or untick the selected file |
 | `Enter` | Open the file under the cursor |
+| `n` / `p` | Next / previous file in the list, in the order it draws them. Opens it without marking it reviewed (`v` marks), and stops at either end |
 | `/` | Filter history (`Esc` clears) |
 | `Shift`+`G` | Toggle the history graph |
 | `Mod`+`G` `g` | Top of history |
@@ -461,7 +462,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`W` | Ignore whitespace |
 | `Alt`+`Z` | Toggle word wrap for the open file (shared with Code) |
 | `v` | Mark the open file reviewed (or unmark it) and open the next unreviewed file |
-| `r` | Refresh changes, history and the source tree |
+| `r` | Refresh changes, history and the source tree (in compare: the comparison, not history) |
 | `c` | In the log: compare refs (the Log tab's Compare…). In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
 | `Tab` | Switch compare side (in compare) |
