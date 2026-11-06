@@ -310,13 +310,17 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	status := controller.GetRuntimeStatus()
 	if status.ShellProcStatus == Status_Init {
 		if (controllerName == BlockController_Shell || controllerName == BlockController_Cmd) && !isLocalConnName(connName) {
-			return fmt.Errorf("cannot start shellproc: remote connections are not supported (%q)", connName)
+			err := fmt.Errorf("cannot start shellproc: remote connections are not supported (%q)", connName)
+			log.Printf("block %s: %v\n", blockId, err)
+			return err
 		}
 
 		// Start controller
 		err = controller.Start(ctx, blockData.Meta, rtOpts, force)
 		if err != nil {
-			return fmt.Errorf("error starting controller: %w", err)
+			err = fmt.Errorf("error starting controller: %w", err)
+			log.Printf("block %s: %v\n", blockId, err)
+			return err
 		}
 	}
 

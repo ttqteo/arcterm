@@ -9,6 +9,7 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { makeFeBlockRouteId } from "@/app/store/wshrouter";
 import { DefaultRouter, TabRpcClient } from "@/app/store/wshrpcutil";
+import { resyncController } from "@/app/view/agents/agentcontrollerstore";
 import { isAgentSleeping } from "@/app/view/agents/session-models/agentresumestore";
 import { TerminalView } from "@/app/view/term/term";
 import { TermWshClient } from "@/app/view/term/term-wsh";
@@ -523,7 +524,8 @@ export class TermViewModel implements ViewModel {
             rows: this.termRef.current?.terminal?.rows,
             cols: this.termRef.current?.terminal?.cols,
         };
-        await RpcApi.ControllerResyncCommand(TabRpcClient, {
+        // a refused restart reaches the agent's row as failed to start, not only the console fireAndForget logs it to
+        await resyncController({
             tabid: globalStore.get(atoms.staticTabId),
             blockid: this.blockId,
             forcerestart: true,

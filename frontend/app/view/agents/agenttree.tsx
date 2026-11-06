@@ -1216,7 +1216,9 @@ function ParentRow({
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
     const background = runningBackgroundTasks(bgTasks);
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
-    const shown = shownState(agent.state, backgroundActivity(bgTasks, machineServers));
+    // a controller that refused to start started nothing: no background work can make its row read as working
+    const startError = agent.startError;
+    const shown = startError != null ? "idle" : shownState(agent.state, backgroundActivity(bgTasks, machineServers));
     // the dev servers it left listening: not work, so a green server glyph beside the state instead of a working dot
     const servers = launchedServers(bgTasks, machineServers);
     // its running ones as rows under it: only while its process lives, since a sleeping or terminal-less agent's
@@ -1234,7 +1236,7 @@ function ParentRow({
     // holding unread turns brings its name back
     const dim = agent.sleeping != null && !selected;
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
-    const settling = useSettle(shown === "idle");
+    const settling = useSettle(shown === "idle" && startError == null);
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
     const digit = useHeldDigit(navDigit);
@@ -1348,8 +1350,17 @@ function ParentRow({
             ) : (
                 <>
                     {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command or the
-                        Close a finished one offers */}
-                    {queued ? (
+                        Close a finished one offers. A controller that refused to start says so in words, as an ask does:
+                        it waits on you to fix it */}
+                    {startError != null ? (
+                        <span
+                            data-agent-start-failed={agent.id}
+                            title={startError}
+                            className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-error"
+                        >
+                            failed to start
+                        </span>
+                    ) : queued ? (
                         <QueuedJobTag job={queued} />
                     ) : done ? (
                         // the chip's click is its own: it must not select the row it closes
@@ -1438,7 +1449,7 @@ function ParentRow({
                             ) : agent.sleeping ? (
                                 <SleepGlyph id={agent.id} runtime={agent.agent} />
                             ) : (
-                                <RuntimeGlyph runtime={agent.agent} state={shown} />
+                                <RuntimeGlyph runtime={agent.agent} state={shown} error={startError} />
                             )}
                         </DigitHint>
                         <span
@@ -2005,18 +2016,25 @@ const UNDER_GLYPH = "pl-[18px]";
 // the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
 // also carries the agent's state, where a dot used to: working pulses in the working green, asking in the warning colour, and
 // an idle one goes muted, so the rows doing something stand out
-function RuntimeGlyph({ runtime, state }: { runtime: string; state?: ShownState }) {
+function RuntimeGlyph({ runtime, state, error }: { runtime: string; state?: ShownState; error?: string }) {
     const rt = runtimeMeta(runtime);
     const busy = state === "working" || state === "asking" || state === "waiting";
     return (
         <span
             data-agent-glyph-state={state}
+            data-tree-start-error={error != null ? "" : undefined}
             className={cn(
                 "min-w-[12px] flex-none text-center text-[12px] transition-colors duration-200",
-                state == null ? rt.text : GLYPH_COLOR[state],
+                error != null ? "text-error" : state == null ? rt.text : GLYPH_COLOR[state],
                 busy && (state === "waiting" ? "pulse-dot-slow" : PULSE)
             )}
-            title={state == null ? rt.label : `${rt.label} · ${state}`}
+            title={
+                error != null
+                    ? `${rt.label} · failed to start: ${error}`
+                    : state == null
+                      ? rt.label
+                      : `${rt.label} · ${state}`
+            }
         >
             {rt.glyph}
         </span>

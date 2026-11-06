@@ -6,6 +6,7 @@ import { setBadge } from "@/app/store/badge";
 import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { resyncController } from "@/app/view/agents/agentcontrollerstore";
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
 import { openPathFromTerminal, touchedPathForBlock } from "@/app/view/agents/pathlinkroute";
 import { isAgentSleeping, relaunchBlockedBy } from "@/app/view/agents/session-models/agentresumestore";
@@ -845,13 +846,12 @@ export class TermWrap {
         }
         const rtOpts: RuntimeOpts = { termsize: { rows: this.terminal.rows, cols: this.terminal.cols } };
         try {
-            await RpcApi.ControllerResyncCommand(TabRpcClient, {
-                tabid: this.tabId,
-                blockid: this.blockId,
-                rtopts: rtOpts,
-            });
+            await resyncController({ tabid: this.tabId, blockid: this.blockId, rtopts: rtOpts });
         } catch (e) {
             console.log(`error controller resync (${reason})`, this.blockId, e);
+            const message = e instanceof Error ? e.message : String(e);
+            // red, unlike the dim [arc] notices: the terminal theme maps it to its error color
+            this.terminal.write(`\r\n\x1b[31m[arc] could not start: ${message}\x1b[0m\r\n`);
         }
     }
 

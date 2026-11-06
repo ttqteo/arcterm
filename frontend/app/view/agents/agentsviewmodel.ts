@@ -116,6 +116,7 @@ export interface AgentVM {
     builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab: Arc's record of the brainstorm's builder check
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab: Arc's record of the brainstorm's judge
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
+    startError?: string; // its controller refused to start: it reads idle, not booting, with this reason
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
     edited?: boolean; // idle: its last turn changed files no later commit took, so the cockpit offers to ship it (shipmodel.ts)
@@ -1121,6 +1122,7 @@ export interface PendingLaunch {
     name: string;
     project: string;
     ts: number; // launch time (UnixMilli) — drives the booting row's age
+    runtime?: string; // so the booting header names its runtime rather than Unknown
 }
 
 /** Pure: a pending launch -> a "booting" working AgentVM. No transcriptPath (none exists yet); the
@@ -1131,11 +1133,20 @@ export function pendingToVM(p: PendingLaunch, now: number): AgentVM {
         name: p.name,
         task: "",
         state: "working",
+        agent: p.runtime,
         project: p.project,
         blockId: p.blockId,
         activeMs: Math.max(0, now - p.ts),
         stateSince: p.ts,
     };
+}
+
+/** Pure: an agent whose controller refused to start reads idle with the reason, never as still booting. */
+export function withStartError(agent: AgentVM, err: string | undefined): AgentVM {
+    if (!err) {
+        return agent;
+    }
+    return { ...agent, state: "idle", startError: err };
 }
 
 /** Pure: overlay booting launches onto the base roster. A pending entry whose tabId already exists in
