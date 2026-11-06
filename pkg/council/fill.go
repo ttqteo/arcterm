@@ -52,7 +52,8 @@ func foldedLine(d CouncilDirection) CouncilDirection {
 
 // gateByEvidence is a Review's evidence gate: a direction in the top whose proposals are all Guess or Disproved moves, in
 // its order, to the head of Kept, and the top is renumbered from 1, so it may hold fewer than the cap. Go promotes nothing:
-// a folded line has no reasoning or first step to show in full. A Brainstorm asks for no evidence and is not gated.
+// a folded line has no reasoning or first step to show in full. A Brainstorm is not gated: a Guess idea can still be a
+// direction.
 func gateByEvidence(c *Council, s *CouncilSummary) {
 	if isBrainstorm(c) {
 		return

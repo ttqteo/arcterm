@@ -6,6 +6,7 @@ package bench
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func TestAppendAndLoadResults(t *testing.T) {
 		t.Fatalf("runs = %d, ratings = %d, want 2 and 1 (the unknown kind, the broken line and the unknown rating skipped)", len(runs), len(ratings))
 	}
 	run.Kind = KindRun
-	if runs[0] != run {
+	if !reflect.DeepEqual(runs[0], run) {
 		t.Errorf("run round trip:\n got %+v\nwant %+v", runs[0], run)
 	}
 	if runs[1].Case != "codefix" || runs[1].State != "failed" {
@@ -64,6 +65,37 @@ func TestAppendAndLoadResults(t *testing.T) {
 	}
 	if first, _, _ := strings.Cut(string(raw), "\n"); !strings.Contains(first, `"kind":"run"`) || !strings.Contains(first, `"harness":"2026-10-22.1"`) {
 		t.Errorf("first line = %s, want a run line with kind and harness", first)
+	}
+}
+
+func TestResultMatchesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	// a line from before the match maps: it must still read, with both maps nil
+	old := `{"kind":"run","date":"2026-10-22T10:00:00Z","harness":"2026-10-22.1","case":"old","variant":"council","run":1,"council":"c0","state":"done","recall":1,"keys":3,"wrong":0,"tokens":10,"minutes":1,"messages":2}` + "\n"
+	if err := os.WriteFile(resultsPath(dir), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := CouncilBenchResult{
+		Date: "2026-11-06T10:00:00Z", Harness: "2026-11-06.1", Case: "brainstorm", Variant: VariantCouncil, Run: 1,
+		Council: "c1", State: "done", Recall: 2, Keys: 4, Kept: 1,
+		Matches: map[string]int{"k1": 1, "k3": 3}, KeptMatches: map[string]int{"k2": 1},
+	}
+	if err := AppendResult(dir, run); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("runs = %d, want 2", len(runs))
+	}
+	if runs[0].Case != "old" || runs[0].Matches != nil || runs[0].KeptMatches != nil {
+		t.Errorf("old line = %+v, want case old and both maps nil", runs[0])
+	}
+	run.Kind = KindRun
+	if !reflect.DeepEqual(runs[1], run) {
+		t.Errorf("run round trip:\n got %+v\nwant %+v", runs[1], run)
 	}
 }
 

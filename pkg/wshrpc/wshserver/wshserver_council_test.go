@@ -2371,15 +2371,18 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	ctx := context.Background()
 
 	empty, err := ws.CouncilBenchResultsCommand(ctx)
-	if err != nil || empty.Runs == nil || empty.Ratings == nil || len(empty.Runs)+len(empty.Ratings) != 0 {
+	if err != nil || empty.Runs == nil || empty.Results == nil || empty.Ratings == nil || len(empty.Runs)+len(empty.Results)+len(empty.Ratings) != 0 {
 		t.Fatalf("results with no file = %+v, %v, want empty lists the frontend can map over", empty, err)
 	}
 
-	for _, r := range []bench.CouncilBenchResult{
-		{Harness: "2026-10-22.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 1, Keys: 2, Tokens: 500_000},
-		{Harness: "2026-10-23.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 2, Keys: 2, Tokens: 500_000},
-		{Harness: "2026-10-23.1", Case: "alpha", Variant: bench.VariantCouncil, Run: 1, State: "stopped", Tokens: 200_000},
-	} {
+	lines := []bench.CouncilBenchResult{
+		{Date: "2026-10-22T10:00:00Z", Harness: "2026-10-22.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 1, Keys: 2, Tokens: 500_000,
+			Matches: map[string]int{"K2": 1}},
+		{Date: "2026-10-23T10:00:00Z", Harness: "2026-10-23.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 2, Keys: 2, Tokens: 500_000,
+			Matches: map[string]int{"K1": 2, "K2": 1}, KeptMatches: map[string]int{"K3": 1}},
+		{Date: "2026-10-23T11:00:00Z", Harness: "2026-10-23.1", Case: "alpha", Variant: bench.VariantCouncil, Run: 1, State: "stopped", Tokens: 200_000},
+	}
+	for _, r := range lines {
 		if err := bench.AppendResult(dataDir, r); err != nil {
 			t.Fatal(err)
 		}
@@ -2408,6 +2411,13 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	}
 	if stoppedRow := got.Runs[1]; stoppedRow.Runs != 1 || stoppedRow.Scored != 0 || stoppedRow.Tokens != 200_000 {
 		t.Errorf("the stopped council's row = %+v, want it counted in runs and tokens but not scored", stoppedRow)
+	}
+	// every run line comes back as it was written, matches included, in file order
+	for i := range lines {
+		lines[i].Kind = bench.KindRun
+	}
+	if !reflect.DeepEqual(got.Results, lines) {
+		t.Errorf("results\n got %+v\nwant %+v", got.Results, lines)
 	}
 	if want := []bench.CouncilBenchRatingRow{{Harness: "2026-10-23.1", Mode: council.ModeReview, Useful: 1}}; !reflect.DeepEqual(got.Ratings, want) {
 		t.Errorf("ratings = %+v, want %+v", got.Ratings, want)

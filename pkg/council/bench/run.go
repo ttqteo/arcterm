@@ -204,9 +204,10 @@ func runCouncilItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Fu
 	return row, err
 }
 
-// judgeRow judges a done item's report and puts the verdict's scores in its row, with what the judge's call spent (the
-// bench's cap counts it). A judge that fails leaves the row failed with no scores: done but unscored is not a result to
-// read as done with nothing found. Its error is ctx's.
+// judgeRow judges a done item's report and puts the verdict's scores in its row, with which key lines matched and at
+// what rank (Matches, KeptMatches), and what the judge's call spent (the bench's cap counts it). A judge that fails
+// leaves the row failed with no scores and no matches: done but unscored is not a result to read as done with nothing
+// found. Its error is ctx's.
 func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council.Council, row *CouncilBenchResult) error {
 	verdict, err := f.Judge(ctx, c, report)
 	row.JudgeTokens = verdict.Tokens // spent whether or not the reply could be read
@@ -222,6 +223,8 @@ func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council
 	row.Recall = verdict.Recall()
 	row.Kept = verdict.KeptMatched()
 	row.Wrong = verdict.Wrong()
+	row.Matches = verdict.Matches
+	row.KeptMatches = verdict.Kept
 	return nil
 }
 

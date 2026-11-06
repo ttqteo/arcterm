@@ -73,6 +73,8 @@ func kindOf(prompt string) string {
 		return "precheck"
 	case strings.HasPrefix(prompt, "You read one round of a council discussion"):
 		return "roundcheck"
+	case strings.HasPrefix(prompt, zonesOpening):
+		return "zones" // keyed "zones/zones"; with no reply set, its canned answer reads as no zones
 	}
 	if m := roundLineRe.FindStringSubmatch(prompt); m != nil {
 		switch n, _ := strconv.Atoi(m[1]); {
@@ -94,7 +96,7 @@ func kindOf(prompt string) string {
 	return "?"
 }
 
-var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3, "precheck": 6, "roundcheck": 4}
+var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3, "precheck": 6, "roundcheck": 4, "zones": 8}
 
 func (f *fakeCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	kind := kindOf(req.Prompt)
@@ -4307,11 +4309,13 @@ func TestBrainstormRunKeepsKept(t *testing.T) {
 	}
 	h.f.setFn("lead/r3", func(req CallReq) string {
 		wild := idsIn(wildHeadRe, req.Prompt)
+		// the directions come from a tame idea: P1 is whichever seat answered first, ram's wild idea as often as not
+		tame := slices.DeleteFunc(idsIn(proposalHeadRe, req.Prompt), func(id string) bool { return slices.Contains(wild, id) })[0]
 		dirs := []map[string]any{}
 		for i, title := range []string{"Idea one", "Idea two", "Idea three", "Idea four"} {
 			dirs = append(dirs, map[string]any{
 				"rank": i + 1, "title": title, "reasoning": "Why " + title + ".", "firststep": "Start " + title,
-				"from": []string{"P1"}, "stances": map[string]string{"ux": "accept"},
+				"from": []string{tame}, "stances": map[string]string{"ux": "accept"},
 			})
 		}
 		return fence(mustJSON(map[string]any{
@@ -4404,6 +4408,173 @@ func TestBrainstormRunKeepsKept(t *testing.T) {
 		for _, req := range reqs {
 			mustContain(t, kind+" prompt", req.Prompt, "brainstorms ideas")
 			mustNotContain(t, kind+" prompt", req.Prompt, evidenceRule)
+		}
+	}
+}
+
+// panelZones is a zone call's reply giving each of seats a zone named "Zone <seat>".
+func panelZones(seats ...string) string {
+	var zones []map[string]string
+	for _, s := range seats {
+		zones = append(zones, map[string]string{"seat": s, "name": "Zone " + s, "covers": "What " + s + " covers."})
+	}
+	return fence(mustJSON(map[string]any{"zones": zones}))
+}
+
+func TestZoneStepSavesZonesAndRound1ReadsThem(t *testing.T) {
+	h := newHarness(t)
+	h.f.setText("zones/zones", panelZones("skeptic", "ux", "ram", "newuser"))
+	c := h.run(brainstormTestCouncil("z1"))
+	if c.State != StateDone || c.Error != "" {
+		t.Fatalf("final = %s %q, want done", c.State, c.Error)
+	}
+	want := []CouncilZone{
+		{Seat: "ux", Name: "Zone ux", Covers: "What ux covers."}, {Seat: "ram", Name: "Zone ram", Covers: "What ram covers."},
+		{Seat: "newuser", Name: "Zone newuser", Covers: "What newuser covers."}, {Seat: "skeptic", Name: "Zone skeptic", Covers: "What skeptic covers."},
+	}
+	if !reflect.DeepEqual(c.Zones, want) {
+		t.Errorf("zones = %+v, want %+v", c.Zones, want)
+	}
+	zc := h.f.calls("zones")
+	if len(zc) != 1 || zc[0].Tools || zc[0].Expert.Model != ModelZones || zc[0].Cwd != c.Project {
+		t.Fatalf("zone calls = %+v, want one no-tools %s call in the project folder", zc, ModelZones)
+	}
+	// it comes before round 1, and every round 1 prompt names its seat's zone and lists them all
+	first := h.f.indexes("zones")[0]
+	for _, i := range h.f.indexes("r1") {
+		if i < first {
+			t.Errorf("a round 1 call (%d) ran before the zone call (%d)", i, first)
+		}
+	}
+	r1 := h.f.calls("r1")
+	if len(r1) != 4 {
+		t.Fatalf("%d round 1 calls, want 4", len(r1))
+	}
+	for _, req := range r1 {
+		mustContain(t, req.Expert.Id+"'s round 1 prompt", req.Prompt, "Your zone is Zone "+req.Expert.Id+": What "+req.Expert.Id+" covers.",
+			"- Zone ux: What ux covers.", "- Zone skeptic: What skeptic covers.", `"zone":`)
+	}
+	mustContain(t, "synthesis", h.f.calls("r3")[0].Prompt, "## Zones", "different zones")
+	// the call is booked on the council and on the coordinator's row
+	if st := c.Stats["lead"]; st.Calls != 2 || st.Tokens != callTokens["zones"]+callTokens["r3"] {
+		t.Errorf("lead's stats = %+v, want the zone call and the synthesis", st)
+	}
+	if wantCalls := len(h.f.all()); c.Calls != wantCalls {
+		var kinds []string
+		for _, req := range h.f.all() {
+			kinds = append(kinds, kindOf(req.Prompt))
+		}
+		t.Errorf("calls = %d, want %d: %v", c.Calls, wantCalls, kinds)
+	}
+}
+
+func TestZoneStepWithNoZonesRunsRound1AsToday(t *testing.T) {
+	for name, set := range map[string]func(f *fakeCaller){
+		"a failed call":  func(f *fakeCaller) { f.setFail("zones/zones", errors.New("boom")) },
+		"too few zones":  func(f *fakeCaller) { f.setText("zones/zones", panelZones("ux", "ram", "newuser")) },
+		"an empty reply": func(f *fakeCaller) { f.setText("zones/zones", "  ") },
+		"garbage":        func(f *fakeCaller) { f.setText("zones/zones", "zones? sure") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			set(h.f)
+			c := h.run(brainstormTestCouncil("z2"))
+			if c.State != StateDone || c.Error != "" || c.Zones != nil {
+				t.Fatalf("final = %s %q zones %+v, want done with no zones", c.State, c.Error, c.Zones)
+			}
+			if n := len(h.f.calls("zones")); n != 1 {
+				t.Errorf("%d zone calls, want 1", n)
+			}
+			r1 := h.f.calls("r1")
+			if len(r1) != 4 {
+				t.Fatalf("%d round 1 calls, want 4", len(r1))
+			}
+			for _, req := range r1 {
+				mustContain(t, "round 1 prompt", req.Prompt, brainstormRound1Shape)
+				mustNotContain(t, "round 1 prompt", req.Prompt, "zone")
+			}
+		})
+	}
+}
+
+func TestZoneStepMakesNoCall(t *testing.T) {
+	t.Run("a one-seat panel", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setText("zones/zones", panelZones("ux"))
+		c := brainstormTestCouncil("z3")
+		c.Experts = []CouncilExpert{c.Experts[0], c.Experts[4]} // ux and the coordinator
+		c = h.run(c)
+		if n := len(h.f.calls("zones")); n != 0 || c.Zones != nil || c.State != StateDone {
+			t.Errorf("%d zone calls, zones %+v, state %s; want none and a done council", n, c.Zones, c.State)
+		}
+	})
+	t.Run("a Review", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setText("zones/zones", panelZones(panelIds()...))
+		c := h.run(flowCouncil(t, "z4"))
+		if n := len(h.f.calls("zones")); n != 0 || c.Zones != nil {
+			t.Errorf("%d zone calls, zones %+v; want none", n, c.Zones)
+		}
+	})
+	t.Run("a council already holding zones", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setText("zones/zones", panelZones(panelIds()...))
+		c := brainstormTestCouncil("z5")
+		held := []CouncilZone{{Seat: "ux", Name: "Kept ux"}, {Seat: "ram", Name: "Kept ram"}, {Seat: "newuser", Name: "Kept newuser"}, {Seat: "skeptic", Name: "Kept skeptic"}}
+		c.Zones = held
+		c = h.run(c)
+		if n := len(h.f.calls("zones")); n != 0 || !reflect.DeepEqual(c.Zones, held) {
+			t.Errorf("%d zone calls, zones %+v; want none and the zones kept", n, c.Zones)
+		}
+		mustContain(t, "round 1 prompt", h.f.calls("r1")[0].Prompt, "- Kept skeptic")
+	})
+}
+
+func TestRound1KeepsZone(t *testing.T) {
+	zoned := func(req CallReq) string {
+		zones := map[string]string{"ux": "zone UX", "ram": "Somewhere else", "newuser": "", "skeptic": " Zone ux "}
+		return fence(mustJSON(map[string]any{"overview": "x", "proposals": []map[string]any{
+			{"title": "Idea from " + req.Expert.Id, "argument": "a", "zone": zones[req.Expert.Id]},
+		}}))
+	}
+	zoneOf := func(c *Council) map[string]string {
+		out := map[string]string{}
+		for _, p := range c.Proposals {
+			out[p.Author] = p.Zone
+		}
+		return out
+	}
+
+	h := newHarness(t)
+	h.f.setText("zones/zones", panelZones(panelIds()...))
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", zoned)
+	}
+	got := zoneOf(h.run(brainstormTestCouncil("k1")))
+	// a case-different name becomes the stored one, an unknown one and none are cleared
+	if want := map[string]string{"ux": "Zone ux", "ram": "", "newuser": "", "skeptic": "Zone ux"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("brainstorm zones = %v, want %v", got, want)
+	}
+
+	// a Brainstorm with no zones keeps none
+	h = newHarness(t)
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", zoned)
+	}
+	for seat, z := range zoneOf(h.run(brainstormTestCouncil("k2"))) {
+		if z != "" {
+			t.Errorf("%s's idea zone = %q in a Brainstorm with no zones, want none", seat, z)
+		}
+	}
+
+	// a Review keeps none
+	h = newHarness(t)
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", zoned)
+	}
+	for seat, z := range zoneOf(h.run(flowCouncil(t, "k3"))) {
+		if z != "" {
+			t.Errorf("%s's proposal zone = %q in a Review, want none", seat, z)
 		}
 	}
 }
@@ -6554,46 +6725,78 @@ func TestRunnerVerifyOneRoundCouncilReachesTheSynthesis(t *testing.T) {
 	}
 }
 
-func TestRunnerChecksNothingInABrainstorm(t *testing.T) {
+func TestCheckClaimsBrainstormLabelsCitedIdeasAndRunsNothing(t *testing.T) {
 	h := newHarness(t)
 	proj := checkProject(t)
 	snaps := useSnapshot(t, "snap", nil)
 	g := newVerifyRig(t)
 	trees := &fakeTrees{}
 	h.r.Trees = trees
-	for _, id := range []string{"ux", "ram", "newuser", "skeptic"} {
-		// even a model that was not asked for them may send a verify list and quotes
-		h.f.setText(id+"/r1", claimJSON("Idea from "+id, []map[string]string{cite("pkg/ux.go:3", "func Sleep()"), cite("pkg/nope.go:1", "")},
-			askRun("go test ./pkg/services -run TestIdea", RunPass)))
-	}
+	// even a model that was not asked for them may send a verify list: a Brainstorm runs none
+	verify := askRun("go test ./pkg/services -run TestIdea", RunPass)
+	h.f.setText("ux/r1", claimJSON("Idea from ux", []map[string]string{cite("pkg/ux.go:3", "func Sleep()"), cite("pkg/nope.go:1", "")}, verify))
+	h.f.setText("ram/r1", claimJSON("Idea from ram", []map[string]string{cite("pkg/ram.go:900", "")}, verify))
+	h.f.setText("newuser/r1", claimJSON("Idea from newuser", nil, verify)) // an idea about what to build cites nothing
+	h.f.setText("skeptic/r1", claimJSON("Idea from skeptic", []map[string]string{cite("pkg/nope.go:1", "")}))
+	h.f.setFn("ux/r2", r2Citing(cite("pkg/ux.go:3", "func Sleep()")))
 	c := claimCouncil("c1", proj)
 	c.Mode = ModeBrainstorm
+	c.PauseAfterRound1 = true
 
-	done := h.run(c)
+	want := map[string]string{"ux": LabelRead, "ram": LabelGuess, "newuser": "", "skeptic": LabelGuess}
+	checkIdeas := func(when string, c *Council) {
+		t.Helper()
+		for author, label := range want {
+			p := proposalOf(t, c, ideaBy(t, c, author))
+			if p.Label != label || len(p.Runs) != 0 {
+				t.Errorf("%s: %s's idea = label %q runs %+v, want label %q and no runs", when, author, p.Label, p.Runs, label)
+			}
+		}
+		if p := proposalOf(t, c, ideaBy(t, c, "ux")); p.Evidence[0].Cite != CiteOK || p.Evidence[1].Cite != CiteWrong {
+			t.Errorf("%s: ux's evidence = %+v, want ok then wrong", when, p.Evidence)
+		}
+		if p := proposalOf(t, c, ideaBy(t, c, "newuser")); len(p.Evidence) != 0 {
+			t.Errorf("%s: newuser's evidence = %+v, want none", when, p.Evidence)
+		}
+	}
+
+	paused := h.run(c)
+	if paused.State != StateAwaiting || paused.Round != 1 {
+		t.Fatalf("after round 1: %s at round %d, want awaiting-you at round 1", paused.State, paused.Round)
+	}
+	checkIdeas("after round 1", paused)
+
+	if _, err := h.r.Continue("c1", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	done := h.wait("c1")
 	if done.State != StateDone {
 		t.Fatalf("council = %s %q, want done", done.State, done.Error)
 	}
+	checkIdeas("done", done)
 	if n := snaps.Load(); n != 0 || done.Snapshot != "" {
 		t.Errorf("snapshot taken %d times, kept %q: a Brainstorm has no tree to run anything in", n, done.Snapshot)
 	}
 	if len(trees.events) != 0 || len(g.commands()) != 0 {
 		t.Errorf("tree events %v, commands %q: a Brainstorm runs nothing", trees.events, g.commands())
 	}
-	for _, p := range done.Proposals {
-		if p.Label != "" || len(p.Runs) != 0 {
-			t.Errorf("idea %s = label %q runs %+v, want neither in a Brainstorm", p.Id, p.Label, p.Runs)
-		}
-		for _, e := range p.Evidence {
-			if e.Cite != "" || e.CiteNote != "" {
-				t.Errorf("idea %s evidence %+v was checked, want it left alone", p.Id, e)
-			}
-		}
-	}
+	// a Brainstorm's replies stay unchecked and unlabelled, though they cite
 	for _, x := range done.Replies {
 		if x.Label != "" {
 			t.Errorf("reply %s has label %q in a Brainstorm", x.Id, x.Label)
 		}
+		for _, e := range x.Evidence {
+			if e.Cite != "" {
+				t.Errorf("reply %s evidence %+v was checked in a Brainstorm", x.Id, e)
+			}
+		}
 	}
+	// the coordinator reads each idea's label, and the Brainstorm's label rule
+	r3 := h.f.calls("r3")
+	if len(r3) != 1 {
+		t.Fatalf("%d synthesis calls, want 1", len(r3))
+	}
+	mustContain(t, "synthesis prompt", r3[0].Prompt, "Label: Read code", "Label: Guess", brainstormLabelRule, brainstormLabelTie)
 }
 
 func TestRunnerVerifyStopMidVerifyRemovesTheTree(t *testing.T) {

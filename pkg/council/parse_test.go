@@ -151,6 +151,29 @@ func TestParseRound1GivesAProposalWithNoEvidenceFieldTheWeakChip(t *testing.T) {
 	}
 }
 
+func TestParseRound1Zone(t *testing.T) {
+	reply := jsonFence(`{"overview": "x", "proposals": [
+		{"title": "A", "argument": "a", "zone": "  First launch "},
+		{"title": "B", "argument": "b", "zone": ""},
+		{"title": "C", "argument": "c", "evidence": [{"ref": "a.go:1"}], "zone": "Idle cost"}
+	]}`)
+	props, _, err := ParseRound1(reply)
+	if err != nil || len(props) != 3 {
+		t.Fatalf("ParseRound1 = %+v, %v", props, err)
+	}
+	if props[0].Zone != "First launch" || props[1].Zone != "" || props[2].Zone != "Idle cost" {
+		t.Errorf("zones = %q, %q, %q; want the trimmed names, and none for the second", props[0].Zone, props[1].Zone, props[2].Zone)
+	}
+
+	// the zoned shape reads through the parser too
+	c := zonesCouncil()
+	c.Zones = []CouncilZone{{Seat: "ux", Name: "First launch"}, {Seat: "ram", Name: "Idle cost"}, {Seat: "skeptic", Name: "Wake failures"}}
+	if props, _, err := ParseRound1(jsonFence(brainstormRound1ShapeFor(c))); err != nil || len(props) != 2 || props[0].Zone == "" ||
+		!strings.Contains(props[1].Argument, "| Idle wait |") {
+		t.Errorf("zoned brainstorm shape: %+v, %v", props, err)
+	}
+}
+
 func TestParseRound1NoProposalsIsFine(t *testing.T) {
 	props, overview, err := ParseRound1(jsonFence(`{"overview": "nothing to change", "proposals": []}`))
 	if err != nil || len(props) != 0 || overview != "nothing to change" {

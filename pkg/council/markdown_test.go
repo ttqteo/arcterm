@@ -640,6 +640,33 @@ func TestMarkdownDiscussionOfAnEmptyCouncil(t *testing.T) {
 	}
 }
 
+func TestBrainstormDocNoLabels(t *testing.T) {
+	// a Brainstorm's checked ideas carry labels in the data, but its document, like the UI, shows no label word
+	c := savedBrainstorm()
+	c.Proposals[0].Label = LabelRead
+	c.Proposals[0].Evidence = []CouncilEvidence{{Ref: "a.go:1", Cite: CiteOK}}
+	c.Proposals[1].Label = LabelGuess
+	c.Proposals[1].Evidence = []CouncilEvidence{{Ref: "a.go:900", Cite: CiteWrong, CiteNote: "line 900 is past the end"}}
+	c.Replies[0].Label = LabelRead // a reply saved with a label all the same
+	for name, doc := range map[string]string{"document": Document(c), "markdown": Markdown(c)} {
+		mustNotContain(t, "brainstorm "+name, doc, "Read code", "Guess", "Check:", "(Read code)", "(Guess)")
+		mustContain(t, "brainstorm "+name, doc, "Open on the report")
+	}
+	if m, ok := MessageMarkdown(c, "P1"); !ok || strings.Contains(m, "Check:") || strings.Contains(m, "Read code") {
+		t.Errorf("P1's message = %q, %v, want it with no label", m, ok)
+	}
+	if m, ok := MessageMarkdown(c, "r1"); !ok || strings.Contains(m, "Check:") {
+		t.Errorf("r1's message = %q, %v, want it with no label", m, ok)
+	}
+	mustContain(t, "brainstorm document", Document(c), "| P1 · Open on the report |", "a.go:1")
+
+	// a Review's document still shows them
+	review := documentCouncil()
+	review.Proposals[0].Label = LabelRead
+	review.Replies[0].Label = LabelGuess
+	mustContain(t, "review document", Document(review), "| P1 · Show the sleep state (Read code) |", "Check: Read code", "Check: Guess")
+}
+
 func savedBrainstorm() *Council {
 	return &Council{
 		Id: "b1", Feature: "Council for newcomers", Question: "Council opens on threads and nobody knows what to do. Fix?",

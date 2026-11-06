@@ -358,20 +358,6 @@ func TestApplyChecks(t *testing.T) {
 		}
 	})
 
-	t.Run("a brainstorm is left alone", func(t *testing.T) {
-		c := build(ModeBrainstorm)
-		want := build(ModeBrainstorm)
-		ApplyChecks(c, rootsFor)
-		if !reflect.DeepEqual(c, want) {
-			t.Errorf("a Brainstorm council was changed by ApplyChecks")
-		}
-		for _, p := range c.Proposals {
-			if p.Label != "" {
-				t.Errorf("%s has Label %q in a Brainstorm", p.Id, p.Label)
-			}
-		}
-	})
-
 	t.Run("a nil council and a nil roots function", func(t *testing.T) {
 		ApplyChecks(nil, rootsFor)
 		c := build("")
@@ -390,4 +376,57 @@ func TestApplyChecks(t *testing.T) {
 			t.Errorf("P6 Label = %q with no roots, want %q from its run", got, LabelRan)
 		}
 	})
+}
+
+func TestApplyChecksBrainstorm(t *testing.T) {
+	proj := t.TempDir()
+	writeCiteFile(t, proj, "pkg/a.go", rowsText(10))
+	rootsFor := func(string) []string { return []string{proj} }
+	build := func() *Council {
+		return &Council{
+			Mode: ModeBrainstorm,
+			Proposals: []CouncilProposal{
+				{Id: "P1", Author: "ux", Evidence: []CouncilEvidence{{Ref: "pkg/a.go:3", Quote: "token-03"}, {Ref: "pkg/gone.go:1"}}},
+				{Id: "P2", Author: "ram", Evidence: []CouncilEvidence{{Ref: "pkg/gone.go:1"}}},
+				{Id: "P3", Author: "ux"}, // an idea about what to build: no cite
+				{Id: "P4", Author: "ram", Evidence: []CouncilEvidence{{Weak: true, Note: noEvidenceNote}}},   // the parser's chip, no cite either
+				{Id: "P5", Author: "ux", Draft: DraftHeld, Evidence: []CouncilEvidence{{Ref: "pkg/a.go:3"}}}, // not sent
+			},
+			Replies: []CouncilReply{
+				{Id: "r1", ProposalId: "P1", Author: "ram", Stance: StanceChallenge, Evidence: []CouncilEvidence{{Ref: "pkg/a.go:3", Quote: "token-03"}}},
+				{Id: "r2", ProposalId: "P2", Author: "ux", Stance: StanceAccept, Builds: true, Evidence: []CouncilEvidence{{Ref: "pkg/gone.go:1"}}},
+			},
+		}
+	}
+	c := build()
+	ApplyChecks(c, rootsFor)
+
+	want := map[string]string{"P1": LabelRead, "P2": LabelGuess, "P3": "", "P4": "", "P5": ""}
+	for _, p := range c.Proposals {
+		if p.Label != want[p.Id] {
+			t.Errorf("%s Label = %q, want %q", p.Id, p.Label, want[p.Id])
+		}
+	}
+	if p1 := c.Proposals[0]; p1.Evidence[0].Cite != CiteOK || p1.Evidence[1].Cite != CiteWrong || p1.Evidence[1].CiteNote == "" {
+		t.Errorf("P1 evidence = %+v, want an ok cite and a wrong one with its note", p1.Evidence)
+	}
+	if e := c.Proposals[1].Evidence[0]; e.Cite != CiteWrong {
+		t.Errorf("P2 evidence = %+v, want a wrong cite", e)
+	}
+	if e := c.Proposals[4].Evidence[0]; e.Cite != "" {
+		t.Errorf("a held idea's cite was checked: %+v", e)
+	}
+	// a Brainstorm's replies, stances included, stay unchecked and unlabelled
+	wantReplies := build().Replies
+	if !reflect.DeepEqual(c.Replies, wantReplies) {
+		t.Errorf("replies = %+v, want them left as they were %+v", c.Replies, wantReplies)
+	}
+
+	// a second run changes nothing
+	again := build()
+	ApplyChecks(again, rootsFor)
+	ApplyChecks(again, rootsFor)
+	if !reflect.DeepEqual(again, c) {
+		t.Error("ApplyChecks twice on a Brainstorm differs from once")
+	}
 }

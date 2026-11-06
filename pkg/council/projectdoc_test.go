@@ -6,6 +6,7 @@ package council
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -143,7 +144,8 @@ func TestSyncProjectDoc(t *testing.T) {
 	b, _ := os.ReadFile(agents)
 	mustContain(t, "AGENTS.md", string(b), "# Agents\n\n"+docBegin, "Settle the problem", "Read the paper before citing it")
 	mustNotContain(t, "AGENTS.md", string(b), "Another project's council")
-	if st, _ := os.Stat(agents); st.Mode().Perm() != 0o600 {
+	// Windows keeps no Unix mode bits (it reports 0666), so the kept mode is checked on Unix only
+	if st, _ := os.Stat(agents); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %v, want the file's own 0600", st.Mode().Perm())
 	}
 	if _, changed, _ := SyncProjectDoc(project); changed {

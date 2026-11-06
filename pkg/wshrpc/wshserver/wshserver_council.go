@@ -699,7 +699,8 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 }
 
 // CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
-// bench runs, and per harness version and mode for the ratings. With cases tagged bench.TeamPassTag (retired or not) it
+// bench runs, and per harness version and mode for the ratings, beside every run line as written (its matches included),
+// in file order. With cases tagged bench.TeamPassTag (retired or not) it
 // adds the go / no-go verdict on the council against the agent team; with none, no cases.json, or cases that cannot be
 // read, there is no verdict (only the last is logged: the table is still the results).
 func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
@@ -708,9 +709,12 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
-	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Ratings: bench.SummarizeRatings(ratings)}
+	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
 	if rtn.Runs == nil {
 		rtn.Runs = []bench.CouncilBenchRow{}
+	}
+	if rtn.Results == nil {
+		rtn.Results = []bench.CouncilBenchResult{}
 	}
 	if rtn.Ratings == nil {
 		rtn.Ratings = []bench.CouncilBenchRatingRow{}

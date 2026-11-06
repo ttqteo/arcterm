@@ -81,7 +81,8 @@ var builtInRoles = []CouncilExpert{
 			"submission, ranked by how likely each point is to sink the paper. Merge duplicate points, mark a claim " +
 			"weak when it cites nothing, and say which concerns the text can answer and which need new work."),
 	},
-	// The Brainstorm's roles. A Brainstorm asks for no evidence, so their briefs carry no evidence rule.
+	// The Brainstorm's roles. A Brainstorm grounds only a claim about today's code, through its own round 1 rule, so their
+	// briefs carry no evidence rule.
 	{
 		Id: "designer", Name: "Designer", NameVi: "Thiết kế", Model: ModelExpert,
 		Brief: "You are the designer. Think in what a person sees and does: the screen, the flow, the first minute. Propose " +

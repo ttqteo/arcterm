@@ -248,6 +248,16 @@ type CouncilProposal struct {
 	// on a proposal from before checkers, which every seat reads in full. CheckWhy is the author's line on why that seat.
 	Checker  string `json:"checker,omitempty"`
 	CheckWhy string `json:"checkwhy,omitempty"`
+	// Zone is the stored zone name (CouncilZone.Name) a Brainstorm idea fits; empty for none, and on every Review idea.
+	Zone string `json:"zone,omitempty"`
+}
+
+// CouncilZone is the part of a Brainstorm's feature one panel seat explores: Name is a few words, Covers one sentence
+// on the part of the feature it covers.
+type CouncilZone struct {
+	Seat   string `json:"seat"` // the panel seat's expert id
+	Name   string `json:"name"`
+	Covers string `json:"covers"`
 }
 
 // The person's thumb on a seat's sent idea or reply. The seats' later prompts and the summary read it (writeThumbs),
@@ -549,6 +559,9 @@ type Council struct {
 	// Snapshot is the commit Start took of the project's tree as it was (HEAD plus uncommitted changes and untracked
 	// files), which the verify commands run on; empty for a Brainstorm and for a project that is not a git repo.
 	Snapshot string `json:"snapshot,omitempty"`
+	// Zones is a Brainstorm's zones, one per panel seat in panel order, set by the zone call before round 1. Nil when
+	// the council has none: a Review, a panel of one seat, a failed zone call, or a council saved before zones.
+	Zones []CouncilZone `json:"zones,omitempty"`
 }
 
 // The rounds a council with agents may run: the ideas round and up to two reply passes. A council with no Rounds, and
