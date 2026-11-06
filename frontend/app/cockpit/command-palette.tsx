@@ -10,6 +10,7 @@
 // second shortcut. The rules live in the pure palette-*.ts modules; this file wires sources to them.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { indicatorSlide } from "@/app/element/motiontokens";
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -20,11 +21,14 @@ import { HOME_PROJECT, projectLabel } from "@/app/view/agents/agentsidebarmodel"
 import { askingLabel, formatAge, projectOf } from "@/app/view/agents/agentsviewmodel";
 import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
+import type { ProjectBrainstorm } from "@/app/view/agents/brainstormpoller";
 import { listCanvasTopics } from "@/app/view/agents/canvaslist";
 import { canvasOwner } from "@/app/view/agents/canvasstore";
 import { sendChannelMessage } from "@/app/view/agents/channelactions";
 import { activeChannelAtom, channelsAtom, primeChannels } from "@/app/view/agents/channelsstore";
+import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "@/app/view/agents/harnessstore";
 import type { Runtime } from "@/app/view/agents/launch";
+import { naFlagsAtom } from "@/app/view/agents/naflagsstore";
 import { openInFocusedPanel } from "@/app/view/agents/pathlinkroute";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectListAtom, projectsAtom, recentProjectsAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
@@ -86,6 +90,8 @@ import { openNeedsTarget } from "./openneeds";
 import { runPaletteAction } from "./palette-action";
 import { actionListGroups, bareLabel, resolveActionRow, verbGroupLabel, verbLeads } from "./palette-actionrows";
 import {
+    brainstormLaunchOpts,
+    buildBrainstormItems,
     buildCommandItems,
     buildExtraItems,
     buildThemeItems,
@@ -102,6 +108,7 @@ import { assembleFileGroups, fileEcho } from "./palette-files";
 import {
     ALL_KIND_ORDER,
     assembleAllGroups,
+    assembleDrillGroup,
     assembleScopeGroups,
     capGroups,
     groupByKind,
@@ -163,6 +170,7 @@ import {
     type NavState,
     type ScopeId,
 } from "./palette-scope";
+import { usePaletteBrainstorms } from "./use-palette-brainstorms";
 
 type CommandRow = PaletteItem & { group: string };
 
@@ -308,6 +316,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const [nav, setNavState] = useState<NavState>(() => initialNav(surface));
     const [sel, setSel] = useState(0);
     const [paletteError, setPaletteError] = useState<string | undefined>(undefined);
+    // the Resume brainstorm picker's list: read only while that drill is showing
+    const brainstorms = usePaletteBrainstorms(open && nav.drill === "brainstorm", projectRows, setPaletteError);
     const [armed, setArmed] = useState<Armed | null>(null);
     // the note being written: while set, the palette is the editor. dropped with each open
     const [draft, setDraft] = useState<NoteDraft | null>(null);
@@ -463,10 +473,52 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         [themePreset]
     );
 
+    // The Resume brainstorm picker: Enter carries one on in its project with the default runtime and its remembered flags,
+    // Mod+Enter (the row's alt) dismisses it until it next changes. null while the projects' folders are being read.
+    const resumeBrainstorm = (b: ProjectBrainstorm) => {
+        const pref = globalStore.get(harnessPreferenceAtom).route?.runtime ?? "";
+        const runtime = (resolveDefaultRuntime(pref, globalStore.get(harnessesAtom)) || "claude") as Runtime;
+        const flags = globalStore.get(naFlagsAtom)[runtime] ?? {};
+        fireAndForget(async () => {
+            try {
+                await launchAgent(model, brainstormLaunchOpts(b, runtime, flags));
+            } catch (err) {
+                pushToast({
+                    title: `Couldn’t resume “${b.title}”`,
+                    message: err instanceof Error ? err.message : String(err),
+                    level: "error",
+                });
+            }
+        });
+    };
+    const brainstormItems = useMemo<PaletteItem[] | null>(
+        () =>
+            brainstorms.list &&
+            buildBrainstormItems(brainstorms.list, Date.now()).map(
+                (r): PaletteItem => ({
+                    key: r.key,
+                    kind: "brainstorm" as const,
+                    search: r.search,
+                    title: r.title,
+                    sub: r.sub,
+                    meta: r.meta,
+                    verb: "Resume",
+                    echo: r.echo,
+                    run: () => {
+                        resumeBrainstorm(r.brainstorm);
+                        close();
+                    },
+                    alt: { echo: "Dismisses it until it next changes", run: () => brainstorms.dismiss(r.brainstorm) },
+                })
+            ),
+        [brainstorms.list, model]
+    );
+
     // Registry-derived: the "Go to" bindings are the surfaces, everything else is a command.
     const { gotoItems, commandItems } = useMemo(() => {
         const drillMeta: Record<DrillId, string> = {
             theme: `${themeItems.length} themes ›`,
+            brainstorm: "every project ›",
         };
         const all = [
             ...buildCommandItems(bindings, postCloseContext(surface)),
@@ -1109,14 +1161,15 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     if (nav.actions != null) {
         groups = actionDrillGroups();
     } else if (nav.drill != null) {
-        const hits = rankPaletteItems(themeItems, nav.query);
+        const pool = nav.drill === "brainstorm" ? brainstormItems : themeItems;
         groups = [
-            {
-                key: nav.drill,
+            assembleDrillGroup({
+                drill: nav.drill,
                 label: DRILL_LABELS[nav.drill],
-                items: hits,
-                ...(hits.length === 0 ? { emptyText: q === "" ? "Nothing to pick." : `Nothing matches “${q}”.` } : {}),
-            },
+                hits: rankPaletteItems(pool ?? [], nav.query),
+                query: nav.query,
+                loading: pool == null,
+            }),
         ];
     } else if (nav.scope === "all") {
         cap = MAX_IN_ALL;

@@ -16,12 +16,16 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     BRAINSTORM_POLL_MS,
     brainstormFilePath,
+    brainstormsDir,
+    dismissedMarkerPath,
+    isDismissed,
     nextSentCheckAt,
     parseBrainstorm,
     parseBrainstormPath,
     settleSent,
     terminalAnswer,
     type BrainstormFile,
+    type OpenBrainstorm,
 } from "./brainstormmodel";
 import {
     attachBrainstorm,
@@ -34,6 +38,7 @@ import {
 } from "./brainstormstore";
 import { boardsFromCanvasJson, boardUrl, canvasDesignDir } from "./canvasmodel";
 import { tauriCanvasIO } from "./canvaspoller";
+import { tauriSendIO } from "./canvassend";
 
 const CANVAS_JSON = "canvas.json";
 const HTTP_OK = 200;
@@ -47,6 +52,79 @@ export type BrainstormIO = {
     serve(designDir: string): Promise<string | null>;
     canvasJson(url: string): Promise<unknown>;
 };
+
+export type OpenBrainstormsIO = Pick<BrainstormIO, "stat" | "read"> & { list(dir: string): Promise<string[]> };
+
+// a project's brainstorms that were never approved, newest first: what a new agent can carry on. One that can't be read
+// right now (mid-write, or not a brainstorm) is left out rather than failing the list, and so is one dismissed since its
+// last change (dismissBrainstorm).
+export async function listOpenBrainstorms(cwd: string, io: OpenBrainstormsIO): Promise<OpenBrainstorm[]> {
+    const dir = brainstormsDir(cwd);
+    if (!(await io.stat(dir)).exists) {
+        return [];
+    }
+    const rows = await Promise.all(
+        (await io.list(dir)).map(async (topic): Promise<OpenBrainstorm | null> => {
+            const path = brainstormFilePath(cwd, topic);
+            try {
+                const st = await io.stat(path);
+                if (!st.exists) {
+                    return null;
+                }
+                const parsed = parseBrainstorm(await io.read(path));
+                if (!("file" in parsed) || parsed.file.done) {
+                    return null;
+                }
+                const modifiedMs = st.modifiedMs ?? 0;
+                const marker = await io.stat(dismissedMarkerPath(path));
+                if (marker.exists && isDismissed(modifiedMs, marker.modifiedMs)) {
+                    return null;
+                }
+                const f = parsed.file;
+                return {
+                    topic,
+                    path,
+                    title: f.title || topic,
+                    question: f.question != null ? { n: f.question.n, text: f.question.text } : null,
+                    modifiedMs,
+                };
+            } catch (e) {
+                console.warn("open brainstorms: reading failed", path, e);
+                return null;
+            }
+        })
+    );
+    return rows.filter((r): r is OpenBrainstorm => r != null).sort((a, b) => b.modifiedMs - a.modifiedMs);
+}
+
+export type ProjectBrainstorm = OpenBrainstorm & { project: string; projectPath: string };
+
+// every project's open brainstorms, newest first; a project whose folder can't be listed is left out
+export async function listAllOpenBrainstorms(
+    projects: { name: string; path: string }[],
+    io: OpenBrainstormsIO
+): Promise<ProjectBrainstorm[]> {
+    const lists = await Promise.all(
+        projects
+            .filter((p) => p.path)
+            .map((p) =>
+                listOpenBrainstorms(p.path, io).then(
+                    (rows) => rows.map((b) => ({ ...b, project: p.name, projectPath: p.path })),
+                    (e) => {
+                        console.warn("open brainstorms: listing failed", p.path, e);
+                        return [];
+                    }
+                )
+            )
+    );
+    return lists.flat().sort((a, b) => b.modifiedMs - a.modifiedMs);
+}
+
+// An empty `dismissed` file beside the brainstorm hides it from the open list while the file is the newer of the two
+// (isDismissed): an agent that carries the brainstorm on brings it back without anyone removing the marker.
+export async function dismissBrainstorm(brainstormFile: string): Promise<void> {
+    await tauriSendIO.write(dismissedMarkerPath(brainstormFile), new Uint8Array());
+}
 
 function listsBoards(f: BrainstormFile): boolean {
     return f.parts.some((p) => p.boards != null && p.boards.length > 0);
@@ -136,6 +214,12 @@ export const tauriBrainstormIO: BrainstormIO = {
         const res = await tauriCanvasIO.get(url);
         return res.status === HTTP_OK ? res.json : undefined;
     },
+};
+
+export const tauriOpenBrainstormsIO: OpenBrainstormsIO = {
+    stat: tauriBrainstormIO.stat,
+    read: tauriBrainstormIO.read,
+    list: tauriSendIO.list,
 };
 
 // `wsh agent-hook` stamps the agent's block on every prompt it submits, the terminal's included

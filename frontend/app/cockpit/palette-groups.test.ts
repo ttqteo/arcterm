@@ -3,7 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    ALL_KIND_ORDER,
+    KIND_LABELS,
     assembleAllGroups,
+    assembleDrillGroup,
     assembleScopeGroups,
     capGroups,
     meetsNameFloor,
@@ -176,6 +179,46 @@ describe("assembleScopeGroups", () => {
         const [g] = assembleScopeGroups({ ...base, rows: [], query: "" });
         expect(g.emptyText).toBe("No runs yet.");
         expect(g.items).toEqual([]);
+    });
+});
+
+describe("assembleDrillGroup", () => {
+    const hit = item("brainstorm:/p/a", "brainstorm", "Agent teams");
+    const group = (over: Partial<Parameters<typeof assembleDrillGroup<GroupableItem>>[0]> = {}) =>
+        assembleDrillGroup<GroupableItem>({
+            drill: "brainstorm",
+            label: "Brainstorm",
+            hits: [hit],
+            query: "",
+            loading: false,
+            ...over,
+        });
+
+    it("lists the hits under the drill's label, keyed by the drill", () => {
+        expect(group()).toEqual({ key: "brainstorm", label: "Brainstorm", items: [hit] });
+    });
+    it("says while the brainstorms are still being read, even with text typed", () => {
+        expect(group({ hits: [], loading: true }).emptyText).toBe("Reading the projects’ brainstorms…");
+        expect(group({ hits: [], loading: true, query: "lag" }).emptyText).toBe("Reading the projects’ brainstorms…");
+    });
+    it("says none is left open once read, and what text matched nothing", () => {
+        expect(group({ hits: [] }).emptyText).toBe("No brainstorm is left open.");
+        expect(group({ hits: [], query: " lag " }).emptyText).toBe("Nothing matches “lag”.");
+    });
+    it("keeps the theme drill's own wording", () => {
+        expect(group({ drill: "theme", label: "Theme", hits: [] }).emptyText).toBe("Nothing to pick.");
+    });
+    it("has no empty text while there are hits", () => {
+        expect(group({ loading: true })).not.toHaveProperty("emptyText");
+    });
+});
+
+describe("the brainstorm kind", () => {
+    it("is labelled, so a group of them reads Brainstorms", () => {
+        expect(KIND_LABELS.brainstorm).toBe("Brainstorms");
+    });
+    it("stays out of All, which lists only the cockpit's own things", () => {
+        expect(ALL_KIND_ORDER).not.toContain("brainstorm");
     });
 });
 

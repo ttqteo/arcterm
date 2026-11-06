@@ -5,6 +5,7 @@
 // brainstorm.json. The agent writes the file; Arc only reads it and types one line back.
 
 import type { NewRunPrefill } from "@/app/view/jarvis/newrun";
+import { sameRepoPath } from "@/util/paths";
 import type { AgentVM } from "./agentsviewmodel";
 import { canvasDir, canvasProjectDir, join, type CanvasBoard } from "./canvasmodel";
 import type { RunShape } from "./runconfig";
@@ -361,8 +362,12 @@ export function parseBrainstorm(text: string): ParseResult {
     }
 }
 
+export function brainstormsDir(cwd: string): string {
+    return join(cwd, ".superpowers", "brainstorm");
+}
+
 export function brainstormFilePath(cwd: string, topic: string): string {
-    return join(cwd, ".superpowers", "brainstorm", topic, "brainstorm.json");
+    return join(brainstormsDir(cwd), topic, "brainstorm.json");
 }
 
 const BRAINSTORM_PATH = /^(.+?)[\\/]\.superpowers[\\/]brainstorm[\\/]([^\\/]+)[\\/]brainstorm\.json$/i;
@@ -1663,6 +1668,52 @@ export function exitedSummary(f: BrainstormFile): string {
 
 export function resumePrompt(path: string): string {
     return `Resume the brainstorm in ${path} with arc:brainstorm.`;
+}
+
+// What a new agent that carries a brainstorm on starts with, from the exited pane's Resume and the palette's Resume
+// brainstorm alike: the resume prompt in the brainstorm's own project, and the file attached to its tab up front
+// (launchAgent writes session:brainstorm). The agent's hook reveals the pane only when its own write creates the file,
+// and a resumed brainstorm's file already exists, so without this a resumed agent never got its pane.
+export function resumeLaunch(
+    path: string,
+    projectPath: string
+): { task: string; brainstormFile: string; projectPath: string } {
+    return { task: resumePrompt(path), brainstormFile: path, projectPath };
+}
+
+// a brainstorm a new agent can carry on, listed by the command palette's Resume brainstorm, since one whose tab is gone
+// is otherwise lost. question is the one still open, if any.
+export type OpenBrainstorm = {
+    topic: string;
+    path: string;
+    title: string;
+    question: { n: number; text: string } | null;
+    modifiedMs: number;
+};
+
+// the row's second line: the open question's number and first line, since the palette's meta column truncates and
+// holds the age
+export function openBrainstormLine(b: Pick<OpenBrainstorm, "question">): string {
+    if (b.question == null) {
+        return "No question open";
+    }
+    const text = b.question.text.split("\n")[0].trim();
+    return `Question ${b.question.n} · ${text}`;
+}
+
+// one an agent still has attached is carried on there, so a second agent would write the same file
+export function notAttached<T extends { path: string }>(rows: T[], attachedPaths: string[]): T[] {
+    return rows.filter((b) => !attachedPaths.some((p) => sameRepoPath(p, b.path)));
+}
+
+// An empty file beside brainstorm.json hides it from the open list. It holds only while it is newer than the
+// brainstorm, so an agent that carries the brainstorm on brings it back without anyone removing the marker.
+export function dismissedMarkerPath(brainstormFile: string): string {
+    return brainstormFile.replace(/brainstorm\.json$/i, "dismissed");
+}
+
+export function isDismissed(brainstormMs: number, markerMs: number | null): boolean {
+    return markerMs != null && markerMs >= brainstormMs;
 }
 
 const ABSOLUTE_PATH = /^([a-zA-Z]:[\\/]|[\\/])/;

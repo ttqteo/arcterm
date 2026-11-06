@@ -7,6 +7,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { sameRepoPath } from "@/util/paths";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import type { AgentsViewModel } from "./agents";
@@ -107,10 +108,12 @@ export function baselineBrainstormSeen(path: string, f: BrainstormFile): void {
 }
 
 // one brainstorm per agent: the agent reveals on every write, so the same one keeps its state, and any other
-// (a new topic, or the same topic in another project) starts over in its place
+// (a new topic, or the same topic in another project) starts over in its place. The project is compared as a path, not
+// as text: one registered as C:/x and a terminal's C:\x reveal are one project, and starting the pane over in terminal
+// mode on each such reveal would throw its state away.
 export function attachBrainstorm(agentId: string, a: { topic: string; cwd: string }, now: number): void {
     const prev = getBrainstorm(agentId);
-    if (prev != null && prev.topic === a.topic && prev.cwd === a.cwd) {
+    if (prev != null && prev.topic === a.topic && sameRepoPath(prev.cwd, a.cwd)) {
         return;
     }
     const next: BrainstormState = {

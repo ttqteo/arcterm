@@ -92,6 +92,36 @@ describe("launchAgent", () => {
         expect(reloadWaveObject).toHaveBeenCalledWith("block:blk-1");
     });
 
+    it("writes session:brainstorm on the new tab when it carries a brainstorm on, and only then", async () => {
+        const file = "C:/proj/.superpowers/brainstorm/lag/brainstorm.json";
+        await launchAgent(fakeModel(), {
+            runtime: "claude",
+            startupCommand: "claude",
+            task: `Resume the brainstorm in ${file} with arc:brainstorm.`,
+            projectPath: "C:/proj",
+            projectName: "proj",
+            brainstormFile: file,
+        });
+        const tabMeta = setMeta.mock.calls.find((c) => c[1]?.oref === "tab:tab-1");
+        expect(tabMeta, "SetMeta called on the new tab").toBeTruthy();
+        expect(tabMeta[1].meta).toMatchObject({
+            "session:agent": "claude",
+            "session:project": "proj",
+            "session:brainstorm": file,
+        });
+
+        setMeta.mockClear();
+        await launchAgent(fakeModel(), {
+            runtime: "claude",
+            startupCommand: "claude",
+            task: "",
+            projectPath: "C:/proj",
+            projectName: "proj",
+        });
+        const plain = setMeta.mock.calls.find((c) => c[1]?.oref === "tab:tab-1");
+        expect(plain[1].meta).not.toHaveProperty("session:brainstorm");
+    });
+
     it("opens the agent on the Agent surface with its terminal taking the keyboard", async () => {
         const model = fakeModel();
         await launchAgent(model, {

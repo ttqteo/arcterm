@@ -18,6 +18,7 @@ import {
     GitFork,
     Hash,
     History,
+    Lightbulb,
     MessageCircleQuestionMark,
     PanelLeft,
     Play,
@@ -44,7 +45,7 @@ export interface PaletteItem {
     icon?: LucideIcon; // a kind whose rows are not all alike (Needs you, Start); default KIND_ICONS
     digit?: number; // answer rows: the key that answers with this option
     hl?: string; // what to highlight in the title when it differs from the query (files: the path part)
-    sub?: string; // second line: an asking agent's question
+    sub?: string; // second line: an asking agent's question, an open brainstorm's open question
     status?: { label: string; tone: StatusTone };
     meta?: string;
     chord?: string; // keybinding descriptor for formatChord
@@ -76,6 +77,7 @@ export const KIND_ICONS: Partial<Record<GroupKind, LucideIcon>> = {
     command: Play,
     file: File,
     theme: Contrast,
+    brainstorm: Lightbulb,
     "as-goal": Zap,
     widen: Search,
     line: CornerDownRight,

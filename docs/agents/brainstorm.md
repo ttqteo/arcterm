@@ -343,7 +343,18 @@ to the judge**). The judge rides the builder check's machinery.
   shows a banner with the counts until you next open the brainstorm.
 - **Agent exited.** The pane offers **Resume in a new agent**, which launches one in the same project
   with the prompt `Resume the brainstorm in <path> with arc:brainstorm.` A brainstorm that started a
-  run is not offered this.
+  run is not offered this. The launch also writes `session:brainstorm` on the new tab (`resumeLaunch`,
+  `launchAgent`'s `brainstormFile`): the agent's hook reveals the pane only when its own write creates
+  the file, and a resumed file already exists.
+- **Brainstorms left open.** The command palette's **Resume brainstorm…** (Ctrl+P, then `c:` for
+  Commands, or just type `resume`) lists every project's brainstorms that were never approved (`done` false), newest
+  first, each with its title, the open question (or "No question open"), its age and its project; one an
+  agent still has attached is left out. Enter starts the default runtime, with its remembered flags, in
+  the brainstorm's project (never a worktree) on the prompt above, with the file attached as for the
+  exited pane's Resume. The row's second action, Ctrl+Enter (Cmd+Enter on a Mac), dismisses it: an empty
+  `dismissed` file beside `brainstorm.json` hides it until the brainstorm next changes, so an agent that
+  carries it on brings it back without anyone removing the marker. The list is read when the picker
+  opens (`listAllOpenBrainstorms`, `use-palette-brainstorms.ts`).
 - **File deleted.** The pane says the file is gone; **Back to terminal** detaches it and clears the
   tab meta.
 
@@ -353,7 +364,8 @@ to the judge**). The judge rides the builder check's machinery.
 |---|---|
 | File parsing and everything drawn from it (pure) | `frontend/app/view/agents/brainstormmodel.ts` |
 | Per-agent state, sent line, shown file | `frontend/app/view/agents/brainstormstore.ts` |
-| Polling, re-attach after a restart, settling a sent line | `frontend/app/view/agents/brainstormpoller.ts` |
+| Polling, re-attach after a restart, settling a sent line; the open-brainstorm list and the dismissed marker | `frontend/app/view/agents/brainstormpoller.ts` |
+| The palette's Resume brainstorm picker | `frontend/app/cockpit/use-palette-brainstorms.ts`, `palette-commands.ts` (`buildBrainstormItems`), `command-palette.tsx` |
 | Sending lines, opening the launcher, run id handback | `frontend/app/view/agents/brainstormsend.ts` |
 | The pane (frame, question, design) | `frontend/app/view/agents/brainstormpane.tsx`, `brainstormui.tsx` |
 | The right rail: Boards tab, drag handle, the open board's dialog, the narrow-pane row | `frontend/app/view/agents/brainstormrail.tsx`, `canvasmarking.tsx` (the shared marking layer) |

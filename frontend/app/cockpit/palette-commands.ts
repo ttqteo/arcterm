@@ -7,6 +7,10 @@
 // registry's labels and showing no chords at all.
 
 import type { Binding, KeyContext, SurfaceKey } from "@/app/store/keybindings/types";
+import { formatAge } from "@/app/view/agents/agentsviewmodel";
+import { openBrainstormLine, resumeLaunch } from "@/app/view/agents/brainstormmodel";
+import type { ProjectBrainstorm } from "@/app/view/agents/brainstormpoller";
+import { composeStartupCommand, runtimeStartupCommand, type Runtime } from "@/app/view/agents/launch";
 import { THEMES } from "@/app/view/agents/themes";
 import type { DrillId } from "./palette-scope";
 
@@ -83,6 +87,13 @@ export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
         { key: "cmd:open-tool", title: "Open a tool…", group: "Global", run: deps.openToolPicker },
         { key: "cmd:reload-window", title: "Reload the window", group: "Global", run: deps.reloadWindow },
         { key: "cmd:theme", title: "Switch theme…", group: "Appearance", drill: "theme", run: () => {} },
+        {
+            key: "cmd:resume-brainstorm",
+            title: "Resume brainstorm…",
+            group: "Global",
+            drill: "brainstorm",
+            run: () => {},
+        },
     ];
 }
 
@@ -166,6 +177,47 @@ export function commandGroups<T extends { group: string }>(
             items: items.filter((it) => it.group === g),
         }))
         .filter((g) => g.items.length > 0);
+}
+
+// One row of the Resume brainstorm picker: the text it shows, and the brainstorm it resumes or dismisses. The component
+// adds what runs, since that reads the stores.
+export interface BrainstormItem {
+    key: string;
+    title: string;
+    search: string;
+    meta: string;
+    sub: string;
+    echo: string;
+    brainstorm: ProjectBrainstorm;
+}
+
+// In the order given (newest first, as the list reads them). Age comes first in the meta: its column truncates, and a
+// long project name is what should be cut. The open question is the second line, which has the room.
+export function buildBrainstormItems(list: ProjectBrainstorm[], now: number): BrainstormItem[] {
+    return list.map((b) => ({
+        key: `brainstorm:${b.path}`,
+        title: b.title,
+        search: `${b.title} ${b.project}`,
+        meta: `${formatAge(now - b.modifiedMs)} · #${b.project}`,
+        sub: openBrainstormLine(b),
+        echo: `Starts an agent in #${b.project} on “${b.title}”`,
+        brainstorm: b,
+    }));
+}
+
+// What Enter on a brainstorm row launches: the runtime on the resume prompt in the brainstorm's project itself (never a
+// worktree, so no branch), with the runtime's remembered flags and the brainstorm's file attached to the new tab.
+export function brainstormLaunchOpts(
+    b: Pick<ProjectBrainstorm, "path" | "project" | "projectPath">,
+    runtime: Runtime,
+    flags: Record<string, boolean>
+) {
+    return {
+        runtime,
+        startupCommand: composeStartupCommand(runtimeStartupCommand(runtime), runtime, flags),
+        projectName: b.project,
+        ...resumeLaunch(b.path, b.projectPath),
+    };
 }
 
 export interface ThemeItem {

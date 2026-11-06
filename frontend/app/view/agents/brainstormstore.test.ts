@@ -68,6 +68,13 @@ describe("attachBrainstorm", () => {
         expect(getBrainstorm("a1")).toMatchObject({ mode: "brainstorm", modifiedMs: 5, lastViewedMs: 200 });
     });
 
+    it("keeps the state when the same project is spelled with other slashes or case", () => {
+        attachBrainstorm("a1", { topic: "lag", cwd: "C:/Users/me/proj" }, 100);
+        setBrainstormMode("a1", "brainstorm", 200);
+        attachBrainstorm("a1", { topic: "lag", cwd: "c:\\Users\\me\\proj" }, 300);
+        expect(getBrainstorm("a1")).toMatchObject({ mode: "brainstorm", lastViewedMs: 200 });
+    });
+
     it("replaces the old brainstorm when a second topic is revealed on the same agent", () => {
         attachBrainstorm("a1", LAG, 100);
         setBrainstormMode("a1", "brainstorm", 200);
