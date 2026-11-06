@@ -17,6 +17,7 @@ import {
 } from "./officepalette";
 
 const css = fs.readFileSync(new URL("../../../tailwindsetup.css", import.meta.url), "utf8");
+const mark = fs.readFileSync(new URL("../agents/christmasmark.tsx", import.meta.url), "utf8");
 const PHASES: OfficePhase[] = ["day", "after"];
 
 describe("officepalette", () => {
@@ -74,9 +75,14 @@ describe("officepalette", () => {
             }
             expect(c.xmasPineDark).toEqual(shadeRgb(read("--color-xmas-pine"), XMAS_PINE_DARK));
         }
-        // every --color-xmas-* token the stylesheet declares is one the scenery reads
+        // every --color-xmas-* token the stylesheet declares is one the scenery or the app bar's Christmas mark reads;
+        // --color-xmas-pine-lit is the mark's own, not the office's
+        const markTokens = [...mark.matchAll(/\bfill-(xmas-[a-z-]+)/g)].map((m) => `--color-${m[1]}`);
+        expect(markTokens).toContain("--color-xmas-pine-lit");
+        expect(Object.values(want)).not.toContain("--color-xmas-pine-lit");
         const declared = [...css.matchAll(/(--color-xmas-[a-z-]+):/g)].map((m) => m[1]);
-        expect([...declared].sort()).toEqual(Object.values(want).sort());
+        const readers = new Set([...Object.values(want), ...markTokens]);
+        expect([...declared].sort()).toEqual([...readers].sort());
     });
 
     it("leaves a role out when its token does not resolve", () => {
