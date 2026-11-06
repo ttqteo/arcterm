@@ -13962,17 +13962,52 @@ const briefComposerSteerOnly = {
 // --- brief-restore: the stored subject, landed three different ways -------------------------------
 // What the same stored value means now (briefrestore.ts): a dossier opens the record peek, while a channel
 // and a conversation left over from before Ask was retired are cleared. Each case needs its
-// own reload, because the restore is once per frontend load by design.
+// own reload, because the restore is once per frontend load by design. A fresh store (the Final stage's) has neither a
+// dossier nor a channel, so the arrange seeds what is missing: a channel, and a run held by deferstart in it, whose
+// CreateRun captures a record named by its goal's slug. The record stays in the vault, so a later run finds one and
+// seeds no run.
+const BRIEF_RESTORE_GOAL = "verify brief-restore: a stored record, do nothing";
 const briefRestore = {
     name: "brief-restore",
     surface: "jarvis",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const ctx = {};
+        try {
+            const dossiers = (await h.rpc("listtaskdossiers", null))?.dossiers ?? [];
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            if (dossiers.length > 0 && channels.length > 0) {
+                return ctx;
+            }
+            ctx.cwd = mkdtempSync(join(tmpdir(), "verify-brief-restore-"));
+            const ch = await h.rpc("createchannel", { name: "verify-brief-restore", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            if (dossiers.length === 0) {
+                const wslist = await h.rpc("workspacelist", null);
+                // createrun probes the harness first, which outlasts the 5s default on a cold Final boot
+                const created = await h.rpc(
+                    "createrun",
+                    {
+                        channelid: ctx.channelId,
+                        workspaceid: wslist[0].workspacedata.oid,
+                        goal: BRIEF_RESTORE_GOAL,
+                        runtime: "claude",
+                        mode: "quick",
+                        deferstart: true,
+                    },
+                    { timeout: 30000 }
+                );
+                ctx.runId = created.run.id;
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const seedGap = ctx?.arrangeError ? ` (seeding failed: ${ctx.arrangeError})` : "";
         await h.ev(`localStorage.setItem('jarvis.subject.last', null)`);
 
         // a fresh load is what makes the restore one-shot, so each case reloads
@@ -13990,7 +14025,7 @@ const briefRestore = {
             rec(
                 "1. a stored dossier restores to the record peek",
                 false,
-                "Vault Records requires at least one dossier"
+                `no dossier in this profile${seedGap}`
             );
         } else {
             await withStored({ kind: "dossier", id: dossier.id });
@@ -14044,7 +14079,7 @@ const briefRestore = {
             rec(
                 "3. a stored channel is cleared, its sheet left closed",
                 false,
-                "no channel in this profile — seed one before reading this as a pass"
+                `no channel in this profile${seedGap}`
             );
         } else {
             await withStored({ kind: "channel", id: channel.oid });
@@ -14065,8 +14100,19 @@ const briefRestore = {
         }
         return steps;
     },
-    async teardown(h) {
-        await h.ev(`localStorage.removeItem('jarvis.subject.last')`);
+    async teardown(h, ctx) {
+        // best-effort, so one failed step does not strand the rest; the seeded record stays in the vault
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`brief-restore teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the stored subject", () => h.ev(`localStorage.removeItem('jarvis.subject.last')`));
+        if (ctx?.runId) await step("cancel the run", () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId }));
+        if (ctx?.channelId) await step("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        if (ctx?.cwd) await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
         await h.goto("cockpit");
     },
 };
