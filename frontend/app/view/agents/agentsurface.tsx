@@ -863,9 +863,14 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 </div>
                 {/* a plain terminal alone has no details of its own: no rail, the tree reaches the others. In a split
                     with an agent it keeps that agent's (headSubject). Nor does a maximized dock, which is a terminal on
-                    screen alone. A canvas, a review or a brainstorm in the terminal's place keeps it, so swapping never
-                    moves the header's controls. */}
-                {!fullscreen && centerMode === "terminal" && subject!.kind !== "terminal" && !dockMax ? (
+                    screen alone. A canvas or a review in the terminal's place keeps it, so swapping never moves the
+                    header's controls; a brainstorm drops it, as its own right rail (Boards, Decided so far) needs the
+                    width. */}
+                {!fullscreen &&
+                centerMode === "terminal" &&
+                subject!.kind !== "terminal" &&
+                !dockMax &&
+                swapped !== "brainstorm" ? (
                     <AgentDetailsRail model={model} agent={subject!} />
                 ) : null}
             </div>

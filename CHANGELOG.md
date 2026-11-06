@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A Brainstorm council splits the problem into zones, one per seat, and picks its top 3 ideas from different zones where
   it can, so one part of the problem no longer takes every place; an idea that says what the code does today cites the
   line, and between two even ideas the one read in the code ranks first.
+- An agent's Brainstorm view no longer keeps the details rail on its right, so the brainstorm's own Boards and
+  Decided rail get the width; it comes back with the terminal.
 - While the judge weighs a brainstorm question, the agent's approaches are headed "Answer now, or wait for the judge",
   so it is plain the rows answer, and every row has a tick box to send several together, as the judge's options may
   allow.

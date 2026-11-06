@@ -563,11 +563,14 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 click: () => globalStore.set(terminalFullscreenAtom, !fullscreen),
             });
         }
-        items.push({
-            label: railVisible ? "Hide details" : "Show details",
-            icon: <PanelRight size={15} />,
-            click: () => globalStore.set(railVisibleAtom, !railVisible),
-        });
+        // a brainstorm on screen has no details rail (agentsurface.tsx), so nothing to show or hide
+        if (view !== "brainstorm") {
+            items.push({
+                label: railVisible ? "Hide details" : "Show details",
+                icon: <PanelRight size={15} />,
+                click: () => globalStore.set(railVisibleAtom, !railVisible),
+            });
+        }
         if (blockId != null) {
             items.push({ type: "separator" });
             items.push({

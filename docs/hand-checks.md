@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Brainstorm hides the details rail.** Open an agent with a brainstorm and press `b`: the right details
+  rail (token meter, Files changed) and its 44px strip are gone, the brainstorm pane reaches the window edge, and the
+  header's `⋯` has no Show/Hide details. `b` back to the terminal: the rail returns as it was. A canvas or a Doc review
+  still keeps the rail. Typecheck only (`agentsurface.tsx`, `agentheader.tsx`).
 - [ ] (arcterm) **A stopped Keep running app stays stopped across a restart.** In the installed app, Setup → Tools:
   portfolio (Keep running on) → Stop, quit and reopen arcterm → it reads stopped/sleeping and nothing listens on 8386;
   `services.json` in the data dir has `"off": true` for it. Open it (rail or tree) → it starts, `off` is gone, and the
