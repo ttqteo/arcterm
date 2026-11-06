@@ -1,0 +1,1 @@
+brainstorm: judged C:/work/app/.superpowers/brainstorm/coach/judge.json

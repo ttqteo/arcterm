@@ -460,3 +460,25 @@ func TestParsePlanDependsReasons(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskFilesReadsBackTheFilesLine(t *testing.T) {
+	p := mustParsePlan(t, "# P\n\n### Task 1: a\n**Files:** `pkg/a.go`, `web/b.ts`\n\nDo a.\n")
+	if got, want := TaskFiles(p.Tasks[0].Description), []string{"pkg/a.go", "web/b.ts"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("TaskFiles = %v, want %v", got, want)
+	}
+	if got := TaskFiles("Do a.\n**Files:** pkg/a.go"); got != nil {
+		t.Fatalf("an unparseable Files line must add none, got %v", got)
+	}
+	if got := TaskFiles("Do a."); got != nil {
+		t.Fatalf("a task with no Files line must list none, got %v", got)
+	}
+}
+
+// a directory entry ends in a slash on the Files line; reading it back drops the slash like any other spelling, so a
+// path under it matches the entry as a prefix
+func TestTaskFilesReadsADirectoryEntry(t *testing.T) {
+	p := mustParsePlan(t, "# P\n\n### Task 1: a\n**Files:** `pkg/gen/`, `web\\b.ts`\n\nDo a.\n")
+	if got, want := TaskFiles(p.Tasks[0].Description), []string{"pkg/gen", "web/b.ts"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("TaskFiles = %v, want %v", got, want)
+	}
+}

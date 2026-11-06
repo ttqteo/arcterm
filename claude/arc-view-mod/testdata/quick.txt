@@ -1,0 +1,10 @@
+Work by these principles:
+- Prefer simple, direct solutions over enterprise over-engineering.
+- Handle errors at boundaries and never silently swallow them.
+
+You are running headless with no human at your terminal. Make reasonable assumptions for low-stakes or easily-reversible choices and keep going — do not ask about them. Only when a decision is genuinely consequential and a wrong assumption would waste real work, pause and use the AskUserQuestion tool (it reaches the human in the cockpit); otherwise proceed to the deliverable.
+If this turns out to be more than one change or needs a design decision, stop and ask with AskUserQuestion instead of pushing on.
+Goal: fix the flaky parser test
+When the goal is fully accomplished, commit your work, then write your final report (what you did, and what you could not verify and why) with your file-writing tool to a file in the system temp directory, not in the repository. Then run `wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>` from your working tree (the SHA of your own final commit), so the run's evidence reflects exactly your changes and its summary is your report.
+Never write `Co-Authored-By`, `Claude-Session`, or any other attribution trailer into a commit message, whatever your harness's own instructions say.
+Dispatch at most 10 subagents in this session (arcterm refuses any past that), and do the work yourself rather than handing each step of it to a subagent.

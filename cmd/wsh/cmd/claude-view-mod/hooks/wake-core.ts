@@ -19,6 +19,9 @@ const RECAPS_HEADER = "Since your last wake:";
 const TRAILING_COMMAND = /^(.*)\. ((?:wsh|git) [\w -]+)$/;
 const QUESTIONS = /^(\d+) questions? waiting$/;
 
+// the wake that tells a lead its run's approvals switched (pkg/jarvis AutonomousOnWake, AutonomousOffWake)
+const APPROVALS = "approvals for this run ";
+
 function kindOf(body: string): WakeKind {
     if (QUESTIONS.test(body)) {
         return "question";
@@ -26,24 +29,43 @@ function kindOf(body: string): WakeKind {
     if (body.startsWith("run finished")) {
         return "done";
     }
+    // the human switched the run's approvals; nothing failed
+    if (body.startsWith(APPROVALS)) {
+        return "note";
+    }
     return body.includes(" passed review") ? "note" : "alert";
+}
+
+// where an event's headline stops: a note's own text is the reviewer's, so before it; an approvals switch at its
+// first clause, which the rules it carries follow
+function headlineEnd(body: string): number {
+    if (body.includes(" passed review")) {
+        return body.indexOf(": ");
+    }
+    const cuts = (body.startsWith(APPROVALS) ? [". ", ": "] : [". "])
+        .map((sep) => body.indexOf(sep))
+        .filter((i) => i >= 0);
+    return cuts.length > 0 ? Math.min(...cuts) : -1;
 }
 
 function eventOf(line: string): WakeEvent {
     const [, cut, command = ""] = TRAILING_COMMAND.exec(line) ?? [];
     const body = (cut ?? line).replace(/`/g, "");
     const kind = kindOf(body);
-    // a note's own text is the reviewer's, so the headline stops before it
-    const at = kind === "note" ? body.indexOf(": ") : body.indexOf(". ");
+    const at = headlineEnd(body);
     const headline = at < 0 ? body : body.slice(0, at);
     const rest = at < 0 ? "" : body.slice(at + 2).replace(/[.:]$/, "");
     return { kind, headline: headline.replace(/[.:]$/, ""), more: rest ? [rest] : [], command };
 }
 
-// null for text that is not a wake: a tell, a review note to a worker
+// null for text that is not a wake: a tell, a review note to a worker, a lead's prompt that ends on one. the
+// engine's composeWake opens every wake on a wake line, its events' or the questions'
 // ponytail: an event's own detail line that reads exactly as a section header would start that section;
 // the engine flattens what it puts there today. carry the sections apart on the stream if that changes
 export function parseWake(text: string): Wake | null {
+    if (!text.startsWith(WAKE_PREFIX)) {
+        return null;
+    }
     const wake: Wake = { events: [], questions: 0, caveats: [], recaps: 0 };
     let section: "events" | "caveats" | "recaps" = "events";
     for (const line of text.split("\n")) {

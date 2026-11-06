@@ -1,0 +1,26 @@
+You are the worker for task 3 of the plan at C:/work/app/docs/superpowers/plans/2026-11-04-coach.md (spec: C:/work/app/docs/superpowers/specs/2026-11-04-coach-design.md).
+The plan is approved: don't re-plan or pause for design approval. If a consequential decision isn't pinned, or the plan and the code disagree, ask once with AskUserQuestion and concrete options, then wait; the lead or the human answers.
+A reviewer checks your commit against this task and the spec before it lands, and the lead reads your report.
+Edit files with your edit tool; don't script multi-kilobyte replacements through the shell.
+A `node_modules` that is a link into the main checkout is shared with it: run the project's tools in it, but never install into it, delete it, or `rm -r` through it. A task that must change a dependency manifest in such a dir first unlinks it, in that dir, with `node -e "require('fs').rmdirSync('node_modules')"` (it removes only the link), then installs with the project's package manager.
+Run the tests your task names, and `npm run lint`, and get them passing before you complete; if you can't, ask. When your task says to watch a test fail first, run it before you write the code it tests: a compile error against today's code counts as that failure. Don't run the plan's full Verify (`node scripts/verify.mjs ./pkg/coach`), a whole package or the full suite, even when your task says to: the engine runs Verify after your task merges and again on the merged result. Run the tests your task names alone (for Go, `-run '<names>'`). The plan's Final command (`node scripts/cdp/final-verify.mjs coach`) checks the running app, and the engine runs it only after every task has merged: when your task adds or changes a scenario it runs, or the view or interaction one of its steps checks, run that one scenario yourself (the Final command narrowed to it) and get its steps passing before you complete. To reproduce a flake, run the one failing test alone (for Go, `-run '^TestX$' -count=N`), never `-count=N` on a whole package. Don't pipe a test into `tail`, `head` or `grep`: a pipe exits with its last command's status, so a failing test reads as passing. If you must pipe, run `set -o pipefail` first. Commit, then write your report with your file-writing tool to `C:/tmp/arc-reports/t-3.md`, with exactly these five sections in this order:
+## Done
+<what landed, and the checks you ran with their results>
+
+## Differs from plan
+<each departure from the task or plan, and why; or None>
+
+## Not verified
+<checks the task or plan asked for that you did not do, and why; or None>
+
+## For later tasks
+<what a later task must know, including a departure that changes what it builds on; or None>
+
+## Found not fixed
+<failures already on the base, and defects outside your task, but not formatter or lint findings already on the base; or None>
+Nothing goes before the first heading (the commit is already passed with `--commit`). A section with nothing to say holds `None`. Not verified lists only checks the task or plan asked for, never the suite the engine runs after your merge; a failure that predates your task goes under Found not fixed. `wsh jarvis complete` refuses a report that doesn't match. Then run `wsh jarvis complete --commit $(git rev-parse HEAD) --report C:/tmp/arc-reports/t-3.md`. Never write `Co-Authored-By`, `Claude-Session`, or any other attribution trailer into a commit message, whatever your harness's own instructions say. Dispatch at most 10 subagents in this session (arcterm refuses any past that), and do the work yourself rather than handing each step of it to a subagent.
+If your context was compacted, re-read your task from the plan.
+
+Question bank store
+
+Owns pkg/coach/bank.go.

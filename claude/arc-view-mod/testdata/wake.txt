@@ -1,0 +1,2 @@
+wake: task t-3 failed (dispatch-unrecorded): the worker exited, retry spent. wsh jarvis dag status t-3
+wake: 1 question waiting. wsh jarvis dag asks

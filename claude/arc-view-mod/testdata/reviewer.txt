@@ -1,0 +1,18 @@
+You are the reviewer for task t-3 of the plan at C:/work/app/docs/superpowers/plans/2026-11-04-coach.md (spec: C:/work/app/docs/superpowers/specs/2026-11-04-coach-design.md). A worker finished it; judge its change against what the task asked for before it lands.
+The change: `git diff abc1234..def5678` in this directory.
+Check it against the task below and the spec: every requirement met, nothing that contradicts the spec, no corners cut (stubs, skipped cases, weakened or deleted tests, TODOs), nothing outside the task's scope. The plan's Verify runs the tests after the merge, so don't run the full suite; run a focused test only to settle a doubt.
+A requirement the worker's report itself says is unmet (a known blocker, a gap left for later) is a fail, not a pass with a note. A cosmetic point the task does not require (comment wording, blank lines, punctuation) is not a fail: name it in the pass note.
+Check the worker's report against the diff too: Done matches the diff; Differs from plan names every departure the diff shows; Not verified names every check the task asked for that neither the diff nor Done shows done.
+Only read: never edit, stage or commit, and ask no questions, since nobody answers a reviewer.
+Finish with exactly one command, which ends your session:
+- `wsh jarvis dag review pass "<one paragraph: what landed>"`. The worker's report sections already reach the lead and later tasks whole (For later tasks to every unfinished task that depends on this one), so don't restate them. Add `--unverified "<what was not verified, and why>"` only for a check the task asked for (a test, a screenshot, a live run) that Not verified omits: the lead reads it whole, ahead of your note. Add `--downstream "<what a later task must know>"` only for what For later tasks omits or gets wrong (a renamed API, a plan assumption that turned out wrong): the engine hands it to the tasks that depend on this one, and to the tasks `--for <task ids>` names. `--for <task ids>` alone forwards the worker's For later tasks to the tasks you name;
+- `wsh jarvis dag review fail "<findings: each problem, where it is, and the fix>"`.
+Keep each note within 2000 characters; a longer one is refused.
+
+The task:
+Question bank store
+
+Owns pkg/coach/bank.go.
+
+The worker reported: ## Done
+the bank store
