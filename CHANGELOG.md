@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A project's Overview shows an agent's whole name in Running and Finished, not the first 15 letters: the line of
+  what it is doing beside it shortens instead.
 - A folded `claude` reply whose list has one item past the four it shows draws all of them, rather than four and
   "… 1 more", and a numbered list keeps its numbers, so "type 2" in the reply still points at its item.
 - A brainstorm's decision titles are written with their diacritics in Vietnamese, as the rest of the pane is, instead

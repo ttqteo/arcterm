@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Overview shows an agent's whole name.** Agent → a project's Overview with an agent at work whose name
+  is longer than ~15 letters ("Rail trong brainstorm mode") → its Running row shows the whole name and the "running …"
+  line beside it shortens instead; a short name still lines its detail up with the others; a very long one stops at
+  60% of the row. Same in Finished, not read yet. Typecheck only (`projectnow.tsx`); no dev app was up.
 - [ ] (arcterm) **Brainstorm hides the details rail.** Open an agent with a brainstorm and press `b`: the right details
   rail (token meter, Files changed) and its 44px strip are gone, the brainstorm pane reaches the window edge, and the
   header's `⋯` has no Show/Hide details. `b` back to the terminal: the rail returns as it was. A canvas or a Doc review

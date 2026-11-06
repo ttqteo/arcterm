@@ -28,6 +28,9 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW = "flex w-full items-center gap-[10px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0";
+// a one-line row's name: as wide as it reads (at least the column the short names line up in, at most 60%), so the
+// detail beside it gives way first
+const NAME = "min-w-[120px] max-w-[60%] flex-none truncate text-[13px] text-primary";
 
 function SectionHead({ label, count }: { label: string; count: number }) {
     return (
@@ -132,7 +135,7 @@ export function NowColumn({ model, project, ny }: { model: AgentsViewModel; proj
                                 className={`${ROW} cursor-pointer hover:bg-surface-hover`}
                             >
                                 <StatusDot state="working" pulse />
-                                <span className="w-[120px] flex-none truncate text-[13px] text-primary">{a.name}</span>
+                                <span className={NAME}>{a.name}</span>
                                 <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{doingLine(a)}</span>
                                 <span className="w-[48px] flex-none text-right text-[11px] tabular-nums text-ink-faint">
                                     {since(a)}
@@ -177,7 +180,7 @@ export function NowColumn({ model, project, ny }: { model: AgentsViewModel; proj
                                     aria-hidden="true"
                                     className="h-[7px] w-[7px] flex-none rounded-full border-[1.5px] border-muted"
                                 />
-                                <span className="w-[120px] flex-none truncate text-[13px] text-primary">{a.name}</span>
+                                <span className={NAME}>{a.name}</span>
                                 <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{doingLine(a)}</span>
                                 <span className="w-[48px] flex-none text-right text-[11px] tabular-nums text-ink-faint">
                                     {since(a)}
