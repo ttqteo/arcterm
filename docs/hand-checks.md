@@ -18,6 +18,23 @@ does not, say what you saw and it becomes a bug row under Actionable.
   in the console (the sampler reads no terminals on a Mac, so `terminalStatusLine` is `null`). The Windows draw is
   shown by the `terminal-status-line` scenario; this branch needs a Mac, which no run here has (`agenttree.tsx`
   terminal rows, `pkg/resmon`).
+- [ ] (arcterm) Kael sync 11-06: the prompt cards in a live Claude session. After the next install (`task install`,
+  which closes the running arcterm), start an orchestrator run on a small plan and open its lead, then a worker and a
+  reviewer in the Agent tree → each one's first prompt is drawn as a card (its role, tags and labelled parts: the
+  worker's task, the reviewer's `The task:` and `The change:`, the lead's goal), not as raw text, and Ctrl+O shows the
+  text the model reads. Then send an agent a message from the cockpit and let a child run end under a lead → each reads
+  as a card too (an agent message, a child-run line). A prompt you type that opens like one of these outside arcterm
+  (paste a worker's first line into a Claude Code session in a plain terminal) stays as typed. Only the mod's
+  vitest suite ran, on fixtures built from our own prompt builders; a drawn prompt row was never seen in a live session,
+  and a launch prompt is the command-line argument, so its row carries no plugin origin and is known only by its
+  opening (`claude/arc-view-mod/hooks/prompt-core.ts`, `prompt-row.tsx`, `register.ts`).
+- [ ] (arcterm) Kael sync 11-06: the reviewer fails a real task that wrote outside its Files line. Run an orchestrator
+  plan with a task whose `**Files:**` line names one file and have its worker also edit another (a stray change to
+  `README.md` will do) → the task's reviewer prompt ends with "The task's commits change these paths, which its
+  **Files:** line does not list:" and that path, and the review fails the task for it unless the worker's report names
+  it under Differs from plan. A task whose edits all sit inside its Files line (a listed directory covers its files)
+  gets no such section. Only unit tests ran (`pkg/orchestrate/review_test.go`); no real run reached a reviewer
+  (`spawnReviewer`, `unlistedSection`, `jarvis.TaskFiles`).
 
 - [ ] (arcterm) **A run's agents run below normal priority.** After the next build, start an engine run; while a
   worker types, Task Manager → Details (add the Base priority column) shows its `claude.exe`/`node.exe`, the `bash.exe`

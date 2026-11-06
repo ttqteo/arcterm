@@ -42,7 +42,7 @@ import {
     partGist,
     partView,
     procExited,
-    resumePrompt,
+    resumeLaunch,
     reviewHead,
     unseenSince,
     type BrainstormAction,
@@ -1106,8 +1106,7 @@ function Exited({
         return launchAgent(model, {
             runtime,
             startupCommand: runtimeStartupCommand(runtime),
-            task: resumePrompt(s.path),
-            projectPath: s.cwd,
+            ...resumeLaunch(s.path, s.cwd),
             projectName: projectOf(agent),
         }).then(() => undefined);
     };

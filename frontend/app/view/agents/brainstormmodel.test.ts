@@ -25,6 +25,7 @@ import {
     brainstormFilePath,
     brainstormLine,
     brainstormPhase,
+    brainstormsDir,
     builderCheckView,
     canCheck,
     checkAsk,
@@ -39,6 +40,7 @@ import {
     confirmableGuesses,
     designLabel,
     designUnder,
+    dismissedMarkerPath,
     droppedQuestion,
     editLock,
     exitedSummary,
@@ -47,13 +49,16 @@ import {
     hasProsCons,
     historyRows,
     isAsking,
+    isDismissed,
     judgeWait,
     judgeWork,
     leftPanel,
     lineBox,
     mainView,
     nextSentCheckAt,
+    notAttached,
     noteParts,
+    openBrainstormLine,
     optionLetter,
     orderedParts,
     paneBack,
@@ -79,6 +84,7 @@ import {
     railReadout,
     railStacks,
     railTabs,
+    resumeLaunch,
     resumePrompt,
     reviewHead,
     runLine,
@@ -104,6 +110,7 @@ import {
     type BrainstormQuestion,
     type BuilderCheckRecord,
     type HistoryEntry,
+    type OpenBrainstorm,
     type ParseResult,
     type PartState,
     type SentLine,
@@ -1806,6 +1813,61 @@ describe("summaries", () => {
         expect(runLine("siem-pipeline", "quick")).toBe("siem-pipeline · quick run · one worker, no plan");
         expect(runTitle("quick")).toBe("Approve and start a quick run");
         expect(runTitle("orchestrator")).toBe("Approve and start an orchestrator run");
+    });
+
+    it("resumeLaunch carries the brainstorm's file, so the new tab has it attached before the agent writes", () => {
+        const path = "C:/p/.superpowers/brainstorm/lag/brainstorm.json";
+        expect(resumeLaunch(path, "C:/p")).toEqual({
+            task: `Resume the brainstorm in ${path} with arc:brainstorm.`,
+            brainstormFile: path,
+            projectPath: "C:/p",
+        });
+    });
+});
+
+describe("open brainstorms", () => {
+    const b: OpenBrainstorm = {
+        topic: "t",
+        path: "/p",
+        title: "T",
+        question: { n: 15, text: "Which sync?" },
+        modifiedMs: 0,
+    };
+
+    it("brainstormsDir is the folder holding every topic, and a file's path is under it", () => {
+        expect(brainstormsDir("/p")).toBe("/p/.superpowers/brainstorm");
+        expect(brainstormsDir("C:\\p")).toBe("C:\\p\\.superpowers\\brainstorm");
+        expect(brainstormFilePath("/p", "lag")).toBe(`${brainstormsDir("/p")}/lag/brainstorm.json`);
+    });
+
+    it("openBrainstormLine names the open question, or says none is open", () => {
+        expect(openBrainstormLine(b)).toBe("Question 15 · Which sync?");
+        expect(openBrainstormLine({ ...b, question: null })).toBe("No question open");
+    });
+
+    it("openBrainstormLine keeps one line of a question that spans several", () => {
+        expect(openBrainstormLine({ ...b, question: { n: 2, text: "First line\nSecond line" } })).toBe(
+            "Question 2 · First line"
+        );
+    });
+
+    it("notAttached leaves out a brainstorm an agent carries on, however its path is spelled", () => {
+        const rows = [{ path: "C:\\p\\.superpowers\\brainstorm\\a\\brainstorm.json" }, { path: "C:/p/b" }];
+        expect(notAttached(rows, ["C:/p/.superpowers/brainstorm/a/brainstorm.json"])).toEqual([rows[1]]);
+        expect(notAttached(rows, [])).toEqual(rows);
+    });
+
+    it("a dismissed marker sits beside the file and holds only while it is newer", () => {
+        expect(dismissedMarkerPath("/p/.superpowers/brainstorm/t/brainstorm.json")).toBe(
+            "/p/.superpowers/brainstorm/t/dismissed"
+        );
+        expect(dismissedMarkerPath("C:\\p\\.superpowers\\brainstorm\\t\\brainstorm.json")).toBe(
+            "C:\\p\\.superpowers\\brainstorm\\t\\dismissed"
+        );
+        expect(isDismissed(100, null)).toBe(false);
+        expect(isDismissed(100, 100)).toBe(true);
+        expect(isDismissed(100, 150)).toBe(true);
+        expect(isDismissed(200, 150)).toBe(false);
     });
 });
 

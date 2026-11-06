@@ -2,11 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { ActiveWorkRow, DeltaRow, QueueRow, RunRow } from "./briefingmodel";
+import {
+    buildAttentionQueue,
+    capRegion,
+    DELTA_CAP,
+    groupDelta,
+    type ActiveWorkRow,
+    type DeltaRow,
+    type QueueRow,
+    type RunRow,
+} from "./briefingmodel";
 import {
     behindGroups,
     filterAsMenu,
     filterLines,
+    foldOpen,
     initiativeLine,
     initiativeProjects,
     keepsProject,
@@ -14,9 +24,11 @@ import {
     lineOpenTarget,
     linkedUnder,
     nestInitiatives,
+    plainSummary,
     projectCounts,
     projectName,
     queueLine,
+    quietCount,
     runKindCounts,
     runKindLegs,
     runRowFace,
@@ -56,6 +68,47 @@ describe("queueLine", () => {
         taskId: "",
         retry: false,
     };
+
+    it("reads a blocked chunk as what it needs, its age and a newer note, still opening its initiative", () => {
+        const latest = { ts: NOW - 2 * 60 * MIN, text: "the blocker is gone on DEV", chunk: "S6" };
+        const [row] = buildAttentionQueue({
+            attention: [],
+            efforts: [
+                {
+                    oref: "effort:e1",
+                    title: "Nav rail",
+                    blockedChunks: ["S6"],
+                    blockedDetail: { S6: { since: NOW - 3 * DAY, needs: "needs: a DEV soak", latest } },
+                } as unknown as EffortCardModel,
+            ],
+        });
+        expect(queueLine(row, NOW)).toMatchObject({
+            id: "waiting:chunk:effort:e1:S6",
+            kind: "blocked",
+            title: "S6",
+            note: "needs: a DEV soak",
+            why: "needs: a DEV soak",
+            meta: "Nav rail",
+            age: "3d",
+            detail: "latest 2h · the blocker is gone on DEV",
+            target: { queue: { kind: "oref", oref: "effort:e1" } },
+        });
+    });
+
+    it("says no newer note, and no age, for a block nothing recorded", () => {
+        const [row] = buildAttentionQueue({
+            attention: [],
+            efforts: [
+                {
+                    oref: "effort:e1",
+                    title: "Nav rail",
+                    blockedChunks: ["S6"],
+                    blockedDetail: { S6: { since: null, needs: "" } },
+                } as unknown as EffortCardModel,
+            ],
+        });
+        expect(queueLine(row, NOW)).toMatchObject({ why: "", age: "", detail: "" });
+    });
 
     it("reads kind, title, why, attribution and wait as one line that opens its target", () => {
         expect(queueLine(q, NOW)).toMatchObject({
@@ -451,6 +504,14 @@ describe("sessionLine", () => {
         expect(sessionLine({ ...run, ts: NOW - DAY }, NOW).stale).toBe(false);
     });
 
+    it("folds a run blocked past seven days too, and keeps a week-old ask in view", () => {
+        const blocked: ActiveWorkRow = { ...run, chip: { label: "blocked", tone: "blocked" } };
+        expect(sessionLine(blocked, NOW).stale).toBe(true);
+        expect(sessionLine({ ...blocked, ts: NOW - 2 * DAY }, NOW).stale).toBe(false);
+        // an asking run's question is still open, however long ago it was asked
+        expect(sessionLine({ ...run, chip: { label: "asking", tone: "asking" } }, NOW).stale).toBe(false);
+    });
+
     it("never folds what needs eyes, and names its state instead of its age", () => {
         const agent: ActiveWorkRow = {
             key: "agent:t1",
@@ -602,6 +663,83 @@ describe("behindGroups", () => {
             NOW
         );
         expect([group.lines[0].note, group.lines[0].detail]).toEqual(["", "created · marked paused"]);
+    });
+
+    it("folds a run into its initiative's digest, by the title that day's events or the index gives it", () => {
+        const run = (key: string, ts: number, kind: string, effortOid: string): DeltaRow =>
+            delta({
+                key,
+                ts,
+                kind,
+                title: "Run goal " + key,
+                wording: "Run",
+                detail: kind === "run-done" ? "summary" : "status: executing",
+                oref: "run:" + key,
+                effortOid,
+            });
+        const efforts = new Map([["e2", { oref: "effort:e2", title: "Radar", chunkStages: {} }]]);
+        const [today] = behindGroups(
+            [
+                {
+                    label: "Today",
+                    rows: [
+                        run("r1", NOW - MIN, "run-created", "e1"),
+                        delta({ key: "n", ts: NOW - 2 * MIN, detail: "A · wrote the fold" }),
+                        run("r1", NOW - 3 * MIN, "run-done", "e1"),
+                        run("r2", NOW - 4 * MIN, "run-created", "e2"),
+                        run("r3", NOW - 5 * MIN, "run-created", "gone"),
+                        run("r4", NOW - 6 * MIN, "run-created", ""),
+                    ],
+                },
+            ],
+            [],
+            NOW,
+            { efforts }
+        );
+        expect(today.lines.map((l) => [l.id, l.kind, l.title, l.detail])).toEqual([
+            ["behind:effort:Today:effort:e1", "Initiative", "SIEM", "1 note · 1 run"],
+            ["behind:effort:Today:effort:e2", "Initiative", "Radar", "1 run"],
+            ["behind:r3", "Run", "Run goal r3", "executing"],
+            ["behind:r4", "Run", "Run goal r4", "executing"],
+        ]);
+        expect(today.lines[1].target).toEqual({ oref: "effort:e2" });
+    });
+
+    it("names a row's project, takes a goal's first sentence and a summary's first line of prose", () => {
+        const [today] = behindGroups(
+            [
+                {
+                    label: "Today",
+                    rows: [
+                        delta({
+                            key: "a",
+                            kind: "run-done",
+                            title: "Wire the fold. Then ship the rest\nof a long goal.",
+                            wording: "Run completed",
+                            detail: "# Run report: wire\n\n## Tasks\n- t-1: **wire** the `fold`",
+                            oref: "run:a",
+                            project: "D:\\work\\waveterm",
+                        }),
+                        delta({
+                            key: "b",
+                            kind: "run-created",
+                            title: "next",
+                            wording: "Run started",
+                            detail: "status: executing",
+                            oref: "run:b",
+                            project: "D:\\work\\waveterm",
+                        }),
+                    ],
+                },
+            ],
+            [],
+            NOW,
+            { projects: { arcterm: { path: "D:/work/waveterm" } } }
+        );
+        expect(today.lines.map((l) => [l.title, l.detail])).toEqual([
+            ["Wire the fold.", "arcterm · t-1: wire the fold"],
+            ["next", "arcterm · executing"],
+        ]);
     });
 
     it("keeps shipped runs as their own group", () => {
@@ -963,5 +1101,77 @@ describe("keepsProject", () => {
         expect(keepsProject("", undefined)).toBe(true);
         expect(keepsProject("", "")).toBe(true);
         expect(keepsProject("", "opal")).toBe(false);
+    });
+});
+
+describe("a search reaches every fold", () => {
+    it("opens a fold for a typed query, and for nothing else", () => {
+        expect(foldOpen(false, "")).toBe(false);
+        expect(foldOpen(false, "   ")).toBe(false);
+        expect(foldOpen(false, "radar")).toBe(true);
+        expect(foldOpen(true, "")).toBe(true);
+    });
+
+    it("matches a row that sits behind Behind you's '+N more', and shows it", () => {
+        const rows: DeltaRow[] = Array.from({ length: DELTA_CAP + 3 }, (_, i) => ({
+            key: "k" + i,
+            ts: NOW - i * MIN,
+            kind: "decision",
+            title: i === DELTA_CAP + 1 ? "the hidden radar decision" : `decision ${i}`,
+            wording: "Decision recorded",
+            detail: null,
+            oref: null,
+        }));
+        const linesFor = (query: string) => {
+            const window = capRegion(rows, DELTA_CAP, foldOpen(false, query));
+            return behindGroups(groupDelta(window.rows, NOW), [], NOW)
+                .flatMap((g) => g.lines)
+                .filter((l) => filterLines([l], query).length > 0);
+        };
+        // folded and unsearched, the row is behind the fold; searched, it is drawn and matches
+        expect(linesFor("").map((l) => l.title)).not.toContain("the hidden radar decision");
+        expect(linesFor("radar").map((l) => l.title)).toEqual(["the hidden radar decision"]);
+    });
+});
+
+describe("quietCount", () => {
+    const card = (over: Partial<EffortCardModel>) =>
+        ({
+            oref: "effort:x",
+            status: "active",
+            done: 1,
+            remaining: 2,
+            skipped: 0,
+            updatedts: NOW,
+            ...over,
+        }) as EffortCardModel;
+
+    it("counts live trackers untouched for seven days or more, not paused, finished, ideas or archived ones", () => {
+        const week = NOW - 7 * DAY;
+        expect(
+            quietCount(
+                [
+                    card({ updatedts: NOW - DAY }),
+                    card({ updatedts: week }),
+                    card({ updatedts: NOW - 30 * DAY }),
+                    card({ updatedts: NOW - 30 * DAY, status: "paused" }),
+                    card({ updatedts: NOW - 30 * DAY, status: "archived" }),
+                    card({ updatedts: NOW - 30 * DAY, remaining: 0, done: 3 }),
+                    card({ updatedts: NOW - 30 * DAY, done: 0, remaining: 0 }),
+                ],
+                NOW
+            )
+        ).toBe(2);
+        expect(quietCount([], NOW)).toBe(0);
+    });
+});
+
+describe("plainSummary", () => {
+    it("takes a report's first line of prose, not its headings, markers, emphasis or link targets", () => {
+        expect(plainSummary("# Run report\n\n---\n1. **Wire** [the fold](http://x/y) in `place`. More.")).toBe(
+            "Wire the fold in place."
+        );
+        expect(plainSummary("# only a heading")).toBe("");
+        expect(plainSummary("")).toBe("");
     });
 });

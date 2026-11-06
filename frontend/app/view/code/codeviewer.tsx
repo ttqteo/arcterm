@@ -10,6 +10,7 @@
 // This is also the only module that touches Monaco directly. The store publishes a pending line and
 // a handoff asks for the current selection; both are served here so codestore.ts stays IO-and-atoms.
 
+import { ImageZoom, type ZoomImage } from "@/app/element/imagezoom";
 import { Markdown } from "@/app/element/markdown";
 import { openLink } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -24,14 +25,14 @@ import { joinRepoPath } from "@/util/paths";
 import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { OUTLINE_SELECTOR, WithOutline } from "../agents/docoutlineview";
 import { CodeBlameColumn, type EditorLineLayout } from "./codeblamecolumn";
 import { codeBlameOnAtom } from "./codeblamestore";
 import { isHtmlPath, isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
-import { splitFrontmatter } from "./codefrontmatter";
+import { splitFrontmatter, type FrontmatterSplit } from "./codefrontmatter";
 import { resolveDocLink } from "./codelink";
 import { isPreviewable } from "./codepreviewable";
 import { applyScroll, keepScroll, keptScroll, scrollKey } from "./codescroll";
@@ -49,6 +50,7 @@ import {
     refreshIndex,
     setCaretLineReader,
     texPdfFor,
+    type CodeProject,
 } from "./codestore";
 import { useWrap } from "./codewrap";
 import { FrontmatterCard } from "./frontmattercard";
@@ -179,6 +181,67 @@ function KeptScroll({ id, children }: { id: string; children: ReactNode }) {
             }}
         >
             {children}
+        </div>
+    );
+}
+
+// A markdown file read as a document. Its own component because the zoom view holds state: a click on a resolved image
+// opens it full-window (element/imagezoom.tsx), and closing hands focus back to the wrapper below.
+function MarkdownPreview({
+    model,
+    project,
+    path,
+    doc,
+}: {
+    model: AgentsViewModel;
+    project: CodeProject | null;
+    path: string;
+    doc: FrontmatterSplit;
+}) {
+    const [zoomed, setZoomed] = useState<ZoomImage | null>(null);
+    const homeRef = useRef<HTMLDivElement>(null);
+    // stable: a new function per render would re-render the memoized Markdown, which remounts every image in it
+    const onClickImage = useCallback((src: string, alt: string) => {
+        // an image takes no focus, so park it on the preview: the zoom view hands focus back to what had it
+        homeRef.current?.focus({ preventScroll: true });
+        setZoomed({ src, alt });
+    }, []);
+    const closeZoom = useCallback(() => setZoomed(null), []);
+    // a doc's image paths are relative to the doc, not the repo root
+    const resolveOpts = useMemo(
+        () => ({
+            connName: "local",
+            baseDir: (project != null ? joinRepoPath(project.path, path) : path).replace(/[\\/][^\\/]*$/, ""),
+        }),
+        [project, path]
+    );
+    const onClickLink = useCallback(
+        (href: string) => {
+            const target = project != null ? resolveDocLink(path, href) : null;
+            if (target == null) {
+                return false;
+            }
+            fireAndForget(() =>
+                openInCode(model, { projectPath: project.path, rel: target.rel, line: target.line ?? undefined })
+            );
+            return true;
+        },
+        [model, project, path]
+    );
+    return (
+        <div ref={homeRef} tabIndex={-1} className="h-full outline-none" data-code-preview="">
+            <Markdown
+                text={doc.body}
+                header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
+                scrollable
+                className="markdown-doc h-full"
+                contentClassName="px-8 pb-12 pt-7"
+                fontSizeOverride={DOC_FONT_SIZE}
+                resolveOpts={resolveOpts}
+                onClickLink={onClickLink}
+                onClickImage={onClickImage}
+            />
+            <ImageZoom image={zoomed} onClose={closeZoom} />
         </div>
     );
 }
@@ -397,35 +460,7 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                 return (
                     <KeptScroll key={abs} id={scrollKey("preview", abs)}>
                         <WithOutline selector={OUTLINE_SELECTOR.markdown} textKey={doc.body}>
-                            <Markdown
-                                text={doc.body}
-                                header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
-                                scrollable
-                                className="markdown-doc h-full"
-                                contentClassName="px-8 pb-12 pt-7"
-                                fontSizeOverride={DOC_FONT_SIZE}
-                                resolveOpts={{
-                                    connName: "local",
-                                    baseDir: (project != null
-                                        ? joinRepoPath(project.path, file.path)
-                                        : file.path
-                                    ).replace(/[\\/][^\\/]*$/, ""),
-                                }}
-                                onClickLink={(href) => {
-                                    const target = project != null ? resolveDocLink(file.path, href) : null;
-                                    if (target == null) {
-                                        return false;
-                                    }
-                                    fireAndForget(() =>
-                                        openInCode(model, {
-                                            projectPath: project.path,
-                                            rel: target.rel,
-                                            line: target.line ?? undefined,
-                                        })
-                                    );
-                                    return true;
-                                }}
-                            />
+                            <MarkdownPreview model={model} project={project} path={file.path} doc={doc} />
                         </WithOutline>
                     </KeptScroll>
                 );

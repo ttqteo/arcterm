@@ -7,6 +7,7 @@
 // starts it. Narrowed scopes are already small, so they list every match.
 
 import { SCORE_PER_CHAR, fuzzyScore } from "./palette-match";
+import type { DrillId } from "./palette-scope";
 
 export type GroupKind =
     | "recent"
@@ -24,6 +25,7 @@ export type GroupKind =
     | "command"
     | "file"
     | "theme"
+    | "brainstorm" // an open brainstorm, in the Resume brainstorm picker
     | "needs" // an attention item waiting on the user
     | "answer" // an inline option under the selected Needs you ask; answered by its digit, never selected
     | "start" // New run…, New agent…, New initiative…, New council…, and Scan workflow with a home project
@@ -65,6 +67,7 @@ export const KIND_LABELS: Partial<Record<GroupKind, string>> = {
     action: "Actions",
     command: "Commands",
     theme: "Themes",
+    brainstorm: "Brainstorms",
 };
 
 // All's kinds, in the order they show below the lead group. Files stay out of All so thousands of
@@ -182,6 +185,30 @@ export function assembleScopeGroups<T extends GroupableItem>(input: {
         return [{ key: "empty", label, items: [], emptyText: `No ${noun} yet.` }];
     }
     return [{ key: "empty", label, items: widenItem ? [widenItem] : [], emptyText: `No ${noun} match “${q}”.` }];
+}
+
+// A command row that opened a picker: its hits under the drill's own label. An empty one says why: the list is still
+// being read (the brainstorms' folders, which only the drill loads), text typed matched nothing, or nothing is there.
+export function assembleDrillGroup<T>(input: {
+    drill: DrillId;
+    label: string;
+    hits: T[];
+    query: string;
+    loading: boolean;
+}): PaletteGroup<T> {
+    const { drill, label, hits, query, loading } = input;
+    if (hits.length > 0) {
+        return { key: drill, label, items: hits };
+    }
+    const q = query.trim();
+    const emptyText = loading
+        ? "Reading the projects’ brainstorms…"
+        : q !== ""
+          ? `Nothing matches “${q}”.`
+          : drill === "brainstorm"
+            ? "No brainstorm is left open."
+            : "Nothing to pick.";
+    return { key: drill, label, items: hits, emptyText };
 }
 
 // All caps its mixed groups so one kind cannot bury the rest; a narrowed scope caps only to keep a

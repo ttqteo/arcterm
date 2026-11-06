@@ -3166,6 +3166,13 @@ declare global {
         updatedts: number;
     };
 
+    // wshrpc.EffortChunkBlocked
+    type EffortChunkBlocked = {
+        since?: number;
+        needs?: string;
+        latest?: EffortLastNote;
+    };
+
     // wshrpc.EffortChunkSummary
     type EffortChunkSummary = {
         label: string;
@@ -3173,6 +3180,7 @@ declare global {
         stage?: string;
         owner?: string;
         workrefs?: ChunkWorkRef[];
+        blocked?: EffortChunkBlocked;
     };
 
     // waveobj.EffortEvent
@@ -4912,6 +4920,7 @@ declare global {
         title: string;
         detail?: string;
         navtarget?: string;
+        effortoid?: string;
     };
 
     // wshrpc.TokenEstimateTypeReview

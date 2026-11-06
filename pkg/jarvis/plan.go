@@ -294,6 +294,21 @@ func ParsePlan(src string) (Plan, error) {
 	return p, nil
 }
 
+// TaskFiles is every path a task's **Files:** lines list, read back from its text, where the line stays after
+// ParsePlan. A line that does not parse adds none; submit already refused such a plan. A directory entry comes back
+// without its trailing slash, like any other spelling of a path.
+func TaskFiles(description string) []string {
+	var out []string
+	for _, line := range strings.Split(description, "\n") {
+		if m := planFilesRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			if paths, err := parsePlanFiles(m[1], 0); err == nil {
+				out = append(out, paths...)
+			}
+		}
+	}
+	return out
+}
+
 // parsePlanFiles reads a **Files:** value: backticked repo-relative paths separated by commas, each
 // returned slash-normalised so two spellings of one path compare equal.
 func parsePlanFiles(value string, n int) ([]string, error) {

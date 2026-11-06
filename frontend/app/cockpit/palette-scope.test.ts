@@ -6,6 +6,7 @@ import {
     backspaceEmpty,
     caretAtEnd,
     cycleScope,
+    DRILL_LABELS,
     ghostHint,
     initialNav,
     leaveActions,
@@ -86,6 +87,32 @@ describe("backspaceEmpty", () => {
     });
     it("has nothing to leave on an empty All", () => {
         expect(backspaceEmpty(nav())).toBeNull();
+    });
+});
+
+describe("the brainstorm drill", () => {
+    it("opens from Commands like the theme drill, with nothing typed", () => {
+        expect(openDrill(nav({ scope: "runs", query: "x" }), "brainstorm")).toMatchObject({
+            scope: "commands",
+            drill: "brainstorm",
+            query: "",
+            actions: null,
+        });
+    });
+    it("names itself in the chip and says what to pick", () => {
+        expect(DRILL_LABELS.brainstorm).toBe("Brainstorm");
+        expect(placeholderFor(openDrill(nav(), "brainstorm"))).toBe("Pick a brainstorm to resume…");
+        expect(placeholderFor(openDrill(nav(), "theme"))).toBe("Pick a theme…");
+    });
+    it("leaves a sigil as text, and backspace on an empty query goes back to Commands, then All", () => {
+        const inDrill = openDrill(nav(), "brainstorm");
+        expect(typeQuery(inDrill, "@")).toMatchObject({ scope: "commands", query: "@", drill: "brainstorm" });
+        const out = backspaceEmpty(inDrill)!;
+        expect(out).toMatchObject({ scope: "commands", drill: null });
+        expect(backspaceEmpty(out)).toMatchObject({ scope: "all" });
+    });
+    it("Tab leaves it for the next scope", () => {
+        expect(cycleScope(openDrill(nav(), "brainstorm"), 1)).toMatchObject({ drill: null });
     });
 });
 

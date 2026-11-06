@@ -28,21 +28,34 @@ export type WaitingStripProps = {
     total: number;
     open: boolean;
     onToggle: () => void;
-    actOf: (line: BriefLine) => QueueAct;
-    onAct: (line: BriefLine) => void;
+    // every button an item carries: one for most, Unblock and Done for a blocked chunk
+    actsOf: (line: BriefLine) => QueueAct[];
+    onAct: (line: BriefLine, act: QueueAct) => void;
     onOpen: (line: BriefLine, e?: React.MouseEvent) => void;
     cursor?: string | null;
     // Accept N unverified: the runs to accept are in this queue
     ack?: React.ReactNode;
+    // what the queue holds in one line (briefingmodel.ts summarizeAttentionQueue), read as the rows open and on the count
+    summary?: string;
 };
 
-export function WaitingStrip({ lines, total, open, onToggle, actOf, onAct, onOpen, cursor, ack }: WaitingStripProps) {
+export function WaitingStrip({
+    lines,
+    total,
+    open,
+    onToggle,
+    actsOf,
+    onAct,
+    onOpen,
+    cursor,
+    ack,
+    summary,
+}: WaitingStripProps) {
     if (total === 0) {
         return null;
     }
     const head = lines[0] ?? null;
-    const act = head != null ? actOf(head) : null;
-    const go = act?.label === "Go to agent";
+    const acts = head != null ? actsOf(head) : [];
     // with the rows open the strip's own line is the first row too, so the cursor rides the rows instead
     const focused = !open && head != null && cursor === head.id;
     return (
@@ -59,7 +72,9 @@ export function WaitingStrip({ lines, total, open, onToggle, actOf, onAct, onOpe
                 <span className="flex flex-none items-center gap-1.5 text-[12px] font-semibold text-asking">
                     <span aria-hidden className="h-1.5 w-1.5 flex-none pulse-dot-slow rounded-full bg-asking" />
                     Waiting on you
-                    <span className="tabular-nums">{total}</span>
+                    <span title={summary || undefined} className="tabular-nums">
+                        {total}
+                    </span>
                 </span>
                 {head != null ? (
                     <>
@@ -86,23 +101,27 @@ export function WaitingStrip({ lines, total, open, onToggle, actOf, onAct, onOpe
                         >
                             {head.title}
                         </button>
-                        {act != null ? (
-                            <button
-                                type="button"
-                                data-jarvis-queue-act={act.kind}
-                                title={go ? "Go to the agent open on this initiative" : undefined}
-                                onClick={() => onAct(head)}
-                                className={cn(
-                                    "h-[26px] flex-none cursor-pointer whitespace-nowrap rounded-[6px] border px-2.5 text-[11.5px] font-semibold hover:border-edge-strong hover:text-ink-hi",
-                                    act.label === "Approve" || go
-                                        ? "border-success/35 bg-success/12 text-success"
-                                        : "border-edge-strong bg-surface-raised text-primary",
-                                    FOCUS
-                                )}
-                            >
-                                {act.label}
-                            </button>
-                        ) : null}
+                        {acts.map((act) => {
+                            const go = act.label === "Go to agent";
+                            return (
+                                <button
+                                    key={act.kind}
+                                    type="button"
+                                    data-jarvis-queue-act={act.kind}
+                                    title={go ? "Go to the agent open on this initiative" : undefined}
+                                    onClick={() => onAct(head, act)}
+                                    className={cn(
+                                        "h-[26px] flex-none cursor-pointer whitespace-nowrap rounded-[6px] border px-2.5 text-[11.5px] font-semibold hover:border-edge-strong hover:text-ink-hi",
+                                        act.label === "Approve" || go
+                                            ? "border-success/35 bg-success/12 text-success"
+                                            : "border-edge-strong bg-surface-raised text-primary",
+                                        FOCUS
+                                    )}
+                                >
+                                    {act.label}
+                                </button>
+                            );
+                        })}
                     </>
                 ) : (
                     <span className="min-w-0 flex-1 truncate text-[12px] text-ink-faint">
@@ -133,14 +152,19 @@ export function WaitingStrip({ lines, total, open, onToggle, actOf, onAct, onOpe
                     data-jarvis-waiting-rows
                     className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
                 >
+                    {summary ? (
+                        <span data-jarvis-waiting-summary className="px-2 pb-1 pt-0.5 text-[11px] text-ink-mid">
+                            {summary}
+                        </span>
+                    ) : null}
                     {lines.map((l) => (
                         <WaitingRow
                             key={l.id}
                             line={l}
                             focused={cursor === l.id}
-                            act={actOf(l)}
+                            acts={actsOf(l)}
                             onOpen={l.target != null ? (e) => onOpen(l, e) : undefined}
-                            onAct={() => onAct(l)}
+                            onAct={(act) => onAct(l, act)}
                         />
                     ))}
                 </div>

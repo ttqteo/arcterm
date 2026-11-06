@@ -18,6 +18,7 @@ import {
     type AsleepLaunch,
 } from "@/app/view/agents/agentsleep";
 import type { AgentVM, PendingLaunch } from "@/app/view/agents/agentsviewmodel";
+import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
 import { archivedSession, nextToReopen, recentlyClosedAtom } from "@/app/view/agents/recentlyclosed";
 import {
@@ -45,6 +46,9 @@ export interface LaunchAgentOpts {
     resumeOf?: string;
     label?: string; // the session's name in the roster (session:label), e.g. the initiative it works on
     effortORef?: string; // the initiative it works on (session:effort), "effort:<oid>"
+    // the brainstorm.json it carries on (session:brainstorm): attached up front, since the agent's hook reveals the pane
+    // only when its own write creates the file, and a resumed brainstorm's file already exists (resumeLaunch)
+    brainstormFile?: string;
     // open asleep: the tab is made with its resume command and marked asleep, so it shows the session's transcript and
     // starts on Wake or a message (asleepLaunchMeta). Its process never starts here.
     asleep?: AsleepLaunch;
@@ -142,6 +146,9 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     }
     if (opts.effortORef) {
         tabMeta["session:effort"] = opts.effortORef;
+    }
+    if (opts.brainstormFile) {
+        tabMeta[SESSION_BRAINSTORM] = opts.brainstormFile;
     }
     await RpcApi.SetMetaCommand(TabRpcClient, { oref: WOS.makeORef("tab", tabId), meta: tabMeta });
     // an agent opened asleep is on the roster at once (sleepingStatus): it never reports in, so no pending row waits on it

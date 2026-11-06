@@ -13,9 +13,13 @@ const MODS = [
     { src: "claude/skim-mod", dst: "cmd/wsh/cmd/claude-skim-mod" },
 ];
 
-// what sync:claudemod leaves out of the copy
+// what sync:claudemod leaves out of the copy: the engine-written types, the hook tests, and the test fixtures (testdata/)
 function synced(rel: string): boolean {
-    return !rel.startsWith(".claude-plugin/types/") && !/^hooks\/[^/]*\.test\.ts$/.test(rel);
+    return (
+        !rel.startsWith(".claude-plugin/types/") &&
+        !/^hooks\/[^/]*\.test\.ts$/.test(rel) &&
+        !rel.startsWith("testdata/")
+    );
 }
 
 function files(dir: string): Map<string, string> {

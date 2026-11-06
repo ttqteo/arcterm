@@ -5,6 +5,8 @@ import type { Binding, KeyContext } from "@/app/store/keybindings/types";
 import { describe, expect, it, vi } from "vitest";
 import { THEMES } from "@/app/view/agents/themes";
 import {
+    brainstormLaunchOpts,
+    buildBrainstormItems,
     buildCommandItems,
     buildExtraItems,
     buildThemeItems,
@@ -116,14 +118,19 @@ describe("buildCommandItems", () => {
 describe("buildExtraItems", () => {
     const deps = () => ({ openNewProject: vi.fn(), openToolPicker: vi.fn(), reloadWindow: vi.fn() });
 
-    it("offers the chordless modals and one drill row for themes", () => {
+    it("offers the chordless modals and one drill row each for themes and open brainstorms", () => {
         const items = buildExtraItems(deps());
         expect(items.map((i) => [i.key, i.drill])).toEqual([
             ["cmd:new-project", undefined],
             ["cmd:open-tool", undefined],
             ["cmd:reload-window", undefined],
             ["cmd:theme", "theme"],
+            ["cmd:resume-brainstorm", "brainstorm"],
         ]);
+        expect(items.find((i) => i.key === "cmd:resume-brainstorm")).toMatchObject({
+            title: "Resume brainstorm…",
+            group: "Global",
+        });
     });
     it("reloads the window from Reload the window, a row with no chord", () => {
         const d = deps();
@@ -193,6 +200,66 @@ describe("commandGroups", () => {
     it("lists groups outside the fixed order alphabetically", () => {
         const groups = commandGroups([row("Zeta"), row("Global"), row("Alpha"), row("Mid")], "usage");
         expect(groups.map((g) => g.label)).toEqual(["Global", "Alpha", "Mid", "Zeta"]);
+    });
+});
+
+describe("the Resume brainstorm picker", () => {
+    const b = {
+        topic: "teams",
+        path: "C:/src/waveterm/.superpowers/brainstorm/teams/brainstorm.json",
+        title: "Agent teams",
+        question: { n: 3, text: "Which runtime leads?" },
+        modifiedMs: 0,
+        project: "waveterm",
+        projectPath: "C:/src/waveterm",
+    };
+
+    describe("buildBrainstormItems", () => {
+        it("makes a row per brainstorm in the order given: the title, the age before the project, the open question under it", () => {
+            const rows = buildBrainstormItems(
+                [b, { ...b, path: "/x", title: "Other", question: null }],
+                2 * 86_400_000
+            );
+            expect(rows).toHaveLength(2);
+            expect(rows[0]).toMatchObject({
+                key: `brainstorm:${b.path}`,
+                title: "Agent teams",
+                search: "Agent teams waveterm",
+                // the meta column truncates, so the age leads and a long project name is what gets cut
+                meta: "2d · #waveterm",
+                sub: "Question 3 · Which runtime leads?",
+                echo: "Starts an agent in #waveterm on “Agent teams”",
+            });
+            expect(rows[0].brainstorm).toBe(b);
+            expect(rows[1]).toMatchObject({ title: "Other", sub: "No question open" });
+        });
+        it("reads a minute-old file as just now, and an hour-old one in hours", () => {
+            expect(buildBrainstormItems([{ ...b, modifiedMs: 100_000 }], 130_000)[0].meta).toBe("just now · #waveterm");
+            expect(buildBrainstormItems([{ ...b, modifiedMs: 0 }], 3 * 3_600_000)[0].meta).toBe("3h · #waveterm");
+        });
+        it("is empty for nothing open", () => {
+            expect(buildBrainstormItems([], 0)).toEqual([]);
+        });
+    });
+
+    describe("brainstormLaunchOpts", () => {
+        it("starts the runtime with its remembered flags on the resume prompt, in the brainstorm's project, with the file attached", () => {
+            const opts = brainstormLaunchOpts(b, "claude", { "skip-permissions": true });
+            expect(opts).toEqual({
+                runtime: "claude",
+                startupCommand: "claude --dangerously-skip-permissions",
+                task: `Resume the brainstorm in ${b.path} with arc:brainstorm.`,
+                brainstormFile: b.path,
+                projectPath: "C:/src/waveterm",
+                projectName: "waveterm",
+            });
+        });
+        it("starts in the project itself, never a worktree", () => {
+            expect(brainstormLaunchOpts(b, "pi", {})).not.toHaveProperty("branch");
+        });
+        it("starts the bare command when no flag is remembered", () => {
+            expect(brainstormLaunchOpts(b, "pi", {}).startupCommand).toBe("pi");
+        });
     });
 });
 

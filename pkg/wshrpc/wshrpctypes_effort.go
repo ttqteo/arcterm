@@ -154,4 +154,12 @@ type EffortChunkSummary struct {
 	Stage    string                 `json:"stage,omitempty"`
 	Owner    string                 `json:"owner,omitempty"`
 	WorkRefs []waveobj.ChunkWorkRef `json:"workrefs,omitempty"`
+	Blocked  *EffortChunkBlocked    `json:"blocked,omitempty"` // set only on a blocked chunk
+}
+
+// EffortChunkBlocked is what the waiting queue shows for a blocked chunk without loading its trail.
+type EffortChunkBlocked struct {
+	Since  int64           `json:"since,omitempty"`  // when the chunk was marked blocked; 0 when no note recorded it
+	Needs  string          `json:"needs,omitempty"`  // the note given with the status: what the blocker needs
+	Latest *EffortLastNote `json:"latest,omitempty"` // the newest note, when it came after the marking
 }

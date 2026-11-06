@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EFFORT_FIXTURES } from "./briefingfixtures";
 import {
     ackableRuns,
     ACTIVE_CAP,
+    actOnChunk,
     buildAttentionQueue,
     capRegion,
     DELTA_CAP,
@@ -16,9 +17,11 @@ import {
     oldestWaitingTs,
     projectBriefing,
     queueAction,
+    queueActions,
     queueKindLabel,
     queueOpenTarget,
     SHIPPED_CAP,
+    summarizeAttentionQueue,
     waitingStrip,
     type AgentRow,
     type BlockerRow,
@@ -184,15 +187,42 @@ describe("briefing projection", () => {
         ];
         const delta: TimelineEvent[] = [
             { ts: T0 - DAY, kind: "run-done", title: "new work", detail: "sealed", navtarget: "run:r-new" },
+            { ts: T0 - DAY - HOUR, kind: "run-created", title: "new work", navtarget: "run:r-new" },
             { ts: T0 - 8 * DAY, kind: "run-done", title: "old work", detail: "sealed", navtarget: "run:r-old" },
+            { ts: T0 - HOUR, kind: "run-created", title: "not yet shipped", navtarget: "run:r-z" },
         ];
         const m = projectBriefing(
             input(workState([{ project: "waveterm", active: [], shipped, events: delta, delta }]), [], T0 - 9 * DAY)
         );
         expect(m.shipped.map((s) => s.oref)).toEqual(["run:r-new"]);
         expect(m.shipped[0].fresh).toBe(true);
-        expect(m.delta.map((d) => d.kind)).toEqual(["run-done"]); // only the old completion remains
-        expect(m.delta[0].title).toBe("old work");
+        // a shipped run's start and its completion both repeat its Shipped row; the old completion and a run that has
+        // not shipped keep theirs
+        expect(m.delta.map((d) => [d.kind, d.oref])).toEqual([
+            ["run-done", "run:r-old"],
+            ["run-created", "run:r-z"],
+        ]);
+    });
+
+    it("carries a delta row's project and the initiative a run event belongs to", () => {
+        const delta: TimelineEvent[] = [
+            {
+                ts: T0 - HOUR,
+                kind: "run-created",
+                project: "/p/one",
+                title: "g",
+                navtarget: "run:r-1",
+                effortoid: "e-1",
+            },
+            { ts: T0 - 2 * HOUR, kind: "decision", title: "chose sqlite" },
+        ];
+        const m = projectBriefing(
+            input(workState([{ project: "waveterm", active: [], shipped: [], events: delta, delta }]), [], T0 - 9 * DAY)
+        );
+        expect(m.delta.map((d) => [d.project, d.effortOid])).toEqual([
+            ["/p/one", "e-1"],
+            ["", ""],
+        ]);
     });
 
     it("removes current attention items from delta rather than showing both", () => {
@@ -714,6 +744,160 @@ describe("buildAttentionQueue", () => {
         const q = buildAttentionQueue({ attention: [item({})], efforts });
         expect(q.map((r) => r.kind)).toEqual(["dag gate", "chunk blocked"]);
         expect(q[1]!.ts).toBeNull();
+    });
+});
+
+describe("a blocked chunk's waiting row", () => {
+    const withDetail = (
+        oref: string,
+        title: string,
+        blocked: Record<string, { since: number | null; needs: string }>
+    ) =>
+        ({
+            oref,
+            title,
+            blockedChunks: Object.keys(blocked),
+            blockedDetail: blocked,
+        }) as unknown as EffortCardModel;
+
+    it("says what it needs, how long it has waited, and carries the chunk its buttons act on", () => {
+        const latest = { ts: T0 - HOUR, text: "the blocker is gone on DEV", chunk: "Phase 5" };
+        const efforts = [
+            {
+                ...withDetail("effort:e-1", "Gate", {
+                    "Phase 5": { since: T0 - 3 * DAY, needs: "needs: SRE sign-off" },
+                }),
+                blockedDetail: { "Phase 5": { since: T0 - 3 * DAY, needs: "needs: SRE sign-off", latest } },
+            } as EffortCardModel,
+        ];
+        const [row] = buildAttentionQueue({ attention: [], efforts });
+        expect(row).toMatchObject({
+            kind: "chunk blocked",
+            title: "Phase 5",
+            detail: "Gate",
+            ts: T0 - 3 * DAY,
+            why: "needs: SRE sign-off",
+            wireKind: "chunk-blocked",
+            chunk: { effortOref: "effort:e-1", label: "Phase 5", needs: "needs: SRE sign-off", latest },
+        });
+    });
+
+    it("puts blocked chunks and records after the wire rows, oldest first, unaged last", () => {
+        const q = buildAttentionQueue({
+            attention: [attentionItem({ kind: "ask", key: "ask:new", text: "the ask", waitingsince: T0 - HOUR })],
+            efforts: [
+                withDetail("effort:a", "A", {
+                    "a-2d": { since: T0 - 2 * DAY, needs: "" },
+                    "a-unaged": { since: null, needs: "" },
+                }),
+                withDetail("effort:b", "B", { "b-22d": { since: T0 - 22 * DAY, needs: "" } }),
+            ],
+            blockers: [{ oref: "task:r", objective: "rec-14d", blockers: "", project: null, ts: T0 - 14 * DAY }],
+        });
+        expect(q.map((r) => r.title)).toEqual(["the ask", "b-22d", "rec-14d", "a-2d", "a-unaged"]);
+    });
+
+    it("offers Unblock and Done in place of Open, and a wire row keeps its one button", () => {
+        const [chunk] = buildAttentionQueue({
+            attention: [],
+            efforts: [withDetail("effort:a", "A", { c: { since: null, needs: "" } })],
+        });
+        expect(queueActions(chunk).map((a) => [a.label, a.kind])).toEqual([
+            ["Unblock", "unblock-chunk"],
+            ["Done", "done-chunk"],
+        ]);
+        const [ask] = buildAttentionQueue({ attention: [attentionItem({ kind: "ask", key: "a" })], efforts: [] });
+        expect(queueActions(ask).map((a) => a.label)).toEqual(["Open"]);
+    });
+});
+
+describe("Unblock and Done on a blocked chunk's row", () => {
+    const [blocked] = buildAttentionQueue({
+        attention: [],
+        efforts: [
+            {
+                oref: "effort:e1",
+                title: "Nav rail",
+                blockedChunks: ["S6 soak"],
+                blockedDetail: { "S6 soak": { since: T0 - DAY, needs: "needs: a DEV soak" } },
+            } as unknown as EffortCardModel,
+        ],
+    });
+    const fakeDeps = (fail = false) => ({
+        setChunkStatus: vi.fn(() => (fail ? Promise.reject(new Error("refused")) : Promise.resolve())),
+        undo: { notify: vi.fn(), error: vi.fn() },
+    });
+
+    it("unblocks to pending, and its undo blocks it again with what it needs", async () => {
+        const deps = fakeDeps();
+        await actOnChunk(deps, blocked, "unblock-chunk");
+        expect(deps.setChunkStatus).toHaveBeenCalledWith("effort:e1", "S6 soak", "pending");
+        const [text, undo] = deps.undo.notify.mock.calls[0] as unknown as [string, () => void];
+        expect(text).toBe("Unblocked · S6 soak");
+        undo();
+        expect(deps.setChunkStatus).toHaveBeenLastCalledWith("effort:e1", "S6 soak", "blocked", "needs: a DEV soak");
+    });
+
+    it("marks done, and its undo blocks it again too", async () => {
+        const deps = fakeDeps();
+        await actOnChunk(deps, blocked, "done-chunk");
+        expect(deps.setChunkStatus).toHaveBeenCalledWith("effort:e1", "S6 soak", "done");
+        const [text, undo] = deps.undo.notify.mock.calls[0] as unknown as [string, () => void];
+        expect(text).toBe("Done · S6 soak");
+        undo();
+        expect(deps.setChunkStatus).toHaveBeenLastCalledWith("effort:e1", "S6 soak", "blocked", "needs: a DEV soak");
+    });
+
+    it("blocks it again with no note when it recorded none", async () => {
+        const deps = fakeDeps();
+        await actOnChunk(deps, { ...blocked, chunk: { ...blocked.chunk!, needs: "" } }, "unblock-chunk");
+        (deps.undo.notify.mock.calls[0] as unknown as [string, () => void])[1]();
+        expect(deps.setChunkStatus).toHaveBeenLastCalledWith("effort:e1", "S6 soak", "blocked", undefined);
+    });
+
+    it("shows a refused write instead of a success toast, and does nothing for a row that is no chunk", async () => {
+        const deps = fakeDeps(true);
+        await actOnChunk(deps, blocked, "done-chunk");
+        expect(deps.undo.error).toHaveBeenCalledWith("refused");
+        expect(deps.undo.notify).not.toHaveBeenCalled();
+        const idle = fakeDeps();
+        await actOnChunk(idle, { ...blocked, chunk: undefined }, "done-chunk");
+        expect(idle.setChunkStatus).not.toHaveBeenCalled();
+    });
+});
+
+describe("summarizeAttentionQueue", () => {
+    const chunks = (oref: string, n: number) =>
+        ({
+            oref,
+            title: oref,
+            blockedChunks: Array.from({ length: n }, (_, i) => `c${i}`),
+            blockedDetail: Object.fromEntries(
+                Array.from({ length: n }, (_, i) => [`c${i}`, { since: T0 - (i + 1) * DAY, needs: "" }])
+            ),
+        }) as unknown as EffortCardModel;
+
+    it("is empty for an empty queue", () => {
+        expect(summarizeAttentionQueue([], T0)).toBe("");
+    });
+
+    it("counts each kind once and names the oldest wait", () => {
+        const queue = buildAttentionQueue({
+            attention: [
+                attentionItem({ kind: "ask", key: "a1", waitingsince: T0 - DAY }),
+                attentionItem({ kind: "ask", key: "a2", waitingsince: T0 - HOUR }),
+            ],
+            efforts: [],
+        });
+        expect(summarizeAttentionQueue(queue, T0)).toBe("2 asks · oldest 1d");
+        expect(summarizeAttentionQueue(queue.slice(0, 1), T0)).toBe("ask · oldest 1d");
+    });
+
+    it("counts blocked chunks once and names how many initiatives they span", () => {
+        const queue = buildAttentionQueue({ attention: [], efforts: [chunks("effort:a", 7), chunks("effort:b", 3)] });
+        expect(summarizeAttentionQueue(queue, T0)).toBe("10 blocked · 2 initiatives · oldest 7d");
+        // oldest first, so the first row of the two lists is the 7-day-old one
+        expect(summarizeAttentionQueue(queue.slice(0, 1), T0)).toBe("blocked · 1 initiative · oldest 7d");
     });
 });
 

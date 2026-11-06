@@ -13,6 +13,10 @@ export const CHIP_CAP = 12;
 
 export type ChunkChip = { label: string; tone: ChunkTone };
 
+// What the waiting queue says about a blocked chunk (EffortChunkBlocked): since is null when no note recorded the block,
+// needs is the note given with the status, and latest the newest note when one came after it.
+export type BlockedChunk = { since: number | null; needs: string; latest?: EffortLastNote };
+
 export type EffortCardModel = {
     oref: string;
     title: string;
@@ -33,6 +37,8 @@ export type EffortCardModel = {
     // every chunk's tone in plan order, the skipped ones left out as the count's denominator leaves them out
     segments: ChunkTone[];
     blockedChunks: string[];
+    // each blocked chunk's trail by label, beside the labels (which other models read as strings)
+    blockedDetail: Record<string, BlockedChunk>;
     // the chunks an agent proposed and nobody accepted yet, in plan order: out of the bar, the chips and every count
     proposed: string[];
     shortId: string;
@@ -87,6 +93,14 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
         // claim someone is on it when it is only next in line
         segments: chunks.filter((c) => c.status !== "skipped").map((c) => chunkTone(c.status)),
         blockedChunks: chunks.filter((c) => c.status === "blocked").map((c) => c.label),
+        blockedDetail: Object.fromEntries(
+            chunks
+                .filter((c) => c.status === "blocked")
+                .map((c) => [
+                    c.label,
+                    { since: c.blocked?.since || null, needs: c.blocked?.needs ?? "", latest: c.blocked?.latest },
+                ])
+        ),
         proposed: all.filter((c) => c.status === "proposed").map((c) => c.label),
         shortId: e.oref.replace(/^effort:/, "").slice(0, 8),
         chunkStages: Object.fromEntries(all.map((c) => [c.label, c.stage ?? ""])),

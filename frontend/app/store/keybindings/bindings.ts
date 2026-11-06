@@ -54,7 +54,14 @@ import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
-import { compareOnAtom, compareSelectionAtom, leaveCompare, swapCompareRefs } from "@/app/view/agents/comparestore";
+import {
+    compareOnAtom,
+    compareRefsAtom,
+    compareSelectionAtom,
+    leaveCompare,
+    setCompareRefs,
+    swapCompareRefs,
+} from "@/app/view/agents/comparestore";
 import { panelFoldedAtom, panelTabAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
 import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
@@ -62,6 +69,7 @@ import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
+import { listOrder, stepInList, treeModeAtom } from "@/app/view/agents/filetree";
 import { toggleFloatNote } from "@/app/view/agents/floatnotestore";
 import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
@@ -94,7 +102,7 @@ import {
     terminalDockFoldedAtom,
     terminalFullscreenAtom,
 } from "@/app/view/agents/railstore";
-import { toggleOpenFile } from "@/app/view/agents/reviewmarks";
+import { activeReviewAtom, toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { runQueueAtom } from "@/app/view/agents/runqueuestore";
@@ -2245,6 +2253,21 @@ export function buildCouncilTabBindings(): Binding[] {
     ];
 }
 
+// n / p: open the next or previous file of the list through the surface's own select, in the order the list draws
+// (tree or flat). false declines the key: no list showing, or already at that end (the list does not wrap). The
+// open file is not marked: v is the key that marks and moves on.
+function stepListFile(dir: 1 | -1): false | undefined {
+    const active = globalStore.get(activeReviewAtom);
+    if (active == null) {
+        return false;
+    }
+    const next = stepInList(listOrder(active.files, globalStore.get(treeModeAtom)), active.open, dir);
+    if (next == null) {
+        return false;
+    }
+    active.select(next);
+}
+
 // Diff-surface keys. `c` is the entry gesture the mockup names; Escape is the single exit; Tab jumps
 // between the two compare sides. Entering compare needs a cwd and a branch, which only the surface
 // knows, so `c` clicks the control the surface already draws (the same clickThrough shape
@@ -2357,6 +2380,23 @@ export function buildFilesBindings(): Binding[] {
             run: () => (toggleOpenFile() ? undefined : false),
         },
         {
+            // n / p open without marking: v is the key that marks and moves on
+            id: "files:next-file",
+            keys: "n",
+            group: "Diff",
+            label: "Next file",
+            when: on,
+            run: () => stepListFile(1),
+        },
+        {
+            id: "files:prev-file",
+            keys: "p",
+            group: "Diff",
+            label: "Previous file",
+            when: on,
+            run: () => stepListFile(-1),
+        },
+        {
             id: "files:toggle-history",
             keys: "Shift:h",
             group: "Diff",
@@ -2459,8 +2499,18 @@ export function buildFilesBindings(): Binding[] {
             label: "Refresh",
             when: on,
             run: () => {
-                void reloadChanges(globalStore.get(filesStateAtom)?.cwd ?? null);
-                refreshHistory();
+                const cwd = globalStore.get(filesStateAtom)?.cwd ?? null;
+                void reloadChanges(cwd);
+                if (!globalStore.get(compareOnAtom)) {
+                    refreshHistory();
+                } else {
+                    // compare draws no history: re-read the pair on screen, as a typed pair is read (the refs may
+                    // have moved under it: a commit, a fetch from a terminal)
+                    const refs = globalStore.get(compareRefsAtom);
+                    if (cwd && refs != null) {
+                        void setCompareRefs(cwd, refs.base, refs.head);
+                    }
+                }
                 void refreshSidebar();
             },
         },

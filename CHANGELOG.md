@@ -35,9 +35,29 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   dot, the command its shell is running with how long it has run ("node server.js  3s") or "idle", and a chip with the
   port its processes listen on (":5173 +1" for several). Windows only for now; on a Mac the row stays one line.
   <!-- try: go:agent -->
+- **Arcterm's prompts show as cards in a Claude transcript** (from the kaeltran16 fork): what a run sends a lead, a
+  worker, a reviewer, a plan reviewer or the final verifier, an agent message, a child run's end, a brainstorm line and a
+  note for a later task now read as a card with its role, tags and labelled parts, instead of the whole prompt as raw
+  text. Ctrl+O still shows the text the model reads.
+- **Image zoom in Code's Preview** (from the kaeltran16 fork): click an image in a markdown file's Preview to open it
+  full-window, fitted to the window and never enlarged past its size. The wheel zooms around the pointer, `+` and `-`
+  around the centre, drag pans, `0` fits again, and Esc or a click outside closes it.
+- **n and p in Diff** (from the kaeltran16 fork): in the changed-file list, `n` opens the next file and `p` the previous
+  one in the order the list draws, without marking it reviewed, and stop at the ends. `r` re-reads the comparison on
+  screen while compare is on.
+- **Resume a brainstorm from the palette** (from the kaeltran16 fork): Commands → Resume brainstorm… lists the
+  brainstorms left open in every project, newest first, with the question each waits on. Enter starts an agent on one in
+  its own project; Ctrl+Enter (Cmd+Enter on a Mac) dismisses it until it next changes. <!-- try: go:palette -->
+- **The Brief's blocked rows say what they need** (from the kaeltran16 fork): a chunk marked blocked shows its note, its
+  age and any newer note, the oldest first, and has Unblock and Done (each with Undo) in place of Open; Open lands on
+  the chunk in its initiative. The queue's summary counts the initiatives the blocked chunks span, the filter reaches
+  rows inside every fold, and Initiatives counts the quiet ones.
 
 ### Changed
 
+- **The reviewer checks a task's Files line** (from the kaeltran16 fork): an orchestrator run's task reviewer is told
+  which files a task's commits changed outside its Files line and fails the ones the task did not call for; it also
+  fails a requirement the worker's report admits is unmet, and passes a cosmetic point with a note.
 - Setup → Memory reviews one memory at a time, with its text, Delete and Ask an agent.
 - A run's agents, and the builds, typechecks and test suites they and the engine start, run below normal CPU priority
   (niced on a Mac), so the machine stays responsive while a run works, and the run still takes the whole CPU when
@@ -74,6 +94,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **Blame follows unsaved edits** (from the kaeltran16 fork): with a file open and changed since saving, Code's blame
+  column keeps each entry beside its own line instead of drifting after an inserted or deleted line, and the lines you
+  inserted or edited read `unsaved` instead of borrowing a neighbour's blame.
+- A resumed brainstorm's agent gets its brainstorm pane back, whether you resume from the exited pane or from the
+  palette.
 - The ↓ button in a transcript now scrolls smoothly down to the latest line instead of jumping there.
 - After an update, arcterm installs its own version's Claude mod and hooks again: it used to pick an old `wsh` left
   behind by an earlier install, so the Claude mod stayed at that old version.

@@ -56,16 +56,22 @@ import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
+import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
 import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import briefActScenarios from "./scenarios-brief-act.mjs";
+import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
+import codeImageZoomScenarios from "./scenarios-code-imagezoom.mjs";
+import diffFileKeysScenarios from "./scenarios-diff-file-keys.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
+import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import terminalStatusLineScenarios from "./scenarios-terminal-status-line.mjs";
 import { xmasTreeFixture, xmasTreeScenarios } from "./xmastreescenarios.mjs";
@@ -53152,6 +53158,14 @@ const BS_KIT = {
     NEW_RUN,
     PEEKS_ESC,
     flatText,
+    // what brainstorm-mode's arrange uses, for scenarios-brainstorm-board-pick.mjs and scenarios-palette-brainstorm-resume.mjs
+    // (docs/superpowers/plans/2026-11-06-kael-sync-surfaces.md, Tasks 7 and 8), and the palette's opener
+    bsClosePeek,
+    bsSeeHints,
+    openCanvasTerminal,
+    polishReload,
+    waitForProjectInConfig,
+    openPalette,
 };
 
 // what the Transcript tab's scenario (scenarios-rail-transcript.mjs) needs of this file: the fixture roster file, the real
@@ -53215,6 +53229,47 @@ const XMAS_TREE_KIT = {
     probe: officeProbe,
     waitForOffice,
     settleBoss: officeSettleBoss,
+};
+
+// what the Code scenarios of docs/superpowers/plans/2026-11-06-kael-sync-surfaces.md (scenarios-code-imagezoom.mjs,
+// scenarios-code-blame-draft.mjs) need of this file: everything their seeds, code-markdown and code-blame, use (the temp-repo
+// `git`, the project picker and the Ctrl+P finder, the blame fixture and its selectors, the Mod key, the project wait, the
+// polls and the service call) and the key probe the Code surface's key scenarios share. SURFACE_LABEL is imported from
+// attach.mjs, not here.
+const CODE_KIT = {
+    git,
+    openProjectPicker,
+    chooseProjectNamed,
+    chooseProjectRow,
+    setFinderQuery,
+    installProbe,
+    pressKey,
+    treeVisible,
+    MOD_KEY_JS,
+    BLAME_FILE,
+    BLAME_SEED,
+    BLAME_RUN_COMMIT,
+    BLAME_GOAL,
+    blameLines,
+    BLAME_ENTRIES,
+    BLAME_ROWS,
+    blameRow,
+    waitForProjectInConfig,
+    polishWaitFor,
+    polishNap,
+    waveService,
+};
+
+// what the Diff scenario of the same plan (scenarios-diff-file-keys.mjs) needs of this file: everything its seed,
+// diff-review-marks, uses (the temp-repo `git`, the Diff source picker, the Log tab, the review marks' storage key and its
+// restore, the reload)
+const FILES_KIT = {
+    git,
+    pickFilesSource,
+    showLogTab,
+    REVIEW_STORAGE_KEY,
+    restoreLocalStorage,
+    reloadApp,
 };
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
@@ -62781,6 +62836,12 @@ export const SCENARIOS = [
     ...railTranscriptScenarios(RT_KIT),
     ...xmasTreeScenarios(XMAS_TREE_KIT),
     ...monitorTasksScenarios(RT_KIT),
+    ...codeImageZoomScenarios(CODE_KIT),
+    ...codeBlameDraftScenarios(CODE_KIT),
+    ...diffFileKeysScenarios(FILES_KIT),
+    ...brainstormBoardPickScenarios(BS_KIT),
+    ...paletteBrainstormResumeScenarios(BS_KIT),
+    ...briefActScenarios(JARVIS_KIT),
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),

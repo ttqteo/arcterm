@@ -140,8 +140,29 @@ export function queueLine(q: QueueRow, now: number): BriefLine {
         target: target != null ? { queue: target } : null,
         why: q.why,
         age: q.ts != null ? age(q.ts, now) : "",
-        detail: "",
+        // a note written after the block often says it cleared, which is what Unblock and Done act on
+        detail: q.chunk?.latest != null ? `latest ${age(q.chunk.latest.ts, now)} · ${q.chunk.latest.text}` : "",
     };
+}
+
+// A search reaches every fold: a match hidden behind "+N more" would read as no match.
+export function foldOpen(open: boolean, query: string): boolean {
+    return open || query.trim() !== "";
+}
+
+// The Initiatives head's quiet count: live trackers nobody has touched for seven days or more. A paused initiative was
+// stopped on purpose and a finished one is done, so neither is "quiet"; the rest stopped without anyone saying so, and the
+// list sorts them down behind its fold, so the count is the only place they show.
+export function quietCount(cards: EffortCardModel[], now: number): number {
+    return cards.filter(
+        (c) =>
+            !isIdea(c) &&
+            c.status !== "archived" &&
+            c.status !== "paused" &&
+            c.status !== "done" &&
+            !(c.remaining === 0 && c.done > 0) &&
+            now - c.updatedts >= SEVEN_DAYS_MS
+    ).length;
 }
 
 // An initiative is a tracker once it has a plan. Until then it is a title written down to come back to —
@@ -336,7 +357,10 @@ const needsEyes = (row: ActiveWorkRow) =>
     row.kind === "blocker" || row.chip?.tone === "blocked" || row.chip?.tone === "asking";
 // a run that needs nothing from you reads by how long it has been quiet; anything else by its state
 const isDated = (row: ActiveWorkRow) => row.kind === "run" && !needsEyes(row);
-const isStale = (row: ActiveWorkRow, now: number) => isDated(row) && now - row.ts > SEVEN_DAYS_MS;
+// a run quiet past seven days folds, and so does one blocked that long: a week-old block is a leftover the Runs count
+// would otherwise call live while nothing runs. An asking row stays, its ask is still open.
+const isStale = (row: ActiveWorkRow, now: number) =>
+    row.kind === "run" && (isDated(row) || row.chip?.tone === "blocked") && now - row.ts > SEVEN_DAYS_MS;
 
 export function sessionLine(row: ActiveWorkRow, now: number): BriefLine & { stale: boolean } {
     const eyes = needsEyes(row);
@@ -552,9 +576,34 @@ function eventText(row: DeltaRow): string {
     return at < 0 ? "" : detail.slice(at + " · ".length);
 }
 
-// One row per initiative per day: the day's notes read as what was written, finished and planned, led by
-// the newest note's first sentence. A burst of forty notes from one agent would otherwise be forty rows.
-function digestLine(group: string, rows: DeltaRow[], now: number): BriefLine {
+const RUN_EVENTS = new Set(["run-created", "run-done"]);
+
+// A run goal runs to paragraphs; a Behind you row is one line, so it takes the goal's first line's lead sentence.
+export function shortTitle(text: string): string {
+    return headline(text.trim().split("\n")[0] ?? "");
+}
+
+const MD_LIST = /^(?:[-*+]|\d+[.)])\s+/;
+const MD_INLINE = /\*\*|__|`/g;
+const MD_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+
+// A run's summary is often its report's markdown ("# Run report: ... ## Tasks - t-1: ..."); a row's second line takes its
+// first line of prose instead: headings skipped, list markers, emphasis, code ticks and link targets dropped.
+export function plainSummary(md: string): string {
+    const line = md
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l !== "" && !l.startsWith("#") && !/^[-*_=|]{3,}/.test(l));
+    if (line == null) {
+        return "";
+    }
+    return headline(line.replace(MD_LIST, "").replace(MD_LINK, "$1").replace(MD_INLINE, "").trim());
+}
+
+// One row per initiative per day: the day's notes read as what was written, finished and planned, led by the newest note's
+// first sentence, with the runs it started or finished counted beside them. A burst of forty notes from one agent would
+// otherwise be forty rows.
+function digestLine(group: string, oref: string, title: string, rows: DeltaRow[], now: number): BriefLine {
     const newestFirst = [...rows].sort((a, b) => b.ts - a.ts);
     const notes = newestFirst
         .filter((r) => r.kind !== "chunk-added" && CHUNK_EVENTS.has(r.kind))
@@ -562,26 +611,28 @@ function digestLine(group: string, rows: DeltaRow[], now: number): BriefLine {
         .filter((n) => n.text !== "");
     const done = rows.filter((r) => r.kind === "chunk-done").length;
     const added = rows.filter((r) => r.kind === "chunk-added").length;
+    const runs = new Set(rows.filter((r) => RUN_EVENTS.has(r.kind)).map((r) => r.oref)).size;
     const status = newestFirst.find((r) => r.kind === "effort-status");
     const top = newestFirst[0];
     return {
-        id: `behind:effort:${group}:${top.oref}`,
+        id: `behind:effort:${group}:${oref}`,
         kind: "Initiative",
         kindTone: "muted",
-        title: top.title,
+        title,
         note: notes.length > 0 ? headline(noteBody(notes[0])) : "",
         meta: "",
         detail: joined([
             notes.length > 0 ? plural(notes.length, "note") : "",
             done > 0 ? plural(done, "chunk") + " done" : "",
             added > 0 ? plural(added, "chunk") + " added" : "",
+            runs > 0 ? plural(runs, "run") : "",
             rows.some((r) => r.kind === "effort-created") ? "created" : "",
             status != null ? "marked " + eventText(status) : "",
         ]),
         state: age(top.ts, now),
         stateTone: "muted",
         progress: null,
-        target: { oref: top.oref ?? "" },
+        target: { oref },
         why: "",
         age: "",
         group: "delta",
@@ -595,14 +646,26 @@ const DELTA_TONE: Record<string, LineTone> = {
     dossier: "asking",
 };
 
-function deltaLine(row: DeltaRow, now: number): BriefLine {
+// the second line: the project, then what happened. A run's start says its status, its finish its summary.
+function deltaDetail(row: DeltaRow, project: string): string {
     const detail = row.detail ?? "";
+    const status = detail.startsWith("status: ") ? detail.slice("status: ".length) : null;
+    if (row.kind === "dossier" && status != null) {
+        return joined([project, "current status: " + status]);
+    }
+    if (row.kind === "run-done") {
+        return joined([project, plainSummary(detail)]);
+    }
+    return joined([project, row.kind === "run-created" && status != null ? status : detail]);
+}
+
+function deltaLine(row: DeltaRow, now: number, project: string): BriefLine {
     return {
         id: "behind:" + row.key,
         // a dossier's wording carries its status after " · "; the kind column takes only the event
         kind: row.wording.split(" · ")[0],
         kindTone: DELTA_TONE[row.kind] ?? "muted",
-        title: row.title,
+        title: shortTitle(row.title),
         note: "",
         meta: "",
         state: age(row.ts, now),
@@ -611,29 +674,62 @@ function deltaLine(row: DeltaRow, now: number): BriefLine {
         target: row.oref != null ? { oref: row.oref } : null,
         why: "",
         age: "",
-        detail:
-            row.kind === "dossier" && detail.startsWith("status: ")
-                ? "current status: " + detail.slice("status: ".length)
-                : detail,
+        detail: deltaDetail(row, project),
         group: "delta",
     };
 }
 
-export function behindGroups(groups: DeltaGroup[], shipped: ShippedRow[], now: number): LineGroup[] {
+// what Behind you reads beyond the rows: initiative titles for a run's fold, project names for the rest
+export type BehindContext = {
+    efforts?: EffortIndex;
+    projects?: Record<string, { path?: string }> | null;
+};
+
+export function behindGroups(
+    groups: DeltaGroup[],
+    shipped: ShippedRow[],
+    now: number,
+    ctx: BehindContext = {}
+): LineGroup[] {
+    const name = (path: string | undefined) => projectName(path ?? "", ctx.projects ?? null);
     const out: LineGroup[] = groups.map((g) => {
-        const byEffort = new Map<string, DeltaRow[]>();
+        // an initiative's title: from its own events that day, else the index; a run whose initiative has
+        // neither (archived, or another project's) stays its own row rather than a digest with no name
+        const titles = new Map<string, string>();
         for (const r of g.rows.filter(isEffortEvent)) {
-            byEffort.set(r.oref!, [...(byEffort.get(r.oref!) ?? []), r]);
+            titles.set(r.oref!, r.title);
+        }
+        const foldKey = (r: DeltaRow): string | null => {
+            if (isEffortEvent(r)) {
+                return r.oref!;
+            }
+            if (!RUN_EVENTS.has(r.kind) || !r.effortOid) {
+                return null;
+            }
+            const oref = "effort:" + r.effortOid;
+            const indexed = ctx.efforts?.get(r.effortOid)?.title;
+            if (!titles.has(oref) && indexed != null) {
+                titles.set(oref, indexed);
+            }
+            return titles.has(oref) ? oref : null;
+        };
+        const byEffort = new Map<string, DeltaRow[]>();
+        for (const r of g.rows) {
+            const k = foldKey(r);
+            if (k != null) {
+                byEffort.set(k, [...(byEffort.get(k) ?? []), r]);
+            }
         }
         const lines: BriefLine[] = [];
         const placed = new Set<string>();
         for (const r of g.rows) {
-            if (!isEffortEvent(r)) {
-                lines.push(deltaLine(r, now));
-            } else if (!placed.has(r.oref!)) {
+            const k = foldKey(r);
+            if (k == null) {
+                lines.push(deltaLine(r, now, name(r.project)));
+            } else if (!placed.has(k)) {
                 // the digest sits where the initiative's first event did, so the day keeps its order
-                placed.add(r.oref!);
-                lines.push(digestLine(g.label, byEffort.get(r.oref!)!, now));
+                placed.add(k);
+                lines.push(digestLine(g.label, k, titles.get(k)!, byEffort.get(k)!, now));
             }
         }
         return { label: g.label, lines };
@@ -654,7 +750,7 @@ export function behindGroups(groups: DeltaGroup[], shipped: ShippedRow[], now: n
                 target: { oref: s.oref },
                 why: "",
                 age: "",
-                detail: joined([s.project, headline(s.summary)]),
+                detail: joined([name(s.project), plainSummary(s.summary)]),
                 hasReport: s.hasReport,
                 fresh: s.fresh,
                 group: "shipped" as const,

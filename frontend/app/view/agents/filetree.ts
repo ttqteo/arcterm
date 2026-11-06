@@ -99,3 +99,23 @@ export function buildFileTree(files: GitChange[], collapsed: Set<string>): FileT
     walk(root, "", 0, collapsed, out);
     return out;
 }
+
+// the order the list shows its files: tree order, or the input order when flat
+export function listOrder(files: GitChange[], tree: boolean): string[] {
+    if (!tree) {
+        return files.map((c) => c.path);
+    }
+    // no collapsed set: a collapsed directory's files are still next in line
+    return buildFileTree(files, new Set())
+        .filter((r) => r.kind === "file")
+        .map((r) => r.id);
+}
+
+// null past either end (no wrap); a `from` that is null or not listed starts at the first file
+export function stepInList(order: string[], from: string | null, dir: 1 | -1): string | null {
+    const at = from == null ? -1 : order.indexOf(from);
+    if (at < 0) {
+        return dir === 1 || from != null ? (order[0] ?? null) : null;
+    }
+    return order[at + dir] ?? null;
+}

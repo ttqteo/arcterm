@@ -7,7 +7,14 @@ vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: {} }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import type { AgentVM } from "./agentsviewmodel";
-import { pollBrainstormOnce, reconcileBrainstorms, settleBrainstorm, type BrainstormIO } from "./brainstormpoller";
+import {
+    listAllOpenBrainstorms,
+    listOpenBrainstorms,
+    pollBrainstormOnce,
+    reconcileBrainstorms,
+    settleBrainstorm,
+    type BrainstormIO,
+} from "./brainstormpoller";
 import type { BrainstormState } from "./brainstormstore";
 
 const PATH = "/p/.superpowers/brainstorm/t/brainstorm.json";
@@ -228,5 +235,114 @@ describe("settleBrainstorm", () => {
         expect(settleBrainstorm(state({ sentCheckAt: 1000 }), {}, newer, undefined).sentCheckAt).toBeNull();
         const older = agent({ builderCheck: { state: "failed", ts: 800, reason: "x" } });
         expect(settleBrainstorm(state({ sentCheckAt: 1000 }), {}, older, undefined).sentCheckAt).toBe(1000);
+    });
+});
+
+describe("listOpenBrainstorms", () => {
+    const dir = "/p/.superpowers/brainstorm";
+    const at = (topic: string) => `${dir}/${topic}/brainstorm.json`;
+    type Listed = { text: string; modifiedMs: number } | "fails";
+    function listIO(topics: string[] | null, files: Record<string, Listed>) {
+        return {
+            async list(path: string) {
+                expect(path).toBe(dir);
+                return topics ?? [];
+            },
+            async stat(path: string) {
+                if (path === dir) {
+                    return { exists: topics != null, modifiedMs: null };
+                }
+                const f = files[path];
+                return f == null
+                    ? { exists: false, modifiedMs: null }
+                    : { exists: true, modifiedMs: f === "fails" ? 1 : f.modifiedMs };
+            },
+            async read(path: string) {
+                const f = files[path];
+                if (f == null || f === "fails") {
+                    throw new Error("sharing violation");
+                }
+                return f.text;
+            },
+        };
+    }
+
+    it("lists the unapproved brainstorms, newest first, with their open question", async () => {
+        const io = listIO(["old", "approved", "new", "notes", "broken", "busy"], {
+            [at("old")]: { text: fileText({ title: "Old one" }), modifiedMs: 10 },
+            [at("approved")]: { text: fileText({ done: true }), modifiedMs: 30 },
+            [at("new")]: { text: fileText({ title: "New one", question: null }), modifiedMs: 20 },
+            [at("broken")]: { text: "{", modifiedMs: 40 },
+            [at("busy")]: "fails",
+        });
+        expect(await listOpenBrainstorms("/p", io)).toEqual([
+            { topic: "new", path: at("new"), title: "New one", question: null, modifiedMs: 20 },
+            {
+                topic: "old",
+                path: at("old"),
+                title: "Old one",
+                question: { n: 1, text: "Who gets paged?" },
+                modifiedMs: 10,
+            },
+        ]);
+    });
+
+    it("is empty for a project that never brainstormed", async () => {
+        expect(await listOpenBrainstorms("/p", listIO(null, {}))).toEqual([]);
+    });
+
+    it("leaves out one dismissed since its last change, and lists it again once the brainstorm moves on", async () => {
+        const marker = `${dir}/t/dismissed`;
+        const files = (brainstormMs: number) => ({
+            [at("t")]: { text: fileText({ title: "T" }), modifiedMs: brainstormMs },
+            // the marker is an empty file: stat sees it, read is never asked for it
+            [marker]: { text: "", modifiedMs: 50 },
+        });
+        expect(await listOpenBrainstorms("/p", listIO(["t"], files(40)))).toEqual([]);
+        // a marker the same age as the file still hides it: the dismiss came after the last write
+        expect(await listOpenBrainstorms("/p", listIO(["t"], files(50)))).toEqual([]);
+        expect((await listOpenBrainstorms("/p", listIO(["t"], files(60)))).map((b) => b.topic)).toEqual(["t"]);
+    });
+});
+
+describe("listAllOpenBrainstorms", () => {
+    it("merges every project's open brainstorms newest first, naming the project, and skips one that fails", async () => {
+        const file = (title: string, modifiedMs: number) => ({ text: fileText({ title }), modifiedMs });
+        const trees: Record<string, Record<string, { text: string; modifiedMs: number }>> = {
+            "/a/.superpowers/brainstorm": { "/a/.superpowers/brainstorm/x/brainstorm.json": file("X", 10) },
+            "/b/.superpowers/brainstorm": { "/b/.superpowers/brainstorm/y/brainstorm.json": file("Y", 20) },
+        };
+        const all = Object.assign({}, ...Object.values(trees));
+        const io = {
+            async list(path: string) {
+                if (path.startsWith("/broken")) {
+                    throw new Error("access denied");
+                }
+                return Object.keys(trees[path] ?? {}).map((f) => f.split("/").at(-2)!);
+            },
+            async stat(path: string) {
+                const f = all[path];
+                return {
+                    exists: path in trees || path.startsWith("/broken") || f != null,
+                    modifiedMs: f?.modifiedMs ?? null,
+                };
+            },
+            async read(path: string) {
+                return all[path].text;
+            },
+        };
+        const rows = await listAllOpenBrainstorms(
+            [
+                { name: "a", path: "/a" },
+                { name: "b", path: "/b" },
+                { name: "broken", path: "/broken" },
+                { name: "nopath", path: "" },
+            ],
+            io
+        );
+        expect(rows.map((r) => [r.project, r.projectPath, r.title])).toEqual([
+            ["b", "/b", "Y"],
+            ["a", "/a", "X"],
+        ]);
     });
 });

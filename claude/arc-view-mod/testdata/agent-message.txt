@@ -1,0 +1,3 @@
+[Message from agent "design lead" (tab tab-1234), sent with wsh agents send. Not typed by the user. Its sender reads your reply with wsh agents read, so answer here and do not send one back.]
+rename the helper
+and rerun the tests
