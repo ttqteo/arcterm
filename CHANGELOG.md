@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A council's views have keys: `r` the Report, `c` the Discussion, `m` the Map, each drawn beside its tab.
+
 ### Changed
 
 - A folded reply keeps the bold heading of the section a highlighted sentence sits in, so "the list is not built"

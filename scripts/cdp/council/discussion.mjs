@@ -470,16 +470,19 @@ const tabFacts = (h) =>
             icon: !!b.querySelector("svg"),
             count: count ? count.textContent.trim() : null,
             countShown: count ? count.getBoundingClientRect().width > 2 : null,
+            key: b.querySelector("[data-council-tab-key]")?.textContent.trim() ?? null,
+            shortcut: b.getAttribute("aria-keyshortcuts"),
             width: Math.round(b.getBoundingClientRect().width),
             height: Math.round(b.getBoundingClientRect().height),
         };
     })`);
 
 // the tabs are icons at every width: the word is each tab's title and aria-label, and the Discussion's number of ideas
-// shows beside its icon, its words in the aria-label
+// shows beside its icon, its words in the aria-label; each tab draws its key (r c m) after them, named in its title
 const iconTabs = (tabs, map) =>
     tabs.map((t) => t.word).join("|") === `Report|Discussion|${map}` &&
-    tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+    tabs.map((t) => t.key).join("") === "rcm" &&
+    tabs.every((t) => !t.wordShown && t.icon && t.title === `${t.word} (${t.key})` && t.shortcut === t.key) &&
     tabs[0].aria === "Report" &&
     tabs[2].aria === map &&
     tabs[1].countShown === true &&

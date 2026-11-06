@@ -2215,6 +2215,33 @@ export function buildCouncilBindings(): Binding[] {
     ];
 }
 
+// A council's view keys: r the Report, c the Discussion (its chat), m the Map. Each clicks its tab in the strip the view
+// draws (counciltabs.tsx), so a key on the view already shown does what that click does (the Report glides to its
+// body). Live wherever a council's view is on screen and focus is not in an input; the agent keys that share r, c and m
+// want the terminal at rest, so they never overlap. Registered by the tab strip itself.
+export const COUNCIL_TAB_KEYS = { summary: "r", discussion: "c", map: "m" } as const;
+export function buildCouncilTabBindings(): Binding[] {
+    const on = (ctx: KeyContext) =>
+        navigateStrict(ctx) &&
+        ctx.surface === "agent" &&
+        globalStore.get(centerModeAtom) === "council" &&
+        initiativePopoverClosed();
+    const tab = (id: keyof typeof COUNCIL_TAB_KEYS, label: string): Binding => ({
+        id: `council:tab-${id}`,
+        keys: COUNCIL_TAB_KEYS[id],
+        group: "Agent",
+        label,
+        when: on,
+        paletteHidden: true,
+        run: () => clickThrough(`[data-council-tab="${id}"]`),
+    });
+    return [
+        tab("summary", "Show the council's Report"),
+        tab("discussion", "Show the council's Discussion"),
+        tab("map", "Show the council's Map"),
+    ];
+}
+
 // Diff-surface keys. `c` is the entry gesture the mockup names; Escape is the single exit; Tab jumps
 // between the two compare sides. Entering compare needs a cwd and a branch, which only the surface
 // knows, so `c` clicks the control the surface already draws (the same clickThrough shape

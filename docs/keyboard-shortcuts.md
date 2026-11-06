@@ -308,6 +308,15 @@ thread (click it, or `Tab` to it), not in a text field; elsewhere nothing here i
 | `Esc` | Close the open thread, which gives `j` / `k` back to the channel. With no thread open, `Esc` leaves the council for the terminal. In the message box or a thread's reply box, `Esc` returns focus to the channel or thread first |
 | `Enter` | In the message box: send. `Shift`+`Enter` adds a line. After an `@`, `↑` / `↓` pick a seat and `Enter` or `Tab` takes it, `Esc` closes the list |
 
+The view keys are live on any of a council's three views while focus is not in a text field; each tab of the header's
+strip shows its key:
+
+| Keys | Action |
+|---|---|
+| `r` | Show the Report (on the Report already: glide down to its body) |
+| `c` | Show the Discussion, the chat |
+| `m` | Show the Map |
+
 ### Agent: terminal grid
 
 A cell is an agent or a terminal (a shell, lazygit beside the agent). Open a split by dragging a live agent or terminal

@@ -1459,7 +1459,7 @@ export const councilSummary = {
                 await h.shot("cdp-shots/council-summary-tabs-narrow-vi.png");
                 const iconOnly = (f) =>
                     f.tabs.length === 3 &&
-                    f.tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+                    f.tabs.every((t, i) => !t.wordShown && t.icon && t.title === `${t.word} (${"rcm"[i]})`) &&
                     f.tabs[1].countShown === true &&
                     f.tabs[1].aria === `Discussion ${f.tabs[1].count} ${f.tabs[1].count === "1" ? "idea" : "ideas"}` &&
                     f.parts.every(Boolean) &&

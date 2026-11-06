@@ -10,6 +10,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   portfolio (Keep running on) → Stop, quit and reopen arcterm → it reads stopped/sleeping and nothing listens on 8386;
   `services.json` in the data dir has `"off": true` for it. Open it (rail or tree) → it starts, `off` is gone, and the
   next restart starts it on its own again. Unit tests only (71461e840).
+- [ ] (arcterm) **A council's r / c / m keys.** Open a council: each tab of the Report / Discussion / Map strip shows its
+  key (r, c, m) after its icon and the Discussion's count, the strip still one row. With focus out of a text box, `c`
+  opens the Discussion, `m` the Map, `r` the Report (on the Report already, it glides to the body); typing r c m in the
+  Discussion's box writes them. Back in the terminal, `r` / `c` / `m` are the agent's again. Unit tests and the
+  typecheck only; the `council-discussion`, `council-map` and `council-summary` scenarios, updated for it, have not run.
 - [ ] (arcterm) **A council report's tab bar on top, one `⋯`.** Open a finished council's Report: the bar with the
   Report / Discussion / Map tabs, the jump links (Ideas worth trying · Wild ideas kept aside) and one `⋯` sits at the
   top, above "Council · Brainstorm" and the title, and stays there as you scroll. The `⋯` lists Save as doc (or Open the

@@ -42,6 +42,7 @@ import {
     buildCockpitBindings,
     buildCodeBindings,
     buildCouncilBindings,
+    buildCouncilTabBindings,
     buildFilesBindings,
     buildGlobalBindings,
     buildInitiativeSheetBindings,
@@ -453,6 +454,33 @@ describe("keybinding conflict invariant", () => {
         } finally {
             globalStore.set(centerModeAtom, "terminal");
             globalStore.set(listNavAtom, null);
+        }
+    });
+
+    // a council's r c m switch its views while it covers the terminal; in the terminal the agent's own r c m keep them
+    it("the council view keys are live on a council and stand down in the terminal, without conflicting", () => {
+        const model = stubModel();
+        const all = () => [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildAgentBindings(model),
+            ...buildCouncilBindings(),
+            ...buildCouncilTabBindings(),
+        ];
+        const ctx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
+        const tabs = buildCouncilTabBindings();
+        expect(tabs.map((b) => b.keys)).toEqual(["r", "c", "m"]);
+        try {
+            globalStore.set(centerModeAtom, "council");
+            expect(() => assertNoConflicts(all())).not.toThrow();
+            expect(tabs.every((b) => b.when!(ctx))).toBe(true);
+            // a text field keeps its letters
+            expect(tabs.some((b) => b.when!({ ...ctx, editable: true }))).toBe(false);
+            globalStore.set(centerModeAtom, "terminal");
+            expect(() => assertNoConflicts(all())).not.toThrow();
+            expect(tabs.some((b) => b.when!(ctx))).toBe(false);
+        } finally {
+            globalStore.set(centerModeAtom, "terminal");
         }
     });
 

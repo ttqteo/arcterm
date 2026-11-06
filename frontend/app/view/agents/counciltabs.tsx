@@ -12,12 +12,17 @@
 // the header row the views share (councilheader.tsx), so the grey fill slides from the tab left to the tab clicked
 // (indicatorSlide): the strip on screen keeps where its tabs sit in `shown`, and the strip that replaces it reads that
 // as it first renders (fillSlideFrom).
+//
+// The strip registers the views' keys, r c m (buildCouncilTabBindings, each clicking its tab here), and draws each tab's
+// key after its icon, so the key is read where it is pressed for.
 
 import { indicatorSlide } from "@/app/element/motiontokens";
+import { buildCouncilTabBindings, COUNCIL_TAB_KEYS } from "@/app/store/keybindings/bindings";
+import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
 import { FileText, LayoutGrid, MessagesSquare, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import { councilTabs, fillSlideFrom, type CouncilTabId, type ShownStrip, type TabSpots } from "./counciltabsmodel";
 
@@ -50,6 +55,8 @@ export function CouncilTabs({
 }) {
     const tabs = councilTabs(c);
     const box = useRef<HTMLDivElement>(null);
+    const bindings = useMemo(buildCouncilTabBindings, []);
+    useKeybindings(bindings);
     // read once, as the strip mounts: the view of a mounted strip never changes, a tab click mounts another
     const [from] = useState(() => fillSlideFrom(shown, c.id, view));
     // a tab's width moves with its count and the Map's word
@@ -85,7 +92,8 @@ export function CouncilTabs({
                         role="tab"
                         aria-selected={on}
                         data-council-tab={tab.id}
-                        title={tab.label}
+                        title={`${tab.label} (${COUNCIL_TAB_KEYS[tab.id]})`}
+                        aria-keyshortcuts={COUNCIL_TAB_KEYS[tab.id]}
                         aria-label={tab.count !== "" ? `${tab.label} ${tab.count}` : tab.label}
                         className={cn(
                             TAB,
@@ -121,6 +129,13 @@ export function CouncilTabs({
                                 {tab.badge}
                             </span>
                         )}
+                        <kbd
+                            aria-hidden
+                            data-council-tab-key
+                            className="rounded-[4px] border border-border px-[4px] font-mono text-[10px] leading-[14px] font-normal text-muted"
+                        >
+                            {COUNCIL_TAB_KEYS[tab.id]}
+                        </kbd>
                     </button>
                 );
             })}
