@@ -26,6 +26,9 @@ const (
 
 func checkViewModFixture(t *testing.T, name, text string) {
 	t.Helper()
+	// a worker's report path sits under this machine's temp dir: pin it, so the files match on any machine and
+	// carry no local path
+	text = strings.ReplaceAll(text, filepath.ToSlash(os.TempDir()), "C:/tmp")
 	path := filepath.Join(viewModFixtureDir, name+".txt")
 	if os.Getenv(updateFixturesEnv) == "1" {
 		if err := os.MkdirAll(viewModFixtureDir, 0o755); err != nil {
