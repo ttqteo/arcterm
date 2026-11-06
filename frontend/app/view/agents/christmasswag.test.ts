@@ -11,14 +11,19 @@ const NEW: Post = { left: 1304, right: 1388, top: 6 };
 const SPROUT: Post = { left: 1398, right: 1424, top: 6 };
 
 describe("swagsFor", () => {
-    it("hangs one swag per gap, hooked 2px in from the boxes' top corners, and one from each bar edge", () => {
+    it("hangs a swag in each gap wide enough for 3+ bulbs, hooked 2px in from the boxes' top corners", () => {
+        // the 14px gaps around New and the fold button, and the fold button to the bar's edge, would hold one bulb
         expect(swagsFor(312, [SEARCH, METERS, NEW, SPROUT], 1436)).toEqual([
             { x1: 312, y1: 1, x2: 469, y2: 5.5 },
             { x1: 825, y1: 5.5, x2: 996, y2: 5.5 },
-            { x1: 1292, y1: 5.5, x2: 1306, y2: 5.5 },
-            { x1: 1386, y1: 5.5, x2: 1400, y2: 5.5 },
-            { x1: 1422, y1: 5.5, x2: 1436, y2: 1 },
         ]);
+    });
+
+    it("hangs a swag from 3 bulbs (~65px) and none at 2", () => {
+        const a: Post = { left: 0, right: 100, top: 6 };
+        const at = (gap: number) => swagsFor(null, [a, { left: 100 + gap - 4, right: 300, top: 6 }], null);
+        expect(at(65)).toHaveLength(1);
+        expect(at(60)).toEqual([]);
     });
 
     it("takes the boxes in any order", () => {
@@ -27,13 +32,11 @@ describe("swagsFor", () => {
         );
     });
 
-    it("leaves out the end swag on Windows, where the window controls follow the fold button", () => {
-        const swags = swagsFor(312, [SEARCH, METERS, NEW, SPROUT], null);
-        expect(swags).toHaveLength(4);
-        expect(swags[3]).toEqual({ x1: 1386, y1: 5.5, x2: 1400, y2: 5.5 });
+    it("hangs the end swag from the bar's corner when the gap to it is wide", () => {
+        expect(swagsFor(null, [SEARCH], 900)).toEqual([{ x1: 825, y1: 5.5, x2: 900, y2: 1 }]);
     });
 
-    it("skips a gap too narrow for a bulb, and boxes with no width", () => {
+    it("skips a narrow gap, and boxes with no width", () => {
         const tight: Post = { left: 830, right: 900, top: 6 };
         const hidden: Post = { left: 950, right: 950, top: 6 };
         expect(swagsFor(null, [SEARCH, tight, hidden], null)).toEqual([]);
@@ -59,9 +62,7 @@ describe("swagShape", () => {
         }
     });
 
-    it("gives a 10px gap between two buttons a single bulb in its middle", () => {
-        const { sockets } = swagShape({ x1: 1292, y1: 5.5, x2: 1306, y2: 5.5 });
-        expect(sockets).toEqual([{ x: 1299, y: expect.any(Number) }]);
-        expect(sockets[0].y).toBeGreaterThan(5.5);
+    it("gives the narrowest swag that hangs three bulbs", () => {
+        expect(swagShape({ x1: 0, y1: 5.5, x2: 65, y2: 5.5 }).sockets).toHaveLength(3);
     });
 });

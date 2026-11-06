@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Work on an initiative that has no project: rather than a toast saying so, ask which project the agent starts in,
-// save it on the initiative (so the next Work on goes straight there), then run the launch that was waiting.
+// save it on the initiative (so the next Work on goes straight there), then run the launch that was waiting. The
+// sheet's "+ Project" opens the same picker with no launch waiting: it only saves the project.
 // workOnInitiative sets projectAskAtom; the cockpit root mounts this, since the palette and Needs you start a
 // launch from any surface.
 
@@ -49,8 +50,12 @@ export function InitiativeProjectPicker({ model }: { model: AgentsViewModel }) {
             return;
         }
         close();
-        await workOnInitiative(model, { ...pending.target, project: picked }, pending.ask);
+        // a null ask only sets the project; the save above already refreshed the detail the sheet reads
+        if (pending.ask != null) {
+            await workOnInitiative(model, { ...pending.target, project: picked }, pending.ask);
+        }
     };
+    const launching = pending?.ask != null;
     // the launcher's Register does the same: this closes, New project opens, and Work on is pressed again after
     const newProject = () => {
         close();
@@ -76,7 +81,9 @@ export function InitiativeProjectPicker({ model }: { model: AgentsViewModel }) {
                     <div className="flex flex-col gap-3 px-[18px] py-4">
                         <div className="text-[12.5px] leading-[1.5] text-secondary">
                             <span className="font-semibold text-primary">“{pending.target.title}”</span> has no project.
-                            The agent starts in the one you pick, and the initiative keeps it.
+                            {launching
+                                ? " The agent starts in the one you pick, and the initiative keeps it."
+                                : " The initiative keeps the one you pick, and Work on starts its agents there."}
                         </div>
                         {names.length > 0 ? (
                             <ProjectChips
@@ -122,7 +129,7 @@ export function InitiativeProjectPicker({ model }: { model: AgentsViewModel }) {
                             disabled={picked == null || saving}
                             onClick={() => void start()}
                         >
-                            Start agent
+                            {launching ? "Start agent" : "Set project"}
                         </DialogButton>
                     </div>
                 </div>

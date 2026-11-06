@@ -354,7 +354,7 @@ function CheckLine({ row }: { row: MatrixRow }) {
             {check.cite !== "" && (
                 <span
                     data-council-map-cite
-                    className="inline-flex items-center rounded-[6px] border border-edge-mid bg-surface px-[7px] py-px text-link"
+                    className="min-w-0 max-w-full rounded-[6px] border border-edge-mid bg-surface px-[7px] py-px text-link wrap-anywhere"
                 >
                     {check.cite}
                 </span>

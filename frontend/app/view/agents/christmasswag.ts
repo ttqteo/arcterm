@@ -33,10 +33,13 @@ const HOOK_IN = 2;
 const HOOK_RISE = 0.5;
 // the bar's own hooks, at either end, hang from its top edge
 const EDGE_Y = 1;
-// a gap narrower than this has no room for a bulb
-const MIN_GAP = 6;
 // the spike's bulb spacing along a swag
 const BULB_GAP = 26;
+// a swag hangs only with more bulbs than this: the 10px gaps between the buttons took one bulb each, which read as a
+// blob stuck between two boxes, not as lights
+const MAX_BULBS_HIDDEN = 2;
+
+const bulbCount = (span: number) => Math.max(1, Math.round(span / BULB_GAP));
 // a 10px gap dips ~5px, a 160px one the most, 17px: the bulbs under it still end above the bar's bottom edge
 const DIP_MIN = 4;
 const DIP_PER_PX = 0.09;
@@ -44,8 +47,9 @@ const DIP_MAX = 17;
 
 const half = (n: number) => Math.round(n * 2) / 2;
 
-/** The swags across the bar: from `start` (an x on the top edge, or null) to the first box, between each two boxes
- *  that have a gap, and from the last box to `end` (an x on the top edge, or null). Boxes come in any order. */
+/** The swags across the bar: from `start` (an x on the top edge, or null) to the first box, between each two boxes,
+ *  and from the last box to `end` (an x on the top edge, or null), keeping only those wide enough for more than two
+ *  bulbs. Boxes come in any order. */
 export function swagsFor(start: number | null, posts: Post[], end: number | null): Swag[] {
     const boxes = posts.filter((p) => p.right > p.left).sort((a, b) => a.left - b.left);
     const hooks: { x: number; y: number; box: boolean }[][] = [];
@@ -58,9 +62,6 @@ export function swagsFor(start: number | null, posts: Post[], end: number | null
     for (let i = 1; i < boxes.length; i++) {
         const a = boxes[i - 1];
         const b = boxes[i];
-        if (b.left - a.right < MIN_GAP) {
-            continue;
-        }
         hooks.push([
             { x: a.right - HOOK_IN, y: a.top - HOOK_RISE, box: true },
             { x: b.left + HOOK_IN, y: b.top - HOOK_RISE, box: true },
@@ -74,7 +75,7 @@ export function swagsFor(start: number | null, posts: Post[], end: number | null
         ]);
     }
     return hooks
-        .filter(([a, b]) => b.x - a.x >= MIN_GAP)
+        .filter(([a, b]) => b.x - a.x > 0 && bulbCount(b.x - a.x) > MAX_BULBS_HIDDEN)
         .map(([a, b]) => ({ x1: half(a.x), y1: half(a.y), x2: half(b.x), y2: half(b.y) }));
 }
 
@@ -84,7 +85,7 @@ export function swagShape(s: Swag): SwagShape {
     const dip = Math.min(DIP_MAX, DIP_MIN + span * DIP_PER_PX);
     const cx = (s.x1 + s.x2) / 2;
     const cy = Math.max(s.y1, s.y2) + dip * 2;
-    const count = Math.max(1, Math.round(span / BULB_GAP));
+    const count = bulbCount(span);
     const sockets: { x: number; y: number }[] = [];
     for (let k = 1; k <= count; k++) {
         const t = k / (count + 1);

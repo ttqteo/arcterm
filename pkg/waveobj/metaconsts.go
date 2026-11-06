@@ -38,6 +38,7 @@ const (
 	MetaKey_CmdShell                         = "cmd:shell"
 	MetaKey_CmdJwt                           = "cmd:jwt"
 	MetaKey_CmdFirstCommand                  = "cmd:firstcommand"
+	MetaKey_CmdLowPriority                   = "cmd:lowpriority"
 	MetaKey_CmdEnv                           = "cmd:env"
 	MetaKey_CmdCwd                           = "cmd:cwd"
 	MetaKey_CmdInitScript                    = "cmd:initscript"

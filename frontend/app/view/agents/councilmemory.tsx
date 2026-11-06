@@ -17,7 +17,7 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { ChevronDown, ChevronRight, Info, X } from "lucide-react";
+import { History, Info, Loader2, Pencil, Pin, PinOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { correctTarget } from "./claudecontextmodel";
@@ -391,34 +391,48 @@ export function MemoryPanel({
                                                     type="button"
                                                     data-council-memory-action="earlier"
                                                     aria-expanded={earlierOpen}
+                                                    aria-label={`Earlier · ${replaced.length}`}
+                                                    title={`Earlier directions (${replaced.length})`}
                                                     onClick={() => setEarlierOpen((o) => !o)}
-                                                    className={rowButton}
-                                                >
-                                                    {earlierOpen ? (
-                                                        <ChevronDown size={12} strokeWidth={2} aria-hidden />
-                                                    ) : (
-                                                        <ChevronRight size={12} strokeWidth={2} aria-hidden />
+                                                    className={cn(
+                                                        rowButton,
+                                                        "tabular-nums",
+                                                        earlierOpen && "text-primary"
                                                     )}
-                                                    Earlier · {replaced.length}
+                                                >
+                                                    <History size={13} strokeWidth={2} aria-hidden />
+                                                    {replaced.length}
                                                 </button>
                                             )}
                                             <button
                                                 type="button"
                                                 data-council-memory-action="edit"
+                                                aria-label="Edit"
+                                                title="Edit"
                                                 disabled={busy}
                                                 onClick={() => edit(DIRECTION_ID, chosen.text, "")}
                                                 className={rowButton}
                                             >
-                                                Edit
+                                                <Pencil size={13} strokeWidth={2} aria-hidden />
                                             </button>
                                             <button
                                                 type="button"
                                                 data-council-memory-action="unpin"
+                                                aria-label={checking("unpin") ? "Unpinning…" : "Unpin"}
+                                                title="Unpin"
                                                 disabled={busy}
                                                 onClick={() => void direction("Unpin", "unpin")}
                                                 className={rowButton}
                                             >
-                                                {checking("unpin") ? "Unpinning…" : "Unpin"}
+                                                {checking("unpin") ? (
+                                                    <Loader2
+                                                        size={13}
+                                                        aria-hidden
+                                                        className="animate-spin motion-reduce:animate-none"
+                                                    />
+                                                ) : (
+                                                    <PinOff size={13} strokeWidth={2} aria-hidden />
+                                                )}
                                             </button>
                                             <Details>
                                                 <DirectionLine c={c} chosen={chosen} onOpenSource={onOpenSource} />
@@ -513,16 +527,26 @@ export function MemoryPanel({
                                                     onClick={() => void chot(e)}
                                                     className={rowButton}
                                                 >
-                                                    {pinning === e.id ? "Checking…" : "Pin"}
+                                                    {pinning === e.id ? (
+                                                        <Loader2
+                                                            size={13}
+                                                            aria-hidden
+                                                            className="animate-spin motion-reduce:animate-none"
+                                                        />
+                                                    ) : (
+                                                        <Pin size={13} strokeWidth={2} aria-hidden />
+                                                    )}
                                                 </button>
                                                 <button
                                                     type="button"
                                                     data-council-memory-action="edit"
+                                                    aria-label="Edit"
+                                                    title="Edit"
                                                     disabled={busy}
                                                     onClick={() => edit(e.id, e.text, e.why ?? "")}
                                                     className={rowButton}
                                                 >
-                                                    Edit
+                                                    <Pencil size={13} strokeWidth={2} aria-hidden />
                                                 </button>
                                                 <Details>
                                                     {details.who == null ? (

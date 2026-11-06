@@ -36,9 +36,23 @@ does not, say what you saw and it becomes a bug row under Actionable.
   gets no such section. Only unit tests ran (`pkg/orchestrate/review_test.go`); no real run reached a reviewer
   (`spawnReviewer`, `unlistedSection`, `jarvis.TaskFiles`).
 
+- [ ] (arcterm) **A run's agents run below normal priority.** After the next build, start an engine run; while a
+  worker types, Task Manager → Details (add the Base priority column) shows its `claude.exe`/`node.exe`, the `bash.exe`
+  of its commands and a `tsc`/`go` they start as Below normal, and your own agents and arcterm itself as Normal; the
+  same for the engine's Verify/Final `bash.exe`. On a Mac, `ps -o pid,nice,comm` shows them at nice 10 (that branch
+  compiled under `GOOS=darwin` vet only, never ran). `jobobject.LowerPriority`, block meta `cmd:lowpriority`.
+- [ ] (arcterm) **Cancelling a pi turn takes its command out of the job queue.** With `jobs:mode` `slots` and
+  `jobs:slots` 1, have one agent run a typecheck, then have a pi agent run another: pi's footer shows it queued; press
+  Escape in pi → the Jobs popover drops pi's entry at once, and nothing holds a slot after the first one ends.
+  `pi/extensions/waveterm-tools.ts` (ctx.signal, read from pi 0.73.1's types, never run live).
 - [ ] (arcterm) **The transcript's ↓ button scrolls smoothly.** In a sleeping or ended agent's transcript, scroll up
   a few screens and click the round ↓ at the bottom: the feed glides down to the last line (instant with Reduce motion
   on), the button leaves and does not flash back, and scrolling up mid-glide stops it. `sticktobottom.tsx`.
+- [ ] (arcterm) **+ Project on an initiative with none.** Brief → open an initiative with no project → under its title a
+  dashed `+ Project` sits before "active · updated …"; click it → "Choose a project" opens, its button reads Set project;
+  pick one and press it → the dialog closes, no agent starts, the meta line now leads with the project and the button is
+  gone; Work on then starts in that project with no picker. Work on from an initiative with none still opens the picker
+  with Start agent. Typecheck only (`initiativesheet.tsx`, `initiativeprojectpicker.tsx`); no dev app was up.
 - [ ] (arcterm) **New agent: pick the Claude account for one launch.** After the next build, with two or more Claude
   accounts in Settings → Claude account, open New agent on Claude Code → the footer reads `Claude: <account> ⌄`;
   click it → a menu above lists your /login account then each token account, the one in use ticked, `active` (or
@@ -57,6 +71,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   portfolio (Keep running on) → Stop, quit and reopen arcterm → it reads stopped/sleeping and nothing listens on 8386;
   `services.json` in the data dir has `"off": true` for it. Open it (rail or tree) → it starts, `off` is gone, and the
   next restart starts it on its own again. Unit tests only (71461e840).
+- [ ] (arcterm) **A council reply to a long message stays in the column.** After the next build, in a council's
+  Discussion, press Reply (↶) on a seat's long message, type a short line and send → your bubble sits at the right,
+  no wider than the column; its quote row shows the seat's name and the message cut with `…`, and your line shows
+  under it. Before, the bubble stretched off the left edge and your text was out of sight. Checked only on a copy of
+  the bubble's markup in the dev app, not on a real council (`councilchat.tsx` ReplyMessage bubble, `max-w-full`).
 - [ ] (arcterm) **A council's r / c / m keys.** Open a council: each tab of the Report / Discussion / Map strip shows its
   key (r, c, m) after its icon and the Discussion's count, the strip still one row. With focus out of a text box, `c`
   opens the Discussion, `m` the Map, `r` the Report (on the Report already, it glides to the body); typing r c m in the
@@ -194,6 +213,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   corner, clear of its glow. Let an orchestrator run land with its final check passed → its row in the Agent tree reads
   Complete beside a small gift instead of the check; a run that landed unverified keeps its check. No CDP scenario
   opens either state (`cockpitemptystate.tsx`, `agenttree.tsx` RunCompleteLabel, f4d4c99cb).
+- [ ] (arcterm) **A brainstorm's Approve follows the Profile's Approvals.** With Jarvis → Profile → Approvals:
+  Autonomous saved, approve a brainstorm's design (Approve and start an orchestrator run) → the New dialog opens on
+  Orchestrate with the goal and Prototype filled and Approvals on Autonomous. (fix(launcher): `applyLauncherPrefill`
+  in `launcherstore.ts` uses `pickRunShape`)
 - [ ] (arcterm) **New → Orchestrate follows the Profile's Approvals.** Jarvis → Profile → Global → Approvals:
   Autonomous → Save. Open New, pick Orchestrate with arcterm picked → Approvals shows Autonomous. Pick another
   project, then back → still Orchestrate. Change Workers by hand, switch project → your pick stays. (fix(launcher):
@@ -1733,6 +1756,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Initiative "only" bar wraps.** Jarvis → an initiative with a long chunk title → Notes → click the
   chunk → the "only" bar on top shows the whole title over several lines, the "only" label, tone dot and "show all"
   sitting on its first line. Prettier only (`NotesFeed` in `effortdetailview.tsx`); no dev app was up.
+- [ ] (arcterm) **Council Memory icons.** A council → Memory → hover the Direction → Earlier reads as a history icon
+  with its count, Edit a pencil, Unpin a crossed-out pin, each with its word as a tooltip; Unpin spins while it runs;
+  hover an entry → Chốt a pin, Edit a pencil. Prettier and ESLint only (`councilmemory.tsx`); no dev app was up.
 - [ ] (arcterm) **Overview Quick look and Back.** Agent → a project's Overview → click a History session row → the
   transcript opens in a dialog over the Overview, with Activity/Transcript, Resume and Open; Esc or a click outside
   closes it. Scroll a long transcript down → the pinned prompt at the top sits on the dialog's own ground, no darker
@@ -1763,3 +1789,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   edge under it. Same in an ended agent's transcript, the rail transcript and a session's read. Prettier/ESLint only
   (`pinnedpromptbar.tsx`; top padding dropped in `sleepingtranscript.tsx`, `endedtranscript.tsx`,
   `sessionsdetail.tsx`); no dev app was up.
+- [ ] (arcterm) **Council Map: a long cite wraps inside the idea column.** A council report → Map, an idea whose
+  "Đã đọc code" line cites a long path (`obsidian_harness/20261104_harness_overview.html:108`): the cite chip wraps
+  within the idea column instead of running under the first seat's column. `councilmap.tsx` (`CheckLine` cite span:
+  `wrap-anywhere`, `max-w-full`); no dev app was up.

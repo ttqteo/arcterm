@@ -22,11 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.0.5 — 2026-11-06
 
 ### Added
 
 - New agent: Quick look shows a Claude session's last 5 messages before you resume it (Shift+Enter).
+- An initiative with no project shows a `+ Project` button under its title in the Brief's sheet: pick the project there,
+  without starting an agent, and Work on goes straight to it afterwards.
 - In the New agent dialog, the `Claude: <account>` line at the bottom is now a menu: pick another of your Claude accounts (or your /login one) and that one agent runs on it, without switching the active account or the project's. A resumed session started this way keeps its account; a later account switch's restart moves it to the new one.
 - A council's views have keys: `r` the Report, `c` the Discussion, `m` the Map, each drawn beside its tab.
 - **Terminal rows say what they run** (from the kaeltran16 fork): under its name, each terminal in the Agent tree shows a
@@ -57,11 +59,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   which files a task's commits changed outside its Files line and fails the ones the task did not call for; it also
   fails a requirement the worker's report admits is unmet, and passes a cosmetic point with a note.
 - Setup → Memory reviews one memory at a time, with its text, Delete and Ask an agent.
+- A run's agents, and the builds, typechecks and test suites they and the engine start, run below normal CPU priority
+  (niced on a Mac), so the machine stays responsive while a run works, and the run still takes the whole CPU when
+  you are not using it.
 - A council's pin button on an idea, a message or a Memory row is now called Set as direction, and its tooltip says what
   that does: the line becomes the one every seat reads first, after a check against what the seats agreed.
 - A Brainstorm council splits the problem into zones, one per seat, and picks its top 3 ideas from different zones where
   it can, so one part of the problem no longer takes every place; an idea that says what the code does today cites the
   line, and between two even ideas the one read in the code ranks first.
+- The app bar's Christmas lights hang only in gaps wide enough for three bulbs or more, so the narrow gaps around New
+  and the fold button no longer hold a lone bulb.
 - An agent's Brainstorm view no longer keeps the details rail on its right, so the brainstorm's own Boards and
   Decided rail get the width; it comes back with the terminal.
 - While the judge weighs a brainstorm question, the agent's approaches are headed "Answer now, or wait for the judge",
@@ -93,6 +100,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A resumed brainstorm's agent gets its brainstorm pane back, whether you resume from the exited pane or from the
   palette.
 - The ↓ button in a transcript now scrolls smoothly down to the latest line instead of jumping there.
+- After an update, arcterm installs its own version's Claude mod and hooks again: it used to pick an old `wsh` left
+  behind by an earlier install, so the Claude mod stayed at that old version.
+- A council reply you send to a long message no longer stretches off the left edge of the Discussion: the quote shortens
+  to fit and your text shows beside it.
+- A run started from a brainstorm's Approve (or a canvas's Build this…) now opens the New dialog with the project's saved Profile (Approvals, workers, workers at once) instead of always Ask me.
 - With every initiative archived, Jarvis's Brief shows the "No initiative yet" box with its New initiative button again,
   over Show N archived, instead of saying every initiative is on a card above when there are no cards.
 - A project's Overview shows an agent's whole name in Running and Finished, not the first 15 letters: the line of

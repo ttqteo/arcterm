@@ -1575,7 +1575,9 @@ function ReplyMessage({
                     data-council-bubble
                     hidden={bare}
                     className={cn(
-                        "flex min-w-0 flex-col gap-[6px] border px-[14px]",
+                        // max-w-full: in the person's right-aligned column the bubble is fit-content, and a quote's
+                        // nowrap text sets its min-content to the whole line, so without a cap it overflows to the left
+                        "flex min-w-0 max-w-full flex-col gap-[6px] border px-[14px]",
                         // the ring a quote's press lays on the post it jumps to (QuoteRow), fading out after FLASH_MS
                         "transition-[box-shadow] duration-300 motion-reduce:transition-none group-data-[flash=true]/reply:ring-2 group-data-[flash=true]/reply:ring-accent",
                         item.mine ? "rounded-[14px_14px_4px_14px]" : "rounded-[4px_14px_14px_14px]",

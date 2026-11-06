@@ -242,6 +242,8 @@ func makeWorkerBlockMeta(spec RunWorkerSpec, cwd string, keepOnExit bool) waveob
 		"agent:baseargs":           baseArgs,
 		waveobj.MetaKey_CmdShell:   false,
 		waveobj.MetaKey_CmdJwt:     true,
+		// a run's agents and the builds and typechecks they start yield the CPU to the person's own work
+		waveobj.MetaKey_CmdLowPriority: true,
 	}
 	if cwd != "" {
 		m[waveobj.MetaKey_CmdCwd] = cwd

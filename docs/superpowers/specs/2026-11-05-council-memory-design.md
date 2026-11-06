@@ -42,12 +42,13 @@ a details button.
   kicker `Suggested direction`, the text, the reason with the messages it rests on as links after it (in place of a
   Show the messages button), then **Make it the direction** and **Dismiss**.
 - **Direction** first in the list: 15px, medium weight, its badge under it. On hover its badge line gains
-  **Earlier · N**, **Edit**, **Unpin** and the details button.
+  **Earlier · N**, **Edit**, **Unpin** and the details button, each an icon with its word as `aria-label` and
+  tooltip (a history icon with the count, a pencil, a crossed-out pin).
 - **Earlier · N** unfolds the directions it replaced under it (board `C-add`): muted text, a thin left rule,
   `replaced 22:25`, no strikethrough.
 - **The entries**, newest first: the text (13.5px, `primary`), for Ruled out its why on a muted line with no label, then
   the badge line: the badge, and a small `accent-soft` dot on an entry that came in since the tab was last open.
-- **Hover an entry:** its badge line gains **Chốt**, **Edit**, the details button (an info icon) and **Remove** (an ✕
+- **Hover an entry:** its badge line gains **Chốt** (a pin icon), **Edit** (a pencil), the details button (an info icon) and **Remove** (an ✕
   with `aria-label`). Nothing else joins that line, so the badge never wraps.
 - **Details** opens on hover or focus as a small popover holding two short lines: who and from what, e.g.
   `Auto · round 3` then `r19 · 22:31` (message ids as links that open their thread), or `You · 22:40`. The direction's

@@ -590,6 +590,16 @@ func TestMakeWorkerBlockMetaMarksARunAgent(t *testing.T) {
 	}
 }
 
+// a run's agents, leads included, and the builds and typechecks they start yield the CPU to the person's own work
+func TestMakeWorkerBlockMetaRunsBelowNormalPriority(t *testing.T) {
+	for _, keepOnExit := range []bool{true, false} {
+		meta := makeWorkerBlockMeta(RunWorkerSpec{Bin: "claude"}, "/proj", keepOnExit)
+		if !meta.GetBool(waveobj.MetaKey_CmdLowPriority, false) {
+			t.Fatalf("keepOnExit=%v: cmd:lowpriority not set; meta %#v", keepOnExit, meta)
+		}
+	}
+}
+
 // only the engine's back-to-back sessions take the 5-minute cache: a lead or a design session has a person
 // pausing in it, and a re-written context after each pause costs more than the 1-hour writes
 func TestSpawnRunWorkerSetsTheShortCacheOnlyWhenAsked(t *testing.T) {

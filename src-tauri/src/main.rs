@@ -249,18 +249,33 @@ fn set_app_user_model_id(identifier: &str) {
 }
 
 // The bundle ships wsh version-named (e.g. wsh-0.14.5-windows.x64.exe), not a plain
-// wsh.exe — find it by pattern in {app_path}/bin.
+// wsh.exe — find it by pattern in {app_path}/bin. The NSIS installer never removes the
+// wsh of an earlier version, so bin/ collects one per release: take this build's own,
+// else the highest version. Taking the first match picked wsh-0.15.21 over 1.0.3 (bin/
+// lists alphabetically), which installed the 0.15.21 Claude mod on every launch.
 fn find_wsh_binary(bin_dir: &std::path::Path) -> Option<PathBuf> {
-    let suffix = wsh_suffix();
+    find_wsh_binary_for(bin_dir, env!("CARGO_PKG_VERSION"))
+}
+
+fn find_wsh_binary_for(bin_dir: &std::path::Path, version: &str) -> Option<PathBuf> {
+    let suffix = format!("-{}", wsh_suffix());
     let entries = std::fs::read_dir(bin_dir).ok()?;
+    let mut best: Option<(Vec<u64>, PathBuf)> = None;
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with("wsh") && name.ends_with(&suffix) {
+        let Some(ver) = name.strip_prefix("wsh-").and_then(|n| n.strip_suffix(&suffix)) else {
+            continue;
+        };
+        if ver == version {
             return Some(entry.path());
         }
+        let key: Vec<u64> = ver.split('.').map(|p| p.parse().unwrap_or(0)).collect();
+        if best.as_ref().map_or(true, |(k, _)| key > *k) {
+            best = Some((key, entry.path()));
+        }
     }
-    None
+    best.map(|(_, p)| p)
 }
 
 // Fire-and-forget: idempotently provision arcterm's Claude Code hooks into the user's
@@ -580,6 +595,25 @@ mod tests {
 
         let got = find_wsh_binary(&dir).expect("should find wsh");
         assert_eq!(got.file_name().unwrap().to_string_lossy(), wsh);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn picks_this_versions_wsh_over_older_ones() {
+        let dir = std::env::temp_dir().join(format!("arc-wsh-multi-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        for v in ["0.15.21", "1.0.2", "1.0.3", "1.0.10"] {
+            fs::write(dir.join(format!("wsh-{v}-{}", wsh_suffix())), b"x").unwrap();
+        }
+        let name = |p: PathBuf| p.file_name().unwrap().to_string_lossy().into_owned();
+
+        // this build's own version wins, even when a higher one sits beside it
+        let got = find_wsh_binary_for(&dir, "1.0.3").expect("should find wsh");
+        assert_eq!(name(got), format!("wsh-1.0.3-{}", wsh_suffix()));
+        // no exact match: the highest version, compared numerically (1.0.10 > 1.0.3 > 0.15.21)
+        let got = find_wsh_binary_for(&dir, "9.9.9").expect("should find wsh");
+        assert_eq!(name(got), format!("wsh-1.0.10-{}", wsh_suffix()));
 
         let _ = fs::remove_dir_all(&dir);
     }
