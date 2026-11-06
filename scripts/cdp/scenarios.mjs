@@ -1444,8 +1444,9 @@ const briefChunkPanel = {
 
 // --- brief-run-sheet-order: the question first, the Timing under the tasks, one accent, the one run vocabulary ------
 // A real orchestrator run held by deferstart and given a chained plan (so a task group exists), its roster lead a dev
-// fixture. The run has no live lead, so the sheet has no composer and no Open group, and nothing can make it ask or
-// land: those steps SKIP and say what to seed.
+// fixture. The stored run is written to put that fixture in its running phase, so the sheet has a live lead (the
+// composer and the Open group). Step 7 then writes the run landed and its dag's final check unverified, a state only
+// the engine reaches, and reads the tree.
 const BRIEF_RUN_ORDER_LEAD = "run-order lead";
 const RUN_SHEET_VERBS = [
     "Planning",
@@ -1479,6 +1480,19 @@ const briefRunSheetOrder = {
             });
             // a queued task folds away, so the dispatch is awaited to have one worker for teardown to delete
             await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            // a live lead is the roster fixture named in the run's running phase: the sheet's lead, its composer's
+            // target and the dock's Open lead all read it from there
+            const leadRef = `tab:${TREE_RAIL_LEAD_ID}`;
+            await fstWriteRun(h, ctx.runId, (run) => {
+                const phases = (run.phases ?? []).length > 0 ? run.phases : [{ kind: "orchestrate", state: "pending" }];
+                return {
+                    ...run,
+                    phases: phases.map((p, i) =>
+                        i === 0 ? { ...p, state: "running", workerorefs: [leadRef], startedts: Date.now() } : p
+                    ),
+                };
+            });
             await briefViewport(h, 1600, 1000);
             // the roster fixture is read once at boot, and the Brief reads a boot-primed snapshot
             await briefReload(h);
@@ -1537,15 +1551,14 @@ const briefRunSheetOrder = {
         })()`);
         rec("2. the dock draws at most one accent button", dock != null && dock.accents.length <= 1, JSON.stringify(dock));
 
-        // 3. i focuses the composer, and the composer shows its keycap and says who it messages. A composer needs a live
-        // lead; briefcompose.test.ts covers the words for every target, so a run with no composer loses nothing here.
+        // 3. i focuses the composer, and the composer shows its keycap and says who it messages. The arrange put the
+        // fixture lead in the run's running phase, so a missing composer is a failure, not a gap in the seed.
         const composer = await h.ev(`!!document.querySelector('[data-jarvis-brief-composer="input"]')`);
         if (composer !== true) {
-            steps.push(
-                skipStep(
-                    "3. i focuses the composer, which shows an i keycap and says who it messages",
-                    "the fixture run has no live lead, so its sheet has no composer (briefcompose.test.ts covers the words); seed a run whose lead is a phase worker to see it"
-                )
+            rec(
+                "3. i focuses the composer, which shows an i keycap and says who it messages",
+                false,
+                "no composer under the sheet, though the run's running phase names the fixture lead"
             );
         } else {
             await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }))`);
@@ -1630,26 +1643,105 @@ const briefRunSheetOrder = {
         );
         await h.shot("cdp-shots/brief-run-sheet-order-tree.png");
 
-        // 6. the dock's Open lead and Open in Agent are one segmented group. They need a live lead or worker.
-        steps.push(
-            skipStep(
-                "6. Open lead and Open in Agent sit in one Open group with no corners of their own",
-                "the fixture run has no live lead or worker, so the dock has no Open group; seed a run with a live phase worker to see it"
-            )
+        // 6. the dock's Open lead and Open in Agent are one segmented group: the group draws the corners, its buttons none
+        await h.goto("jarvis");
+        await h.ev(`window.__openAddress?.(${JSON.stringify(`run:${ctx.runId}`)})`);
+        await polishWaitFor(h, `!!document.querySelector('[data-run-sheet-dock] [role="group"][aria-label="Open"]')`, 10000);
+        const openGroup = await h.ev(`(() => {
+            const g = document.querySelector('[data-run-sheet-dock] [role="group"][aria-label="Open"]');
+            if (!g) return null;
+            const buttons = [...g.querySelectorAll('button')];
+            return {
+                groupRounded: getComputedStyle(g).borderTopLeftRadius,
+                buttons: buttons.map((b) => ({
+                    text: (b.textContent || '').trim(),
+                    radius: getComputedStyle(b).borderTopLeftRadius,
+                })),
+            };
+        })()`);
+        rec(
+            "6. Open lead and Open in Agent sit in one Open group with no corners of their own",
+            openGroup != null &&
+                openGroup.groupRounded !== "0px" &&
+                openGroup.buttons.some((b) => b.text.startsWith("Open lead")) &&
+                openGroup.buttons.every((b) => b.radius === "0px"),
+            JSON.stringify(openGroup)
         );
+        await h.shot("cdp-shots/brief-run-sheet-order-dock.png");
 
-        // 7. a landed run whose final check was unverified reads unverified in the tree
-        steps.push(
-            skipStep(
-                "7. a run that landed unverified reads · unverified, in amber",
-                "no RPC seeds dag.final.state unverified: the engine writes it when a final stage ends; land a run with an unverified final check to see it"
-            )
+        // 7. a landed run whose final check was unverified reads unverified in the tree. The engine writes both when a
+        // run ends, so the stored run and dag are written to that state. A done run with a land reads by its land
+        // (runstage.ts), so the dag's derived status is left as it is.
+        // The dag's t-1 is still dispatched, so the watchdog's next tick can write the dag back over the seed: seed it
+        // again until the page shows it.
+        let seeded = null;
+        let tries = 0;
+        await h.goto("agent");
+        try {
+            ctx.wroteDone = true;
+            await fstWriteRun(h, ctx.runId, (run) => ({
+                ...run,
+                status: "done",
+                completedts: Date.now(),
+                land: { ...(run.land ?? {}), state: "landed" },
+            }));
+            for (; tries < 3; tries++) {
+                await seedDag(
+                    h,
+                    ctx,
+                    (dag) => ({ ...dag, final: { ...(dag.final ?? {}), state: "unverified", round: 1 } }),
+                    (dag) => dag?.final?.state ?? ""
+                );
+                if (await polishWaitFor(h, `!!(${leadRow})?.querySelector('[data-run-complete="unverified"]')`, 5000)) break;
+            }
+            seeded = true;
+        } catch (e) {
+            seeded = String(e?.message ?? e);
+        }
+        await polishWaitFor(h, `!!(${leadRow})?.querySelector('[data-run-complete]')`, 15000);
+        const done = await h.ev(`(() => {
+            const el = (${leadRow})?.querySelector('[data-run-complete]');
+            if (!el) return null;
+            return {
+                kind: el.getAttribute('data-run-complete'),
+                text: (el.textContent || '').trim(),
+                warning: el.classList.contains('text-warning'),
+            };
+        })()`);
+        rec(
+            "7. a run that landed unverified reads · unverified, in amber",
+            seeded === true && done != null && done.kind === "unverified" && done.text.endsWith("· unverified") && done.warning,
+            JSON.stringify({ seeded, seeds: tries + 1, done })
         );
+        await h.shot("cdp-shots/brief-run-sheet-order-unverified.png");
         return steps;
     },
     async teardown(h, ctx) {
         await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
-        await teardownFixtureRun(h, ctx, "brief-run-sheet-order");
+        // the cancel is what stops t-1's worker, and it refuses a finished run and the fixture lead's oref (no real
+        // tab): undo the arrange's and step 7's writes first
+        const restore = ctx.runId
+            ? {
+                  what: "undo the run's seeded lead and land",
+                  // a write can time out while the engine holds the store; one retry
+                  fn: async () => {
+                      const undo = () =>
+                          fstWriteRun(h, ctx.runId, ({ land, completedts, ...run }) => ({
+                              ...run,
+                              ...(ctx.wroteDone ? { status: "executing" } : { land, completedts }),
+                              phases: (run.phases ?? []).map(({ workerorefs, ...p }) => {
+                                  const kept = (workerorefs ?? []).filter((o) => o !== `tab:${TREE_RAIL_LEAD_ID}`);
+                                  return kept.length > 0 ? { ...p, workerorefs: kept } : p;
+                              }),
+                          }));
+                      await undo().catch(async () => {
+                          await new Promise((r) => setTimeout(r, 2000));
+                          await undo();
+                      });
+                  },
+              }
+            : undefined;
+        await teardownFixtureRun(h, ctx, "brief-run-sheet-order", restore);
     },
 };
 
