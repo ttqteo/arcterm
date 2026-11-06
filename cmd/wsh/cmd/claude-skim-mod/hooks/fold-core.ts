@@ -90,11 +90,15 @@ export function folded(text: string, marks: readonly string[]): Folded {
         !TABLE_ROW.test(block) &&
         !isCommandFence(block);
     const at = blocks.findIndex(isProse);
+    // a verdict ending on a colon ("answering when it ends:") points at the paragraph after it, which holds the
+    // answer: folded without it, the verdict promised what the fold then hid
+    const verdict = at >= 0 && /:$/.test(blocks[at]) && isProse(blocks[at + 1] ?? "") ? [at, at + 1] : [at];
     const wanted = marks.filter((mark) => mark.trim() !== "");
     if (wanted.length > 0) {
-        return foldMarked(blocks, at, wanted);
+        return foldMarked(blocks, verdict, wanted);
     }
-    return { text: byPosition(blocks, blocks[at] ?? "", blocks.find(isList)), marks: [] };
+    const lead = verdict.map((i) => blocks[i] ?? "").join("\n\n");
+    return { text: byPosition(lead, blocks.find(isList)), marks: [] };
 }
 
 export function summary(text: string, marks: readonly string[] = []): string {
@@ -104,7 +108,7 @@ export function summary(text: string, marks: readonly string[] = []): string {
 // the verdict whole, then each line holding a mark as its marks alone: an item's behind its bullet and bold lead,
 // the items of a run kept as one list. a command for the person to type is as much a must-read as a mark, so a
 // command fence stays whole and a command's code span stays beside its line's marks
-function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonly string[]): Folded {
+function foldMarked(blocks: readonly string[], verdictAt: readonly number[], marks: readonly string[]): Folded {
     const left = [...marks];
     const kept: string[] = [];
     const take = (line: string): string[] => {
@@ -114,8 +118,11 @@ function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonl
         return found;
     };
     const parts: { text: string; isItem: boolean }[] = [];
+    // the heading of the section the walk is in, until a mark under it shows: then it shows once, above that mark, so
+    // "the list is not built" still says it is the Stack's list
+    let heading: string | undefined;
     blocks.forEach((block, i) => {
-        if (i === verdictAt) {
+        if (verdictAt.includes(i)) {
             block.split("\n").forEach(take);
             parts.push({ text: block, isItem: false });
             return;
@@ -126,6 +133,10 @@ function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonl
         }
         for (const line of block.split("\n")) {
             const found = take(line);
+            if (found.length === 0 && HEADING.test(line) && !ITEM.test(line)) {
+                heading = line.trim();
+                continue;
+            }
             const commands = commandSpans(line)
                 .map(([from, to]) => ({ at: from, text: line.slice(from, to) }))
                 .filter(({ text }) => !found.some((mark) => mark.includes(text)));
@@ -134,6 +145,10 @@ function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonl
                 .map(({ text }) => text);
             if (shown.length === 0) {
                 continue;
+            }
+            if (heading !== undefined) {
+                parts.push({ text: heading, isItem: false });
+                heading = undefined;
             }
             const item = line.match(ITEM)?.[1];
             if (item === undefined) {
@@ -151,7 +166,7 @@ function foldMarked(blocks: readonly string[], verdictAt: number, marks: readonl
     return { text, marks: kept };
 }
 
-function byPosition(blocks: readonly string[], verdict: string, list: string | undefined): string {
+function byPosition(verdict: string, list: string | undefined): string {
     const lines = (block: string) => block.split("\n");
     if (!list) {
         return verdict;
