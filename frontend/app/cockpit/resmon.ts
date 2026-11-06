@@ -29,6 +29,26 @@ export function fmtMem(bytes: number): string {
     return `${(bytes / GIB).toFixed(1)} GB`;
 }
 
+// how long a process has run, to the second under a minute: "12s", "38m", "1h 5m", "2d 1h"; "–" without a start
+export function fmtAge(createTs: number, now: number): string {
+    if (createTs <= 0) {
+        return UNAVAILABLE;
+    }
+    const s = Math.max(0, Math.floor((now - createTs) / 1000));
+    if (s < 60) {
+        return `${s}s`;
+    }
+    const m = Math.floor(s / 60);
+    if (m < 60) {
+        return `${m}m`;
+    }
+    const h = Math.floor(m / 60);
+    if (h < 24) {
+        return `${h}h ${m % 60}m`;
+    }
+    return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
 export function busyWords(s: ResMonSnapshotData): string | null {
     if (s.busycpu && s.busymem) {
         return "high CPU and memory";
@@ -66,7 +86,7 @@ function splitCommand(command: string): { exe: string; args: string } {
     return { exe, args: c.slice(end + 1).trim() };
 }
 
-function baseName(path: string): string {
+export function baseName(path: string): string {
     return path.split(/[\\/]/).pop() ?? path;
 }
 

@@ -20,6 +20,12 @@ func readCmdline(pid int) string {
 	return ""
 }
 
+// readListenPorts maps each pid to the tcp ports it listens on. Off Windows nothing is sampled (no job
+// groups either), so the rows carry no ports and the frontend draws no ports chip.
+func readListenPorts() map[int][]int {
+	return nil
+}
+
 func splitCmdline(cmdline string) []string {
 	return nil
 }

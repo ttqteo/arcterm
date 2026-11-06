@@ -3902,6 +3902,7 @@ declare global {
         mempct: number;
         cpu: number;
         numthreads: number;
+        ports?: number[];
         gone?: boolean;
     };
 

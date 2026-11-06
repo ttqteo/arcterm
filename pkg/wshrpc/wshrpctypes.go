@@ -333,9 +333,10 @@ type ProcessInfo struct {
 	Tag        string  `json:"tag,omitempty"`      // agent | launcher | console | shell
 	Status     string  `json:"status,omitempty"`
 	User       string  `json:"user,omitempty"`
-	Mem        int64   `json:"mem"`        // working set (resident set size) in bytes; -1 if unavailable
-	MemPct     float64 `json:"mempct"`     // memory percent; -1 if unavailable
-	Cpu        float64 `json:"cpu"`        // % of the whole machine; -1 if unavailable
-	NumThreads int32   `json:"numthreads"` // -1 if unavailable
+	Mem        int64   `json:"mem"`             // working set (resident set size) in bytes; -1 if unavailable
+	MemPct     float64 `json:"mempct"`          // memory percent; -1 if unavailable
+	Cpu        float64 `json:"cpu"`             // % of the whole machine; -1 if unavailable
+	NumThreads int32   `json:"numthreads"`      // -1 if unavailable
+	Ports      []int   `json:"ports,omitempty"` // tcp ports it listens on (resmon only); empty where it is not sampled
 	Gone       bool    `json:"gone,omitempty"`
 }
