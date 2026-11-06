@@ -821,3 +821,99 @@ func TestClaudeResumeCommand_aSessionInHomeKeepsTheAskSettings(t *testing.T) {
 		}
 	}
 }
+
+// claude writes a Task subagent's transcript under <session>/subagents/; pi-subagents writes its child
+// sessions under <parent stem>/<runId>/run-<n>/. Neither is a session the user started.
+func TestWalkSkipsSubagentsDir(t *testing.T) {
+	human := func(task string) string {
+		return `{"type":"user","cwd":"/repo","entrypoint":"cli","message":{"content":"` + task + `"}}`
+	}
+	claudeRoot := t.TempDir()
+	proj := filepath.Join(claudeRoot, "C--repo")
+	sub := filepath.Join(proj, "parent-id", "subagents")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONL(t, proj, "parent-id.jsonl", human("the parent task"))
+	writeJSONL(t, sub, "agent-1.jsonl", human("a subagent prompt"))
+	got := scanProvider(claudeProvider(claudeRoot), 0, 0)
+	if len(got) != 1 || got[0].Task != "the parent task" {
+		t.Errorf("claude: got %+v, want only the parent session", got)
+	}
+
+	piRoot := filepath.Join(t.TempDir(), "pi", "agent", "sessions")
+	parent := buildPiTree(t, piRoot)
+	child := filepath.Join(strings.TrimSuffix(parent, ".jsonl"), "377de312", "run-0")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(child, "session.jsonl"), strings.Replace(string(data), "session-uuid", "child-uuid", 1))
+	pi := scanProvider(piProvider(piRoot), 0, 0)
+	if len(pi) != 1 || pi[0].ID != "session-uuid" {
+		t.Errorf("pi: got %+v, want only the parent session", pi)
+	}
+}
+
+func TestSidechainTranscriptIsNotASession(t *testing.T) {
+	lines := []string{
+		`{"type":"user","isSidechain":true,"cwd":"/repo","entrypoint":"cli","message":{"content":"Search the repo for the flag"}}`,
+		`{"type":"assistant","isSidechain":true,"cwd":"/repo","message":{"content":[{"type":"text","text":"found it"}]}}`,
+	}
+	if s := extractClaudeSession("agent-1", lines); s != nil {
+		t.Errorf("a sidechain transcript is a subagent's, got session %+v", s)
+	}
+}
+
+func TestSessionTitleStripsEffortRef(t *testing.T) {
+	ref := "effort:89d8c0de-1234-4abc-9def-0123456789ab"
+	cases := map[string]string{
+		"Fix the bug (" + ref + ")":            "Fix the bug",
+		"Fix every chunk of initiative " + ref: "Fix every chunk of initiative",
+		"Ship " + ref + " now":                 "Ship now",
+		"keep effort:notauuid as typed":        "keep effort:notauuid as typed",
+	}
+	for raw, want := range cases {
+		if got := sessionTitle(raw); got != want {
+			t.Errorf("sessionTitle(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// /status or /context output is echoed back as a user record; it names nothing the user asked, so the
+// next prompt titles the session.
+func TestSessionTitleSkipsLocalCommandOutput(t *testing.T) {
+	for _, raw := range []string{
+		"<local-command-stdout>Context Usage: 42k tokens</local-command-stdout>",
+		"<local-command-stderr>Error: unknown command</local-command-stderr>",
+	} {
+		if got := sessionTitle(raw); got != "" {
+			t.Errorf("sessionTitle(%q) = %q, want empty", raw, got)
+		}
+	}
+	lines := []string{
+		`{"type":"user","cwd":"/repo","entrypoint":"cli","message":{"content":"<local-command-stdout>Context Usage</local-command-stdout>"}}`,
+		`{"type":"user","cwd":"/repo","entrypoint":"cli","message":{"content":"why is the donut stale?"}}`,
+	}
+	if s := extractClaudeSession("id6", lines); s == nil || s.Task != "why is the donut stale?" {
+		t.Errorf("session = %+v, want it titled by the prompt after the output", s)
+	}
+}
+
+// the lead prompt of an orchestrator run: principles, a conflict line, then the body with no Goal: line
+func TestSessionTitlePreambleWithoutGoal(t *testing.T) {
+	raw := "Work by these principles:\n- Prefer simple, direct solutions over enterprise over-engineering.\n- Use worktree\n" +
+		"Where a principle above conflicts with this run's contract below (who merges, who executes the plan, where work lands), the contract wins.\n\n" +
+		"You are the lead for run 0cbe3614-1afe-4941-8b60-c890b69c163a. Spec: C:/x/spec.md.\n" +
+		"- questions: answer from the spec and plan"
+	if got, want := sessionTitle(raw), "You are the lead for run 0cbe3614-1afe-4941-8b60-c890b69c163a. Spec: C:/x/spec.md."; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	withGoal := strings.Replace(raw, "You are the lead for run", "Goal: Broaden what Radar finds. You are", 1)
+	if got := sessionTitle(withGoal); !strings.HasPrefix(got, "Broaden what Radar finds.") {
+		t.Errorf("Goal: prefix not unwrapped: %q", got)
+	}
+}

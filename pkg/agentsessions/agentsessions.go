@@ -29,6 +29,8 @@ const (
 	defaultWindowDays = 14
 	defaultLimit      = 20
 	maxTaskLen        = 120
+	// a transcript written this recently may be a session pausing between turns, not one that finished
+	finishedQuietFor = 5 * time.Minute
 )
 
 // A session's first message is frequently scaffolding rather than anything a person wrote: the CLI
@@ -40,11 +42,18 @@ const (
 	caveatCloseTag       = "</local-command-caveat>"
 	dispatchPreambleLead = "Work by these principles"
 	dispatchGoalPrefix   = "Goal: "
+	dispatchBulletPrefix = "- "
+	dispatchConflictLead = "Where a principle above conflicts"
 )
+
+// local command output (/status, /context) is echoed back as a user record but is nothing the user asked
+var localCommandOutputTags = []string{"<local-command-stdout>", "<local-command-stderr>"}
 
 var (
 	commandNameRe = regexp.MustCompile(`(?s)<command-name>(.*?)</command-name>`)
 	commandArgsRe = regexp.MustCompile(`(?s)<command-args>(.*?)</command-args>`)
+	// an initiative ref typed into a run goal; the Go index has no store to name it, so it is dropped
+	effortRefRe = regexp.MustCompile(`\(\s*effort:[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\s*\)|effort:[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}`)
 )
 
 // sessionTitle unwraps a first user message into a human-recognizable title, returning "" when the
@@ -52,14 +61,27 @@ var (
 // The slash-command shape mirrors parseCommand in frontend/app/view/agents/transcriptprojection.ts so
 // one session is not named two different things in two places.
 func sessionTitle(raw string) string {
+	t := unwrapTitle(raw)
+	if !effortRefRe.MatchString(t) {
+		return t
+	}
+	return strings.TrimSpace(wsRe.ReplaceAllString(effortRefRe.ReplaceAllString(t, " "), " "))
+}
+
+func unwrapTitle(raw string) string {
 	t := strings.TrimSpace(raw)
 	if t == "" {
 		return ""
 	}
+	for _, tag := range localCommandOutputTags {
+		if strings.HasPrefix(t, tag) {
+			return ""
+		}
+	}
 	if strings.HasPrefix(t, caveatOpenTag) {
 		// the caveat is boilerplate the CLI adds; the real message, if any, follows the closing tag
 		if i := strings.Index(t, caveatCloseTag); i >= 0 {
-			return sessionTitle(t[i+len(caveatCloseTag):])
+			return unwrapTitle(t[i+len(caveatCloseTag):])
 		}
 		return ""
 	}
@@ -76,15 +98,33 @@ func sessionTitle(raw string) string {
 		return name
 	}
 	if strings.HasPrefix(t, dispatchPreambleLead) {
-		for _, line := range strings.Split(t, "\n") {
-			if strings.HasPrefix(line, dispatchGoalPrefix) {
-				if goal := strings.TrimSpace(strings.TrimPrefix(line, dispatchGoalPrefix)); goal != "" {
-					return goal
-				}
-			}
+		if body := preambleBody(t); body != "" {
+			return body
 		}
 	}
 	return t
+}
+
+// preambleBody titles a dispatched prompt by its Goal: line, else by the first line after the principles
+// (the lead line, its "- " bullets and the conflict line), so a lead prompt with no goal line is still
+// named by its own text. "" when the preamble is all there is.
+func preambleBody(t string) string {
+	lines := strings.Split(t, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, dispatchGoalPrefix) {
+			if goal := strings.TrimSpace(strings.TrimPrefix(line, dispatchGoalPrefix)); goal != "" {
+				return goal
+			}
+		}
+	}
+	for _, line := range lines[1:] {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, dispatchBulletPrefix) || strings.HasPrefix(line, dispatchConflictLead) {
+			continue
+		}
+		return line
+	}
+	return ""
 }
 
 // SessionInfo is one resumable past agent session.
@@ -686,7 +726,7 @@ type provider struct {
 	runtime   string
 	root      string
 	matches   func(name string) bool
-	skipDir   func(name string) bool // a folder the walk never enters; nil enters every one
+	skipDir   func(root, path string) bool // a folder the walk never enters (path is under root); nil enters every one
 	fused     func(path, stem string, lines []string) (*SessionInfo, sessionEvents)
 	resumeCmd func(s *SessionInfo) string
 	beginScan func() // run once before a scan walks or parses; nil when the provider keeps no per-scan state
@@ -706,7 +746,7 @@ func claudeProvider(root string) provider {
 		},
 		// the Agent tool's <parent>/subagents/agent-<id>.jsonl is part of its parent and never a session of its own
 		// (claudeSessionFrom drops it), yet those files were a third of a cold scan's bytes
-		skipDir: func(name string) bool { return name == "subagents" },
+		skipDir: func(_, path string) bool { return filepath.Base(path) == "subagents" },
 		// one shared unmarshal pass for both derivations — claude transcripts dominate the scan cost
 		fused: func(path string, id string, lines []string) (*SessionInfo, sessionEvents) {
 			recs := parseClaudeLines(lines)
@@ -1033,6 +1073,12 @@ func piProvider(root string) provider {
 		runtime: "pi",
 		root:    root,
 		matches: func(name string) bool { return strings.HasSuffix(name, ".jsonl") },
+		// sessions sit at <encoded cwd>/<file>.jsonl; anything deeper is a pi-subagents child session
+		// (<parent stem>/<runId>/run-<n>/session.jsonl), part of its parent and never a session of its own
+		skipDir: func(root, path string) bool {
+			rel, err := filepath.Rel(root, path)
+			return err == nil && strings.ContainsRune(rel, filepath.Separator)
+		},
 		fused: func(path, _ string, _ []string) (*SessionInfo, sessionEvents) {
 			file, err := pisession.Read(path)
 			if err != nil {
@@ -1149,7 +1195,7 @@ func walkSince(p provider, cutoff time.Time) []candidate {
 			if headlessSlug != "" && d.Name() == headlessSlug {
 				return filepath.SkipDir // the backend's own headless passes, never a user session
 			}
-			if p.skipDir != nil && p.skipDir(d.Name()) {
+			if p.skipDir != nil && path != p.root && p.skipDir(p.root, path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1284,11 +1330,22 @@ func asSession(c candidate, r parsed) *SessionInfo {
 	}
 	s.ResumeCommand = c.p.resumeCmd(&s)
 	s.TranscriptPath = c.path
-	s.Events = r.se.Events
+	s.Events = withoutRecentFinish(r.se.Events, c.mtime, time.Now())
 	s.Status = r.se.Status
 	s.StartedTs = r.se.StartedTs
 	s.DurationMs = r.se.DurationMs
 	return &s
+}
+
+// withoutRecentFinish drops a trailing synthetic "finished" while the transcript is still fresh. It runs at
+// read time because the scan cache keys on mtime+size: a decision cached while fresh would stand forever
+// for a file that then goes idle. Returns a copy; the cached slice is shared.
+func withoutRecentFinish(events []SessionEvent, lastActive, now time.Time) []SessionEvent {
+	n := len(events)
+	if n == 0 || events[n-1].Type != "finished" || now.Sub(lastActive) >= finishedQuietFor {
+		return events
+	}
+	return append([]SessionEvent(nil), events[:n-1]...)
 }
 
 // ExtractSession folds a single transcript file into a SessionInfo, selecting the parser by runtime.
