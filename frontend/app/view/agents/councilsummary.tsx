@@ -139,6 +139,14 @@ const STANCE_PILL: Record<StanceLabel, string> = {
     proposed: "bg-pill text-secondary",
 };
 
+// a card's avatar of an expert that took a stance is ringed in its colour; one that only proposed is not
+const STANCE_RING: Record<StanceLabel, string> = {
+    accept: "ring-[1.5px] ring-success",
+    challenge: "ring-[1.5px] ring-warning",
+    oppose: "ring-[1.5px] ring-error",
+    proposed: "",
+};
+
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 const BUTTON = cn(
     "flex h-[28px] flex-none cursor-pointer items-center rounded-md border border-edge-mid bg-surface-raised px-3 text-[13px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50 disabled:hover:border-edge-mid disabled:hover:bg-surface-raised",
@@ -297,32 +305,31 @@ function DirectionCard({
                 </span>
             ) : null}
             <span data-council-direction-footer className="mt-auto flex w-full items-end gap-2">
-                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[7px] gap-y-[6px]">
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[10px] gap-y-[6px]">
+                    {row.chips.length > 0 ? (
+                        <span data-council-chips className="flex flex-none items-center gap-[4px]">
+                            {row.chips.map((chip) => (
+                                // one avatar per expert: who proposed it is plain, a stance rings it in its colour;
+                                // the name and the stance are on hover (and read out), the tag above says the verdict
+                                <span
+                                    key={chip.expert.id}
+                                    data-council-chip={chip.expert.id}
+                                    data-council-chip-stance={chip.stance}
+                                    role="img"
+                                    aria-label={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
+                                    title={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
+                                    className={cn("flex rounded-full", STANCE_RING[chip.stance])}
+                                >
+                                    <Avatar c={c} id={chip.expert.id} name={chip.expert.name} small />
+                                </span>
+                            ))}
+                        </span>
+                    ) : null}
                     {row.meta !== "" ? (
                         <span data-council-meta className="text-[12.5px] text-muted">
                             {row.meta}
                         </span>
                     ) : null}
-                    {row.chips.map((chip) => (
-                        <span
-                            key={chip.expert.id}
-                            data-council-chip={chip.expert.id}
-                            title={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
-                            className={cn(
-                                "flex items-center gap-1 rounded-full py-[2px] pl-[2px] pr-[7px] text-[10.5px]",
-                                STANCE_PILL[chip.stance]
-                            )}
-                        >
-                            <Avatar
-                                c={c}
-                                id={chip.expert.id}
-                                name={chip.expert.name}
-                                small
-                                className="h-[16px] w-[16px] text-[8px]"
-                            />
-                            {STANCE_WORD[chip.stance]}
-                        </span>
-                    ))}
                 </span>
                 {open ? (
                     <ChevronUp

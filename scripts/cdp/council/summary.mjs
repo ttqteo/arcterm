@@ -175,7 +175,8 @@ const BRAINSTORM_FACTS = `(() => {
         heading: t(root.querySelector("[data-council-directions-heading]")),
         titles: all("[data-council-direction] [data-council-title]").map(t),
         steps: all("[data-council-direction] [data-council-first-step]").map(t),
-        meta: all("[data-council-direction] [data-council-meta]").map(t),
+        meta: all("[data-council-direction]").map((d) => t(d.querySelector("[data-council-meta]")) ?? ""),
+        chips: all("[data-council-direction]").map((d) => [...d.querySelectorAll("[data-council-chip]")].map((c) => c.dataset.councilChip)),
         keptHeading: t(root.querySelector("[data-council-kept] [data-council-kept-heading]")),
         kept: all("[data-council-kept-idea]").map((k) => ({
             title: t(k.querySelector("[data-council-title]")),
@@ -571,7 +572,9 @@ export const councilSummary = {
                     brainstorm: body.querySelector('[data-council-action="brainstorm"]')?.innerText ?? null,
                     askAgain: body.querySelector('[data-council-action="ask-again"]')?.innerText ?? null,
                     meta: d.querySelector("[data-council-meta]")?.innerText ?? null,
-                    chips: Object.fromEntries([...d.querySelectorAll("[data-council-chip]")].map((c) => [c.dataset.councilChip, c.innerText.replace(/\\s+/g, " ").trim()])),
+                    chips: Object.fromEntries([...d.querySelectorAll("[data-council-chip]")].map((c) => [c.dataset.councilChip, c.title])),
+                    // the card shows each expert once, as an avatar: no stance word and no "from" names repeat it
+                    cardText: d.innerText,
                 };
             })()`);
             // a click on card 1 opens it and closes 3: one detail under the grid
@@ -628,12 +631,13 @@ export const councilSummary = {
                 open.refs.includes("pkg/services/model.go:36") &&
                 open.brainstorm === "Start an agent on it" &&
                 open.askAgain === "Ask the experts again" &&
-                open.meta === "from UX and RAM · 1 file · 1 weak claim" &&
-                // the chip's text starts with the expert's avatar letter
-                open.chips.ram.endsWith(" Is against it") &&
-                open.chips.skeptic.endsWith(" Has doubts") &&
-                open.chips.newuser.endsWith(" Agrees") &&
-                open.chips.ux.endsWith(" Proposed") &&
+                open.meta === "1 file · 1 weak claim" &&
+                // each avatar's hover names the expert and its stance
+                open.chips.ram.endsWith(": Is against it") &&
+                open.chips.skeptic.endsWith(": Has doubts") &&
+                open.chips.newuser.endsWith(": Agrees") &&
+                open.chips.ux.endsWith(": Proposed") &&
+                !/\bfrom\b|Proposed/.test(open.cardText) &&
                 detailInFrame;
             await h.shot("cdp-shots/council-summary.png");
             return { ok, detail: JSON.stringify({ open, swapped, one, framedAfter }) };
@@ -1245,10 +1249,14 @@ export const councilSummary = {
                 facts.jumps === "directions,kept" &&
                 facts.keptGrid === "grid" &&
                 facts.keptBorder === "0px" &&
-                facts.meta[0].startsWith("Had it: Skeptic · built on by New user") &&
-                facts.meta[1].startsWith("Had it: UX") &&
-                !facts.meta[1].includes("built on by") &&
-                facts.meta[2].startsWith("Had it: UX and RAM") &&
+                // who had an idea is its avatars; the line of facts names only who built on it
+                /^New user\b[^·]* built on it/.test(facts.meta[0]) &&
+                !facts.meta[1].includes("built on it") &&
+                facts.meta.every((m) => !m.includes("Had it")) &&
+                facts.chips[0].includes("skeptic") &&
+                facts.chips[1].includes("ux") &&
+                facts.chips[2].includes("ux") &&
+                facts.chips[2].includes("ram") &&
                 facts.keptHeading === "Wild ideas kept aside" &&
                 facts.kept.length === 1 &&
                 facts.kept[0].title === TITLES[3] &&

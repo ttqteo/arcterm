@@ -204,10 +204,11 @@ describe("directionRows", () => {
         ]);
     });
 
-    it("says where a direction came from, and how many files and weak claims it cites", () => {
+    it("says how many files and weak claims a direction cites, and leaves who proposed it to the chips", () => {
         const rows = directionRows(council());
-        expect(rows[0].meta).toBe("from UX and RAM · 1 file · 1 weak claim");
-        expect(rows[1].meta).toBe("from Skeptic · 1 file");
+        expect(rows[0].meta).toBe("1 file · 1 weak claim");
+        expect(rows[1].meta).toBe("1 file");
+        expect(rows[1].chips.some((x) => x.expert.id === "sk")).toBe(true);
     });
 
     it("names no proposal id and no Merged in a line of facts", () => {
@@ -220,15 +221,15 @@ describe("directionRows", () => {
             },
         });
         const [row] = directionRows(c);
-        expect(row.meta).toBe("from UX and RAM · 1 file · 1 weak claim");
+        expect(row.meta).toBe("1 file · 1 weak claim");
         expect(row.meta).not.toMatch(/\bP\d+\b|Merged/);
     });
 
-    it("names one author once when two of its proposals meet in a direction", () => {
+    it("gives one author one chip when two of its proposals meet in a direction", () => {
         const c = council({
             summary: { text: "", directions: [direction(1, ["P1", "P2"])], outcomes: {}, at: 15 },
         });
-        expect(directionRows(c)[0].meta.startsWith("from UX · ")).toBe(true);
+        expect(directionRows(c)[0].chips.filter((x) => x.expert.id === "ux")).toHaveLength(1);
     });
 
     it("leaves out what it cannot say", () => {
@@ -297,20 +298,20 @@ describe("a Brainstorm report", () => {
         expect(directionRows(council())[0].firstStep).toBe("");
     });
 
-    it("says who had the idea and who built on it, in panel order and once each, leaving the person out", () => {
+    it("says who built on the idea, in panel order and once each, leaving the person out", () => {
         const [first, second] = directionRows(brainstorm());
-        expect(first.meta).toBe("Had it: UX and RAM · built on by New user and Skeptic · 1 file · 1 weak claim");
-        expect(second.meta).toBe("Had it: Skeptic · 1 file");
+        expect(first.meta).toBe("New user and Skeptic built on it · 1 file · 1 weak claim");
+        expect(second.meta).toBe("1 file");
         expect(first.meta).not.toContain("You");
     });
 
     it("says nothing about builders when no reply builds on it", () => {
         const c = brainstorm({ replies: [] });
-        expect(directionRows(c)[1].meta).toBe("Had it: Skeptic · 1 file");
+        expect(directionRows(c)[0].meta).toBe("1 file · 1 weak claim");
     });
 
-    it("keeps the from line, not Had it, in a Review report", () => {
-        expect(directionRows(council())[1].meta).toBe("from Skeptic · 1 file");
+    it("says nothing about builders in a Review report", () => {
+        expect(directionRows(council())[1].meta).toBe("1 file");
     });
 
     it("lists the wild ideas kept aside with who had them and why", () => {
@@ -418,9 +419,9 @@ describe("a report's top and its folded rest", () => {
             },
         });
         expect(directionRows(old).map((r) => [r.direction.rank, r.tag, r.meta])).toEqual([
-            [1, "RAM is against it", "from UX and RAM · 1 file · 1 weak claim"],
-            [2, "Everyone agrees", "from Skeptic · 1 file"],
-            [3, "RAM has doubts", "from UX"],
+            [1, "RAM is against it", "1 file · 1 weak claim"],
+            [2, "Everyone agrees", "1 file"],
+            [3, "RAM has doubts", ""],
         ]);
         expect(directionRows(old)[2].chips.map((x) => [x.expert.id, x.stance])).toEqual([
             ["ux", "proposed"],

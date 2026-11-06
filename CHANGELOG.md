@@ -29,6 +29,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's Report, Discussion and Map share one header row, so the tabs and the ⋯ menu stay in place when you
   switch. The Report's row shows the mode, the clock, the replies and the tokens after the status chip, and the lone ⓘ
   button is gone from the Discussion and the Map.
+- A council report's idea cards name each expert once, as an avatar: the "from …" list of names and the row of
+  "Proposed" chips are gone. An expert who agrees, doubts or opposes has its avatar ringed in that colour, and
+  hovering an avatar says who it is and where it stands.
 - The app bar shows the t> mark alone, without the "arcterm" name beside it.
 - With the Christmas theme, the t> mark dresses for the season: the t a pine with a star and two baubles, the > a
   string of red and gold lights. On a Mac the menu bar icon wears it too, in colour, in deeper tones on a light menu bar.

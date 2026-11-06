@@ -115,7 +115,8 @@ export interface Position {
 
 export interface DirectionRow {
     direction: CouncilDirection;
-    meta: string; // `from UX and RAM · 1 file · 1 weak claim`; a Brainstorm's starts `Had it: UX · built on by RAM`
+    meta: string; // `1 file · 1 weak claim`; a Brainstorm's starts `RAM built on it`. Who proposed it is in `chips`
+    //               (the card's avatars), so the names are not repeated here
     firstStep: string; // `First step: Try it on one screen`, or empty when the coordinator gave none
     step: string; // the coordinator's first step alone (`Try it on one screen`), or empty: the card's First step box
     chips: StanceChip[]; // the experts that proposed or took a stance, in panel order
@@ -257,8 +258,9 @@ export function directionRows(c: Council): DirectionRow[] {
         const files = new Set(evidence.map(fileOf).filter((f) => f !== ""));
         // a region named with no box in a checked claim is no evidence, so it counts as a weak claim
         const weak = positions.flatMap((p) => p.evidence.filter((e) => isWeakEvidence(e, p.label !== ""))).length;
+        const builders = brainstorm ? builderNames(c, direction.from) : [];
         const meta = [
-            brainstorm ? hadLine(c, direction.from) : fromLine(c, direction.from),
+            builders.length > 0 ? `${listNames(builders)} built on it` : "",
             files.size > 0 ? plural(files.size, "file", "files") : "",
             weak > 0 ? plural(weak, "weak claim", "weak claims") : "",
         ].filter((part) => part !== "");
