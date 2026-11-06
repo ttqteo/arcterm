@@ -340,8 +340,9 @@ export function draftShown(draft: LauncherDraft): boolean {
 // the top, where the dialog opens; any other textarea is "textarea".
 export type FocusZone = "start" | "project" | "tools" | "resume" | "task" | "textarea" | "input" | "other";
 
-// What an Escape can close before the dialog, innermost first
-export type LauncherInner = "flags" | "branches" | "account" | "filter";
+// What an Escape can close before the dialog, innermost first. "peek" is the Quick look panel under the columns
+// (launcherpeek.ts): the menus draw over it, so they go first.
+export type LauncherInner = "flags" | "branches" | "account" | "peek" | "filter";
 
 export interface LauncherKeyCtx {
     zone: FocusZone;
@@ -361,6 +362,8 @@ export interface LauncherKeyCtx {
     branchListOpen: boolean;
     // the footer's Claude account menu; optional, as only a claude launch with accounts to pick has one
     accountMenuOpen?: boolean;
+    // the Quick look panel is open (a Claude session picked); optional, as only that pick has one
+    peekOpen?: boolean;
     // a session row of the Resume list is picked, not New session: only a session has a transcript to read
     resumePicked: boolean;
     // the pick has a Task box (an agent that takes one) or a Goal box (a run started from a goal)
@@ -418,6 +421,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         }
         if (ctx.accountMenuOpen) {
             return { kind: "dismiss-inner", what: "account" };
+        }
+        // Quick look closes before the dialog, wherever focus is (spec D6)
+        if (ctx.peekOpen) {
+            return { kind: "dismiss-inner", what: "peek" };
         }
         // the filter clears when focus leaves the Project column, so a filter means focus is there
         return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };

@@ -1466,6 +1466,18 @@ declare global {
         label: string;
     };
 
+    // wshrpc.CommandGetSessionPeekData
+    type CommandGetSessionPeekData = {
+        transcriptpath: string;
+        count: number;
+    };
+
+    // wshrpc.CommandGetSessionPeekRtnData
+    type CommandGetSessionPeekRtnData = {
+        messages: SessionPeekMessage[];
+        capped: boolean;
+    };
+
     // wshrpc.CommandGetSessionUsageData
     type CommandGetSessionUsageData = {
         windowdays?: number;
@@ -4512,6 +4524,13 @@ declare global {
         resumecommand: string;
         transcriptpath: string;
         resumeargs?: string[];
+    };
+
+    // wshrpc.SessionPeekMessage
+    type SessionPeekMessage = {
+        role: string;
+        text: string;
+        ts: number;
     };
 
     // wconfig.SettingsType

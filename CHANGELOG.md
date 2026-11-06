@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- New agent: Quick look shows a Claude session's last 5 messages before you resume it (Shift+Enter).
 - In the New agent dialog, the `Claude: <account>` line at the bottom is now a menu: pick another of your Claude accounts (or your /login one) and that one agent runs on it, without switching the active account or the project's. A resumed session started this way keeps its account; a later account switch's restart moves it to the new one.
 - A council's views have keys: `r` the Report, `c` the Discussion, `m` the Map, each drawn beside its tab.
 

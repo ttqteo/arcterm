@@ -25883,9 +25883,10 @@ const launcherResume = {
                 await waitForProjectInConfig(h, name);
             }
             // one transcript the backend scan reads as a Claude session of the first project: a user prompt with the
-            // project dir as its cwd (claudeSessionFrom), filed under a folder of its own
+            // project dir as its cwd (claudeSessionFrom), filed under the project's slug folder so the project-scoped
+            // scan reads that one folder, not the whole root
             ctx.sessionId = randomUUID();
-            ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-launcher-resume-${randomUUID().slice(0, 8)}`);
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", learnSlug(ctx.dirs[0]));
             mkdirSync(ctx.transcriptDir, { recursive: true });
             writeFileSync(
                 join(ctx.transcriptDir, `${ctx.sessionId}.jsonl`),
@@ -26091,7 +26092,7 @@ const launcherResume = {
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
         rec("5c. Escape from Project closes the dialog", closed, `closed=${closed}`);
 
-        // 6. Open asleep (Shift+Enter on the picked session): a new agent on the roster, asleep, its conversation and the
+        // 6. Open asleep (from Quick look's header): a new agent on the roster, asleep, its conversation and the
         // box under it in its cell, and no process started (the server lists it as sleeping, which it does only for a
         // block with no running shell). Safe to press: nothing runs until a Wake, which this never sends. Its tab is
         // closed in teardown.
@@ -26112,7 +26113,10 @@ const launcherResume = {
         const footer = await h.ev(`(() => {
             const d = ${LAUNCHER};
             const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+            const toggle = d?.querySelector('[data-launcher-peek-toggle]');
             return {
+                peek: flat(toggle) || null,
+                pressed: toggle?.getAttribute('aria-pressed') ?? null,
                 asleep: flat(d?.querySelector('[data-launcher-asleep]')) || null,
                 transcript: !!d?.querySelector('[data-launcher-transcript]'),
                 picked: d?.querySelector('[data-resume-id][aria-checked="true"]')?.getAttribute('data-resume-id') ?? null,
@@ -26120,13 +26124,20 @@ const launcherResume = {
         })()`);
         await h.shot("cdp-shots/launcher-resume-6-asleep-button.png");
         rec(
-            "6a. a picked Claude session offers Open asleep (Shift+Enter) beside Resume, in place of Transcript",
-            footer?.picked === ctx.sessionId && /^Open asleep/.test(footer.asleep ?? "") && !footer.transcript,
+            "6a. a picked Claude session offers Quick look (Shift+Enter) beside Resume, in place of Open asleep and Transcript",
+            footer?.picked === ctx.sessionId &&
+                /^Quick look/.test(footer.peek ?? "") &&
+                footer.pressed !== "true" &&
+                footer.asleep == null &&
+                !footer.transcript,
             JSON.stringify(footer)
         );
 
+        // Shift+Enter opens Quick look; Open asleep is in its header (spec 2026-11-06-launcher-session-peek D2)
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.focus()`);
         await launcherPress(h, "Enter", { shift: true });
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-asleep]')`, 5000);
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-asleep]')?.click()`);
         const appeared = await polishWaitFor(h, `!${LAUNCHER} && !!(${asleepCover})`, 10000);
         const tabId = appeared ? await h.ev(`(${asleepCover})?.getAttribute('data-sleeping-transcript') ?? null`) : null;
         ctx.asleepTab = tabId;
@@ -26145,7 +26156,7 @@ const launcherResume = {
         }
         await h.shot("cdp-shots/launcher-resume-6-asleep-agent.png");
         rec(
-            "6b. Shift+Enter closes the dialog and the session is a new agent row with the moon; its cell shows the conversation, the Sleeping card and the box to wake it",
+            "6b. Open asleep from Quick look closes the dialog and the session is a new agent row with the moon; its cell shows the conversation, the Sleeping card and the box to wake it",
             appeared && tabId != null && cell?.moon && cell.conversation && cell.card.includes("Sleeping since") &&
                 /to wake it/.test(cell.composer ?? ""),
             JSON.stringify({ appeared, tabId, cell })
@@ -26236,6 +26247,613 @@ const launcherResume = {
         });
         for (const dir of ctx.dirs ?? []) {
             await step("remove a project dir", () => rmSync(dir, { recursive: true, force: true }));
+        }
+    },
+};
+
+// --- launcher-session-peek: Quick look on a Claude session in New agent
+// (docs/superpowers/specs/2026-11-06-launcher-session-peek-design.md). Six transcripts in one project, A newest to F
+// oldest by mtime, read through the real getsessionpeek: A (7 turns with tool, meta, sidechain and narration records),
+// B (long messages, so its panel scrolls), C (emptied once listed), D (capped with none), E (capped with 2 found) and F
+// (deleted once listed). Like launcher-resume it never presses Launch or Resume.
+const PEEK_PROJECT = "verify-launcher-peek";
+const PEEK_EMPTY_TEXT = "This session has no messages yet.";
+const PEEK_CAPPED_TEXT = "No messages in the last 8 MB. Open asleep to read the whole session.";
+// a tool-result line past the reader's 256 KB skip, and how much of them D and E hold: past its 8 MB scan cap
+const PEEK_LONG_LINE = 300 * 1024;
+const PEEK_LONG_TOTAL = 9.6 * 1024 * 1024;
+// text that must never reach the panel: a tool call or result, a meta record, a sidechain record, narration
+const PEEK_FORBIDDEN = ["PEEKTOOL", "PEEKMETA", "PEEKSIDE", "PEEKNARR"];
+const PEEK_DELAY_KEY = "__arcPeekDelay";
+
+// one Claude transcript, written record by record in the shapes the scan and the tail reader parse
+function peekTranscript(cwd, sessionId) {
+    const lines = [];
+    let t = Date.now() - 3_600_000;
+    const base = () => ({ cwd, sessionId, uuid: randomUUID(), timestamp: new Date((t += 1000)).toISOString() });
+    const push = (rec) => lines.push(JSON.stringify(rec));
+    const assistant = (content, extra = {}) =>
+        push({ ...base(), type: "assistant", ...extra, message: { role: "assistant", model: "claude-opus-5-5", content } });
+    const tool = (result) => {
+        const id = `toolu_${randomUUID().slice(0, 12)}`;
+        assistant([{ type: "tool_use", id, name: "Bash", input: { command: "echo PEEKTOOL-use" } }]);
+        push({ ...base(), type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: result }] } });
+    };
+    return {
+        prompt: (text, extra = {}) => push({ ...base(), type: "user", ...extra, message: { role: "user", content: text } }),
+        answer: (text, extra = {}) => assistant([{ type: "text", text }], extra),
+        tool: (marker) => tool(`PEEKTOOL-result ${marker}`),
+        meta: (text) => push({ ...base(), type: "user", isMeta: true, message: { role: "user", content: text } }),
+        // tool results each over 256 KB, past the 8 MB cap in all
+        longResults() {
+            const pad = "x".repeat(PEEK_LONG_LINE);
+            for (let n = 0; n * PEEK_LONG_LINE < PEEK_LONG_TOTAL; n++) tool(`PEEKTOOL-long ${n} ${pad}`);
+        },
+        text: () => lines.join("\n") + "\n",
+    };
+}
+
+// an answer long enough that five of them overflow the ~170px panel
+const peekLong = (marker) =>
+    [marker, ...Array.from({ length: 5 }, (_, i) => `line ${i + 1} of a long answer, so the panel has to scroll`)].join("\n");
+
+// what the dialog and the panel show, read in one evaluate
+const peekStateExpr = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), h: Math.round(r.height) };
+    };
+    const p = d.querySelector('[data-launcher-peek]');
+    const toggle = d.querySelector('[data-launcher-peek-toggle]');
+    const sc = p?.querySelector('[data-peek-scroll]');
+    const msgs = [...(p?.querySelectorAll('[data-peek-msg]') ?? [])];
+    const note = p?.querySelector('[data-peek-note]');
+    const asleep = p?.querySelector('[data-peek-asleep]');
+    const primary = [...d.querySelectorAll('button')].find((b) => /^(Launch agent|Resume agent)/.test(flat(b)));
+    return {
+        rows: [...d.querySelectorAll('[data-launcher-resume] [data-resume-id]')].map((r) => r.getAttribute('data-resume-id')),
+        picked: d.querySelector('[data-launcher-resume] [data-resume-id][aria-checked="true"]')?.getAttribute('data-resume-id') ?? null,
+        newPicked: d.querySelector('[data-resume-new]')?.getAttribute('aria-checked') === 'true',
+        toggle: toggle ? { text: flat(toggle), pressed: toggle.getAttribute('aria-pressed') } : null,
+        footerAsleep: !!d.querySelector('[data-launcher-asleep]'),
+        transcript: !!d.querySelector('[data-launcher-transcript]'),
+        open: !!p,
+        session: p?.getAttribute('data-peek-session') ?? null,
+        state: p?.getAttribute('data-peek-state') ?? null,
+        panelH: p ? Math.round(p.getBoundingClientRect().height) : null,
+        msgs: msgs.map((m) => ({ role: m.getAttribute('data-role'), text: flat(m) })),
+        note: note ? flat(note) : null,
+        noteAboveOldest: !!note && msgs.length > 0 && !!(note.compareDocumentPosition(msgs[0]) & Node.DOCUMENT_POSITION_FOLLOWING),
+        empty: p?.querySelector('[data-peek-empty]') ? flat(p.querySelector('[data-peek-empty]')) : null,
+        error: p?.querySelector('[data-peek-error]') ? flat(p.querySelector('[data-peek-error]')) : null,
+        reading: !!p?.querySelector('[data-peek-reading]'),
+        asleep: asleep ? { disabled: !!asleep.disabled || asleep.getAttribute('aria-disabled') === 'true' } : null,
+        scroll: sc ? { top: Math.round(sc.scrollTop), client: sc.clientHeight, height: sc.scrollHeight } : null,
+        task: box(d.querySelector('#launcher-task')),
+        sessionCol: box(d.querySelector('[data-launcher-column="third"]')),
+        primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
+    };
+})()`;
+
+const peekAtBottom = (s) => s?.scroll != null && s.scroll.top + s.scroll.client >= s.scroll.height - 2;
+const peekSame = (a, b) => a != null && b != null && Math.abs(a - b) <= 1;
+const peekClick = (h, id) => h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${id}"]')?.click()`);
+const peekFocus = (h, id) => h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${id}"]')?.focus()`);
+// resolves when the panel shows `id` in one of `states`
+const peekWait = (h, id, states, ms = 5000) =>
+    polishWaitFor(
+        h,
+        `(() => {
+            const p = ${LAUNCHER}?.querySelector('[data-launcher-peek]');
+            return p?.getAttribute('data-peek-session') === ${JSON.stringify(id)} &&
+                ${JSON.stringify(states)}.includes(p.getAttribute('data-peek-state'));
+        })()`,
+        ms
+    );
+
+// Holds every getsessionpeek answer back by `ms` until removed; every other call goes to what was there. Resolves to
+// "ok", or why it did not install.
+async function installPeekDelay(h, apiUrl, ms) {
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(apiUrl)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${PEEK_DELAY_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const call = (client, command, data, opts) =>
+            prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command !== "getsessionpeek") return call(client, command, data, opts);
+                return new Promise((r) => setTimeout(r, ${ms})).then(() => call(client, command, data, opts));
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${PEEK_DELAY_KEY} = { api, prev };
+        return "ok";
+    })()`);
+}
+const removePeekDelay = (h) =>
+    h.ev(`(() => {
+        const f = window.${PEEK_DELAY_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${PEEK_DELAY_KEY};
+        return "restored";
+    })()`);
+
+const launcherSessionPeek = {
+    name: "launcher-session-peek",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // not under the temp dir: the session scan drops a session whose project sits there (parseCandidates)
+            const dir = mkdtempSync(join(homedir(), `.${PEEK_PROJECT}-`));
+            ctx.dirs.push(dir);
+            await h.rpc("createproject", { name: PEEK_PROJECT, path: dir });
+            ctx.projects.push(PEEK_PROJECT);
+            await waitForProjectInConfig(h, PEEK_PROJECT);
+
+            // filed under the project's slug folder so the project-scoped scan reads that one folder, not the whole root
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", learnSlug(dir));
+            mkdirSync(ctx.transcriptDir, { recursive: true });
+            ctx.ids = {};
+            ctx.files = {};
+            ctx.mtimes = {};
+            const now = Date.now();
+            const write = (key, order, build) => {
+                const id = randomUUID();
+                const tr = peekTranscript(dir, id);
+                build(tr);
+                const file = join(ctx.transcriptDir, `${id}.jsonl`);
+                writeFileSync(file, tr.text());
+                // A newest: the list is A to F, top to bottom
+                const at = new Date(now - (order + 1) * 60_000);
+                utimesSync(file, at, at);
+                ctx.ids[key] = id;
+                ctx.files[key] = file;
+                ctx.mtimes[key] = at;
+            };
+            write("A", 0, (t) => {
+                t.prompt("verify peek A, turn 1");
+                t.answer("A-ans-1");
+                for (const n of [2, 3, 4]) {
+                    t.prompt(`A-ask-${n}`);
+                    t.answer(`A-ans-${n}`);
+                }
+                // turn 5: a tool call, the answer, then a sidechain record that must not replace it
+                t.prompt("A-ask-5");
+                t.tool("turn 5");
+                t.answer(peekLong("A-ans-5"));
+                t.answer("PEEKSIDE a subagent's text", { isSidechain: true });
+                t.meta("PEEKMETA a meta record");
+                // turn 6: narration, a tool call, then the answer: only the answer shows
+                t.prompt("A-ask-6");
+                t.answer("PEEKNARR Let me check the file first.");
+                t.tool("turn 6");
+                t.answer(peekLong("A-ans-6"));
+                t.prompt("A-ask-7");
+                t.answer(peekLong("A-ans-7"));
+            });
+            write("B", 1, (t) => {
+                t.prompt("verify peek B, turn 1");
+                t.answer(peekLong("B-ans-1"));
+                for (const n of [2, 3]) {
+                    t.prompt(`B-ask-${n}`);
+                    t.answer(peekLong(`B-ans-${n}`));
+                }
+            });
+            write("C", 2, (t) => {
+                t.prompt("verify peek C");
+                t.answer("C-ans-1");
+            });
+            write("D", 3, (t) => {
+                t.prompt("verify peek D");
+                t.longResults();
+            });
+            write("E", 4, (t) => {
+                t.prompt("verify peek E");
+                t.answer("E-ans-1");
+                t.prompt("E-ask-2");
+                t.answer("E-ans-2");
+                t.longResults();
+                t.prompt("E-ask-last");
+                t.answer("E-ans-last");
+            });
+            write("F", 5, (t) => {
+                t.prompt("verify peek F");
+                t.answer("F-ans-1");
+            });
+
+            // recent-first puts the project on top; put the developer's own list back in teardown
+            ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
+            const recent = [PEEK_PROJECT, ...JSON.parse(ctx.prevRecent ?? "[]")];
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(RECENT_PROJECTS_KEY)}, ${JSON.stringify(JSON.stringify(recent))})`
+            );
+            ctx.prevFlags = await h.ev(`localStorage.getItem(${JSON.stringify(NA_FLAGS_KEY)})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(NA_FLAGS_KEY)}, "{}")`);
+            await polishReload(h);
+            // the module url the getsessionpeek delay wraps (step 4)
+            ctx.modules = await ahResolveModules(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. a project was registered and six Claude transcripts were written", false, ctx.arrangeError);
+            return steps;
+        }
+        const { A, B, C, D, E, F } = ctx.ids;
+        const state = () => h.ev(peekStateExpr);
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("cockpit");
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        const offered = (await h.ev(`!!${LAUNCHER}`)) ? await launcherStartRows(h) : [];
+        if (!offered.includes("claude")) {
+            rec("0. the dialog opens with Claude offered", false, JSON.stringify({ offered }));
+            return steps;
+        }
+        await launcherPickStart(h, "claude");
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${F}"]')`, 10000);
+        await polishNap(300);
+
+        // 1. a picked Claude session offers Quick look, not pressed, in place of Open asleep
+        await peekClick(h, A);
+        await polishNap(300);
+        let s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-1-offered.png");
+        const order = [A, B, C, D, E, F];
+        rec(
+            "1. with A picked the footer offers Quick look, not pressed, and no Open asleep; the list is A to F",
+            s?.picked === A &&
+                JSON.stringify(s.rows.filter((id) => order.includes(id))) === JSON.stringify(order) &&
+                /^Quick look/.test(s.toggle?.text ?? "") &&
+                s.toggle.pressed !== "true" &&
+                !s.footerAsleep &&
+                !s.open,
+            JSON.stringify(s)
+        );
+        const before = s;
+
+        // 2. Shift+Enter on A's row opens the panel on A's last five messages
+        await peekFocus(h, A);
+        await launcherPress(h, "Enter", { shift: true });
+        await peekWait(h, A, ["ready"]);
+        await polishNap(250);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-2-open.png");
+        const wantA = [
+            ["assistant", "A-ans-5"],
+            ["user", "A-ask-6"],
+            ["assistant", "A-ans-6"],
+            ["user", "A-ask-7"],
+            ["assistant", "A-ans-7"],
+        ];
+        rec(
+            "2. Shift+Enter opens Quick look on A: its last 5 messages, newest last, no tool, meta, sidechain or narration text; the toggle pressed, scrolled to the newest, the Task box and Session column unmoved",
+            s?.session === A &&
+                s.state === "ready" &&
+                s.msgs.length === 5 &&
+                wantA.every(([role, text], i) => s.msgs[i]?.role === role && s.msgs[i].text.includes(text)) &&
+                s.msgs.every((m) => PEEK_FORBIDDEN.every((f) => !m.text.includes(f))) &&
+                s.toggle?.pressed === "true" &&
+                peekAtBottom(s) &&
+                peekSame(s.task?.top, before.task?.top) &&
+                peekSame(s.task?.h, before.task?.h) &&
+                peekSame(s.sessionCol?.top, before.sessionCol?.top),
+            JSON.stringify({ before: { task: before.task, sessionCol: before.sessionCol }, ...s })
+        );
+
+        // 3. ↓ to B: the panel follows, keeps its height, and starts at B's newest message though A was scrolled up
+        const heightA = s?.panelH;
+        await h.ev(`(() => {
+            const sc = ${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-scroll]');
+            if (sc) sc.scrollTop = 0;
+        })()`);
+        await peekFocus(h, A);
+        await launcherPress(h, "ArrowDown");
+        await peekWait(h, B, ["ready"]);
+        await polishNap(250);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-3-follow.png");
+        rec(
+            "3. ↓ to B: the panel follows to B's 5 messages (the newest last), its height unchanged, scrolled to the bottom",
+            s?.picked === B &&
+                s.session === B &&
+                s.msgs.length === 5 &&
+                s.msgs[4]?.text.includes("B-ans-3") &&
+                s.msgs[0]?.text.includes("B-ans-1") &&
+                peekSame(s.panelH, heightA) &&
+                s.scroll != null &&
+                s.scroll.height > s.scroll.client &&
+                peekAtBottom(s),
+            JSON.stringify({ heightA, ...s })
+        );
+
+        // 4. Reading…: C, not yet read in this opening, with its answer held back a second. C is emptied first (step 5)
+        // and keeps its mtime, so the list's order and C's cache key stand
+        writeFileSync(
+            ctx.files.C,
+            (() => {
+                const t = peekTranscript(ctx.dirs[0], C);
+                t.meta("PEEKMETA only a meta record");
+                t.prompt("PEEKSIDE a subagent's prompt", { isSidechain: true });
+                t.answer("PEEKSIDE a subagent's answer", { isSidechain: true });
+                t.tool("tool only");
+                return t.text();
+            })()
+        );
+        utimesSync(ctx.files.C, ctx.mtimes.C, ctx.mtimes.C);
+        const delay = ctx.modules?.urls
+            ? await installPeekDelay(h, ctx.modules.urls.api, 1000)
+            : `no-module-url (${ctx.modules?.error})`;
+        const timing = await h.ev(`(async () => {
+            const d = ${LAUNCHER};
+            const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+            const read = () => {
+                const p = d?.querySelector('[data-launcher-peek]');
+                return {
+                    session: p?.getAttribute('data-peek-session') ?? null,
+                    state: p?.getAttribute('data-peek-state') ?? null,
+                    reading: !!p?.querySelector('[data-peek-reading]'),
+                    msgs: p?.querySelectorAll('[data-peek-msg]').length ?? 0,
+                };
+            };
+            d?.querySelector('[data-resume-id="${C}"]')?.click();
+            await nap(50);
+            const early = read();
+            await nap(350);
+            const late = read();
+            return { early, late };
+        })()`);
+        await h.shot("cdp-shots/launcher-session-peek-4-reading.png");
+        await removePeekDelay(h);
+        rec(
+            "4. picking C (an unread session, its read held back 1 s): the header at once with no messages and no Reading… at ~50 ms, Reading… by ~400 ms",
+            delay === "ok" &&
+                timing?.early.session === C &&
+                timing.early.msgs === 0 &&
+                !timing.early.reading &&
+                timing.late.session === C &&
+                timing.late.reading,
+            JSON.stringify({ delay, ...timing })
+        );
+
+        // 5. C holds only meta, sidechain and tool records
+        await peekWait(h, C, ["empty"], 6000);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-5-empty.png");
+        rec(
+            "5. C: no messages, the empty line",
+            s?.session === C && s.state === "empty" && s.msgs.length === 0 && s.empty === PEEK_EMPTY_TEXT,
+            JSON.stringify(s)
+        );
+
+        // 6. D: none found in the last 8 MB
+        await peekClick(h, D);
+        await peekWait(h, D, ["capped", "ready", "empty", "error"], 8000);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-6-capped-none.png");
+        rec(
+            "6. D: capped with none found, the capped line",
+            s?.session === D && s.state === "capped" && s.msgs.length === 0 && s.empty === PEEK_CAPPED_TEXT,
+            JSON.stringify(s)
+        );
+
+        // 7. E: 2 found before the cap, the note above the oldest
+        await peekClick(h, E);
+        await peekWait(h, E, ["capped", "ready", "empty", "error"], 8000);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-7-capped-note.png");
+        rec(
+            "7. E: its last prompt and answer, with the capped note above the oldest",
+            s?.session === E &&
+                s.state === "capped" &&
+                s.msgs.length === 2 &&
+                s.msgs[0]?.role === "user" &&
+                s.msgs[0].text.includes("E-ask-last") &&
+                s.msgs[1]?.role === "assistant" &&
+                s.msgs[1].text.includes("E-ans-last") &&
+                !!s.note &&
+                s.noteAboveOldest,
+            JSON.stringify(s)
+        );
+
+        // 8. F, deleted after the list loaded: the read error, and Open asleep and Resume still enabled
+        rmSync(ctx.files.F, { force: true });
+        await peekClick(h, F);
+        await peekWait(h, F, ["error", "ready", "empty", "capped"], 6000);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-8-error.png");
+        rec(
+            "8. F (its file gone): the error line with the real error, Open asleep and Resume enabled",
+            s?.session === F &&
+                s.state === "error" &&
+                (s.error ?? "") !== "" &&
+                s.asleep != null &&
+                !s.asleep.disabled &&
+                /^Resume agent/.test(s.primary?.text ?? "") &&
+                !s.primary.disabled,
+            JSON.stringify(s)
+        );
+
+        // 9. the close button closes it; Shift+Enter (on A) opens it again
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-close]')?.click()`);
+        await polishNap(300);
+        const closedByButton = await state();
+        await peekClick(h, A);
+        await peekFocus(h, A);
+        await launcherPress(h, "Enter", { shift: true });
+        await peekWait(h, A, ["ready"]);
+        await polishNap(250);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-9-reopened.png");
+        rec(
+            "9. the panel's close button closes it and unpresses the toggle; Shift+Enter opens it again",
+            closedByButton != null &&
+                !closedByButton.open &&
+                closedByButton.toggle?.pressed !== "true" &&
+                s?.open &&
+                s.session === A &&
+                s.toggle?.pressed === "true",
+            JSON.stringify({ closedByButton, reopened: s })
+        );
+
+        // 10. ↑ from A to New session closes it
+        await peekFocus(h, A);
+        await launcherPress(h, "ArrowUp");
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-session-peek-10-new-session.png");
+        rec("10. ↑ to New session closes the panel", s?.newPicked && !s.open, JSON.stringify(s));
+
+        // 11. a short window: shorten it until the panel gives height up, then the panel is the only thing that did
+        await peekClick(h, A);
+        await peekFocus(h, A);
+        await launcherPress(h, "Enter", { shift: true });
+        await peekWait(h, A, ["ready"]);
+        await polishNap(250);
+        // measure the panel at full height in a window tall enough that nothing squeezes it
+        await h.cdp("Emulation.setDeviceMetricsOverride", { ...MODELS_VIEWPORT, height: 1300 });
+        await polishNap(300);
+        const fullH = (await state())?.panelH ?? null;
+        let height = null;
+        let shrunk = null;
+        for (let vh = 1300 - 40; vh >= 400; vh -= 40) {
+            await h.cdp("Emulation.setDeviceMetricsOverride", { ...MODELS_VIEWPORT, height: vh });
+            await polishNap(250);
+            shrunk = await state();
+            if (shrunk?.panelH != null && fullH != null && shrunk.panelH < fullH - 8) {
+                height = vh;
+                break;
+            }
+        }
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-close]')?.click()`);
+        await polishNap(300);
+        const shortClosed = await state();
+        await peekFocus(h, A);
+        await launcherPress(h, "Enter", { shift: true });
+        await peekWait(h, A, ["ready"]);
+        await polishNap(250);
+        const shortOpen = await state();
+        await h.shot("cdp-shots/launcher-session-peek-11-short-window.png");
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await polishNap(300);
+        rec(
+            "11. in a tall window the panel is 170px; in a short window it shrinks first (under 170px, still about two messages tall); the Task box and the Session column sit as with it closed",
+            height != null &&
+                fullH != null &&
+                Math.abs(fullH - 170) <= 8 &&
+                shortClosed != null &&
+                !shortClosed.open &&
+                shortOpen?.open &&
+                shortOpen.panelH < 170 &&
+                shortOpen.panelH >= 56 &&
+                peekSame(shortOpen.task?.top, shortClosed.task?.top) &&
+                peekSame(shortOpen.task?.h, shortClosed.task?.h) &&
+                peekSame(shortOpen.sessionCol?.top, shortClosed.sessionCol?.top),
+            JSON.stringify({
+                fullH,
+                height,
+                closed: { task: shortClosed?.task, sessionCol: shortClosed?.sessionCol },
+                open: { panelH: shortOpen?.panelH, task: shortOpen?.task, sessionCol: shortOpen?.sessionCol },
+            })
+        );
+
+        // 12. Esc closes the panel first, then the dialog
+        await peekFocus(h, A);
+        await launcherPress(h, "Escape");
+        await polishNap(300);
+        const afterEsc = await state();
+        await h.shot("cdp-shots/launcher-session-peek-12-esc.png");
+        await launcherPress(h, "Escape");
+        const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec(
+            "12. Esc closes Quick look and the dialog stays; a second Esc closes the dialog",
+            afterEsc != null && !afterEsc.open && closed,
+            JSON.stringify({ afterEsc: afterEsc && { open: afterEsc.open, picked: afterEsc.picked }, closed })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`launcher-session-peek teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the read delay", () => removePeekDelay(h));
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await step("restore the viewport", () => h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT));
+        if (ctx.transcriptDir) {
+            await step("remove the transcripts", () => rmSync(ctx.transcriptDir, { recursive: true, force: true }));
+        }
+        if (ctx.prevFlags !== undefined) {
+            const key = JSON.stringify(NA_FLAGS_KEY);
+            await step("restore the remembered flags", () =>
+                h.ev(
+                    ctx.prevFlags === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevFlags)})`
+                )
+            );
+        }
+        if (ctx.prevRecent !== undefined) {
+            const key = JSON.stringify(RECENT_PROJECTS_KEY);
+            await step("restore the recent projects", () =>
+                h.ev(
+                    ctx.prevRecent === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevRecent)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            // the store replaces projects.json by rename, which Windows refuses while something else holds the file
+            await step(`delete ${name}`, async () => {
+                for (let attempt = 1; ; attempt++) {
+                    try {
+                        return await h.rpc("deleteproject", { name });
+                    } catch (e) {
+                        if (attempt >= 3) throw e;
+                        await new Promise((r) => setTimeout(r, 400));
+                    }
+                }
+            });
+        }
+        // deleteproject leaves the channel createproject made, so the channel at the project's path goes too
+        await step("delete the project's channel", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        // the dialog's draft lives in memory; a reload hands the next scenario a fresh one
+        await step("reload", async () => {
+            await h.ev("location.reload()");
+            await new Promise((r) => setTimeout(r, 2500));
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step("remove the project dir", () => rmSync(dir, { recursive: true, force: true }));
         }
     },
 };
@@ -62119,6 +62737,7 @@ export const SCENARIOS = [
     newRunWindow,
     launcherScenario,
     launcherResume,
+    launcherSessionPeek,
     launcherResumeOlder,
     historyOlder,
     launcherImages,

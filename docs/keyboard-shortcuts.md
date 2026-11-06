@@ -80,7 +80,7 @@ column. The Tool row is the last in Start, so the other rows keep their digits.
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
-| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
+| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a Claude session picked: open or close Quick look, a panel under the columns with the session's last 5 messages (`↑` `↓` in the Session column move it to the next session; `Esc` closes it before the dialog; Open asleep sits in its header). With another agent's session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 

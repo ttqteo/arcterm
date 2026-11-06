@@ -44,6 +44,26 @@ func (ws *WshServer) GetAgentTranscriptCommand(ctx context.Context, data wshrpc.
 	return rtn, nil
 }
 
+// GetSessionPeekCommand answers the New dialog's Quick look: a Claude session's last few prompts and answers. Any
+// .jsonl path is read, as GetAgentTranscriptCommand does: Claude accounts can live in more than one config dir.
+func (ws *WshServer) GetSessionPeekCommand(ctx context.Context, data wshrpc.CommandGetSessionPeekData) (*wshrpc.CommandGetSessionPeekRtnData, error) {
+	if data.TranscriptPath == "" {
+		return nil, fmt.Errorf("transcriptpath is required")
+	}
+	if !strings.HasSuffix(data.TranscriptPath, ".jsonl") {
+		return nil, fmt.Errorf("transcriptpath must be a .jsonl file: %s", data.TranscriptPath)
+	}
+	msgs, capped, err := agentsessions.ClaudeTailMessages(data.TranscriptPath, data.Count)
+	if err != nil {
+		return nil, fmt.Errorf("reading session peek: %w", err)
+	}
+	out := make([]wshrpc.SessionPeekMessage, len(msgs))
+	for i, m := range msgs {
+		out[i] = wshrpc.SessionPeekMessage{Role: m.Role, Text: m.Text, Ts: m.Ts}
+	}
+	return &wshrpc.CommandGetSessionPeekRtnData{Messages: out, Capped: capped}, nil
+}
+
 func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.CommandGetSubagentsData) (*wshrpc.CommandGetSubagentsRtnData, error) {
 	infos, err := listSubagents(data.Path)
 	if err != nil {

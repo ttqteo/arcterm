@@ -912,6 +912,12 @@ export class RpcApiType {
         return client.wshRpcCall("getsessiongroup", data, opts);
     }
 
+    // command "getsessionpeek" [call]
+    GetSessionPeekCommand(client: WshClient, data: CommandGetSessionPeekData, opts?: RpcOpts): Promise<CommandGetSessionPeekRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsessionpeek", data, opts);
+        return client.wshRpcCall("getsessionpeek", data, opts);
+    }
+
     // command "getsessionsactivity" [call]
     GetSessionsActivityCommand(client: WshClient, data: CommandGetSessionsActivityData, opts?: RpcOpts): Promise<CommandGetSessionsActivityRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsessionsactivity", data, opts);

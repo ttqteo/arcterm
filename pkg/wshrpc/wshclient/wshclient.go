@@ -908,6 +908,12 @@ func GetSessionGroupCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionGrou
 	return resp, err
 }
 
+// command "getsessionpeek", wshserver.GetSessionPeekCommand
+func GetSessionPeekCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionPeekData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSessionPeekRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSessionPeekRtnData](w, "getsessionpeek", data, opts)
+	return resp, err
+}
+
 // command "getsessionsactivity", wshserver.GetSessionsActivityCommand
 func GetSessionsActivityCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionsActivityData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSessionsActivityRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSessionsActivityRtnData](w, "getsessionsactivity", data, opts)
