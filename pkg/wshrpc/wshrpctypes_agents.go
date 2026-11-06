@@ -8,7 +8,8 @@ import "context"
 type AgentCommands interface {
 	GetSessionGroupCommand(ctx context.Context, data CommandGetSessionGroupData) (*CommandGetSessionGroupRtnData, error)
 	GetAgentTranscriptCommand(ctx context.Context, data CommandGetAgentTranscriptData) (*CommandGetAgentTranscriptRtnData, error)
-	GetSubagentsCommand(ctx context.Context, data CommandGetSubagentsData) (*CommandGetSubagentsRtnData, error) // list a parent agent's on-disk subagent transcripts
+	GetSessionPeekCommand(ctx context.Context, data CommandGetSessionPeekData) (*CommandGetSessionPeekRtnData, error) // a Claude session's last few prompts and answers, for the New dialog's Quick look
+	GetSubagentsCommand(ctx context.Context, data CommandGetSubagentsData) (*CommandGetSubagentsRtnData, error)       // list a parent agent's on-disk subagent transcripts
 	GetUsageStatsCommand(ctx context.Context, data CommandGetUsageStatsData) (*CommandGetUsageStatsRtnData, error)
 	GetSessionUsageCommand(ctx context.Context, data CommandGetSessionUsageData) (*CommandGetSessionUsageRtnData, error) // Claude usage folded per session, for the Usage surface's By session table and digest
 	AnalyzeUsageCommand(ctx context.Context, data CommandAnalyzeUsageData) (*UsageInsights, error)                       // have Claude (Sonnet, headless) read a usage digest and save what it says
@@ -154,6 +155,28 @@ type CommandGetAgentTranscriptData struct {
 	// lines in them, so an append never re-reads the file. MaxLines is ignored; Start and Total come back 0.
 	// Setting more than one of Before, FromByte and FromStart is an error, as is a negative Before or FromByte.
 	FromByte int64 `json:"frombyte,omitempty"`
+}
+
+// CommandGetSessionPeekData asks for the last Count messages of a Claude transcript (a .jsonl path). Count outside
+// 1..20 is clamped; 0 means 5.
+type CommandGetSessionPeekData struct {
+	TranscriptPath string `json:"transcriptpath"`
+	Count          int    `json:"count"`
+}
+
+// SessionPeekMessage is one message of a session peek: a prompt the person typed ("user") or the answer that closed
+// its turn ("assistant"). Ts is UnixMilli.
+type SessionPeekMessage struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
+	Ts   int64  `json:"ts"`
+}
+
+// CommandGetSessionPeekRtnData holds the messages oldest first. Capped says the read stopped at its scan limit before
+// it found Count messages, so older ones may exist.
+type CommandGetSessionPeekRtnData struct {
+	Messages []SessionPeekMessage `json:"messages"`
+	Capped   bool                 `json:"capped"`
 }
 
 type CommandGetAgentTranscriptRtnData struct {
