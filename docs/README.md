@@ -18,7 +18,7 @@ lists what each version changed for the user.
 
 | Path | What's in it |
 | --- | --- |
-| `reference/` | `architecture.md` (the full three-layer map extracted from `AGENTS.md`), `motion-system.md` (motion principles and tokens), and protocol references cited from source comments. |
+| `reference/` | `architecture.md` (the full three-layer map extracted from `AGENTS.md`), `motion-system.md` (motion principles and tokens), [`surface-review.md`](reference/surface-review.md) (reviewing an area on a copy of the packaged store with `task dev:snapshot`), and protocol references cited from source comments. |
 | `agents/` | Integration notes for the agent reporters: tab auto-naming, usage reporting, and [Antigravity](agents/antigravity.md); [Brainstorm mode](agents/brainstorm.md) (how an agent's brainstorm is drawn, what each action sends, how it is tested); plus the [research and writing briefs](agents/subagent-briefs.md) a lead pastes into subagent prompts. |
 | `images/` | Screenshots the docs outside `guide/` show (`images/brainstorm/` for Brainstorm mode). |
 | `superpowers/specs/` | Design docs — the **why** behind each feature. Written before implementation, kept after. |

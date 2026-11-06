@@ -4,8 +4,11 @@
 package blockcontroller
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -299,5 +302,81 @@ func TestFailedAppendStillPublishesChunk(t *testing.T) {
 	}
 	if data.Data64 != base64.StdEncoding.EncodeToString(chunk) {
 		t.Errorf("published data64 = %q, want the chunk", data.Data64)
+	}
+}
+
+// withSnapshotStore makes the process a snapshot app whose store is base: its scratch dir is base/scratch, beside the
+// data dir.
+func withSnapshotStore(t *testing.T, base string, snapshot bool) string {
+	t.Helper()
+	oldData, oldSnapshot := wavebase.DataHome_VarCache, wavebase.Snapshot_VarCache
+	wavebase.DataHome_VarCache = filepath.Join(base, "data")
+	wavebase.Snapshot_VarCache = snapshot
+	t.Cleanup(func() { wavebase.DataHome_VarCache, wavebase.Snapshot_VarCache = oldData, oldSnapshot })
+	return wavebase.SnapshotScratchDir()
+}
+
+func TestSnapshotStartRefusal(t *testing.T) {
+	base := t.TempDir()
+	scratch := withSnapshotStore(t, base, true)
+	if want := filepath.Join(base, "scratch"); scratch != want {
+		t.Fatalf("scratch dir = %q, want %q beside the data dir", scratch, want)
+	}
+	cases := []struct {
+		name string
+		cwd  string
+		want bool // may start
+	}{
+		{"the scratch dir itself", scratch, true},
+		{"a project inside it", filepath.Join(scratch, "proj", "sub"), true},
+		{"no cwd, so the shell's default, the home dir", "", false},
+		{"a home-relative path", "~/code/waveterm", false},
+		{"a relative path", filepath.Join("proj", "sub"), false},
+		{"the snapshot's own store", base, false},
+		{"a sibling sharing the scratch prefix", filepath.Join(base, "scratch-other"), false},
+		{"a path climbing out of scratch", filepath.Join(scratch, "..", "data"), false},
+		{"the store's parent", filepath.Dir(base), false},
+	}
+	for _, c := range cases {
+		err := snapshotStartRefusal(true, scratch, c.cwd)
+		if got := err == nil; got != c.want {
+			t.Errorf("%s: snapshotStartRefusal(%q) = %v, want may-start %v", c.name, c.cwd, err, c.want)
+		}
+	}
+
+	err := snapshotStartRefusal(true, scratch, "D:/code/arcterm")
+	if err == nil {
+		t.Fatal("a real checkout outside scratch must be refused")
+	}
+	for _, part := range []string{"snapshot store", "D:/code/arcterm", scratch} {
+		if !strings.Contains(err.Error(), part) {
+			t.Errorf("refusal %q does not name %q", err, part)
+		}
+	}
+
+	// without ARC_SNAPSHOT nothing is refused, whatever the cwd
+	for _, cwd := range []string{"", "~/code/waveterm", base, filepath.Dir(base)} {
+		if err := snapshotStartRefusal(false, scratch, cwd); err != nil {
+			t.Errorf("guard off: snapshotStartRefusal(%q) = %v, want nil", cwd, err)
+		}
+	}
+}
+
+// a copied block's cwd is a real checkout: the start is refused with the reason (the pane shows it as failed to
+// start), and no process is made. Both the pane mounting and the boot's RestoreLiveAgents come through here.
+func TestResyncRefusesAProcessOutsideTheSnapshotScratch(t *testing.T) {
+	base := t.TempDir()
+	withSnapshotStore(t, base, true)
+	meta := withMeta(agentMeta("claude", "--resume", "abc"), waveobj.MetaKey_CmdCwd, filepath.Join(base, "checkout"))
+	blockId, tabId := insertAgentBlock(t, meta)
+	t.Cleanup(func() { DestroyBlockController(blockId) })
+
+	err := ResyncController(context.Background(), tabId, blockId, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "snapshot store") {
+		t.Fatalf("ResyncController outside the scratch dir = %v, want the snapshot refusal", err)
+	}
+	status := GetBlockControllerRuntimeStatus(blockId)
+	if status == nil || status.ShellProcStatus != Status_Init {
+		t.Errorf("status after the refusal = %+v, want a controller still at %q with no process", status, Status_Init)
 	}
 }

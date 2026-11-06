@@ -36,6 +36,9 @@ const (
 	WaveNoConfirmQuitVarName    = "WAVETERM_NOCONFIRMQUIT"
 	// set on a dev app beside the user's own (the final stage's, task dev:browser): it touches nothing outside its store
 	NoGlobalInstallVarName = "ARC_DEV_NO_GLOBAL_INSTALL"
+	// marks a wavesrv running on a copy of the user's packaged store (scripts/cdp/snapshot-dev.mjs). The copy holds live
+	// runs and agents whose cwds are real checkouts, so nothing it does may reach them, the vault remote or the harness homes
+	ArcSnapshotVarName = "ARC_SNAPSHOT"
 
 	WaveJwtTokenVarName  = "WAVETERM_JWT"
 	WaveSwapTokenVarName = "WAVETERM_SWAPTOKEN"
@@ -55,6 +58,7 @@ var AppPath_VarCache string          // caches WAVETERM_APP_PATH
 var AppResourcesPath_VarCache string // caches WAVETERM_RESOURCES_PATH
 var Dev_VarCache string              // caches WAVETERM_DEV
 var NoGlobalInstall_VarCache bool    // caches ARC_DEV_NO_GLOBAL_INSTALL
+var Snapshot_VarCache bool           // caches ARC_SNAPSHOT
 
 const WaveLockFile = "wave.lock"
 const DomainSocketBaseName = "wave.sock"
@@ -108,6 +112,9 @@ func CacheAndRemoveEnvVars() error {
 	os.Unsetenv(WaveNoConfirmQuitVarName)
 	NoGlobalInstall_VarCache = os.Getenv(NoGlobalInstallVarName) != ""
 	os.Unsetenv(NoGlobalInstallVarName)
+	// removed like the rest, so a shell or agent started from a snapshot app does not carry it into a dev app of its own
+	Snapshot_VarCache = os.Getenv(ArcSnapshotVarName) == "1"
+	os.Unsetenv(ArcSnapshotVarName)
 	return nil
 }
 
@@ -119,6 +126,19 @@ func IsDevMode() bool {
 // and writes no harness's steering or skills.
 func NoGlobalInstall() bool {
 	return NoGlobalInstall_VarCache
+}
+
+// IsSnapshot is whether this wavesrv runs on a copy of the packaged store (ARC_SNAPSHOT=1, set by
+// scripts/cdp/snapshot-dev.mjs). Boot work that reaches outside the copy stays off (cmd/server snapshotSkips), and
+// blockcontroller starts processes only inside SnapshotScratchDir.
+func IsSnapshot() bool {
+	return Snapshot_VarCache
+}
+
+// SnapshotScratchDir is the one place a snapshot app may start processes: the snapshot base's scratch dir, beside the
+// data dir.
+func SnapshotScratchDir() string {
+	return filepath.Join(filepath.Dir(GetWaveDataDir()), "scratch")
 }
 
 func GetWaveAppPath() string {

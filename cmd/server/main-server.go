@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 
 	"runtime"
 	"sync"
@@ -74,6 +76,42 @@ const TempAttachmentSweepInterval = 4 * time.Hour
 
 var shutdownOnce sync.Once
 var initConfigWatcher = wconfig.InitWatcher
+
+// snapshotBootSkips names the boot-time calls a snapshot store (scripts/cdp/snapshot-dev.mjs) leaves out. The store is a
+// copy of the user's packaged one, holding live runs, agents and a vault remote that belong to the packaged app, so a
+// call that writes outside the copy, starts a process or talks to a remote stays off. Each name is the call as main
+// writes it, and each call site asks snapshotSkips(name): a name that is listed but never asked, or asked but not
+// listed, is caught by TestSnapshotSkipNamesMatchTheirCallSites. A boot call not here runs in a snapshot too; the ones a
+// reviewer might wonder about are listed in docs/reference/surface-review.md.
+var snapshotBootSkips = []string{
+	"retryCleanupDebtAtStartup",
+	"runTelebot",
+	"wavevault.StartSyncLoop",
+	"harnessupdate.StartLoop",
+	"reporadar.RecoverInterruptedScans",
+	"sessiontrash.StartPurgeLoop",
+	"wshserver.StartStorage",
+	"wshserver.SweepCanvasFeedback",
+	"orchestrate.SweepWorktreeRoot",
+	"orchestrate.MarkInterruptedRuns",
+	"orchestrate.ResumeInterruptedLeads",
+	"runpause.ResumeAtBoot",
+	"wshserver.ResumeBrainstormSessions",
+	"orchestrate.StartWatchdog",
+	"runregulator.Start",
+	"services.Init",
+	"wshserver.StartAgentSleepLoop",
+	"jarvisvolunteer.StartLooseEndSweep",
+	"memhygiene.StartSweep",
+	"wshserver.StartCouncilRunner",
+	"wshserver.StartRunQueue",
+}
+
+// snapshotSkips is whether the boot call name stays off: only in a snapshot store, and only for a name in
+// snapshotBootSkips.
+func snapshotSkips(name string) bool {
+	return wavebase.IsSnapshot() && slices.Contains(snapshotBootSkips, name)
+}
 
 func init() {
 	envFilePath := os.Getenv("WAVETERM_ENVFILE")
@@ -229,9 +267,13 @@ func tempAttachmentCleanupLoop() {
 	}()
 	for {
 		wshserver.SweepTempAttachments()
-		wshserver.SweepCanvasFeedback()
+		if !snapshotSkips("wshserver.SweepCanvasFeedback") { // deletes inside the registered projects' real checkouts
+			wshserver.SweepCanvasFeedback()
+		}
 		orchestrate.SweepFinalShots(time.Now())
-		orchestrate.SweepWorktreeRoot(context.Background())
+		if !snapshotSkips("orchestrate.SweepWorktreeRoot") { // the worktrees under it belong to the packaged app's runs
+			orchestrate.SweepWorktreeRoot(context.Background())
+		}
 		blockcontroller.SweepIdleTerminalOutput()
 		time.Sleep(TempAttachmentSweepInterval)
 	}
@@ -442,6 +484,9 @@ func main() {
 	log.Printf("wave version: %s (%s)\n", WaveVersion, BuildTime)
 	log.Printf("wave data dir: %s\n", wavebase.GetWaveDataDir())
 	log.Printf("wave config dir: %s\n", wavebase.GetWaveConfigDir())
+	if wavebase.IsSnapshot() {
+		log.Printf("snapshot store: boot work off: %s; a process starts only inside %s\n", strings.Join(snapshotBootSkips, ", "), wavebase.SnapshotScratchDir())
+	}
 	err = filestore.InitFilestore()
 	if err != nil {
 		log.Printf("error initializing filestore: %v\n", err)
@@ -485,7 +530,9 @@ func main() {
 	if firstLaunch {
 		log.Printf("first launch detected")
 	}
-	reporadar.RecoverInterruptedScans(context.Background())
+	if !snapshotSkips("reporadar.RecoverInterruptedScans") {
+		reporadar.RecoverInterruptedScans(context.Background())
+	}
 	err = clearTempFiles()
 	if err != nil {
 		log.Printf("error clearing temp files: %v\n", err)
@@ -504,7 +551,9 @@ func main() {
 	startJobQueue()
 	startTelebot()
 	createMainWshClient()
-	retryCleanupDebtAtStartup()
+	if !snapshotSkips("retryCleanupDebtAtStartup") {
+		retryCleanupDebtAtStartup()
+	}
 	sigutil.InstallShutdownSignalHandlers(doShutdown)
 	sigutil.InstallSIGUSR1Handler()
 	if err := jarvis.MigrateTierPins(context.Background()); err != nil {
@@ -529,10 +578,16 @@ func main() {
 		log.Printf("error starting config watcher: %v\n", err)
 		return
 	}
-	runTelebot()
+	if !snapshotSkips("runTelebot") { // the copied settings may hold a paired chat and its token
+		runTelebot()
+	}
 	// after the config watcher: each run resolves the vault path from config
-	wavevault.StartSyncLoop(context.Background(), publishNotice)
-	harnessupdate.StartLoop(context.Background(), harnessUpdateCheckEnabled, publishNotice)
+	if !snapshotSkips("wavevault.StartSyncLoop") { // opening the copied vault (no .git) would git init it and sync it with the remote the copied settings name
+		wavevault.StartSyncLoop(context.Background(), publishNotice)
+	}
+	if !snapshotSkips("harnessupdate.StartLoop") { // asks the npm registry for each installed harness's latest version
+		harnessupdate.StartLoop(context.Background(), harnessUpdateCheckEnabled, publishNotice)
+	}
 	maybeStartPprofServer()
 	go stdinReadWatch()
 	go tempAttachmentCleanupLoop()
@@ -543,37 +598,63 @@ func main() {
 		jobobject.WatchKeptApps() // a quit kills this server outright: a block's Docker Desktop must not go with it
 	}()
 	// trashed sessions older than 7 days are removed: now, then daily
-	sessiontrash.StartPurgeLoop(context.Background())
+	if !snapshotSkips("sessiontrash.StartPurgeLoop") { // the trash is the user's own, under their home
+		sessiontrash.StartPurgeLoop(context.Background())
+	}
 	// the daily token tally behind a project's Activity card: a scan after a short delay, then every 30 minutes
 	projectactivity.StartLoop(context.Background())
 	// Settings → Storage: a scan after a short delay, then the daily auto-clean when storage:autoclean is on
-	wshserver.StartStorage(context.Background())
+	if !snapshotSkips("wshserver.StartStorage") { // its auto-clean removes worktrees, old sessions and package caches on the real machine
+		wshserver.StartStorage(context.Background())
+	}
 	// the machine slept: the pet says so when agents were working through it
 	sleepwatch.StartLoop(context.Background(), func(d baseds.SleptData) {
 		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_Slept, Data: d})
 	})
 	orchestrate.SealRunEvidenceHook = wshserver.SealDoneRunEvidenceAsync // a run the engine closed itself gets the same evidence snapshot `wsh jarvis complete` produces; before StartWatchdog, whose first tick is immediate and can be the tick that closes one
 	orchestrate.LaunchLeadHook = wshserver.LaunchPlanLead                // a run submitted with no lead gets one at its first judgment event; before StartWatchdog, whose first tick can deliver one
-	orchestrate.MarkInterruptedRuns(context.Background())                // no worker survives a restart; the previous wavesrv's non-dag runs would otherwise read executing forever
-	orchestrate.ResumeInterruptedLeads(context.Background())             // nor does a dag run's lead, and unlike its workers nothing else restarts it
-	runpause.ResumeAtBoot(context.Background())                          // a paused run resumes unless memory is already tight, then it stays paused for the regulator; before StartWatchdog, whose first tick is immediate
-	wshserver.ResumeBrainstormSessions(context.Background())             // a brainstorm's builder check or judge was watched by a goroutine the restart ended
-	orchestrate.StartWatchdog(context.Background())                      // dag advance + stall detection tick
-	runregulator.Start(context.Background())                             // RAM regulator: pauses a run when memory stays tight, resumes it when memory is free again; after the watchdog
-	agentask.AnswerHook = wshserver.RecordAskAnswered                    // one ask lifecycle row per delivered answer, whichever surface delivered it
+	// a snapshot store's runs are the packaged app's: a resume would start workers and leads in real checkouts, and the
+	// watchdog and regulator would advance, merge and pause them
+	if !snapshotSkips("orchestrate.MarkInterruptedRuns") {
+		orchestrate.MarkInterruptedRuns(context.Background()) // no worker survives a restart; the previous wavesrv's non-dag runs would otherwise read executing forever
+	}
+	if !snapshotSkips("orchestrate.ResumeInterruptedLeads") {
+		orchestrate.ResumeInterruptedLeads(context.Background()) // nor does a dag run's lead, and unlike its workers nothing else restarts it
+	}
+	if !snapshotSkips("runpause.ResumeAtBoot") {
+		runpause.ResumeAtBoot(context.Background()) // a paused run resumes unless memory is already tight, then it stays paused for the regulator; before StartWatchdog, whose first tick is immediate
+	}
+	if !snapshotSkips("wshserver.ResumeBrainstormSessions") {
+		wshserver.ResumeBrainstormSessions(context.Background()) // a brainstorm's builder check or judge was watched by a goroutine the restart ended
+	}
+	if !snapshotSkips("orchestrate.StartWatchdog") {
+		orchestrate.StartWatchdog(context.Background()) // dag advance + stall detection tick
+	}
+	if !snapshotSkips("runregulator.Start") {
+		runregulator.Start(context.Background()) // RAM regulator: pauses a run when memory stays tight, resumes it when memory is free again; after the watchdog
+	}
+	agentask.AnswerHook = wshserver.RecordAskAnswered // one ask lifecycle row per delivered answer, whichever surface delivered it
 	blocklogger.InitBlockLogger()
 	blockcontroller.InitBlockController()
-	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one
-	go services.Init(context.Background())                  // pinned apps' servers: Boot sweeps leftovers and staggers the starts, so it must not hold up WAVESRV-ESTART
+	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one; a snapshot store's relaunch is refused by ResyncController outside its scratch dir
+	if !snapshotSkips("services.Init") {
+		go services.Init(context.Background()) // pinned apps' servers: Boot sweeps leftovers and staggers the starts, so it must not hold up WAVESRV-ESTART
+	}
 	// idle agents sleep after a while, or early when RAM runs low
-	wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
+	if !snapshotSkips("wshserver.StartAgentSleepLoop") {
+		wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
+	}
 	// the Mac stays out of idle sleep while agents, runs or heavy jobs work (power:keepawake)
 	wshserver.StartKeepAwake(context.Background())
 	startStableWshWatch()
 	// the tray icon's red dot when memory pressure turns critical (spec 2026-10-15-tray-popover-design.md)
 	wshserver.StartMachineWatch(context.Background())
-	jarvisvolunteer.StartLooseEndSweep(context.Background())
-	memhygiene.StartSweep(context.Background())
+	if !snapshotSkips("jarvisvolunteer.StartLooseEndSweep") {
+		jarvisvolunteer.StartLooseEndSweep(context.Background())
+	}
+	if !snapshotSkips("memhygiene.StartSweep") {
+		memhygiene.StartSweep(context.Background())
+	}
 	err = wcore.InitBadgeStore()
 	if err != nil {
 		log.Printf("error initializing badge store: %v\n", err)
@@ -612,10 +693,14 @@ func main() {
 	go wshutil.RunWshRpcOverListener(unixListener, nil)
 	// a council left running when wavesrv last quit has nothing running it, so it is marked stopped; one that already has
 	// a run behind it is left alone, so the listeners above being up is no problem
-	wshserver.StartCouncilRunner()
+	if !snapshotSkips("wshserver.StartCouncilRunner") {
+		wshserver.StartCouncilRunner()
+	}
 	// last: its first evaluation can start a run, which spawns workers that dial back into the listeners above, and
 	// reads settings, so it waits for the config watcher, the engine and the block controller too
-	wshserver.StartRunQueue(context.Background())
+	if !snapshotSkips("wshserver.StartRunQueue") {
+		wshserver.StartRunQueue(context.Background())
+	}
 	web.RunWebServer(webListener) // blocking
 	runtime.KeepAlive(waveLock)
 }

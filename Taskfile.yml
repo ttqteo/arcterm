@@ -40,6 +40,10 @@ tasks:
             WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WAVETERM_NOCONFIRMQUIT: "1"
 
+    dev:snapshot:
+        desc: "Run the dev app on a fresh copy of the packaged arcterm's store (arc-snap under %LOCALAPPDATA%) to review a surface on real data: wavesrv starts a process only inside the copy's scratch dir and skips the boot work that reaches outside the copy (docs/reference/surface-review.md). It takes the main dev app's ports, so stop that one first. `task dev:snapshot -- --dry-run` prints what it would copy. Windows only."
+        cmd: node scripts/cdp/snapshot-dev.mjs {{.CLI_ARGS}}
+
     tauri:sync-version:
         desc: Write package.json's version into every file that carries a copy (src-tauri/tauri.conf.json, src-tauri/Cargo.toml) so the installer, the crate, and app.getVersion() agree (package.json stays the single source of truth).
         cmds:
