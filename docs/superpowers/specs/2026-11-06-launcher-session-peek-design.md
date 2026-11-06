@@ -5,8 +5,7 @@ see where the conversation stood, you have to Open asleep: that makes a tab on t
 and closes the dialog. That is too heavy when all you want is a glance before you choose Resume. This spec adds
 **Quick look**: a panel inside the dialog that shows the session's last 5 messages and loads at once.
 
-Prototype: `.superpowers/design/launcher-session-peek/project/A2-under-columns.dc.html` (absolute:
-`D:\src\arcterm\.superpowers\design\launcher-session-peek\project\A2-under-columns.dc.html`).
+Prototype: `.superpowers/design/launcher-session-peek/project/A2-under-columns.dc.html`.
 
 ## What exists today
 
