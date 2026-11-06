@@ -27,7 +27,7 @@ func TestReviewReadsModifiedDateAndMovesIt(t *testing.T) {
 	}
 
 	now := want.Add(60 * 24 * time.Hour)
-	changes := ReviewChanges(inv, nil, true, now)
+	changes := ReviewChanges(inv, nil, true, now, nil, nil)
 	if len(changes) != 1 || len(changes[0].Diffs) != 1 {
 		t.Fatalf("want one review with the date's diff: %+v", changes)
 	}
@@ -61,10 +61,10 @@ func TestReviewSkipsFreshAndTakenMemories(t *testing.T) {
 		}
 		return strings.Join(out, ",")
 	}
-	if got := names(ReviewChanges(inv, taken, true, now)); got != "old.md" {
+	if got := names(ReviewChanges(inv, taken, true, now, nil, nil)); got != "old.md" {
 		t.Fatalf("judged: reviews for %q, want old.md", got)
 	}
-	if got := names(ReviewChanges(inv, taken, false, now)); got != "old.md,warned.md" {
+	if got := names(ReviewChanges(inv, taken, false, now, nil, nil)); got != "old.md,warned.md" {
 		t.Fatalf("not judged: reviews for %q, want old.md,warned.md", got)
 	}
 }

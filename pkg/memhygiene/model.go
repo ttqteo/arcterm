@@ -7,18 +7,62 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/consult"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
+// headlessRuntimeFn names the headless runtime and openRouterKeyFn says whether an OpenRouter key is
+// stored; tests replace both, since one reads the config watcher and the other the secret store.
+var (
+	headlessRuntimeFn = consult.HeadlessRuntime
+	openRouterKeyFn   = consult.OpenRouterKeyConfigured
+)
+
+// modelFallbackJudgedBy is what the pane header shows when the claude fallback judged.
+const modelFallbackJudgedBy = "claude (OpenRouter has no key)"
+
+// modelSpec picks the spec memory hygiene judges with: the headless runtime's, except that openrouter
+// with no key stored falls back to claude for memory hygiene alone (the headless:runtime setting is
+// left as it is). judgedBy is "" unless the fallback was taken. A key read error is returned.
+func modelSpec() (spec consult.RuntimeSpec, runtime, judgedBy string, err error) {
+	runtime = headlessRuntimeFn()
+	if runtime == "openrouter" {
+		hasKey, kerr := openRouterKeyFn()
+		if kerr != nil {
+			return consult.RuntimeSpec{}, runtime, "", fmt.Errorf("memory hygiene: %w", kerr)
+		}
+		if !hasKey {
+			runtime, judgedBy = "claude", modelFallbackJudgedBy
+		}
+	}
+	spec, ok := consult.SpecForTier(runtime, consult.TierCapable)
+	if !ok {
+		return consult.RuntimeSpec{}, runtime, judgedBy, fmt.Errorf("memory hygiene: headless runtime %q has no spec", runtime)
+	}
+	return spec, runtime, judgedBy, nil
+}
+
+// modelRuntime is the runtime a judge call runs on and the pane header's judged-by note, for the
+// sites that store them. On a key read error it logs and returns the headless runtime and "": the
+// model call itself reports that error.
+func modelRuntime() (runtime, judgedBy string) {
+	_, runtime, judgedBy, err := modelSpec()
+	if err != nil {
+		log.Printf("memhygiene: picking the judge's runtime: %v\n", err)
+		return headlessRuntimeFn(), ""
+	}
+	return runtime, judgedBy
+}
+
 // runModel makes one judge or sort call; tests replace it. The judge gets no tools: everything it
 // needs is in the prompt, and Arc applies the result.
 var runModel = func(ctx context.Context, prompt string) (string, error) {
-	spec, ok := consult.HeadlessSpecForTier(consult.TierCapable)
-	if !ok {
-		return "", fmt.Errorf("memory hygiene: headless runtime %q has no spec", consult.HeadlessRuntime())
+	spec, _, _, err := modelSpec()
+	if err != nil {
+		return "", err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

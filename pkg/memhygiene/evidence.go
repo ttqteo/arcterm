@@ -208,20 +208,35 @@ func (r *evidenceRepo) lineCount(path string) (int, error) {
 	return len(tf.Lines), nil
 }
 
+// evidencePathRef is a repo path a memory's body names, with the :line it gives ("" when none).
+type evidencePathRef struct {
+	ref, line string
+}
+
+// evidenceBodyPaths is every repo path the body names, in order, repeats included. a match followed
+// by a path separator is the start of an absolute or longer path, so it isn't one.
+func evidenceBodyPaths(body string) []evidencePathRef {
+	var out []evidencePathRef
+	for _, idx := range evidencePathRe.FindAllStringSubmatchIndex(body, -1) {
+		end := idx[1]
+		if end < len(body) && strings.ContainsRune(`/\`, rune(body[end])) {
+			continue
+		}
+		p := evidencePathRef{ref: body[idx[2]:idx[3]]}
+		if idx[4] >= 0 {
+			p.line = body[idx[4]:idx[5]]
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func (r *evidenceRepo) references(m *Memory) error {
 	seen := map[string]bool{}
 	var found []string
 	flagged := false
-	for _, idx := range evidencePathRe.FindAllStringSubmatchIndex(m.Body, -1) {
-		end := idx[1]
-		if end < len(m.Body) && strings.ContainsRune(`/\`, rune(m.Body[end])) {
-			continue
-		}
-		ref := m.Body[idx[2]:idx[3]]
-		lineRef := ""
-		if idx[4] >= 0 {
-			lineRef = m.Body[idx[4]:idx[5]]
-		}
+	for _, p := range evidenceBodyPaths(m.Body) {
+		ref, lineRef := p.ref, p.line
 		shown := ref
 		if lineRef != "" {
 			shown += ":" + lineRef

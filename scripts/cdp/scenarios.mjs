@@ -30,7 +30,9 @@ import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 import {
+    MEMORY_ASK_ERROR,
     MEMORY_FAILED_ERROR,
+    MEMORY_JUDGED_BY,
     MEMORY_PROJECTS,
     MEMORY_SHARED_REPO,
     buildMemoryFixture,
@@ -56757,6 +56759,57 @@ async function setupMemoryAssert(h, ctx) {
             rec(step, false, String(e?.message ?? e));
         }
     };
+    // the shown project's view: "cards" (one memory at a time, a plain project's default, and what a reload
+    // returns to) or "table" (the rows and the detail rail the numbered steps drive)
+    const paneView = () =>
+        h.ev(`document.querySelector("[data-memory-pane]")?.getAttribute("data-memory-view") ?? null`);
+    const showView = async (view) => {
+        if ((await paneView()) === view) return true;
+        await click(`[data-memory-view-toggle=${q(view)}]`);
+        return polishWaitFor(
+            h,
+            `document.querySelector("[data-memory-pane]")?.getAttribute("data-memory-view") === ${q(view)}`,
+            5000
+        );
+    };
+    const queueSel = (id) => `[data-memory-queue-row=${q(id)}]`;
+    const queueRows = () =>
+        h.ev(`[...document.querySelectorAll("[data-memory-queue-row]")].map((b) => ({
+            id: b.getAttribute("data-memory-queue-row"),
+            selected: b.hasAttribute("data-selected"),
+            decided: b.hasAttribute("data-decided"),
+            title: (b.firstElementChild?.textContent ?? "").trim(),
+            status: (b.lastElementChild?.textContent ?? "").trim(),
+        }))`);
+    const cardKind = () =>
+        h.ev(`document.querySelector("[data-memory-review-card]")?.getAttribute("data-card-kind") ?? null`);
+    const cardButtons = () =>
+        h.ev(`[...document.querySelectorAll("[data-memory-review-card] [data-memory-card-action]")].map((b) => ({
+            action: b.getAttribute("data-memory-card-action"),
+            label: b.textContent.trim(),
+            disabled: b.disabled,
+        }))`);
+    const cardStatus = () =>
+        h.ev(`(() => {
+            const s = document.querySelector("[data-memory-review-card] [data-memory-card-status]");
+            return s ? { text: s.textContent.trim(), tone: s.getAttribute("data-tone") } : null;
+        })()`);
+    // a queue row picks its card; the card shown is the selected row's
+    const selectCard = async (id) => {
+        await click(queueSel(id));
+        return polishWaitFor(
+            h,
+            `document.querySelector(${q(queueSel(id))})?.hasAttribute("data-selected") === true && !!document.querySelector("[data-memory-review-card]")`,
+            5000
+        );
+    };
+    const stateOf = (project) => JSON.parse(readFileSync(memoryStatePath(ctx.dataDir, project), "utf8"));
+    const reopenMemoryTab = async () => {
+        await polishReload(h);
+        await h.goto("setup");
+        await click("#setup-tab-memory");
+        await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
+    };
 
     await h.cdp("Emulation.setDeviceMetricsOverride", {
         width: 1600,
@@ -56769,9 +56822,10 @@ async function setupMemoryAssert(h, ctx) {
     await polishWaitFor(h, `!!document.querySelector("[data-memory-project]")`, 10000);
 
     await run(
-        "1. Main: the own project with the toolbar status, a meter, one index card, five rows and a trim's detail",
+        "1. Main: the own project's table with the toolbar status, a meter, one index card, a row per change and a trim's detail",
         async () => {
             await selectProject(MEMORY_PROJECTS.own);
+            await showView("table");
             await selectChange(own.trim.id);
             const ix = fx.states[MEMORY_PROJECTS.own].index;
             const meter = `${ix.lines} lines · ${(ix.bytes / 1000).toFixed(1)} of 25 KB`;
@@ -56792,7 +56846,7 @@ async function setupMemoryAssert(h, ctx) {
                     toReview >= 3 &&
                     got.rail.includes(meter) &&
                     got.cards === 1 &&
-                    got.rows === 5 &&
+                    got.rows === fx.states[MEMORY_PROJECTS.own].changes.length &&
                     got.detail.includes("Why") &&
                     got.detail.includes("Change") &&
                     got.detail.includes(own.trim.title) &&
@@ -56835,6 +56889,361 @@ async function setupMemoryAssert(h, ctx) {
             detail: JSON.stringify({ toReview, onSetup, offSetup }),
         };
     });
+
+    // ---- the card view (boards A and A2 of .superpowers/design/memory-review-ux): the own project opens one memory
+    // at a time after 1b's reload. Its seeded asks are state only (no model call): never press Ask an agent, nor
+    // Talk it over, which launches a real agent. 1k's Back to review is the one verdict that stays, so the own
+    // project is reseeded after it.
+    const cr = fx.reviews;
+    const ownState = fx.states[MEMORY_PROJECTS.own];
+    // the queue: every open change in table order (the superseded Review left out), then the decided ones
+    const openIds = ownState.changes.filter((c) => c.status === "open" || c.status === "conflict").map((c) => c.id);
+
+    await run(
+        "1c. setup-memory-review-card (board A): the queue strip, a Review's text, its four buttons, the reason section and the judged-by header",
+        async () => {
+            await selectProject(MEMORY_PROJECTS.own);
+            const view = await paneView();
+            const picked = await selectCard(cr.first.id);
+            const got = {
+                view,
+                picked,
+                rows: await queueRows(),
+                kind: await cardKind(),
+                body: await text("[data-memory-review-card] [data-memory-body]"),
+                buttons: await cardButtons(),
+                reason: await text("[data-memory-review-card] [data-memory-reason]"),
+                askLine: await text("[data-memory-review-card] [data-memory-ask-line]"),
+                doclines: await h.ev(
+                    `[...document.querySelectorAll("[data-memory-review-card] [data-memory-doclines] > span")].map((s) => s.textContent.trim())`
+                ),
+                detailsOpen: await h.ev(
+                    `document.querySelector("[data-memory-review-card] details[data-memory-details]")?.open ?? null`
+                ),
+                judgedBy: await text("[data-memory-judged-by]"),
+            };
+            await h.shot("cdp-shots/setup-memory-review-card.png");
+            const ids = got.rows.map((r) => r.id);
+            return {
+                ok:
+                    view === "cards" &&
+                    picked &&
+                    JSON.stringify(ids) === JSON.stringify(openIds) &&
+                    !ids.includes(cr.proposed.id) &&
+                    got.kind === "review" &&
+                    got.body.includes("Run the focused tests first, then the whole suite once.") &&
+                    JSON.stringify(got.buttons.map((b) => [b.action, b.label])) ===
+                        JSON.stringify([
+                            ["apply", "Still true"],
+                            ["ask", "Ask an agent…"],
+                            ["delete", "Delete"],
+                            ["keep", "Keep as is"],
+                        ]) &&
+                    got.reason.includes(cr.first.verdict) &&
+                    got.askLine.startsWith(`Asked ${cr.first.askedby} at `) &&
+                    got.askLine.endsWith(`: ${cr.first.askreason}`) &&
+                    got.doclines.length === 2 &&
+                    cr.first.doclines.every(
+                        (d, i) => got.doclines[i]?.includes(`${d.doc}:${d.line}`) && got.doclines[i]?.includes(d.text)
+                    ) &&
+                    got.detailsOpen === false &&
+                    got.judgedBy === `judged by ${MEMORY_JUDGED_BY}`,
+                detail: JSON.stringify({ ...got, rows: got.rows.length, want: openIds.length }),
+            };
+        }
+    );
+
+    await run(
+        "1d. setup-memory-agent-proposal (board A2): the proposal's chip, who proposed it, its reason, three diffs and Apply / Talk it over / Back to review",
+        async () => {
+            const picked = await selectCard(fx.proposal.id);
+            const got = {
+                picked,
+                row: (await queueRows()).find((r) => r.id === fx.proposal.id),
+                kind: await cardKind(),
+                chip: await text("[data-memory-review-card] [data-memory-kind]"),
+                head: await text("[data-memory-review-card] [data-memory-card-head]"),
+                reason: await text("[data-memory-review-card] [data-memory-body] > p"),
+                diffs: await h.ev(
+                    `[...document.querySelectorAll("[data-memory-review-card] [data-memory-body] > div")].map((d) => (d.firstElementChild?.textContent ?? "").trim())`
+                ),
+                buttons: await cardButtons(),
+            };
+            await h.shot("cdp-shots/setup-memory-agent-proposal.png");
+            const paths = ["AGENTS.md", "MEMORY.md", "feedback_commit-pathspec.md"];
+            return {
+                ok:
+                    picked &&
+                    got.row?.title === cr.proposed.title &&
+                    got.row?.status === "Agent proposes: move to AGENTS.md" &&
+                    got.kind === "proposal" &&
+                    got.chip === "Move to AGENTS.md" &&
+                    got.head.startsWith("Proposed by the agent") &&
+                    got.reason === fx.proposal.title &&
+                    got.diffs.length === 3 &&
+                    paths.every((p, i) => got.diffs[i]?.includes(p)) &&
+                    JSON.stringify(got.buttons.map((b) => [b.action, b.label])) ===
+                        JSON.stringify([
+                            ["apply", "Apply"],
+                            ["talk", "Talk it over with an agent"],
+                            ["keep", "Back to review"],
+                        ]),
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run(
+        "1e. setup-memory-asking: the asked Review reads Asking claude… with its buttons off, the next one waits, and Check now waits for the ask",
+        async () => {
+            const picked = await selectCard(cr.asking.id);
+            const rows = await queueRows();
+            const got = {
+                picked,
+                row: rows.find((r) => r.id === cr.asking.id)?.status,
+                waiting: rows.find((r) => r.id === cr.waiting.id)?.status,
+                status: await cardStatus(),
+                buttons: await cardButtons(),
+                check: await h.ev(`(() => {
+                    const b = document.querySelector("[data-memory-check]");
+                    return b ? { disabled: b.disabled, blocked: b.hasAttribute("data-memory-check-blocked"), title: b.parentElement?.title ?? "" } : null;
+                })()`),
+            };
+            await h.shot("cdp-shots/setup-memory-asking.png");
+            return {
+                ok:
+                    picked &&
+                    got.row === "Asking claude…" &&
+                    got.waiting === "Waiting to ask…" &&
+                    got.status?.text === "Asking claude…" &&
+                    got.buttons.length === 4 &&
+                    got.buttons.every((b) => b.disabled) &&
+                    got.check?.disabled === true &&
+                    got.check?.blocked === true &&
+                    got.check?.title === "Waiting for Ask an agent",
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run("1f. setup-memory-ask-error: a failed ask's error reads in the warning tone, with Ask an agent on", async () => {
+        const picked = await selectCard(cr.askError.id);
+        const got = {
+            picked,
+            kind: await cardKind(),
+            status: await cardStatus(),
+            ask: (await cardButtons()).find((b) => b.action === "ask"),
+        };
+        await h.shot("cdp-shots/setup-memory-ask-error.png");
+        return {
+            ok:
+                picked &&
+                got.kind === "review" &&
+                got.status?.text === MEMORY_ASK_ERROR &&
+                got.status?.tone === "warn" &&
+                got.ask?.disabled === false,
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run("1g. setup-memory-conflict-card: a change found changed on disk shows the conflict alert naming its file", async () => {
+        const picked = await selectCard(fx.conflict.id);
+        const got = {
+            picked,
+            row: (await queueRows()).find((r) => r.id === fx.conflict.id)?.status,
+            kind: await cardKind(),
+            alert: await text("[data-memory-review-card] [data-memory-conflict]"),
+            apply: (await cardButtons()).find((b) => b.action === "apply"),
+        };
+        await h.shot("cdp-shots/setup-memory-conflict-card.png");
+        return {
+            ok:
+                picked &&
+                got.row === "Changed on disk" &&
+                got.kind === "change" &&
+                got.alert.includes("Changed on disk since the check.") &&
+                got.alert.includes(basename(fx.conflict.conflictfile)) &&
+                got.apply?.disabled === true,
+            detail: JSON.stringify({ ...got, alert: got.alert.slice(0, 160) }),
+        };
+    });
+
+    await run(
+        "1h. setup-memory-delete-undo: d deletes a Review's memory and moves on, its row reads Deleted · Undo, and Undo brings the Review back with the file as it was",
+        async () => {
+            const file = fx.paths.firstReview;
+            const before = { file: bytes(file), index: bytes(fx.paths.ownIndex) };
+            const picked = await selectCard(cr.first.id);
+            await press("d");
+            const decided = `[data-memory-queue-row][data-decided]`;
+            const deleted = await polishWaitFor(h, `!!document.querySelector(${q(decided)})`, 10000);
+            // the next open card: the superseded Review after it is out of the queue, so its proposal
+            const movedOn = await polishWaitFor(
+                h,
+                `document.querySelector(${q(queueSel(fx.proposal.id))})?.hasAttribute("data-selected") === true`,
+                5000
+            );
+            const after = {
+                gone: !existsSync(file),
+                row: (await queueRows()).find((r) => r.decided),
+            };
+            // back to the delete's card by its row (k moves up through the open rows, never to a decided one)
+            await click(decided);
+            const undoShown = await polishWaitFor(
+                h,
+                `!!document.querySelector('[data-memory-review-card][data-decided] [data-memory-card-action="undo"]')`,
+                5000
+            );
+            const del = stateOf(MEMORY_PROJECTS.own).changes.find((c) => c.kind === "delete" && c.fromreview === cr.first.id);
+            if (del?.applyid) ctx.applyIds.push(del.applyid);
+            const onDelete = { kind: await cardKind(), buttons: await cardButtons() };
+            await h.shot("cdp-shots/setup-memory-delete-undo.png");
+            await click(`[data-memory-review-card] [data-memory-card-action="undo"]`);
+            const back = await polishWaitFor(
+                h,
+                `document.querySelector(${q(queueSel(cr.first.id))})?.hasAttribute("data-selected") === true && !document.querySelector(${q(decided)}) && document.querySelector("[data-memory-review-card]")?.getAttribute("data-card-kind") === "review"`,
+                10000
+            );
+            const review = stateOf(MEMORY_PROJECTS.own).changes.find((c) => c.id === cr.first.id);
+            const got = {
+                picked,
+                deleted,
+                movedOn,
+                ...after,
+                undoShown,
+                applyId: del?.applyid ?? null,
+                onDelete,
+                back,
+                reviewStatus: review?.status ?? null,
+                deleteLeft: stateOf(MEMORY_PROJECTS.own).changes.some((c) => c.kind === "delete" && c.fromreview === cr.first.id),
+                restored: same(bytes(file), before.file),
+                indexRestored: same(bytes(fx.paths.ownIndex), before.index),
+            };
+            await h.shot("cdp-shots/setup-memory-delete-undone.png");
+            return {
+                ok:
+                    picked &&
+                    deleted &&
+                    movedOn &&
+                    after.gone &&
+                    after.row?.status === "Deleted · Undo" &&
+                    after.row?.title === cr.first.title &&
+                    undoShown &&
+                    !!del?.applyid &&
+                    onDelete.kind === "change" &&
+                    JSON.stringify(onDelete.buttons.map((b) => b.action)) === JSON.stringify(["undo"]) &&
+                    back &&
+                    got.reviewStatus === "open" &&
+                    !got.deleteLeft &&
+                    got.restored &&
+                    got.indexRestored,
+                detail: JSON.stringify(got),
+            };
+        }
+    );
+
+    await run("1i. setup-memory-done-card: a project with nothing open reads Nothing to review, its decided change in the queue", async () => {
+        await selectProject(MEMORY_PROJECTS.done);
+        const shown = await polishWaitFor(
+            h,
+            `document.querySelector("[data-memory-review-card]")?.getAttribute("data-card-kind") === "done"`,
+            5000
+        );
+        const got = {
+            shown,
+            view: await paneView(),
+            card: await text("[data-memory-review-card]"),
+            rows: await queueRows(),
+        };
+        await h.shot("cdp-shots/setup-memory-done-card.png");
+        return {
+            ok:
+                shown &&
+                got.view === "cards" &&
+                got.card.startsWith(`Nothing to review in ${MEMORY_PROJECTS.done}`) &&
+                got.rows.length === 1 &&
+                got.rows[0].id === fx.doneReview.id &&
+                got.rows[0].decided &&
+                got.rows[0].status === "Still true",
+            detail: JSON.stringify(got),
+        };
+    });
+
+    await run("1j. setup-memory-table-view: All changes as a table shows the table, and Review one at a time returns", async () => {
+        await selectProject(MEMORY_PROJECTS.own);
+        await showView("cards");
+        const toTableLabel = await text(`[data-memory-view-toggle="table"]`);
+        const toTable = await showView("table");
+        const table = {
+            rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
+            queue: await h.ev(`!!document.querySelector("[data-memory-queue]")`),
+            card: await h.ev(`!!document.querySelector("[data-memory-review-card]")`),
+            toCardsLabel: await text(`[data-memory-view-toggle="cards"]`),
+        };
+        await h.shot("cdp-shots/setup-memory-table-view.png");
+        const toCards = await showView("cards");
+        const cards = {
+            queue: await h.ev(`!!document.querySelector("[data-memory-queue]")`),
+            card: await h.ev(`!!document.querySelector("[data-memory-review-card]")`),
+            rows: await h.ev(`document.querySelectorAll("[data-memory-change]").length`),
+        };
+        return {
+            ok:
+                toTableLabel === "All changes as a table" &&
+                toTable &&
+                table.rows === ownState.changes.length &&
+                !table.queue &&
+                !table.card &&
+                table.toCardsLabel === "Review one at a time" &&
+                toCards &&
+                cards.queue &&
+                cards.card &&
+                cards.rows === 0,
+            detail: JSON.stringify({ toTableLabel, toTable, table, toCards, cards }),
+        };
+    });
+
+    await run(
+        "1k. setup-memory-back-to-review: Back to review on the agent proposal shows its Review again, selected and open",
+        async () => {
+            try {
+                await selectProject(MEMORY_PROJECTS.own);
+                await showView("cards");
+                const picked = await selectCard(fx.proposal.id);
+                await click(`[data-memory-review-card] [data-memory-card-action="keep"]`);
+                const back = await polishWaitFor(
+                    h,
+                    `document.querySelector(${q(queueSel(cr.proposed.id))})?.hasAttribute("data-selected") === true && document.querySelector("[data-memory-review-card]")?.getAttribute("data-card-kind") === "review"`,
+                    10000
+                );
+                const st = stateOf(MEMORY_PROJECTS.own);
+                const got = {
+                    picked,
+                    back,
+                    review: st.changes.find((c) => c.id === cr.proposed.id)?.status ?? null,
+                    proposal: st.changes.find((c) => c.id === fx.proposal.id)?.status ?? null,
+                    buttons: (await cardButtons()).map((b) => b.action),
+                    row: (await queueRows()).find((r) => r.id === cr.proposed.id),
+                };
+                await h.shot("cdp-shots/setup-memory-back-to-review.png");
+                return {
+                    ok:
+                        picked &&
+                        back &&
+                        got.review === "open" &&
+                        got.proposal === "kept" &&
+                        JSON.stringify(got.buttons) === JSON.stringify(["apply", "ask", "delete", "keep"]) &&
+                        got.row?.selected === true &&
+                        !got.row?.decided,
+                    detail: JSON.stringify(got),
+                };
+            } finally {
+                // the kept proposal and the reopened Review stay in the state; the numbered steps start from the seed
+                writeMemoryStates(ctx.dataDir, { [MEMORY_PROJECTS.own]: ownState });
+                await reopenMemoryTab();
+            }
+        }
+    );
 
     await run(
         "2. Split: split-a shows the split text, two index cards, three labelled groups and a move-here",
@@ -56891,6 +57300,7 @@ async function setupMemoryAssert(h, ctx) {
             const original = bytes(fx.paths.trim);
             const trimmed = Buffer.from(original.toString("utf8").replace(fx.trim.old, fx.trim.new), "utf8");
             await selectProject(MEMORY_PROJECTS.own);
+            await showView("table");
             await selectChange(own.trim.id);
             await click("[data-memory-apply]");
             const advanced = await waitSelected(own.delete.id);
@@ -56994,7 +57404,9 @@ async function setupMemoryAssert(h, ctx) {
             ["failed", MEMORY_PROJECTS.failed],
             ["checking", MEMORY_PROJECTS.checking],
         ]) {
+            // a project with nothing pending opens in the card view; the row count read here is the table's
             await selectProject(name);
+            await showView("table");
             got[key] = {
                 rail: await railStatus(name),
                 line: await checkLine(),
@@ -57025,6 +57437,7 @@ async function setupMemoryAssert(h, ctx) {
         async () => {
             const before = { index: bytes(fx.paths.ownIndex), note: bytes(fx.paths.harvested) };
             await selectProject(MEMORY_PROJECTS.own);
+            await showView("table");
             await selectChange(own.addToIndex.id);
             await click("[data-memory-apply]");
             await reselectWhen(own.addToIndex.id, "Applied");
@@ -57061,6 +57474,7 @@ async function setupMemoryAssert(h, ctx) {
         "9. Keys: j and k move the selection, a applies and lands on the next change to review, x keeps and u undoes",
         async () => {
             await selectProject(MEMORY_PROJECTS.own);
+            await showView("table");
             // kind chips are tinted by what the change does: a removal, a bringing in, an edit in place
             const tone = (id) =>
                 h.ev(
@@ -57102,7 +57516,9 @@ async function setupMemoryAssert(h, ctx) {
             await press("j");
             const onDoc = await waitSelected(own.moveToDoc.id);
             await press("x");
-            const wrapped = await waitSelected(own.trim.id);
+            // the next change still to review after move-to-doc: add-to-index stays applied from step 8, so the first
+            // of the card view's Reviews listed after it
+            const wrapped = await waitSelected(fx.reviews.first.id);
             const kept = await waitRowStatus(own.moveToDoc.id, "Kept");
             await selectChange(own.moveToDoc.id);
             await press("u");
@@ -57426,6 +57842,11 @@ async function setupMemoryAssert(h, ctx) {
     await run(
         "16. Motion: a project switch fades the pane in with viewFade, a change switch its detail, a status fades with microFade and the meters ease their width",
         async () => {
+            // the own project opens in the card view after step 13's reload; the motion read here is the table's
+            await selectProject(MEMORY_PROJECTS.own);
+            await showView("table");
+            await selectProject(MEMORY_PROJECTS.fresh);
+            await polishNap(700);
             await motionStart();
             await selectProject(MEMORY_PROJECTS.own);
             await polishNap(700);
@@ -57485,6 +57906,7 @@ async function setupMemoryAssert(h, ctx) {
             const emulated = await h.ev(`matchMedia("(prefers-reduced-motion: reduce)").matches`);
             await motionStart();
             await selectProject(MEMORY_PROJECTS.own);
+            await showView("table");
             await selectChange((await selectedChange()) === own.trim.id ? own.merge.id : own.trim.id);
             await selectProject(MEMORY_PROJECTS.fresh);
             await click("[data-memory-check]");

@@ -13,6 +13,8 @@ type MemHygieneCommands interface {
 	// starts a check and returns at once: a check runs model calls, which can't fit the rpc budget
 	CheckMemoryHygieneCommand(ctx context.Context, data CommandCheckMemoryHygieneData) error
 	DecideMemoryChangeCommand(ctx context.Context, data CommandDecideMemoryChangeData) (*MemHygieneProject, error)
+	// starts a one-memory judge call and returns at once, like the check: a model call can't fit the rpc budget
+	AskMemoryAgentCommand(ctx context.Context, data CommandAskMemoryAgentData) error
 }
 
 const (
@@ -20,6 +22,10 @@ const (
 	MemVerdict_Keep   = "keep"
 	MemVerdict_Undo   = "undo"
 	MemVerdict_Reopen = "reopen"
+	MemVerdict_Delete = "delete"
+
+	// a Review another change (a delete from it, or an agent proposal) replaced; not pending
+	MemStatus_Superseded = "superseded"
 )
 
 type CommandListMemoryHygieneRtnData struct {
@@ -33,7 +39,12 @@ type CommandCheckMemoryHygieneData struct {
 type CommandDecideMemoryChangeData struct {
 	Project  string `json:"project"`
 	ChangeId string `json:"changeid"`
-	Verdict  string `json:"verdict"` // apply|keep|undo|reopen
+	Verdict  string `json:"verdict"` // apply|keep|undo|reopen|delete (delete: only on an open Review)
+}
+
+type CommandAskMemoryAgentData struct {
+	Project  string `json:"project"`
+	ChangeId string `json:"changeid"`
 }
 
 type MemHygieneProject struct {
@@ -53,6 +64,15 @@ type MemHygieneProject struct {
 	Index        MemIndexStats  `json:"index"`              // Folder's MEMORY.md
 	OwnIndex     *MemIndexStats `json:"ownindex,omitempty"` // OwnFolder's, during a split
 	Changes      []MemChange    `json:"changes"`
+	Asking       *MemAsk        `json:"asking,omitempty"` // the one-memory ask running now
+	AskWaiting   []string       `json:"askwaiting"`       // change ids queued behind Asking
+	JudgedBy     string         `json:"judgedby"`         // "" or "claude (OpenRouter has no key)" after the fallback
+}
+
+type MemAsk struct {
+	ChangeId  string `json:"changeid"`
+	StartedAt int64  `json:"startedat"` // unix ms
+	Runtime   string `json:"runtime"`   // the runtime the ask runs on, e.g. claude
 }
 
 type MemIndexStats struct {
@@ -75,11 +95,28 @@ type MemChange struct {
 	IndexDelta    MemIndexDelta `json:"indexdelta"`    // effect on Folder's MEMORY.md
 	OwnIndexDelta MemIndexDelta `json:"ownindexdelta"` // effect on OwnFolder's MEMORY.md
 	Op            MemOp         `json:"op"`
-	Status        string        `json:"status"`       // open|applied|kept|conflict
+	Status        string        `json:"status"`       // open|applied|kept|conflict|superseded (a Review another change replaced; not pending)
 	ConflictFile  string        `json:"conflictfile"` // the file whose hash changed since the check
 	DecidedAt     int64         `json:"decidedat"`
 	BackupUntil   int64         `json:"backupuntil"`
 	ApplyId       string        `json:"applyid"`
+	Body          string        `json:"body"`         // the memory's text, frontmatter stripped (Reviews and agent proposals)
+	Verdict       string        `json:"verdict"`      // the reason section's sentence
+	DocLines      []MemDocLine  `json:"doclines"`     // the doc lines the reason section quotes
+	Source        string        `json:"source"`       // "" or "agent" (an Ask an agent proposal)
+	ProposedAt    int64         `json:"proposedat"`   // unix ms
+	FromReview    string        `json:"fromreview"`   // on a delete or agent proposal: the Review it came from
+	SupersededBy  string        `json:"supersededby"` // on a Review: the change that took its place
+	AskReason     string        `json:"askreason"`    // on a Review: the judge's reason when it found the memory fine
+	AskedAt       int64         `json:"askedat"`      // unix ms
+	AskedBy       string        `json:"askedby"`      // the runtime that answered
+	AskError      string        `json:"askerror"`     // on a Review: a failed ask's error
+}
+
+type MemDocLine struct {
+	Doc  string `json:"doc"`
+	Line int    `json:"line"`
+	Text string `json:"text"`
 }
 
 type MemFileRef struct {

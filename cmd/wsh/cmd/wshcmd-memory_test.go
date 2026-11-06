@@ -107,3 +107,15 @@ func TestFormatMemoryDecisionReportsConflict(t *testing.T) {
 		t.Fatalf("applied: %s", got)
 	}
 }
+
+func TestFormatMemoryDecisionFollowsDeleteFromReview(t *testing.T) {
+	review := wshrpc.MemChange{Id: "9a9a9a9aee", Kind: "review", Title: "Old rule", Status: "superseded", SupersededBy: "5b5b5b5bff"}
+	applied := []wshrpc.MemChange{review, {Id: "5b5b5b5bff", Kind: "delete", Title: "Old rule", Status: "applied", FromReview: review.Id}}
+	if got := formatMemoryDecision(applied, review.Id); got != "9a9a9a9a: deleted as 5b5b5b5b: applied  Old rule" {
+		t.Fatalf("delete applied: %s", got)
+	}
+	conflict := []wshrpc.MemChange{review, {Id: "5b5b5b5bff", Kind: "delete", Title: "Old rule", Status: "conflict", ConflictFile: "old.md", FromReview: review.Id}}
+	if got := formatMemoryDecision(conflict, review.Id); !strings.Contains(got, "5b5b5b5b: not applied, old.md changed since the check") {
+		t.Fatalf("delete conflict: %s", got)
+	}
+}

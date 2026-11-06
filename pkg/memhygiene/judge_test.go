@@ -289,6 +289,127 @@ func TestJudgePromptSectionsExact(t *testing.T) {
 	}
 }
 
+// judgeGoldenInventory is a fixed inventory with no temp paths, so the prompt it gives is the same on
+// every machine: over its budget, a dead link, frontmatter, evidence, and a doc that isn't the target.
+func judgeGoldenInventory() (*Inventory, map[string]string, string) {
+	lineA := "- [Alpha](alpha.md) — when to read alpha"
+	inv := &Inventory{
+		Folder:     "/mem",
+		IndexPath:  "/mem/MEMORY.md",
+		IndexLines: []string{"Budget: 50 bytes", lineA},
+		Index:      wshrpc.MemIndexStats{Exists: true, Lines: 2, Bytes: 90},
+		DeadLinks:  []string{"gone.md"},
+		Sessions:   7,
+		Memories: []Memory{
+			{Name: "alpha.md", IndexLine: lineA, Body: "Alpha rule.\n", Reads: 3,
+				Frontmatter: map[string]string{"name": "alpha", "description": "the alpha"},
+				Evidence:    []wshrpc.MemEvidence{{Tone: "warn", Text: "Names a file that is gone: ", Code: "src/x.go"}}},
+			{Name: "beta.md", Body: "Beta rule.\n"},
+		},
+	}
+	return inv, map[string]string{"/proj/CLAUDE.md": "# Rules\n\nbe kind\n"}, "/proj/AGENTS.md"
+}
+
+// the weekly check's prompt, captured before the explain option was added; it must not move
+const judgeGoldenPrompt = `You review a project's Claude Code auto memory. Sessions load the index, MEMORY.md, and read a topic file only when its index line looks relevant. Claude Code loads only the first 200 lines or 25000 bytes of the index, so the index must stay small and current.
+
+Propose changes only where the evidence supports them. The index is 90 bytes, 40 over its 50-byte budget, and every session pays for each of its lines. The index lines of the memories below take 43 bytes, so propose changes that cut at least 40 bytes from the index. In order of preference: delete a memory that is stale, a one-off record, or repeats an instruction doc; merge memories that say one thing; shorten an index line longer than its hook needs (a trim whose "new" equals its "old", with the shorter "index_line"); move a rule the repo should own to AGENTS.md. While the index is over budget, keep an index line only if a session would make a mistake without it. A date's age alone is never a reason to change a memory: tell a one-off note (a past test result, a single verification) from a rule.
+
+Change kinds:
+- "delete": the memory is stale, wrong, a one-off record, or repeats an instruction doc. Deletes the file and its index line.
+- "trim": replace one exact passage of a memory's body with a shorter one. "old" must be copied exactly from the body and appear in it once. Optionally "index_line" replaces the memory's index line.
+- "merge": two or more memories of THIS batch say one thing. "merge_name" is the file written (one of the merged files, or a new kebab-case name ending in .md), "merge_body" its full content, "index_line" the one index line that replaces theirs. The other files are deleted.
+- "move-to-doc": the memory is a rule the repo should own. "section" is the exact text of one heading in AGENTS.md, "passage" the markdown added at the end of that section. Deletes the memory and its index line.
+- "add-to-index": a memory the index doesn't link that is still worth loading. "index_line" is its new index line.
+
+An index line is one line: "- [short title](file-name.md) — the hook that tells a session when to read it". Every change acts on one memory, except merge.
+
+Reply with strict JSON only, no prose, in this shape:
+{"changes": [{"kind": "delete|trim|merge|move-to-doc|add-to-index", "title": "a short reason, for a table row", "files": ["memory-file.md"], "evidence": [{"tone": "ok|warn|none", "text": "one line of evidence", "code": "optional file, path or quote shown in monospace"}], "old": "", "new": "", "index_line": "", "merge_name": "", "merge_body": "", "section": "", "passage": ""}]}
+Leave out the fields a kind doesn't use.
+
+## The whole index (MEMORY.md)
+
+Budget: 50 bytes
+- [Alpha](alpha.md) — when to read alpha
+
+Index links to files that don't exist: gone.md
+
+## Memories to review
+
+### alpha.md
+
+Index line: - [Alpha](alpha.md) — when to read alpha
+Frontmatter description: the alpha
+Frontmatter name: alpha
+Read in 3 of 7 sessions
+Evidence: Names a file that is gone: src/x.go
+Body:
+Alpha rule.
+
+
+### beta.md
+
+Index line: none (the index doesn't link it)
+Read in 0 of 7 sessions
+Body:
+Beta rule.
+
+
+## Instruction docs
+
+The project has no AGENTS.md, so propose no move-to-doc.
+
+### /proj/CLAUDE.md
+
+# Rules
+
+be kind
+
+`
+
+func TestJudgePrompt_withoutExplainUnchanged(t *testing.T) {
+	inv, docs, target := judgeGoldenInventory()
+	if got := JudgePrompt(inv, inv.Memories, docs, target); got != judgeGoldenPrompt {
+		t.Fatalf("JudgePrompt moved from its golden output:\n%s", got)
+	}
+}
+
+func TestJudgePrompt_explainAsksForFine(t *testing.T) {
+	inv, docs, target := judgeGoldenInventory()
+	got := judgePrompt(inv, inv.Memories[:1], docs, target, true)
+	for _, want := range []string{`"fine": [{"memory": "<name>", "reason": "<one sentence>"}]`, "one-sentence reason"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the explain prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(JudgePrompt(inv, inv.Memories[:1], docs, target), `"fine"`) {
+		t.Error("the weekly prompt asks for fine")
+	}
+}
+
+func TestParseJudge_readsFine(t *testing.T) {
+	inv := judgeTestInventory(t)
+	doc := filepath.Join(t.TempDir(), judgeDocAgents)
+	reply := "Here:\n```json\n" + `{"changes": [], "fine": [{"memory": "alpha.md", "reason": "Still needed; nothing in AGENTS.md covers it."}]}` + "\n```"
+	changes, fine, err := parseJudge(reply, inv, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 0 || len(fine) != 1 || fine[0].Memory != "alpha.md" || fine[0].Reason != "Still needed; nothing in AGENTS.md covers it." {
+		t.Fatalf("changes/fine = %+v/%+v", changes, fine)
+	}
+
+	// a reply with only changes reads as no fine list
+	changes, fine, err = parseJudge(`{"changes": [{"kind": "delete", "title": "Stale alpha", "files": ["alpha.md"]}]}`, inv, doc)
+	if err != nil || len(changes) != 1 || len(fine) != 0 {
+		t.Fatalf("changes/fine/err = %+v/%+v/%v", changes, fine, err)
+	}
+	if _, _, err := parseJudge(`{"fine": "nope", "changes": []}`, inv, doc); err == nil {
+		t.Fatal("a malformed fine list must be an error")
+	}
+}
+
 func TestModelRefusesToolsInInit(t *testing.T) {
 	base, ok := consult.SpecFor("claude")
 	if !ok {

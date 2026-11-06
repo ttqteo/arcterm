@@ -43,11 +43,11 @@ func StartCheck(project string) error {
 }
 
 func Decide(project, changeID, verdict string) (*wshrpc.MemHygieneProject, error) {
-	if !slices.Contains([]string{wshrpc.MemVerdict_Apply, wshrpc.MemVerdict_Keep, wshrpc.MemVerdict_Undo, wshrpc.MemVerdict_Reopen}, verdict) {
+	if !slices.Contains([]string{wshrpc.MemVerdict_Apply, wshrpc.MemVerdict_Keep, wshrpc.MemVerdict_Undo, wshrpc.MemVerdict_Reopen, wshrpc.MemVerdict_Delete}, verdict) {
 		return nil, fmt.Errorf("memory hygiene: unknown verdict %q on change %s of %s", verdict, changeID, project)
 	}
 	st, err := Update(project, func(st *State) error {
-		i := slices.IndexFunc(st.Changes, func(c wshrpc.MemChange) bool { return c.Id == changeID })
+		i := entryFind(st, changeID)
 		if i < 0 {
 			return fmt.Errorf("memory hygiene: %s has no change %s", project, changeID)
 		}
@@ -55,12 +55,24 @@ func Decide(project, changeID, verdict string) (*wshrpc.MemHygieneProject, error
 		now := time.Now()
 		switch verdict {
 		case wshrpc.MemVerdict_Apply:
+			// a superseded Review's place is taken by the change that replaced it
+			if c.Status == wshrpc.MemStatus_Superseded {
+				return entryRefuse(st, c, verdict)
+			}
 			if err := entryApply(st, c, now); err != nil {
+				return err
+			}
+		case wshrpc.MemVerdict_Delete:
+			if err := entryDelete(st, i, now); err != nil {
 				return err
 			}
 		case wshrpc.MemVerdict_Undo:
 			if err := entryUndo(st, c); err != nil {
 				return err
+			}
+			// undoing a delete made from a Review brings the Review back in its place
+			if c.FromReview != "" && c.Kind == judgeKindDelete && entryRestoreReview(st, c.FromReview) {
+				st.Changes = slices.Delete(st.Changes, i, i+1)
 			}
 		case wshrpc.MemVerdict_Keep:
 			// an applied change's files stay applied, so keeping it would misstate what's on disk
@@ -68,6 +80,10 @@ func Decide(project, changeID, verdict string) (*wshrpc.MemHygieneProject, error
 				return entryRefuse(st, c, verdict)
 			}
 			c.Status, c.DecidedAt = checkStatusKept, now.UnixMilli()
+			// Back to review: keeping a change made from a Review reopens the Review
+			if c.FromReview != "" {
+				entryRestoreReview(st, c.FromReview)
+			}
 			return nil
 		case wshrpc.MemVerdict_Reopen:
 			if c.Status != checkStatusKept {
@@ -86,6 +102,82 @@ func Decide(project, changeID, verdict string) (*wshrpc.MemHygieneProject, error
 
 func entryRefuse(st *State, c *wshrpc.MemChange, verdict string) error {
 	return fmt.Errorf("memory hygiene: can't %s %q in %s: it's %s", verdict, c.Title, st.Project, c.Status)
+}
+
+func entryFind(st *State, changeID string) int {
+	return slices.IndexFunc(st.Changes, func(c wshrpc.MemChange) bool { return c.Id == changeID })
+}
+
+// entryDelete deletes the one memory of the open Review at st.Changes[i], with its MEMORY.md index
+// line: it builds the same change the judge's delete kind does, records it as replacing the Review, and
+// applies it. A memory changed since the check is a conflict, as for any apply, and the Review stays
+// superseded behind the conflicted delete.
+func entryDelete(st *State, i int, now time.Time) error {
+	review := st.Changes[i]
+	if review.Kind != reviewKind || review.Status != splitStatusOpen {
+		return entryRefuse(st, &review, wshrpc.MemVerdict_Delete)
+	}
+	if len(review.Op.Memories) != 1 {
+		return fmt.Errorf("memory hygiene: review %q in %s names %d memories, want one", review.Title, st.Project, len(review.Op.Memories))
+	}
+	inv, err := ReadInventory(review.Op.Folder)
+	if err != nil {
+		return err
+	}
+	index, err := ReadText(inv.IndexPath)
+	if err != nil {
+		return err
+	}
+	del, err := judgeBuild(judgeChange{Kind: judgeKindDelete, Title: review.Title, Files: review.Op.Memories}, inv, "", len(index.EOL))
+	if err != nil {
+		return fmt.Errorf("memory hygiene: deleting %q in %s: %w", review.Title, st.Project, err)
+	}
+	// the hashes the Review was checked at, so a memory edited since then is a conflict
+	for fi := range del.Files {
+		for _, rf := range review.Files {
+			if checkSameFolder(rf.Path, del.Files[fi].Path) {
+				del.Files[fi].Sha256 = rf.Sha256
+			}
+		}
+	}
+	del.Id = ChangeID(judgeKindDelete, del.Files)
+	del.Evidence, del.Body = review.Evidence, review.Body
+	del.DocLines = []wshrpc.MemDocLine{}
+	del.FromReview, del.Status = review.Id, splitStatusOpen
+
+	// a judge delete of the same memory at the same hash has the same id; one the person kept is
+	// replaced, one already applied can't be (the memory would be gone)
+	j := entryFind(st, del.Id)
+	switch {
+	case j >= 0 && st.Changes[j].Status == checkStatusApplied:
+		return fmt.Errorf("memory hygiene: %q in %s is already deleted", review.Title, st.Project)
+	case j >= 0:
+		st.Changes[j] = del
+	default:
+		st.Changes = append(st.Changes, del)
+		j = len(st.Changes) - 1
+	}
+	entrySupersede(st, &st.Changes[i], &st.Changes[j])
+	return entryApply(st, &st.Changes[j], now)
+}
+
+// entrySupersede records that by replaces review: the Review leaves the pending list and by names it.
+func entrySupersede(st *State, review, by *wshrpc.MemChange) {
+	review.Status, review.SupersededBy = wshrpc.MemStatus_Superseded, by.Id
+	by.FromReview = review.Id
+}
+
+// entryRestoreReview sets the Review reviewID back to open, as Undo of its delete or Back to review on
+// its agent proposal does. It reports false when the state no longer holds that Review (a check dropped
+// it), so the caller leaves the replacing change in place.
+func entryRestoreReview(st *State, reviewID string) bool {
+	i := entryFind(st, reviewID)
+	if i < 0 || st.Changes[i].Kind != reviewKind {
+		return false
+	}
+	r := &st.Changes[i]
+	r.Status, r.SupersededBy, r.DecidedAt, r.ConflictFile = splitStatusOpen, "", 0, ""
+	return true
 }
 
 func entryApply(st *State, c *wshrpc.MemChange, now time.Time) error {
@@ -132,7 +224,8 @@ func entryUndo(st *State, c *wshrpc.MemChange) error {
 	return nil
 }
 
-// entryBegin marks a registered project as checking, refusing one that already is. It moves the next
+// entryBegin marks a registered project as checking, refusing one that already is or that is asking an
+// agent. It moves the next
 // sweep a week out up front, so a check that fails or is cut short waits for the next weekly sweep
 // instead of making a model call every hour.
 func entryBegin(project string) error {
@@ -143,8 +236,13 @@ func entryBegin(project string) error {
 		if st.Checking {
 			return fmt.Errorf("memory hygiene: %s is already being checked", project)
 		}
+		now := time.Now()
+		// a live ask or one waiting behind it; a stale marker reads as failed (askLive)
+		if askLive(st, now) {
+			return fmt.Errorf("memory hygiene: %s is asking an agent", project)
+		}
 		st.Checking = true
-		st.NextCheckAt = time.Now().Add(checkInterval).UnixMilli()
+		st.NextCheckAt = now.Add(checkInterval).UnixMilli()
 		return nil
 	})
 	return err

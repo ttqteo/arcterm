@@ -25,3 +25,7 @@ func (ws *WshServer) CheckMemoryHygieneCommand(ctx context.Context, data wshrpc.
 func (ws *WshServer) DecideMemoryChangeCommand(ctx context.Context, data wshrpc.CommandDecideMemoryChangeData) (*wshrpc.MemHygieneProject, error) {
 	return memhygiene.Decide(data.Project, data.ChangeId, data.Verdict)
 }
+
+func (ws *WshServer) AskMemoryAgentCommand(ctx context.Context, data wshrpc.CommandAskMemoryAgentData) error {
+	return memhygiene.StartAsk(data.Project, data.ChangeId)
+}

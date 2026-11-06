@@ -44,8 +44,9 @@ func reviewTouched(path string, fm map[string]string) (int64, error) {
 // ReviewChanges proposes a Review, built in code with no model, for each memory untouched for 30
 // days or more and, when the judge didn't run, for each memory with a warning in its evidence. A
 // memory another change already acts on gets none. A review never edits the memory: Still true only
-// marks it touched today.
-func ReviewChanges(inv *Inventory, others []wshrpc.MemChange, judged bool, now time.Time) []wshrpc.MemChange {
+// marks it touched today. docs are the instruction docs the reason section quotes, and seen the
+// fingerprints of the versions the judge judged: with judged false, the reason says nothing of the judge.
+func ReviewChanges(inv *Inventory, others []wshrpc.MemChange, judged bool, now time.Time, docs map[string]string, seen map[string]string) []wshrpc.MemChange {
 	taken := map[string]bool{}
 	for _, c := range others {
 		if c.Kind == reviewKind || !Pending(c) || !checkSameFolder(c.Op.Folder, inv.Folder) {
@@ -74,12 +75,13 @@ func ReviewChanges(inv *Inventory, others []wshrpc.MemChange, judged bool, now t
 		if !stale && (judged || len(warns) == 0) {
 			continue
 		}
-		out = append(out, reviewChange(inv, m, days, stale, now))
+		judgeSaw := judged && seen[m.Name] == checkFingerprint(m)
+		out = append(out, reviewChange(inv, m, days, stale, now, docs, judgeSaw))
 	}
 	return out
 }
 
-func reviewChange(inv *Inventory, m Memory, days int, stale bool, now time.Time) wshrpc.MemChange {
+func reviewChange(inv *Inventory, m Memory, days int, stale bool, now time.Time, docs map[string]string, judgeSaw bool) wshrpc.MemChange {
 	files := []wshrpc.MemFileRef{{Path: m.Path, Sha256: m.Sha256}}
 	var evidence []wshrpc.MemEvidence
 	effect := ""
@@ -115,7 +117,9 @@ func reviewChange(inv *Inventory, m Memory, days int, stale bool, now time.Time)
 		Evidence:   evidence,
 		Op:         wshrpc.MemOp{Folder: inv.Folder, Memories: []string{m.Name}},
 		Status:     splitStatusOpen,
+		Body:       m.Body,
 	}
+	c.Verdict, c.DocLines = Reason(m, inv.Sessions, docs, judgeSaw)
 	if line, ok := reviewModifiedLine(m.Path); ok {
 		c.Diffs = []wshrpc.MemDiff{{
 			Path: m.Path, Note: "frontmatter date",

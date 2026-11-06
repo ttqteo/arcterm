@@ -62,8 +62,8 @@ var memoryShowCmd = &cobra.Command{
 }
 
 var memoryDecideCmd = &cobra.Command{
-	Use:     "decide <project> <apply|keep|undo|reopen> <change-id>...",
-	Short:   "apply, keep (reject), undo or reopen changes; ids may be unique prefixes",
+	Use:     "decide <project> <apply|keep|undo|reopen|delete> <change-id>...",
+	Short:   "apply, keep (reject), undo, reopen or delete (a review's memory) changes; ids may be unique prefixes",
 	Args:    cobra.MinimumNArgs(3),
 	RunE:    memoryDecideRun,
 	PreRunE: preRunSetupRpcClient,
@@ -141,8 +141,8 @@ func memoryShowRun(cmd *cobra.Command, args []string) error {
 
 func memoryDecideRun(cmd *cobra.Command, args []string) error {
 	name, verdict, ids := args[0], args[1], args[2:]
-	if !slices.Contains([]string{wshrpc.MemVerdict_Apply, wshrpc.MemVerdict_Keep, wshrpc.MemVerdict_Undo, wshrpc.MemVerdict_Reopen}, verdict) {
-		return fmt.Errorf("unknown verdict %q: use apply, keep, undo or reopen", verdict)
+	if !slices.Contains([]string{wshrpc.MemVerdict_Apply, wshrpc.MemVerdict_Keep, wshrpc.MemVerdict_Undo, wshrpc.MemVerdict_Reopen, wshrpc.MemVerdict_Delete}, verdict) {
+		return fmt.Errorf("unknown verdict %q: use apply, keep, undo, reopen or delete", verdict)
 	}
 	proj, err := memoryProject(name)
 	if err != nil {
@@ -319,6 +319,16 @@ func formatMemoryDecision(changes []wshrpc.MemChange, id string) string {
 		return fmt.Sprintf("%s: decided", shortMemoryId(id))
 	}
 	c := changes[i]
+	// a delete is decided on its Review, which the delete then replaces: report the delete's outcome
+	if c.Status == wshrpc.MemStatus_Superseded && c.SupersededBy != "" {
+		if j := slices.IndexFunc(changes, func(d wshrpc.MemChange) bool { return d.Id == c.SupersededBy }); j >= 0 && changes[j].Status != wshrpc.MemStatus_Superseded {
+			how := "replaced by"
+			if changes[j].Kind == "delete" {
+				how = "deleted as"
+			}
+			return fmt.Sprintf("%s: %s %s", shortMemoryId(id), how, formatMemoryDecision(changes, c.SupersededBy))
+		}
+	}
 	if c.Status == "conflict" {
 		return fmt.Sprintf("%s: not applied, %s changed since the check; run `wsh memory check` again", shortMemoryId(id), c.ConflictFile)
 	}

@@ -183,6 +183,12 @@ func AskCommand(w *wshutil.WshRpc, data wshrpc.CommandAskData, opts *wshrpc.RpcO
 	return resp, err
 }
 
+// command "askmemoryagent", wshserver.AskMemoryAgentCommand
+func AskMemoryAgentCommand(w *wshutil.WshRpc, data wshrpc.CommandAskMemoryAgentData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "askmemoryagent", data, opts)
+	return err
+}
+
 // command "authenticate", wshserver.AuthenticateCommand
 func AuthenticateCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (wshrpc.CommandAuthenticateRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[wshrpc.CommandAuthenticateRtnData](w, "authenticate", data, opts)
