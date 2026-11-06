@@ -84,6 +84,16 @@ import {
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
+import {
+    createPeekLoader,
+    PEEK_COUNT,
+    peekClosesOn,
+    peekOffered,
+    type PeekLoader,
+    type PeekPick,
+    type PeekState,
+} from "./launcherpeek";
+import { LauncherPeekPanel } from "./launcherpeekpanel";
 import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
@@ -464,6 +474,40 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const flagMenuShown = isAgent && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
 
+    // Quick look (launcherpeek.ts): a Claude session's last 5 messages in a panel under the columns. Its state lives in
+    // the dialog, not an atom, so nothing outlives it; one loader (and its cache) per opening, dropped at close.
+    const [peekOpen, setPeekOpen] = useState(false);
+    const [peek, setPeek] = useState<{ id: string; state: PeekState } | null>(null);
+    const peekLoaderRef = useRef<PeekLoader | null>(null);
+    const peekOnOffer = peekOffered(runtime, resume);
+    const peekShown = peekOpen && peekOnOffer;
+    const peekLoader = () => {
+        if (peekLoaderRef.current == null) {
+            peekLoaderRef.current = createPeekLoader({
+                fetch: async (s) => {
+                    const rtn = await RpcApi.GetSessionPeekCommand(TabRpcClient, {
+                        transcriptpath: s.transcriptpath,
+                        count: PEEK_COUNT,
+                    });
+                    return { messages: rtn?.messages ?? [], capped: !!rtn?.capped };
+                },
+            });
+        }
+        return peekLoaderRef.current;
+    };
+    const closePeek = () => {
+        setPeekOpen(false);
+        setPeek(null);
+        peekLoaderRef.current?.cancel();
+    };
+    const togglePeek = () => {
+        if (peekShown) {
+            closePeek();
+        } else {
+            setPeekOpen(true);
+        }
+    };
+
     // the first open picks the agent row from the harness preference; later opens keep the last pick
     useEffect(() => {
         if (!open || globalStore.get(launcherRuntimeAtom) != null) {
@@ -620,6 +664,47 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         setError(null);
     }, [kind, runtime, project?.name, tool?.id]);
+
+    // Quick look follows the picked session as ↑↓ or a click move it (D6). The old session's messages go at once; a
+    // cached read answers inside request, so the loading state is set first.
+    const peekSessionId = peekShown ? (resume?.id ?? null) : null;
+    const peekStamp = peekShown ? (resume?.lastactivets ?? 0) : 0;
+    useEffect(() => {
+        if (!peekShown || resume == null) {
+            return;
+        }
+        const id = resume.id;
+        setPeek({ id, state: { status: "loading", since: Date.now() } });
+        peekLoader().request(resume, (o) => {
+            // the repo's tsconfig does not narrow the union on `ok`, so the error branch is read with "in"
+            const state: PeekState =
+                "error" in o ? { status: "error", error: o.error } : { status: "done", result: o.result };
+            setPeek({ id, state });
+        });
+    }, [peekSessionId, peekStamp]);
+
+    // another agent, another project or New session closes it (peekClosesOn)
+    const peekPick: PeekPick = { runtime, project: pickKey, sessionId: resume?.id ?? null };
+    const peekPickRef = useRef(peekPick);
+    useEffect(() => {
+        const prev = peekPickRef.current;
+        peekPickRef.current = peekPick;
+        if (peekClosesOn(prev, peekPick)) {
+            closePeek();
+        }
+    }, [runtime, pickKey, resume?.id]);
+
+    // the dialog closed: the panel and every read and cached answer of this opening go with it
+    useEffect(() => {
+        if (open) {
+            return;
+        }
+        peekLoaderRef.current?.dispose();
+        peekLoaderRef.current = null;
+        setPeekOpen(false);
+        setPeek(null);
+    }, [open]);
+    useEffect(() => () => peekLoaderRef.current?.dispose(), []);
 
     useEffect(() => {
         projectRef.current?.querySelector('[role="radio"][aria-checked="true"]')?.scrollIntoView({ block: "nearest" });
@@ -907,6 +992,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
                 accountMenuOpen: accountMenuShown,
+                peekOpen: peekShown,
                 resumePicked: resume != null,
                 textField: textField != null,
             },
@@ -1002,7 +1088,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 launch();
                 return;
             case "resume-secondary":
-                if (resume != null) {
+                // a Claude session's second button is Quick look; the others keep Open asleep or Transcript
+                if (peekOnOffer) {
+                    togglePeek();
+                } else if (resume != null) {
                     resumeSecondary(resume);
                 }
                 return;
@@ -1015,6 +1104,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     globalStore.set(launcherBranchListAtom, false);
                 } else if (action.what === "account") {
                     globalStore.set(launcherAccountMenuAtom, false);
+                } else if (action.what === "peek") {
+                    closePeek();
                 } else if (action.what === "filter") {
                     applyFilter("");
                 }
@@ -1405,6 +1496,21 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             </div>
                         </div>
                     </div>
+                    {/* Quick look sits under the columns, so opening it only pushes the footer down: the Task box and the
+                    columns never move (D3) */}
+                    {peekShown && resume != null ? (
+                        <LauncherPeekPanel
+                            session={resume}
+                            peek={peek?.id === resume.id ? peek.state : { status: "loading", since: Date.now() }}
+                            asleepDisabled={primaryDisabled}
+                            onAsleep={() => resumeSecondary(resume)}
+                            onClose={() => {
+                                closePeek();
+                                // the clicked button unmounts with the panel: keep focus in the dialog, under its keys
+                                rootRef.current?.focus();
+                            }}
+                        />
+                    ) : null}
                     <div className="flex shrink-0 items-center gap-3 border-t border-border px-[18px] py-[13px]">
                         {error != null ? (
                             <span
@@ -1442,7 +1548,20 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
-                        {resume != null && canOpenAsleep ? (
+                        {resume != null && peekOnOffer ? (
+                            // a Claude session: its last messages here, Open asleep in the panel's header (D2)
+                            <DialogButton
+                                variant="secondary"
+                                hint="shift+enter"
+                                data-launcher-peek-toggle
+                                aria-pressed={peekShown}
+                                title="Quick look: the session's last 5 messages (Shift+Enter)"
+                                onClick={togglePeek}
+                                className={cn(peekShown && "border-accent bg-surface-selected text-primary")}
+                            >
+                                Quick look
+                            </DialogButton>
+                        ) : resume != null && canOpenAsleep ? (
                             <DialogButton
                                 variant="secondary"
                                 hint="shift+enter"
