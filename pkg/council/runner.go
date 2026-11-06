@@ -834,6 +834,16 @@ func (r *Runner) roundsWork(from int) work {
 				continue
 			}
 			if round == 1 {
+				// a Brainstorm gives each seat a zone before the ideas: one zone spreads nothing, and a rerun keeps the zones it has
+				if isBrainstorm(snap) && len(panelOf(snap)) > 1 && len(snap.Zones) == 0 {
+					r.setZones(ctx, rn, id, snap)
+					if ctx.Err() != nil {
+						return ending{}
+					}
+					if snap, err = Load(id); err != nil {
+						return loadFailed(err)
+					}
+				}
 				forEachExpert(panelOf(snap), func(e CouncilExpert) { r.round1(ctx, rn, id, snap, e) })
 				snapped()
 				// the checks on what round 1 claimed come before the pause, so the person cuts ideas knowing which ones held up
@@ -1146,8 +1156,9 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 			if isBrainstorm(c) {
 				p.Evidence = withoutNoEvidenceChip(p.Evidence) // a Brainstorm's idea needs none, so it is not drawn weak
 				p.Checker, p.CheckWhy = "", ""                 // and its cross-check is whole, so it routes nothing
+				p.Zone = zoneNamed(c, p.Zone)                  // the stored name it matches, or none
 			} else {
-				p.Wild = false // only a Brainstorm has wild ideas
+				p.Wild, p.Zone = false, "" // only a Brainstorm has wild ideas and zones
 				// the model's name for a checker becomes the seat that reads the idea whole. It is settled before p joins the
 				// council, so the name p carries never counts as a check already routed (routeChecker)
 				p.Checker = routeChecker(c, p)
@@ -1307,10 +1318,7 @@ func (r *Runner) checkClaims(ctx context.Context, rn *run, id string) {
 		log.Printf("[council] %s: claims not checked: %v", id, err)
 		return
 	}
-	if isBrainstorm(snap) {
-		return
-	}
-	rootsFor := r.checkRoots(ctx, snap)
+	rootsFor := r.checkRoots(ctx, snap) // a Brainstorm's cited ideas are checked too (ApplyChecks); it runs no command
 	r.updateLogged(rn, id, func(c *Council) error {
 		ApplyChecks(c, rootsFor)
 		return nil

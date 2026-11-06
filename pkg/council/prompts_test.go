@@ -93,10 +93,11 @@ func TestRound1PromptAsksForAQuoteAndVerifyRequests(t *testing.T) {
 		"At most 2", `"pass" or "fail"`, "absolute path")
 	mustContain(t, "round 1 prompt", p, round1Shape)
 
-	// a Brainstorm asks for no evidence, so for no quote and no check either
+	// a Brainstorm asks for a quote on a cite about today's code (brainstormGroundRule), and for no check
 	b := brainstormCouncil()
 	pb := Round1Prompt(b, b.Experts[0])
-	mustNotContain(t, "brainstorm round 1 prompt", pb, quoteRule, verifyRule, `"quote"`, `"verify"`, `"expect"`)
+	mustContain(t, "brainstorm round 1 prompt", pb, quoteRule, `"quote"`)
+	mustNotContain(t, "brainstorm round 1 prompt", pb, verifyRule, `"verify"`, `"expect"`)
 }
 
 func TestLangLine(t *testing.T) {
@@ -720,15 +721,53 @@ func brainstormCouncil() *Council {
 	return c
 }
 
-func TestBrainstormRound1PromptAsksForIdeasWithNoEvidence(t *testing.T) {
+func TestBrainstormRound1PromptAsksForIdeas(t *testing.T) {
 	c := brainstormCouncil()
 	p := Round1Prompt(c, c.Experts[0])
 	mustContain(t, "round 1 prompt", p,
 		"You are UX", "Can someone use it without being told how?", "brainstorms ideas",
 		"Problem or goal: Idle sleep for services", "Which direction first?", `D:\proj`,
 		"pkg/services/idle.go", `D:\shots\tree.png`, "This is round 1 of 3", "Read, Grep and Glob", "never edit",
-		"Do not judge", `"wild"`, brainstormRound1Shape, "```json")
+		"Do not judge", `"wild"`, brainstormGroundRule, brainstormRound1Shape, "```json")
 	mustNotContain(t, "round 1 prompt", p, evidenceRule, round1Shape, briefEvidenceRule, "Feature:", "cites nothing", "Title-one", "Text-r1")
+}
+
+func TestBrainstormRound1Grounding(t *testing.T) {
+	c := brainstormCouncil()
+	p := Round1Prompt(c, c.Experts[0])
+	// its own grounding rule, the quote the cite check looks for, and the evidence field: never a Review's evidence rule
+	mustContain(t, "round 1 prompt", p, brainstormGroundRule, quoteRule, `"evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]`)
+	mustContain(t, "grounding rule", brainstormGroundRule, "path:line", "screenshot:<file>#<name>@x,y,w,h", "fraction from 0 to 1",
+		"a screenshot cite with no box counts as no evidence", "what to build", "a guess")
+	mustNotContain(t, "round 1 prompt", p, evidenceRule, briefEvidenceRule, "cites nothing", "so it needs no evidence")
+	// an agent seat's first turn shares the task
+	agent := CouncilExpert{Id: "witness", Name: "Witness", Agent: "tab1"}
+	c.Experts = append(c.Experts, agent)
+	mustContain(t, "agent first prompt", AgentFirstPrompt(c, agent, 1), brainstormGroundRule, quoteRule, brainstormRound1Shape)
+
+	// the shape: the first example idea cites, the second does not; with zones both still carry a zone
+	for name, sc := range map[string]*Council{"no zones": brainstormCouncil(), "zones": zonedCouncil()} {
+		shape := brainstormRound1ShapeFor(sc)
+		props, _, err := ParseRound1(jsonFence(shape))
+		if err != nil || len(props) != 2 {
+			t.Fatalf("%s shape: %+v, %v", name, props, err)
+		}
+		if ev := props[0].Evidence; len(ev) != 1 || ev[0].Ref == "" || ev[0].Quote == "" || ev[0].Weak {
+			t.Errorf("%s shape: first idea's evidence = %+v, want one cite with its quote", name, ev)
+		}
+		if ev := props[1].Evidence; len(ev) != 1 || !ev[0].Weak || ev[0].Ref != "" {
+			t.Errorf("%s shape: second idea's evidence = %+v, want none (the parser's chip)", name, ev)
+		}
+		if zoned := hasZones(sc); zoned != (props[0].Zone != "" && props[1].Zone != "") {
+			t.Errorf("%s shape: zones %q %q", name, props[0].Zone, props[1].Zone)
+		}
+	}
+
+	// a Review's round 1 is as it was: the evidence rule and its own shape, none of the Brainstorm's grounding
+	review := promptCouncil()
+	rp := Round1Prompt(review, review.Experts[0])
+	mustContain(t, "review round 1 prompt", rp, evidenceRule, quoteRule, round1Shape)
+	mustNotContain(t, "review round 1 prompt", rp, brainstormGroundRule, brainstormRound1Shape)
 }
 
 func TestBrainstormRound2PromptBuildsOnTheOthersIdeas(t *testing.T) {
@@ -762,6 +801,133 @@ func TestBrainstormSynthesisPromptPicksAtMostThreeIdeasAndKeepsTheWildOnesAside(
 	p = SynthesisPrompt(c)
 	mustContain(t, "synthesis prompt, no question", p, brainstormSynthesisShapeNoQuestion)
 	mustNotContain(t, "synthesis prompt, no question", p, `"answer"`, brainstormSynthesisShape)
+}
+
+func zonedCouncil() *Council {
+	c := brainstormCouncil()
+	c.Zones = []CouncilZone{
+		{Seat: "ux", Name: "First launch", Covers: "What a newcomer sees first."},
+		{Seat: "ram", Name: "Idle cost", Covers: "What a sleeping service holds."},
+		{Seat: "skeptic", Name: "Wake failures", Covers: "What breaks on wake."},
+	}
+	return c
+}
+
+func TestRound1PromptZone(t *testing.T) {
+	c := zonedCouncil()
+	ux, ram := c.Experts[0], c.Experts[1]
+	p := Round1Prompt(c, ux)
+	mustContain(t, "zoned round 1 prompt", p, "Your zone is First launch: What a newcomer sees first.",
+		"- First launch: What a newcomer sees first.", "- Idle cost: What a sleeping service holds.", "- Wake failures: What breaks on wake.",
+		"Most of your ideas sit in your own zone", "one idea outside it", `set "zone"`, `""`, brainstormRound1ShapeFor(c), `"zone":`)
+	mustNotContain(t, "zoned round 1 prompt", p, brainstormRound1Shape+"\n```")
+	mustContain(t, "ram's zoned round 1 prompt", Round1Prompt(c, ram), "Your zone is Idle cost: What a sleeping service holds.")
+
+	// an agent seat's first turn carries its zone the same way
+	agent := CouncilExpert{Id: "witness", Name: "Witness", Agent: "tab1"}
+	c.Experts = append(c.Experts, agent)
+	c.Zones = append(c.Zones, CouncilZone{Seat: "witness", Name: "Error paths", Covers: "What the person sees when it fails."})
+	first := AgentFirstPrompt(c, agent, 1)
+	mustContain(t, "agent first turn", first, "Your zone is Error paths: What the person sees when it fails.", "- First launch: What a newcomer sees first.",
+		"Most of your ideas sit in your own zone", brainstormRound1ShapeFor(c))
+
+	// with no zones, the prompts are today's, byte for byte
+	plain := brainstormCouncil()
+	if got := brainstormRound1ShapeFor(plain); got != brainstormRound1Shape {
+		t.Errorf("shape with no zones = %s, want brainstormRound1Shape", got)
+	}
+	noZone := Round1Prompt(plain, plain.Experts[0])
+	mustContain(t, "no-zone round 1 prompt", noZone, brainstormRound1Shape)
+	mustNotContain(t, "no-zone round 1 prompt", noZone, "zone")
+	// a Review with zones set by hand is still a Review's prompt
+	review := promptCouncil()
+	before := Round1Prompt(review, review.Experts[0])
+	review.Zones = zonedCouncil().Zones
+	if after := Round1Prompt(review, review.Experts[0]); after != before {
+		t.Errorf("a Review's round 1 prompt changed with zones:\n%s", after)
+	}
+}
+
+func TestBrainstormSynthesisZones(t *testing.T) {
+	c := zonedCouncil()
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	c.Proposals[0].Zone, c.Proposals[1].Zone = "First launch", "Idle cost"
+	p := SynthesisPrompt(c)
+	mustContain(t, "zones section", section(t, p, "## Zones"), "- First launch (UX): What a newcomer sees first.",
+		"- Idle cost (RAM): What a sleeping service holds.", "- Wake failures (Skeptic): What breaks on wake.")
+	idea := func(id string) string {
+		_, rest, _ := strings.Cut(p, "### "+id+" · ")
+		block, _, _ := strings.Cut(rest, "\n\n")
+		return block
+	}
+	for id, zone := range map[string]string{"P1": "First launch", "P2": "Idle cost", "P3": "none"} {
+		if b := idea(id); !strings.HasSuffix(b, "\nZone: "+zone) {
+			t.Errorf("%s's block = %q, want it to end with its zone, %s", id, b, zone)
+		}
+	}
+	mustContain(t, "zoned synthesis", p, "from 3 different zones where the ideas allow it", "Within a zone", "the zones' best ideas", "A second idea from a zone",
+		"no other zone has an idea anybody picked or built on", "zone none compete as one zone", "An idea nobody picked or built on",
+		"a wild idea never takes")
+	mustNotContain(t, "zoned synthesis", p, "Rank by how many experts picked it")
+
+	// with no zones, the synthesis is today's
+	plain := brainstormCouncil()
+	plain.Picks = c.Picks
+	np := SynthesisPrompt(plain)
+	mustContain(t, "no-zone synthesis", np, "Rank by how many experts picked it")
+	mustNotContain(t, "no-zone synthesis", np, "## Zones", "Zone:", "different zones")
+
+	// a Review's synthesis does not change with zones set by hand
+	review := promptCouncil()
+	before := SynthesisPrompt(review)
+	review.Zones = c.Zones
+	review.Proposals[0].Zone = "First launch"
+	if after := SynthesisPrompt(review); after != before {
+		t.Errorf("a Review's synthesis changed with zones:\n%s", after)
+	}
+}
+
+func TestBrainstormSynthesisLabels(t *testing.T) {
+	ideaBlock := func(p, id string) string {
+		_, rest, _ := strings.Cut(p, "### "+id+" · ")
+		block, _, _ := strings.Cut(rest, "\n\n")
+		return block
+	}
+	for name, build := range map[string]func() *Council{"no zones": brainstormCouncil, "zones": zonedCouncil} {
+		c := build()
+		c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+
+		// no idea carries a label: the synthesis is today's, with neither the rule nor the tie-break
+		p := SynthesisPrompt(c)
+		mustNotContain(t, name+" synthesis, no label", p, brainstormLabelRule, brainstormLabelTie, "Label:", "label:", "Read code")
+
+		// P1 read in the code, P2 a Guess, P3 cites nothing
+		c.Proposals[0].Label, c.Proposals[1].Label = LabelRead, LabelGuess
+		p = SynthesisPrompt(c)
+		if b := ideaBlock(p, "P1"); !strings.Contains(b, "\nLabel: Read code") {
+			t.Errorf("%s: P1's block = %q, want its label Read code", name, b)
+		}
+		if b := ideaBlock(p, "P2"); !strings.Contains(b, "\nLabel: Guess") {
+			t.Errorf("%s: P2's block = %q, want its label Guess", name, b)
+		}
+		if b := ideaBlock(p, "P3"); strings.Contains(b, "Label:") {
+			t.Errorf("%s: P3's block = %q, want no label on an idea that cites nothing", name, b)
+		}
+		mustContain(t, name+" synthesis", p, brainstormLabelRule, brainstormLabelTie)
+		mustContain(t, "label rule", brainstormLabelRule, "Read code", "Guess", "no claim about today's code")
+		mustContain(t, "tie-break", brainstormLabelTie, "otherwise even", "Read code", "before", "Guess", "never ranked above or below")
+		// the tie-break sits in rule 2, before rule 3
+		two, _, _ := strings.Cut(p, "\n3. ")
+		if !strings.Contains(two[strings.LastIndex(two, "\n2. "):], brainstormLabelTie) {
+			t.Errorf("%s: the tie-break is not in rule 2:\n%s", name, p)
+		}
+		mustNotContain(t, name+" synthesis", p, labelRule, evidenceRule, `"weak"`)
+		if hasZones(c) {
+			if b := ideaBlock(p, "P1"); !strings.Contains(b, "\nLabel: Read code\nZone: ") {
+				t.Errorf("%s: P1's block = %q, want the zone under the label", name, b)
+			}
+		}
+	}
 }
 
 func TestBrainstormAnswersPromptAsksForNoEvidence(t *testing.T) {

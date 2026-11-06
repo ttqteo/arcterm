@@ -107,6 +107,14 @@ Council giữ chỗ chờ cũ (mọi ghế xong vòng 1 rồi mới sang vòng 2
 với **Brainstorm** (xếp hạng dựa trên picks và số ý được xây tiếp, nên mọi ghế phải đọc mọi ý), và với ghế agent đang sống:
 ghế agent sang vòng 2 sau khi mọi ghế xong vòng 1, nhưng cũng đọc ý theo người kiểm của nó.
 
+Council **Brainstorm** chia vấn đề thành vùng trước vòng 1: một lượt gọi haiku đọc câu hỏi rồi giao cho mỗi ghế một vùng
+(một hành trình người dùng, một phần của tính năng, tùy câu hỏi), không vùng nào trùng nhau, mỗi vùng hợp với góc nhìn của
+ghế nhận nó. Mỗi ghế đưa phần lớn ý trong vùng của mình, có thể thêm một ý mạnh ngoài vùng, và ghi ý đó thuộc vùng nào.
+Coordinator chọn tối đa ba ý từ ba vùng khác nhau khi các ý cho phép, nên một vùng không chiếm hết cả ba chỗ. Council một
+ghế không chia vùng, và nếu lượt chia vùng lỗi thì vòng 1 chạy như trước. Ý nói về việc code đang làm gì hôm nay phải trích
+`path:line` (hay một vùng ảnh chụp màn hình) kèm đoạn trích; Go kiểm trích dẫn đó như với Review, và giữa hai ý ngang nhau,
+coordinator xếp ý đã đọc trong code (Read code) trước ý chỉ đoán (Guess). Ý về việc nên làm gì thì không cần bằng chứng.
+
 ## Đọc cuộc thảo luận
 
 Phần **Discussion** là một nhóm chat. Mỗi ý là một tin nhắn trong bong bóng mang màu của chuyên gia viết nó, avatar có hai
@@ -167,8 +175,9 @@ Một trích dẫn không khớp (file không có, số dòng vượt cuối fil
 trích dẫn sai vẫn hiện riêng. "Gần dòng đó" là chính dòng hay đoạn được trích, cộng ba dòng mỗi bên, phân biệt hoa thường.
 Trích dẫn vào file hay thư mục bạn đính kèm cho council được kiểm theo đường dẫn đó (với file ngoài project, trích bằng
 đường dẫn tuyệt đối); trích dẫn của một ghế agent được kiểm theo thư mục làm việc của chính agent đó khi biết, không thì
-theo project; `screenshot:` không bị gắn nhãn hay đếm. Council **Brainstorm** không đòi bằng chứng, nên không có nhãn, không
-có thanh bằng chứng và không có bước chạy lệnh.
+theo project; `screenshot:` không bị gắn nhãn hay đếm. Council **Brainstorm** chỉ đòi bằng chứng cho ý nói về code hôm nay:
+Go kiểm trích dẫn của những ý đó và coordinator đọc nhãn khi chọn ý, nhưng màn hình và tài liệu đã lưu không hiện nhãn, không
+có thanh bằng chứng, không có bước chạy lệnh, và một ý Guess vẫn có thể vào top.
 
 ### Lệnh kiểm chứng
 

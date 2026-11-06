@@ -17,7 +17,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-05.5"
+const HarnessVersion = "2026-11-06.1"
 
 // verifyField is the "verify" line of round1Shape: one request, in an allowed form, with what the expert expects. An agent
 // seat's shape (round1ShapeNoVerify) is round1Shape without it, since Go runs nothing for a seat.
@@ -151,6 +151,7 @@ const (
     {
       "title": "a short title for the idea",
       "argument": "what the idea is and why it could work, in about 70 words, with a table, a list or a diagram when it compares or counts",
+      "evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}],
       "wild": false
     },
     {
@@ -206,6 +207,17 @@ const (
 }`
 )
 
+// brainstormRound1ShapeFor is the Brainstorm round 1 shape c asks for: brainstormRound1Shape, whose first example idea
+// cites its claim about today's code in "evidence" and whose second cites nothing (brainstormGroundRule), with a "zone"
+// on each example idea when c holds zones. It is the one source of that shape.
+func brainstormRound1ShapeFor(c *Council) string {
+	if !hasZones(c) {
+		return brainstormRound1Shape
+	}
+	return strings.ReplaceAll(brainstormRound1Shape, `"wild": false`+"\n",
+		`"wild": false,`+"\n"+`      "zone": "the name of the zone it fits, as listed above, or \"\" for none"`+"\n")
+}
+
 // brainstormSynthesisShapeNoQuestion is brainstormSynthesisShape for a council with no question.
 var brainstormSynthesisShapeNoQuestion = strings.Replace(brainstormSynthesisShape, answerLine, "", 1)
 
@@ -219,7 +231,17 @@ const (
 		"mean; a screenshot cite with no box counts as no evidence. Cite evidence for every claim: a claim that cites " +
 		"nothing is drawn weak, and the coordinator marks it as such."
 
-	// quoteRule follows evidenceRule in round 1 of a Review, and in an agent seat's: Go checks each cite against the files,
+	// brainstormGroundRule is a Brainstorm's round 1 in place of evidenceRule: a claim about what the code does today cites
+	// its evidence, which Go checks (ApplyChecks) and labels, but an idea about what to build needs none and is not drawn
+	// weak. The screenshot box is evidenceRule's, fractions of the image. quoteRule follows it.
+	brainstormGroundRule = `Ground what an idea says about today's code. When an idea claims something about what the code ` +
+		`does today, cite where you read it in the idea's "evidence": a path:line in the project, or a region of a ` +
+		`screenshot or an image the person gave, written screenshot:<file>#<name>@x,y,w,h. The box is x,y (its top-left ` +
+		`corner) and w,h (its size), each a fraction from 0 to 1 of the image's width or height; a screenshot cite with ` +
+		`no box counts as no evidence. An idea about what to build needs no evidence and may still rest on a guess: leave ` +
+		`"evidence" out of an idea that claims nothing about today's code. Read the code to ground an idea, not to audit it.`
+
+	// quoteRule follows evidenceRule in round 1 of a Review, and in an agent seat's (brainstormGroundRule in a Brainstorm's): Go checks each cite against the files,
 	// and the quote is what it looks for at the line. A file outside the project folder, one the person attached, is only
 	// found by its absolute path.
 	quoteRule = `Go checks every path:line you cite against the project's files. For each cite you read, add the exact ` +
@@ -255,6 +277,15 @@ const (
 		`(a path:line it cites resolves), Guess (nothing it cites checks out) or Disproved (a check Go ran contradicts it). ` +
 		`A direction takes the label of its best proposal, Ran first, then Read code. A stance carries a label too: a ` +
 		`challenge or an objection that is Ran or Read code holds, and one that is a Guess does not weigh much.`
+
+	// brainstormLabelRule and brainstormLabelTie are in a Brainstorm's synthesis once an idea it shows carries a label
+	// (hasLabels): only an idea that cites something is checked (ApplyChecks), so an unlabelled one makes no claim about
+	// today's code and stays out of the tie-break. The tie-break sits in rule 2, after the picks and the builds.
+	brainstormLabelRule = `An idea's label is Go's check of what it claims about today's code, shown under it: Read code (a ` +
+		`path:line it cites resolves) or Guess (nothing it cites checks out). An idea with no label cites nothing, so it ` +
+		`makes no claim about today's code.`
+	brainstormLabelTie = `Between two ideas otherwise even, the one labelled Read code goes before the one labelled Guess; ` +
+		`an idea with no label is never ranked above or below another for its label.`
 
 	// titleRule is in every prompt that cites proposals by id: the person reads the prose fields, and the UI shows no
 	// proposal id.
@@ -372,7 +403,8 @@ const (
 // isBrainstorm says whether c is a Brainstorm; every other council, a council with no mode too, is a Review.
 func isBrainstorm(c *Council) bool { return ModeOf(c) == ModeBrainstorm }
 
-// angleOf is a role's brief without the evidence rule the library ends it with: a Brainstorm asks for no evidence.
+// angleOf is a role's brief without the evidence rule the library ends it with: a Brainstorm asks for evidence only for a
+// claim about today's code, through its own rule in round 1 (brainstormGroundRule), never the brief's "marked weak".
 func angleOf(brief string) string {
 	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(brief), briefEvidenceRule))
 }
@@ -873,19 +905,22 @@ func checkerRule(c *Council) string {
 
 // round1Task is what the ideas round asks, and the shape of the answer: the end of the round 1 prompt, and of an agent
 // seat's first turn. verify says the expert is a role expert in a Review, not an agent seat: it may ask Go to run commands
-// for its proposals, and it names a checker for each when the panel has another seat to name. A Brainstorm asks for no
-// evidence, so for no quote and no check either.
-func round1Task(c *Council, verify bool) string {
+// for its proposals, and it names a checker for each when the panel has another seat to name. A Brainstorm asks for
+// evidence only for a claim about today's code (brainstormGroundRule, with its quote), and for no check; one that holds
+// zones names e's zone and lists every seat's.
+func round1Task(c *Council, e CouncilExpert, verify bool) string {
 	var b strings.Builder
 	if isBrainstorm(c) {
 		b.WriteString("Come up with ideas for the problem or goal from your angle only. Do not judge any idea, yours or " +
 			"anyone's: doubts wait for round 2. A few strong, different ideas beat many that are alike. Each idea is one " +
-			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work. An idea " +
-			"may rest on a guess, so it needs no evidence; read the code to ground an idea, not to audit it.\n\n")
+			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work.\n\n")
+		b.WriteString(brainstormGroundRule + "\n\n")
+		b.WriteString(quoteRule + "\n\n")
+		writeZonesTask(&b, c, e)
 		b.WriteString(wildRule + "\n\n")
 		b.WriteString(messageRules + "\n\n")
 		b.WriteString(pictureCheck + "\n\n")
-		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
+		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1ShapeFor(c) + "\n```\n")
 		return b.String()
 	}
 	b.WriteString("Review the feature from your angle only and propose the changes worth making. A few strong " +
@@ -908,6 +943,38 @@ func round1Task(c *Council, verify bool) string {
 	return b.String()
 }
 
+// writeZonesTask is the zone block of a Brainstorm's round 1 task: e's own zone, every seat's, and how an idea names the
+// zone it fits. It writes nothing when c holds no zones.
+func writeZonesTask(b *strings.Builder, c *Council, e CouncilExpert) {
+	if !hasZones(c) {
+		return
+	}
+	b.WriteString("Before this round the problem was split into zones, one for each seat, so the panel spreads over it " +
+		"instead of each seat sweeping all of it.")
+	if z, ok := zoneOf(c, e.Id); ok {
+		fmt.Fprintf(b, " Your zone is %s", z.Name)
+		if z.Covers != "" {
+			fmt.Fprintf(b, ": %s", z.Covers)
+		}
+		if !strings.HasSuffix(b.String(), ".") {
+			b.WriteString(".")
+		}
+		b.WriteString(" The zones are:")
+	} else {
+		b.WriteString(" You hold no zone of your own; the zones are:")
+	}
+	b.WriteString("\n\n")
+	for _, z := range c.Zones {
+		if z.Covers != "" {
+			fmt.Fprintf(b, "- %s: %s\n", z.Name, z.Covers)
+		} else {
+			fmt.Fprintf(b, "- %s\n", z.Name)
+		}
+	}
+	b.WriteString("\nMost of your ideas sit in your own zone. You may offer one idea outside it when you think that idea " +
+		"strong. In each idea, set \"zone\" to the name of the zone it fits, as written above, or \"\" when it fits none.\n\n")
+}
+
 // Round1Prompt asks one expert for its proposals. The call runs in the project folder with Read, Grep and Glob.
 func Round1Prompt(c *Council, e CouncilExpert) string {
 	var b strings.Builder
@@ -925,7 +992,7 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 	if questionLinks(c) {
 		b.WriteString(webNote + "\n\n")
 	}
-	b.WriteString(round1Task(c, true))
+	b.WriteString(round1Task(c, e, true))
 	return b.String()
 }
 
@@ -1406,6 +1473,40 @@ func writeLabelled(b *strings.Builder, c *Council, p CouncilProposal, level stri
 	fmt.Fprintf(b, "%s\nLabel: %s\n\n", strings.TrimRight(one.String(), "\n"), w)
 }
 
+// writeZoned is writeLabelled with, for a Brainstorm that holds zones, a "Zone:" line under the idea: the zone it fits,
+// or none. The synthesis writes every idea through it.
+func writeZoned(b *strings.Builder, c *Council, p CouncilProposal, level string) {
+	if !hasZones(c) {
+		writeLabelled(b, c, p, level)
+		return
+	}
+	var one strings.Builder
+	writeLabelled(&one, c, p, level)
+	zone := zoneNamed(c, p.Zone)
+	if zone == "" {
+		zone = "none"
+	}
+	fmt.Fprintf(b, "%s\nZone: %s\n\n", strings.TrimRight(one.String(), "\n"), zone)
+}
+
+// writeSynthesisZones lists a zoned Brainstorm's zones for its synthesis: each one's name, the seat it went to, and
+// what it covers. It writes nothing for a council with no zones.
+func writeSynthesisZones(b *strings.Builder, c *Council) {
+	if !hasZones(c) {
+		return
+	}
+	b.WriteString("## Zones\n\nBefore round 1 the problem was split into zones, one for each expert, and each idea below " +
+		"names the zone it fits (\"Zone: none\" when it fits none).\n\n")
+	for _, z := range c.Zones {
+		fmt.Fprintf(b, "- %s (%s)", z.Name, speaker(c, z.Seat))
+		if z.Covers != "" {
+			fmt.Fprintf(b, ": %s", z.Covers)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+}
+
 // writeThread writes the replies of one proposal (or, with an empty id, the ones to the whole council), each
 // indented under the reply it answers. A held or dropped reply is not written: it is not out in the room. With labels, a
 // reply that carries a claim label says it among its tags (the synthesis shows them; the experts' rounds do not).
@@ -1506,6 +1607,7 @@ func SynthesisPrompt(c *Council) string {
 		}
 	}
 	b.WriteString("\n")
+	writeSynthesisZones(&b, c)
 
 	var missing []string
 	for _, e := range c.Experts {
@@ -1531,7 +1633,7 @@ func SynthesisPrompt(c *Council) string {
 		b.WriteString("(no expert made a proposal)\n\n")
 	}
 	for _, p := range sent {
-		writeLabelled(&b, c, p, "###")
+		writeZoned(&b, c, p, "###")
 		switch {
 		case p.Cut:
 			b.WriteString("The person cut this proposal at the pause: it was not reviewed.\n\n")
@@ -1601,14 +1703,33 @@ func LangLine(lang string) string {
 		`"Tìm bug" (a bug hunter), "Khách" (a new user) and "Đo RAM" (a memory watcher).`
 }
 
+// hasLabels says an idea the synthesis shows carries a check label (labelWord), so the prompt explains the labels.
+func hasLabels(c *Council) bool {
+	return slices.ContainsFunc(sentProposals(c), func(p CouncilProposal) bool { return labelWord(p.Label) != "" })
+}
+
 // writeBrainstormSynthesisTask ends a Brainstorm's synthesis prompt: at most 3 ideas worth trying, each with why and a
-// first step, and the wild ideas kept aside. It returns the whole prompt.
+// first step, and the wild ideas kept aside. With a labelled idea, rule 2 breaks a tie on the label
+// (brainstormLabelTie). It returns the whole prompt.
 func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 	b.WriteString("1. Merge ideas that say the same thing into one, and list their ids in \"from\".\n")
 	n := maxDirections(c)
-	fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by how many experts "+
-		"picked it (an expert who picked any of the ideas it merges counts once), then by how many experts built on it. Leave out an idea nobody picked or built on. "+
-		"A wild idea never takes one of the %d places.\n", n, n)
+	tie := "" // the label tie-break, once an idea shows a label
+	if hasLabels(c) {
+		tie = " " + brainstormLabelTie + " " + brainstormLabelRule
+	}
+	if hasZones(c) {
+		fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1, from %d different "+
+			"zones where the ideas allow it. Within a zone, the best idea is the one most experts picked (an expert who picked "+
+			"any of the ideas it merges counts once), then the one most experts built on.%s Rank the zones' best ideas against "+
+			"each other the same way. A second idea from a zone that already holds a place takes one only when no other zone "+
+			"has an idea anybody picked or built on. Ideas with zone none compete as one zone of their own. An idea nobody "+
+			"picked or built on never takes a place, and a wild idea never takes one of the %d places.\n", n, n, tie, n)
+	} else {
+		fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by how many experts "+
+			"picked it (an expert who picked any of the ideas it merges counts once), then by how many experts built on it.%s Leave out an idea nobody picked or built on. "+
+			"A wild idea never takes one of the %d places.\n", n, tie, n)
+	}
 	b.WriteString("3. For each of them, \"reasoning\" says why it is worth trying, and \"firststep\" is its first step: the one " +
 		"thing to do first, small enough to start this week.\n")
 	b.WriteString("4. In \"kept\", list the wild ideas that were not chosen (the ones marked wild above), each with a title, a " +
@@ -1793,7 +1914,7 @@ func answersTask(c *Council, others bool) string {
 	b.WriteString("Answer every reply above with one entry in \"answers\", by its replyid. If an answer changes your " +
 		"view of the proposal it sits on, add a \"stance\". " + stanceRule + "\n\n")
 	b.WriteString(titleRule + "\n\n")
-	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
+	if !isBrainstorm(c) { // a Brainstorm's replies are never checked, so it asks for no evidence here
 		b.WriteString(evidenceRule + "\n\n")
 	}
 	b.WriteString(messageRules + "\n\n")
@@ -1999,7 +2120,7 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 	}
 
 	if round == 1 {
-		b.WriteString(round1Task(c, false)) // Go runs no command for a live seat
+		b.WriteString(round1Task(c, e, false)) // Go runs no command for a live seat
 		return
 	}
 	if first && briefedByReport(c, round) {

@@ -323,6 +323,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Wild     bool         `json:"wild"`
 			Checker  string       `json:"checker"`
 			CheckWhy string       `json:"checkwhy"`
+			Zone     string       `json:"zone"`
 		} `json:"proposals"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
@@ -348,6 +349,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Wild:     p.Wild,
 			Checker:  strings.TrimSpace(p.Checker),
 			CheckWhy: strings.TrimSpace(p.CheckWhy),
+			Zone:     strings.TrimSpace(p.Zone),
 		})
 	}
 	return out, strings.TrimSpace(r.Overview), nil
