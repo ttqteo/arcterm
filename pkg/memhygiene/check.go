@@ -96,10 +96,10 @@ func checkRun(ctx context.Context, project, claudeHome string, startedAt time.Ti
 			// reason, and keep the last fingerprints so the next check judges the same memories again
 			log.Printf("memhygiene: judge of %s failed, storing what code found: %v\n", project, jerr)
 			out.err, out.seen = jerr, prev.Seen
-			out.changes = ReviewChanges(inv, prev.Changes, false, startedAt)
+			out.changes = ReviewChanges(inv, prev.Changes, false, startedAt, docs, nil)
 			return checkStore(project, startedAt, out)
 		}
-		out.changes = append(judged, ReviewChanges(inv, append(judged, prev.Changes...), true, startedAt)...)
+		out.changes = append(judged, ReviewChanges(inv, append(judged, prev.Changes...), true, startedAt, docs, out.seen)...)
 		if prev.FormerShared != "" {
 			removals, err := checkRemoveShared(ctx, project, prev, registry, resolved, out.sort)
 			if err != nil {
