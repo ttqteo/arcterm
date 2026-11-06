@@ -188,9 +188,11 @@ function WaveBlock(props: WaveBlockProps) {
 const MarkdownImg = ({
     props,
     resolveOpts,
+    onClickImage,
 }: {
     props: React.ImgHTMLAttributes<HTMLImageElement>;
     resolveOpts: MarkdownResolveOpts;
+    onClickImage?: (src: string, alt: string) => void;
 }) => {
     // every render of Markdown remounts its images: one read before draws at once from its blob:, checked again below
     // (not with a srcset, whose own paths wait for the read)
@@ -235,7 +237,19 @@ const MarkdownImg = ({
         return <span>{resolvedStr}</span>;
     }
     if (resolvedSrc != null) {
-        return <img {...props} src={resolvedSrc} srcSet={resolvedSrcSet} data-md-src={props.src} />;
+        if (onClickImage == null) {
+            return <img {...props} src={resolvedSrc} srcSet={resolvedSrcSet} data-md-src={props.src} />;
+        }
+        return (
+            <img
+                {...props}
+                src={resolvedSrc}
+                srcSet={resolvedSrcSet}
+                data-md-src={props.src}
+                onClick={() => onClickImage(resolvedSrc, props.alt ?? "")}
+                className={cn(props.className, "cursor-zoom-in")}
+            />
+        );
     }
     return <span>[img]</span>;
 };
@@ -250,6 +264,8 @@ type MarkdownProps = {
     onClickExecute?: (cmd: string) => void;
     // return true when the link was handled; false falls through to the external opener
     onClickLink?: (href: string) => boolean;
+    // opt-in: an image that resolved is clickable and reports its resolved src; unresolved ones stay text
+    onClickImage?: (src: string, alt: string) => void;
     resolveOpts?: MarkdownResolveOpts;
     scrollable?: boolean;
     rehype?: boolean;
@@ -286,6 +302,7 @@ const Markdown = memo(function Markdown({
     rehype = true,
     onClickExecute,
     onClickLink,
+    onClickImage,
 }: MarkdownProps) {
     const textAtomValue = useAtomValueSafe<string>(textAtom);
     const tocRef = useRef<TocItem[]>([]);
@@ -395,7 +412,7 @@ const Markdown = memo(function Markdown({
         ),
         img: ({ node, ...props }: any) => (
             <>
-                <MarkdownImg props={props} resolveOpts={resolveOpts} />
+                <MarkdownImg props={props} resolveOpts={resolveOpts} onClickImage={onClickImage} />
                 {after("img", props)}
             </>
         ),

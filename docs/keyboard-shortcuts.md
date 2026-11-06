@@ -521,6 +521,19 @@ kept for that run until Reset layout); drag empty canvas to pan. A dashed band m
 
 While the viewer is open these are the only cockpit keys: the surface underneath does not move.
 
+### Image zoom (a markdown Preview image on Code, opened by clicking it)
+
+| Keys | Action |
+|---|---|
+| Wheel | Zoom in or out around the pointer |
+| `+` / `-` | Zoom in / out around the centre |
+| Drag | Pan the zoomed image |
+| `0` | Fit the image to the view again |
+| `Esc` | Close the zoom view; Code stays open and focus returns to the Preview |
+
+These are the zoom view's own keys, not cockpit bindings, so the cheat sheet does not list them; the surface
+underneath takes no keys while it is open.
+
 ## Help
 
 | Keys | Action |
