@@ -9,6 +9,7 @@ import { queuedJobFor } from "@/app/cockpit/jobqueue";
 import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
 import {
     cardVariants,
@@ -24,6 +25,7 @@ import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { selectAtom } from "jotai/utils";
 import {
     AppWindow,
     ArrowRight,
@@ -130,6 +132,7 @@ import {
 import { runMenuEntries } from "./runrowmenu";
 import { startingMeta, type StartingRun } from "./startingrunsmodel";
 import { cancelStartingRun, dismissStartingRun, retryStartingRun, startingRunsAtom } from "./startingrunsstore";
+import { terminalStatusLine, type TerminalStatusLine } from "./terminalstatus";
 import {
     centerModeAtom,
     overviewProjectAtom,
@@ -2543,13 +2546,43 @@ function InstallState({ state }: { state: Exclude<TerminalRowState, "removed"> }
     );
 }
 
+function sameStatusLine(a: TerminalStatusLine | null, b: TerminalStatusLine | null): boolean {
+    return (
+        a === b ||
+        (a != null && b != null && a.kind === b.kind && a.text === b.text && a.ports.join(",") === b.ports.join(","))
+    );
+}
+
+// What a terminal's shell is running, read off the Resource Manager's poll (terminalstatus.ts), or null while the sample
+// cannot say (no group, no shell row, a host that samples none). The snapshot is replaced every poll; the selector hands
+// back its previous line while the words and ports hold, so a row re-renders when its own line moves, not on every poll.
+function useTerminalStatusLine(blockId: string | undefined): TerminalStatusLine | null {
+    const lineAtom = useMemo(
+        () =>
+            selectAtom(
+                resmonSnapshotAtom,
+                (snap) =>
+                    blockId == null || snap == null
+                        ? null
+                        : terminalStatusLine(
+                              snap.groups?.find((g) => g.ownerid === blockId),
+                              snap.ts
+                          ),
+                sameStatusLine
+            ),
+        [blockId]
+    );
+    return useAtomValue(lineAtom);
+}
+
 // A plain terminal or tool in its project's folder, a peer of the agent rows above the divider: the tool's icon and
 // name (a plain shell: the terminal icon and its last command), the folder it runs in when that is not the project's
 // root, a pulsing dot while its shell runs a command, and where it shows when that is not the centre (`panel`; a cell of a split has no row, SplitRow holds it).
 // A click gives it the centre, as an agent's row does. It drags onto the grid and takes an Alt digit like one, and its
 // menu (showTerminalMenu) can open it in a split or move it to the panel. An install terminal reads installing, or
 // install failed once it exited non-zero; one whose folder was removed (worktreegone.ts) strikes its folder through and
-// reads removed.
+// reads removed. Under the name, a second line says what its shell runs (useTerminalStatusLine): a dot, the command and
+// its run time or "idle", and a chip with the TCP port its processes listen on; none while the sample cannot say.
 function TerminalRow({
     model,
     terminal,
@@ -2572,6 +2605,7 @@ function TerminalRow({
     const selected = useSelectedRowId(model) === terminal.id;
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
     const digit = useHeldDigit(navDigit);
+    const line = useTerminalStatusLine(terminal.blockId);
     const removed = state === "removed";
     // a removed terminal always names the folder it was in, even where no project root says which part is the worktree
     const chip = place ?? (removed ? folderName(terminal.cwd) : undefined);
@@ -2588,49 +2622,103 @@ function TerminalRow({
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <DigitHint digit={digit}>
-                <Slot>
-                    <ToolGlyph name={icon} className="text-muted" />
-                </Slot>
-            </DigitHint>
-            {renaming ? (
-                <RenameBox tabId={terminal.id} shown={name} />
-            ) : (
-                <span
-                    title={name}
-                    className={cn(
-                        "truncate text-[13px]",
-                        // the name takes the row unless a branch chip shares it
-                        chip == null ? "min-w-0 flex-1" : "min-w-0 shrink-0 max-w-[60%]",
-                        selected ? "text-primary" : "text-secondary"
+            {/* with a second line the glyph sits on the name's line, not centred on both */}
+            <span className={cn("flex flex-none", line != null && "mt-[3px] self-start")}>
+                <DigitHint digit={digit}>
+                    <Slot>
+                        <ToolGlyph name={icon} className="text-muted" />
+                    </Slot>
+                </DigitHint>
+            </span>
+            <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-[9px]">
+                    {renaming ? (
+                        <RenameBox tabId={terminal.id} shown={name} />
+                    ) : (
+                        <span
+                            title={name}
+                            className={cn(
+                                "truncate text-[13px]",
+                                // the name takes the row unless a branch chip shares it
+                                chip == null ? "min-w-0 flex-1" : "min-w-0 shrink-0 max-w-[60%]",
+                                selected ? "text-primary" : "text-secondary"
+                            )}
+                        >
+                            {name}
+                        </span>
                     )}
-                >
-                    {name}
-                </span>
-            )}
-            {chip != null ? (
-                <span
-                    data-terminal-branch
-                    title={removed ? `${chip} was removed` : `Runs in ${chip}`}
-                    className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden text-[11px] text-muted"
-                >
-                    <GitBranch size={10} aria-hidden className="flex-none" />
-                    <span className={cn("truncate", removed && "line-through")}>{chip}</span>
-                </span>
-            ) : null}
-            {state === "installing" || state === "failed" ? <InstallState state={state} /> : null}
-            {removed ? <span className="flex-none whitespace-nowrap text-[11px] text-muted">removed</span> : null}
-            {/* a command still running (a dev server, a build) pulses like a working agent; at its prompt, no dot */}
-            {terminal.running && state == null ? (
-                <span title="Running a command" aria-label="running a command" className="flex flex-none">
-                    <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
-                </span>
-            ) : null}
-            {shows != null ? (
-                <span data-terminal-place={shows} className="flex-none text-[11px] text-ink-faint">
-                    {shows}
-                </span>
-            ) : null}
+                    {chip != null ? (
+                        <span
+                            data-terminal-branch
+                            title={removed ? `${chip} was removed` : `Runs in ${chip}`}
+                            className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden text-[11px] text-muted"
+                        >
+                            <GitBranch size={10} aria-hidden className="flex-none" />
+                            <span className={cn("truncate", removed && "line-through")}>{chip}</span>
+                        </span>
+                    ) : null}
+                    {state === "installing" || state === "failed" ? <InstallState state={state} /> : null}
+                    {removed ? (
+                        <span className="flex-none whitespace-nowrap text-[11px] text-muted">removed</span>
+                    ) : null}
+                    {/* a command still running (a dev server, a build) pulses like a working agent; at its prompt, no dot.
+                        With a status line the process tree says it, in the line's own dot */}
+                    {terminal.running && state == null && line == null ? (
+                        <span title="Running a command" aria-label="running a command" className="flex flex-none">
+                            <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
+                        </span>
+                    ) : null}
+                    {shows != null ? (
+                        <span data-terminal-place={shows} className="flex-none text-[11px] text-ink-faint">
+                            {shows}
+                        </span>
+                    ) : null}
+                </div>
+                {line != null ? (
+                    <div
+                        data-terminal-status={line.kind}
+                        className="mt-[2px] flex min-w-0 items-center gap-[6px] text-[11px]"
+                    >
+                        <span
+                            aria-hidden
+                            className={cn(
+                                "h-[6px] w-[6px] flex-none rounded-full",
+                                line.kind === "running" ? "bg-working" : "border border-muted"
+                            )}
+                        />
+                        {line.kind === "running" ? (
+                            <>
+                                <span
+                                    data-terminal-command
+                                    title={line.command}
+                                    className="min-w-0 truncate font-mono text-ink-mid"
+                                >
+                                    {line.command}
+                                </span>
+                                {line.age !== "" ? (
+                                    <span data-terminal-age className="flex-none tabular-nums text-muted">
+                                        {line.age}
+                                    </span>
+                                ) : null}
+                            </>
+                        ) : (
+                            <span data-terminal-command className="text-muted">
+                                {line.text}
+                            </span>
+                        )}
+                        {line.ports.length > 0 ? (
+                            <span
+                                data-terminal-ports
+                                title={`Listening on ${line.ports.map((p) => `:${p}`).join(", ")}`}
+                                className="ml-auto flex-none rounded-[5px] bg-accentbg px-[6px] py-[1px] text-[10.5px] font-semibold tabular-nums text-accent-soft"
+                            >
+                                :{line.ports[0]}
+                                {line.ports.length > 1 ? ` +${line.ports.length - 1}` : ""}
+                            </span>
+                        ) : null}
+                    </div>
+                ) : null}
+            </div>
         </div>
     );
 }
