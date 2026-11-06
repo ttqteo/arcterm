@@ -472,13 +472,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const flagMenuShown = isAgent && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
 
-    // The resume step (launcherpeek.ts): for Claude Code in a project with sessions, the Task box on top, the sessions on
-    // the left and the picked session's last 5 messages on the right, in place of the three columns. Going back (← from
-    // the sessions, or the agent or project in the title) shows the columns to change your mind; each opening starts on
-    // the step. Its state lives in the dialog, not an atom, so nothing outlives it; one loader (and its cache) per
+    // The resume step (launcherpeek.ts): once a past Claude Code session is picked, the Task box on top, the sessions on
+    // the left and the picked session's last 5 messages on the right, in place of the three columns; New session keeps
+    // the columns. Going back (← from the sessions, or the agent or project in the title) shows the columns to change
+    // your mind. Its state lives in the dialog, not an atom, so nothing outlives it; one loader (and its cache) per
     // opening, dropped at close.
     const [resumeStep, setResumeStep] = useState(true);
-    const stepShown = resumeStepShows(resumeStep, runtime, thirdList);
+    const stepShown = resumeStepShows(resumeStep, runtime, thirdList, resume != null);
     // the column focus moves to once the step switch has rendered it: the switch unmounts the one that had focus
     const stepFocusRef = useRef<"start" | "project" | "resume" | null>(null);
     const [peek, setPeek] = useState<{ id: string; state: PeekState } | null>(null);
@@ -508,12 +508,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             stepFocusRef.current = to;
         }
     };
-    // into the step from the columns: focus reached the Session column (→ from Project, Tab, or a click on a row)
+    // focus reached the Session column (→ from Project, Tab, or a click on a row): the step shows again as soon as a past
+    // session is picked, at once when one already is
     const enterStep = () => {
-        if (!resumeStep && resumeStepShows(true, runtime, thirdList)) {
-            stepFocusRef.current = "resume";
-            setResumeStep(true);
+        if (resumeStep) {
+            return;
         }
+        if (resumeStepShows(true, runtime, thirdList, resume != null)) {
+            stepFocusRef.current = "resume";
+        }
+        setResumeStep(true);
     };
 
     // the first open picks the agent row from the harness preference; later opens keep the last pick
@@ -693,11 +697,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         });
     }, [peekSessionId, peekStamp]);
 
-    // a step switch unmounts the column that had focus; focus moves to the one asked for once it is drawn
+    // a step switch unmounts the column that had focus; focus moves to the one asked for once it is drawn. A switch made
+    // from inside the session list (↑↓, a digit or a click between a past session and New session) unmounts the row that
+    // had focus, so focus lands on the picked row of the list drawn now.
     useEffect(() => {
         const to = stepFocusRef.current;
         stepFocusRef.current = null;
-        if (to === "resume") {
+        const lost = !rootRef.current?.contains(document.activeElement);
+        if (to === "resume" || (to == null && lost)) {
             rootRef.current?.querySelector<HTMLElement>('[data-launcher-resume] [role="radio"][tabindex="0"]')?.focus();
         } else if (to != null) {
             (to === "project" ? projectRef : startRef).current?.focus();
@@ -1294,7 +1301,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             </>
                         )}
                     </div>
-                    {stepShown ? (
+                    {stepShown && resume != null ? (
                         // the resume step: the sessions and the picked one's read where the columns were, about as tall
                         // as the columns' band so a step switch leaves the dialog's height alone; in a short window the
                         // read gives way before the Task box does
@@ -1318,12 +1325,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             </div>
                             <LauncherPeekPane
                                 session={resume}
-                                peek={
-                                    resume != null && peek?.id === resume.id
-                                        ? peek.state
-                                        : { status: "loading", since: Date.now() }
-                                }
-                                projectName={project?.name ?? ""}
+                                peek={peek?.id === resume.id ? peek.state : { status: "loading", since: Date.now() }}
                             />
                         </motion.div>
                     ) : (

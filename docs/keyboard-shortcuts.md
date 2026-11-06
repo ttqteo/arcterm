@@ -69,10 +69,11 @@ Under it, three columns sit side by side: Start, Project, and the pick's own lis
 run's model, or its start and width). They keep one height: a long Project, Session or Tool list scrolls inside its
 column. The Tool row is the last in Start, so the other rows keep their digits.
 
-For Claude Code in a project that has sessions, the dialog opens on the **resume step** instead: the Task box on top,
-the Session list on the left and the picked session's last 5 messages on the right. The agent and the project sit in
-the title; `←` from the Session list, or a click on either, goes back to the three columns to change them, and
-reaching the Session column again (`→`, `Tab` or a click) returns to the step.
+With Claude Code, picking a past session (not New session) turns the dialog into the **resume step**: the Task box on
+top, the Session list on the left and the picked session's last 5 messages on the right. The agent and the project sit
+in the title; `←` from the Session list, or a click on either, goes back to the three columns to change them, and
+reaching the Session column again (`→`, `Tab` or a click) returns to the step. Picking New session from the list
+brings the columns back.
 
 | Keys | Action |
 |---|---|

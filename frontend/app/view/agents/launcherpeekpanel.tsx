@@ -22,12 +22,10 @@ import { sessionTitle } from "./launcherresume";
 import { MarkdownMessage } from "./markdownmessage";
 
 interface LauncherPeekPaneProps {
-    // null is New session: nothing to read yet
-    session: SessionInfo | null;
+    // the picked past session (New session keeps the three columns, so the pane never shows for it)
+    session: SessionInfo;
     // the read of this session; loading until it answers
     peek: PeekState;
-    // the picked project's name, for New session's line
-    projectName: string;
 }
 
 function PeekRow({ m }: { m: PeekMessage }) {
@@ -49,7 +47,7 @@ function PeekRow({ m }: { m: PeekMessage }) {
     );
 }
 
-export function LauncherPeekPane({ session, peek, projectName }: LauncherPeekPaneProps) {
+export function LauncherPeekPane({ session, peek }: LauncherPeekPaneProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [now, setNow] = useState(() => Date.now());
     const view = peekView(peek, now);
@@ -74,22 +72,7 @@ export function LauncherPeekPane({ session, peek, projectName }: LauncherPeekPan
         if (el != null) {
             el.scrollTop = el.scrollHeight;
         }
-    }, [session?.id, result]);
-
-    if (session == null) {
-        return (
-            <section
-                aria-label="Quick look"
-                data-launcher-peek
-                data-peek-state="new"
-                className="flex min-h-0 min-w-0 flex-col bg-surface px-[18px] py-[14px]"
-            >
-                <span className="text-[12.5px] leading-normal text-muted">
-                    New session: Claude Code starts fresh in {projectName}. The task above is its first message.
-                </span>
-            </section>
-        );
-    }
+    }, [session.id, result]);
 
     return (
         <section

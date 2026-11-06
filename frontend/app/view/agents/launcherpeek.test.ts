@@ -53,15 +53,18 @@ function deferred<T>() {
 }
 
 describe("resumeStepShows", () => {
-    it("shows for Claude Code once the project has sessions, until you go back", () => {
-        expect(resumeStepShows(true, "claude", "resume")).toBe(true);
-        expect(resumeStepShows(false, "claude", "resume")).toBe(false);
+    it("shows for Claude Code once a past session is picked, until you go back", () => {
+        expect(resumeStepShows(true, "claude", "resume", true)).toBe(true);
+        expect(resumeStepShows(false, "claude", "resume", true)).toBe(false);
+    });
+    it("New session keeps the three columns", () => {
+        expect(resumeStepShows(true, "claude", "resume", false)).toBe(false);
     });
     it("never for another agent, nor without a session list (Home, no sessions yet, a tool)", () => {
-        expect(resumeStepShows(true, "pi", "resume")).toBe(false);
-        expect(resumeStepShows(true, "codex", "resume")).toBe(false);
-        expect(resumeStepShows(true, "claude", null)).toBe(false);
-        expect(resumeStepShows(true, "claude", "tools")).toBe(false);
+        expect(resumeStepShows(true, "pi", "resume", true)).toBe(false);
+        expect(resumeStepShows(true, "codex", "resume", true)).toBe(false);
+        expect(resumeStepShows(true, "claude", null, true)).toBe(false);
+        expect(resumeStepShows(true, "claude", "tools", true)).toBe(false);
     });
 });
 

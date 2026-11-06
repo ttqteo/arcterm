@@ -35,11 +35,17 @@ export const PEEK_EMPTY = "This session has no messages yet.";
 export const PEEK_CAPPED_NONE = "No messages in the last 8 MB. Open asleep to read the whole session.";
 export const PEEK_CAPPED_NOTE = "Only the last 8 MB was read. Open asleep to read the whole session.";
 
-// The resume step is Claude Code's alone (only its transcripts are read: D1), and needs the session list: a project
-// with no sessions yet, Home, a terminal or a tool keeps the three columns. `wanted` is false once you go back to the
-// columns (← or the title's agent or project), to change your mind; each opening starts with it true.
-export function resumeStepShows(wanted: boolean, runtime: Runtime | string, third: "resume" | "tools" | null): boolean {
-    return wanted && runtime === "claude" && third === "resume";
+// The resume step is Claude Code's alone (only its transcripts are read: D1), and shows once a past session is picked:
+// New session, a project with no sessions yet, Home, a terminal or a tool keep the three columns. `wanted` is false
+// once you go back to the columns (← or the title's agent or project), to change your mind; each opening starts with it
+// true.
+export function resumeStepShows(
+    wanted: boolean,
+    runtime: Runtime | string,
+    third: "resume" | "tools" | null,
+    sessionPicked: boolean
+): boolean {
+    return wanted && sessionPicked && runtime === "claude" && third === "resume";
 }
 
 // A session that has moved on since its last read reads again (D7).
