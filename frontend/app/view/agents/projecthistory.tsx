@@ -171,6 +171,13 @@ function sessionMenu(
               }
     );
     items.push(copyTitleItem(s.task || "(untitled session)"));
+    if (s.id) {
+        items.push({
+            label: "Copy session id",
+            icon: <Copy size={15} />,
+            click: () => void navigator.clipboard.writeText(s.id),
+        });
+    }
     if (s.transcriptpath) {
         items.push({
             label: "Copy transcript path",
