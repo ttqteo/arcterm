@@ -142,6 +142,14 @@ func List(registry map[string]string) ([]wshrpc.MemHygieneProject, error) {
 		if p.SharedWith == nil {
 			p.SharedWith = []string{}
 		}
+		if p.AskWaiting == nil {
+			p.AskWaiting = []string{}
+		}
+		for i := range p.Changes {
+			if p.Changes[i].DocLines == nil {
+				p.Changes[i].DocLines = []wshrpc.MemDocLine{}
+			}
+		}
 		out = append(out, p)
 	}
 	return out, nil

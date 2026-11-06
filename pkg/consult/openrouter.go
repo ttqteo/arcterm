@@ -26,6 +26,28 @@ const (
 	openRouterTimeout    = 5 * time.Minute
 )
 
+// getSecretFn reads a stored secret; tests replace it.
+var getSecretFn = secretstore.GetSecret
+
+// openRouterKey reads the stored OpenRouter key, "" when none is set.
+func openRouterKey() (string, error) {
+	key, exists, err := getSecretFn(openRouterSecretName)
+	if err != nil {
+		return "", fmt.Errorf("reading OPENROUTER_KEY: %w", err)
+	}
+	if !exists {
+		return "", nil
+	}
+	return key, nil
+}
+
+// OpenRouterKeyConfigured reports whether an OpenRouter key is stored, reading the secret the
+// openrouter runtime itself reads. A read error is returned, not taken as "no key".
+func OpenRouterKeyConfigured() (bool, error) {
+	key, err := openRouterKey()
+	return key != "", err
+}
+
 type openrouterBackend struct{}
 
 func (b *openrouterBackend) Run(ctx context.Context, spec RuntimeSpec, prompt string, emit func(string)) (string, error) {
@@ -34,11 +56,11 @@ func (b *openrouterBackend) Run(ctx context.Context, spec RuntimeSpec, prompt st
 }
 
 func (b *openrouterBackend) RunWithUsage(ctx context.Context, spec RuntimeSpec, prompt string, emit func(string)) (string, Usage, error) {
-	key, exists, err := secretstore.GetSecret(openRouterSecretName)
+	key, err := openRouterKey()
 	if err != nil {
-		return "", Usage{}, fmt.Errorf("reading OPENROUTER_KEY: %w", err)
+		return "", Usage{}, err
 	}
-	if !exists || key == "" {
+	if key == "" {
 		return "", Usage{}, fmt.Errorf("OpenRouter API key not configured (set OPENROUTER_KEY)")
 	}
 

@@ -26,6 +26,7 @@ const (
 	checkGroupOwn      = "own"
 	checkStatusApplied = "applied"
 	checkStatusKept    = "kept"
+	checkSourceAgent   = "agent" // MemChange.Source of an Ask an agent proposal
 
 	checkSettingsDir  = ".claude"
 	checkSettingsFile = "settings.local.json"
@@ -40,6 +41,9 @@ type checkOutcome struct {
 	seen    map[string]string
 	sort    map[string]SortEntry
 	err     error // the model failed: the result holds only what code found, and this is the reason
+	// judgedBy is the pane header's judged-by note for the runtime the model calls ran on ("" unless
+	// the claude fallback was taken); stored only when the check got as far as the model (inv set)
+	judgedBy string
 }
 
 // runCheck checks one project and stores the result. A failure records its reason and keeps the last
@@ -83,6 +87,7 @@ func checkRun(ctx context.Context, project, claudeHome string, startedAt time.Ti
 		return err
 	}
 	out := checkOutcome{r: r, inv: inv, seen: map[string]string{}, sort: map[string]SortEntry{}}
+	_, out.judgedBy = modelRuntime()
 	docs := InstructionDocs(r.Path, claudeHome)
 	docTarget := DocTarget(r.Path)
 
@@ -96,10 +101,10 @@ func checkRun(ctx context.Context, project, claudeHome string, startedAt time.Ti
 			// reason, and keep the last fingerprints so the next check judges the same memories again
 			log.Printf("memhygiene: judge of %s failed, storing what code found: %v\n", project, jerr)
 			out.err, out.seen = jerr, prev.Seen
-			out.changes = ReviewChanges(inv, prev.Changes, false, startedAt)
+			out.changes = ReviewChanges(inv, prev.Changes, false, startedAt, docs, nil)
 			return checkStore(project, startedAt, out)
 		}
-		out.changes = append(judged, ReviewChanges(inv, append(judged, prev.Changes...), true, startedAt)...)
+		out.changes = append(judged, ReviewChanges(inv, append(judged, prev.Changes...), true, startedAt, docs, out.seen)...)
 		if prev.FormerShared != "" {
 			removals, err := checkRemoveShared(ctx, project, prev, registry, resolved, out.sort)
 			if err != nil {
@@ -361,6 +366,7 @@ func checkStore(project string, startedAt time.Time, out checkOutcome) error {
 		if out.inv != nil {
 			st.Memories, st.Sessions = len(out.inv.Memories), out.inv.Sessions
 			st.Seen, st.Sort = out.seen, out.sort
+			st.JudgedBy = out.judgedBy
 		}
 		// measured now, not from the inventory: an apply during the check moved the index
 		return checkRemeasure(st)
@@ -400,10 +406,14 @@ func checkMeasureIndex(folder string) (wshrpc.MemIndexStats, error) {
 // checkMerge combines a check's proposals with the changes in the state as it is now. A verdict on a
 // proposal survives the re-check, and a decision made while the check ran wins over its proposal for
 // the same memories. An earlier change no proposal replaces stays while its files are unchanged, and
-// an applied one stays until its backup expires.
+// an applied one stays until its backup expires. An open agent proposal (Ask an agent) whose files are
+// unchanged stays, and the check's own changes on its memories are dropped in its favour. A superseded
+// Review stays exactly as long as the change that superseded it.
 func checkMerge(cur, fresh []wshrpc.MemChange, startedAt int64, now time.Time) []wshrpc.MemChange {
 	byID := map[string]wshrpc.MemChange{}
 	decided := map[string]bool{}
+	agentPaths := map[string]bool{}
+	agentIDs := map[string]bool{}
 	for _, c := range cur {
 		byID[c.Id] = c
 		if (c.Status == checkStatusApplied || c.Status == checkStatusKept) && c.DecidedAt >= startedAt {
@@ -411,14 +421,24 @@ func checkMerge(cur, fresh []wshrpc.MemChange, startedAt int64, now time.Time) [
 				decided[p] = true
 			}
 		}
+		if c.Source == checkSourceAgent && c.Status == splitStatusOpen && checkFilesUnchanged(c) {
+			agentIDs[c.Id] = true
+			for _, p := range checkMemoryPaths(c) {
+				agentPaths[p] = true
+			}
+		}
 	}
 	freshPaths := map[string]bool{}
 	var out []wshrpc.MemChange
 	listed := map[string]bool{}
 	for _, c := range fresh {
+		if agentIDs[c.Id] {
+			// the check proposed the agent's change again: keep the agent's, which the loop below lists
+			continue
+		}
 		if old, ok := byID[c.Id]; ok && old.Status != splitStatusOpen && old.Status != "" {
 			c = old
-		} else if checkAnyIn(checkMemoryPaths(c), decided) {
+		} else if checkAnyIn(checkMemoryPaths(c), decided) || checkAnyIn(checkMemoryPaths(c), agentPaths) {
 			continue
 		}
 		out = append(out, c)
@@ -432,9 +452,15 @@ func checkMerge(cur, fresh []wshrpc.MemChange, startedAt int64, now time.Time) [
 			continue
 		}
 		keep := false
-		if c.Status == checkStatusApplied {
+		switch {
+		case c.Status == checkStatusApplied:
 			keep = c.BackupUntil > now.UnixMilli()
-		} else {
+		case agentIDs[c.Id]:
+			keep = true
+		case c.Status == wshrpc.MemStatus_Superseded:
+			// decided below, once it is known whether the change that superseded it stays
+			keep = true
+		default:
 			keep = !checkAnyIn(checkMemoryPaths(c), freshPaths) && checkFilesUnchanged(c)
 		}
 		if keep {
@@ -442,7 +468,10 @@ func checkMerge(cur, fresh []wshrpc.MemChange, startedAt int64, now time.Time) [
 			listed[c.Id] = true
 		}
 	}
-	return out
+	// a superseded Review goes with the change that took its place
+	return slices.DeleteFunc(out, func(c wshrpc.MemChange) bool {
+		return c.Status == wshrpc.MemStatus_Superseded && !listed[c.SupersededBy]
+	})
 }
 
 // checkMemoryPaths is what a change acts on, for telling which changes are about the same thing.

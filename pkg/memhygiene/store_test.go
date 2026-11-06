@@ -168,7 +168,7 @@ func TestListIncludesUncheckedProjects(t *testing.T) {
 	if len(got) != 2 || got[0].Project != "a" || got[1].Project != "b" {
 		t.Fatalf("List = %+v, want a then b", got)
 	}
-	if got[0].Path != `C:\a` || got[0].CheckedAt != 0 || got[0].Changes == nil {
+	if got[0].Path != `C:\a` || got[0].CheckedAt != 0 || got[0].Changes == nil || got[0].AskWaiting == nil {
 		t.Errorf("unchecked project: %+v", got[0])
 	}
 	if got[1].Path != `C:\b` || got[1].CheckedAt != 5 {

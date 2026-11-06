@@ -15,9 +15,15 @@ export const MEMORY_PROJECTS = {
     fresh: "verify-mem-new",
     failed: "verify-mem-failed",
     checking: "verify-mem-checking",
+    done: "verify-mem-done",
 };
 
 export const MEMORY_FAILED_ERROR = "judge returned malformed JSON";
+
+// what the pane header names after the claude fallback (pkg/memhygiene JudgedBy), and the runtime an ask ran on
+export const MEMORY_JUDGED_BY = "claude (OpenRouter has no key)";
+export const MEMORY_ASK_RUNTIME = "claude";
+export const MEMORY_ASK_ERROR = "memory hygiene: claude returned no JSON: the reply was empty";
 
 // the shared folder is named for this repo's slug, so the tab names the repo as the memory's owner
 export const MEMORY_SHARED_REPO = "monorepo";
@@ -82,6 +88,16 @@ export function indexStats(path) {
     return { exists: true, lines: lines.length, bytes: buf.length };
 }
 
+// pkg/memhygiene/review.go's note on every Review
+const REVIEW_NOTE =
+    "Is it still true, and still needed? Still true marks it reviewed today and changes nothing else, so it isn't flagged again for 30 days. To delete or trim it, edit the file or ask an agent.";
+
+// a local date as review.go's untouched evidence names it
+const ymd = (ts) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 const lineDelta = (line, sign) => ({ lines: sign, bytes: sign * (Buffer.byteLength(line) + 1) });
 const signedBytes = (n) => `${n < 0 ? "−" : "+"}${Math.abs(n).toLocaleString("en-US")} B`;
 const diffLines = (sign, text) => text.split("\n").map((t) => ({ sign, text: t }));
@@ -128,6 +144,17 @@ function change(kind, { paths, op, ...rest }) {
         decidedat: 0,
         backupuntil: 0,
         applyid: "",
+        body: "",
+        verdict: "",
+        doclines: [],
+        source: "",
+        proposedat: 0,
+        fromreview: "",
+        supersededby: "",
+        askreason: "",
+        askedat: 0,
+        askedby: "",
+        askerror: "",
         ...rest,
         op: { ...emptyOp(), ...op },
     };
@@ -150,6 +177,8 @@ function project(name, path, fields) {
         switchedat: 0,
         index: { exists: false, lines: 0, bytes: 0 },
         changes: [],
+        askwaiting: [],
+        judgedby: "",
         ...fields,
     };
 }
@@ -197,10 +226,32 @@ export function buildMemoryFixture(root, now = Date.now()) {
         check: "- [Check lines on Windows](check-lines-windows.md) — plan Check lines: use go build ./cmd/wsh/...",
         merged: "- [wsh jarvis EC-TIME](ec-time-answer.md) — an answer lands anyway; a submit was never sent",
         harvested: "- [Harvested note](harvested-note.md) — vitest needs --stack-size for tsc here",
+        // the card view's memories: Reviews, the one an agent proposal replaced, and a trim found changed on disk
+        devLoop: "- [Dev loop](dev-loop.md) — task dev, then the focused tests",
+        pathspec: "- [Commit with pathspec](feedback_commit-pathspec.md) — git commit -- <paths>, never git add -A",
+        ciCache: "- [CI cache](ci-cache.md) — CI caches go modules by go.sum",
+        port: "- [Dev server port](dev-port.md) — the dev server listens on 5174",
+        notes: "- [Release notes](release-notes.md) — CHANGELOG.md lines are written for the user",
+        junctions: "- [Worktree junctions](worktree-junctions.md) — task worktree:prepare in a new worktree",
     };
     write(
         ownIndex,
-        ["# Memory index", "", line.build, line.flaky, line.answer, line.submit, line.check, ""].join("\n")
+        [
+            "# Memory index",
+            "",
+            line.build,
+            line.flaky,
+            line.answer,
+            line.submit,
+            line.check,
+            line.devLoop,
+            line.pathspec,
+            line.ciCache,
+            line.port,
+            line.notes,
+            line.junctions,
+            "",
+        ].join("\n")
     );
     const trimOld = "See `scripts/build.mjs` for the working reference. Verified 2026-07-24 (commit 64bc188f).";
     const trimNew = "See `scripts/build.mjs` for the working reference.";
@@ -370,6 +421,163 @@ export function buildMemoryFixture(root, now = Date.now()) {
         }),
     };
 
+    // ---- the own project's card view: Reviews as pkg/memhygiene/review.go builds them, seeded with what an
+    // ask leaves (a reason, an error, an agent proposal), one ask running and one waiting ----
+    const docLines = readFileSync(doc, "utf8").split("\n");
+    // a doc line as reason.go quotes it: the doc's path, its 1-based line, the line trimmed
+    const docLine = (needle) => {
+        const i = docLines.findIndex((l) => l.includes(needle));
+        return { doc, line: i + 1, text: docLines[i].trim() };
+    };
+    const review = (name, title, body, days, fields = {}) => {
+        const path = write(join(own, name), memoryFile(title, title, body));
+        const since = ymd(now - days * DAY_MS);
+        return change("review", {
+            paths: [[path]],
+            title,
+            note: REVIEW_NOTE,
+            applylabel: "Still true",
+            effect: `untouched ${days} days`,
+            evidence: [{ tone: "warn", text: `Untouched for ${days} days, since `, code: since }],
+            op: { folder: own, memories: [name] },
+            body,
+            ...fields,
+        });
+    };
+    const devLoopBody = "Run `task dev` for the app. Run the focused tests first, then the whole suite once.";
+    const pathspecBody = "Commit only the files you changed: `git commit -- <paths>`, never `git add -A`.";
+    const reviews = {
+        first: review("dev-loop.md", "Dev loop: task dev, then the focused tests", devLoopBody, 41, {
+            verdict:
+                `Read in 3 of 42 sessions. Untouched for 41 days, since ${ymd(now - 41 * DAY_MS)}. ` +
+                "AGENTS.md names the same command in 2 places.",
+            doclines: [docLine("task dev"), docLine("focused tests")],
+            askreason: "still needed: AGENTS.md runs the app the same way but never says to run the focused tests first",
+            askedat: checkedAt + 20 * 60 * 1000,
+            askedby: MEMORY_ASK_RUNTIME,
+        }),
+        proposed: review("feedback_commit-pathspec.md", "Commit with pathspec", pathspecBody, 52, {
+            verdict: "Read in 9 of 42 sessions. Untouched for 52 days.",
+        }),
+        asking: review(
+            "ci-cache.md",
+            "CI caches go modules by go.sum",
+            "The CI job caches the go module download dir, keyed by `go.sum`.",
+            35
+        ),
+        askError: review(
+            "dev-port.md",
+            "The dev server listens on 5174",
+            "The Vite dev server listens on `:5174`; a second dev app needs its own port.",
+            33,
+            { askerror: MEMORY_ASK_ERROR }
+        ),
+        waiting: review(
+            "release-notes.md",
+            "Release notes are written for the user",
+            "A `CHANGELOG.md` line is written for the user, never copied from the commit subject.",
+            31
+        ),
+    };
+    // the agent's proposal for the second Review, as ParseJudge builds a move-to-doc: the doc and the index stay
+    // out of its files; its diffs are the doc's section, the index line and the memory file
+    const pathspecPath = reviews.proposed.files[0].path;
+    const pathspecPassage = "- **Commit with pathspec:** `git commit -- <paths>`, never `git add -A`.";
+    const proposal = change("move-to-doc", {
+        paths: [[pathspecPath]],
+        title: "Every agent in this repo commits, so the rule belongs in AGENTS.md beside the other rules, not in one memory.",
+        note: "Leaves AGENTS.md changed in your working tree. Commit it with your next change.",
+        applylabel: "Move to AGENTS.md",
+        effect: `Index ${signedBytes(-(Buffer.byteLength(line.pathspec) + 1))}`,
+        indexdelta: lineDelta(line.pathspec, -1),
+        diffs: [
+            { path: "AGENTS.md", note: "## Rules", lines: diffLines("+", pathspecPassage) },
+            { path: INDEX, note: "−1 line", lines: diffLines("-", line.pathspec) },
+            {
+                path: "feedback_commit-pathspec.md",
+                note: `deleted · ${Buffer.byteLength(readFileSync(pathspecPath)).toLocaleString("en-US")} B`,
+                lines: [],
+            },
+        ],
+        op: {
+            folder: own,
+            memories: ["feedback_commit-pathspec.md"],
+            indexremove: [line.pathspec],
+            docpath: doc,
+            docsection: "## Rules",
+            docpassage: pathspecPassage,
+        },
+        body: pathspecBody,
+        verdict: reviews.proposed.verdict,
+        source: "agent",
+        proposedat: checkedAt + 30 * 60 * 1000,
+        fromreview: reviews.proposed.id,
+    });
+    reviews.proposed.status = "superseded";
+    reviews.proposed.supersededby = proposal.id;
+
+    // a trim whose memory was edited after the check: hashed as checked, then changed on disk
+    const junctionsOld = "Run `task worktree:prepare` in a new worktree. Checked on 2026-08-03 against main.";
+    const junctionsNew = "Run `task worktree:prepare` in a new worktree.";
+    const junctionsPath = write(
+        join(own, "worktree-junctions.md"),
+        memoryFile("Worktree junctions", "task worktree:prepare in a new worktree", junctionsOld)
+    );
+    const conflict = change("trim", {
+        paths: [[junctionsPath]],
+        title: "Drop a past check from the worktree note",
+        note: "The index line stays as it is.",
+        applylabel: "Apply trim",
+        effect: `Body ${signedBytes(junctionsNew.length - junctionsOld.length)}`,
+        evidence: [{ tone: "none", text: "Records one past check (2026-08-03), not a rule", code: "" }],
+        diffs: [
+            {
+                path: "worktree-junctions.md",
+                note: "body",
+                lines: [...diffLines("-", junctionsOld), ...diffLines("+", junctionsNew)],
+            },
+        ],
+        op: { folder: own, memories: ["worktree-junctions.md"], old: junctionsOld, new: junctionsNew },
+        status: "conflict",
+        conflictfile: junctionsPath,
+        decidedat: checkedAt + 40 * 60 * 1000,
+    });
+    writeFileSync(junctionsPath, `${readFileSync(junctionsPath, "utf8")}Also run it after a rebase.\n`);
+    const cardChanges = [
+        reviews.first,
+        reviews.proposed,
+        proposal,
+        reviews.asking,
+        reviews.askError,
+        reviews.waiting,
+        conflict,
+    ];
+    // a live ask: well inside the 30-minute timeout (ASK_TIMEOUT_MS) the scenario's steps run in
+    const asking = { changeid: reviews.asking.id, startedat: now - 2 * 60 * 1000, runtime: MEMORY_ASK_RUNTIME };
+
+    // ---- a second plain project with nothing left to review: its one change, a Review, marked still true
+    // after the check, so the queue lists it under the done card ----
+    const doneRepo = repo("done-repo");
+    const doneFolder = claudeFolder(doneRepo);
+    const doneLine = "- [Lint config](lint-config.md) — eslint runs on paths, never the whole tree";
+    const doneIndex = write(join(doneFolder, INDEX), `# Memory index\n\n${doneLine}\n`);
+    const doneMemory = write(
+        join(doneFolder, "lint-config.md"),
+        memoryFile("Lint config", "eslint runs on paths", "Run `npx eslint` on paths: the tree holds worktree copies.")
+    );
+    const doneReview = change("review", {
+        paths: [[doneMemory]],
+        title: "Lint config",
+        note: REVIEW_NOTE,
+        applylabel: "Still true",
+        effect: "untouched 30 days",
+        evidence: [{ tone: "warn", text: "Untouched for 30 days, since ", code: ymd(now - 30 * DAY_MS) }],
+        op: { folder: doneFolder, memories: ["lint-config.md"] },
+        body: "Run `npx eslint` on paths: the tree holds worktree copies.",
+        status: "applied",
+        decidedat: checkedAt + 10 * 60 * 1000,
+    });
+
     // ---- the split: two subprojects of one repo loading its shared folder ----
     const mono = repo(MEMORY_SHARED_REPO);
     const splitAPath = join(mono, "split-a");
@@ -501,11 +709,22 @@ export function buildMemoryFixture(root, now = Date.now()) {
     const states = {
         [MEMORY_PROJECTS.own]: project(MEMORY_PROJECTS.own, ownRepo, {
             ...checked,
-            memories: 6,
+            memories: 12,
             sessions: 42,
             folder: own,
             index: indexStats(ownIndex),
-            changes: Object.values(ownChanges),
+            changes: [...Object.values(ownChanges), ...cardChanges],
+            asking,
+            askwaiting: [reviews.waiting.id],
+            judgedby: MEMORY_JUDGED_BY,
+        }),
+        [MEMORY_PROJECTS.done]: project(MEMORY_PROJECTS.done, doneRepo, {
+            ...checked,
+            memories: 1,
+            sessions: 8,
+            folder: doneFolder,
+            index: indexStats(doneIndex),
+            changes: [doneReview],
         }),
         [MEMORY_PROJECTS.splitA]: project(MEMORY_PROJECTS.splitA, splitAPath, {
             ...checked,
@@ -553,10 +772,16 @@ export function buildMemoryFixture(root, now = Date.now()) {
             { name: MEMORY_PROJECTS.fresh, path: freshRepo },
             { name: MEMORY_PROJECTS.failed, path: failedRepo },
             { name: MEMORY_PROJECTS.checking, path: checkingRepo },
+            { name: MEMORY_PROJECTS.done, path: doneRepo },
         ],
         states,
         ownChanges,
         splitChanges,
+        // the card view's changes on the own project, and the done project's one decided change
+        reviews,
+        proposal,
+        conflict,
+        doneReview,
         paths: {
             own,
             ownIndex,
@@ -564,6 +789,9 @@ export function buildMemoryFixture(root, now = Date.now()) {
             trim: trimPath,
             delete: flakyPath,
             harvested: harvestedPath,
+            firstReview: reviews.first.files[0].path,
+            conflict: junctionsPath,
+            doneIndex,
             shared,
             sharedIndex,
             ownA,

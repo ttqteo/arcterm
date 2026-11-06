@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Setup surface's Memory tab: every registered project's Claude Code auto memory, the changes the
-// weekly check proposes, and the selected change's evidence and diff with its verdict buttons. All
-// derivation is in memorymodel.ts, the atoms and RPCs in memorystore.ts.
+// The Setup surface's Memory tab: every registered project's Claude Code auto memory and the changes the
+// weekly check proposes, reviewed one card at a time (memorycard.tsx) or as the table with the selected
+// change's evidence and diff in a rail beside it. All derivation is in memorymodel.ts, the atoms and RPCs
+// in memorystore.ts, the pieces both views draw in memoryparts.tsx.
 
 import { KeyCap } from "@/app/element/keycap";
 import { widthTween } from "@/app/element/meter";
@@ -11,12 +12,12 @@ import { microFade, viewFade } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildMemoryBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
-import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { RefreshCw, TriangleAlert } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { MemoryCard, MemoryDoneCard, MemoryQueue } from "./memorycard";
 import {
     applyAllIds,
     canApply,
@@ -26,8 +27,8 @@ import {
     fileLabel,
     indexCards,
     isPending,
+    judgedByText,
     kindLabel,
-    kindTone,
     LIMIT_BYTES,
     LIMIT_LINES,
     railOrder,
@@ -39,11 +40,23 @@ import {
     toolbarStatus,
     type ChangeGroup,
     type IndexCard,
-    type KindTone,
+    type MemoryView,
 } from "./memorymodel";
 import {
+    BTN_PRIMARY,
+    BTN_SECONDARY,
+    CheckButton,
+    ConflictAlert,
+    DiffBlock,
+    Dot,
+    KindChip,
+    SECTION_HEAD,
+    TONE_TEXT,
+    toTone,
+    useFade,
+} from "./memoryparts";
+import {
     applyMemoryGroup,
-    checkMemory,
     decideMemory,
     ensureMemoryFeed,
     loadMemory,
@@ -54,60 +67,18 @@ import {
     memoryProjectsAtom,
     memorySelectedChangeAtom,
     memorySelectedProjectAtom,
+    memoryViewAtom,
+    memoryViewOf,
     selectMemoryChange,
     selectMemoryProject,
+    setMemoryView,
+    shownCard,
+    type MemVerdict,
 } from "./memorystore";
 import { PathTail } from "./pathtail";
-import { fmtClock } from "./runcompletion";
-import type { Tone } from "./setupmodel";
 import { DETAIL_RAIL_WIDTH } from "./setupstyles";
 
-const SECTION_HEAD = cn(REGION_LABEL, "text-muted");
-const BTN_SECONDARY =
-    "h-8 flex-none cursor-pointer rounded border border-edge-mid bg-surface-raised px-3 text-[13px] font-semibold text-ink-mid hover:border-edge-strong hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:text-ink-faint disabled:hover:border-edge-mid disabled:hover:bg-surface-raised";
-const BTN_PRIMARY =
-    "h-8 cursor-pointer rounded border-0 bg-accent px-[14px] text-[13px] font-bold text-background shadow-inset-highlight hover:bg-accenthover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent";
-const KIND_CHIP =
-    "inline-flex h-[22px] items-center whitespace-nowrap rounded-md border px-2 text-[11px] font-semibold";
-// a removal reads apart from what comes in and from an edit in place
-const KIND_TONE: Record<KindTone, string> = {
-    remove: "border-error/30 bg-error/10 text-error-soft",
-    add: "border-accent/30 bg-accentbg text-accent-soft",
-    edit: "border-edge-mid bg-surface-hover text-ink-mid",
-};
 const TABLE_GRID = "grid grid-cols-[148px_minmax(0,1fr)_128px_92px] items-center px-3";
-
-const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
-const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };
-
-const DIFF_LINE: Record<string, string> = {
-    "-": "bg-diff-removed/10 text-diff-removed",
-    "+": "bg-diff-added/10 text-diff-added",
-};
-
-function toTone(s: string): Tone {
-    return s === "ok" || s === "warn" ? s : "none";
-}
-
-function Dot({ tone, className }: { tone: Tone; className?: string }) {
-    return <span className={cn("h-1.5 w-1.5 flex-none rounded-full", TONE_DOT[tone], className)} />;
-}
-
-// the props of a motion element that fades in on mount (and out on exit, when it leaves under AnimatePresence).
-// MotionConfig's reduced-motion pass drops transform and layout animation but keeps opacity, so a fade is
-// dropped here: under reduced motion the element just appears.
-interface FadeProps {
-    variants?: Variants;
-    initial?: string;
-    animate?: string;
-    exit?: string;
-}
-
-function useFade(): (variants: Variants, leaves?: boolean) => FadeProps {
-    const reduce = useReducedMotion();
-    return (variants, leaves = false) =>
-        reduce ? {} : { variants, initial: "initial", animate: "animate", ...(leaves ? { exit: "exit" } : {}) };
-}
 
 function Meter({ pct }: { pct: number }) {
     const reduce = useReducedMotion();
@@ -120,18 +91,6 @@ function Meter({ pct }: { pct: number }) {
             />
         </span>
     );
-}
-
-function KindChip({ p, change }: { p: MemHygieneProject; change: MemChange }) {
-    return (
-        <span data-memory-kind={kindTone(change.kind)} className={cn(KIND_CHIP, KIND_TONE[kindTone(change.kind)])}>
-            {kindLabel(p, change)}
-        </span>
-    );
-}
-
-function baseName(path: string): string {
-    return path.split(/[\\/]/).pop() ?? path;
 }
 
 export function MemoryHeader() {
@@ -407,52 +366,46 @@ function ChangeTable({ p, selected }: { p: MemHygieneProject; selected: string |
     );
 }
 
-// Check now and Check again: the spin and label carry a running check, which the disabled state alone did
-// not. a check with nothing new ends before a list can read it running; the result note covers that one.
-function CheckButton({
+// the pane right of the rail: the project's header line and index meter, then the card view's card or the
+// table, whichever view the project is in. the card view's queue strip sits left of it (MemoryTab).
+function ProjectPane({
+    model,
     p,
-    label,
-    className,
-    marked,
+    view,
+    selected,
 }: {
+    model: AgentsViewModel;
     p: MemHygieneProject;
-    label: string;
-    className?: string;
-    marked?: boolean;
+    view: MemoryView;
+    selected: string | null;
 }) {
-    // busy also covers a decision in flight, which disables the button but is not a check
-    const busy = useAtomValue(memoryBusyAtom);
-    return (
-        <button
-            type="button"
-            data-memory-check={marked || undefined}
-            disabled={busy || p.checking}
-            onClick={() => fireAndForget(() => checkMemory(p.project))}
-            className={cn(BTN_SECONDARY, "inline-flex items-center gap-1.5", className)}
-        >
-            <RefreshCw size={13} className={cn(p.checking && "animate-spin motion-reduce:animate-none")} />
-            {p.checking ? "Checking…" : label}
-        </button>
-    );
-}
-
-function ProjectPane({ p, selected }: { p: MemHygieneProject; selected: string | null }) {
     const fade = useFade();
     const result = useAtomValue(memoryCheckResultAtom);
     const cards = indexCards(p);
     const split = splitText(p);
+    const judged = judgedByText(p);
+    const shown = view === "cards" ? shownCard(p, selected) : null;
     return (
         // keyed by project: switching it fades the whole pane in rather than cutting to the next one's
         <motion.main
             key={p.project}
             data-memory-pane
+            data-memory-view={view}
             {...fade(viewFade)}
             className="flex min-w-0 flex-1 flex-col gap-3.5 px-5 pb-[18px] pt-4"
         >
             <div className="flex items-center gap-3.5">
                 <div className="flex min-w-0 flex-col gap-[3px]">
                     <div className="text-[15px] font-semibold text-primary">{p.project}</div>
-                    <div className="text-[12px] text-muted">{checkLine(p, Date.now())}</div>
+                    <div className="text-[12px] text-muted">
+                        {checkLine(p, Date.now())}
+                        {judged ? (
+                            <>
+                                {" · "}
+                                <span data-memory-judged-by>{judged}</span>
+                            </>
+                        ) : null}
+                    </div>
                 </div>
                 <span className="flex-1" />
                 <AnimatePresence>
@@ -480,67 +433,35 @@ function ProjectPane({ p, selected }: { p: MemHygieneProject; selected: string |
                     <IndexCardView key={c.label} card={c} />
                 ))}
             </section>
-            <ChangeTable p={p} selected={selected} />
+            {view === "cards" ? (
+                // the card scrolls, never truncated; the header line stays put above it
+                <div data-memory-card-scroll className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+                    {shown != null ? <MemoryCard model={model} p={p} change={shown} /> : <MemoryDoneCard p={p} />}
+                </div>
+            ) : (
+                <>
+                    <div className="-mb-2 flex flex-none justify-end">
+                        <button
+                            type="button"
+                            data-memory-view-toggle="cards"
+                            onClick={() => setMemoryView(p.project, "cards")}
+                            className="cursor-pointer border-0 bg-transparent p-0 text-[12px] text-accent hover:text-accenthover"
+                        >
+                            Review one at a time
+                        </button>
+                    </div>
+                    <ChangeTable p={p} selected={selected} />
+                </>
+            )}
         </motion.main>
     );
 }
 
 // ---- detail rail ----
 
-function ConflictAlert({ p, change }: { p: MemHygieneProject; change: MemChange }) {
-    const what = change.conflictfile ? baseName(change.conflictfile) : "A file this change touches";
-    return (
-        <div
-            role="alert"
-            data-memory-conflict
-            className="flex flex-col gap-2.5 rounded border border-warning/30 bg-warning/10 px-3.5 py-2.5"
-        >
-            <span className="flex gap-2 text-[12.5px] leading-[1.5] text-secondary">
-                <TriangleAlert size={16} strokeWidth={2} className="mt-0.5 flex-none text-warning" />
-                <span>
-                    <span className="font-semibold text-warning-soft">Changed on disk since the check.</span> {what}{" "}
-                    changed after Arc checked it at {fmtClock(p.checkedat)}. Check it again before applying.
-                </span>
-            </span>
-            <span>
-                <CheckButton p={p} label="Check again" className="h-[30px] text-[12.5px]" />
-            </span>
-        </div>
-    );
-}
-
-function DiffBlock({ diff }: { diff: MemDiff }) {
-    return (
-        <div className="overflow-hidden rounded border border-edge-mid bg-surface-code">
-            <div className="flex h-7 items-center gap-2.5 border-b border-edge-faint px-2.5 font-mono text-[11px] text-muted">
-                <PathTail path={diff.path} className="font-mono text-[11px]" />
-                <span className="flex-1" />
-                <span className="flex-none">{diff.note}</span>
-            </div>
-            {diff.lines?.length ? (
-                <div className="py-1.5">
-                    {diff.lines.map((ln, i) => (
-                        <div
-                            key={i}
-                            className={cn(
-                                "flex gap-2 px-2.5 py-px font-mono text-[11.5px] leading-[18px]",
-                                DIFF_LINE[ln.sign] ?? "text-ink-mid"
-                            )}
-                        >
-                            <span className="w-2 flex-none">{ln.sign}</span>
-                            <span className="whitespace-pre-wrap break-words">{ln.text}</span>
-                        </div>
-                    ))}
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
 function Verdict({ p, change }: { p: MemHygieneProject; change: MemChange }) {
     const busy = useAtomValue(memoryBusyAtom);
-    const decide = (verdict: "apply" | "keep" | "undo" | "reopen") =>
-        fireAndForget(() => decideMemory(p.project, change.id, verdict));
+    const decide = (verdict: MemVerdict) => fireAndForget(() => decideMemory(p.project, change.id, verdict));
     if (!isPending(change)) {
         const status = statusOf(change);
         const applied = change.status === "applied";
@@ -665,11 +586,12 @@ function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }
 
 // ---- tab ----
 
-export function MemoryTab() {
+export function MemoryTab({ model }: { model: AgentsViewModel }) {
     const projects = useAtomValue(memoryProjectsAtom);
     const selectedName = useAtomValue(memorySelectedProjectAtom);
     const selectedChange = useAtomValue(memorySelectedChangeAtom);
     const error = useAtomValue(memoryErrorAtom);
+    const views = useAtomValue(memoryViewAtom);
     // re-read on every visit; the feed the nav rail started re-reads on every state write. a failure from an
     // earlier visit must not leave its banner over fresh data.
     useEffect(() => {
@@ -680,6 +602,8 @@ export function MemoryTab() {
     const bindings = useMemo(() => buildMemoryBindings(), []);
     useKeybindings(bindings);
     const { project: p, change } = resolveSelection(projects, selectedName, selectedChange);
+    const view = p != null ? memoryViewOf(p, views) : "table";
+    const shown = p != null && view === "cards" ? shownCard(p, selectedChange) : null;
     return (
         <div className="flex min-w-0 flex-1 flex-col">
             {error ? (
@@ -697,8 +621,18 @@ export function MemoryTab() {
                 ) : (
                     <>
                         <ProjectRail projects={projects} selected={p?.project ?? ""} />
-                        {p != null ? <ProjectPane p={p} selected={change?.id ?? null} /> : null}
-                        {p != null && change != null ? <ChangeDetail p={p} change={change} /> : null}
+                        {p != null && view === "cards" ? (
+                            <>
+                                <MemoryQueue p={p} shown={shown?.id ?? null} />
+                                <ProjectPane model={model} p={p} view={view} selected={selectedChange} />
+                            </>
+                        ) : null}
+                        {p != null && view === "table" ? (
+                            <ProjectPane model={model} p={p} view={view} selected={change?.id ?? null} />
+                        ) : null}
+                        {p != null && view === "table" && change != null ? (
+                            <ChangeDetail p={p} change={change} />
+                        ) : null}
                     </>
                 )}
             </div>

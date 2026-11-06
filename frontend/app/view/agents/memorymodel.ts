@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Pure derivations behind the Setup surface's Memory tab: rail meters and statuses, the check line,
-// the index cards and their after-totals, the split's groups and switch-over gate, and each change's
-// status and outcome text. memorystore.ts feeds these the memhygiene RPC results; setupmemory.tsx
-// renders them.
+// the index cards and their after-totals, the split's groups and switch-over gate, each change's
+// status and outcome text, and the card view's queue, card and keys (one memory at a time).
+// memorystore.ts feeds these the memhygiene RPC results; setupmemory.tsx and memorycard.tsx render them.
 
 import { fmtClock } from "./runcompletion";
 import type { Tone } from "./setupmodel";
@@ -76,10 +76,11 @@ function sharedRepo(p: MemHygieneProject): string {
     return repoName(p.path, p.formershared || p.folder);
 }
 
-// an undecided change: open, or found changed on disk and waiting on a fresh check. memhygiene.Pending
-// in pkg/memhygiene/split.go mirrors it.
+// an undecided change: open, or found changed on disk and waiting on a fresh check. an allow-list, as
+// memhygiene.Pending in pkg/memhygiene/split.go is, so a decided change (applied, kept) and a Review
+// another change replaced (superseded) both read as decided.
 export function isPending(c: MemChange): boolean {
-    return c.status !== "applied" && c.status !== "kept";
+    return c.status === "" || c.status === "open" || c.status === "conflict";
 }
 
 // a project sharing a folder with other registered projects gets the split, not ordinary changes.
@@ -461,6 +462,8 @@ export function statusOf(change: MemChange): StatusText {
             return { text: "Kept", tone: "none" };
         case "conflict":
             return { text: "Changed on disk", tone: "warn" };
+        case "superseded":
+            return { text: "Replaced", tone: "none" };
         default:
             return { text: "To review", tone: "warn" };
     }
@@ -503,4 +506,464 @@ export function fileLabel(change: MemChange): string {
         return names.join(" + ");
     }
     return `${names[0]} + ${names.length - 1} more`;
+}
+
+// ---- the card view: one memory at a time ----
+
+export type MemoryView = "cards" | "table";
+
+// a shared folder, or an open split / remove-shared / settings change, needs the table's groups,
+// Apply all and switch gate; everything else opens one card at a time.
+export function defaultMemoryView(p: MemHygieneProject): MemoryView {
+    if (isSplit(p)) {
+        return "table";
+    }
+    const tableOnly = p.changes.some(
+        (c) => isPending(c) && (c.group !== "" || c.kind === "remove-shared" || c.kind === "settings")
+    );
+    return tableOnly ? "table" : "cards";
+}
+
+// pkg/memhygiene/check.go's checkTimeout: an ask marker older than this belongs to an ask that died
+// (a restart loses its goroutine), so it and the ids waiting behind it read as idle.
+export const ASK_TIMEOUT_MS = 30 * 60 * 1000;
+
+export type AskState = "asking" | "waiting" | "idle";
+
+function liveAsk(p: MemHygieneProject, now: number): MemAsk | null {
+    const a = p.asking;
+    return a && a.changeid && now - a.startedat < ASK_TIMEOUT_MS ? a : null;
+}
+
+export function askState(p: MemHygieneProject, changeId: string, now: number): AskState {
+    const a = liveAsk(p, now);
+    if (a == null) {
+        return "idle";
+    }
+    if (a.changeid === changeId) {
+        return "asking";
+    }
+    return (p.askwaiting ?? []).includes(changeId) ? "waiting" : "idle";
+}
+
+// Check now would race the ask's state write, so it waits for the ask queue to drain
+export function checkNowBlocked(p: MemHygieneProject, now: number): string | null {
+    return liveAsk(p, now) ? "Waiting for Ask an agent" : null;
+}
+
+export function judgedByText(p: MemHygieneProject): string {
+    return p.judgedby ? `judged by ${p.judgedby}` : "";
+}
+
+function isDecided(c: MemChange): boolean {
+    return c.status === "applied" || c.status === "kept";
+}
+
+function byId(p: MemHygieneProject, id: string): MemChange | undefined {
+    return id ? p.changes.find((c) => c.id === id) : undefined;
+}
+
+// the queue's changes: every open one in table order, then the ones decided since the last check (a
+// superseded Review is left out; its delete or proposal stands in its place)
+function queueChanges(p: MemHygieneProject): MemChange[] {
+    const order = changeOrder(p);
+    return [
+        ...order.filter(isPending),
+        ...order.filter((c) => isDecided(c) && (c.decidedat ?? 0) >= (p.checkedat ?? 0)),
+    ];
+}
+
+function capitalize(s: string): string {
+    return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+function lowerFirst(s: string): string {
+    return s ? s[0].toLowerCase() + s.slice(1) : s;
+}
+
+// the memory a change acts on, by its title: a delete or agent proposal made from a Review carries
+// the Review's memory, whose title the proposal's own (the agent's reason) replaced
+function memoryTitle(p: MemHygieneProject, c: MemChange): string {
+    const from = byId(p, c.fromreview);
+    return from?.title || c.title;
+}
+
+const MEMORY_TYPES = ["user", "feedback", "project", "reference"];
+
+// Claude Code names a memory file for its type (feedback_x.md); the file line shows it beside the name
+function memoryType(c: MemChange): string {
+    const names = c.op.memories ?? [];
+    if (names.length !== 1) {
+        return "";
+    }
+    const prefix = names[0].split("_")[0];
+    return names[0].includes("_") && MEMORY_TYPES.includes(prefix) ? prefix : "";
+}
+
+export type QueueTone = Tone | "accent";
+
+export interface QueueRow {
+    id: string;
+    title: string;
+    status: string;
+    tone: QueueTone;
+    decided: boolean;
+}
+
+function reviewEffect(c: MemChange): StatusText {
+    const effect = c.effect || "to review";
+    return { text: capitalize(effect), tone: effect.startsWith("untouched") ? "warn" : "none" };
+}
+
+function queueStatus(p: MemHygieneProject, c: MemChange, now: number): { text: string; tone: QueueTone } {
+    if (c.status === "applied") {
+        if (c.kind === "review") {
+            return { text: "Still true", tone: "none" };
+        }
+        return { text: c.kind === "delete" ? "Deleted · Undo" : "Applied · Undo", tone: "none" };
+    }
+    if (c.status === "kept") {
+        return { text: "Kept", tone: "none" };
+    }
+    const ask = askState(p, c.id, now);
+    if (ask === "asking") {
+        return { text: `Asking ${liveAsk(p, now)?.runtime || "the agent"}…`, tone: "none" };
+    }
+    if (ask === "waiting") {
+        return { text: "Waiting to ask…", tone: "none" };
+    }
+    if (c.status === "conflict") {
+        return statusOf(c);
+    }
+    if (c.source === "agent") {
+        return { text: `Agent proposes: ${lowerFirst(kindLabel(p, c))}`, tone: "accent" };
+    }
+    if (c.kind === "review") {
+        return reviewEffect(c);
+    }
+    const label = kindLabel(p, c);
+    return { text: c.effect ? `${label} · ${c.effect}` : label, tone: "none" };
+}
+
+export function memoryQueue(p: MemHygieneProject, now: number): QueueRow[] {
+    return queueChanges(p).map((c) => {
+        const { text, tone } = queueStatus(p, c, now);
+        return { id: c.id, title: memoryTitle(p, c), status: text, tone, decided: isDecided(c) };
+    });
+}
+
+// the shown card's change: the chosen one while it is in the queue, else the first open one, else none
+// (the done card)
+export function pickCard(p: MemHygieneProject, id: string | null): MemChange | null {
+    const queue = queueChanges(p);
+    return queue.find((c) => c.id === id) ?? queue.find(isPending) ?? null;
+}
+
+// j and k: the queue row delta away from the shown card, stopping at either end
+export function stepQueue(p: MemHygieneProject, id: string | null, delta: number): string | null {
+    const queue = queueChanges(p);
+    if (queue.length === 0) {
+        return null;
+    }
+    const shown = pickCard(p, id);
+    const i = shown ? queue.findIndex((c) => c.id === shown.id) : -1;
+    const next = i < 0 ? 0 : Math.max(0, Math.min(queue.length - 1, i + delta));
+    return queue[next].id;
+}
+
+// after a verdict, the next open item. the queue lists open items in table order, so this is
+// nextPending: the table order still holds a superseded Review at its old place, which is what lets
+// a Delete advance from the Review it replaced.
+export function nextOpenInQueue(p: MemHygieneProject, id: string): string | null {
+    return nextPending(p, id);
+}
+
+// after an Undo, the card to show. undone is the change as it was before the Undo (once a Delete made
+// from a Review is undone it is gone from p, and its fromreview with it): the Review it reopened, else
+// the undone change itself.
+export function selectAfterUndo(p: MemHygieneProject, undone: MemChange): string | null {
+    if (byId(p, undone.id)) {
+        return undone.id;
+    }
+    const from = byId(p, undone.fromreview);
+    return from && isPending(from) ? from.id : undone.id;
+}
+
+// after Keep: Back to review (Keep on a change made from a Review) shows the reopened Review; an
+// ordinary Keep moves on to the next open item
+export function selectAfterKeep(p: MemHygieneProject, keptId: string): string | null {
+    const from = byId(p, byId(p, keptId)?.fromreview ?? "");
+    return from && isPending(from) ? from.id : nextOpenInQueue(p, keptId);
+}
+
+export interface DoneCard {
+    title: string;
+    next: string;
+}
+
+export function doneCard(p: MemHygieneProject, now: number): DoneCard {
+    return {
+        title: `Nothing to review in ${p.project}`,
+        next: p.nextcheckat ? `Next check ${dayName(p.nextcheckat, now)} at ${fmtClock(p.nextcheckat)}.` : "",
+    };
+}
+
+export type CardKind = "review" | "proposal" | "change";
+
+export type CardAction = "apply" | "ask" | "delete" | "keep" | "talk" | "undo" | "reopen";
+
+export type CardKeyAction = "apply" | "delete" | "keep" | "undo" | "reopen";
+
+export interface CardButton {
+    action: CardAction;
+    label: string;
+    // the key that presses it, "" for none
+    key: string;
+    primary: boolean;
+    danger: boolean;
+    disabled: boolean;
+}
+
+export type CardBody =
+    | { kind: "text"; text: string }
+    | { kind: "proposal"; reason: string; diffs: MemDiff[] }
+    | { kind: "diff"; diffs: MemDiff[] };
+
+export interface CardReason {
+    verdict: string;
+    // "Asked claude at 12:58: <the judge's reason>", "" when never asked
+    askLine: string;
+    doclines: MemDocLine[];
+    // the evidence rows, folded under Details
+    evidence: MemEvidence[];
+}
+
+export interface CardModel {
+    id: string;
+    kind: CardKind;
+    decided: boolean;
+    chip: string;
+    chipTone: KindTone;
+    head: StatusText;
+    title: string;
+    fileLine: string;
+    body: CardBody;
+    buttons: CardButton[];
+    hint: string;
+    // the line under the buttons: the ask running or waiting, a failed ask, a held switch-over, or
+    // a decided change's outcome; null for none
+    status: StatusText | null;
+    reason: CardReason;
+}
+
+const REVIEW_HINT =
+    "Ask an agent proposes one change for this memory (move into AGENTS.md, trim, delete or still true) " +
+    "that you Apply with Undo. Delete keeps a copy you can undo.";
+
+function button(action: CardAction, label: string, key: string, over: Partial<CardButton> = {}): CardButton {
+    return { action, label, key, primary: false, danger: false, disabled: false, ...over };
+}
+
+// "Untouched 30 days, since Sep 14", from the Review's untouched evidence row (its code is the date)
+function reviewHead(c: MemChange): StatusText {
+    const head = reviewEffect(c);
+    const row = (c.evidence ?? []).find((e) => e.text.startsWith("Untouched for") && e.code);
+    const m = row?.code.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (head.tone === "warn" && m) {
+        const since = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+        return { ...head, text: `${head.text}, since ${monthDay(since)}` };
+    }
+    return head;
+}
+
+function proposalHead(c: MemChange, now: number): StatusText {
+    if (!c.proposedat) {
+        return { text: "Proposed by the agent", tone: "none" };
+    }
+    const day = dayName(c.proposedat, now);
+    const when = day === "today" ? fmtClock(c.proposedat) : `${day} at ${fmtClock(c.proposedat)}`;
+    return { text: `Proposed by the agent, ${when}`, tone: "none" };
+}
+
+const NUMBER_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+function filesPhrase(n: number): string {
+    if (n <= 1) {
+        return "the file";
+    }
+    if (n === 2) {
+        return "both files";
+    }
+    return `all ${NUMBER_WORDS[n] ?? n} files`;
+}
+
+function docName(c: MemChange): string {
+    return basename(c.op.docpath) || "AGENTS.md";
+}
+
+function proposalHint(c: MemChange): string {
+    const files = new Set([...(c.files ?? []).map((f) => f.path), ...(c.diffs ?? []).map((d) => d.path)]);
+    return (
+        `Apply keeps a copy of ${filesPhrase(files.size)}, with Undo. Talk it over opens a Claude agent with this ` +
+        `memory, ${docName(c)} and the proposal; it edits the files itself, outside Undo.`
+    );
+}
+
+function cardButtons(p: MemHygieneProject, c: MemChange, kind: CardKind, now: number): CardButton[] {
+    if (c.status === "applied") {
+        return [button("undo", "Undo", "u")];
+    }
+    if (c.status === "kept") {
+        return [button("reopen", "Review again", "u")];
+    }
+    const applyable = canApply(p, c);
+    if (kind === "review") {
+        const ask = askState(p, c.id, now);
+        const asking = ask === "asking";
+        const open = c.status === "open" || c.status === "";
+        return [
+            button("apply", c.applylabel || "Still true", "a", { primary: true, disabled: asking || !applyable }),
+            button("ask", "Ask an agent…", "", { disabled: asking || ask === "waiting" || p.checking || !open }),
+            button("delete", "Delete", "d", { danger: true, disabled: asking || !open }),
+            button("keep", "Keep as is", "x", { disabled: asking }),
+        ];
+    }
+    if (kind === "proposal") {
+        return [
+            button("apply", "Apply", "a", { primary: true, disabled: !applyable }),
+            button("talk", "Talk it over with an agent", ""),
+            button("keep", "Back to review", "x"),
+        ];
+    }
+    return [
+        button("apply", c.applylabel || kindLabel(p, c), "a", { primary: true, disabled: !applyable }),
+        button("keep", "Keep as is", "x"),
+    ];
+}
+
+function cardStatus(p: MemHygieneProject, c: MemChange, now: number): StatusText | null {
+    if (isDecided(c)) {
+        return { text: closedText(p, c, now), tone: statusOf(c).tone };
+    }
+    const ask = askState(p, c.id, now);
+    if (ask === "asking") {
+        return { text: `Asking ${liveAsk(p, now)?.runtime || "the agent"}…`, tone: "none" };
+    }
+    if (ask === "waiting") {
+        return { text: "Waiting to ask…", tone: "none" };
+    }
+    if (c.askerror) {
+        return { text: c.askerror, tone: "warn" };
+    }
+    const gate = switchGate(p, c);
+    return gate.blocked ? { text: gate.text, tone: "warn" } : null;
+}
+
+export function memoryCard(p: MemHygieneProject, change: MemChange, now: number): CardModel {
+    const kind: CardKind = change.kind === "review" ? "review" : change.source === "agent" ? "proposal" : "change";
+    const type = memoryType(change);
+    let head: StatusText;
+    let body: CardBody;
+    let hint: string;
+    if (kind === "review") {
+        head = reviewHead(change);
+        body = { kind: "text", text: change.body };
+        hint = REVIEW_HINT;
+    } else if (kind === "proposal") {
+        head = proposalHead(change, now);
+        body = { kind: "proposal", reason: change.title, diffs: change.diffs ?? [] };
+        hint = proposalHint(change);
+    } else {
+        head = { text: capitalize(change.effect), tone: "none" };
+        body = { kind: "diff", diffs: change.diffs ?? [] };
+        hint = change.note;
+    }
+    const decided = isDecided(change);
+    return {
+        id: change.id,
+        kind,
+        decided,
+        chip: kindLabel(p, change),
+        chipTone: kindTone(change.kind),
+        head,
+        title: memoryTitle(p, change),
+        fileLine: type ? `${fileLabel(change)} · ${type}` : fileLabel(change),
+        body,
+        buttons: cardButtons(p, change, kind, now),
+        hint: decided ? "" : hint,
+        status: cardStatus(p, change, now),
+        reason: {
+            verdict: change.verdict,
+            askLine: change.askedat
+                ? `Asked ${change.askedby || "the agent"} at ${fmtClock(change.askedat)}` +
+                  (change.askreason ? `: ${change.askreason}` : "")
+                : "",
+            // the wire's nil slice arrives as null
+            doclines: change.doclines ?? [],
+            evidence: change.evidence ?? [],
+        },
+    };
+}
+
+const KEY_ACTIONS: CardAction[] = ["apply", "delete", "keep", "undo", "reopen"];
+
+// a key on the card view: the enabled button it presses, if it has one
+export function cardKeyAction(card: CardModel, key: string): CardKeyAction | null {
+    const b = card.buttons.find((x) => x.key === key && !x.disabled);
+    return b && KEY_ACTIONS.includes(b.action) ? (b.action as CardKeyAction) : null;
+}
+
+function joinPath(dir: string, name: string): string {
+    if (!dir) {
+        return name;
+    }
+    const sep = dir.includes("\\") && !dir.includes("/") ? "\\" : "/";
+    return dir.replace(/[\\/]+$/, "") + sep + name;
+}
+
+// the memory file a change acts on: its Review's file, else the file named for its memory
+function memoryPath(p: MemHygieneProject, c: MemChange): string {
+    const from = byId(p, c.fromreview);
+    if (from?.files?.[0]?.path) {
+        return from.files[0].path;
+    }
+    const name = c.op.memories?.[0] ?? "";
+    const file = (c.files ?? []).find((f) => name && basename(f.path) === name);
+    return file?.path ?? (name ? joinPath(c.op.folder || p.folder, name) : (c.files?.[0]?.path ?? ""));
+}
+
+// the task "Talk it over with an agent" launches a claude agent with: what it needs to talk the
+// proposal over, and that its edits are its own (memhygiene's Undo never sees them)
+export function talkItOverTask(p: MemHygieneProject, change: MemChange): string {
+    const from = byId(p, change.fromreview);
+    const text = change.body || from?.body || "";
+    const docPath = change.op.docpath || joinPath(p.path, "AGENTS.md");
+    const diffs = (change.diffs ?? []).flatMap((d) => [
+        `--- ${d.path}${d.note ? ` (${d.note})` : ""}`,
+        ...(d.lines ?? []).map((l) => `${l.sign}${l.text}`),
+    ]);
+    const lines = [
+        `Talk over a proposed change to one of my Claude Code memories in ${p.project}, then make the change we agree on.`,
+        "",
+        `Memory file: ${memoryPath(p, change)}`,
+        "Its text:",
+        text,
+        "",
+        `The project's instructions: ${docPath}`,
+        "",
+        `The proposal (${kindLabel(p, change)}): ${change.title}`,
+    ];
+    if (change.note) {
+        lines.push(change.note);
+    }
+    if (diffs.length > 0) {
+        lines.push("", "Its diffs:", ...diffs);
+    }
+    lines.push(
+        "",
+        `Read the memory and ${basename(docPath)}, tell me what you think of the proposal, and ask before changing ` +
+            "anything. Once we agree, edit the files yourself (the memory, MEMORY.md, the instructions doc): " +
+            "this happens outside Arc's memory Undo, and the next memory check picks up what changed."
+    );
+    return lines.join("\n");
 }

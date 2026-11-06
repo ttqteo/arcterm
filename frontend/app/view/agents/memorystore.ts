@@ -5,19 +5,29 @@
 // Setup surface unmounts on a switch, and the selected project and change must survive one (the
 // memhygiene address also writes them before it switches here).
 
+import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
+import { runtimeStartupCommand } from "./launch";
 import {
     checkResult,
+    defaultMemoryView,
     isPending,
+    nextOpenInQueue,
     nextPending,
+    pickCard,
     projectsToReview,
     resolveSelection,
+    selectAfterKeep,
+    selectAfterUndo,
+    talkItOverTask,
     type MemorySelection,
+    type MemoryView,
     type StatusText,
 } from "./memorymodel";
 
@@ -28,7 +38,8 @@ const DECIDE_TIMEOUT_MS = 15000;
 // long enough to read; it goes stale once the user starts deciding the changes it counts
 const RESULT_SHOW_MS = 5000;
 
-export type MemVerdict = "apply" | "keep" | "undo" | "reopen";
+// delete: only on an open Review, which the delete change then replaces (superseded)
+export type MemVerdict = "apply" | "keep" | "undo" | "reopen" | "delete";
 
 // null = not read yet
 export const memoryProjectsAtom = atom<MemHygieneProject[] | null>(null) as PrimitiveAtom<MemHygieneProject[] | null>;
@@ -40,6 +51,28 @@ export const memoryBusyAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 export const memoryBulkAtom = atom<BulkProgress | null>(null) as PrimitiveAtom<BulkProgress | null>;
 // what the last check this tab started found, shown beside Check now for a few seconds
 export const memoryCheckResultAtom = atom<CheckResult | null>(null) as PrimitiveAtom<CheckResult | null>;
+// the view the person picked per project (one card at a time, or the table); a project not in it opens in
+// defaultMemoryView
+export const memoryViewAtom = atom<Record<string, MemoryView>>({}) as PrimitiveAtom<Record<string, MemoryView>>;
+
+export function memoryViewOf(
+    p: MemHygieneProject,
+    views: Record<string, MemoryView> = globalStore.get(memoryViewAtom)
+): MemoryView {
+    return views[p.project] ?? defaultMemoryView(p);
+}
+
+export function setMemoryView(project: string, view: MemoryView): void {
+    globalStore.set(memoryViewAtom, { ...globalStore.get(memoryViewAtom), [project]: view });
+}
+
+// the card view's shown change. an ask's proposal takes its Review's place: a selection still on the Review
+// (the person stayed on it while the agent ran) follows it to the proposal
+export function shownCard(p: MemHygieneProject, id: string | null): MemChange | null {
+    const sel = id == null ? null : p.changes.find((c) => c.id === id);
+    const follow = sel?.status === "superseded" && sel.supersededby ? sel.supersededby : id;
+    return pickCard(p, follow);
+}
 
 export interface BulkProgress {
     project: string;
@@ -189,11 +222,78 @@ function advanceFrom(updated: MemHygieneProject | null, changeId: string): void 
     }
 }
 
+// the card view after a verdict on the shown card: Delete, Still true, Apply and Keep move on to the next open
+// item (a Delete's Review is superseded by then, and nextOpenInQueue advances from its old place), Back to review
+// shows the Review it reopened, and an Undo the card it brought back. nothing left open shows the done card.
+function selectAfterCard(updated: MemHygieneProject, before: MemChange, verdict: MemVerdict): void {
+    let next: string | null;
+    if (verdict === "undo" || verdict === "reopen") {
+        next = selectAfterUndo(updated, before);
+    } else if (verdict === "keep") {
+        next = selectAfterKeep(updated, before.id);
+    } else {
+        next = nextOpenInQueue(updated, before.id);
+    }
+    globalStore.set(memorySelectedChangeAtom, next);
+}
+
 export function decideMemory(project: string, changeId: string, verdict: MemVerdict): Promise<void> {
+    // read before the decision: the view a project opens in depends on its open changes
+    const p = globalStore.get(memoryProjectsAtom)?.find((x) => x.project === project) ?? null;
+    const cards = p != null && memoryViewOf(p) === "cards";
+    const selected = globalStore.get(memorySelectedChangeAtom);
+    const shown = cards ? shownCard(p, selected) : null;
     return busy(async () => {
         const updated = await decideOne(project, changeId, verdict);
+        if (cards) {
+            // only when the decided card was the one shown and the person has not moved on meanwhile (j and k
+            // still work while a decision is in flight)
+            if (updated != null && shown?.id === changeId && globalStore.get(memorySelectedChangeAtom) === selected) {
+                selectAfterCard(updated, shown, verdict);
+            }
+            return;
+        }
         if (verdict === "apply" || verdict === "keep") {
             advanceFrom(updated, changeId);
+        }
+    });
+}
+
+// Ask an agent: the one-memory judge call runs in the background and returns at once (a second ask on the
+// project queues behind it); re-list so the card reads "Asking…" without waiting on the update event
+export function askMemoryAgent(project: string, changeId: string): Promise<void> {
+    return busy(async () => {
+        try {
+            await RpcApi.AskMemoryAgentCommand(
+                TabRpcClient,
+                { project, changeid: changeId },
+                { timeout: READ_TIMEOUT_MS }
+            );
+        } catch (e) {
+            throw new Error(`Could not ask an agent about the memory in ${project}: ${errText(e)}`);
+        }
+        await loadMemory();
+    });
+}
+
+// Talk it over with an agent: a claude agent in the project with the memory, its instructions doc and the
+// proposal. It edits the files itself, outside Undo. The person stays on Setup: the agent shows in the Agent
+// tree and its nav badge (launchAgent foregrounds the Agent surface for every agent, so the surface is put back).
+export function talkItOver(model: AgentsViewModel, p: MemHygieneProject, change: MemChange): Promise<void> {
+    return busy(async () => {
+        const surface = globalStore.get(model.surfaceAtom);
+        try {
+            await launchAgent(model, {
+                runtime: "claude",
+                startupCommand: runtimeStartupCommand("claude"),
+                task: talkItOverTask(p, change),
+                projectPath: p.path,
+                projectName: p.project,
+            });
+        } catch (e) {
+            throw new Error(`Could not open an agent: ${errText(e)}`);
+        } finally {
+            globalStore.set(model.surfaceAtom, surface);
         }
     });
 }

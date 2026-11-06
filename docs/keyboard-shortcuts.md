@@ -80,7 +80,7 @@ column. The Tool row is the last in Start, so the other rows keep their digits.
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
-| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
+| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a Claude session picked: open or close Quick look, a panel under the columns with the session's last 5 messages (`↑` `↓` in the Session column move it to the next session; `Esc` closes it before the dialog; Open asleep sits in its header). With another agent's session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 
@@ -480,12 +480,17 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 
 ### Setup: Memory tab
 
+A project opens one memory at a time (the queue strip and one card); a shared-folder or split project opens in
+the table. **All changes as a table** and **Review one at a time** switch between them. The keys follow the view
+the project is in:
+
 | Keys | Action |
 |---|---|
-| `j` / `k` (or `↓` / `↑`) | Next / previous change in the table |
-| `a` | Apply the selected change (when its Apply button is enabled), then move to the next change to review |
-| `x` | Keep the selected change as is, then move to the next change to review |
-| `u` | Undo an applied change, or review a kept one again |
+| `j` / `k` (or `↓` / `↑`) | Next / previous card in the queue, or change in the table. The decided cards sit below the open ones |
+| `a` | Still true on a Review card, Apply on any other (when its button is enabled), then move to the next card or change to review |
+| `d` | Delete the memory (card view, on an open Review), then move to the next card. The queue keeps it as `Deleted · Undo` |
+| `x` | Keep the card or change as is, then move to the next one to review. On an agent's proposal: Back to review, which shows the Review again |
+| `u` | Undo an applied change (a Delete's Undo brings its Review back), or review a kept one again |
 
 ### Route DAG (the orchestrator run's graph)
 

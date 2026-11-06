@@ -1157,7 +1157,7 @@ export function SetupSurface({ model }: { model: AgentsViewModel }) {
                     ) : tab === "learned" ? (
                         <LearnedPane />
                     ) : tab === "memory" ? (
-                        <MemoryTab />
+                        <MemoryTab model={model} />
                     ) : (
                         <ProjectContextTab model={model} />
                     )}
