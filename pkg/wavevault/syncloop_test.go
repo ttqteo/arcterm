@@ -165,6 +165,54 @@ func TestLoopOffIsNotAFailure(t *testing.T) {
 	}
 }
 
+func TestLoopAfterPullRunsOnlyOnPull(t *testing.T) {
+	var calls atomic.Int32
+	old := AfterPull
+	AfterPull = func() { calls.Add(1) }
+	t.Cleanup(func() { AfterPull = old })
+
+	results := []struct {
+		res SyncResult
+		err error
+	}{
+		{SyncResult{Pulled: true}, nil},
+		{SyncResult{}, nil},
+		// the push failed after a merge that already wrote the remote's files
+		{SyncResult{Pulled: true}, errors.New("push rejected")},
+		{SyncResult{Off: SyncOffNoRemote}, nil},
+	}
+	var run atomic.Int32
+	l, _, _ := startTestLoop(t, func(context.Context) (SyncResult, error) {
+		r := results[run.Add(1)-1]
+		return r.res, r.err
+	})
+	for range results {
+		_ = l.request(context.Background(), true)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("AfterPull ran %d times over two pulls among %d runs, want 2", got, len(results))
+	}
+}
+
+func TestLoopAfterPullPanicKeepsLoop(t *testing.T) {
+	old := AfterPull
+	AfterPull = func() { panic("boom") }
+	t.Cleanup(func() { AfterPull = old })
+	var runs atomic.Int32
+	l, _, _ := startTestLoop(t, func(context.Context) (SyncResult, error) {
+		runs.Add(1)
+		return SyncResult{Pulled: true}, nil
+	})
+	for range 2 {
+		if err := l.request(context.Background(), true); err != nil {
+			t.Fatalf("request: %v", err)
+		}
+	}
+	if got := runs.Load(); got != 2 {
+		t.Fatalf("runs = %d, want 2: a panicking AfterPull must not stop the loop", got)
+	}
+}
+
 func TestRequestSyncWaitReturnsError(t *testing.T) {
 	want := errors.New("git push origin HEAD:main: exit status 1: rejected")
 	l, _, _ := startTestLoop(t, func(context.Context) (SyncResult, error) {

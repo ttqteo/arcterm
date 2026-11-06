@@ -6,12 +6,15 @@ package xmastree
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wavevault"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -28,14 +31,33 @@ func TestMain(m *testing.M) {
 	if err := wstore.InitWStore(); err != nil {
 		panic(err)
 	}
+	// a vault of the test's own, never the user's
+	testVault = filepath.Join(dir, "vault")
+	vaultRoot = func() string { return testVault }
+	clientID = func() string { return testClient }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
 
-// resetLedger empties the ledger and the run events, and forgets the backfill, so each test starts from a fresh
-// process's store.
+var testVault string
+
+const testClient = "client-mac"
+
+// resetLedger empties the ledger, the run events and the test vault's ledger files, and forgets the backfill, so each
+// test starts from a fresh process's store.
 func resetLedger(t *testing.T) {
+	t.Helper()
+	pendingExports.Wait()
+	clearStore(t)
+	if err := os.RemoveAll(filepath.Join(testVault, VaultDir)); err != nil {
+		t.Fatal(err)
+	}
+	forgetBackfill()
+}
+
+// clearStore empties the ledger and the run events, as a store cleared by hand would be.
+func clearStore(t *testing.T) {
 	t.Helper()
 	err := wstore.WithTx(context.Background(), func(tx *wstore.TxWrap) error {
 		tx.Exec(`DELETE FROM db_xmastask`)
@@ -45,7 +67,30 @@ func resetLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forgetBackfill()
+}
+
+func ledgerPath(season int, client string) string {
+	return filepath.Join(testVault, VaultDir, strconv.Itoa(season), client+ledgerExt)
+}
+
+func writeLedgerFile(t *testing.T, season int, client string, content string) {
+	t.Helper()
+	p := ledgerPath(season, client)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readOwnFile(t *testing.T, season int) []ledgerTask {
+	t.Helper()
+	tasks, err := readLedgerFile(ledgerPath(season, testClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tasks
 }
 
 // forgetBackfill makes the next Read backfill again, as a new wavesrv process would.
@@ -247,5 +292,151 @@ func TestReadStub(t *testing.T) {
 	}
 	if data.Done == nil || len(data.Done) != 0 {
 		t.Fatalf("Done = %#v, want empty non-nil", data.Done)
+	}
+}
+
+func insertLedger(t *testing.T, runID, taskID string, ts int64) {
+	t.Helper()
+	err := wstore.WithTx(context.Background(), func(tx *wstore.TxWrap) error {
+		tx.Exec(`INSERT INTO db_xmastask (runid, taskid, ts) VALUES (?, ?, ?)`, runID, taskID, ts)
+		return tx.Err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadCountsOtherMachines(t *testing.T) {
+	resetLedger(t)
+	ctx := context.Background()
+	local := ms(2026, time.November, 3, 9)
+	remote := ms(2026, time.November, 10, 9)
+	insertLedger(t, "run-m", "t-1", local)
+	writeLedgerFile(t, 2026, "client-win", `[
+  {"runid": "run-w", "taskid": "t-1", "ts": `+strconv.FormatInt(remote, 10)+`},
+  {"runid": "run-m", "taskid": "t-1", "ts": `+strconv.FormatInt(remote, 10)+`},
+  {"runid": "run-w", "taskid": "t-2", "ts": `+strconv.FormatInt(ms(2026, time.October, 20, 9), 10)+`},
+  {"runid": "run-w", "taskid": "", "ts": `+strconv.FormatInt(remote, 10)+`}
+]`)
+	writeLedgerFile(t, 2026, "client-bad", `{not json`)
+	writeLedgerFile(t, 2025, "client-old", `[{"runid": "run-o", "taskid": "t-1", "ts": `+strconv.FormatInt(remote, 10)+`}]`)
+	data, err := Read(ctx, midSeason)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the other machine's task counts; the task both hold counts once at its first finish; a task outside the window,
+	// one with no task id, a malformed file and another season's folder add nothing
+	if want := []int64{local, remote}; !slices.Equal(data.Done, want) {
+		t.Fatalf("Done = %v, want %v", data.Done, want)
+	}
+	if n := ledgerCount(t); n != 1 {
+		t.Fatalf("ledger rows = %d, want 1: the other machine's tasks stay in its file", n)
+	}
+}
+
+func TestExportWritesOwnFile(t *testing.T) {
+	resetLedger(t)
+	ctx := context.Background()
+	_, _, from, to := SeasonAt(midSeason)
+	a, b := ms(2026, time.November, 2, 9), ms(2026, time.November, 10, 9)
+	insertLedger(t, "run-b", "t-1", b)
+	insertLedger(t, "run-a", "t-1", b)
+	insertLedger(t, "run-a", "t-2", a)
+	insertLedger(t, "run-a", "t-9", ms(2026, time.October, 30, 9))
+	wavevault.PokedForTest()
+	if err := exportSeason(ctx, 2026, from, to); err != nil {
+		t.Fatal(err)
+	}
+	want := []ledgerTask{{"run-a", "t-2", a}, {"run-a", "t-1", b}, {"run-b", "t-1", b}}
+	if got := readOwnFile(t, 2026); !slices.Equal(got, want) {
+		t.Fatalf("own file = %v, want %v", got, want)
+	}
+	if !wavevault.PokedForTest() {
+		t.Fatal("a written ledger file must poke the vault sync")
+	}
+	// nothing new: the file is left alone and the sync is not poked
+	if err := exportSeason(ctx, 2026, from, to); err != nil {
+		t.Fatal(err)
+	}
+	if wavevault.PokedForTest() {
+		t.Fatal("an unchanged ledger file must not poke the vault sync")
+	}
+	// a cleared store keeps the file's tasks, and a new one joins them
+	clearStore(t)
+	c := ms(2026, time.November, 20, 9)
+	insertLedger(t, "run-c", "t-1", c)
+	if err := exportSeason(ctx, 2026, from, to); err != nil {
+		t.Fatal(err)
+	}
+	want = append(want, ledgerTask{"run-c", "t-1", c})
+	if got := readOwnFile(t, 2026); !slices.Equal(got, want) {
+		t.Fatalf("own file after clearing the store = %v, want %v", got, want)
+	}
+	data, err := Read(ctx, midSeason)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Done) != 4 {
+		t.Fatalf("Done = %v, want the file's 4 tasks though the store holds 1", data.Done)
+	}
+}
+
+func TestExportWritesNothing(t *testing.T) {
+	resetLedger(t)
+	ctx := context.Background()
+	_, _, from, to := SeasonAt(midSeason)
+	// no task this season
+	insertLedger(t, "run-a", "t-1", ms(2026, time.October, 30, 9))
+	if err := exportSeason(ctx, 2026, from, to); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ledgerPath(2026, testClient)); !os.IsNotExist(err) {
+		t.Fatalf("a season with no task wrote a file (stat err %v)", err)
+	}
+	// no client id
+	insertLedger(t, "run-a", "t-2", ms(2026, time.November, 3, 9))
+	old := clientID
+	clientID = func() string { return "" }
+	defer func() { clientID = old }()
+	if err := exportSeason(ctx, 2026, from, to); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ledgerPath(2026, "")); !os.IsNotExist(err) {
+		t.Fatalf("an install with no client id wrote a file (stat err %v)", err)
+	}
+}
+
+func TestBackfillWritesOwnFile(t *testing.T) {
+	resetLedger(t)
+	ts := ms(2026, time.November, 2, 9)
+	appendEvent(t, ts, "run-1", waveobj.RunEventKindTaskDone, map[string]any{"taskid": "t-1"})
+	if _, err := Read(context.Background(), midSeason); err != nil {
+		t.Fatal(err)
+	}
+	pendingExports.Wait()
+	if got, want := readOwnFile(t, 2026), []ledgerTask{{"run-1", "t-1", ts}}; !slices.Equal(got, want) {
+		t.Fatalf("own file after the backfill = %v, want %v", got, want)
+	}
+}
+
+func TestNoVaultReadsStoreOnly(t *testing.T) {
+	resetLedger(t)
+	local := ms(2026, time.November, 3, 9)
+	insertLedger(t, "run-m", "t-1", local)
+	writeLedgerFile(t, 2026, "client-win", `[{"runid": "run-w", "taskid": "t-1", "ts": `+
+		strconv.FormatInt(ms(2026, time.November, 10, 9), 10)+`}]`)
+	old := vaultRoot
+	vaultRoot = nil
+	defer func() { vaultRoot = old }()
+	data, err := Read(context.Background(), midSeason)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []int64{local}; !slices.Equal(data.Done, want) {
+		t.Fatalf("Done = %v, want only the store's %v before EnableVaultSync", data.Done, want)
+	}
+	pendingExports.Wait()
+	if _, err := os.Stat(ledgerPath(2026, testClient)); !os.IsNotExist(err) {
+		t.Fatalf("a Read before EnableVaultSync wrote a ledger file (stat err %v)", err)
 	}
 }

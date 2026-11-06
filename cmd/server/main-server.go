@@ -63,6 +63,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshserver"
 	"github.com/wavetermdev/waveterm/pkg/wshutil"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/wavetermdev/waveterm/pkg/xmastree"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -86,6 +87,7 @@ var initConfigWatcher = wconfig.InitWatcher
 var snapshotBootSkips = []string{
 	"retryCleanupDebtAtStartup",
 	"runTelebot",
+	"xmastree.EnableVaultSync",
 	"wavevault.StartSyncLoop",
 	"harnessupdate.StartLoop",
 	"reporadar.RecoverInterruptedScans",
@@ -502,6 +504,10 @@ func main() {
 	wstore.RunChangedHook = wshserver.PokeRunQueue
 	// before the first config read (the watcher inits lazily) and before the efforts, which resolve the vault from config
 	wconfig.OnVaultLayerWrite = wavevault.Poke
+	// before anything can finish a task, and before the vault sync loop, whose AfterPull it sets
+	if !snapshotSkips("xmastree.EnableVaultSync") { // the copied settings may name the user's real vault
+		xmastree.EnableVaultSync()
+	}
 	if err := wconfig.MigrateSettingsToVault(); err != nil {
 		log.Printf("error migrating settings to the vault: %v\n", err)
 	}

@@ -179,6 +179,32 @@ func TestSyncEachSideCommitsAndSyncs(t *testing.T) {
 	assertPublished(t, a, remote)
 }
 
+func TestSyncReportsPulled(t *testing.T) {
+	remote := newBareRemote(t)
+	a, b := newSyncVault(t, remote), newSyncVault(t, remote)
+
+	writeVaultFile(t, a, "memory/a.md", []byte("from a\n"))
+	if res := mustSync(t, a); res.Pulled {
+		t.Fatal("a's first push to an empty remote pulled nothing")
+	}
+	if res := mustSync(t, b); !res.Pulled {
+		t.Fatal("b joining a's history must report a pull")
+	}
+	if res := mustSync(t, b); res.Pulled {
+		t.Fatal("b syncing again with nothing new must not report a pull")
+	}
+	// a local commit alone is not a pull
+	writeVaultFile(t, a, "memory/a2.md", []byte("again\n"))
+	if res := mustSync(t, a); res.Pulled || !res.Pushed {
+		t.Fatalf("a's own write: Pulled %v Pushed %v, want a push and no pull", res.Pulled, res.Pushed)
+	}
+	// both sides wrote: the merge brings a's commit into b
+	writeVaultFile(t, b, "memory/b.md", []byte("from b\n"))
+	if res := mustSync(t, b); !res.Pulled {
+		t.Fatal("b merging a's new commit must report a pull")
+	}
+}
+
 func TestSyncUnbornVaultJoinsRemote(t *testing.T) {
 	remote := newBareRemote(t)
 	a := newSyncVault(t, remote)

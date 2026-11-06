@@ -205,9 +205,27 @@ func (l *syncLoop) runOnce(ctx context.Context) {
 
 	res, err := l.safeSync(ctx)
 	l.record(res, err)
+	// a failed push can follow a merge that already wrote the remote's files
+	if res.Pulled {
+		l.runAfterPull()
+	}
 	for _, w := range waiters {
 		w <- err
 	}
+}
+
+// AfterPull runs after a sync whose merge brought in the remote's commits, outside the vault lock, for state read
+// from vault files that has no reader of its own to notice the change. Set once at startup, before the loop starts.
+var AfterPull func()
+
+func (l *syncLoop) runAfterPull() {
+	if AfterPull == nil {
+		return
+	}
+	defer func() {
+		panichandler.PanicHandler("vault sync after pull", recover())
+	}()
+	AfterPull()
 }
 
 // safeSync turns a panic in one run into that run's error, so the loop survives it.

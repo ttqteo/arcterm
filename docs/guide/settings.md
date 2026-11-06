@@ -51,7 +51,7 @@ Trang **Appearance**: bấm một preset trong thẻ **Theme**; các màu khác 
 Trang **Storage & sync**, thẻ **Vault & sync** (thẻ đầu trang).
 
 1. **Vault path**: nhập đường dẫn hoặc bấm biểu tượng thư mục để chọn. Thư mục phải tồn tại; để trống thì dùng vault mặc định (`~/.waveterm/vault`). Đường dẫn không hợp lệ bị từ chối với thông báo lỗi.
-2. **Sync remote**: nhập một git remote riêng tư (`git@host:you/vault.git`) để vault, initiative và các cài đặt di động giống nhau trên mọi máy. Để trống thì tắt đồng bộ. Dòng trạng thái ở chân thẻ cho biết `Sync off — git not found`, `Sync off — no remote`, `Syncing…`, `Last synced 3m ago`, `Sync failed: …`, kèm số bản xung đột (`conflict copies`) và effort lỗi.
+2. **Sync remote**: nhập một git remote riêng tư (`git@host:you/vault.git`) để vault, initiative, các cài đặt di động và số ornament của cây thông Noel ở lobby giống nhau trên mọi máy (cách bạn treo ornament vẫn riêng từng máy). Để trống thì tắt đồng bộ. Dòng trạng thái ở chân thẻ cho biết `Sync off — git not found`, `Sync off — no remote`, `Syncing…`, `Last synced 3m ago`, `Sync failed: …`, kèm số bản xung đột (`conflict copies`) và effort lỗi.
 
 Cũng làm được bằng lệnh: `wsh vault remote [url]`, `wsh vault sync`, `wsh vault status`.
 

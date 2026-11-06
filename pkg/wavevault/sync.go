@@ -53,10 +53,12 @@ var pushRejectedMarkers = []string{"[rejected]", "non-fast-forward", "fetch firs
 var beforePush func()
 
 // SyncResult reports one Sync. Off is "" when sync ran, else SyncOffNoGit or SyncOffNoRemote.
-// NewConflicts lists the vault-relative conflict copies this run wrote.
+// NewConflicts lists the vault-relative conflict copies this run wrote. Pulled is whether the merge brought in
+// commits from the remote.
 type SyncResult struct {
 	Off          string
 	Pushed       bool
+	Pulled       bool
 	NewConflicts []string
 }
 
@@ -93,8 +95,13 @@ func (v *Vault) Sync(ctx context.Context) (SyncResult, error) {
 
 	var res SyncResult
 	for attempt := 1; ; attempt++ {
+		before, _ := v.revParse(ctx, "HEAD")
 		if err := v.fetchAndMerge(ctx, &res); err != nil {
 			return res, err
+		}
+		// the local changes are committed by now, so HEAD moves only by what the merge brought in
+		if after, _ := v.revParse(ctx, "HEAD"); after != before {
+			res.Pulled = true
 		}
 		pushed, err := v.push(ctx)
 		if err == nil {

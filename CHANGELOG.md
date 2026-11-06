@@ -28,6 +28,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A session's menu in History has Copy session id, beside Copy title and Copy transcript path.
 
+### Changed
+
+- The lobby Christmas tree grows with the tasks your runs finish on every machine that syncs the same vault, not
+  only this one. Where you hung the ornaments stays your own on each machine.
+
 ## 1.0.5 — 2026-11-06
 
 ### Added
