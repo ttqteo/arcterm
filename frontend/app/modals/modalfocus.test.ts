@@ -14,8 +14,26 @@ function fakePanel(contains: boolean) {
     return { focus: vi.fn(), contains: vi.fn(() => contains) } as unknown as HTMLElement;
 }
 
+// focus() moves document.activeElement, as a focusable element's does
 function fakeNode(isConnected: boolean, visible = true) {
-    return { focus: vi.fn(), blur: vi.fn(), isConnected, checkVisibility: () => visible } as unknown as HTMLElement;
+    const node = { blur: vi.fn(), isConnected, checkVisibility: () => visible } as unknown as HTMLElement;
+    node.focus = vi.fn(() => {
+        (document as { activeElement: Element | null }).activeElement = node;
+    });
+    return node;
+}
+
+// <body>, which a modal opened over nothing records as the element to hand focus back to: it passes the connected and
+// visible checks, but focus() on it does nothing
+function fakeBody() {
+    return { isConnected: true, checkVisibility: () => true, focus: vi.fn(), blur: vi.fn() } as unknown as HTMLElement;
+}
+
+const documentBody = fakeBody();
+
+// the document a close reads: what has focus, its <body>, and the [data-focus-home] elements in it
+function stubDocument(activeElement: unknown = null, homes: HTMLElement[] = []) {
+    vi.stubGlobal("document", { activeElement, body: documentBody, querySelectorAll: () => homes });
 }
 
 describe("focusTrapTarget", () => {
@@ -68,7 +86,7 @@ describe("focusTrapTarget", () => {
 });
 
 describe("takeModalFocus", () => {
-    beforeEach(() => vi.stubGlobal("document", { activeElement: null }));
+    beforeEach(() => stubDocument());
     afterEach(() => vi.unstubAllGlobals());
 
     it("focuses the panel when focus is outside it", () => {
@@ -105,16 +123,87 @@ describe("takeModalFocus", () => {
     // pick navigated to from claiming focus, and then fell to <body>
     it("drops focus from the closing panel when there is nowhere to restore it", () => {
         const input = fakeNode(true);
-        vi.stubGlobal("document", { activeElement: input });
+        stubDocument(input);
         takeModalFocus(fakePanel(true), fakeNode(true, false))();
         expect(input.blur).toHaveBeenCalledOnce();
     });
 
     it("leaves focus that already moved outside the panel alone", () => {
         const elsewhere = fakeNode(true);
-        vi.stubGlobal("document", { activeElement: elsewhere });
+        stubDocument(elsewhere);
         takeModalFocus(fakePanel(false), fakeNode(false))();
         expect(elsewhere.blur).not.toHaveBeenCalled();
+    });
+
+    // a palette pick from the Agent surface to the Cockpit hid the xterm the palette opened over: focus fell to <body>
+    // and the Cockpit's j/k/Enter, which are its container's own onKeyDown, were dead until a click
+    describe("with a focus home", () => {
+        it("hands focus to the visible [data-focus-home] element when the previous element is hidden", () => {
+            const previous = fakeNode(true, false);
+            const home = fakeNode(true);
+            stubDocument(null, [home]);
+            takeModalFocus(fakePanel(false), previous)();
+            expect(home.focus).toHaveBeenCalledOnce();
+            expect(previous.focus).not.toHaveBeenCalled();
+        });
+
+        it("hands focus to it when there was no previous element", () => {
+            const home = fakeNode(true);
+            stubDocument(null, [home]);
+            takeModalFocus(fakePanel(false), null)();
+            expect(home.focus).toHaveBeenCalledOnce();
+        });
+
+        it("skips a focus home that is not showing, for the visible one", () => {
+            const hidden = fakeNode(true, false);
+            const shown = fakeNode(true);
+            stubDocument(null, [hidden, shown]);
+            takeModalFocus(fakePanel(false), fakeNode(false))();
+            expect(hidden.focus).not.toHaveBeenCalled();
+            expect(shown.focus).toHaveBeenCalledOnce();
+        });
+
+        it("does nothing when no focus home is showing", () => {
+            const hidden = fakeNode(true, false);
+            stubDocument(null, [hidden]);
+            expect(() => takeModalFocus(fakePanel(false), fakeNode(false))()).not.toThrow();
+            expect(hidden.focus).not.toHaveBeenCalled();
+        });
+
+        // the palette opened over nothing focused: previous is <body>, which ignores focus(), so focus stayed in the
+        // palette's input until the panel unmounted and dropped it to <body>
+        it("hands focus to it when the previous element is <body>, which ignores focus()", () => {
+            const input = fakeNode(true);
+            const home = fakeNode(true);
+            stubDocument(input, [home]);
+            takeModalFocus(fakePanel(true), documentBody)();
+            expect(documentBody.focus).toHaveBeenCalledOnce();
+            expect(input.blur).toHaveBeenCalledOnce();
+            expect(home.focus).toHaveBeenCalledOnce();
+        });
+
+        it("returns focus to a visible previous element, not the home", () => {
+            const previous = fakeNode(true);
+            const home = fakeNode(true);
+            stubDocument(null, [home]);
+            takeModalFocus(fakePanel(false), previous)();
+            expect(previous.focus).toHaveBeenCalledOnce();
+            expect(home.focus).not.toHaveBeenCalled();
+        });
+
+        it("leaves focus that moved elsewhere during the hand-back alone", () => {
+            // a focus handler on the previous element sent focus on to another element, as the Agent surface's cells do
+            const elsewhere = fakeNode(true);
+            const previous = fakeNode(true);
+            previous.focus = vi.fn(() => {
+                (document as { activeElement: unknown }).activeElement = elsewhere;
+            }) as unknown as HTMLElement["focus"];
+            const home = fakeNode(true);
+            stubDocument(null, [home]);
+            takeModalFocus(fakePanel(false), previous)();
+            expect(previous.focus).toHaveBeenCalledOnce();
+            expect(home.focus).not.toHaveBeenCalled();
+        });
     });
 
     it("is a no-op when the panel ref is not attached yet", () => {
@@ -151,7 +240,7 @@ describe("takeModalFocus", () => {
 
         it("asks it after dropping focus from the closing panel", () => {
             const input = fakeNode(true);
-            vi.stubGlobal("document", { activeElement: input });
+            stubDocument(input);
             const target = fakeNode(true);
             unset = setModalFocusFallback(() => target);
             takeModalFocus(fakePanel(true), fakeNode(true, false))();
@@ -167,11 +256,43 @@ describe("takeModalFocus", () => {
         });
 
         it("does not ask it when focus already moved outside the panel", () => {
-            vi.stubGlobal("document", { activeElement: fakeNode(true) });
+            stubDocument(fakeNode(true));
             const fallback = vi.fn(() => fakeNode(true));
             unset = setModalFocusFallback(fallback);
             takeModalFocus(fakePanel(false), fakeNode(false))();
             expect(fallback).not.toHaveBeenCalled();
+        });
+
+        // the close tries the previous element, then the fallback, then the focus home
+        it("takes the fallback's choice over the focus home", () => {
+            const target = fakeNode(true);
+            const home = fakeNode(true);
+            stubDocument(null, [home]);
+            unset = setModalFocusFallback(() => target);
+            takeModalFocus(fakePanel(false), fakeNode(true, false))();
+            expect(target.focus).toHaveBeenCalledOnce();
+            expect(home.focus).not.toHaveBeenCalled();
+        });
+
+        it("goes on to the focus home when the fallback has nowhere to put focus", () => {
+            const home = fakeNode(true);
+            stubDocument(null, [home]);
+            const fallback = vi.fn(() => null);
+            unset = setModalFocusFallback(fallback);
+            takeModalFocus(fakePanel(false), fakeNode(true, false))();
+            expect(fallback).toHaveBeenCalledOnce();
+            expect(home.focus).toHaveBeenCalledOnce();
+        });
+
+        it("asks the fallback before the focus home when the previous element is <body>", () => {
+            const input = fakeNode(true);
+            const target = fakeNode(true);
+            const home = fakeNode(true);
+            stubDocument(input, [home]);
+            unset = setModalFocusFallback(() => target);
+            takeModalFocus(fakePanel(true), documentBody)();
+            expect(target.focus).toHaveBeenCalledOnce();
+            expect(home.focus).not.toHaveBeenCalled();
         });
     });
 });

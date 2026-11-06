@@ -1040,6 +1040,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         <div
             ref={containerRef}
             data-cockpit-surface
+            data-focus-home
             tabIndex={0}
             onKeyDown={onKeyDown}
             onKeyUp={(e) => {
