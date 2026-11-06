@@ -79,6 +79,17 @@ function change(id: string, over: Partial<MemChange> = {}): MemChange {
         decidedat: 0,
         backupuntil: 0,
         applyid: "",
+        body: "",
+        verdict: "",
+        doclines: [],
+        source: "",
+        proposedat: 0,
+        fromreview: "",
+        supersededby: "",
+        askreason: "",
+        askedat: 0,
+        askedby: "",
+        askerror: "",
         ...over,
     };
 }
@@ -100,6 +111,8 @@ function project(over: Partial<MemHygieneProject> = {}): MemHygieneProject {
         switchedat: 0,
         index: { exists: true, lines: 89, bytes: 12561 },
         changes: [],
+        askwaiting: [],
+        judgedby: "",
         ...over,
     };
 }

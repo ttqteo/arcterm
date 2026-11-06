@@ -186,6 +186,12 @@ export class RpcApiType {
         return client.wshRpcCall("ask", data, opts);
     }
 
+    // command "askmemoryagent" [call]
+    AskMemoryAgentCommand(client: WshClient, data: CommandAskMemoryAgentData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "askmemoryagent", data, opts);
+        return client.wshRpcCall("askmemoryagent", data, opts);
+    }
+
     // command "authenticate" [call]
     AuthenticateCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<CommandAuthenticateRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "authenticate", data, opts);

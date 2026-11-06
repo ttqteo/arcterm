@@ -615,6 +615,12 @@ declare global {
         hold?: boolean;
     };
 
+    // wshrpc.CommandAskMemoryAgentData
+    type CommandAskMemoryAgentData = {
+        project: string;
+        changeid: string;
+    };
+
     // wshrpc.CommandAuthenticateRtnData
     type CommandAuthenticateRtnData = {
         routeid: string;
@@ -3574,6 +3580,13 @@ declare global {
         disks: MachineDiskData[];
     };
 
+    // wshrpc.MemAsk
+    type MemAsk = {
+        changeid: string;
+        startedat: number;
+        runtime: string;
+    };
+
     // wshrpc.MemChange
     type MemChange = {
         id: string;
@@ -3594,6 +3607,17 @@ declare global {
         decidedat: number;
         backupuntil: number;
         applyid: string;
+        body: string;
+        verdict: string;
+        doclines: MemDocLine[];
+        source: string;
+        proposedat: number;
+        fromreview: string;
+        supersededby: string;
+        askreason: string;
+        askedat: number;
+        askedby: string;
+        askerror: string;
     };
 
     // wshrpc.MemDiff
@@ -3606,6 +3630,13 @@ declare global {
     // wshrpc.MemDiffLine
     type MemDiffLine = {
         sign: string;
+        text: string;
+    };
+
+    // wshrpc.MemDocLine
+    type MemDocLine = {
+        doc: string;
+        line: number;
         text: string;
     };
 
@@ -3640,6 +3671,9 @@ declare global {
         index: MemIndexStats;
         ownindex?: MemIndexStats;
         changes: MemChange[];
+        asking?: MemAsk;
+        askwaiting: string[];
+        judgedby: string;
     };
 
     // wshrpc.MemIndexDelta
