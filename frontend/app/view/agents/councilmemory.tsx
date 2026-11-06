@@ -194,7 +194,7 @@ export function MemoryPanel({
     // Chốt on an entry: it becomes the direction through the pre-set check, and leaves the list once set
     const chot = async (e: CouncilMemoryEntry) => {
         setPinning(e.id);
-        await go(`${DIRECTION}pin`, "Chốt", () => directionCouncil(c.id, "pin", e.text, undefined, e.id));
+        await go(`${DIRECTION}pin`, "Set as direction", () => directionCouncil(c.id, "pin", e.text, undefined, e.id));
         setPinning(null);
     };
     const remove = (e: CouncilMemoryEntry) =>
@@ -507,11 +507,13 @@ export function MemoryPanel({
                                                 <button
                                                     type="button"
                                                     data-council-memory-action="chot"
+                                                    aria-label="Set as direction"
+                                                    title="Set as direction: the line every seat reads first. It is checked against what the seats agreed before it is set"
                                                     disabled={busy}
                                                     onClick={() => void chot(e)}
                                                     className={rowButton}
                                                 >
-                                                    {pinning === e.id ? "Checking…" : "Chốt"}
+                                                    {pinning === e.id ? "Checking…" : "Pin"}
                                                 </button>
                                                 <button
                                                     type="button"

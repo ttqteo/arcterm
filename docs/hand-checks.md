@@ -294,9 +294,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **A council's memory with the real checks, in the installed app.** In a council past round 1, send a
   message that settles one point and drops another → after the seats answer, the Memory tab (`Memory · N`, its dot on
   while you are elsewhere) lists new `Agreed` / `Ruled out` / `Open` rows from the haiku round check, at most three, each
-  badge's tooltip saying what it means. Hover a row (WKWebView, not the headless Chrome the Final used) → Chốt · Edit ·
-  ⓘ · ✕ show on one line with the badge unbroken, and ⓘ's popover reads `Auto · round N` / `rN · time` inside the rail.
-  Chốt a row → it becomes the Direction pinned on top and leaves the list; Chốt one that clashes → the held card, and
+  badge's tooltip saying what it means. Hover a row (WKWebView, not the headless Chrome the Final used) → Set as direction (pin) ·
+  Edit · ⓘ · ✕ show on one line with the badge unbroken, and ⓘ's popover reads `Auto · round N` / `rN · time` inside the
+  rail. Set a row as direction → it becomes the Direction pinned on top and leaves the list; set one that clashes → the held card, and
   Discard keeps the row. Ask the seats again → none argues an Agreed row or proposes a Ruled out one. Remove an auto row
   → the next round does not add it back. Also see what Unpin leaves: the earlier directions then show nowhere until a
   new direction is set (spec 2026-11-05 hangs Earlier on the direction row only). The `council-memory` scenario drives

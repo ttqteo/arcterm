@@ -733,10 +733,10 @@ function Chot({ councilId, item, text, acts }: { councilId: string; item: string
         <button
             type="button"
             data-council-chot={item}
-            aria-label="Chốt: pin it as the council's direction"
-            title="Chốt: pin it as the direction the seats read (Memory tab)"
+            aria-label="Set as the council's direction"
+            title="Set as direction: the line every seat reads first (Memory tab). It is checked against what the seats agreed before it is set"
             disabled={busy}
-            onClick={() => void acts.run(key, "Chốt", () => directionCouncil(councilId, "pin", line, item))}
+            onClick={() => void acts.run(key, "Set as direction", () => directionCouncil(councilId, "pin", line, item))}
             className="flex h-[24px] w-[24px] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
         >
             {busy ? (
@@ -3812,7 +3812,7 @@ export function CouncilChat({
             if (text === "") {
                 return false;
             }
-            void run(`direction:pin:${id}`, "Chốt", () => directionCouncil(c.id, "pin", text, id));
+            void run(`direction:pin:${id}`, "Set as direction", () => directionCouncil(c.id, "pin", text, id));
             return true;
         },
         [items, run, c.id]
