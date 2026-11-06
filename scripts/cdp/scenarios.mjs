@@ -25883,9 +25883,10 @@ const launcherResume = {
                 await waitForProjectInConfig(h, name);
             }
             // one transcript the backend scan reads as a Claude session of the first project: a user prompt with the
-            // project dir as its cwd (claudeSessionFrom), filed under a folder of its own
+            // project dir as its cwd (claudeSessionFrom), filed under the project's slug folder so the project-scoped
+            // scan reads that one folder, not the whole root
             ctx.sessionId = randomUUID();
-            ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-launcher-resume-${randomUUID().slice(0, 8)}`);
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", learnSlug(ctx.dirs[0]));
             mkdirSync(ctx.transcriptDir, { recursive: true });
             writeFileSync(
                 join(ctx.transcriptDir, `${ctx.sessionId}.jsonl`),
@@ -26401,7 +26402,8 @@ const launcherSessionPeek = {
             ctx.projects.push(PEEK_PROJECT);
             await waitForProjectInConfig(h, PEEK_PROJECT);
 
-            ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-launcher-peek-${randomUUID().slice(0, 8)}`);
+            // filed under the project's slug folder so the project-scoped scan reads that one folder, not the whole root
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", learnSlug(dir));
             mkdirSync(ctx.transcriptDir, { recursive: true });
             ctx.ids = {};
             ctx.files = {};
@@ -26727,10 +26729,13 @@ const launcherSessionPeek = {
         await launcherPress(h, "Enter", { shift: true });
         await peekWait(h, A, ["ready"]);
         await polishNap(250);
+        // measure the panel at full height in a window tall enough that nothing squeezes it
+        await h.cdp("Emulation.setDeviceMetricsOverride", { ...MODELS_VIEWPORT, height: 1300 });
+        await polishNap(300);
         const fullH = (await state())?.panelH ?? null;
         let height = null;
         let shrunk = null;
-        for (let vh = MODELS_VIEWPORT.height - 40; vh >= 400; vh -= 40) {
+        for (let vh = 1300 - 40; vh >= 400; vh -= 40) {
             await h.cdp("Emulation.setDeviceMetricsOverride", { ...MODELS_VIEWPORT, height: vh });
             await polishNap(250);
             shrunk = await state();
@@ -26751,8 +26756,10 @@ const launcherSessionPeek = {
         await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
         await polishNap(300);
         rec(
-            "11. in a short window the panel shrinks first (under 170px, still about two messages tall); the Task box and the Session column sit as with it closed",
+            "11. in a tall window the panel is 170px; in a short window it shrinks first (under 170px, still about two messages tall); the Task box and the Session column sit as with it closed",
             height != null &&
+                fullH != null &&
+                Math.abs(fullH - 170) <= 8 &&
                 shortClosed != null &&
                 !shortClosed.open &&
                 shortOpen?.open &&
