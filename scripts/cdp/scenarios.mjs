@@ -14282,9 +14282,8 @@ const briefRestore = {
         // a fresh load is what makes the restore one-shot, so each case reloads
         const withStored = async (stored) => {
             await h.ev(`localStorage.setItem('jarvis.subject.last', ${JSON.stringify(JSON.stringify(stored))})`);
-            await h.ev("location.reload()");
-            await settle(2800);
-            await h.goto("jarvis");
+            // the app takes 3.4-4.6 s to boot after a reload, more than a fixed sleep allowed: wait for its nav
+            await briefReload(h);
             await settle(900);
         };
 
