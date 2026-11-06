@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The transcript's ↓ button scrolls smoothly.** In a sleeping or ended agent's transcript, scroll up
+  a few screens and click the round ↓ at the bottom: the feed glides down to the last line (instant with Reduce motion
+  on), the button leaves and does not flash back, and scrolling up mid-glide stops it. `sticktobottom.tsx`.
 - [ ] (arcterm) **New agent: pick the Claude account for one launch.** After the next build, with two or more Claude
   accounts in Settings → Claude account, open New agent on Claude Code → the footer reads `Claude: <account> ⌄`;
   click it → a menu above lists your /login account then each token account, the one in use ticked, `active` (or
