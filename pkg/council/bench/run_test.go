@@ -288,12 +288,53 @@ func TestRunRowFields(t *testing.T) {
 	want := CouncilBenchResult{
 		Kind: KindRun, Date: got.Date, Harness: "2026-10-22.1", Case: "a", Variant: VariantCouncil, Run: 1, Council: "c1",
 		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 1_400_000, Minutes: 1.5, Messages: 5, JudgeTokens: 123_456,
+		Matches: map[string]int{"K1": 1, "K3": 2}, KeptMatches: map[string]int{"K2": 1},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
 	}
 	if got.Date == "" {
 		t.Error("the row has no date")
+	}
+}
+
+func TestJudgeRowKeepsTheMatches(t *testing.T) {
+	c := Case{Id: "a", KeyLines: []KeyLine{{Id: "K1"}, {Id: "K2"}, {Id: "K3"}}}
+	report := &council.Council{Id: "c1"}
+	f := Funcs{Judge: func(ctx context.Context, c Case, report *council.Council) (Verdict, error) {
+		return Verdict{
+			Matches: map[string]int{"K1": 2, "K3": 1},
+			Kept:    map[string]int{"K2": 1},
+			Items:   []ItemVerdict{{Rank: 1, Verdict: "key:K3"}, {Rank: 2, Verdict: "key:K1"}, {Rank: 3, Verdict: "wrong"}},
+			Tokens:  50_000,
+		}, nil
+	}}
+	row := CouncilBenchResult{State: "done"}
+	if err := judgeRow(context.Background(), f, c, "a", report, &row); err != nil {
+		t.Fatal(err)
+	}
+	want := CouncilBenchResult{
+		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, JudgeTokens: 50_000,
+		Matches: map[string]int{"K1": 2, "K3": 1}, KeptMatches: map[string]int{"K2": 1},
+	}
+	if !reflect.DeepEqual(row, want) {
+		t.Errorf("row\n got %+v\nwant %+v", row, want)
+	}
+}
+
+func TestJudgeRowFailedJudgingKeepsNoMatches(t *testing.T) {
+	c := Case{Id: "a", KeyLines: []KeyLine{{Id: "K1"}}}
+	f := Funcs{Judge: func(ctx context.Context, c Case, report *council.Council) (Verdict, error) {
+		// a reply that could not be read: what was parsed so far is not a result
+		return Verdict{Matches: map[string]int{"K1": 1}, Kept: map[string]int{"K1": 1}, Tokens: 7_000}, errors.New("unreadable reply")
+	}}
+	row := CouncilBenchResult{State: "done"}
+	if err := judgeRow(context.Background(), f, c, "a", &council.Council{Id: "c1"}, &row); err != nil {
+		t.Fatal(err)
+	}
+	want := CouncilBenchResult{State: string(council.StateFailed), JudgeTokens: 7_000}
+	if !reflect.DeepEqual(row, want) {
+		t.Errorf("row\n got %+v\nwant %+v", row, want)
 	}
 }
 
@@ -639,6 +680,7 @@ func TestRunTeamDoneOutcomeIsJudgedAndScored(t *testing.T) {
 	want := CouncilBenchResult{
 		Kind: KindRun, Date: got.Date, Harness: council.HarnessVersion, Case: "a", Variant: VariantTeam, Run: 1, Council: "lead-1",
 		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 4_100_000, Minutes: 31.4, Messages: 9, JudgeTokens: 90_000,
+		Matches: map[string]int{"K1": 1, "K2": 2}, KeptMatches: map[string]int{"K3": 1},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
