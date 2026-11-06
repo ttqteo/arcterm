@@ -26,6 +26,7 @@ import {
     ChevronUp,
     Copy,
     Ellipsis,
+    FolderPlus,
     Pause,
     Pencil,
     Play,
@@ -59,7 +60,7 @@ import {
     showInitiativeActivity,
 } from "./initiativesheetstore";
 import { noteStamp, openAgentFor } from "./initiativework";
-import { workOnInitiative, type WorkOnTarget } from "./initiativeworkaction";
+import { pickInitiativeProject, workOnInitiative, type WorkOnTarget } from "./initiativeworkaction";
 import { chunkRowId, initiativeRows, type DetailRow } from "./inlinetracker";
 import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
 import { briefInitiativeListAtom, initiativeSheetRequestAtom } from "./jarvisstore";
@@ -184,9 +185,26 @@ export function InitiativeSheetHead({
                             {title}
                         </span>
                     )}
-                    <span data-jarvis-initiative-sheet-meta className="truncate text-[11.5px] text-ink-mid">
-                        {meta}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-1.5 text-[11.5px]">
+                        {project === "" && effort != null ? (
+                            <button
+                                type="button"
+                                data-jarvis-sheet-set-project
+                                title="This initiative has no project: pick the one its agents start in"
+                                onClick={() => pickInitiativeProject({ oref, title })}
+                                className={cn(
+                                    "flex flex-none cursor-pointer items-center gap-0.5 rounded-[5px] border border-dashed border-edge-mid px-1.5 py-px text-ink-mid hover:border-accent/60 hover:text-ink-hi",
+                                    FOCUS
+                                )}
+                            >
+                                <FolderPlus size={11} aria-hidden />
+                                Project
+                            </button>
+                        ) : null}
+                        <span data-jarvis-initiative-sheet-meta className="truncate text-ink-mid">
+                            {meta}
+                        </span>
+                    </div>
                 </div>
                 <button
                     type="button"

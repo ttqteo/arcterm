@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **+ Project on an initiative with none.** Brief → open an initiative with no project → under its title a
+  dashed `+ Project` sits before "active · updated …"; click it → "Choose a project" opens, its button reads Set project;
+  pick one and press it → the dialog closes, no agent starts, the meta line now leads with the project and the button is
+  gone; Work on then starts in that project with no picker. Work on from an initiative with none still opens the picker
+  with Start agent. Typecheck only (`initiativesheet.tsx`, `initiativeprojectpicker.tsx`); no dev app was up.
 - [ ] (arcterm) **New agent: pick the Claude account for one launch.** After the next build, with two or more Claude
   accounts in Settings → Claude account, open New agent on Claude Code → the footer reads `Claude: <account> ⌄`;
   click it → a menu above lists your /login account then each token account, the one in use ticked, `active` (or
