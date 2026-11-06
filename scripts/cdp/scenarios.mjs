@@ -1170,8 +1170,8 @@ const briefLayout = {
         await briefNap(400);
 
         // 9. the empty boxes carry the button that starts what they say is missing; Since you looked tells a first visit
-        // from a quiet one. The empty fixture has no run and no initiative; a live archived initiative still fills the
-        // Initiatives box, which is then not empty.
+        // from a quiet one. The empty fixture has no run and no initiative; a live archived initiative keeps its Show N
+        // archived toggle, under the same empty box.
         await briefFixture(h, "empty", 700);
         const empty = await h.ev(`(() => {
             const act = (k) => document.querySelector('[data-jarvis-empty-act="' + k + '"]');
@@ -1191,29 +1191,55 @@ const briefLayout = {
                 empty.shipped === "Nothing shipped in the last seven days.",
             JSON.stringify(empty)
         );
-        if (empty.initiative == null && empty.archived) {
-            steps.push(
-                skipStep(
-                    "9b. the empty Initiatives box holds New initiative, which opens the form",
-                    "this profile has archived initiatives, so the Initiatives box is not empty; archive none to see it"
-                )
-            );
-        } else {
-            await h.ev(`document.querySelector('[data-jarvis-empty-act="initiative"]')?.click()`);
-            await briefNap(500);
-            const form = await h.ev(`(() => {
-                const d = document.querySelector('[role="dialog"]');
-                return d ? (d.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 40) : null;
+        // with archived initiatives on this profile, the list under the box keeps their toggle and claims no cards
+        const allCards = await h.ev(`(document.querySelector('[data-jarvis-initiative-list]')?.textContent || '').includes('on a card above')`);
+        await h.ev(`document.querySelector('[data-jarvis-empty-act="initiative"]')?.click()`);
+        await briefNap(500);
+        const form = await h.ev(`(() => {
+            const d = document.querySelector('[role="dialog"]');
+            return d ? (d.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 40) : null;
+        })()`);
+        await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
+        await briefNap(400);
+        const closed = await h.ev(`document.querySelector('[role="dialog"]') == null`);
+        rec(
+            "9b. the empty Initiatives box holds New initiative, which opens the form, even with archived initiatives",
+            (empty.initiative ?? "").startsWith("New initiative") &&
+                /New initiative/.test(form ?? "") &&
+                closed === true &&
+                allCards === false,
+            JSON.stringify({ initiative: empty.initiative, archived: empty.archived, allCards, form, closed })
+        );
+        // 9b2. only archived initiatives: the same box and New initiative, with the archived toggle under it. The archived
+        // list loads once per mount, so the seed is followed by a reload.
+        const ARCHIVED_ONLY = "verify-archived-only";
+        let archivedOnly = null;
+        let archivedOid = null;
+        try {
+            archivedOid = await briefSeedInitiative(h, ARCHIVED_ONLY, ["Done"], [{ op: "setStatus", status: "archived" }]);
+            await briefReload(h);
+            await briefFixture(h, "empty", 700);
+            archivedOnly = await h.ev(`(() => {
+                const act = document.querySelector('[data-jarvis-empty-act="initiative"]');
+                const list = document.querySelector('[data-jarvis-initiative-list]');
+                return {
+                    initiative: act ? (act.textContent || '').replace(/\\s+/g, ' ').trim() : null,
+                    toggle: (document.querySelector('[data-jarvis-brief-archived]')?.textContent || '').trim(),
+                    allCards: (list?.textContent || '').includes('on a card above'),
+                };
             })()`);
-            await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
-            await briefNap(400);
-            const closed = await h.ev(`document.querySelector('[role="dialog"]') == null`);
-            rec(
-                "9b. the empty Initiatives box holds New initiative, which opens the form",
-                (empty.initiative ?? "").startsWith("New initiative") && /New initiative/.test(form ?? "") && closed === true,
-                JSON.stringify({ initiative: empty.initiative, form, closed })
-            );
+            await h.shot("cdp-shots/brief-layout-archived-only.png");
+        } finally {
+            // briefDeleteEfforts lists without archived ones, so this one goes by its oid
+            if (archivedOid != null) await h.rpc("effortdelete", { effortoid: archivedOid }).catch(() => {});
         }
+        rec(
+            "9b2. with only archived initiatives the box still holds New initiative, over Show N archived",
+            (archivedOnly?.initiative ?? "").startsWith("New initiative") &&
+                /^Show \d+ archived$/.test(archivedOnly?.toggle ?? "") &&
+                archivedOnly?.allCards === false,
+            JSON.stringify(archivedOnly)
+        );
         // Since you looked: no last look reads as a first visit. The dwell ack writes the key a few seconds after a
         // load, so the line is read right after the fixture is picked, which restarts that dwell.
         await h.ev(`localStorage.removeItem("jarvis.briefing.lastseen")`);

@@ -1597,6 +1597,22 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const loadFailed = snapshot == null && error != null;
     const staleSnapshot = snapshot != null && error != null;
     const noInitiatives = efforts.length === 0 && archivedCards.length === 0;
+    // drawn whenever no initiative is live: alone when none exists, over the list's archived toggle when only
+    // archived ones do (that list's empty slot says every initiative is on a card, and there are no cards)
+    const newInitiativeBox = (
+        <div className="flex items-center gap-3 rounded-[10px] border border-dashed border-edge-strong bg-surface px-4 py-3">
+            <span className="min-w-0 flex-1 text-[13px] text-secondary">{NO_INITIATIVES}</span>
+            <button
+                type="button"
+                data-jarvis-empty-act="initiative"
+                onClick={() => globalStore.set(model.newInitiativeOpenAtom, true)}
+                className={EMPTY_ACT}
+            >
+                New initiative
+                <kbd className="font-mono text-[10px] font-normal text-muted">{formatChordString("Shift:n")}</kbd>
+            </button>
+        </div>
+    );
 
     return (
         <div data-jarvis-region="brief" className="absolute inset-0 flex flex-col bg-background">
@@ -1873,26 +1889,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                     {pass.done ? <ReviewDone onBack={exitReview} /> : reviewRows}
                                                 </div>
                                             ) : noInitiatives ? (
-                                                <div className="flex items-center gap-3 rounded-[10px] border border-dashed border-edge-strong bg-surface px-4 py-3">
-                                                    <span className="min-w-0 flex-1 text-[13px] text-secondary">
-                                                        {NO_INITIATIVES}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        data-jarvis-empty-act="initiative"
-                                                        onClick={() =>
-                                                            globalStore.set(model.newInitiativeOpenAtom, true)
-                                                        }
-                                                        className={EMPTY_ACT}
-                                                    >
-                                                        New initiative
-                                                        <kbd className="font-mono text-[10px] font-normal text-muted">
-                                                            {formatChordString("Shift:n")}
-                                                        </kbd>
-                                                    </button>
-                                                </div>
+                                                newInitiativeBox
                                             ) : (
                                                 <>
+                                                    {efforts.length === 0 ? newInitiativeBox : null}
                                                     {filtering && cards.length === 0 && cardSet.length > 0 ? (
                                                         <NoMatch />
                                                     ) : null}
