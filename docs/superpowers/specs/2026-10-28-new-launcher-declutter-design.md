@@ -51,7 +51,8 @@ What is cluttered today (screenshot of 0.15.x, `launchermodal.tsx`, `launcherres
   with the full title in the row's `title` tooltip, as today. "New session" stays pinned first.
 - **D5. No preview panel, no transcript read.** A preview of the picked session (first prompt, last message, branch,
   model, cost) was drawn and rejected: not needed for now. The dialog reads no transcript when it opens or when a row
-  is picked.
+  is picked. Narrowed by `2026-11-06-launcher-session-peek-design.md`: it reads one only when the person opens Quick
+  look on a Claude session (its last 5 messages, in a panel under the columns), and still none on a pick alone.
 - **D6. Task on one row; Command folded; footer short.** The details region under the columns becomes one row for an
   agent pick: the Task field (one line, growing as text wraps or an image is attached; paste and drop images as
   today), then `+ Flag` and the Worktree switch (a new session only, as today), then a `Command ›` toggle. The command
