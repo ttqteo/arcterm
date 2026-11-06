@@ -133,7 +133,7 @@ type SettingsType struct {
 	TokenGateWeekPct    *float64 `json:"tokengate:weekpct,omitempty"`    // ask when the weekly window is this % used; nil = 80, 0 = off
 	TokenGateSessionPct *float64 `json:"tokengate:sessionpct,omitempty"` // ask when the asking session has used this % of the 5h window; nil = 25, 0 = off
 
-	JobsSlots *int   `json:"jobs:slots,omitempty"` // heavy jobs run at once (pkg/jobqueue), 1–4; unset is 1
+	JobsSlots *int   `json:"jobs:slots,omitempty" jsonschema:"minimum=1,maximum=4"` // heavy jobs run at once (pkg/jobqueue), 1–4 (jobqueue.MaxSlots); unset is 1
 	JobsMode  string `json:"jobs:mode,omitempty"`  // how the queue starts them: "auto" (unset; as RAM allows), "slots" (jobs:slots at once), "off" (at once)
 	// JobsPauseUntil turns the queue off until then (Unix ms): the Jobs popover's Pause 1h / 4h; 0 or past is no pause
 	JobsPauseUntil *int64 `json:"jobs:pauseuntil,omitempty"`
