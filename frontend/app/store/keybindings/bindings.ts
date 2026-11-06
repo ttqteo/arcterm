@@ -76,12 +76,15 @@ import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
-import { canApply, isPending, stepChange } from "@/app/view/agents/memorymodel";
+import { canApply, cardKeyAction, isPending, memoryCard, stepChange, stepQueue } from "@/app/view/agents/memorymodel";
 import {
     decideMemory,
     memoryBusyAtom,
+    memorySelectedChangeAtom,
     memorySelection,
+    memoryViewOf,
     selectMemoryChange,
+    shownCard,
     type MemVerdict,
 } from "@/app/view/agents/memorystore";
 import { canRequest } from "@/app/view/agents/proseanchor";
@@ -2800,13 +2803,42 @@ export function buildMemoryBindings(): Binding[] {
         paletteHidden: true,
         run,
     });
+    // the project shown, when it is in the card view (one memory at a time); null in the table view
+    const cardProject = (): MemHygieneProject | null => {
+        const { project } = memorySelection();
+        return project != null && memoryViewOf(project) === "cards" ? project : null;
+    };
     const move = (delta: number) => () => {
+        const cards = cardProject();
+        if (cards != null) {
+            const shown = shownCard(cards, globalStore.get(memorySelectedChangeAtom));
+            const next = stepQueue(cards, shown?.id ?? null, delta);
+            if (next == null) {
+                return false;
+            }
+            selectMemoryChange(next);
+            return;
+        }
         const { project, change } = memorySelection();
         const next = project == null ? null : stepChange(project, change?.id ?? null, delta);
         if (next == null) {
             return false;
         }
         selectMemoryChange(next);
+    };
+    // the card view: the key presses the shown card's enabled button that carries it (cardKeyAction)
+    const cardKey = (key: string): boolean => {
+        const cards = cardProject();
+        const change = cards == null ? null : shownCard(cards, globalStore.get(memorySelectedChangeAtom));
+        if (cards == null || change == null || globalStore.get(memoryBusyAtom)) {
+            return false;
+        }
+        const action = cardKeyAction(memoryCard(cards, change, Date.now()), key);
+        if (action == null) {
+            return false;
+        }
+        fireAndForget(() => decideMemory(cards.project, change.id, action));
+        return true;
     };
     const decide = (verdict: MemVerdict, allowed: (p: MemHygieneProject, c: MemChange) => boolean) => () => {
         const { project, change } = memorySelection();
@@ -2815,22 +2847,39 @@ export function buildMemoryBindings(): Binding[] {
         }
         fireAndForget(() => decideMemory(project.project, change.id, verdict));
     };
+    // a key's card-view action, else its table-view one
+    const either = (key: string, table: () => void | boolean) => () => {
+        if (cardProject() != null) {
+            return cardKey(key);
+        }
+        return table();
+    };
     return [
         bind("next", "j", "Next change", move(1)),
         bind("prev", "k", "Previous change", move(-1)),
         bind("next-arrow", "ArrowDown", "Next change", move(1)),
         bind("prev-arrow", "ArrowUp", "Previous change", move(-1)),
-        bind("apply", "a", "Apply the change", decide("apply", canApply)),
+        bind("apply", "a", "Apply the change", either("a", decide("apply", canApply))),
         bind(
             "keep",
             "x",
             "Keep as is",
-            decide("keep", (_p, c) => isPending(c))
+            either(
+                "x",
+                decide("keep", (_p, c) => isPending(c))
+            )
         ),
-        bind("undo", "u", "Undo an applied change, or review a kept one again", () => {
-            const c = memorySelection().change;
-            return decide(c?.status === "applied" ? "undo" : "reopen", (_p, ch) => !isPending(ch))();
-        }),
+        bind(
+            "undo",
+            "u",
+            "Undo an applied change, or review a kept one again",
+            either("u", () => {
+                const c = memorySelection().change;
+                return decide(c?.status === "applied" ? "undo" : "reopen", (_p, ch) => !isPending(ch))();
+            })
+        ),
+        // the card view only: the table has no Delete
+        bind("delete", "d", "Delete the memory", () => (cardProject() != null ? cardKey("d") : false)),
     ];
 }
 

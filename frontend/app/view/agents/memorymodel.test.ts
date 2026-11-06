@@ -4,28 +4,43 @@
 import { describe, expect, it } from "vitest";
 import {
     applyAllIds,
+    askState,
     canApply,
+    cardKeyAction,
     changeGroups,
     checkLine,
+    checkNowBlocked,
     checkResult,
     closedText,
+    defaultMemoryView,
+    doneCard,
     fileLabel,
     indexCards,
+    isPending,
+    judgedByText,
     kindLabel,
     kindTone,
     LIMIT_BYTES,
     LIMIT_LINES,
+    memoryCard,
+    memoryQueue,
+    nextOpenInQueue,
     nextPending,
+    pickCard,
     pickChange,
     projectsToReview,
     railOrder,
     railRow,
     resolveSelection,
+    selectAfterKeep,
+    selectAfterUndo,
     setupRailTitle,
     splitText,
     statusOf,
     stepChange,
+    stepQueue,
     switchGate,
+    talkItOverTask,
     toolbarStatus,
 } from "./memorymodel";
 
@@ -655,6 +670,7 @@ describe("statusOf", () => {
         expect(statusOf(change("1", { status: "applied" }))).toEqual({ text: "Applied", tone: "ok" });
         expect(statusOf(change("1", { status: "kept" }))).toEqual({ text: "Kept", tone: "none" });
         expect(statusOf(change("1", { status: "conflict" }))).toEqual({ text: "Changed on disk", tone: "warn" });
+        expect(statusOf(change("1", { status: "superseded" }))).toEqual({ text: "Replaced", tone: "none" });
     });
 });
 
@@ -683,5 +699,567 @@ describe("kindLabel and fileLabel", () => {
         );
         expect(fileLabel(change("1", { files: [{ path: "C:\\m\\x.md", sha256: "" }] }))).toBe("x.md");
         expect(fileLabel(settings())).toBe(`${SPLIT_PATH}\\.claude\\settings.local.json`);
+    });
+});
+
+// ---- one card at a time ----
+
+const FOLDER = "C:/Users/me/.claude/projects/C--Users-me-src-waveterm/memory";
+const AT = (h: number, m: number) => new Date(2026, 9, 14, h, m).getTime();
+
+function review(id: string, name: string, over: Partial<MemChange> = {}): MemChange {
+    return change(id, {
+        kind: "review",
+        title: `${name} title`,
+        applylabel: "Still true",
+        effect: "untouched 30 days",
+        files: [{ path: `${FOLDER}/${name}`, sha256: "abc" }],
+        op: op({ folder: FOLDER, memories: [name] }),
+        evidence: [{ tone: "warn", text: "Untouched for 30 days, since ", code: "2026-09-14" }],
+        body: `Body of ${name}`,
+        ...over,
+    });
+}
+
+const proposalDiffs: MemDiff[] = [
+    {
+        path: "C:\\Users\\me\\src\\waveterm\\AGENTS.md",
+        note: "Design docs",
+        lines: [{ sign: "+", text: "Before `wsh runs start`, tell the person the models." }],
+    },
+    { path: `${FOLDER}/feedback_confirm.md`, note: "deleted", lines: [{ sign: "-", text: "old rule" }] },
+    { path: `${FOLDER}/MEMORY.md`, note: "", lines: [{ sign: "-", text: "- [Confirm](feedback_confirm.md)" }] },
+];
+
+// table order: r1, rb, d1, ra, p1, r2, t1, k1, old1, s1
+function cardProject(over: Partial<MemHygieneProject> = {}): MemHygieneProject {
+    return project({
+        folder: FOLDER,
+        changes: [
+            review("r1", "feedback_confirm-run-models.md"),
+            review("rb", "project_old.md", { status: "superseded", supersededby: "d1" }),
+            change("d1", {
+                kind: "delete",
+                applylabel: "Delete",
+                status: "applied",
+                decidedat: AT(17, 0),
+                fromreview: "rb",
+                op: op({ folder: FOLDER, memories: ["project_old.md"] }),
+            }),
+            review("ra", "feedback_confirm.md", { status: "superseded", supersededby: "p1" }),
+            change("p1", {
+                kind: "move-to-doc",
+                title: "The rule is about this repo's engine handoff, which AGENTS.md already describes.",
+                note: "Move it where every agent reads it.",
+                applylabel: "Move to AGENTS.md",
+                source: "agent",
+                fromreview: "ra",
+                proposedat: AT(12, 58),
+                body: "Before wsh runs start, state the models.",
+                files: [
+                    { path: "C:\\Users\\me\\src\\waveterm\\AGENTS.md", sha256: "a" },
+                    { path: `${FOLDER}/feedback_confirm.md`, sha256: "b" },
+                    { path: `${FOLDER}/MEMORY.md`, sha256: "c" },
+                ],
+                op: op({
+                    folder: FOLDER,
+                    memories: ["feedback_confirm.md"],
+                    docpath: "C:\\Users\\me\\src\\waveterm\\AGENTS.md",
+                }),
+                diffs: proposalDiffs,
+            }),
+            review("r2", "user_role.md", { effect: "3 findings", evidence: [] }),
+            change("t1", { effect: "1 line shorter", op: op({ memories: ["reference_links.md"] }) }),
+            change("k1", { status: "kept", decidedat: AT(16, 0) }),
+            change("old1", { status: "applied", decidedat: new Date(2026, 9, 13, 10, 0).getTime() }),
+            review("s1", "feedback_tests.md", { status: "applied", decidedat: AT(17, 30) }),
+        ],
+        ...over,
+    });
+}
+
+describe("a superseded Review is not pending", () => {
+    const p = () =>
+        project({
+            changes: [
+                review("ra", "feedback_a.md", { status: "superseded", supersededby: "p1" }),
+                change("p1", { status: "applied", fromreview: "ra" }),
+            ],
+        });
+
+    it("matches Go's Pending: only no status, open and conflict are undecided", () => {
+        expect(["", "open", "conflict"].map((s) => isPending(change("1", { status: s })))).toEqual([true, true, true]);
+        expect(["applied", "kept", "superseded"].map((s) => isPending(change("1", { status: s })))).toEqual([
+            false,
+            false,
+            false,
+        ]);
+    });
+
+    it("leaves it out of the check result, the rail row and the Setup badge", () => {
+        expect(checkResult(p())).toEqual({ text: "Checked · nothing to review", tone: "ok" });
+        expect(railRow(p())).toMatchObject({ status: "Nothing to review", tone: "ok" });
+        expect(projectsToReview([p()])).toBe(0);
+        expect(railOrder([p(), project({ project: "b", changes: [change("1")] })]).map((x) => x.project)).toEqual([
+            "b",
+            "waveterm",
+        ]);
+    });
+
+    it("never applies it, and the table opens an open change over it", () => {
+        expect(canApply(p(), p().changes[0])).toBe(false);
+        const q = project({ changes: [...p().changes, change("o1")] });
+        expect(pickChange(q, null)?.id).toBe("o1");
+    });
+});
+
+describe("defaultMemoryView", () => {
+    it("opens a plain project in cards", () => {
+        expect(defaultMemoryView(cardProject())).toBe("cards");
+        expect(defaultMemoryView(project())).toBe("cards");
+    });
+
+    it("opens a shared folder, or an open split, remove-shared or settings change, in the table", () => {
+        expect(defaultMemoryView(splitProject([settings("applied")]))).toBe("table");
+        expect(defaultMemoryView(project({ changes: [change("m", { kind: "move-here", group: "shared" })] }))).toBe(
+            "table"
+        );
+        expect(defaultMemoryView(project({ changes: [change("r", { kind: "remove-shared" })] }))).toBe("table");
+        expect(defaultMemoryView(project({ changes: [settings()] }))).toBe("table");
+    });
+
+    it("goes back to cards once those changes are decided", () => {
+        const p = project({
+            changes: [change("r", { kind: "remove-shared", status: "applied" }), settings("applied"), change("t")],
+        });
+        expect(defaultMemoryView(p)).toBe("cards");
+    });
+});
+
+describe("memoryQueue", () => {
+    it("lists open changes first, then those decided since the last check, hiding superseded ones", () => {
+        const q = memoryQueue(cardProject(), NOW);
+        expect(q.map((r) => [r.id, r.decided])).toEqual([
+            ["r1", false],
+            ["p1", false],
+            ["r2", false],
+            ["t1", false],
+            ["d1", true],
+            ["k1", true],
+            ["s1", true],
+        ]);
+    });
+
+    it("reads each row's status line", () => {
+        const rows = Object.fromEntries(memoryQueue(cardProject(), NOW).map((r) => [r.id, [r.status, r.tone]]));
+        expect(rows).toEqual({
+            r1: ["Untouched 30 days", "warn"],
+            p1: ["Agent proposes: move to AGENTS.md", "accent"],
+            r2: ["3 findings", "none"],
+            t1: ["Trim · 1 line shorter", "none"],
+            d1: ["Deleted · Undo", "none"],
+            k1: ["Kept", "none"],
+            s1: ["Still true", "none"],
+        });
+    });
+
+    it("names the memory, not the agent's reason, on a proposal's row", () => {
+        const row = memoryQueue(cardProject(), NOW).find((r) => r.id === "p1");
+        expect(row?.title).toBe("feedback_confirm.md title");
+    });
+
+    it("reads an applied change, a conflict, an ask running and an ask waiting", () => {
+        const p = cardProject({
+            asking: { changeid: "r2", startedat: NOW - 60_000, runtime: "claude" },
+            askwaiting: ["r1"],
+        });
+        p.changes.push(change("a2", { status: "applied", decidedat: AT(17, 45) }));
+        p.changes.push(change("c1", { status: "conflict" }));
+        const rows = Object.fromEntries(memoryQueue(p, NOW).map((r) => [r.id, r.status]));
+        expect(rows.r2).toBe("Asking claude…");
+        expect(rows.r1).toBe("Waiting to ask…");
+        expect(rows.a2).toBe("Applied · Undo");
+        expect(rows.c1).toBe("Changed on disk");
+    });
+
+    it("lists every decided change while the project was never checked", () => {
+        const p = cardProject({ checkedat: 0 });
+        expect(memoryQueue(p, NOW).map((r) => r.id)).toContain("old1");
+    });
+});
+
+describe("askState and checkNowBlocked", () => {
+    it("reads the running ask and the ones waiting behind it", () => {
+        const p = cardProject({
+            asking: { changeid: "r2", startedat: NOW - 60_000, runtime: "claude" },
+            askwaiting: ["r1"],
+        });
+        expect(askState(p, "r2", NOW)).toBe("asking");
+        expect(askState(p, "r1", NOW)).toBe("waiting");
+        expect(askState(p, "t1", NOW)).toBe("idle");
+        expect(checkNowBlocked(p, NOW)).toBe("Waiting for Ask an agent");
+    });
+
+    it("reads a marker older than the check timeout, and the queue behind it, as failed", () => {
+        const p = cardProject({
+            asking: { changeid: "r2", startedat: NOW - 31 * 60_000, runtime: "claude" },
+            askwaiting: ["r1"],
+        });
+        expect(askState(p, "r2", NOW)).toBe("idle");
+        expect(askState(p, "r1", NOW)).toBe("idle");
+        expect(checkNowBlocked(p, NOW)).toBeNull();
+    });
+
+    it("is idle with no marker, even with a null wait list", () => {
+        const p = cardProject({ askwaiting: null as unknown as string[] });
+        expect(askState(p, "r1", NOW)).toBe("idle");
+        expect(checkNowBlocked(p, NOW)).toBeNull();
+    });
+});
+
+describe("queue navigation", () => {
+    it("steps through the queue and stops at either end", () => {
+        const p = cardProject();
+        expect(stepQueue(p, "r1", 1)).toBe("p1");
+        expect(stepQueue(p, "t1", 1)).toBe("d1");
+        expect(stepQueue(p, "s1", 1)).toBe("s1");
+        expect(stepQueue(p, "r1", -1)).toBe("r1");
+        expect(stepQueue(p, "d1", -1)).toBe("t1");
+    });
+
+    it("steps from the shown card when the chosen id left the queue", () => {
+        expect(stepQueue(cardProject(), "rb", 1)).toBe("p1");
+        expect(stepQueue(cardProject(), null, 1)).toBe("p1");
+        expect(stepQueue(project(), null, 1)).toBeNull();
+    });
+
+    it("moves on to the next open item, wrapping to the top", () => {
+        const p = cardProject();
+        expect(nextOpenInQueue(p, "r1")).toBe("p1");
+        expect(nextOpenInQueue(p, "t1")).toBe("r1");
+        expect(nextOpenInQueue(p, "k1")).toBe("r1");
+    });
+
+    it("moves on from a superseded Review's old place after a Delete", () => {
+        // rb was deleted: it sits superseded between r1 and p1, so the next open item is p1
+        expect(nextOpenInQueue(cardProject(), "rb")).toBe("p1");
+        expect(nextOpenInQueue(cardProject(), "gone")).toBe("r1");
+    });
+
+    it("moves on to none when nothing is open", () => {
+        const p = project({ changes: [change("a", { status: "applied", decidedat: AT(17, 0) })] });
+        expect(nextOpenInQueue(p, "a")).toBeNull();
+    });
+});
+
+describe("selectAfterUndo and selectAfterKeep", () => {
+    const deleteChange = cardProject().changes.find((c) => c.id === "d1")!;
+
+    it("shows the Review an undone Delete reopened", () => {
+        const after = cardProject();
+        after.changes = after.changes
+            .filter((c) => c.id !== "d1")
+            .map((c) => (c.id === "rb" ? { ...c, status: "open", supersededby: "" } : c));
+        expect(selectAfterUndo(after, deleteChange)).toBe("rb");
+    });
+
+    it("stays on the delete when a check dropped the Review and the undo left it open", () => {
+        const after = cardProject();
+        after.changes = after.changes
+            .filter((c) => c.id !== "rb")
+            .map((c) => (c.id === "d1" ? { ...c, status: "open", decidedat: 0 } : c));
+        expect(selectAfterUndo(after, deleteChange)).toBe("d1");
+    });
+
+    it("stays on an ordinary undone change", () => {
+        const t = change("t9", { status: "applied" });
+        expect(selectAfterUndo(cardProject(), t)).toBe("t9");
+    });
+
+    it("shows the reopened Review after Back to review", () => {
+        const after = cardProject();
+        after.changes = after.changes.map((c) =>
+            c.id === "p1"
+                ? { ...c, status: "kept", decidedat: AT(17, 50) }
+                : c.id === "ra"
+                  ? { ...c, status: "open", supersededby: "" }
+                  : c
+        );
+        expect(selectAfterKeep(after, "p1")).toBe("ra");
+    });
+
+    it("moves on to the next open item after an ordinary Keep", () => {
+        const after = cardProject();
+        after.changes = after.changes.map((c) => (c.id === "r2" ? { ...c, status: "kept", decidedat: AT(17, 50) } : c));
+        expect(selectAfterKeep(after, "r2")).toBe("t1");
+    });
+});
+
+describe("pickCard and doneCard", () => {
+    it("shows the chosen queue item, else the first open one", () => {
+        const p = cardProject();
+        expect(pickCard(p, "t1")?.id).toBe("t1");
+        expect(pickCard(p, "d1")?.id).toBe("d1");
+        expect(pickCard(p, "rb")?.id).toBe("r1");
+        expect(pickCard(p, "old1")?.id).toBe("r1");
+        expect(pickCard(p, null)?.id).toBe("r1");
+    });
+
+    it("falls to the done card when nothing is open, unless a decided row is chosen", () => {
+        const p = project({ changes: [change("a", { status: "applied", decidedat: AT(17, 0) })] });
+        expect(pickCard(p, null)).toBeNull();
+        expect(pickCard(p, "a")?.id).toBe("a");
+        expect(pickCard(project(), null)).toBeNull();
+    });
+
+    it("names the project and the next check on the done card", () => {
+        expect(doneCard(project(), NOW)).toEqual({
+            title: "Nothing to review in waveterm",
+            next: "Next check Oct 21 at 09:12.",
+        });
+        expect(doneCard(project({ nextcheckat: 0 }), NOW).next).toBe("");
+    });
+});
+
+describe("memoryCard", () => {
+    const shown = (p: MemHygieneProject, id: string) => memoryCard(p, p.changes.find((c) => c.id === id)!, NOW);
+    const buttons = (card: ReturnType<typeof memoryCard>) =>
+        card.buttons.map((b) => [b.action, b.label, b.key, b.primary, b.danger, b.disabled]);
+
+    it("draws a Review with its text, its buttons and its reason section", () => {
+        const p = cardProject();
+        const r1 = p.changes[0];
+        Object.assign(r1, {
+            verdict: "Read in none of 1,149 sessions since Sep 14.",
+            doclines: [{ doc: "AGENTS.md", line: 252, text: "`wsh runs start --plan <file>`" }],
+            askreason: "still needed, nothing in AGENTS.md covers it",
+            askedat: AT(12, 58),
+            askedby: "claude",
+        });
+        const card = shown(p, "r1");
+        expect(card).toMatchObject({
+            id: "r1",
+            kind: "review",
+            decided: false,
+            chip: "Review",
+            chipTone: "edit",
+            head: { text: "Untouched 30 days, since Sep 14", tone: "warn" },
+            title: "feedback_confirm-run-models.md title",
+            fileLine: "feedback_confirm-run-models.md · feedback",
+            body: { kind: "text", text: "Body of feedback_confirm-run-models.md" },
+            hint: "Ask an agent proposes one change for this memory (move into AGENTS.md, trim, delete or still true) that you Apply with Undo. Delete keeps a copy you can undo.",
+            status: null,
+            reason: {
+                verdict: "Read in none of 1,149 sessions since Sep 14.",
+                askLine: "Asked claude at 12:58: still needed, nothing in AGENTS.md covers it",
+                doclines: [{ doc: "AGENTS.md", line: 252, text: "`wsh runs start --plan <file>`" }],
+                evidence: r1.evidence,
+            },
+        });
+        expect(buttons(card)).toEqual([
+            ["apply", "Still true", "a", true, false, false],
+            ["ask", "Ask an agent…", "", false, false, false],
+            ["delete", "Delete", "d", false, true, false],
+            ["keep", "Keep as is", "x", false, false, false],
+        ]);
+    });
+
+    it("reads a Review with findings and no ask, and treats null doc lines as none", () => {
+        const card = shown(cardProject(), "r2");
+        expect(card.head).toEqual({ text: "3 findings", tone: "none" });
+        expect(card.fileLine).toBe("user_role.md · user");
+        expect(card.reason.askLine).toBe("");
+        const p = cardProject();
+        p.changes[5] = { ...p.changes[5], doclines: null as unknown as MemDocLine[] };
+        expect(shown(p, "r2").reason.doclines).toEqual([]);
+    });
+
+    it("disables Ask while a check runs, and only Ask while the Review waits to be asked", () => {
+        const checking = buttons(shown(cardProject({ checking: true }), "r1"));
+        expect(checking.map((b) => [b[0], b[5]])).toEqual([
+            ["apply", false],
+            ["ask", true],
+            ["delete", false],
+            ["keep", false],
+        ]);
+        const waiting = cardProject({
+            asking: { changeid: "r2", startedat: NOW - 60_000, runtime: "claude" },
+            askwaiting: ["r1"],
+        });
+        expect(buttons(shown(waiting, "r1")).map((b) => [b[0], b[5]])).toEqual([
+            ["apply", false],
+            ["ask", true],
+            ["delete", false],
+            ["keep", false],
+        ]);
+        expect(shown(waiting, "r1").status).toEqual({ text: "Waiting to ask…", tone: "none" });
+    });
+
+    it("disables every button while the Review is being asked, and says so under them", () => {
+        const p = cardProject({ asking: { changeid: "r1", startedat: NOW - 60_000, runtime: "claude" } });
+        const card = shown(p, "r1");
+        expect(card.buttons.every((b) => b.disabled)).toBe(true);
+        expect(card.status).toEqual({ text: "Asking claude…", tone: "none" });
+        expect(cardKeyAction(card, "a")).toBeNull();
+    });
+
+    it("shows a failed ask's error in the warning tone, with Ask available again", () => {
+        const p = cardProject();
+        p.changes[0] = { ...p.changes[0], askerror: "openrouter: 401 no key" };
+        const card = shown(p, "r1");
+        expect(card.status).toEqual({ text: "openrouter: 401 no key", tone: "warn" });
+        expect(card.buttons.find((b) => b.action === "ask")?.disabled).toBe(false);
+    });
+
+    it("holds Still true and Delete on a conflict, but not Keep", () => {
+        const p = cardProject();
+        p.changes[0] = { ...p.changes[0], status: "conflict" };
+        expect(buttons(shown(p, "r1")).map((b) => [b[0], b[5]])).toEqual([
+            ["apply", true],
+            ["ask", true],
+            ["delete", true],
+            ["keep", false],
+        ]);
+    });
+
+    it("draws an agent proposal with the memory's title, the agent's reason and its diffs", () => {
+        const card = shown(cardProject(), "p1");
+        expect(card).toMatchObject({
+            kind: "proposal",
+            chip: "Move to AGENTS.md",
+            chipTone: "add",
+            head: { text: "Proposed by the agent, 12:58", tone: "none" },
+            title: "feedback_confirm.md title",
+            fileLine: "feedback_confirm.md · feedback",
+            body: {
+                kind: "proposal",
+                reason: "The rule is about this repo's engine handoff, which AGENTS.md already describes.",
+                diffs: proposalDiffs,
+            },
+            hint: "Apply keeps a copy of all three files, with Undo. Talk it over opens a Claude agent with this memory, AGENTS.md and the proposal; it edits the files itself, outside Undo.",
+        });
+        expect(buttons(card)).toEqual([
+            ["apply", "Apply", "a", true, false, false],
+            ["talk", "Talk it over with an agent", "", false, false, false],
+            ["keep", "Back to review", "x", false, false, false],
+        ]);
+    });
+
+    it("names an earlier day on a proposal's head", () => {
+        const p = cardProject();
+        p.changes[4] = { ...p.changes[4], proposedat: new Date(2026, 9, 13, 12, 58).getTime() };
+        expect(shown(p, "p1").head.text).toBe("Proposed by the agent, yesterday at 12:58");
+    });
+
+    it("draws another kind as its diff with its own apply label and the judge's note as the hint", () => {
+        const p = cardProject();
+        p.changes[6] = { ...p.changes[6], note: "Judged by the weekly check.", diffs: proposalDiffs.slice(0, 1) };
+        const card = shown(p, "t1");
+        expect(card).toMatchObject({
+            kind: "change",
+            chip: "Trim",
+            head: { text: "1 line shorter", tone: "none" },
+            fileLine: "reference_links.md · reference",
+            body: { kind: "diff", diffs: proposalDiffs.slice(0, 1) },
+            hint: "Judged by the weekly check.",
+        });
+        expect(buttons(card)).toEqual([
+            ["apply", "Apply trim", "a", true, false, false],
+            ["keep", "Keep as is", "x", false, false, false],
+        ]);
+    });
+
+    it("draws an applied delete with Undo and the applied text", () => {
+        const card = shown(cardProject(), "d1");
+        expect(card).toMatchObject({
+            kind: "change",
+            decided: true,
+            chip: "Delete",
+            chipTone: "remove",
+            title: "project_old.md title",
+            status: { text: "Applied at 17:00.", tone: "ok" },
+        });
+        expect(buttons(card)).toEqual([["undo", "Undo", "u", false, false, false]]);
+    });
+
+    it("draws a kept change with Review again, and a Review marked still true with Undo", () => {
+        const kept = shown(cardProject(), "k1");
+        expect(buttons(kept)).toEqual([["reopen", "Review again", "u", false, false, false]]);
+        expect(kept.status?.text).toBe("Kept as is. The next check skips it unless the memory changes.");
+        const still = shown(cardProject(), "s1");
+        expect(still.kind).toBe("review");
+        expect(still.body).toEqual({ kind: "text", text: "Body of feedback_tests.md" });
+        expect(buttons(still)).toEqual([["undo", "Undo", "u", false, false, false]]);
+    });
+
+    it("holds a gated switch-over and says why", () => {
+        const p = splitProject([change("m1", { kind: "move-here", group: "shared" }), settings()]);
+        const card = memoryCard(p, p.changes[1], NOW);
+        expect(card.buttons[0]).toMatchObject({ action: "apply", disabled: true });
+        expect(card.status?.tone).toBe("warn");
+        expect(card.status?.text).toMatch(/^Review the 1 change from SIEM’s memory first\./);
+    });
+});
+
+describe("cardKeyAction", () => {
+    const card = (p: MemHygieneProject, id: string) => memoryCard(p, p.changes.find((c) => c.id === id)!, NOW);
+
+    it("maps a, d and x on a Review", () => {
+        const c = card(cardProject(), "r1");
+        expect(["a", "d", "x", "u", "z"].map((k) => cardKeyAction(c, k))).toEqual([
+            "apply",
+            "delete",
+            "keep",
+            null,
+            null,
+        ]);
+    });
+
+    it("maps a and x on a proposal, with no d", () => {
+        const c = card(cardProject(), "p1");
+        expect(["a", "d", "x"].map((k) => cardKeyAction(c, k))).toEqual(["apply", null, "keep"]);
+    });
+
+    it("maps u to undo or reopen on a decided card", () => {
+        expect(cardKeyAction(card(cardProject(), "d1"), "u")).toBe("undo");
+        expect(cardKeyAction(card(cardProject(), "k1"), "u")).toBe("reopen");
+        expect(cardKeyAction(card(cardProject(), "d1"), "a")).toBeNull();
+    });
+});
+
+describe("judgedByText", () => {
+    it("names the fallback runtime, and nothing otherwise", () => {
+        expect(judgedByText(project({ judgedby: "claude (OpenRouter has no key)" }))).toBe(
+            "judged by claude (OpenRouter has no key)"
+        );
+        expect(judgedByText(project())).toBe("");
+    });
+});
+
+describe("talkItOverTask", () => {
+    it("hands the agent the memory, the doc, the proposal and the rule that it edits files itself", () => {
+        const p = cardProject();
+        const task = talkItOverTask(p, p.changes[4]);
+        expect(task).toContain(`${FOLDER}/feedback_confirm.md`);
+        expect(task).toContain("Before wsh runs start, state the models.");
+        expect(task).toContain("C:\\Users\\me\\src\\waveterm\\AGENTS.md");
+        expect(task).toContain("Move to AGENTS.md");
+        expect(task).toContain("The rule is about this repo's engine handoff");
+        expect(task).toContain("Move it where every agent reads it.");
+        expect(task).toContain(`--- ${FOLDER}/MEMORY.md`);
+        expect(task).toContain("+Before `wsh runs start`, tell the person the models.");
+        expect(task).toContain("-- [Confirm](feedback_confirm.md)");
+        expect(task).toMatch(/edit the files yourself/i);
+    });
+
+    it("falls back to the project's AGENTS.md and the Review's text", () => {
+        const p = project({ path: "C:\\Users\\me\\src\\waveterm" });
+        const r = review("r", "feedback_x.md");
+        const trim = change("t", { kind: "trim", source: "agent", fromreview: "r", body: "", diffs: [] });
+        p.changes = [r, trim];
+        const task = talkItOverTask(p, trim);
+        expect(task).toContain("C:\\Users\\me\\src\\waveterm\\AGENTS.md");
+        expect(task).toContain("Body of feedback_x.md");
+        expect(task).toContain(`${FOLDER}/feedback_x.md`);
     });
 });

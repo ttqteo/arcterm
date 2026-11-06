@@ -480,12 +480,17 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 
 ### Setup: Memory tab
 
+A project opens one memory at a time (the queue strip and one card); a shared-folder or split project opens in
+the table. **All changes as a table** and **Review one at a time** switch between them. The keys follow the view
+the project is in:
+
 | Keys | Action |
 |---|---|
-| `j` / `k` (or `↓` / `↑`) | Next / previous change in the table |
-| `a` | Apply the selected change (when its Apply button is enabled), then move to the next change to review |
-| `x` | Keep the selected change as is, then move to the next change to review |
-| `u` | Undo an applied change, or review a kept one again |
+| `j` / `k` (or `↓` / `↑`) | Next / previous card in the queue, or change in the table. The decided cards sit below the open ones |
+| `a` | Still true on a Review card, Apply on any other (when its button is enabled), then move to the next card or change to review |
+| `d` | Delete the memory (card view, on an open Review), then move to the next card. The queue keeps it as `Deleted · Undo` |
+| `x` | Keep the card or change as is, then move to the next one to review. On an agent's proposal: Back to review, which shows the Review again |
+| `u` | Undo an applied change (a Delete's Undo brings its Review back), or review a kept one again |
 
 ### Route DAG (the orchestrator run's graph)
 

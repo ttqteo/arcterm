@@ -31,6 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Setup → Memory reviews one memory at a time, with its text, Delete and Ask an agent.
 - A Brainstorm council splits the problem into zones, one per seat, and picks its top 3 ideas from different zones where
   it can, so one part of the problem no longer takes every place; an idea that says what the code does today cites the
   line, and between two even ideas the one read in the code ranks first.
