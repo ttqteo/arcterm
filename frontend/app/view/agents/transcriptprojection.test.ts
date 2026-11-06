@@ -504,6 +504,121 @@ describe("extractSubagentSpawns", () => {
         expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false, async: true });
     });
 
+    describe("a background agent's launch ack and its notification", () => {
+        const spawnBg = (id: string) =>
+            asst([
+                {
+                    type: "tool_use",
+                    id,
+                    name: "Agent",
+                    input: { subagent_type: "Explore", prompt: "dig", run_in_background: true },
+                },
+            ]);
+        // the ack's own text is left different from the receipt text, so only the record's toolUseResult says it
+        const ack = (id: string, toolUseResult: any, isError = false) =>
+            JSON.stringify({
+                type: "user",
+                toolUseResult,
+                message: {
+                    content: [{ type: "tool_result", tool_use_id: id, content: "Started.", is_error: isError }],
+                },
+            });
+        const notice = (id: string, status: string) =>
+            `<task-notification>\n<task-id>x</task-id>\n<tool-use-id>${id}</tool-use-id>\n<status>${status}</status>\n<summary>s</summary>\n</task-notification>`;
+        const noticeRec = (id: string, status: string) =>
+            JSON.stringify({ type: "user", message: { content: notice(id, status) } });
+
+        it("reads an ack carrying toolUseResult.isAsync as a launch, whatever its text says", () => {
+            const out = extractSubagentSpawns([spawnBg("b1"), ack("b1", { isAsync: true })]);
+            expect(out[0]).toMatchObject({ done: false, failed: false, async: true });
+        });
+
+        it("reads an ack carrying toolUseResult.status async_launched as a launch", () => {
+            const out = extractSubagentSpawns([spawnBg("b1"), ack("b1", { status: "async_launched" })]);
+            expect(out[0]).toMatchObject({ done: false, failed: false, async: true });
+        });
+
+        it("does not read an errored result as a launch even when its record says async", () => {
+            const out = extractSubagentSpawns([spawnBg("b1"), ack("b1", { isAsync: true }, true)]);
+            expect(out[0]).toMatchObject({ done: true, failed: true });
+            expect(out[0].async).toBeUndefined();
+        });
+
+        it("does not read a foreground agent's completed result as a launch", () => {
+            const out = extractSubagentSpawns([spawnBg("f1"), ack("f1", { status: "completed" })]);
+            expect(out[0]).toMatchObject({ done: true, failed: false });
+            expect(out[0].async).toBeUndefined();
+        });
+
+        it("ends the spawn as a success at a completed notification", () => {
+            const lines = [spawnBg("b1"), ack("b1", { isAsync: true }), noticeRec("b1", "completed")];
+            expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: true, failed: false, async: true });
+        });
+
+        it("ends the spawn as a failure at a failed or stopped notification", () => {
+            for (const status of ["failed", "killed", "stopped"]) {
+                const lines = [spawnBg("b1"), ack("b1", { status: "async_launched" }), noticeRec("b1", status)];
+                expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: true, failed: true, async: true });
+            }
+        });
+
+        it("ends the spawn at a notification that is a text block, a queue-operation or a queued command", () => {
+            const textBlock = JSON.stringify({
+                type: "user",
+                message: { content: [{ type: "text", text: notice("b1", "completed") }] },
+            });
+            const queued = JSON.stringify({ type: "queue-operation", operation: "enqueue", content: notice("b1", "completed") });
+            const attached = JSON.stringify({
+                type: "attachment",
+                attachment: { type: "queued_command", prompt: notice("b1", "completed") },
+            });
+            for (const rec of [textBlock, queued, attached]) {
+                const lines = [spawnBg("b1"), ack("b1", { isAsync: true }), rec];
+                expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: true, failed: false });
+            }
+        });
+
+        it("keeps the spawn running at a notification that is not an end, or names another spawn", () => {
+            const lines = [
+                spawnBg("b1"),
+                ack("b1", { isAsync: true }),
+                noticeRec("b1", "running"),
+                noticeRec("other", "completed"),
+                JSON.stringify({ type: "user", message: { content: "<task-notification><task-id>x</task-id></task-notification>" } }),
+            ];
+            expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false, async: true });
+        });
+
+        it("keeps a foreground spawn's result: a notification naming it changes nothing", () => {
+            const lines = [spawnBg("f1"), ack("f1", { status: "completed" }), noticeRec("f1", "failed")];
+            expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: true, failed: false });
+        });
+
+        it("does not take a notification for a spawn still waiting on its result", () => {
+            const lines = [spawnBg("f2"), noticeRec("f2", "completed")];
+            expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false });
+        });
+
+        it("keeps the receipt-text check: a launch receipt with no toolUseResult is still a launch", () => {
+            const lines = [
+                spawnBg("b1"),
+                usr([{ type: "tool_result", tool_use_id: "b1", content: "Async agent launched successfully. agentId: a1" }]),
+                noticeRec("b1", "completed"),
+            ];
+            expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: true, failed: false, async: true });
+        });
+
+        it("does not take the copy of a notification (api-request-blob) for its end", () => {
+            const blob = JSON.stringify({
+                type: "api-request-blob",
+                hash: "h",
+                message: { role: "user", content: notice("b1", "completed") },
+            });
+            const lines = [spawnBg("b1"), ack("b1", { isAsync: true }), blob];
+            expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false, async: true });
+        });
+    });
+
     it("marks a still-running Task as not done", () => {
         const lines = [asst([{ type: "tool_use", id: "t2", name: "Task", input: { subagent_type: "Plan", prompt: "plan Y" } }])];
         expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false });
@@ -565,6 +680,46 @@ describe("extractSubagentSpawns", () => {
         expect(extractSubagentSpawns(lines)).toStrictEqual([
             { toolUseId: "k1", subagentType: "", prompt: "real", done: false, failed: false },
         ]);
+    });
+});
+
+describe("projectTranscript SubagentHandback", () => {
+    const asst = (blocks: any[]) => JSON.stringify({ type: "assistant", message: { content: blocks } });
+    const usr = (blocks: any[]) => JSON.stringify({ type: "user", message: { content: blocks } });
+
+    it("drops the handback call and its result, keeping the work around them", () => {
+        const lines = [
+            asst([
+                { type: "tool_use", id: "h1", name: "SubagentHandback", input: { report: "all done" } },
+                { type: "tool_use", id: "r1", name: "Read", input: { file_path: "/a/b.ts" } },
+            ]),
+            usr([
+                { type: "tool_result", tool_use_id: "h1", content: "handed back" },
+                { type: "tool_result", tool_use_id: "r1", content: "x" },
+            ]),
+        ];
+        const out = projectTranscript(lines);
+        expect(out).toHaveLength(1);
+        expect(out[0]).toMatchObject({ kind: "action", verb: "read", target: "b.ts" });
+    });
+
+    it("drops a handback that is the whole turn, whatever its result says", () => {
+        const lines = [
+            asst([{ type: "tool_use", id: "h1", name: "SubagentHandback", input: { report: "all done" } }]),
+            usr([{ type: "tool_result", tool_use_id: "h1", content: "boom", is_error: true }]),
+        ];
+        expect(projectTranscript(lines)).toEqual([]);
+    });
+
+    it("still shows an assistant's text beside the handback", () => {
+        const lines = [
+            asst([
+                { type: "text", text: "Found it." },
+                { type: "tool_use", id: "h1", name: "SubagentHandback", input: { report: "Found it." } },
+            ]),
+            usr([{ type: "tool_result", tool_use_id: "h1", content: "ok" }]),
+        ];
+        expect(projectTranscript(lines)).toEqual([{ kind: "message", text: "Found it." }]);
     });
 });
 

@@ -65,6 +65,9 @@ function targetFor(input: any): string {
 
 type ActionEntry = AgentEntry & { kind: "action" };
 
+// the tool a background subagent reports back with: plumbing, not work it did
+const HANDBACK_TOOL = "SubagentHandback";
+
 function parseCommand(content: string): { name: string; args?: string } | null {
     const nameMatch = /<command-name>([^]*?)<\/command-name>/.exec(content);
     if (nameMatch == null) {
@@ -161,6 +164,10 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     continue;
                 }
                 if (block?.type === "tool_use" && typeof block.name === "string") {
+                    // no action is made for it, so its tool_result below finds none and is dropped too
+                    if (block.name === HANDBACK_TOOL) {
+                        continue;
+                    }
                     if (block.name === "Skill" && block?.caller?.type === "direct" && typeof block.input?.skill === "string") {
                         const args = typeof block.input.args === "string" ? block.input.args.trim() : "";
                         entries.push({
@@ -401,16 +408,46 @@ export interface SubagentSpawn {
     prompt: string;
     done: boolean;
     failed: boolean;
-    // a background agent: its tool_result was the launch receipt, so only its own transcript knows when it ends
+    // a background agent: its tool_result was only the launch ack, so it is done (and failed or not) when a
+    // <task-notification> names it; until then its own transcript is all that says whether it ended
     async?: true;
 }
 
-// how claude answers the tool_use of an agent it starts in the background, before the agent has done anything
+// how claude answers the tool_use of an agent it starts in the background, before the agent has done anything: the
+// result's text is a receipt, and its record's toolUseResult says the agent went async
 const ASYNC_LAUNCH_RECEIPT = "Async agent launched successfully";
+
+// a tool_result that is that ack: either mark is enough, since the receipt's wording is not ours to rely on
+function isAsyncLaunchAck(block: any, rec: any): boolean {
+    return (
+        block.is_error !== true &&
+        (rec?.toolUseResult?.isAsync === true ||
+            rec?.toolUseResult?.status === "async_launched" ||
+            toolResultText(block.content).startsWith(ASYNC_LAUNCH_RECEIPT))
+    );
+}
+
+// Ends the background spawns the <task-notification>s in a record name. A completed one is a success, any other end
+// (failed, killed, stopped) a failure; a "running" one ends nothing. A foreground spawn is ended by its tool_result
+// alone, so a notification that names one changes nothing.
+function endBackgroundSpawns(spawns: Map<string, SubagentSpawn>, rec: any): void {
+    for (const text of notificationTexts(rec)) {
+        for (const note of text.matchAll(/<task-notification>[^]*?<\/task-notification>/g)) {
+            const toolUseId = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(note[0])?.[1]?.trim();
+            const status = NOTIFIED_STATUS[/<status>([^<]+)<\/status>/.exec(note[0])?.[1]?.trim() ?? ""];
+            const s = toolUseId ? spawns.get(toolUseId) : undefined;
+            if (s?.async && status != null && status !== "running") {
+                s.done = true;
+                s.failed = status !== "completed";
+            }
+        }
+    }
+}
 
 /** Pure: Task/Agent tool_use blocks in a Claude transcript -> subagent spawns, each joined to its
  *  tool_result by tool_use_id (done + failed via is_error). A spawn with no matching result is still
- *  running (done=false), and so is a background one whose result was only its launch receipt (async).
+ *  running (done=false), and so is a background one whose result was only its launch ack (async) until a
+ *  <task-notification> naming its tool-use id ends it: completed is done, any other status failed.
  *  Spawns keep first-seen order; non-Task tools are ignored. */
 export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
     const spawns = new Map<string, SubagentSpawn>();
@@ -422,11 +459,11 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
         } catch {
             continue;
         }
-        const content = rec?.message?.content;
-        if (!Array.isArray(content) || isRequestCopy(rec)) {
+        if (isRequestCopy(rec)) {
             continue;
         }
-        for (const block of content) {
+        const content = rec?.message?.content;
+        for (const block of Array.isArray(content) ? content : []) {
             if (
                 block?.type === "tool_use" &&
                 (block.name === "Task" || block.name === "Agent") &&
@@ -443,13 +480,16 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
                 order.push(block.id);
             } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
                 const s = spawns.get(block.tool_use_id);
-                if (s && toolResultText(block.content).startsWith(ASYNC_LAUNCH_RECEIPT)) {
+                if (s && isAsyncLaunchAck(block, rec)) {
                     s.async = true;
                 } else if (s) {
                     s.done = true;
                     s.failed = block.is_error === true;
                 }
             }
+        }
+        if (line.includes("<task-notification>")) {
+            endBackgroundSpawns(spawns, rec);
         }
     }
     return order.map((id) => spawns.get(id)!);
