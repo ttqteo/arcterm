@@ -13815,13 +13815,37 @@ const dagLifecycle = {
     },
 };
 
+// The scroll step needs more model rows than the panel holds. The picker opens scoped to the route's harness, and a Mac
+// with only claude installed lists four Claude models: they fit, so the list never scrolled (run d09b9dd1's Final). The
+// catalog is answered in-page instead, with 24 Claude models and two Pi ones, whatever is installed.
+const ROUTE_PICKER_FLAT_MODELS = ["opus", "sonnet", "haiku"].flatMap((family) =>
+    ["4-0", "4-1", "4-5", "4-6", "4-7", "4-8", "5-0", "5-5"].map((v) => `claude-${family}-${v}`)
+);
+const routePickerFlatCatalog = () => [
+    agyHarnessRow("claude", "Claude Code", { leadcapable: true, models: ROUTE_PICKER_FLAT_MODELS }),
+    agyHarnessRow("pi", "Pi", { leadcapable: true, models: ["gpt-5.5", "deepseek-v4.1-flash"] }),
+];
+// ROUTE_PICKER_MAX_HEIGHT in routepicker.tsx
+const ROUTE_PICKER_MAX_HEIGHT = 480;
+
 const routePickerFlat = {
     name: "route-picker-flat",
     surface: "cockpit",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const modules = await ahResolveModules(h);
+        const mock = modules.urls
+            ? await installCatalogMock(h, modules.urls, routePickerFlatCatalog())
+            : `no-module-url (${modules.error})`;
+        return { mock };
     },
-    async assert(h) {
+    async teardown(h) {
+        try {
+            await removeCatalogMock(h);
+        } catch (e) {
+            console.error(`route-picker-flat teardown: remove the catalog mock failed: ${e?.message ?? e}`);
+        }
+    },
+    async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
@@ -13829,6 +13853,7 @@ const routePickerFlat = {
             await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode });
             await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode });
         };
+        rec("the catalog mock lists 24 Claude and 2 Pi models", ctx?.mock === "ok", `mock=${ctx?.mock}`);
         await h.goto("settings");
         // the two-pane Settings surface renders one page at a time; the run route picker lives on Runs & limits
         await h.ev(
@@ -13871,7 +13896,7 @@ const routePickerFlat = {
             layout != null &&
                 layout.top >= 8 &&
                 layout.bottom <= layout.viewportHeight - 8 &&
-                layout.height <= 360 &&
+                layout.height <= ROUTE_PICKER_MAX_HEIGHT &&
                 layout.overflowY === "auto" &&
                 layout.scrollHeight > layout.clientHeight,
             JSON.stringify(layout)
@@ -46324,7 +46349,7 @@ const settingsPages = {
 };
 
 // --- agy-harness: Antigravity across the cockpit (docs/superpowers/specs/2026-10-08-agy-harness-design.md, Testing) ---------
-// Nothing needs agy installed. The harness list and the sessions archive are answered in-page (installAgyMock), the roster
+// Nothing needs agy installed. The harness list and the sessions archive are answered in-page (installCatalogMock), the roster
 // row comes from the fixture file, the transcript is a temp file in agy's own format under a `.../antigravity-cli/brain/<id>/`
 // path (what picks the agy projector), and the usage chart reads the dev bucket fixture. Steps, one view each:
 //   1 New agent modal offers Antigravity and fills `agy`; 2 the rail row (glyph, color, title, asking); 3 History lists the agy
@@ -46339,7 +46364,7 @@ const AGY_SESSION_ID = "agy-fx-conv-1";
 const AGY_TASK = "count the files";
 const AGY_ANSWER = "I saw 3 files in the workspace.";
 const AGY_MODEL = "gemini-3-pro";
-const AGY_MOCK_KEY = "__arcAgyHarnessMock";
+const CATALOG_MOCK_KEY = "__arcCatalogMock";
 const AGY_USAGE_KEY = "wave:dev-usage-buckets";
 const AGY_ROUTE_MODELS = { claude: ["opus", "sonnet"], pi: ["gpt-5.5"], agy: [AGY_MODEL, "gemini-3-flash"] };
 
@@ -46354,8 +46379,8 @@ function agyHarnessRow(runtime, label, flags) {
         runworkercapable: true,
         leadcapable: flags.leadcapable,
         routecapabilities: [
-            { runtime, resolvedmodel: AGY_ROUTE_MODELS[runtime][0], default: true },
-            ...AGY_ROUTE_MODELS[runtime].map((model) => ({ runtime, model, resolvedmodel: model, provider: runtime })),
+            { runtime, resolvedmodel: (flags.models ?? AGY_ROUTE_MODELS[runtime])[0], default: true },
+            ...(flags.models ?? AGY_ROUTE_MODELS[runtime]).map((model) => ({ runtime, model, resolvedmodel: model, provider: runtime })),
         ],
     };
 }
@@ -46452,21 +46477,29 @@ async function agyHarnessStoreUrlInPage(storeUrl) {
     return new URL(m[1], from).href;
 }
 
-// answers getsessionsactivity and listharnesses with the fixtures and delegates every other command to what was there, then has
-// the app load its catalog through the mock. "ok" or why it did not take.
-async function installAgyMock(h, urls, sessions, harnesses) {
+// answers listharnesses with `harnesses` (and getsessionsactivity with `sessions`, unless null) and delegates every other command
+// to what was there, then has the app load its catalog through the mock. It first waits out a catalog load already in flight
+// (the cockpit's boot load spawns the CLIs, up to 30 s): that load went out on the real client and would land over the mock's.
+// "ok" or why it did not take. agy-harness and route-picker-flat use it.
+async function installCatalogMock(h, urls, harnesses, sessions = null) {
     const storeUrl = await h.ev(`(${agyHarnessStoreUrlInPage.toString()})(${JSON.stringify(urls.store)})`);
     return h.ev(`(async () => {
         const mod = await import(${JSON.stringify(urls.api)});
         const api = mod.RpcApi;
         if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
-        if (window.${AGY_MOCK_KEY}) return "already-installed";
+        if (window.${CATALOG_MOCK_KEY}) return "already-installed";
+        const store = await import(${JSON.stringify(storeUrl)});
+        const { globalStore } = await import(${JSON.stringify(urls.store)});
+        for (let i = 0; i < 300 && globalStore.get(store.harnessesLoadingAtom); i++) {
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        if (globalStore.get(store.harnessesLoadingAtom)) return "a catalog load was still running after 30 s";
         const prev = api.mockClient ?? null;
         const sessions = ${JSON.stringify(sessions)};
         const harnesses = ${JSON.stringify(harnesses)};
         const mock = {
             mockWshRpcCall(client, command, data, opts) {
-                if (command === "getsessionsactivity") return Promise.resolve({ sessions });
+                if (command === "getsessionsactivity" && sessions != null) return Promise.resolve({ sessions });
                 if (command === "listharnesses") return Promise.resolve({ harnesses });
                 return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
             },
@@ -46474,22 +46507,24 @@ async function installAgyMock(h, urls, sessions, harnesses) {
                 return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
             },
         };
-        window.${AGY_MOCK_KEY} = { api, prev };
+        window.${CATALOG_MOCK_KEY} = { api, prev, store };
         api.setMockRpcClient(mock);
         const probe = await api.ListHarnessesCommand(window.TabRpcClient);
-        if (!(probe.harnesses ?? []).some((x) => x.runtime === "agy")) return "not-intercepted";
-        const store = await import(${JSON.stringify(storeUrl)});
+        const runtimes = (list) => JSON.stringify((list ?? []).map((x) => x.runtime));
+        if (runtimes(probe.harnesses) !== runtimes(harnesses)) return "not-intercepted";
         await store.loadHarnesses();
         return "ok";
     })()`);
 }
 
-const removeAgyMock = (h) =>
-    h.ev(`(() => {
-        const f = window.${AGY_MOCK_KEY};
+// puts the client back and reloads the catalog through it, so the next scenario reads the real one
+const removeCatalogMock = (h) =>
+    h.ev(`(async () => {
+        const f = window.${CATALOG_MOCK_KEY};
         if (!f) return "absent";
         f.api.setMockRpcClient(f.prev);
-        delete window.${AGY_MOCK_KEY};
+        delete window.${CATALOG_MOCK_KEY};
+        await f.store.loadHarnesses();
         return "restored";
     })()`);
 
@@ -46612,7 +46647,7 @@ const agyHarness = {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             ctx.modules = await ahResolveModules(h);
             ctx.mock = ctx.modules.urls
-                ? await installAgyMock(h, ctx.modules.urls, sessions, agyHarnessFixture())
+                ? await installCatalogMock(h, ctx.modules.urls, agyHarnessFixture(), sessions)
                 : `no-module-url (${ctx.modules.error})`;
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
@@ -46891,7 +46926,7 @@ const agyHarness = {
             }
         };
         await step("close the profile modal", () => h.ev(`document.querySelector('[data-jarvis-brief-modal="profile"] [aria-label="Close"]')?.click()`));
-        await step("remove the catalog and sessions mock", () => removeAgyMock(h));
+        await step("remove the catalog and sessions mock", () => removeCatalogMock(h));
         if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
         await step("restore the usage fixture", () => h.ev(restoreStorageKey(AGY_USAGE_KEY, ctx.prevUsage)));
         await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
