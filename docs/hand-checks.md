@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) History → right-click a session row → Copy session id sits between Copy title and Copy transcript
+  path; pasting gives the session's id (for Claude, the transcript file's name without `.jsonl`). No dev app was
+  running to try it (`projecthistory.tsx` `sessionMenu`, 5db413c1e).
+
 - [ ] (arcterm) Kael sync 11-06: a real `snapshot-dev.mjs` boot on the packaged store: with the main dev app stopped,
   run `task dev:snapshot` on your install → the app opens on a copy of your projects, runs and vault; no run resumes
   and no agent relaunches (nothing starts outside `%LOCALAPPDATA%\arc-snap\scratch`), no vault push or commit reaches
