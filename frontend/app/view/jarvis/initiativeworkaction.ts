@@ -41,9 +41,14 @@ export interface WorkOnTarget {
 export type WorkAsk = "work" | "plan" | { due: string } | { chunk: string };
 
 // the launch waiting on a project: set when Work on meets an initiative with none, read by the picker the cockpit
-// root mounts, since the palette and Needs you start a launch from any surface
-type ProjectAsk = { target: WorkOnTarget; ask: WorkAsk };
+// root mounts, since the palette and Needs you start a launch from any surface. A null ask only sets the project:
+// the sheet's "+ Project" on an initiative with none, which starts no agent.
+type ProjectAsk = { target: WorkOnTarget; ask: WorkAsk | null };
 export const projectAskAtom = atom<ProjectAsk | null>(null) as PrimitiveAtom<ProjectAsk | null>;
+
+export function pickInitiativeProject(target: WorkOnTarget): void {
+    globalStore.set(projectAskAtom, { target, ask: null });
+}
 
 export async function workOnInitiative(model: AgentsViewModel, e: WorkOnTarget, ask: WorkAsk = "work"): Promise<void> {
     const oid = e.oref.replace(/^effort:/, "");
