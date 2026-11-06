@@ -36,10 +36,11 @@ type BlockRef struct {
 	BlockId string
 }
 
-// Remembered is what arcterm keeps about a service between runs, in its own state file, never in tools.json. A Stop is
-// not kept: an older file's "stopped" key is ignored.
+// Remembered is what arcterm keeps about a service between runs, in its own state file, never in tools.json. An older
+// file's "stopped" key is ignored: Off took its place with a narrower meaning.
 type Remembered struct {
-	Port int `json:"port,omitempty"` // the port of a service on "port": "auto"
+	Port int  `json:"port,omitempty"` // the port of a service on "port": "auto"
+	Off  bool `json:"off,omitempty"`  // the person stopped this Keep running service: boot leaves it off until it starts again
 }
 
 type StateStore interface {
@@ -301,10 +302,10 @@ func (s *Supervisor) sleepTick(id string, tok int) {
 	}
 }
 
-// startsNowLocked reports whether a service starts as soon as the supervisor knows it: it has Keep running or is on
-// screen.
+// startsNowLocked reports whether a service starts as soon as the supervisor knows it: it is on screen, or has Keep
+// running and the person did not stop it.
 func (s *Supervisor) startsNowLocked(v *svc) bool {
-	return v.tool.Autostart || s.shown[v.tool.Id]
+	return s.shown[v.tool.Id] || (v.tool.Autostart && !s.d.State.Get(v.tool.Id).Off)
 }
 
 // Status is every service, by id. Never nil.
@@ -420,7 +421,8 @@ func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projec
 		delete(s.svcs, id)
 		blockId, tabId := v.blockId, v.tabId
 		after = append(after, func() {
-			// the remembered port stays, for the page's address
+			// the remembered port stays, for the page's address; a Stop goes with the entry
+			s.remember(id, func(r *Remembered) { r.Off = false })
 			if blockId != "" {
 				s.d.Stop(blockId)
 			}
@@ -633,6 +635,7 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 		}
 	}
 	s.mu.Unlock()
+	s.remember(id, func(r *Remembered) { r.Off = false }) // it runs again: the next boot starts it as Keep running says
 
 	port := fixed
 	if fixed > 0 {
@@ -792,10 +795,21 @@ func (s *Supervisor) probeTick(id string, gen int) {
 	s.scheduleProbeLocked(v, gen)
 }
 
-// Stop stops a service now, whatever work it is in the middle of. Nothing remembers it: the service starts again the
-// next time it is shown (a Seen that newly shows it), or when Start is called.
+// Stop stops a service now, whatever work it is in the middle of. The service starts again the next time it is shown
+// (a Seen that newly shows it), or when Start is called. A Keep running service also remembers the Stop (Off), so the
+// next boot leaves it off instead of starting it: a restart of arcterm keeps it as it was. Any start forgets it.
 func (s *Supervisor) Stop(ctx context.Context, id string) error {
-	return s.stop(id)
+	if err := s.stop(id); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	v := s.svcs[id]
+	keep := v != nil && v.tool.Autostart
+	s.mu.Unlock()
+	if keep {
+		s.remember(id, func(r *Remembered) { r.Off = true })
+	}
+	return nil
 }
 
 func (s *Supervisor) stop(id string) error {

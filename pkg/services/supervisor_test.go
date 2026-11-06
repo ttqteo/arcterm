@@ -325,8 +325,8 @@ func TestStopSleepsAndIsNotRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.wantState("portfolio", StateSleeping)
-	if got := h.state.Get("portfolio"); got != (Remembered{}) {
-		t.Errorf("Stop remembered %+v: nothing remembers a Stop", got)
+	if got := h.state.Get("portfolio"); got != (Remembered{Off: true}) {
+		t.Errorf("Stop of a Keep running service remembered %+v, want Off", got)
 	}
 	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
 		t.Errorf("stops = %v", h.stops)
@@ -342,14 +342,73 @@ func TestStopSleepsAndIsNotRetried(t *testing.T) {
 		t.Errorf("starts = %v: a stopped service that is not shown started again", h.starts)
 	}
 
-	// a boot with the same state starts it: Keep running is the only thing that starts a service nobody shows
+	// a boot with the same state leaves it off: arcterm restarting keeps it as the person left it
 	h2 := newHarness(t)
 	h2.state = h.state
 	h2.sup = New(h2.deps())
-	h2.setTools(fixedTool("portfolio", dashURL))
-	h2.sup.Boot(context.Background())
+	h2.boot(fixedTool("portfolio", dashURL))
 	h2.advance(time.Second)
+	h2.wantState("portfolio", StateSleeping)
+	if len(h2.starts) != 0 {
+		t.Errorf("starts = %v: boot started a service the person stopped", h2.starts)
+	}
+
+	// showing it starts it and forgets the Stop, so the boot after starts it again
+	h2.seen("portfolio")
 	h2.wantState("portfolio", StateStarting)
+	if got := h2.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("a start kept %+v, want the Stop forgotten", got)
+	}
+	h3 := newHarness(t)
+	h3.state = h2.state
+	h3.sup = New(h3.deps())
+	h3.boot(fixedTool("portfolio", dashURL))
+	h3.advance(time.Second)
+	h3.wantState("portfolio", StateStarting)
+}
+
+func TestStopWithoutKeepRunningRemembersNothing(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.wantState("portfolio", StateSleeping)
+	if got := h.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("Stop remembered %+v: only a Keep running service keeps a Stop", got)
+	}
+}
+
+func TestStartForgetsAStop(t *testing.T) {
+	h := newHarness(t)
+	h.setTools(fixedTool("portfolio", dashURL))
+	h.run("portfolio", dashURL)
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.sup.Start(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.wantState("portfolio", StateStarting)
+	if got := h.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("Start kept %+v, want the Stop forgotten", got)
+	}
+}
+
+func TestRemovingTheEntryForgetsAStop(t *testing.T) {
+	h := newHarness(t)
+	h.setTools(fixedTool("portfolio", dashURL))
+	h.run("portfolio", dashURL)
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.setTools()
+	h.advance(0)
+	if got := h.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("a removed entry kept %+v", got)
+	}
 }
 
 func TestStopsExitDoesNotCountAgainstARestart(t *testing.T) {

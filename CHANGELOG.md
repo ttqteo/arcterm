@@ -41,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   "… 1 more", and a numbered list keeps its numbers, so "type 2" in the reply still points at its item.
 - A brainstorm's decision titles are written with their diacritics in Vietnamese, as the rest of the pane is, instead
   of sometimes showing as "Quy mo chay".
+- An app with Keep running that you stopped stays stopped when arcterm restarts, instead of starting again on its
+  own; opening it or pressing Start runs it, and from then on it starts with arcterm as before.
 
 ## 1.0.4 — 2026-11-06
 
