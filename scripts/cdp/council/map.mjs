@@ -245,7 +245,8 @@ const FACTS = `(() => {
     return {
         id: root.dataset.councilId,
         lang: root.getAttribute("lang"),
-        tabs: all("[data-council-tab]").map((b) => b.dataset.councilTab + "=" + t(b) + (b.getAttribute("aria-selected") === "true" ? "*" : "")),
+        // a tab's word and count, not its key (the r c m drawn after them)
+        tabs: all("[data-council-tab]").map((b) => b.dataset.councilTab + "=" + [t(b.querySelector("[data-council-tab-label]")), t(b.querySelector("[data-council-tab-count]"))].filter(Boolean).join(" ") + (b.getAttribute("aria-selected") === "true" ? "*" : "")),
         cardsTitle: t(root.querySelector("[data-council-map-cards] h2")),
         cardsHint: t(root.querySelector("[data-council-map-cards] h2")?.nextElementSibling),
         cards: all("[data-council-map-card]").map((card) => ({
@@ -337,7 +338,7 @@ export const councilMap = {
             // from the Discussion of the running council, the Map tab is a click away
             await h.ev(`window.__arcCouncil.showCouncil(${q(vi)}, "discussion")`);
             await until(h, `document.querySelector("[data-council-discussion]")?.dataset.councilId === ${q(vi)}`);
-            const fromDiscussion = await h.ev(`[...document.querySelectorAll("[data-council-discussion] [data-council-tab]")].map((b) => b.dataset.councilTab + "=" + b.innerText.replace(/\\s+/g, " ").trim()).join("|")`);
+            const fromDiscussion = await h.ev(`[...document.querySelectorAll("[data-council-discussion] [data-council-tab]")].map((b) => b.dataset.councilTab + "=" + [...b.querySelectorAll("[data-council-tab-label], [data-council-tab-count]")].map((e) => e.innerText.replace(/\\s+/g, " ").trim()).join(" ")).join("|")`);
             await click(h, "[data-council-discussion] [data-council-tab='map']");
             const opened = await until(h, `document.querySelector(${q(MAP)})?.dataset.councilId === ${q(vi)}`);
             await sleep(300);

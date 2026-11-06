@@ -1,8 +1,10 @@
 // skim: highlights the sentences of a reply worth reading (highlight-core.ts). claude marks them, the mod strips the
-// marks before the reply is stored and draws them in the terminal alone, dimming the rest of an explanation.
+// marks before the reply is stored and draws them in the terminal alone, dimming the rest of an explanation. a long
+// reply folds to its verdict and top reasons, or to the sentences claude marked, behind a show more button
+// (fold-core.ts).
 // arcterm ships it beside its own mods (`wsh install-agent-hooks`); it is also published on its own as claude-skim.
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register } from "claude-code";
+import type { EngineInterface, Register, RenderElement } from "claude-code";
 import type { Ask } from "../types";
 import {
     askOf,
@@ -17,7 +19,8 @@ import {
     shownMarks,
     submitContext,
 } from "./highlight-core";
-import { drawAskLine, drawHighlighted, paletteFor } from "./highlight-row";
+import { canFold, endsOnQuestion, folded, lineCount, toggleOpened } from "./fold-core";
+import { drawAskLine, drawFolded, drawHighlighted, drawOpened, paletteFor } from "./highlight-row";
 import type { Palette } from "./highlight-row";
 
 // the width a row is laid out for where the surface has not measured
@@ -40,6 +43,8 @@ const isSkimOff = atom({ plugin: "skim", key: "isSkimOff" } as const, false);
 const SKIM_OFF_STATUS = "skim off";
 const ask = atom({ plugin: "skim", key: "ask" } as const, null);
 const isAskHidden = atom({ plugin: "skim", key: "isAskHidden" } as const, false);
+// the long replies the person opened, by the hash of their text
+const opened = atom({ plugin: "skim", key: "opened" } as const, [], { shape: "opened-1" });
 
 // module copies, refilled at session.start after a reload
 let kept: [string, string[]][] = [];
@@ -92,7 +97,8 @@ export const register: Register = (on) => {
         $.ui.status((await read($, isSkimOff)) ? SKIM_OFF_STATUS : undefined);
         await $.command.register({
             name: "skim",
-            description: "Turn skim off or on: off draws explanations in full instead of dimmed around their highlighted sentences",
+            description:
+                "Turn skim off or on: off draws replies in full, not folded to their verdict or dimmed around their highlighted sentences",
         });
         $.clock.every(ASK_POLL_MS, () => {
             void read($, isAskHidden).then((isHidden) => {
@@ -174,13 +180,14 @@ export const register: Register = (on) => {
         $.ui.status(isOff ? SKIM_OFF_STATUS : undefined);
         $.ui.toast(
             isOff
-                ? "Skim off: explanations draw in full"
-                : "Skim on: an explanation dims all but its highlighted sentences"
+                ? "Skim off: replies draw in full"
+                : "Skim on: a long reply folds to its verdict, an explanation dims all but its highlighted sentences"
         );
         return {};
     });
 
-    // marked while it streams, stored without the marks once done: either way the marked sentences draw highlighted
+    // marked while it streams, stored without the marks once done: either way the marked sentences draw highlighted.
+    // a long reply folds to its verdict and top reasons until the person opens it
     on("ui.render", { component: "AssistantMessage" }, async ($, e, next) => {
         const { clean, marks: written } = parseMarks(e.props.text);
         const hash = hashText(clean);
@@ -190,13 +197,29 @@ export const register: Register = (on) => {
         }
         const all = written.length > 0 ? written : (byHash.get(hash) ?? []);
         const marks = shownMarks(all);
-        if (e.surface !== "terminal" || e.props.isSummary || marks.length === 0) {
-            return written.length > 0 ? next({ ...e, props: { ...e.props, text: clean } }) : next(e);
-        }
+        const isTerminal = e.surface === "terminal" && !e.props.isSummary;
+        const isOff = await read($, isSkimOff);
         // a brainstorm turn, its last mark the question waiting on the person, draws in full: its options are to be
-        // read. so does a reply marked through most of its length
-        const isSkim = askOf(all) === null && canSkim(clean, marks) && !(await read($, isSkimOff));
-        return drawHighlighted($.ui.resolve(e), layout(clean, marks, isSkim), isSkim, palette, e.props.isFirstOfReply);
+        // read. so does a reply ending on a question it left unmarked, and one marked through most of its length
+        const isAsk = askOf(all) !== null;
+        const isFoldable = isTerminal && !isOff && !isAsk && !endsOnQuestion(clean) && canFold(clean);
+        const isOpen = isFoldable && (await read($, opened)).includes(hash);
+        const toggle = () => void update($, opened, (list) => toggleOpened(list, hash));
+        if (isFoldable && !isOpen) {
+            const els = $.ui.resolve(e);
+            const fold = folded(clean, marks);
+            const segments = layout(fold.text, fold.marks, false);
+            const short = drawHighlighted(els, segments, false, palette, e.props.isFirstOfReply);
+            return drawFolded(els, short, hash, lineCount(clean), toggle);
+        }
+        let reply: RenderElement;
+        if (!isTerminal || marks.length === 0) {
+            reply = await (written.length > 0 ? next({ ...e, props: { ...e.props, text: clean } }) : next(e));
+        } else {
+            const isSkim = !isAsk && canSkim(clean, marks) && !isOff;
+            reply = drawHighlighted($.ui.resolve(e), layout(clean, marks, isSkim), isSkim, palette, e.props.isFirstOfReply);
+        }
+        return isFoldable ? drawOpened($.ui.resolve(e), reply, hash, toggle) : reply;
     });
 
     // the question the last reply asks, above the prompt while its rows are out of view (the fullscreen terminal

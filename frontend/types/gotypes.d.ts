@@ -1209,6 +1209,20 @@ declare global {
         effort: Effort;
     };
 
+    // wshrpc.CommandEffortPinData
+    type CommandEffortPinData = {
+        effortoid: string;
+        pin: boolean;
+        replaceoldest?: boolean;
+    };
+
+    // wshrpc.CommandEffortPinRtnData
+    type CommandEffortPinRtnData = {
+        pinned: boolean;
+        capreached?: boolean;
+        oldest?: EffortPinRef;
+    };
+
     // wshrpc.CommandEventReadHistoryData
     type CommandEventReadHistoryData = {
         event: string;
@@ -1974,6 +1988,12 @@ declare global {
         body?: string;
     };
 
+    // wshrpc.CommandPauseRunData
+    type CommandPauseRunData = {
+        channelid: string;
+        runid: string;
+    };
+
     // wshrpc.CommandPostChannelMessageData
     type CommandPostChannelMessageData = {
         channelid: string;
@@ -2179,6 +2199,13 @@ declare global {
     // wshrpc.CommandServiceSeenData
     type CommandServiceSeenData = {
         ids: string[];
+    };
+
+    // wshrpc.CommandSetCanvasLinkData
+    type CommandSetCanvasLinkData = {
+        dir: string;
+        replaces: string;
+        notreplaces: string[];
     };
 
     // wshrpc.CommandSetChannelProfileData
@@ -2520,6 +2547,7 @@ declare global {
         timeline?: {[key: string]: CouncilStep[]};
         lang?: string;
         snapshot?: string;
+        zones?: CouncilZone[];
     };
 
     // council.CouncilActivity
@@ -2568,9 +2596,32 @@ declare global {
         not: number;
     };
 
+    // bench.CouncilBenchResult
+    type CouncilBenchResult = {
+        kind: string;
+        date: string;
+        harness: string;
+        case: string;
+        variant: string;
+        run: number;
+        council: string;
+        state: string;
+        recall: number;
+        keys: number;
+        kept?: number;
+        wrong: number;
+        tokens: number;
+        minutes: number;
+        messages: number;
+        judgetokens?: number;
+        matches?: {[key: string]: number};
+        keptmatches?: {[key: string]: number};
+    };
+
     // wshrpc.CouncilBenchResultsRtnData
     type CouncilBenchResultsRtnData = {
         runs: CouncilBenchRow[];
+        results: CouncilBenchResult[];
         ratings: CouncilBenchRatingRow[];
         verdict?: CouncilBenchDecision;
     };
@@ -2745,6 +2796,9 @@ declare global {
         thumb?: string;
         runs?: CouncilRun[];
         label?: string;
+        checker?: string;
+        checkwhy?: string;
+        zone?: string;
     };
 
     // council.CouncilRegion
@@ -2868,6 +2922,13 @@ declare global {
         answer?: string;
         asks?: CouncilAsk[];
         at: number;
+    };
+
+    // council.CouncilZone
+    type CouncilZone = {
+        seat: string;
+        name: string;
+        covers: string;
     };
 
     // wshrpc.DagAskItem
@@ -3072,6 +3133,7 @@ declare global {
         events?: EffortEvent[];
         createdts: number;
         updatedts: number;
+        pinnedts?: number;
     };
 
     // waveobj.EffortChunk
@@ -3142,6 +3204,12 @@ declare global {
         oref?: string;
     };
 
+    // wshrpc.EffortPinRef
+    type EffortPinRef = {
+        oid: string;
+        title: string;
+    };
+
     // wshrpc.EffortSummary
     type EffortSummary = {
         oref: string;
@@ -3155,7 +3223,18 @@ declare global {
         total: number;
         activechunk?: string;
         updatedts: number;
+        pinnedts?: number;
         lastnote?: EffortLastNote;
+    };
+
+    // wshrpc.EndedItem
+    type EndedItem = {
+        project: string;
+        runoid: string;
+        goal: string;
+        status: string;
+        mode?: string;
+        completedts: number;
     };
 
     // waveobj.EvidenceArtifact
@@ -3731,6 +3810,14 @@ declare global {
         openexternal: boolean;
     };
 
+    // waveobj.PausedSession
+    type PausedSession = {
+        runid: string;
+        workeroref: string;
+        runtime: string;
+        sessionid: string;
+    };
+
     // waveobj.PhaseTriage
     type PhaseTriage = {
         verdict: string;
@@ -3860,6 +3947,7 @@ declare global {
         project: string;
         active?: ActiveWorkItem[];
         shipped?: ShippedItem[];
+        ended?: EndedItem[];
         events?: TimelineEvent[];
         delta?: TimelineEvent[];
     };
@@ -4124,6 +4212,7 @@ declare global {
         radarorigin?: RunRadarOrigin;
         createdts: number;
         completedts?: number;
+        cancelledts?: number;
         evidence?: RunEvidence;
         land?: RunLand;
         verificationackts?: number;
@@ -4153,6 +4242,9 @@ declare global {
         planfeedback?: string;
         workflowscan?: WorkflowScan;
         consultsessions?: ConsultSession[];
+        pause?: RunPause;
+        pausedunder?: string;
+        lastresumedts?: number;
     };
 
     // waveobj.RunEffortRef
@@ -4213,6 +4305,15 @@ declare global {
         resolvertried?: boolean;
         conflicts?: string[];
         fixture?: boolean;
+    };
+
+    // waveobj.RunPause
+    type RunPause = {
+        pausedts: number;
+        by: string;
+        heldbytes?: number;
+        sessions?: PausedSession[];
+        noautoresumeuntil?: number;
     };
 
     // waveobj.RunPhase
@@ -4529,6 +4630,10 @@ declare global {
         modts: number;
         thumbts: number;
         bytes: number;
+        title?: string;
+        createdts: number;
+        replaces?: string;
+        notreplaces?: string[];
     };
 
     // storage.StorageCategoryReport
@@ -4640,6 +4745,7 @@ declare global {
         plangate?: boolean;
         planapprovedts?: number;
         notifiedcondition?: string;
+        pausedts?: number;
         usage?: UsageRow[];
         verify?: string;
         setup?: string;
@@ -5153,6 +5259,13 @@ declare global {
     // wshrpc.WshServerCommandMeta
     type WshServerCommandMeta = {
         commandtype: string;
+    };
+
+    // wshrpc.XmasTreeData
+    type XmasTreeData = {
+        season: number;
+        phase: string;
+        done: number[];
     };
 
 }

@@ -181,8 +181,32 @@ describe("the content", () => {
                 .slice(1)
                 .every((p) => p === "profile")
         ).toBe(true);
-        expect(prep("initiatives")).toEqual([null, null, null, "firstInitiative", "firstInitiative", null, null]);
+        // new, the cards, the list, the actions, then the sheet's head and plan, then ideas and archived
+        expect(prep("initiatives")).toEqual([null, null, null, null, "firstInitiative", "firstInitiative", null, null]);
         expect(prep("brief").every((p) => p === null)).toBe(true);
+    });
+    it("points the Brief track at the strip and Activity, and the Initiatives track at the cards, the list and the sheet", () => {
+        const targets = (id: string) =>
+            TOUR_TRACKS.find((t) => t.id === id)!.steps.flatMap((s) => [...(s.target ?? []), ...(s.also ?? [])]);
+        expect(targets("brief")).toEqual(
+            expect.arrayContaining(["[data-jarvis-waiting-strip]", "[data-jarvis-activity]"])
+        );
+        expect(targets("initiatives")).toEqual(
+            expect.arrayContaining([
+                "[data-jarvis-cards]",
+                "[data-jarvis-initiative-list]",
+                "[data-jarvis-initiative-sheet-head]",
+            ])
+        );
+        // the old in-place tracker's and the Chunk sidebar's hooks are gone from the page
+        const every = TOUR_TRACKS.flatMap((t) => t.steps.flatMap((s) => [...(s.target ?? []), ...(s.also ?? [])]));
+        for (const gone of [
+            "data-jarvis-chunk-sidebar",
+            "data-jarvis-initiative-detail",
+            '[data-jarvis-brief-region="sessions"]',
+        ]) {
+            expect(every.some((sel) => sel.includes(gone))).toBe(false);
+        }
     });
     it("ends the Brief track on a card with no spotlight", () => {
         const brief = TOUR_TRACKS.find((t) => t.id === "brief")!.steps;

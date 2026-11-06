@@ -6,7 +6,9 @@ package storage
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -97,6 +99,21 @@ func TestRunWorktreesJudgeEachTree(t *testing.T) {
 	}
 }
 
+// linkDirForTest links a directory the way a run's Setup does: a junction on Windows (a symlink there needs a
+// privilege most accounts lack), a symlink elsewhere
+func linkDirForTest(t *testing.T, link, target string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+			t.Fatalf("mklink /J %s %s: %v\n%s", link, target, err, out)
+		}
+		return
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // a run's Setup links node_modules and src-tauri/target into its tree, and a .gitignore's `node_modules/` matches
 // only a directory, so git lists each link as untracked: a link holds no work and must not guard the tree
 func TestUntrackedLinksAreNotUncommittedChanges(t *testing.T) {
@@ -105,15 +122,11 @@ func TestUntrackedLinksAreNotUncommittedChanges(t *testing.T) {
 	mixed := addTree(t, repo, runDirtyID)
 	deps := t.TempDir()
 	for _, wt := range []string{linked, mixed} {
-		if err := os.Symlink(deps, filepath.Join(wt, "node_modules")); err != nil {
-			t.Fatal(err)
-		}
+		linkDirForTest(t, filepath.Join(wt, "node_modules"), deps)
 		if err := os.MkdirAll(filepath.Join(wt, "src-tauri"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(deps, filepath.Join(wt, "src-tauri", "target")); err != nil {
-			t.Fatal(err)
-		}
+		linkDirForTest(t, filepath.Join(wt, "src-tauri", "target"), deps)
 	}
 	writeFile(t, filepath.Join(mixed, "uncommitted.txt"), 10)
 	env := worktreeEnv(repo, map[string]RunState{

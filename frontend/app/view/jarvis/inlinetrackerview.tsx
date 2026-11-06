@@ -1,11 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The inline initiative tracker — the view over inlinetracker.ts.
+// An initiative's plan, edited in place — the view over inlinetracker.ts.
 //
-// The plan reads first: an expanded initiative shows its stages and chunks in place, and prose moves out
-// to the Chunk sidebar (chunksidebar.tsx), because an initiative's notes here average ~1.1k characters and
-// the sheet this replaces could not hold plan and prose at 640px.
+// The initiative sheet (initiativesheet.tsx, spec decision 7) draws it: its rows take the board's look and a folded
+// stage previews its first chunks (inlinetracker.ts initiativeRows). The plan reads first, and a chunk's prose opens
+// in the chunk view (chunkview.tsx) inside the same sheet. IdeaDetail is the plan's place for an idea, which has none.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn } from "@/util/util";
@@ -111,27 +111,37 @@ export type TrackerEdits = {
 
 type Editing = { id: string; draft: string } | null;
 
+// How long a click on a sheet row waits for a second click before it opens the chunk: a double-click renames instead
+const OPEN_DELAY_MS = 250;
+
 export function InitiativeDetail({
     rows,
     cursor,
     edits,
     onSelectChunk,
     onToggleStage,
+    onOpenChunk,
 }: {
+    // the initiative sheet's plan (spec decision 7): rows with a glyph, a two-line label, a note count and a status
+    // word, the next chunk raised with an accent →, a folded stage's preview with its "+N more", and no footer (the
+    // sheet's head carries rename, details, pause, archive and delete)
     rows: DetailRow[];
     cursor: string | undefined;
     edits: TrackerEdits;
     onSelectChunk: (id: string) => void;
     onToggleStage: (id: string, open: boolean) => void;
+    // the way into a chunk: a click opens it once no second click follows (a double-click renames)
+    onOpenChunk?: (id: string) => void;
 }) {
     // one menu and one inline editor at a time, across every row of this plan
     // an atom, not local state: Escape closing it is a keybinding (jarvis:close-tracker-menu)
     const [menu, setMenu] = useAtom(trackerMenuAtom);
     const [editing, setEditing] = useState<Editing>(null);
-    const [confirming, setConfirming] = useState(false);
     const [newStage, setNewStage] = useState<{ name: string; chunk: string | null } | null>(null);
+    const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     // a menu left open when the plan unmounts would hold Escape away from the surface
     useEffect(() => () => setMenu(null), [setMenu]);
+    useEffect(() => () => clearTimeout(openTimer.current), []);
     useEffect(() => {
         if (menu == null) {
             return;
@@ -149,8 +159,16 @@ export function InitiativeDetail({
         return null;
     }
     const startEdit = (id: string, draft: string) => {
+        clearTimeout(openTimer.current);
         setMenu(null);
         setEditing({ id, draft });
+    };
+    const clickChunk = (id: string) => {
+        onSelectChunk(id);
+        if (onOpenChunk != null) {
+            clearTimeout(openTimer.current);
+            openTimer.current = setTimeout(() => onOpenChunk(id), OPEN_DELAY_MS);
+        }
     };
     const commitEdit = (apply: (next: string) => void, before: string) => {
         const next = editing?.draft.trim() ?? "";
@@ -188,24 +206,24 @@ export function InitiativeDetail({
     for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
         if (r.kind === "stage") {
-            openStage = r.collapsed ? null : r;
+            // a folded stage still shows its preview, and its "+ Add chunk" under it
+            openStage = r;
         }
         if (openStage != null && (i + 1 === rows.length || rows[i + 1].kind === "stage")) {
             addAfter.set(i, openStage);
         }
     }
-    // a flat plan has no header to own its run, so its one run ends at its last chunk
+    // a flat plan has no header to own its run, so its one run ends at its last chunk (or its "+N more")
     if (!rows.some((r) => r.kind === "stage")) {
-        const last = rows.map((r) => r.kind).lastIndexOf("chunk");
+        const kinds = rows.map((r) => r.kind);
+        const last = Math.max(kinds.lastIndexOf("chunk"), kinds.lastIndexOf("more"));
         if (last >= 0) {
             addAfter.set(last, { stage: "", at: 0 });
         }
     }
 
     return (
-        // no box of its own: the opened row's raised box holds it, so an open initiative reads as one
-        // box rather than a row with a second block stepped in beneath it
-        <div data-jarvis-initiative-detail="true" className="pb-2.5 pl-2.5 pr-3.5 pt-2">
+        <div data-jarvis-initiative-detail="sheet" className="flex flex-col pb-4">
             {rows.map((row, i) => {
                 const tail = addAfter.get(i);
                 const add =
@@ -229,6 +247,25 @@ export function InitiativeDetail({
                 }
                 if (row.kind === "proposed") {
                     return <ProposedGroup key={row.id} rows={row.rows} edits={edits} />;
+                }
+                if (row.kind === "more") {
+                    return (
+                        <Fragment key={row.id}>
+                            <button
+                                type="button"
+                                data-jarvis-stage-more={row.n}
+                                title="Show every chunk here"
+                                onClick={() => onToggleStage(row.stageId, true)}
+                                className={cn(
+                                    "flex cursor-pointer items-center self-start px-2 py-1.5 text-[11px] text-ink-mid hover:text-ink-hi",
+                                    FOCUS
+                                )}
+                            >
+                                +{row.n} more {row.n === 1 ? "chunk" : "chunks"}
+                            </button>
+                            {add}
+                        </Fragment>
+                    );
                 }
                 if (row.kind === "stage") {
                     const menuId = row.id + "#menu";
@@ -322,6 +359,8 @@ export function InitiativeDetail({
                 const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
                 const menuId = row.id + "#menu";
                 const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
+                // the chunk picked up next is raised and marked with an accent →, its status word "next"
+                const next = row.next;
                 return (
                     <Fragment key={row.id}>
                         <div className="relative">
@@ -329,16 +368,27 @@ export function InitiativeDetail({
                                 role="button"
                                 tabIndex={-1}
                                 aria-pressed={selected}
-                                title="Click for notes · double-click to rename"
-                                onClick={() => onSelectChunk(row.id)}
+                                title="Click to open · double-click to rename"
+                                onClick={() => clickChunk(row.id)}
                                 onDoubleClick={() => startEdit(row.id, label)}
                                 data-jarvis-tracker-chunk={label}
+                                data-jarvis-next-chunk={next ? "true" : undefined}
                                 className={cn(
-                                    "group/chunk my-px flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-[6px] py-[5px] pl-[7px] pr-1.5 text-left",
-                                    selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+                                    "group/chunk my-px flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-[6px] px-2 py-[7px] text-left",
+                                    selected
+                                        ? "bg-surface-selected"
+                                        : next
+                                          ? "bg-surface-raised hover:bg-surface-hover"
+                                          : "hover:bg-surface-hover"
                                 )}
                             >
-                                <ToneIcon tone={row.row.tone} />
+                                <span className="flex h-[17px] w-3.5 flex-none items-center justify-center">
+                                    {next ? (
+                                        <ArrowRight size={12} strokeWidth={2.4} aria-hidden className="text-accent" />
+                                    ) : (
+                                        <ToneIcon tone={row.row.tone} />
+                                    )}
+                                </span>
                                 {renameInput(
                                     row.id,
                                     label,
@@ -347,14 +397,16 @@ export function InitiativeDetail({
                                 ) ?? (
                                     <span
                                         className={cn(
-                                            "min-w-0 flex-1 line-clamp-2 text-[12px] leading-[1.4]",
+                                            "min-w-0 flex-1 line-clamp-2 text-[12.5px] leading-[17px]",
                                             selected
                                                 ? "font-semibold text-primary"
-                                                : row.row.status === "active"
-                                                  ? "font-medium text-ink-hi"
-                                                  : row.row.status === "done" || row.row.status === "skipped"
-                                                    ? "text-ink-mid"
-                                                    : "text-ink-hi",
+                                                : next
+                                                  ? "text-primary"
+                                                  : row.row.status === "active"
+                                                    ? "font-medium text-ink-hi"
+                                                    : row.row.status === "done" || row.row.status === "skipped"
+                                                      ? "text-ink-mid"
+                                                      : "text-ink-hi",
                                             row.row.status === "skipped" && "line-through"
                                         )}
                                     >
@@ -373,26 +425,25 @@ export function InitiativeDetail({
                                         {due.text}
                                     </span>
                                 ) : null}
-                                {row.notes > 0 ? (
-                                    <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
-                                        {row.notes} {row.notes === 1 ? "note" : "notes"}
-                                    </span>
-                                ) : null}
+                                {/* a column of its own, so the status words line up down the plan */}
+                                <span className="w-11 flex-none text-right text-[10.5px] leading-[17px] tabular-nums text-muted">
+                                    {row.notes > 0 ? `${row.notes} ${row.notes === 1 ? "note" : "notes"}` : ""}
+                                </span>
                                 <button
                                     type="button"
-                                    title="Change status"
+                                    title={next ? `Next · ${row.row.status} · change status` : "Change status"}
                                     data-jarvis-chunk-status={row.row.status}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setMenu(menu === menuId ? null : menuId);
                                     }}
                                     className={cn(
-                                        "flex min-w-[72px] flex-none cursor-pointer items-center justify-end gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-semibold hover:bg-surface-hover",
-                                        TONE_FG[row.row.tone],
+                                        "flex min-w-[64px] flex-none cursor-pointer items-center justify-end gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-semibold hover:bg-surface-hover",
+                                        next ? "text-accent" : TONE_FG[row.row.tone],
                                         FOCUS
                                     )}
                                 >
-                                    {row.row.status}
+                                    {next ? "next" : row.row.status}
                                     <ChevronDown
                                         size={11}
                                         aria-hidden
@@ -503,12 +554,6 @@ export function InitiativeDetail({
                 </>
             ) : null}
             <NewStageRow state={newStage} onChange={setNewStage} />
-            <TrackerFooter
-                facts={rows.find((r): r is Extract<DetailRow, { kind: "facts" }> => r.kind === "facts") ?? null}
-                edits={edits}
-                confirming={confirming}
-                onConfirm={setConfirming}
-            />
         </div>
     );
 }
@@ -912,90 +957,6 @@ function NewStageRow({
                     />
                     <span className="font-mono text-[10.5px] text-muted">enter · esc</span>
                 </div>
-            )}
-        </div>
-    );
-}
-
-function TrackerFooter({
-    facts,
-    edits,
-    confirming,
-    onConfirm,
-}: {
-    facts: Extract<DetailRow, { kind: "facts" }> | null;
-    edits: TrackerEdits;
-    confirming: boolean;
-    onConfirm: (on: boolean) => void;
-}) {
-    const archived = edits.effortStatus === "archived";
-    const action = (name: string, label: string, run: (e: React.MouseEvent) => void, danger = false, peek = false) => (
-        <button
-            type="button"
-            data-jarvis-initiative-action={name}
-            data-peek={peek ? "" : undefined}
-            onClick={run}
-            className={cn(SMALL_BUTTON, danger && "hover:border-error/50 hover:text-error", FOCUS)}
-        >
-            {label}
-        </button>
-    );
-    return (
-        <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-edge-faint px-1.5 pt-2.5 text-[10.5px] tabular-nums text-ink-mid">
-            {/* the id is what you paste into a prompt or a `wsh effort` call, and a span is the one
-                thing you cannot lift out of a row you can click */}
-            <button
-                type="button"
-                title="copy this initiative's id"
-                onClick={() => void navigator.clipboard?.writeText(edits.oid)}
-                className={cn("cursor-pointer font-mono hover:text-ink-hi", FOCUS)}
-            >
-                {edits.oid.slice(0, 8)}
-            </button>
-            {facts != null ? <span>{facts.count}</span> : null}
-            {confirming ? (
-                <span
-                    data-jarvis-delete-confirm
-                    className="ml-auto flex items-center gap-2 rounded-[7px] border border-error/40 bg-error/10 py-[3px] pl-2.5 pr-1"
-                >
-                    <span className="font-sans text-[11.5px] text-error-soft">
-                        Delete this initiative, its {edits.total} chunks and their notes?
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => onConfirm(false)}
-                        className={cn(
-                            "cursor-pointer rounded-[5px] border border-edge-mid bg-surface-raised px-2 py-0.5 text-[10.5px] text-secondary hover:text-primary",
-                            FOCUS
-                        )}
-                    >
-                        cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            onConfirm(false);
-                            edits.onDelete();
-                        }}
-                        className={cn(
-                            "cursor-pointer rounded-[5px] bg-error px-[9px] py-[3px] font-bold text-background",
-                            FOCUS
-                        )}
-                    >
-                        delete
-                    </button>
-                </span>
-            ) : (
-                <span className="ml-auto flex items-center gap-1.5">
-                    {action("rename", "rename", () => edits.onRename(edits.title))}
-                    {action("details", "details", edits.onDetails)}
-                    {action("activity", "activity", edits.onActivity, false, true)}
-                    {archived
-                        ? action("unarchive", "unarchive", edits.onUnarchive)
-                        : action("pause", edits.effortStatus === "paused" ? "resume" : "pause", edits.onTogglePause)}
-                    {archived ? null : action("archive", "archive", edits.onArchive, true)}
-                    {action("delete", "delete", () => onConfirm(true), true)}
-                </span>
             )}
         </div>
     );

@@ -77,7 +77,7 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
     }
 });
 
-for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider"]) {
+for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider", "christmas"]) {
     describe(`${id} — contrast floor (DESIGN.md)`, () => {
         const p = activePalette(id);
         it("muted clears 4.5:1 on the background and on a hovered row", () => {
@@ -89,6 +89,16 @@ for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider"]) {
         });
     });
 }
+
+describe("christmas — text and status colours clear 4.5:1 (DESIGN.md)", () => {
+    const p = activePalette("christmas");
+    for (const role of ["text", "secondary", "accent", "success", "warning", "error"] as const) {
+        it(`${role} on the background and on the surface`, () => {
+            expect(contrast(p[role], p.bg)).toBeGreaterThanOrEqual(4.5);
+            expect(contrast(p[role], p.surface)).toBeGreaterThanOrEqual(4.5);
+        });
+    }
+});
 
 describe("the Claude runtime mark", () => {
     it("is the brand clay in a theme that does not tint it, the same as the provider dot", () => {
@@ -131,8 +141,8 @@ describe("helpers", () => {
         expect(colorOf(p, {}, "accent")).toBe("#5e9cff");
         expect(colorOf(p, { accent: "#123456" }, "accent")).toBe("#123456");
     });
-    it("THEMES ships the nine dark presets — light mode was declined and removed", () => {
-        expect(THEMES).toHaveLength(9);
+    it("THEMES ships the ten dark presets — light mode was declined and removed", () => {
+        expect(THEMES).toHaveLength(10);
         expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
     });
     it("Spider is Claude's palette with the suit's blue accent, a pinker error and the suit's blue", () => {

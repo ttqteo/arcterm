@@ -405,7 +405,7 @@ export function RunColumn() {
             <div aria-hidden className="mx-2 my-2 h-px shrink-0 bg-border" />
             <div className="flex shrink-0 items-center gap-2 px-2">
                 <span className={cn(LAUNCHER_LABEL, "flex-1")}>Workers at once</span>
-                <WorkerStepper value={parallelism} onStep={stepParallelism} warn={over} />
+                <WorkerStepper value={parallelism} onStep={stepParallelism} unsetLabel="auto" unsettable warn={over} />
             </div>
             {cap != null && over ? (
                 <div className="mt-2 flex shrink-0 items-start gap-1.5 px-2 text-[11.5px] leading-[1.45] text-warning">

@@ -56,6 +56,12 @@ type CouncilBenchResult struct {
 	Messages int     `json:"messages"`
 
 	JudgeTokens int64 `json:"judgetokens,omitempty"` // the judge's call, apart from Tokens: the bench's cap counts both
+
+	// Matches is which key lines the judge matched in the top items: key line id -> its rank among them (1 is the
+	// first). KeptMatches is the same for the wild ideas kept aside: key line id -> rank among them. Both are nil on a
+	// row written before they existed, and on a row with no match.
+	Matches     map[string]int `json:"matches,omitempty"`
+	KeptMatches map[string]int `json:"keptmatches,omitempty"`
 }
 
 // CouncilBenchRating is a "rating" line: the person's verdict on one real council's report.

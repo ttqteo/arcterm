@@ -32,7 +32,8 @@ export const reviewerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<Ro
 export const lightReviewerRouteAtom = atom<RoutePin | null>(null) as PrimitiveAtom<RoutePin | null>;
 // the Approvals field: Autonomous when true, Ask me when false
 export const autonomousAtom = atom(false) as PrimitiveAtom<boolean>;
-export const parallelismAtom = atom<number>(DEFAULT_PARALLELISM) as PrimitiveAtom<number>;
+// null is auto: the width is left to the profile, then the lead (or the plan's own width for a plan file)
+export const parallelismAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
 // Not profile-backed: a plan file belongs to one launch, never to a project's defaults, and a saved default
 // that silently started lead-free runs is not a default anyone asked for.
 export const startAtom = atom<StartFrom>(DEFAULT_START) as PrimitiveAtom<StartFrom>;
@@ -58,6 +59,16 @@ export function setParallelism(next: number): void {
 
 export function setRunShape(next: RunShape): void {
     globalStore.set(configTouchedAtom, true);
+    globalStore.set(runShapeAtom, next);
+}
+
+// Whether the New dialog's Quick run / Orchestrate row picked the shape. That row is a door, not a hand edit of
+// the run's defaults: it must not mark the draft touched, or the project's saved profile (Approvals, workers,
+// width) never fills the dialog, and a profile arriving or a project switch must not move the shape off it.
+export const shapePickedAtom = atom(false) as PrimitiveAtom<boolean>;
+
+export function pickRunShape(next: RunShape): void {
+    globalStore.set(shapePickedAtom, true);
     globalStore.set(runShapeAtom, next);
 }
 
@@ -114,8 +125,10 @@ export function hydrateRunConfigFromProfile(profile: JarvisProfile | null | unde
         return;
     }
     const defaults = profileRunDefaults(profile);
-    globalStore.set(runShapeAtom, defaults.shape ?? LAUNCH_SHAPE);
-    globalStore.set(parallelismAtom, defaults.parallelism ?? DEFAULT_PARALLELISM);
+    if (!globalStore.get(shapePickedAtom)) {
+        globalStore.set(runShapeAtom, defaults.shape ?? LAUNCH_SHAPE);
+    }
+    globalStore.set(parallelismAtom, defaults.parallelism);
     globalStore.set(startAtom, DEFAULT_START);
     globalStore.set(planPathAtom, "");
     globalStore.set(workerRouteAtom, defaults.workerRoute ?? null);
@@ -134,15 +147,22 @@ export function hydrateRunConfigFromProfile(profile: JarvisProfile | null | unde
 // launch never consumed the user's choice of it.
 export function endRunConfigDraft(profile: JarvisProfile | null | undefined): void {
     globalStore.set(configTouchedAtom, false);
+    globalStore.set(shapePickedAtom, false);
     hydrateRunConfigFromProfile(profile);
 }
 
 // The stepper's two buttons. A delta rather than a computed value on purpose: clicks batch, so
 // `set(atom, clamp(par + 1))` from a render closure re-reads the same stale `par` for every click in
 // the batch and a fast double-click advances one step. Measured over CDP — twelve clicks moved 4 -> 5.
+// + from auto starts at the default width, as the Profile's row does; − at 1 goes back to auto, and − at auto stays.
 export function stepParallelism(delta: number): void {
     globalStore.set(configTouchedAtom, true);
-    globalStore.set(parallelismAtom, (prev) => clampParallelism(prev + delta));
+    globalStore.set(parallelismAtom, (prev) => {
+        if (prev == null) {
+            return delta > 0 ? DEFAULT_PARALLELISM : null;
+        }
+        return prev + delta < 1 ? null : clampParallelism(prev + delta);
+    });
 }
 
 // Picking a lead route by hand is what stops the channel's preferred route flowing in over it, so the
@@ -166,14 +186,17 @@ export function requestRouteOpen(): void {
 // Every control is per-channel: carrying an orchestrator-with-6-workers setup onto the next channel
 // would silently arm a dispatch the user configured somewhere else.
 export function resetRunConfig(): void {
-    globalStore.set(runShapeAtom, LAUNCH_SHAPE);
+    // the row picked in the New dialog stays across its project switch, which resets the rest
+    if (!globalStore.get(shapePickedAtom)) {
+        globalStore.set(runShapeAtom, LAUNCH_SHAPE);
+    }
     globalStore.set(runRouteAtom, null);
     globalStore.set(workerRouteAtom, null);
     globalStore.set(reviewerPicksAtom, false);
     globalStore.set(reviewerRouteAtom, null);
     globalStore.set(lightReviewerRouteAtom, null);
     globalStore.set(autonomousAtom, false);
-    globalStore.set(parallelismAtom, DEFAULT_PARALLELISM);
+    globalStore.set(parallelismAtom, null);
     globalStore.set(startAtom, DEFAULT_START);
     globalStore.set(planPathAtom, "");
     globalStore.set(planPreviewAtom, null);

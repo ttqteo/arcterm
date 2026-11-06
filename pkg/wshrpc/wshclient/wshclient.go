@@ -656,6 +656,12 @@ func EffortMutateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortMutateData,
 	return resp, err
 }
 
+// command "effortpin", wshserver.EffortPinCommand
+func EffortPinCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortPinData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortPinRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortPinRtnData](w, "effortpin", data, opts)
+	return resp, err
+}
+
 // command "eventpublish", wshserver.EventPublishCommand
 func EventPublishCommand(w *wshutil.WshRpc, data wps.WaveEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "eventpublish", data, opts)
@@ -1261,6 +1267,12 @@ func PathCommand(w *wshutil.WshRpc, data wshrpc.PathCommandData, opts *wshrpc.Rp
 	return resp, err
 }
 
+// command "pauserun", wshserver.PauseRunCommand
+func PauseRunCommand(w *wshutil.WshRpc, data wshrpc.CommandPauseRunData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "pauserun", data, opts)
+	return err
+}
+
 // command "postchannelmessage", wshserver.PostChannelMessageCommand
 func PostChannelMessageCommand(w *wshutil.WshRpc, data wshrpc.CommandPostChannelMessageData, opts *wshrpc.RpcOpts) (*waveobj.ChannelMessage, error) {
 	resp, err := sendRpcRequestCallHelper[*waveobj.ChannelMessage](w, "postchannelmessage", data, opts)
@@ -1398,6 +1410,12 @@ func ResolveIdsCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveIdsData, opt
 	return resp, err
 }
 
+// command "resumerun", wshserver.ResumeRunCommand
+func ResumeRunCommand(w *wshutil.WshRpc, data wshrpc.CommandPauseRunData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "resumerun", data, opts)
+	return err
+}
+
 // command "retryradarclustering", wshserver.RetryRadarClusteringCommand
 func RetryRadarClusteringCommand(w *wshutil.WshRpc, data wshrpc.CommandRetryRadarClusteringData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "retryradarclustering", data, opts)
@@ -1521,6 +1539,12 @@ func ServiceStartCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts
 // command "servicestop", wshserver.ServiceStopCommand
 func ServiceStopCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "servicestop", data, opts)
+	return err
+}
+
+// command "setcanvaslink", wshserver.SetCanvasLinkCommand
+func SetCanvasLinkCommand(w *wshutil.WshRpc, data wshrpc.CommandSetCanvasLinkData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "setcanvaslink", data, opts)
 	return err
 }
 
@@ -1766,6 +1790,12 @@ func WorkspaceListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]wshrpc.Wor
 // command "writetempfile", wshserver.WriteTempFileCommand
 func WriteTempFileCommand(w *wshutil.WshRpc, data wshrpc.CommandWriteTempFileData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "writetempfile", data, opts)
+	return resp, err
+}
+
+// command "xmastree", wshserver.XmasTreeCommand
+func XmasTreeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.XmasTreeData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.XmasTreeData](w, "xmastree", nil, opts)
 	return resp, err
 }
 

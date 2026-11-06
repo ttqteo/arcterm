@@ -8,6 +8,10 @@
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
+import { CHRISTMAS_THEME } from "../christmas";
+import { SantaHatSvg } from "../christmashat";
+import { LightString } from "../christmaslights";
+import { useChristmasDecor } from "../christmasstore";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
 import { ROW_FIELD_ROWS } from "../rowfields";
@@ -16,7 +20,7 @@ import { Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
 import { chipSwatches, SPIDER_THEME } from "../themedecor";
 import { SmallSpider } from "../themedecorview";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
-import { themeOverridesAtom, themePresetAtom } from "../themestore";
+import { christmasEffectsOffAtom, christmasSnowOnAtom, themeOverridesAtom, themePresetAtom } from "../themestore";
 
 export function AppearancePage() {
     return (
@@ -41,6 +45,65 @@ export function AppearancePage() {
 // changed dot and revert. `data-theme-presets` scopes the terminal-theme scenario's preset clicks.
 function ThemeChips() {
     const [preset, setPreset] = useAtom(themePresetAtom);
+    const decorOn = useChristmasDecor();
+    return (
+        <>
+            <ThemePresetGrid preset={preset} setPreset={setPreset} />
+            {preset === CHRISTMAS_THEME ? <ChristmasEffectsRow /> : null}
+            {preset === CHRISTMAS_THEME && decorOn ? <ChristmasSnowRow /> : null}
+        </>
+    );
+}
+
+// The Christmas preset's switch, under the chips only while it is the preset: off keeps the palette and drops every
+// decor and motion. A plain control, not a registered SettingRow, so the theme card keeps its one-row pin.
+function ChristmasEffectsRow() {
+    const [effectsOff, setEffectsOff] = useAtom(christmasEffectsOffAtom);
+    const decorOn = useChristmasDecor();
+    return (
+        <div
+            className={cn(
+                "relative flex items-center gap-4 overflow-hidden border-t border-edge-mid px-4 pb-3 transition-colors hover:bg-surface-hover",
+                // room for the bulbs above the label
+                decorOn ? "pt-5" : "pt-3"
+            )}
+        >
+            {/* while the effects are on, the lights hang along the row's top edge, lit and still */}
+            {decorOn ? <LightString place="settings" className="top-0" /> : null}
+            <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-primary">Christmas effects</div>
+                <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
+                    The lights under the app bar, the Office&apos;s trees and gifts, and the Santa hats.
+                </div>
+            </div>
+            <Toggle
+                on={!effectsOff}
+                onToggle={() => setEffectsOff(!effectsOff)}
+                label="Christmas effects"
+                data-christmas-effects
+            />
+        </div>
+    );
+}
+
+// The snow's own switch, under Christmas effects while they are on: off by default, since the snow is the one effect
+// that animates the whole window.
+function ChristmasSnowRow() {
+    const [snowOn, setSnowOn] = useAtom(christmasSnowOnAtom);
+    return (
+        <div className="flex items-center gap-4 border-t border-edge-mid px-4 py-3 transition-colors hover:bg-surface-hover">
+            <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-primary">Snow</div>
+                <div className="mt-0.5 text-[12px] leading-[1.45] text-muted">
+                    Snow falling over the whole window, fainter over terminals. Uses a little CPU while it falls.
+                </div>
+            </div>
+            <Toggle on={snowOn} onToggle={() => setSnowOn(!snowOn)} label="Snow" data-christmas-snow-switch />
+        </div>
+    );
+}
+
+function ThemePresetGrid({ preset, setPreset }: { preset: string; setPreset: (id: string) => void }) {
     return (
         <div data-theme-presets role="group" aria-label="Theme" className="grid grid-cols-3 gap-1.5 p-3">
             {THEMES.map((t) => {
@@ -67,6 +130,7 @@ function ThemeChips() {
                         </span>
                         <span className="min-w-0 flex-1 truncate">{t.name}</span>
                         {t.id === SPIDER_THEME ? <SmallSpider /> : null}
+                        {t.id === CHRISTMAS_THEME ? <SantaHatSvg size={15} className="block flex-none" /> : null}
                         {on ? <Check size={13} className="flex-none" aria-hidden /> : null}
                     </button>
                 );

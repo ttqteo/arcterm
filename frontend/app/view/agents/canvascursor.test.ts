@@ -80,6 +80,7 @@ describe("changedLine", () => {
         modts: NOW,
         thumbts: 0,
         bytes: 1,
+        createdts: NOW,
         ...over,
     });
 

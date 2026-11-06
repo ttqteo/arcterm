@@ -16,9 +16,6 @@ export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 // The window a region opens at. This projection produces every row it knows about; the caps are what
 // the Brief shows before its regions are expanded, so the hidden rows stay addressable rather than
 // being discarded here. capRegion applies them.
-export const EFFORT_CAP = 8;
-// Waiting shows its most urgent three; a longer queue folds behind "+N more" (spec 2026-10-12 decision 1)
-export const WAITING_CAP = 3;
 // the ideas column caps on its own, so a pile of ideas never hides a live tracker
 export const IDEA_CAP = 6;
 export const ACTIVE_CAP = 8;
@@ -35,6 +32,12 @@ export interface CappedRows<T> {
 export function capRegion<T>(rows: T[], cap: number, expanded: boolean): CappedRows<T> {
     const shown = expanded ? rows : rows.slice(0, cap);
     return { rows: shown, more: rows.length - shown.length };
+}
+
+// The Waiting strip (spec 2026-11-05-jarvis-revamp-design.md decision 2): the most urgent item inline, and with
+// Show all open, every item as a row under it in the queue's order. With nothing waiting there is no strip: head null.
+export function waitingStrip<T>(lines: T[], open: boolean): { head: T | null; rows: T[] } {
+    return { head: lines[0] ?? null, rows: open ? lines : [] };
 }
 
 export interface BriefingModelInput {
@@ -92,6 +95,16 @@ export interface ShippedRow {
     effortOid: string;
     chunkLabel: string;
     mode: string;
+}
+// a run that ended without shipping (cancelled), which Activity files under Earlier
+export interface EndedRow {
+    oref: string;
+    oid: string;
+    goal: string;
+    project: string;
+    status: string;
+    mode: string;
+    endedTs: number;
 }
 // one recency-sorted list across runs, blockers and direct agents; the kind badge tells the
 // story the old per-leg sub-headers told, so the section reads as one triage queue.
@@ -506,6 +519,8 @@ export interface BriefingModel {
     directAgents: AgentRow[];
     delta: DeltaRow[];
     shipped: ShippedRow[];
+    // newest first, within the seven-day window
+    ended: EndedRow[];
     efforts: EffortCardModel[];
     health: SourceHealthSummary;
     counts: { runs: number; agents: number; delta: number; shipped: number };
@@ -666,6 +681,21 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
         mode: s.mode ?? "",
     }));
 
+    // ended without shipping: the same seven-day window as shipped (the server windows by the cursor)
+    const ended: EndedRow[] = projects
+        .flatMap((p) => p.ended ?? [])
+        .filter((e) => e.completedts >= input.sevenDaysAgo)
+        .sort((a, b) => b.completedts - a.completedts)
+        .map((e) => ({
+            oref: "run:" + e.runoid,
+            oid: e.runoid,
+            goal: e.goal,
+            project: e.project,
+            status: e.status,
+            mode: e.mode ?? "",
+            endedTs: e.completedts,
+        }));
+
     const missingLegs: string[] = [];
     if (state.sources.runs !== true) {
         missingLegs.push("Runs");
@@ -687,6 +717,7 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
         directAgents,
         delta,
         shipped,
+        ended,
         efforts: effortCards,
         health: { complete: missingLegs.length === 0, missingLegs, attentionState: state.sources.attention },
         counts: { runs: activeRuns.length, agents: directAgents.length, delta: delta.length, shipped: shipped.length },

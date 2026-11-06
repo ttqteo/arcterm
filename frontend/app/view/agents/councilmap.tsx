@@ -3,14 +3,13 @@
 //
 // The council Map tab (board Map-tab.dc.html in .superpowers/design/council-stronger; docs/superpowers/specs/
 // 2026-11-03-council-stronger-design.md "The Map tab"): a glance at who did what and who backs which idea. It is open
-// while the council runs and after it ends. A header in one 52px row (the Report / Discussion / Map tabs, the feature, the
-// step chip, the Seats popover and Pin); the expert cards, one per seat in a grid (avatar, name, what it does now with the
-// working dot and a running command in mono, the evidence bar in four segments with its counts in words, then tokens,
-// time and calls; a card is a button that asks for that seat's timeline, councilTimelineAtom); the legend; and the stance
-// matrix, one row per idea sorted by agreement (the pill of each seat with its icon and word, the check badge under the
-// title, the agreement bar, the outcome; a withdrawn idea dim). A click or Enter on a row opens its reasons under each
-// seat's column, a second click closes it; with many seats the matrix scrolls sideways inside its own box and the idea
-// column stays in place. Before any idea is sent the matrix is one line, "No ideas yet". A Brainstorm asks for no
+// while the council runs and after it ends. The header row the three views share (councilheader.tsx); the expert cards,
+// one per seat in a grid (avatar, name, what it does now with the working dot and a running command in mono, the
+// evidence bar in four segments with its counts in words, then tokens, time and calls; a card is a button that asks for
+// that seat's timeline, councilTimelineAtom); the legend; and the stance matrix, one row per idea sorted by agreement
+// (the pill of each seat with its icon and word, the check badge under the title, the agreement bar, the outcome; a
+// withdrawn idea dim). A click or Enter on a row opens its reasons under each seat's column, a second click closes it;
+// with many seats the matrix scrolls sideways inside its own box and the idea column stays in place. Before any idea is sent the matrix is one line, "No ideas yet". A Brainstorm asks for no
 // evidence, so its cards carry no bar and its rows no badge: the idea shows a Builds on pill instead.
 //
 // Status is never colour alone: every badge and pill carries an icon and a word. Every word follows the council's
@@ -33,7 +32,6 @@ import { motion } from "motion/react";
 import { useMemo, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, MarkedText } from "./councilchat";
-import { stepChip } from "./councilchatmodel";
 import { CHECK_TONE, CheckIcon, WRONG_CITE_ICON, WRONG_CITE_TONE } from "./councilchecks";
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
 import { CouncilHeaderRow } from "./councilheader";
@@ -109,45 +107,10 @@ function MapView({ c, model }: { c: Council; model: AgentsViewModel }) {
 
 // ---- the header ----
 
-// the step chip's colours by its dot, as the Discussion's: amber while the council waits on the person, green while it
-// runs, red when it failed
-const CHIP_TONE = {
-    working: { box: "bg-pill text-secondary", dot: "bg-working pulse-dot" },
-    waiting: { box: "bg-askingbg text-warning-soft", dot: "bg-asking" },
-    failed: { box: "bg-error/12 text-error-soft", dot: "bg-error" },
-    idle: { box: "bg-pill text-secondary", dot: "bg-ink-faint" },
-};
-
-function StatusChip({ c }: { c: Council }) {
-    const chip = stepChip(c);
-    const tone = CHIP_TONE[chip.dot];
-    return (
-        <span
-            data-council-map-chip
-            aria-live="polite"
-            title={chip.text}
-            className={cn(
-                "inline-flex min-w-0 flex-[0_1_auto] items-center gap-[6px] whitespace-nowrap rounded-full px-[9px] py-[3px] text-[10.5px] tabular-nums",
-                tone.box
-            )}
-        >
-            <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", tone.dot)} />
-            <span className="min-w-0 truncate">{chip.text}</span>
-        </span>
-    );
-}
-
 function Header({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: string) => void }) {
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            <CouncilHeaderRow
-                c={c}
-                view="map"
-                details
-                titleAttr="data-council-map-title"
-                status={<StatusChip c={c} />}
-                onOpenTerminal={onOpenTerminal}
-            />
+            <CouncilHeaderRow c={c} view="map" titleAttr="data-council-map-title" onOpenTerminal={onOpenTerminal} />
         </header>
     );
 }

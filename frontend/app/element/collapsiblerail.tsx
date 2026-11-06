@@ -152,6 +152,7 @@ export function CollapsibleRail({
     body,
     stripTabs,
     edge,
+    footer,
 }: {
     openAtom: PrimitiveAtom<boolean>;
     sections: RailSection[];
@@ -184,6 +185,9 @@ export function CollapsibleRail({
     stripTabs?: RailStripTab[];
     // laid over the panel's left edge while it is open (a resize grip)
     edge?: ReactNode;
+    // the sections column's last piece, pushed to its bottom right while the sections leave room and after them once
+    // they scroll, so it never covers one (the agent rail's Christmas pine)
+    footer?: ReactNode;
 }) {
     const [open, setOpen] = useAtom(openAtom);
     const collapsedWidth = hideWhenCollapsed ? 0 : RAIL_COLLAPSED_PX;
@@ -283,6 +287,7 @@ export function CollapsibleRail({
                                             <div key={s.id}>{s.content}</div>
                                         )
                                     )}
+                                    {footer != null ? <div className="mt-auto flex justify-end">{footer}</div> : null}
                                 </div>
                             )}
                         </motion.div>

@@ -25,6 +25,7 @@ import { EndFinalForm } from "@/app/view/agents/endfinalform";
 import { RerunFinalStage } from "@/app/view/agents/finalstageviews";
 import { resumeRun } from "@/app/view/agents/runactions";
 import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents/runcards";
+import { RunMenu } from "@/app/view/agents/runmenu";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
 import { RunGoal } from "@/app/view/agents/rungoalview";
@@ -32,6 +33,7 @@ import { runTitle } from "@/app/view/agents/runlineage";
 import {
     cancelSurvivors,
     canResume,
+    canResumePaused,
     currentPhaseIndex,
     isTerminal,
     leadAsker,
@@ -416,7 +418,7 @@ function Reading({
         // squeezed the body to nothing and pushed the dock (and its screenshots button) out of the sheet's clip.
         // Its rows keep their height ([&>*]:flex-none) so the overflow scrolls instead of crushing one of them.
         <div className="sc flex max-h-[50%] min-h-0 flex-none flex-col gap-[11px] overflow-y-auto border-b border-edge-faint px-4 pb-3.5 pt-4 [&>*]:flex-none">
-            <div className="flex items-center gap-[9px]">
+            <div data-run-paused={canResumePaused(run) ? "" : undefined} className="flex items-center gap-[9px]">
                 <span
                     className={cn(
                         "h-[7px] w-[7px] flex-none rounded-full",
@@ -432,6 +434,7 @@ function Reading({
                     {status.verb}
                 </span>
                 <span className="min-w-0 text-[13px] leading-[1.35] text-ink-mid">{status.sub}</span>
+                <RunMenu channelId={run.channeloid} runId={run.id} run={run} className="ml-auto" />
             </div>
             <SheetBarView bar={status.meter} dag={dag} run={run} />
             <RunSettingsPanel

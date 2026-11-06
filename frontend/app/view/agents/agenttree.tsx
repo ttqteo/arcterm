@@ -43,6 +43,7 @@ import {
     CornerUpLeft,
     ExternalLink,
     FileDiff,
+    Gift,
     Folder,
     FolderOpen,
     GitBranch,
@@ -113,7 +114,7 @@ import { machineServersReadingAtom } from "./machineserversstore";
 import { RenameBox, startRowRename } from "./rowrename";
 import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
-import { cancellingRunIdsAtom } from "./runactions";
+import { cancellingRunIdsAtom, resumePausedRun, resumingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
 import { originLinks, type OriginLink } from "./runorigin";
 import { openOriginLink, openOriginSession, useOriginName, useOriginRuns } from "./runoriginstore";
@@ -251,6 +252,8 @@ import {
     useRunDigests,
     useRunInfo,
 } from "./runlineagestore";
+import { useChristmasDecor } from "./christmasstore";
+import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
 import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
@@ -812,16 +815,19 @@ function TaskStripBar({ run }: { run: RunInfo }) {
 }
 
 // a finished run's check and word; a run that landed with its final check unverified says so, in the amber a held
-// land uses, so "Complete" does not claim more than the engine could check
+// land uses, so "Complete" does not claim more than the engine could check. While the Christmas decor shows a verified
+// run's check is a gift, as its done tasks are gifts under the Office's tree; an unverified one keeps its check
 function RunCompleteLabel({ run }: { run: RunInfo }) {
     const unverified = runStage(run).outcome === "unverified";
     const label = `${finishedRunLabel(run)}${unverified ? " · unverified" : ""}`;
+    const gift = useChristmasDecor() && !unverified;
+    const Mark = gift ? Gift : Check;
     return (
         <span
             data-run-complete={unverified ? "unverified" : "done"}
             className={cn("flex min-w-0 items-center gap-[5px]", unverified ? "text-warning" : "text-success")}
         >
-            <Check size={11} aria-hidden className="flex-none" />
+            <Mark size={11} aria-hidden data-run-gift={gift ? "" : undefined} className="flex-none" />
             <span className="truncate" title={label}>
                 {label}
             </span>
@@ -889,6 +895,27 @@ function OriginChip({ model, link }: { model: AgentsViewModel; link: OriginLink 
     );
 }
 
+// A paused run's Resume, small, in its row beside the words that say it is paused. It never selects the row.
+function RunResumeButton({ run }: { run: RunInfo }) {
+    const resuming = useAtomValue(resumingRunIdsAtom).has(run.runId);
+    return (
+        <button
+            type="button"
+            data-run-resume
+            aria-label="Resume run"
+            title="Resume this run"
+            disabled={resuming}
+            onClick={(e) => {
+                e.stopPropagation();
+                fireAndForget(() => resumePausedRun(run.channelId, run.runId));
+            }}
+            className="inline-flex h-[18px] flex-none cursor-pointer items-center rounded-[5px] border border-edge-mid bg-surface-hover px-[6px] text-[10.5px] font-semibold text-ink-mid hover:border-accent hover:text-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60"
+        >
+            {resuming ? "Resuming…" : "Resume"}
+        </button>
+    );
+}
+
 // RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
 // a lead's second line: its workers chip and progress, then `from <session>` when a session started the run, then
 // `trailing` (the lead's own badges) at its right end
@@ -909,6 +936,8 @@ function RunSubline({
 }) {
     // the runs the tree knows, which a land in line is placed among (landPlace keeps to the run's own project)
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
+    // a paused run says so in its words, and offers Resume beside them
+    const paused = runStage(run).paused;
     if (run.dag == null) {
         // no dag means the lead judged the goal bounded and never submitted a plan, not that a plan is
         // still on its way — so the run's own status is the only truth here. Hardcoding "planning" left
@@ -918,8 +947,11 @@ function RunSubline({
             <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
+                ) : run.land?.state === "pending" ? (
+                    <LandLine model={model} run={run} className="text-muted" />
                 ) : (
                     <span
+                        data-run-paused={paused ? "" : undefined}
                         className="truncate text-muted"
                         title={runStatusView(run.status ?? "planning", run.land).label}
                     >
@@ -927,6 +959,7 @@ function RunSubline({
                     </span>
                 )}
                 <OriginFrom model={model} run={run} />
+                {paused ? <RunResumeButton run={run} /> : null}
                 {trailing != null ? <span className="flex-1" /> : null}
                 {trailing}
             </div>
@@ -955,12 +988,19 @@ function RunSubline({
                 />
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
+                ) : runStage(run).key === "landing" && run.land?.state === "pending" ? (
+                    <LandLine model={model} run={run} className={PROGRESS_TEXT[runStage(run).tone]} />
                 ) : (
-                    <span className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])} title={progress.title}>
+                    <span
+                        data-run-paused={paused ? "" : undefined}
+                        className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])}
+                        title={progress.title}
+                    >
                         {progress.text}
                     </span>
                 )}
                 <OriginFrom model={model} run={run} />
+                {paused ? <RunResumeButton run={run} /> : null}
                 {trailing != null ? <span className="flex-1" /> : null}
                 {trailing}
             </div>
@@ -1374,10 +1414,10 @@ function ParentRow({
                 {...dragSource(agent, !renaming)}
                 className={cn(
                     "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
-                    // selection is the one filled row; an asking agent's whole row breathes amber over it (.pulse-tint),
-                    // so one waiting on you is seen from across the tree, not only by its glyph
+                    // selection is the one filled row; an asking agent's whole row breathes an amber wash and edge
+                    // over it (.asking-tint, driven by pulsedriver), so one waiting on you is seen from across the tree
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
-                    asking && "pulse-tint",
+                    asking && "asking-tint",
                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none",
                     nested && "pl-[28px]"
                 )}

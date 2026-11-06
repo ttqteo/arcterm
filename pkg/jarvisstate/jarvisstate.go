@@ -156,6 +156,40 @@ func Shipped(runs []*waveobj.Run, windowStartMs int64) []wshrpc.ShippedItem {
 	return out
 }
 
+// Ended returns the runs that ended without shipping within the window, newest first. No run status is
+// "failed", so that is a cancelled run; DAG workers and brainstorm sessions stay out, as in ActiveWork.
+// windowStartMs 0 means unbounded.
+func Ended(runs []*waveobj.Run, windowStartMs int64) []wshrpc.EndedItem {
+	var out []wshrpc.EndedItem
+	for _, r := range runs {
+		if r.Status != jarvis.RunStatus_Cancelled || isDagWorker(r) {
+			continue
+		}
+		ts := endedTs(r)
+		if windowStartMs > 0 && ts < windowStartMs {
+			continue
+		}
+		out = append(out, wshrpc.EndedItem{
+			Project: r.ProjectPath, RunOID: r.OID, Goal: r.Goal, Status: r.Status, Mode: r.Mode, CompletedTs: ts,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CompletedTs > out[j].CompletedTs })
+	return out
+}
+
+// endedTs is when a cancelled run ended: its CancelledTs, or for a run cancelled before that field was
+// recorded, the last time one of its phases started or finished, else its creation.
+func endedTs(r *waveobj.Run) int64 {
+	if r.CancelledTs > 0 {
+		return r.CancelledTs
+	}
+	ts := r.CreatedTs
+	for _, p := range r.Phases {
+		ts = max(ts, p.StartedTs, p.DoneTs)
+	}
+	return ts
+}
+
 // DecisionEntry is one vault decision's ledger-relevant projection (a pure input; the fetch layer
 // loads it from the decisions collection).
 type DecisionEntry struct {
@@ -238,7 +272,7 @@ func Delta(sinceMs int64, runs []*waveobj.Run, sessions []agentsessions.SessionI
 func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 	s := wshrpc.EffortSummary{
 		ORef: "effort:" + e.OID, Title: e.Title, Project: e.Project, Ticket: e.Ticket,
-		Status: e.Status, ParentOID: e.ParentOID, UpdatedTs: e.UpdatedTs,
+		Status: e.Status, ParentOID: e.ParentOID, UpdatedTs: e.UpdatedTs, PinnedTs: e.PinnedTs,
 	}
 	for _, c := range e.Chunks {
 		s.Chunks = append(s.Chunks, wshrpc.EffortChunkSummary{

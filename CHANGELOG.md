@@ -27,6 +27,152 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - In the New agent dialog, the `Claude: <account>` line at the bottom is now a menu: pick another of your Claude accounts (or your /login one) and that one agent runs on it, without switching the active account or the project's. A resumed session started this way keeps its account; a later account switch's restart moves it to the new one.
+- A council's views have keys: `r` the Report, `c` the Discussion, `m` the Map, each drawn beside its tab.
+
+### Changed
+
+- A Brainstorm council splits the problem into zones, one per seat, and picks its top 3 ideas from different zones where
+  it can, so one part of the problem no longer takes every place; an idea that says what the code does today cites the
+  line, and between two even ideas the one read in the code ranks first.
+- An agent's Brainstorm view no longer keeps the details rail on its right, so the brainstorm's own Boards and
+  Decided rail get the width; it comes back with the terminal.
+- While the judge weighs a brainstorm question, the agent's approaches are headed "Answer now, or wait for the judge",
+  so it is plain the rows answer, and every row has a tick box to send several together, as the judge's options may
+  allow.
+- A folded reply keeps the bold heading of the section a highlighted sentence sits in, so "the list is not built"
+  still says which part it is about.
+- A folded reply whose opening ends on a colon ("answering when it will be done:") keeps the paragraph after it, which
+  holds the answer, and claude is asked to highlight the answer to your question first.
+- The prompt pinned to the top of a transcript shows as the top card of a stack when earlier prompts lie above it:
+  one card's edge peeks out under it.
+- A council's Report, Discussion and Map share one header row, so the tabs and the ⋯ menu stay in place when you
+  switch. The Report's row shows the mode, the clock, the replies and the tokens after the status chip, and the lone ⓘ
+  button is gone from the Discussion and the Map.
+- A council report's idea cards name each expert once, as an avatar: the "from …" list of names and the row of
+  "Proposed" chips are gone. An expert who agrees, doubts or opposes has its avatar ringed in that colour, and
+  hovering an avatar says who it is and where it stands.
+- The app bar shows the t> mark alone, without the "arcterm" name beside it.
+- With the Christmas theme, the t> mark dresses for the season: the t a pine with a star and two baubles, the > a
+  string of red and gold lights. On a Mac the menu bar icon wears it too, in colour, in deeper tones on a light menu bar.
+- With the Christmas theme, the app bar's lights hang in swags between the search, the chips and New, hooked to their
+  top corners, instead of one long string along the bar's bottom edge, so no bulb sits on a box.
+
+### Fixed
+
+- A folded `claude` reply whose list has one item past the four it shows draws all of them, rather than four and
+  "… 1 more", and a numbered list keeps its numbers, so "type 2" in the reply still points at its item.
+- A brainstorm's decision titles are written with their diacritics in Vietnamese, as the rest of the pane is, instead
+  of sometimes showing as "Quy mo chay".
+- A short table in an agent's reply sits in a frame as wide as the table, instead of one stretched across the pane.
+- In a sleeping or ended agent's transcript, nothing shows above the pinned prompt any more: a strip of what scrolled
+  past used to peek out over it.
+- An app with Keep running that you stopped stays stopped when arcterm restarts, instead of starting again on its
+  own; opening it or pressing Start runs it, and from then on it starts with arcterm as before.
+
+## 1.0.4 — 2026-11-06
+
+### Added
+
+- Jarvis's Brief opens on the initiatives you pinned, as cards: up to six, each with its progress bar, its next chunk and Work on. Pin one from a card's ⋯ menu, a list row, the open initiative's Pin, or `p` under the cursor; every other initiative sits in one compact list under the cards, and with nothing pinned the six that most need you show as cards. <!-- try: go:jarvis --> <!-- big -->
+- `wsh effort pin <initiative>` and `wsh effort unpin <initiative>` pin an initiative to the Brief's cards from a terminal. Pinning a seventh says six are pinned and offers to unpin the oldest (`--replace-oldest` in the terminal).
+- A council's report opens in the Brief's side sheet from its line in Activity: the verdict, the ranked directions with their first steps, Work on (it opens the New agent dialog filled in and never starts an agent by itself), Add to initiative…, and what to ask next. <!-- try: go:jarvis -->
+- Reply to one seat's message in a council: Reply beside Copy and Pin puts "Replying to …" above the message box, and what you send goes to the seat that wrote it, with its message quoted on yours. It works in the chat and in an idea's thread; × or Esc stops replying.
+- A project's CLAUDE.md (or its AGENTS.md when it has no CLAUDE.md) keeps a "Council decisions" block: the direction,
+  Agreed, Ruled out and Open of each of its councils' Memory, newest first, rewritten a few seconds after a Memory
+  changes. Every agent of the project starts from what the councils settled. Arcterm writes only that block; the rest
+  of the file stays yours.
+- Update CLAUDE.md at the foot of a council's Memory tab hands a Claude agent of the project a prompt to bring the rest
+  of its CLAUDE.md in line with what the council settled (a stale status line, the next steps, an outdated direction),
+  showing you the diff before it commits. With several agents open you pick one; with none it copies the prompt.
+
+### Changed
+
+- A council's report opens with its tab bar at the top (Report / Discussion / Map and the jump to its ideas), not at the
+  bottom of the screen under the cover, and has one `⋯` menu there: Save as doc, Create initiative and Run again sit
+  with Resume and Pin.
+- A big council (more than forty ideas and replies) opens at once: its header and an outline of the chat show while the chat draws, instead of arcterm pausing on the click.
+- The Brief shows what is waiting on you as one strip at the top (Show all opens the full queue under it), and runs and councils together in one Activity column on the right: live ones as cards, the last week's finished councils and failed or cancelled runs under Earlier, with tabs for all, orchestrator, quick and councils. <!-- try: go:jarvis -->
+- An initiative opens in the side sheet instead of expanding in place, and its plan is still editable there (add, rename, move and remove chunks). `j`/`k` step its chunks, Previous and Next step the initiatives, and Activity ↗ shows its feed. A run's ↳ link opens its initiative on that chunk.
+- A chunk opens inside its initiative's sheet instead of a separate side panel: one status button (`s`, then `1`–`6`; blocked asks why and keeps the reason as a note) beside the move it most needs (Start, Done, Reopen, Unblock), and its trail newest first, where Notes only hides the bare status changes. Esc goes back to the initiative.
+- Pause a run from its ⋯ menu (the run sheet, the lead card on the Cockpit, the DAG view's header) or with `wsh runs pause <run>`, to free its memory without losing it: the lead, the workers and any running Verify or Final stop, the worktrees, commits and sessions stay, and a paused run reads "Paused · resumes when memory frees" in the Agent tree and the run list. Resume it from the same menu, from the small Resume button on its row, or with `wsh runs resume <run>`, and each agent carries on in its own session.
+- Arc pauses a run by itself when memory stays tight, the one with the fewest tasks done, never one in its Final stage or mid-merge, and resumes it once memory has been free for a while, so a crowded machine slows down instead of stalling. It does nothing while the heavy-job queue is switched off, and it leaves a notice only in the run itself, never a card or a toast.
+- A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
+  waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
+  for an agent, to hand a stuck land to another agent.
+- The Files tab in an agent's side panel has a filter box: type part of a file name (or press `/` in the tree) and
+  the tree keeps only the files that match, their folders open. Enter opens the file, Esc shows it in the whole tree.
+- A landing run's line in the Agent tree says what the land is doing: Check or Verify running and for how long, or
+  waiting for RAM or a job slot in the heavy-job queue. Hover it for the details; click it for Run now, Jobs and Copy
+  for an agent, to hand a stuck land to another agent.
+- In a `claude` session, a long reply folds to its verdict and the first sentence of each of its top reasons, or,
+  when Claude highlighted sentences in it, to its verdict and those sentences, still highlighted, with a ▾ show more
+  button that opens it in full (and ▴ show less to fold it back), set a line below the reply in Claude's
+  orange so it never reads as one of its items. `/skim` off draws replies in full.
+- Right-click a session in a project's History to mark it for later: a bookmark shows on its row, the same mark the
+  Agent tree's Conversations carry, and Done clears it.
+- A Christmas tree stands in the Office's lobby from 1 November to New Year and grows as your orchestrator runs finish tasks: every finished task hangs an ornament, ten small ones merge into a big bauble, and the tree gains tiers of branches, then its lights, then its star, with a notice each time it reaches a new stage. Walk the boss to the tree and press `Space` for a close-up: pick an ornament with the arrows, lift it and hang it somewhere else, and the tree keeps your arrangement. <!-- big -->
+
+### Changed
+
+- A brainstorm whose run merged can now be closed even when the run's final check could not verify everything (it
+  asks first), and Close also closes what is left of the run: accepts its outcome, ends its open sessions and removes
+  the worktrees its cleanup left.
+- Your own messages in a session's transcript sit in an accent-tinted box, so they stand out from the agent's replies.
+- An agent asking you something in the Agent tree breathes amber over its whole row again, not only its glyph, without the stray amber line beside the row.
+- The Christmas snow has its own Snow switch under Christmas effects in Settings → Appearance, off by default, and
+  falls smoothly instead of in jerky steps when you turn it on.
+- The Christmas theme's green is a shade darker, so text, code and cards on it read more easily.
+- The Christmas lights run along the bottom of the app bar, behind its search and buttons, instead of hanging over the top of the screen below, where they sat on buttons and made them look disabled.
+- While arcterm starts up (a long wait after a reinstall), the Agent and Cockpit screens show your pet running back and forth with "Setting up arcterm" instead of blank grey boxes, so it no longer looks stuck.
+
+### Fixed
+
+- A council seat you ask again in the Discussion remembers the chat since the report, its own earlier answers
+  included: it no longer says it has not read a paper it answered about one message up, and a file or link you gave
+  earlier in the chat stays open to it.
+- A council's Memory keeps what you decide in the chat (a choice, a fact you correct, an option you drop), and what a
+  seat settles at the end of a long answer: it used to read only a message's first 400 characters and only what the
+  seats agreed on.
+- A council's chat no longer jumps while you scroll or loses your place when you come back to it: a diagram in it
+  keeps its height from the start instead of growing a few hundred pixels when it finishes drawing.
+- A council's Ideas and Memory tabs keep where you scrolled them: switching between them, or to an idea's thread, and
+  back no longer returns the list to the top.
+- A run no longer logs "Cleanup failed" every 30 seconds when a dev server a worker started and left behind holds a
+  finished task's folder: the engine stops what holds the folder and deletes it.
+- Stop on an agent's background shell task on Windows also stops the command the task started (a `sleep`, a dev
+  server), which kept running before.
+- A finished run no longer waits on you to land because its spec was edited in your checkout after it started: the land keeps the run's version, moves your newer draft into the repo's `.git/arc-drafts/<run>/`, and says so in the land's notes.
+- In a `claude` session, a folded reply keeps the command Claude asks you to type (`! task install`), highlighted,
+  instead of ending on "type the command below:" with the command hidden under show more; and a reply that ends on a
+  question for you (which way, A, B or C?) is drawn in full, so the question and its options are never folded away.
+
+## 1.0.3 — 2026-11-05
+
+### Added
+
+- In the Canvas gallery, a canvas that redraws an older one now says `Replaces <topic>`, and the older card is dimmed with an Outdated chip and a Newer link to the latest version. Scan for versions finds the pairs already there for you to untick and link in one go, a card that looks like a new version offers Link or No, and an open canvas has Link an older version… (and × to undo a link). <!-- try: go:canvases -->
+
+### Changed
+
+- More of arcterm dresses up with the Christmas theme on: the snow keeps falling while a dialog is open (fainter over the dialog itself); New agent, New project, Keyboard shortcuts and Quick look hang a string of lights from their top edge; New agent's Start column, the cockpit's "No agents running" window and the Christmas theme chip wear Santa hats, as do the pet on the app bar's fold button and in What's new; a finished run's check becomes a gift; and the lights hang along the Christmas effects switch in Settings. A small Christmas tree stands in the bottom corner of an agent's Overview panel. <!-- try: new-agent -->
+- In a project's Overview, clicking a session in History opens it in Quick look, over the page, instead of leaving for the full session; Open in the dialog (or Open transcript in the row's right-click menu) still takes you there.
+
+### Fixed
+
+- Right-clicking twice in a terminal opens its menu again instead of pasting twice; a double right-click at an ordinary pace no longer counts as two clicks.
+- An agent that finished its turn but is still watching a Monitor or a background command no longer offers Resume in its Overview panel: the panel says it is waiting, like the agent's header, since the agent picks up again on its own.
+- An agent asking you something in the Agent tree no longer flickers: its row keeps a steady amber box, and the stray amber line that came and went beside it is gone.
+- In Quick look, the prompt pinned to the top of a long transcript no longer sits on a dark band that does not match the dialog.
+- Every orchestrator run no longer stalls for minutes while the engine deletes one task's worktree that holds a full `node_modules`.
+- New run now takes Jarvis's Parallel workers "auto": Workers at once reads auto and the lead picks the width, instead of always starting at 3. Press − at 1 to go back to auto.
+- A tooltip that explains something at length (the reason the council's router picked a seat, a source's note) no longer pops over the text you are reading as the pointer passes: it waits a moment before it shows. A control's short name still shows at once. In a council, the router's reason shows only when you point at the chips above your message, and it opens above them instead of over the message.
+
+## 1.0.2 — 2026-11-05
+
+### Added
+
+- **Christmas**, a new theme in Settings → Appearance → Theme: forest green and antique gold, snow falling over the window (fainter over a terminal), a string of lights under the app bar that blinks while an agent needs you, Christmas trees, gifts and a wreath in the Office, and a Santa hat on the pet and on everyone in the Office. The Christmas effects switch under the themes drops the decor and keeps the colours; with reduced motion on, the snow and the blink stop and the rest stays. <!-- big --> <!-- shot: 1.0.2-christmas.webp -->
+- With the Christmas theme on, every icon on the nav rail wears a small Santa hat; it goes when you turn the Christmas effects off.
 - In a project's Overview, each session in History has a Quick look button (and a Quick look item in its right-click menu) that opens its transcript in a dialog over the page, with Resume and Open, so you can read a session without leaving the Overview.
 
 ### Changed
@@ -35,11 +181,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A session or run opened from a project's Overview (or from History, Councils or the Canvas gallery) now goes back there with its Back button and Escape, and the button says where ("Back to Overview"), instead of always going back to the terminal.
 - In a council's message box, an `@seat` you pick or type is tinted in that seat's colour (and an `@file` as a link) as you write, as the sent message shows it, instead of sitting in the text as plain words.
 - In a brainstorm, clicking a board in the Boards rail opens it large in a dialog over the question, instead of stretching the rail and squeezing the question into a thin column. A board tied to an answer has a Pick button for that answer under it.
+- A Review council's report now leads with up to five ranked, evidence-backed findings and folds the rest under Also raised (a brainstorm folds its wild ideas kept aside the same way); click the heading to open them. A Review council also finishes sooner, because its seats start reviewing each other's ideas as they arrive instead of waiting for every seat to finish.
 - In a council, an idea's "4 agree" shows the avatars of the seats that agreed, and hovering it lists them one per line with their avatars, instead of a plain tooltip with their names run together.
 - Setup in the nav rail now carries a badge counting the projects whose memory has something to review, and its Memory tab reads `Memory · N`, so a stale or oversized memory gets noticed without opening Setup to look.
 
 ### Fixed
 
+- The New dialog's Orchestrate and Quick run now start from the project's saved Profile (Approvals, workers, workers at once): picking the row used to count as changing the run by hand, so an Autonomous default never showed and it stayed on Ask me.
 - Quick translate on Windows keeps translating when Google turns it away for too many requests: it falls back to MyMemory's free translator (up to about 500 characters at a time and a few thousand a day) instead of failing until Google lets it back in. On a Mac it is tried after Apple Translation.
 - Setup → Memory now shows each project's memory size even when its model check fails, and lists the memories worth a second look without a model: one untouched for 30 days, or (when the model check failed) one naming a file that is gone. Each comes up as a Review; Still true marks it reviewed, so neither this tab nor the session-start memory check flags it again for 30 days.
 - Ctrl+Z in a council's message box takes back a seat or file picked from the `@` list, a suggested question put in with a click, and text pasted beside an image; before, any of these wiped the box's undo, so Ctrl+Z did nothing after them.

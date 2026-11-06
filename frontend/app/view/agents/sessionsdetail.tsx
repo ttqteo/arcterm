@@ -319,11 +319,14 @@ export function SessionBody({
     session,
     empty,
     className,
+    pinBg,
 }: {
     model: AgentsViewModel;
     session?: LiveSession;
     empty: string;
     className?: string;
+    // the scroller's background, for the transcript's pinned prompt (CompactTranscript)
+    pinBg?: string;
 }) {
     const view = useAtomValue(model.sessionsViewAtom);
     const read = view === "transcript" ? session : undefined;
@@ -370,6 +373,7 @@ export function SessionBody({
                 entries={entries}
                 active={session.live}
                 placeId={placeId}
+                pinBg={pinBg}
                 onReview={
                     session.projectpath
                         ? () => openDiff(model, projectDiffScope(session.projectname || "project", session.projectpath))
@@ -663,7 +667,7 @@ export function RunDetail({
                         model={model}
                         session={memberSession}
                         empty={memberEmpty(member)}
-                        className="px-4 pb-4 pt-1"
+                        className="px-4 pb-4"
                     />
                 </div>
             </div>

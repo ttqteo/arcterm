@@ -40,17 +40,20 @@ func newCouncilRunner(caller council.Caller) *council.Runner {
 // publishCouncilChanged tells the cockpit and `wsh council wait` that a council was saved.
 func publishCouncilChanged(c *council.Council) {
 	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: c.Id, Project: c.Project}})
+	noteCouncilDoc(c) // what it settled may have changed: its project's instruction file follows
 }
 
 // StartCouncilRunner is called once at startup: a council left running when wavesrv last quit has no run behind it, so
 // it is marked stopped. A council with a live run is left alone. A council that was queued when wavesrv quit stays
 // queued, and the oldest one starts now. Then the councils folder is watched, so a council synced in from another
-// machine, or a file changed or removed by hand, shows in the cockpit without waiting for an unrelated change.
+// machine, or a file changed or removed by hand, shows in the cockpit without waiting for an unrelated change, and each
+// project's instruction file gets what its councils settled (startCouncilDocs).
 func StartCouncilRunner() {
 	councilRunner.MarkStale()
 	stopQueuedBenchCouncils()
 	councilRunner.StartNext()
 	startCouncilWatch()
+	startCouncilDocs()
 }
 
 // startCouncilWatch watches the councils folder for the life of wavesrv, publishing council:changed for each file
@@ -273,6 +276,7 @@ func (ws *WshServer) CouncilDeleteCommand(ctx context.Context, data wshrpc.Comma
 		return err
 	}
 	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: c.Id, Project: c.Project, Deleted: true}})
+	councilDocs.forget(c)
 	return nil
 }
 
@@ -336,7 +340,12 @@ func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.Com
 		if err != nil {
 			return nil, err
 		}
-		est = council.EstimateFollowup(data.Followup, seats, data.Tools)
+		// a file the person attached earlier in the Discussion keeps the answers' tools on, whatever the composer says
+		tools := data.Tools
+		if c, err := council.Load(data.Id); err == nil && council.DiscussionReads(c) {
+			tools = true
+		}
+		est = council.EstimateFollowup(data.Followup, seats, tools)
 	case data.Id != "":
 		c, err := council.Load(data.Id)
 		if err != nil {
@@ -690,7 +699,8 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 }
 
 // CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
-// bench runs, and per harness version and mode for the ratings. With cases tagged bench.TeamPassTag (retired or not) it
+// bench runs, and per harness version and mode for the ratings, beside every run line as written (its matches included),
+// in file order. With cases tagged bench.TeamPassTag (retired or not) it
 // adds the go / no-go verdict on the council against the agent team; with none, no cases.json, or cases that cannot be
 // read, there is no verdict (only the last is logged: the table is still the results).
 func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
@@ -699,9 +709,12 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
-	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Ratings: bench.SummarizeRatings(ratings)}
+	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
 	if rtn.Runs == nil {
 		rtn.Runs = []bench.CouncilBenchRow{}
+	}
+	if rtn.Results == nil {
+		rtn.Results = []bench.CouncilBenchResult{}
 	}
 	if rtn.Ratings == nil {
 		rtn.Ratings = []bench.CouncilBenchRatingRow{}

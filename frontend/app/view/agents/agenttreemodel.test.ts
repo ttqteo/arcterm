@@ -384,6 +384,31 @@ describe("buildAgentTree with run lineage", () => {
         ]);
     });
 
+    // a pause suspends the sessions but is not a stage: the run's rows stand as they were, and its head row carries the
+    // run's own status, which the row reads to say Paused and to offer Resume
+    it("draws a paused run's rows as it does a running one's, its head row reading paused", () => {
+        const tasks = [task("t-1", "done"), task("t-2", "running")];
+        const roles: Lineage["roles"] = {
+            lead: { kind: "lead", runId: "run-1" },
+            w2: { kind: "worker", leadRunId: "run-1", taskId: "t-2" },
+        };
+        const agents = [agent("lead", "idle"), agent("w2", "idle", "")];
+        const running = buildAgentTree(
+            agents,
+            ["lead", "w2"],
+            lineage([{ ...run("run-1", tasks), status: "executing" }], roles)
+        );
+        const paused = buildAgentTree(
+            agents,
+            ["lead", "w2"],
+            lineage([{ ...run("run-1", tasks), status: "paused" }], roles)
+        );
+        expect(shape(paused)).toEqual(shape(running));
+        expect(shape(paused)).toContain("lead:run-1:1");
+        const head = paused.find((r) => r.kind === "lead");
+        expect(head?.kind === "lead" && head.run.status).toBe("paused");
+    });
+
     it("nests the engine's stage sessions under their run, between its tasks and its queued fold", () => {
         const r = run("run-1", [task("t-1", "pending")]);
         const rows = buildAgentTree(

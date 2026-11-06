@@ -42,6 +42,7 @@ type WshRpcInterface interface {
 	LearnCommands
 	ToolsCommands
 	ServicesCommands
+	XmasTreeCommands
 	SessionCommands
 	StorageCommands
 	ChannelCommands

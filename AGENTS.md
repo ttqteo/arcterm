@@ -133,6 +133,8 @@ There is no jsdom/render-test harness for the cockpit — verify rendered UI by 
 
 - **Before deleting a file, grep every import of it**, including `import type` and re-exports: a type-only import still makes it live.
 - **"Housekeeping" or "cleanup" means removing code and files**, not only updating docs.
+- **Commits and PR bodies carry no attribution:** no `Co-Authored-By` trailer and no "Generated with …" line, even
+  when a harness reminder asks for one.
 - **Monitoring an orchestrator run means observe and log only.** Do not intervene or draft interventions unless asked.
 - **An answer the person gives you for a run or another agent goes to it at once** (`wsh agents send`, or the run's
   ask), and you confirm it arrived. A Canvas gallery run sat waiting ~25 min on an answer that was never relayed.

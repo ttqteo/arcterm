@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -266,13 +267,19 @@ func LabelOf(ev []CouncilEvidence, runs []CouncilRun) string {
 	return LabelGuess
 }
 
+// citesAnything says ev holds a cite: an item with a ref. The weak chip ParseRound1 gives an idea that cites nothing has none.
+func citesAnything(ev []CouncilEvidence) bool {
+	return slices.ContainsFunc(ev, func(e CouncilEvidence) bool { return strings.TrimSpace(e.Ref) != "" })
+}
+
 // ApplyChecks checks the cites of every sent proposal and of every reply that takes a stance, and sets their labels.
 // rootsFor gives the folders one expert's cites are read against (the project and the attached folders and files, or an
 // agent seat's own working directory); nil, or an empty answer, leaves that expert's cites unchecked, and a label then
-// follows from the runs alone. A held or dropped proposal, a plain reply (an answer to the person) and everything in a
-// Brainstorm council are left exactly as they are: a Brainstorm asks for no evidence. It checks from scratch each time.
+// follows from the runs alone. A held or dropped proposal and a plain reply (an answer to the person) are left exactly as
+// they are. In a Brainstorm only an idea that cites something is checked and labelled: an idea with no cite makes no claim
+// about today's code and gets no label, and every reply is left as it is. It checks from scratch each time.
 func ApplyChecks(c *Council, rootsFor func(expertId string) []string) {
-	if c == nil || isBrainstorm(c) {
+	if c == nil {
 		return
 	}
 	roots := func(id string) []string {
@@ -287,8 +294,15 @@ func ApplyChecks(c *Council, rootsFor func(expertId string) []string) {
 		if !Sent(p.Draft) {
 			continue
 		}
+		if isBrainstorm(c) && !citesAnything(p.Evidence) {
+			p.Label = ""
+			continue
+		}
 		p.Evidence = CheckEvidence(p.Evidence, roots(p.Author), shots)
 		p.Label = LabelOf(p.Evidence, p.Runs)
+	}
+	if isBrainstorm(c) {
+		return
 	}
 	for i := range c.Replies {
 		r := &c.Replies[i]

@@ -52,6 +52,7 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort ticket <effort> <ticket\|"">` | set/clear ticket |
 | `wsh effort status <effort> <active\|paused\|done\|archived>` | effort-level status |
 | `wsh effort unarchive <effort>` | restore an archived effort to the status it held when archived |
+| `wsh effort pin <effort> [--replace-oldest]` / `unpin <effort>` | pin to (or unpin from) the Brief's cards, at most 6; at the cap `pin` fails naming the oldest pin, and `--replace-oldest` unpins it to make room. A view preference: no note, no event, the effort's updated time is kept. Archiving unpins |
 | `wsh effort link <effort> --parent <effort>` / `unlink` | parent link (e.g. sub-migration under the rollout) |
 | `wsh effort delete <effort> [--force]` | delete (refuses unless archived or `--force`) |
 | `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next non-done chunk |

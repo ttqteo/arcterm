@@ -587,6 +587,33 @@ func TestLandUntrackedEarlierVersionOfWhatTheBranchAdds(t *testing.T) {
 			t.Fatalf("feature.txt = %q, want the human's file intact", got)
 		}
 	})
+	// runs 983dcb44, ebf318c1, ee2ca359: the spec the run started from came back to the checkout as a later draft,
+	// and the land held on a file the run itself brought
+	t.Run("a draft of the run's own spec is set aside and the land merges", func(t *testing.T) {
+		f, _ := landFixture(t)
+		if err := wstore.UpdateDag(f.ctx, f.dagID, func(g *waveobj.TaskGroup) error {
+			g.SpecPath = "feature.txt"
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(f.project, "feature.txt"), "a later draft\n")
+
+		land := f.landRun(t, false)
+		if land.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", land)
+		}
+		if got := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "feature.txt")), "\r\n", "\n"); got != "feature\n" {
+			t.Fatalf("feature.txt = %q, want the run's version", got)
+		}
+		aside := filepath.Join(gitCmd(t, f.project, "rev-parse", "--absolute-git-dir"), "arc-drafts", f.ownerID, "feature.txt")
+		if got := readFile(t, aside); got != "a later draft\n" {
+			t.Fatalf("set-aside draft = %q, want the checkout's draft intact", got)
+		}
+		if len(land.Notes) == 0 || !strings.Contains(land.Notes[0], "feature.txt") {
+			t.Fatalf("notes = %q, want one naming the set-aside draft", land.Notes)
+		}
+	})
 }
 
 // a project in a subfolder of its repo: git names what the run adds from the repo root, not the project (runs
@@ -1060,12 +1087,12 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "staged changes")
 
 		gitCmd(t, f.project, "commit", "-m", "another session's work")
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed || got.Commit != gitCmd(t, f.project, "rev-parse", "HEAD") {
 			t.Fatalf("land = %+v, want landed on the checkout's new head", got)
 		}
@@ -1081,7 +1108,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 
 		gitCmd(t, f.project, "checkout", "--", "base.txt")
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
 		}
@@ -1100,14 +1127,14 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "a cherry-pick is in progress")
 
 		if err := os.Remove(pick); err != nil {
 			t.Fatal(err)
 		}
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
 		}
@@ -1123,7 +1150,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 
 		gitCmd(t, f.project, "commit", "-m", "staged")
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed past the failed final stage", got)
 		}
@@ -1137,18 +1164,18 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 
 		// nothing reran it yet: the hold stays
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, finalFailedHold)
 
 		// the rerun is still running: nothing lands yet
 		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Checking, Round: 1})
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, finalFailedHold)
 
 		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1})
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.driveLandLineUntil(t, f.ownerID)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed after the rerun passed", got)
@@ -1162,7 +1189,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 
 		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Unverified, Round: 1, Unverified: []string{"Check `x` could not verify: docker is not running"}})
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.driveLandLineUntil(t, f.ownerID)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
@@ -1178,7 +1205,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 
 		gitCmd(t, f.project, "checkout", "main")
 		retryHeldLands(f.ctx)
-		waitStages(t)
+		waitLandStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "checkout is on x, not main")
 	})
 }

@@ -87,11 +87,12 @@ mod imp {
     use objc2::runtime::{AnyClass, AnyObject, Bool, NSObject, NSObjectProtocol, Sel};
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly, Message};
     use objc2_app_kit::{
-        NSApplication, NSApplicationDidBecomeActiveNotification, NSAutoresizingMaskOptions, NSBackingStoreType, NSColor,
+        NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
+        NSApplicationDidBecomeActiveNotification, NSAutoresizingMaskOptions, NSBackingStoreType, NSColor,
         NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSPanel, NSStatusItem, NSView, NSWindow,
         NSWindowButton, NSWindowCollectionBehavior, NSWindowStyleMask,
     };
-    use objc2_foundation::{ns_string, NSMutableAttributedString, NSNotificationCenter, NSRange, NSString};
+    use objc2_foundation::{ns_string, NSArray, NSMutableAttributedString, NSNotificationCenter, NSRange, NSString};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
     use super::{brings_to_front, takes_key, takes_to_desktop, Arrival, GrownBack, Unfolded};
@@ -625,6 +626,21 @@ mod imp {
         });
     }
 
+    /// Whether the menu bar is dark under the status item, as macOS draws it after the appearance and the wallpaper
+    /// behind the bar: the button's effective appearance, matched to aqua or dark aqua. None while it has no button.
+    pub fn tray_bar_is_dark(tray: &tauri::tray::TrayIcon) -> Option<bool> {
+        tray.with_inner_tray_icon(|inner| {
+            let mtm = MainThreadMarker::new()?;
+            let button = inner.ns_status_item()?.button(mtm)?;
+            let (aqua, dark) = unsafe { (NSAppearanceNameAqua, NSAppearanceNameDarkAqua) };
+            let names = NSArray::from_slice(&[aqua, dark]);
+            let best = button.effectiveAppearance().bestMatchFromAppearancesWithNames(&names)?;
+            Some(best.isEqualToString(dark))
+        })
+        .ok()
+        .flatten()
+    }
+
     /// Has the menu bar draw the status item selected while the popover's panel shows, as it does for an NSPopover or a
     /// menu. On macOS 27 the button's own highlight: sets the state and draws nothing (2026-10-17); an NSPopover shown
     /// from the button tells its item with the private _willPresentContent:cancellationHandler: and, once closed,
@@ -1020,6 +1036,12 @@ pub fn close_panel() {
 #[cfg(target_os = "macos")]
 pub fn tint_tray_alert(tray: &tauri::tray::TrayIcon, title: String) {
     imp::tint_tray_alert(tray, title);
+}
+
+// Runs on the main thread, from the tray's apply and its tone watch.
+#[cfg(target_os = "macos")]
+pub fn tray_bar_is_dark(tray: &tauri::tray::TrayIcon) -> Option<bool> {
+    imp::tray_bar_is_dark(tray)
 }
 
 // Runs from the tray's open, on the main thread, after show_in_panel.

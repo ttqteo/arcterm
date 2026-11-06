@@ -250,6 +250,7 @@ type Run struct {
 	RadarOrigin *RunRadarOrigin `json:"radarorigin,omitempty"` // set when started from a Radar finding
 	CreatedTs   int64           `json:"createdts"`
 	CompletedTs int64           `json:"completedts,omitempty"` // set at seal, when Status becomes done
+	CancelledTs int64           `json:"cancelledts,omitempty"` // set by CancelRun; 0 on a run cancelled before it was recorded
 	Evidence    *RunEvidence    `json:"evidence,omitempty"`    // sealed once at completion; immutable
 	// Land is the merge of a branch-landed run's wave/<runId> back into BaseBranch, which runs after the seal.
 	// It lives beside the evidence, not in it, because a held land is retried after the seal is frozen.
@@ -335,11 +336,41 @@ type Run struct {
 	// ConsultSessions are sessions the run started outside its own agent (a one-shot model call), each with the
 	// usage role it played, so the usage linker can place their tokens on this run.
 	ConsultSessions []ConsultSession `json:"consultsessions,omitempty"`
-	Meta            MetaMapType      `json:"meta"`
+	// Pause is a top-level run's pause record, set only while the run is paused and nil after a resume. The run's
+	// Status reads paused while it is set (derived by jarvis's recomputeStatus), unless the run is done or cancelled.
+	Pause *RunPause `json:"pause,omitempty"`
+	// PausedUnder is the top-level run whose pause covers this child run (a task worker, a reviewer, a stage session,
+	// a run its lead spawned). The child keeps its own Status; this mark alone says it is paused, and
+	// pkg/runpause clears it on resume. Empty on a top-level run, and on any child while its tree runs.
+	PausedUnder string `json:"pausedunder,omitempty"`
+	// LastResumedTs is when the run was last resumed (Unix ms). It outlives Pause: the regulator reads it to hold a
+	// run it paused again soon after a resume.
+	LastResumedTs int64       `json:"lastresumedts,omitempty"`
+	Meta          MetaMapType `json:"meta"`
 }
 
 func (*Run) GetOType() string {
 	return OType_Run
+}
+
+// RunPause is what a paused run keeps so Resume can carry on from where it stopped.
+type RunPause struct {
+	PausedTs  int64  `json:"pausedts"`
+	By        string `json:"by"`                  // auto | manual | boot (pkg/runpause's By_* constants)
+	HeldBytes uint64 `json:"heldbytes,omitempty"` // the RAM the run's agents and commands held when it paused
+	// Sessions are the agent sessions the pause suspended, so a resume reopens each in its own session.
+	Sessions []PausedSession `json:"sessions,omitempty"`
+	// NoAutoResumeUntil (Unix ms) holds the regulator off a run it paused again soon after a resume; a manual
+	// Resume ignores it.
+	NoAutoResumeUntil int64 `json:"noautoresumeuntil,omitempty"`
+}
+
+// PausedSession is one agent session a pause suspended: the tab it ran in, and what it takes to reopen it.
+type PausedSession struct {
+	RunId      string `json:"runid"`
+	WorkerORef string `json:"workeroref"` // the tab oref ("tab:<id>") the session ran in
+	Runtime    string `json:"runtime"`
+	SessionId  string `json:"sessionid"`
 }
 
 type ConsultSession struct {
@@ -592,7 +623,7 @@ type TaskGroup struct {
 	Title         string     `json:"title,omitempty"`
 	Parallelism   int        `json:"parallelism"`
 	Tasks         []TaskNode `json:"tasks"`
-	Status        string     `json:"status"`                  // awaiting-plan|running|awaiting-review|blocked|done|cancelled (derived)
+	Status        string     `json:"status"`                  // awaiting-plan|running|awaiting-review|blocked|paused|done|cancelled (derived)
 	Failures      int        `json:"failures"`                // consecutive task failures; circuit-break at 3
 	WorkerRoute   *RoutePin  `json:"workerroute,omitempty"`   // default worker route (nil = inherit owner); task RunSpec wins
 	ReviewerPicks bool       `json:"reviewerpicks,omitempty"` // the plan reviewer picks task models (false = the WorkerRoute rule stands)
@@ -614,6 +645,11 @@ type TaskGroup struct {
 	// re-announcing a condition that has not changed. Kept in its own block so its name does not
 	// rewiden the alignment of every field above it.
 	NotifiedCondition string `json:"notifiedcondition,omitempty"`
+
+	// PausedTs is when the dag was paused with its run (Unix ms); 0 while it runs. Status reads paused while it is
+	// set, unless the dag is done or cancelled. It is set in the same write that marks the dag's runs, before any
+	// of its agents or commands is stopped, so every exit a stop causes already finds the dag paused.
+	PausedTs int64 `json:"pausedts,omitempty"`
 
 	// Usage is the run's tokens per session and model (jarvis.RunUsage), totalled once when the dag is done.
 	Usage []UsageRow `json:"usage,omitempty"`
@@ -871,7 +907,10 @@ type Effort struct {
 	Events    []EffortEvent `json:"events,omitempty"` // delta-source event log (six kinds)
 	CreatedTs int64         `json:"createdts"`
 	UpdatedTs int64         `json:"updatedts"`
-	Meta      MetaMapType   `json:"meta"`
+	// PinnedTs is when the effort was pinned to the Brief's cards (0 = not pinned). A pin is a view
+	// preference: setting it writes no event or note and keeps UpdatedTs.
+	PinnedTs int64       `json:"pinnedts,omitempty"`
+	Meta     MetaMapType `json:"meta"`
 }
 
 func (*Effort) GetOType() string { return OType_Effort }

@@ -22,6 +22,10 @@ description: Use when you need to start an arcterm run (quick, or orchestrator f
 - `wsh runs show <run-id>` shows status, route, commits, the task digest and the sealed report.
 - `wsh runs answer <run-id> '<answers-json>'` answers the run's own pending question (a lead's AskUserQuestion), which `wsh runs show` prints with numbered options.
 - `wsh runs cancel <run-id>` cancels a run.
+- `wsh runs pause <run-id>` pauses a top-level run: every agent and command under it stops and its RAM comes back,
+  while their sessions, worktrees and commits are kept. Take the exact id `wsh runs list` prints.
+- `wsh runs resume <run-id>` resumes a paused run: every agent reopens in its own session, where it was. Take the exact
+  id `wsh runs list` prints.
 - `wsh runs attention` lists everything waiting on the user, across every project.
 - `wsh runs route` prints the lead, workers and reviewer routes a new run here would use, and where each
   comes from. `wsh runs route [--global] --worker-runtime <h> --worker-model <m>` (or `--reviewer-picks`,
@@ -82,6 +86,8 @@ Rules:
   another run.
 - `cancel` stops live workers, so it asks for `--yes` when there are any. Cancel only a run the user
   asked you to stop. A finished run cannot be cancelled.
+- On a Mac or Windows machine, arcterm may resume a run paused this way once memory has been free for a few minutes, so
+  a paused run is not guaranteed to stay paused.
 - Steer one task of a run (asks, approve, retry, merge, message a worker) with `wsh jarvis dag <cmd>
   --channel <id> --runid <run-id>`. A lead spawning a child of its own run uses `wsh jarvis run`.
 - For follow-up work on something a finished run did, look for that run's agent in `wsh agents list`

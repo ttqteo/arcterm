@@ -373,6 +373,8 @@ export type RunRowFace = {
     asking: boolean;
     canStop: boolean;
     stopped: boolean;
+    // a paused run: its state says so in full, and its row offers Resume beside Stop
+    paused: boolean;
     chunkLabel: string;
     effortOref: string;
     chunk: string;
@@ -417,6 +419,7 @@ export function runRowFace(i: {
             asking,
             canStop: false,
             stopped: false,
+            paused: false,
             chunkLabel: "",
             effortOref: "",
             chunk: "",
@@ -425,15 +428,19 @@ export function runRowFace(i: {
     const orch = run.mode === "orchestrator";
     const status = run.status ?? "";
     const s = runStage({ status: run.status, land: run.land, dag: i.dag }, i.asking);
-    // a question names itself, a run whose worker died keeps the word blocked (its stage alone would say working), and
-    // a cancelled run keeps the Brief's own word, stopped, which its Stop button earns
-    const state = i.asking
-        ? "asking"
-        : status === "blocked"
-          ? "blocked"
-          : s.key === "cancelled"
-            ? "stopped"
-            : s.label.toLowerCase();
+    const paused = s.paused;
+    // a paused run says so in the tree's own words, whole (the row has room for them); a question names itself, a run
+    // whose worker died keeps the word blocked (its stage alone would say working), and a cancelled run keeps the
+    // Brief's own word, stopped, which its Stop button earns
+    const state = paused
+        ? s.label
+        : i.asking
+          ? "asking"
+          : status === "blocked"
+            ? "blocked"
+            : s.key === "cancelled"
+              ? "stopped"
+              : s.label.toLowerCase();
     const stateTone = STAGE_LINE_TONE[s.tone];
     const terminal = status === "done" || status === "cancelled";
     const ref = run.effortref;
@@ -445,10 +452,11 @@ export function runRowFace(i: {
         elapsed: line.age,
         state,
         stateTone,
-        dot: s.needsYou ? "asking" : s.complete ? "done" : s.key === "cancelled" ? "idle" : "live",
+        dot: s.needsYou ? "asking" : s.complete ? "done" : s.key === "cancelled" || paused ? "idle" : "live",
         asking: i.asking,
         canStop: !terminal,
         stopped: status === "cancelled",
+        paused,
         chunkLabel: linked ? `${i.effort.title} · ${stage || "unstaged"}` : "",
         effortOref: linked ? i.effort.oref : "",
         chunk: ref?.chunklabel ?? "",

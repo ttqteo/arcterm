@@ -70,6 +70,11 @@ describe("chipSwatches", () => {
         const p = activePalette("spider");
         expect(chipSwatches("spider", p)).toEqual([p.bg, p.surface, "var(--color-spidey-red)", "#7a9ce6"]);
     });
+
+    it("shows the decor crimson and the gold accent on the Christmas chip", () => {
+        const p = activePalette("christmas");
+        expect(chipSwatches("christmas", p)).toEqual([p.bg, p.surface, "var(--color-xmas-crimson)", "#d4a26a"]);
+    });
 });
 
 describe("SPIDER_SENSE", () => {

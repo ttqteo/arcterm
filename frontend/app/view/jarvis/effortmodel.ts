@@ -40,6 +40,8 @@ export type EffortCardModel = {
     chunkStages: Record<string, string>;
     // carried so the card can tell the detail cache how fresh the summary it is drawing from is
     updatedts: number;
+    // when it was pinned to the Brief's cards; 0 when it is not pinned
+    pinnedTs: number;
     // the newest note: where the initiative was left, which Work on picks up from
     lastnote?: EffortLastNote;
 };
@@ -65,6 +67,7 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
     return {
         oref: e.oref,
         updatedts: e.updatedts,
+        pinnedTs: e.pinnedts ?? 0,
         title: e.title,
         project: e.project,
         ticket: e.ticket,

@@ -111,6 +111,17 @@
     --color-spidey-seam: #2a0a0d;
     --color-spidey-eye: #f4f6fb;
     --color-spidey-web: #c9ced8;
+
+    /* The Christmas theme's decor (christmas.ts): crimson for the hats, ribbons, the wreath's bow and the gift paper,
+       a lit red bulb, pine for the trees and the wreath, and snow for the flakes, the hat's trim and a cream bulb.
+       The star and the gold bulb use the accent. Decor, never theme-derived */
+    --color-xmas-crimson: #a0061b;
+    --color-xmas-bulb: #d0283c;
+    --color-xmas-pine: #2f6b4a;
+    /* the app bar's Christmas mark (christmasmark.tsx): the pine lit up, since --color-xmas-pine stands 2.9:1 on the
+       theme's ground and a 25px mark needs 3:1 */
+    --color-xmas-pine-lit: #4f9a6c;
+    --color-xmas-snow: #f2ead9;
     --color-peter-skin: #f0c19b;
     --color-peter-hair: #4a2f1c;
     --color-peter-glasses: #3a3a40;
@@ -509,16 +520,25 @@ svg [aria-label="tip"] g path {
     );
 }
 
-/* An asking agent's row in the Agent tree breathes amber over the whole row: a wash laid as a background image, so a
-   selected row keeps its grey fill under it, and an inset edge. pulsedriver.tsx sets --pulse (1 at rest, 0 at the
-   peak) at 12fps; without the driver (reduced motion) it rests at the faint wash. */
-.pulse-tint {
-    --tint: calc(1 - var(--pulse, 1));
-    background-image: linear-gradient(
-        color-mix(in oklab, var(--color-warning) calc(4% + 10% * var(--tint)), transparent),
-        color-mix(in oklab, var(--color-warning) calc(4% + 10% * var(--tint)), transparent)
-    );
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-warning) calc(18% + 32% * var(--tint)), transparent);
+/* An asking agent's whole row in the Agent tree breathes amber: a wash and a 1px edge, both on ::after (the row is
+   `relative`), under the row's text (`isolation` + z-index -1) and over its own fill, so a selected row keeps its grey.
+   pulsedriver.tsx sets --tint (1 at the peak) at 12fps and only the layer's opacity moves (will-change), so WebView2
+   composites it instead of repainting: the earlier breath, an inset box-shadow repainted each tick, left amber residue
+   outside the row's corners. Without the driver (reduced motion) it holds a steady wash. */
+.asking-tint {
+    isolation: isolate;
+}
+.asking-tint::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-color: color-mix(in oklab, var(--color-warning) 14%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-warning) 50%, transparent);
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: var(--tint, 0.65);
+    will-change: opacity;
 }
 
 /* Finished settle (moment 4): a single soft scale acknowledgement on working -> idle. */
@@ -676,7 +696,7 @@ svg [aria-label="tip"] g path {
     font-style: italic;
 }
 /* cells wrap, so a table fits its panel; one still too wide (a long path or code) scrolls inside it instead of
-   forcing the panel wider (see markdownmessage.tsx) */
+   forcing the panel wider; a short one keeps its own width, its box no wider than it (see markdownmessage.tsx) */
 .agent-table-wrap {
     overflow-x: auto;
     border: 1px solid rgba(255, 255, 255, 0.08);

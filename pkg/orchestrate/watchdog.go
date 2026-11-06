@@ -45,7 +45,9 @@ var verifyOverdue = VerifyTimeout + scheduleTickTimeout
 // task fails or a gate opens — while its siblings are still live children that can hang with nothing
 // else to notice them. Ticking the parked ones cannot advance work that should not advance: every
 // dispatch guard (the gate halt, the circuit-break, parallelism) is inside NextToSpawn, so the tick
-// observes and reports without spawning.
+// observes and reports without spawning. DagStatus_Paused is left out on purpose: a paused dag's agents are
+// suspended, not dead, and nothing in it may advance until its resume (scheduleLocked stops a tick that reaches it
+// anyway).
 var watchdogStatuses = []string{DagStatus_Running, DagStatus_PlanReview, DagStatus_Finalizing, DagStatus_Blocked, DagStatus_AwaitingReview}
 
 // watchdogOnce guards the single start; watchdogTick is the per-tick body (a var so tests can count

@@ -204,6 +204,36 @@ func TestMergeEffort(t *testing.T) {
 	}
 }
 
+// A pin keeps UpdatedTs, so it cannot ride the newer-side rule: the side that pinned is often the older.
+func TestMergeEffortPinnedTs(t *testing.T) {
+	pinned := func(ts, pinnedTs int64) *waveobj.Effort {
+		e := effort(ts)
+		e.PinnedTs = pinnedTs
+		return e
+	}
+	cases := []struct {
+		name               string
+		base, ours, theirs *waveobj.Effort
+		want               int64
+	}{
+		{"pinned on the older side survives a newer edit", pinned(10, 0), pinned(10, 500), pinned(30, 0), 500},
+		{"pinned theirs, older side", pinned(10, 0), pinned(30, 0), pinned(10, 500), 500},
+		{"unpinned on the older side survives", pinned(10, 500), pinned(10, 0), pinned(30, 500), 0},
+		{"unpinned theirs, older side", pinned(10, 500), pinned(30, 500), pinned(10, 0), 0},
+		{"both changed: a pin beats an unpin", pinned(10, 500), pinned(20, 0), pinned(15, 700), 700},
+		{"both changed: the later pin wins", pinned(10, 0), pinned(20, 600), pinned(15, 900), 900},
+		{"neither changed", pinned(10, 500), pinned(20, 500), pinned(15, 500), 500},
+		{"new on both sides, nil base", nil, pinned(20, 0), pinned(15, 400), 400},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := MergeEffort(tc.base, tc.ours, tc.theirs).PinnedTs; got != tc.want {
+				t.Fatalf("PinnedTs = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func wantLabels(t *testing.T, e *waveobj.Effort, want ...string) {
 	t.Helper()
 	if got := labels(e); !reflect.DeepEqual(got, want) {

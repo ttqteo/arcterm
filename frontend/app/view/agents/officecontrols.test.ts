@@ -160,6 +160,39 @@ describe("officeKey while a room is carried", () => {
     });
 });
 
+describe("officeKey while the tree's close-up card is up", () => {
+    it("moves the cursor on the arrows", () => {
+        expect(officeKey("tree", false, "ArrowUp")).toEqual({ do: "treeMove", dir: "up" });
+        expect(officeKey("tree", false, "ArrowDown")).toEqual({ do: "treeMove", dir: "down" });
+        expect(officeKey("tree", false, "ArrowLeft")).toEqual({ do: "treeMove", dir: "left" });
+        expect(officeKey("tree", false, "ArrowRight")).toEqual({ do: "treeMove", dir: "right" });
+    });
+
+    it("lifts or puts down on Space and Enter, the A button, and goes back on Esc", () => {
+        expect(officeKey("tree", false, officeKeyName(" "))).toEqual({ do: "treeLift" });
+        expect(officeKey("tree", false, "Enter")).toEqual({ do: "treeLift" });
+        expect(officeKey("tree", false, "Escape")).toEqual({ do: "back" });
+    });
+
+    it("does nothing on any other key, the office's own, the lift's, the carry's and the Cockpit's included", () => {
+        for (const k of ["m", "j", "k", "n", "f", "s", "h", "l", "g", "PageUp", "PageDown", "1", "t", "r", " "]) {
+            expect(officeKey("tree", false, k)).toEqual({ do: "none" });
+        }
+    });
+
+    it("takes its keys before the menu", () => {
+        expect(officeKey("tree", true, "Enter")).toEqual({ do: "treeLift" });
+        expect(officeKey("tree", true, "ArrowUp")).toEqual({ do: "treeMove", dir: "up" });
+        expect(officeKey("tree", true, "m")).toEqual({ do: "none" });
+    });
+
+    it("lets every chord through", () => {
+        expect(officeKey("tree", false, "ArrowLeft", { meta: true })).toEqual({ do: "pass" });
+        expect(officeKey("tree", false, "Enter", { ctrl: true })).toEqual({ do: "pass" });
+        expect(officeKey("tree", false, "Escape", { alt: true })).toEqual({ do: "pass" });
+    });
+});
+
 describe("backFrom", () => {
     it("steps the full card back to the dialog box and the box back to walking", () => {
         expect(backFrom("card")).toBe("dialog");
@@ -169,6 +202,10 @@ describe("backFrom", () => {
 
     it("sets a carried room down and walks on", () => {
         expect(backFrom("carry")).toBe("walk");
+    });
+
+    it("closes the tree's close-up card back to walking", () => {
+        expect(backFrom("tree")).toBe("walk");
     });
 });
 

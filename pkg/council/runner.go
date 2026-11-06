@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -48,6 +49,11 @@ type Runner struct {
 	// Now is the clock in milliseconds; nil is the wall clock.
 	Now func() int64
 
+	// noEarly makes every Review wait for all of round 1 before round 2, as a council that holds drafts does (roundsWork).
+	// Nothing outside the tests sets it. With fakes that answer at once, how many passes a seat makes depends on which seat
+	// is ready first, and a test that counts calls cannot have that: newHarness sets it, newEarlyHarness clears it.
+	noEarly bool
+
 	mu     sync.Mutex // guards active and the queue, and orders a reply against the end of a run
 	active map[string]*run
 	// routing holds one channel per reply whose router call is in flight, keyed councilId + "/" + replyId and closed when
@@ -60,6 +66,7 @@ const (
 	actStarting = "Starting"
 	actSummary  = "Writing the summary"
 	actPerson   = "Replying to the person"
+	actPicks    = "Choosing its picks"
 
 	// maxPasses stops a run whose answers passes in a row answer none of the person's replies, which only a store that
 	// cannot save can cause. A pass that answers some starts the count again, so a person who keeps posting while the
@@ -795,6 +802,9 @@ func awaitingDrafts(round int) ending {
 // one, one reply pass and the synthesis. One that holds drafts (agents seated, started from the app) holds every answer,
 // so a round whose answers left a draft held ends the run awaiting-you at that round: settling the last of them starts
 // the next, and the council holds no slot while it waits.
+//
+// A Review that holds no drafts and has no pause (earlyRounds) runs no barrier after round 1: each seat goes on to review
+// as soon as its own ideas' claims are checked, and round 2 is over when the catch-up passes are, so the loop skips it.
 func (r *Runner) roundsWork(from int) work {
 	return func(ctx context.Context, rn *run, id string) ending {
 		snap, err := Load(id)
@@ -802,24 +812,45 @@ func (r *Runner) roundsWork(from int) work {
 			return loadFailed(err)
 		}
 		synth, held, at := SynthesisRound(snap), HoldsDrafts(snap), snap.Round
+		early := from == 1 && synth > 2 && !held && !snap.PauseAfterRound1 && !isBrainstorm(snap) && !r.noEarly
 		snapped := func() {}
 		if from == 1 {
 			snapped = r.snapshotTree(ctx, rn, id, snap)
 		}
 		defer snapped() // a run that ends early still waits for it
 		for round := from; round < synth; round++ {
+			if early && round == 2 {
+				continue // the early passes and their catch-ups were round 2
+			}
 			if round != at {
 				r.setRound(rn, id, round)
 				at = round
 			}
+			if round == 1 && early {
+				if end, stop := r.earlyRounds(ctx, rn, id, snap, snapped); stop {
+					return end
+				}
+				at = 2 // the first early pass set it
+				continue
+			}
 			if round == 1 {
+				// a Brainstorm gives each seat a zone before the ideas: one zone spreads nothing, and a rerun keeps the zones it has
+				if isBrainstorm(snap) && len(panelOf(snap)) > 1 && len(snap.Zones) == 0 {
+					r.setZones(ctx, rn, id, snap)
+					if ctx.Err() != nil {
+						return ending{}
+					}
+					if snap, err = Load(id); err != nil {
+						return loadFailed(err)
+					}
+				}
 				forEachExpert(panelOf(snap), func(e CouncilExpert) { r.round1(ctx, rn, id, snap, e) })
 				snapped()
 				// the checks on what round 1 claimed come before the pause, so the person cuts ideas knowing which ones held up
 				r.settleClaims(ctx, rn, id)
 			} else {
 				// an idea the person sent after round 1 (held drafts) asked for commands too: they run before it is argued over
-				if r.verifyClaims(ctx, rn, id) && ctx.Err() == nil {
+				if r.verifyClaims(ctx, rn, id, "") && ctx.Err() == nil {
 					r.checkClaims(ctx, rn, id)
 				}
 				if ctx.Err() != nil {
@@ -1124,8 +1155,13 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 			p.Id, p.Author, p.Ts, p.Draft = nextProposalId(c), e.Id, r.now(), heldFor(c)
 			if isBrainstorm(c) {
 				p.Evidence = withoutNoEvidenceChip(p.Evidence) // a Brainstorm's idea needs none, so it is not drawn weak
+				p.Checker, p.CheckWhy = "", ""                 // and its cross-check is whole, so it routes nothing
+				p.Zone = zoneNamed(c, p.Zone)                  // the stored name it matches, or none
 			} else {
-				p.Wild = false // only a Brainstorm has wild ideas
+				p.Wild, p.Zone = false, "" // only a Brainstorm has wild ideas and zones
+				// the model's name for a checker becomes the seat that reads the idea whole. It is settled before p joins the
+				// council, so the name p carries never counts as a check already routed (routeChecker)
+				p.Checker = routeChecker(c, p)
 			}
 			if isBrainstorm(c) || IsAgent(e) {
 				// a Brainstorm asks for no check and an agent seat is never offered the commands, but a model may send a
@@ -1282,10 +1318,7 @@ func (r *Runner) checkClaims(ctx context.Context, rn *run, id string) {
 		log.Printf("[council] %s: claims not checked: %v", id, err)
 		return
 	}
-	if isBrainstorm(snap) {
-		return
-	}
-	rootsFor := r.checkRoots(ctx, snap)
+	rootsFor := r.checkRoots(ctx, snap) // a Brainstorm's cited ideas are checked too (ApplyChecks); it runs no command
 	r.updateLogged(rn, id, func(c *Council) error {
 		ApplyChecks(c, rootsFor)
 		return nil
@@ -1293,9 +1326,11 @@ func (r *Runner) checkClaims(ctx context.Context, rn *run, id string) {
 }
 
 // hasOpenRequests says an idea that is out in the room and not cut still holds a verify request nothing has handled.
-func hasOpenRequests(c *Council) bool {
+// author limits it to that seat's ideas; "" is every seat's.
+func hasOpenRequests(c *Council, author string) bool {
 	return slices.ContainsFunc(c.Proposals, func(p CouncilProposal) bool {
-		return Sent(p.Draft) && !p.Cut && slices.ContainsFunc(p.Runs, func(x CouncilRun) bool { return x.State == "" })
+		return (author == "" || p.Author == author) && Sent(p.Draft) && !p.Cut &&
+			slices.ContainsFunc(p.Runs, func(x CouncilRun) bool { return x.State == "" })
 	})
 }
 
@@ -1303,14 +1338,15 @@ func hasOpenRequests(c *Council) bool {
 // a council nobody else writes, so it gets a copy of the ideas, and each result is merged back into the saved council as
 // its command ends, to show on the Map and the timeline while the next one runs. The step it reports for a command is the
 // timeline's row (a result replaces its opening row), and the card of the expert it belongs to shows the command while it
-// runs.
-func (r *Runner) verifyClaims(ctx context.Context, rn *run, id string) bool {
+// runs. author limits it to the commands that seat's ideas asked for ("" is every seat's); two calls on one council must
+// not overlap (RunVerifiesBy).
+func (r *Runner) verifyClaims(ctx context.Context, rn *run, id, author string) bool {
 	snap, err := Load(id)
 	if err != nil {
 		log.Printf("[council] %s: commands not run: %v", id, err)
 		return false
 	}
-	if isBrainstorm(snap) || !hasOpenRequests(snap) {
+	if isBrainstorm(snap) || !hasOpenRequests(snap, author) {
 		return false
 	}
 	work := *snap
@@ -1330,7 +1366,7 @@ func (r *Runner) verifyClaims(ctx context.Context, rn *run, id string) bool {
 			return nil
 		})
 	}
-	RunVerifies(ctx, r.Trees, &work, onStep)
+	RunVerifiesBy(ctx, r.Trees, &work, author, onStep)
 	r.updateLogged(rn, id, func(c *Council) error {
 		mergeRuns(c, &work) // what ended before a Stop; the rest stays a request
 		return nil
@@ -1360,7 +1396,7 @@ func (r *Runner) settleClaims(ctx context.Context, rn *run, id string) {
 		return
 	}
 	r.checkClaims(ctx, rn, id)
-	if r.verifyClaims(ctx, rn, id) && ctx.Err() == nil {
+	if r.verifyClaims(ctx, rn, id, "") && ctx.Err() == nil {
 		r.checkClaims(ctx, rn, id)
 	}
 }
@@ -1456,13 +1492,8 @@ func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) e
 		}
 		experts = append(experts, e)
 	}
-	var asks []string
-	for _, pr := range snap.Replies {
-		if pr.Author == YouId && !pr.Answered && !awaitsRoute(pr) { // one still pending (it could not be saved) is no seat's yet
-			asks = append(asks, pr.Id)
-		}
-	}
-	forEachExpert(experts, func(e CouncilExpert) { r.round2(ctx, rn, id, snap, e, round) })
+	asks := openAsks(snap)
+	forEachExpert(experts, func(e CouncilExpert) { r.round2(ctx, rn, id, snap, e, round, wholePass(snap, round)) })
 	if ctx.Err() == nil && len(asks) > 0 {
 		r.updateLogged(rn, id, func(c *Council) error {
 			markAnswered(c, asks)
@@ -1471,6 +1502,25 @@ func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) e
 	}
 	r.checkMemory(ctx, rn, id, snap, round) // what the pass added may move the direction: all green, then the round check
 	return nil
+}
+
+// openAsks are the ids of the person's messages no pass has answered and the router has taken up: the ones a reply pass
+// marks answered when it ends. One still pending (it could not be saved) is no seat's yet.
+func openAsks(c *Council) []string {
+	var asks []string
+	for _, pr := range c.Replies {
+		if pr.Author == YouId && !pr.Answered && !awaitsRoute(pr) {
+			asks = append(asks, pr.Id)
+		}
+	}
+	return asks
+}
+
+// wholePass is the scope of a pass that reviews every proposal there is: round 3, a retry, a live agent's turn, and the
+// only pass of a council that runs no early round 2. It asks for picks when round is the last reply pass, the only one
+// where applyRound2 keeps them.
+func wholePass(c *Council, round int) round2Scope {
+	return round2Scope{Picks: round == lastReplyRound(c)}
 }
 
 // withOpenAsks is c as expert e should see it: the person's replies to e that e has not answered are open, even when
@@ -1486,34 +1536,39 @@ func withOpenAsks(c *Council, e CouncilExpert) *Council {
 	return &v
 }
 
-// round2Target is what an expert is doing in round 2, for its avatar's tooltip and the dashed row in the thread: the
-// first proposal it reviews, or, with none, the person's question it answers. Nil means it has nothing to do.
-func round2Target(c *Council, e CouncilExpert) *CouncilActivity {
+// round2Target is what an expert is doing in a reply pass over scope, for its avatar's tooltip and the dashed row in the
+// thread: the first proposal it reviews, or, with none, the person's question it answers, or, with none, its picks (a
+// pass that asks for them, and has a proposal of another seat to pick from). Nil means it has nothing to do.
+func round2Target(c *Council, e CouncilExpert, scope round2Scope) *CouncilActivity {
 	for _, p := range sentProposals(c) {
-		if p.Author != e.Id && !p.Cut {
+		if p.Author != e.Id && !p.Cut && (scope.Only == nil || slices.Contains(scope.Only, p.Id)) {
 			return &CouncilActivity{Text: "Replying to " + speaker(c, p.Author), ProposalId: p.Id}
 		}
 	}
 	if asks := unansweredFor(c, e.Id); len(asks) > 0 {
 		return &CouncilActivity{Text: actPerson, ProposalId: asks[0].ProposalId, ParentId: asks[0].Id}
 	}
+	if scope.Picks && slices.ContainsFunc(sentProposals(c), func(p CouncilProposal) bool { return p.Author != e.Id && !p.Cut && !p.Withdrawn }) {
+		return &CouncilActivity{Text: actPicks}
+	}
 	return nil
 }
 
-// round2 is one seat's turn in reply pass round (2, or 3 in a council with three rounds). A live agent is sent its own
-// prompt, and what it answers that holds no JSON is heard as one plain reply. After the first pass a seat with nothing
-// new to answer sits the pass out. The call has no tools, except a seat owed a reply of the person's that asked for them
-// (it attaches files or names one): that call has the tools and the folders of the attached images (readsOf).
-func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, round int) {
+// round2 is one seat's turn in reply pass round (2, or 3 in a council with three rounds) over scope: every proposal
+// (wholePass), or the part an early pass or its catch-up covers. A live agent is sent its own prompt, and what it answers
+// that holds no JSON is heard as one plain reply. After the first pass a seat with nothing new to answer sits the pass
+// out. The call has no tools, except a seat owed a reply of the person's that asked for them (it attaches files or names
+// one): that call has the tools and the folders of the attached images (readsOf).
+func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, round int, scope round2Scope) {
 	view := withOpenAsks(snap, e)
-	target := round2Target(view, e)
+	target := round2Target(view, e, scope)
 	if target != nil && round > 2 && !seatHasNews(view, e, round) {
 		target = nil
 	}
 	if target == nil {
 		return
 	}
-	prompt := round2PromptFor(view, e, round)
+	prompt := round2PromptFor(view, e, round, scope)
 	if IsAgent(e) {
 		prompt = agentPrompt(view, e, round)
 	}
@@ -1538,8 +1593,292 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 			addPlainReply(c, e, plain, round, r.now(), nil)
 			return
 		}
-		applyRound2(c, e, out, round, r.now())
+		applyRound2(c, e, out, round, scope.Picks, r.now())
 	})
+}
+
+// ---- early round 2 ----
+
+// earlyRun is the state of one Review's early round 2. Every seat runs its own chain at once (earlySeat), so mu guards
+// every field but verify and barrier.
+type earlyRun struct {
+	mu    sync.Mutex
+	panel int                        // the seats on the panel
+	ready map[string]bool            // the seats whose round 1 and claim checks are done
+	full  map[string]map[string]bool // per seat, the ids of the proposals its passes read whole
+	title map[string]map[string]bool // per seat, the ids of the proposals its passes read as a title and a line
+	asked map[string]bool            // the seats a pass asked for picks
+	dead  bool                       // every seat failed or skipped round 1: no reply pass runs
+	err   error                      // the council could not be read when the last seat was ready
+	asks  []string                   // the person's messages the barrier found open: marked answered when the passes end
+
+	barrier chan struct{} // closed when every seat is ready and the barrier work is done: the catch-ups wait on it
+	enter   sync.Once     // c.Round becomes 2 once, when the first pass is about to call
+	verify  sync.Mutex    // one seat's verify commands at a time: they share the council's one tree (RunVerifiesBy)
+}
+
+func newEarlyRun(panel int) *earlyRun {
+	return &earlyRun{
+		panel: panel, ready: map[string]bool{}, full: map[string]map[string]bool{}, title: map[string]map[string]bool{},
+		asked: map[string]bool{}, barrier: make(chan struct{}),
+	}
+}
+
+// markReady notes that seat id's round 1 and claim checks are done, and says whether it was the last seat to finish them.
+func (st *earlyRun) markReady(id string) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.ready[id] = true
+	return len(st.ready) == st.panel
+}
+
+// stopped says the barrier ended the reply passes: no seat answered round 1, or the council could not be read.
+func (st *earlyRun) stopped() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.dead || st.err != nil
+}
+
+// wait blocks until the barrier is done and says the passes after it may run: a Stop, or a barrier that ended them, says no.
+func (st *earlyRun) wait(ctx context.Context) bool {
+	select {
+	case <-st.barrier:
+		return !st.stopped()
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// readySeats are the seats whose round 1 and claim checks are done now, and whether that is every seat. A pass reads them
+// before it loads the council: a seat saves its ideas and their labels before it is ready, so the load then holds them
+// settled.
+func (st *earlyRun) readySeats() (ready map[string]bool, all bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return maps.Clone(st.ready), len(st.ready) == st.panel
+}
+
+// viewOf is c as a pass may read it: while a seat is still in its round 1 or its claim checks (not in ready), its
+// proposals are left out, so nobody argues over a claim before it is checked.
+func viewOf(c *Council, ready map[string]bool, all bool) *Council {
+	if all {
+		return c
+	}
+	v := *c
+	v.Proposals = slices.DeleteFunc(slices.Clone(c.Proposals), func(p CouncilProposal) bool { return !ready[p.Author] })
+	return &v
+}
+
+// scopeFor is what seat e's next pass over view covers: each proposal of another seat it has not read at all, and each it
+// read only as a title and that is routed to it now (a re-route at the barrier). It asks for picks when this is the last
+// reply pass, every seat is ready (all) and no earlier pass of e asked. Only is never nil: nothing to review is not all.
+func (st *earlyRun) scopeFor(view *Council, e CouncilExpert, all bool) round2Scope {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	only := []string{}
+	for _, p := range sentProposals(view) {
+		if p.Cut || p.Author == e.Id {
+			continue
+		}
+		if !st.full[e.Id][p.Id] && (!st.title[e.Id][p.Id] || readInFull(view, e, 2, p)) {
+			only = append(only, p.Id)
+		}
+	}
+	return round2Scope{Only: only, Picks: lastReplyRound(view) == 2 && all && !st.asked[e.Id]}
+}
+
+// record notes what seat e's pass over scope held: each proposal it read whole or as a title, and whether it asked picks.
+func (st *earlyRun) record(view *Council, e CouncilExpert, scope round2Scope) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.full[e.Id] == nil {
+		st.full[e.Id], st.title[e.Id] = map[string]bool{}, map[string]bool{}
+	}
+	for _, p := range sentProposals(view) {
+		switch {
+		case p.Cut || p.Author == e.Id || !slices.Contains(scope.Only, p.Id):
+		case !routes(view) || readInFull(view, e, 2, p):
+			st.full[e.Id][p.Id] = true
+		default:
+			st.title[e.Id][p.Id] = true
+		}
+	}
+	if scope.Picks {
+		st.asked[e.Id] = true
+	}
+}
+
+// earlyRounds runs round 1 and round 2 of a Review that holds no drafts and has no pause, with no barrier between them.
+// Each model seat goes through round 1, the claim checks of its own ideas (seatClaims) and a first pass over the other
+// seats' ideas that are settled by then (reviewPass); a seat finishing early reviews early. The seat that finishes last
+// ends the wait, the barrier: it settles the routing, and every seat then runs a catch-up pass over what its earlier ones
+// left: ideas that landed after it started, ideas routed to it that it read only as a title, the person's open asks, and
+// its picks. A live agent seat takes its round 2 after the barrier, whole, as it always has. It returns the run's ending
+// and true when the run is over: a Stop, a council nobody answered in, or one that could not be read.
+func (r *Runner) earlyRounds(ctx context.Context, rn *run, id string, snap *Council, snapped func()) (ending, bool) {
+	panel := panelOf(snap)
+	st := newEarlyRun(len(panel))
+	forEachExpert(panel, func(e CouncilExpert) { r.earlySeat(ctx, rn, id, snap, e, st, snapped) })
+	switch {
+	case ctx.Err() != nil:
+		return ending{}, true
+	case st.err != nil:
+		return loadFailed(st.err), true
+	case st.dead:
+		return ending{set: func(c *Council) { c.State, c.Error = StateFailed, noOneAnsweredRound1(c) }}, true
+	}
+	if len(st.asks) > 0 {
+		r.updateLogged(rn, id, func(c *Council) error {
+			markAnswered(c, st.asks)
+			return nil
+		})
+	}
+	cur, err := Load(id)
+	if err != nil {
+		return loadFailed(err), true
+	}
+	r.checkMemory(ctx, rn, id, beforeReplyRound(cur, 2), 2) // what the passes added may move the direction: all green, then the round check
+	if ctx.Err() == nil {
+		r.checkClaims(ctx, rn, id)
+	}
+	return ending{}, ctx.Err() != nil
+}
+
+// beforeReplyRound is c as it stood before reply round `round` began, which the round check reads the round against: the
+// ideas and every message of the rounds before, none of the round's replies, which early passes began to add while round
+// 1 still ran.
+func beforeReplyRound(c *Council, round int) *Council {
+	v := *c
+	v.Replies = slices.DeleteFunc(slices.Clone(c.Replies), func(x CouncilReply) bool { return x.Round >= round })
+	return &v
+}
+
+// earlySeat is one seat's chain in earlyRounds. Every seat marks itself ready, a failure or a Stop included, so the
+// barrier always comes.
+func (r *Runner) earlySeat(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, st *earlyRun, snapped func()) {
+	r.round1(ctx, rn, id, snap, e)
+	snapped()
+	r.seatClaims(ctx, rn, id, e, st)
+	if st.markReady(e.Id) {
+		r.barrier(ctx, rn, id, st)
+		close(st.barrier)
+	}
+	if IsAgent(e) {
+		if st.wait(ctx) {
+			if cur, ok := r.seatView(id, e); ok {
+				r.round2(ctx, rn, id, cur, e, 2, wholePass(cur, 2))
+			}
+		}
+		return
+	}
+	r.reviewPass(ctx, rn, id, e, st)
+	if st.wait(ctx) {
+		r.reviewPass(ctx, rn, id, e, st) // the catch-up: what the first pass left, which may be nothing
+	}
+}
+
+// seatView loads council id for a pass of seat e, and says whether e takes part: a seat whose call failed sits the passes
+// out, as it does in replyPass (a failure in round 1), and has no catch-up after a failed early pass.
+func (r *Runner) seatView(id string, e CouncilExpert) (*Council, bool) {
+	cur, err := Load(id)
+	if err != nil {
+		log.Printf("[council] %s: %s's reply pass not run: %v", id, e.Id, err)
+		return nil, false
+	}
+	_, failed := cur.Failed[e.Id]
+	return cur, !failed
+}
+
+// seatClaims checks the claims of seat e's own ideas as its round 1 lands, before any pass reads them: it checks the cites
+// (ApplyChecks), runs the commands e's ideas asked for, behind the run's lock, and checks again with the results in. Every
+// claim label an idea shows another seat is final.
+func (r *Runner) seatClaims(ctx context.Context, rn *run, id string, e CouncilExpert, st *earlyRun) {
+	if ctx.Err() != nil {
+		return
+	}
+	r.checkClaims(ctx, rn, id)
+	// a seat that asked for no command does not wait behind another seat's: the lock is for the ones that run
+	if cur, err := Load(id); err != nil || !hasOpenRequests(cur, e.Id) {
+		return
+	}
+	st.verify.Lock()
+	ran := r.verifyClaims(ctx, rn, id, e.Id)
+	st.verify.Unlock()
+	if ran && ctx.Err() == nil {
+		r.checkClaims(ctx, rn, id)
+	}
+}
+
+// barrier runs once, when the last seat is ready. When nobody answered round 1 it ends the passes. Otherwise it routes
+// again each idea whose checker failed, so a seat that can answer reads it whole; routes the person's messages the router
+// has not taken up, so a catch-up reads the ones put to it; keeps the ones now open to mark answered when the passes end;
+// and turns the council to round 2 for a view that has not yet (a council where no early pass called).
+func (r *Runner) barrier(ctx context.Context, rn *run, id string, st *earlyRun) {
+	if ctx.Err() != nil {
+		return
+	}
+	end := func(dead bool, err error) {
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		st.dead, st.err = dead, err
+	}
+	cur, err := Load(id)
+	if err != nil {
+		end(false, err)
+		return
+	}
+	if everyoneFailedRound1(cur) {
+		end(true, nil)
+		return
+	}
+	r.updateLogged(rn, id, func(c *Council) error {
+		rerouteFailed(c)
+		return nil
+	})
+	r.routePending(ctx, id)
+	if cur, err = Load(id); err != nil {
+		end(false, err)
+		return
+	}
+	st.mu.Lock()
+	st.asks = openAsks(cur)
+	st.mu.Unlock()
+	st.enter.Do(func() { r.setRound(rn, id, 2) })
+}
+
+// rerouteFailed routes again each idea whose checker failed round 1: a seat that gave no answer reads nothing, so another
+// seat, the fewest checks first (routeChecker), gets the idea whole.
+func rerouteFailed(c *Council) {
+	for i := range c.Proposals {
+		p := &c.Proposals[i]
+		if f, failed := c.Failed[p.Checker]; p.Checker != "" && failed && f.Round == 1 {
+			q := *p
+			q.Checker = ""
+			p.Checker = routeChecker(c, q)
+		}
+	}
+}
+
+// reviewPass is one pass of model seat e: its early pass, or after the barrier its catch-up, the same step over what is
+// left. It reads the ideas of the seats that are ready (viewOf), covers what e has not read (scopeFor), and makes no call
+// when nothing is left: no idea, no open ask, no picks owed.
+func (r *Runner) reviewPass(ctx context.Context, rn *run, id string, e CouncilExpert, st *earlyRun) {
+	if ctx.Err() != nil || st.stopped() {
+		return
+	}
+	ready, all := st.readySeats() // before the load, so what a ready seat saved is in it
+	cur, ok := r.seatView(id, e)
+	if !ok {
+		return
+	}
+	view := viewOf(cur, ready, all)
+	scope := st.scopeFor(view, e, all)
+	if round2Target(withOpenAsks(view, e), e, scope) == nil {
+		return
+	}
+	st.enter.Do(func() { r.setRound(rn, id, 2) }) // the live view turns to cross-review as soon as the first review starts
+	r.round2(ctx, rn, id, view, e, 2, scope)
+	st.record(view, e, scope)
 }
 
 // hasStance says seat expertId took a stance of its own on the proposal: a dropped one is not one.
@@ -1602,8 +1941,9 @@ func applyRevision(p *CouncilProposal, rev CouncilRevision) {
 // is checked: a stance on an unknown, cut, own or unsent proposal is dropped, and so is a revision of someone else's
 // proposal. In a council with agents every reply with words is held for the person; an agreement with nothing to add
 // applies at once, and a revision rides on its reply and applies when that is sent. After the first pass, a stance on a
-// proposal the seat already took one on answers the latest reply to it, and only when it has a reason.
-func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, now int64) {
+// proposal the seat already took one on answers the latest reply to it, and only when it has a reason. Picks are kept
+// only from a pass that asked for them (picks), and then replace the seat's earlier ones.
+func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, picks bool, now int64) {
 	hold := heldFor(c)
 	for _, s := range res.Stances {
 		p := findProposal(c, s.ProposalId)
@@ -1671,7 +2011,7 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, now i
 		}
 		c.Replies = append(c.Replies, reply)
 	}
-	if round == SynthesisRound(c)-1 { // picks are taken in the last reply pass only
+	if picks { // picks are taken in the last reply pass only, which the pass's scope says
 		applyPicks(c, e, res.Picks)
 	}
 	applyAnswers(c, e, res.Answers, round, now)
@@ -2608,9 +2948,6 @@ func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model str
 	return err
 }
 
-// directionOutcome reads the direction number of a proposal's outcome: "Direction 4", "Merged into direction 4".
-var directionOutcome = regexp.MustCompile(`(?i)^(?:merged into )?direction (\d+)$`)
-
 // findSentProposal is the proposal with id when it is out in the room, nil when there is none or it is held or dropped.
 func findSentProposal(c *Council, id string) *CouncilProposal {
 	if p := findProposal(c, id); p != nil && Sent(p.Draft) {
@@ -2619,52 +2956,38 @@ func findSentProposal(c *Council, id string) *CouncilProposal {
 	return nil
 }
 
-// cleanSummary drops what the coordinator named that is not on the council: a proposal that does not exist, an
-// expert that is not on the panel, and a stance from the author of a proposal the direction merges. A Brainstorm's
-// report holds at most maxDirections ideas worth trying, then the wild ideas kept aside. A Review's holds at most
-// maxDirections directions too, each with its first step, then Also raised (Kept): a direction past the cap moves there
-// as one line, ahead of the ones the model put there, and an outcome naming a direction past the cap reads Also raised.
+// cleanSummary drops what the coordinator named that is not on the council (a proposal that does not exist or was never
+// sent), then makes the report what the person reads. A Brainstorm's holds at most maxDirections ideas worth trying, then
+// the wild ideas kept aside. A Review's holds at most maxDirections directions, each with its first step, then Also raised
+// (Kept): a direction past the cap moves there as one line, ahead of the ones the model put there, and the evidence gate
+// folds the top's unbacked directions into it too. Go then fills in the stances, agreed flags and outcomes from the replies
+// (fill.go), whatever the model sent.
 func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	if strings.TrimSpace(c.Question) == "" {
 		s.Answer = "" // nothing was asked, so there is nothing to answer
 	}
+	if n := maxDirections(c); len(s.Directions) > n {
+		if !isBrainstorm(c) {
+			var moved []CouncilDirection
+			for _, d := range s.Directions[n:] {
+				moved = append(moved, foldedLine(d))
+			}
+			s.Kept = append(moved, s.Kept...)
+		}
+		s.Directions = s.Directions[:n]
+	}
+	for i := range s.Directions {
+		cleanDirection(c, &s.Directions[i])
+	}
+	for i := range s.Kept {
+		cleanDirection(c, &s.Kept[i])
+	}
+	gateByEvidence(c, &s)
+	fillSummary(c, &s)
 	panel := map[string]bool{}
 	for _, e := range panelOf(c) {
 		panel[e.Id] = true
 	}
-	if isBrainstorm(c) {
-		if len(s.Directions) > maxDirections {
-			s.Directions = s.Directions[:maxDirections]
-		}
-	} else if len(s.Directions) > maxDirections {
-		var moved []CouncilDirection
-		for _, d := range s.Directions[maxDirections:] {
-			moved = append(moved, CouncilDirection{Title: d.Title, Reasoning: d.Reasoning, From: d.From, Stances: map[string]CouncilStance{}})
-		}
-		s.Directions = s.Directions[:maxDirections]
-		s.Kept = append(moved, s.Kept...)
-		for i := range s.Kept {
-			s.Kept[i].Rank = i + 1
-		}
-	}
-	for i := range s.Directions {
-		cleanDirection(c, &s.Directions[i], panel)
-	}
-	for i := range s.Kept {
-		cleanDirection(c, &s.Kept[i], panel)
-	}
-	outcomes := map[string]string{}
-	for pid, o := range s.Outcomes {
-		if o = strings.TrimSpace(o); o != "" && findSentProposal(c, pid) != nil {
-			if m := directionOutcome.FindStringSubmatch(o); m != nil && !isBrainstorm(c) {
-				if n, _ := strconv.Atoi(m[1]); n > maxDirections {
-					o = "Also raised"
-				}
-			}
-			outcomes[pid] = o
-		}
-	}
-	s.Outcomes = outcomes
 	s.Asks = cleanAsks(s.Asks, panel)
 	return s
 }
@@ -2688,23 +3011,16 @@ func cleanAsks(asks []CouncilAsk, panel map[string]bool) []CouncilAsk {
 	return out
 }
 
-// cleanDirection keeps the proposal ids of d that are on the council, once each, and the stances of the panel's
-// experts other than the authors of those proposals.
-func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
+// cleanDirection keeps the proposal ids of d that are on the council, once each. Its stances are Go's, written after
+// (fillSummary).
+func cleanDirection(c *Council, d *CouncilDirection) {
 	from := make([]string, 0, len(d.From))
-	authors := map[string]bool{}
 	for _, pid := range d.From {
-		if p := findSentProposal(c, pid); p != nil && !slices.Contains(from, pid) {
+		if findSentProposal(c, pid) != nil && !slices.Contains(from, pid) {
 			from = append(from, pid)
-			authors[p.Author] = true
 		}
 	}
 	d.From = from
-	for expert := range d.Stances {
-		if !panel[expert] || authors[expert] {
-			delete(d.Stances, expert)
-		}
-	}
 }
 
 // Summarize reruns the synthesis on everything so far and replaces the Summary. A done, stopped or paused council
@@ -3023,7 +3339,7 @@ func (r *Runner) retrySeat(ctx context.Context, rn *run, id string, snap *Counci
 	case f.Round <= 1:
 		r.round1(ctx, rn, id, snap, e)
 	case f.Round < SynthesisRound(snap):
-		r.round2(ctx, rn, id, snap, e, f.Round)
+		r.round2(ctx, rn, id, snap, e, f.Round, wholePass(snap, f.Round))
 	default:
 		if replies := owed(snap, e, false); len(replies) > 0 {
 			r.answerCall(ctx, rn, id, snap, e, replies, f.Round)

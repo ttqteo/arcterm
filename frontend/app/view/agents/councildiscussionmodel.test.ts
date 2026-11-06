@@ -6,6 +6,7 @@ import {
     coordinatorFailure,
     councilDetails,
     discussionBody,
+    drawsLater,
     evidenceChip,
     expertCard,
     expertDoing,
@@ -20,7 +21,6 @@ import {
     listNames,
     modeWord,
     postedAt,
-    railHoldsDetails,
     reactions,
     retriedOut,
     seatInitials,
@@ -321,22 +321,6 @@ describe("councilDetails", () => {
     });
 });
 
-describe("railHoldsDetails", () => {
-    const at = (r: Partial<Parameters<typeof railHoldsDetails>[0]>) =>
-        railHoldsDetails({ chat: true, folded: false, threadOpen: false, sourcesOpen: false, ...r });
-
-    it("holds them while the chat shows its rail, unfolded or with a thread open", () => {
-        expect(at({})).toBe(true);
-        expect(at({ folded: true, threadOpen: true })).toBe(true);
-    });
-
-    it("gives them back to the header with the rail folded, Sources in its place, or no chat", () => {
-        expect(at({ folded: true })).toBe(false);
-        expect(at({ sourcesOpen: true })).toBe(false);
-        expect(at({ chat: false })).toBe(false);
-    });
-});
-
 describe("sinceStart", () => {
     it("reads the council's clock at a time, empty before it started", () => {
         expect(sinceStart(council({ started: 1000 }), 1000 + 112_000)).toBe("1:52");
@@ -485,6 +469,19 @@ describe("failures", () => {
         expect(retriedOut({ ...c, failed: {} })).toBe(true);
         expect(retriedOut({ ...c, failed: undefined })).toBe(true);
         expect(retriedOut({ ...c, state: "done", failed: {} })).toBe(false);
+    });
+});
+
+describe("drawsLater", () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => reply(`r${i}`, "ram"));
+
+    it("draws a big council's chat after a skeleton, counting its ideas and replies", () => {
+        expect(drawsLater(council({ proposals: [prop("P1", "ux")], replies: many(40) }))).toBe(true);
+        expect(drawsLater(council({ proposals: [prop("P1", "ux")], replies: many(39) }))).toBe(false);
+    });
+
+    it("draws a small council's chat at once", () => {
+        expect(drawsLater(council({ replies: undefined }))).toBe(false);
     });
 });
 

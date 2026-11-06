@@ -114,6 +114,132 @@ func TestCancelRunSkipsOpenPhases(t *testing.T) {
 	if r.Phases[1].State != PhaseState_Skipped || r.Phases[2].State != PhaseState_Skipped {
 		t.Errorf("open phases should be skipped: %+v", r.Phases)
 	}
+	if r.CancelledTs == 0 {
+		t.Errorf("cancel should record CancelledTs")
+	}
+	first := r.CancelledTs
+	r.CancelledTs = 42
+	if r = CancelRun(r); r.CancelledTs != 42 {
+		t.Errorf("a second cancel should keep CancelledTs, got %d (first %d)", r.CancelledTs, first)
+	}
+}
+
+func pausedRecord() *waveobj.RunPause {
+	return &waveobj.RunPause{PausedTs: 100, By: "manual", HeldBytes: 2 << 30}
+}
+
+func TestRunPausedReadsStatusOrMark(t *testing.T) {
+	cases := []struct {
+		name string
+		run  *waveobj.Run
+		want bool
+	}{
+		{"nil run", nil, false},
+		{"executing", &waveobj.Run{Status: RunStatus_Executing}, false},
+		{"top-level run that reads paused", &waveobj.Run{Status: RunStatus_Paused}, true},
+		{"child run marked by its top-level run", &waveobj.Run{Status: RunStatus_Executing, PausedUnder: "top"}, true},
+		{"a record alone is not the status", &waveobj.Run{Status: RunStatus_Executing, Pause: pausedRecord()}, false},
+	}
+	for _, c := range cases {
+		if got := RunPaused(c.run); got != c.want {
+			t.Errorf("%s: RunPaused = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestSetRunPauseReadsPausedWhileTheRecordIsSet(t *testing.T) {
+	for _, phaseState := range []string{PhaseState_Running, PhaseState_Blocked, PhaseState_Failed} {
+		r := NewRun("g", "ws", "/r", nil, RunMode_Quick, QuickPlaybook(), 1)
+		r.Phases[0].State = phaseState
+		SetRunPause(&r, pausedRecord())
+		if r.Status != RunStatus_Paused {
+			t.Errorf("phase %s: want paused, got %q", phaseState, r.Status)
+		}
+		if r.Pause == nil || r.Pause.By != "manual" {
+			t.Errorf("phase %s: the record was not kept: %+v", phaseState, r.Pause)
+		}
+	}
+}
+
+func TestRecomputeStatusKeepsAPausedRunPausedAcrossPhaseWrites(t *testing.T) {
+	r := NewRun("g", "ws", "/r", nil, RunMode_Pipeline, storedPipeline(), 1)
+	SetRunPause(&r, pausedRecord())
+	r, err := CompletePhase(r, 0, nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != RunStatus_Paused {
+		t.Fatalf("a phase that completes under a pause: want paused, got %q", r.Status)
+	}
+}
+
+func TestRecomputeStatusDoneBeatsPaused(t *testing.T) {
+	r := NewRun("g", "ws", "/r", nil, RunMode_Quick, QuickPlaybook(), 1)
+	SetRunPause(&r, pausedRecord())
+	// the worker completed in the instant before its stop: the pause must not hide the finished run
+	r.Phases[0].State = PhaseState_Done
+	recomputeStatus(&r)
+	if r.Status != RunStatus_Done {
+		t.Fatalf("all phases closed under a pause: want done, got %q", r.Status)
+	}
+}
+
+func TestRecomputeStatusCancelledBeatsPaused(t *testing.T) {
+	r := NewRun("g", "ws", "/r", nil, RunMode_Quick, QuickPlaybook(), 1)
+	r.Status = RunStatus_Cancelled
+	r.Phases[0].State = PhaseState_Running
+	SetRunPause(&r, pausedRecord())
+	if r.Status != RunStatus_Cancelled {
+		t.Fatalf("a cancelled run given a record: want cancelled, got %q", r.Status)
+	}
+}
+
+func TestClearRunPauseRestoresTheDerivedStatusAndRecordsTheResume(t *testing.T) {
+	r := NewRun("g", "ws", "/r", nil, RunMode_Quick, QuickPlaybook(), 1)
+	SetRunPause(&r, pausedRecord())
+	ClearRunPause(&r, 555)
+	if r.Pause != nil {
+		t.Errorf("the record must be gone after a resume: %+v", r.Pause)
+	}
+	if r.LastResumedTs != 555 {
+		t.Errorf("LastResumedTs = %d, want 555", r.LastResumedTs)
+	}
+	if r.Status != RunStatus_Executing {
+		t.Errorf("want executing again, got %q", r.Status)
+	}
+}
+
+func TestClearRunPauseLeavesAFinishedRunFinished(t *testing.T) {
+	for _, status := range []string{RunStatus_Done, RunStatus_Cancelled} {
+		r := waveobj.Run{Status: status, Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, State: PhaseState_Skipped}}}
+		ClearRunPause(&r, 9)
+		if r.Status != status {
+			t.Errorf("a %s run after ClearRunPause reads %q", status, r.Status)
+		}
+		if r.LastResumedTs != 9 {
+			t.Errorf("%s: LastResumedTs = %d, want 9", status, r.LastResumedTs)
+		}
+	}
+}
+
+func TestCancelRunClearsThePauseAndTheMark(t *testing.T) {
+	r := NewRun("g", "ws", "/r", nil, RunMode_Quick, QuickPlaybook(), 1)
+	SetRunPause(&r, pausedRecord())
+	r.PausedUnder = "top"
+	r.LastResumedTs = 42
+	r = CancelRun(r)
+	if r.Status != RunStatus_Cancelled {
+		t.Errorf("want cancelled, got %q", r.Status)
+	}
+	if r.Pause != nil || r.PausedUnder != "" {
+		t.Errorf("a cancelled run must not read paused: pause=%+v pausedunder=%q", r.Pause, r.PausedUnder)
+	}
+	if RunPaused(&r) {
+		t.Error("RunPaused must be false for a cancelled run")
+	}
+	if r.LastResumedTs != 42 {
+		t.Errorf("CancelRun must leave LastResumedTs alone, got %d", r.LastResumedTs)
+	}
 }
 
 // the lead hands the engine a plan, so its one phase names no skill and never gates.

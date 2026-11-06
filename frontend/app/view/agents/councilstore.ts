@@ -454,12 +454,25 @@ export const councilOpenProposalAtom = atomFamily(
 
 /** What is typed and not sent in a council's chat, so it survives a trip to the Summary: the channel's composer under
  *  `""`, a thread's under its idea's id; the images pasted or dropped into each box, under the same keys; and Let them
- *  read files for the next follow-up: the person's own choice, or null to let the question decide (`readsFiles`). The
- *  Summary's Ask next writes the channel's text. */
+ *  read files for the next follow-up: the person's own choice, or null to let the question decide (`readsFiles`); and
+ *  the seat's message each box answers, by its id under the same keys, set by a message's Reply and cleared by the
+ *  box's × or a send. The Summary's Ask next writes the channel's text. */
 export interface CouncilChatDrafts {
     texts: Record<string, string>;
     images: Record<string, TaskImage[]>;
     tools: boolean | null;
+    replyTo?: Record<string, string>;
+}
+
+/** Pure: the draft with box `key` answering the message `id`, or answering none for an empty `id`. */
+export function setDraftReplyTo(d: CouncilChatDrafts, key: string, id: string): CouncilChatDrafts {
+    const replyTo = { ...d.replyTo };
+    if (id === "") {
+        delete replyTo[key];
+    } else {
+        replyTo[key] = id;
+    }
+    return { ...d, replyTo };
 }
 
 export const councilChatDraftAtom = atomFamily(

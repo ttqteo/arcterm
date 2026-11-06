@@ -30,6 +30,9 @@ import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { initiativeSheetAtom, initiativeSheetOpenAtom } from "@/app/view/jarvis/initiativesheetstore";
+import { briefSheetOpenAtom } from "@/app/view/jarvis/jarvisstore";
+import { activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { describe, expect, it } from "vitest";
@@ -39,8 +42,10 @@ import {
     buildCockpitBindings,
     buildCodeBindings,
     buildCouncilBindings,
+    buildCouncilTabBindings,
     buildFilesBindings,
     buildGlobalBindings,
+    buildInitiativeSheetBindings,
     buildJarvisBindings,
     buildListNavBindings,
     buildMemoryBindings,
@@ -237,6 +242,7 @@ describe("keybinding conflict invariant", () => {
             ...buildListNavBindings(model),
             ...buildChannelsAskBindings(model, askRef),
             ...buildJarvisBindings(model),
+            ...buildInitiativeSheetBindings({}),
             ...buildCockpitBindings(),
             ...buildAgentBindings(model),
             ...buildFilesBindings(),
@@ -451,6 +457,33 @@ describe("keybinding conflict invariant", () => {
         }
     });
 
+    // a council's r c m switch its views while it covers the terminal; in the terminal the agent's own r c m keep them
+    it("the council view keys are live on a council and stand down in the terminal, without conflicting", () => {
+        const model = stubModel();
+        const all = () => [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildAgentBindings(model),
+            ...buildCouncilBindings(),
+            ...buildCouncilTabBindings(),
+        ];
+        const ctx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
+        const tabs = buildCouncilTabBindings();
+        expect(tabs.map((b) => b.keys)).toEqual(["r", "c", "m"]);
+        try {
+            globalStore.set(centerModeAtom, "council");
+            expect(() => assertNoConflicts(all())).not.toThrow();
+            expect(tabs.every((b) => b.when!(ctx))).toBe(true);
+            // a text field keeps its letters
+            expect(tabs.some((b) => b.when!({ ...ctx, editable: true }))).toBe(false);
+            globalStore.set(centerModeAtom, "terminal");
+            expect(() => assertNoConflicts(all())).not.toThrow();
+            expect(tabs.some((b) => b.when!(ctx))).toBe(false);
+        } finally {
+            globalStore.set(centerModeAtom, "terminal");
+        }
+    });
+
     // Canvases covers the terminal like History, with its own arrows, Enter and Escape in each of its views; none may meet
     // the agent's, the surface switch's `[` `]`, or the Escape that leaves the centre
     it("global + list-nav + agent bindings do not conflict while Canvases is open, in any view", () => {
@@ -658,6 +691,49 @@ describe("keybinding conflict invariant", () => {
         globalStore.set(listNavAtom, null);
     });
 
+    // the initiative in the Brief's sheet (spec decision 7): its j/k/Enter step its chunks, not the page's rows under
+    // it, and in a chunk view Escape goes back to the initiative rather than closing the sheet or leaving the surface
+    it("hands j, k and Enter to the initiative sheet, and Escape to its chunk view, without conflicting", () => {
+        const model = stubModel();
+        const jarvisCtx = { surface: "jarvis" as const, editable: false, modalOpen: false, leader: null };
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: [], cursorId: undefined, setCursor() {} });
+        const all = [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildJarvisBindings(model),
+            ...buildInitiativeSheetBindings({ step() {}, open() {}, statusMenu() {}, setStatus() {}, back() {} }),
+        ];
+        const live = (key: string) => all.filter((b) => b.keys === key && (b.when ? b.when(jarvisCtx) : true));
+        expect(live("j").map((b) => b.id)).toEqual(["list:next-j"]);
+        expect(live("s")).toEqual([]);
+
+        // the sheet is a ModalShell (variant sheet): registered, it holds Escape away from back-home
+        const unregister = registerModal("brief-sheet", "sheet");
+        globalStore.set(activeSubjectAtom, { kind: "effort", id: "e1" });
+        globalStore.set(briefSheetOpenAtom, true);
+        try {
+            expect(globalStore.get(initiativeSheetOpenAtom)).toBe(true);
+            expect(live("j").map((b) => b.id)).toEqual(["jarvis:sheet-next-chunk"]);
+            expect(live("Enter").map((b) => b.id)).toEqual(["jarvis:sheet-open-chunk"]);
+            // the plan view: no chunk open, so s, the digits and Escape stay off (Escape closes the sheet itself)
+            expect(live("s")).toEqual([]);
+            expect(live("Escape")).toEqual([]);
+            expect(() => assertNoConflicts(all)).not.toThrow();
+
+            globalStore.set(initiativeSheetAtom, { view: "plan", chunk: "Spec" });
+            expect(live("s").map((b) => b.id)).toEqual(["jarvis:sheet-status-menu"]);
+            expect(live("3").map((b) => b.id)).toEqual(["jarvis:sheet-status-3"]);
+            expect(live("Escape").map((b) => b.id)).toEqual(["jarvis:sheet-chunk-back"]);
+            expect(() => assertNoConflicts(all)).not.toThrow();
+        } finally {
+            unregister();
+            globalStore.set(initiativeSheetAtom, { view: "plan", chunk: null });
+            globalStore.set(briefSheetOpenAtom, false);
+            globalStore.set(activeSubjectAtom, null);
+            globalStore.set(listNavAtom, null);
+        }
+    });
+
     it("hands Escape to the files surface while compare is on, without conflicting", () => {
         const model = stubModel();
         const filesCtx = { surface: "files" as const, editable: false, modalOpen: false, leader: null };
@@ -730,6 +806,7 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             ...buildListNavBindings(model),
             ...buildChannelsAskBindings(model, askRef),
             ...buildJarvisBindings(model),
+            ...buildInitiativeSheetBindings({}),
             ...buildCockpitBindings(),
             ...buildAgentBindings(model),
             ...buildFilesBindings(),

@@ -136,6 +136,7 @@ func FetchWorkState(ctx context.Context, projectFilter string, sinceMs int64) (w
 
 	active := ActiveWork(runs, sessions, attention, dossiers)
 	shipped := Shipped(runs, sinceMs)
+	ended := Ended(runs, sinceMs)
 	timeline := Timeline(runs, sessions, decisions, dossiers, efforts, sinceMs)
 	delta := Delta(sinceMs, runs, sessions, decisions, attention, dossiers, efforts)
 
@@ -168,6 +169,13 @@ func FetchWorkState(ctx context.Context, projectFilter string, sinceMs int64) (w
 		}
 		key := projectOf(it.Project)
 		byProject[key].Shipped = append(byProject[key].Shipped, it)
+	}
+	for _, it := range ended {
+		if !inProject(it.Project) {
+			continue
+		}
+		key := projectOf(it.Project)
+		byProject[key].Ended = append(byProject[key].Ended, it)
 	}
 	for _, e := range timeline {
 		if !inProject(e.Project) {

@@ -35,7 +35,7 @@ export function SleepingTranscript({ agent, barred }: { agent: AgentVM; barred: 
             )}
         >
             <div className="relative min-h-0 flex-1">
-                <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] py-[12px]">
+                <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] pb-[12px]">
                     {entries == null ? (
                         <TranscriptSkeleton />
                     ) : entries.length > 0 ? (

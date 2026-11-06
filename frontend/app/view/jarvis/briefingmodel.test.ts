@@ -10,7 +10,6 @@ import {
     buildAttentionQueue,
     capRegion,
     DELTA_CAP,
-    EFFORT_CAP,
     groupDelta,
     kindWord,
     mergeActiveWork,
@@ -20,7 +19,7 @@ import {
     queueKindLabel,
     queueOpenTarget,
     SHIPPED_CAP,
-    WAITING_CAP,
+    waitingStrip,
     type AgentRow,
     type BlockerRow,
     type BriefingModelInput,
@@ -261,6 +260,52 @@ describe("briefing projection", () => {
         expect(m.shipped.map((s) => s.oref)).toEqual(["run:r-new"]);
     });
 
+    it("maps the runs that ended without shipping, across projects, windowed to seven days, newest first", () => {
+        const ended = (project: string, runoid: string, completedts: number, mode?: string): EndedItem => ({
+            project,
+            runoid,
+            goal: "goal " + runoid,
+            status: "cancelled",
+            ...(mode != null ? { mode } : {}),
+            completedts,
+        });
+        const m = projectBriefing(
+            input(
+                workState([
+                    {
+                        project: "/p/one",
+                        ended: [
+                            ended("/p/one", "r-a", T0 - 3 * DAY, "orchestrator"),
+                            ended("/p/one", "r-old", T0 - 8 * DAY),
+                        ],
+                    },
+                    { project: "/p/two", ended: [ended("/p/two", "r-b", T0 - HOUR, "quick")] },
+                ])
+            )
+        );
+        expect(m.ended).toEqual([
+            {
+                oref: "run:r-b",
+                oid: "r-b",
+                goal: "goal r-b",
+                project: "/p/two",
+                status: "cancelled",
+                mode: "quick",
+                endedTs: T0 - HOUR,
+            },
+            {
+                oref: "run:r-a",
+                oid: "r-a",
+                goal: "goal r-a",
+                project: "/p/one",
+                status: "cancelled",
+                mode: "orchestrator",
+                endedTs: T0 - 3 * DAY,
+            },
+        ]);
+        expect(projectBriefing(input(workState([{ project: "/p/one" }]))).ended).toEqual([]);
+    });
+
     it("projects efforts, non-archived only, and leaves the display window to the view", () => {
         const state = workState([{ project: "waveterm", active: [], shipped: [], events: [], delta: [] }]);
         state.efforts = EFFORT_FIXTURES;
@@ -282,8 +327,8 @@ describe("briefing projection", () => {
         const m2 = projectBriefing(input({ ...state, efforts: many }));
         expect(m2.efforts).toHaveLength(9);
         expect(m2.efforts.some((e) => e.title === "effort 0")).toBe(false); // archived excluded
-        expect(capRegion(m2.efforts, EFFORT_CAP, false)).toMatchObject({ more: 1 });
-        expect(capRegion(m2.efforts, EFFORT_CAP, true).rows).toHaveLength(9);
+        expect(capRegion(m2.efforts, 8, false)).toMatchObject({ more: 1 });
+        expect(capRegion(m2.efforts, 8, true).rows).toHaveLength(9);
     });
 
     it("folds blocked chunks into the queue", () => {
@@ -705,12 +750,15 @@ describe("capRegion", () => {
     });
 });
 
-describe("the Waiting window", () => {
-    it("shows the first three items and folds the rest", () => {
-        const q = ["a", "b", "c", "d", "e"];
-        expect(WAITING_CAP).toBe(3);
-        expect(capRegion(q, WAITING_CAP, false)).toEqual({ rows: ["a", "b", "c"], more: 2 });
-        expect(capRegion(q, WAITING_CAP, true)).toEqual({ rows: q, more: 0 });
+describe("the Waiting strip", () => {
+    it("shows the most urgent item inline and no rows while Show all is shut", () => {
+        expect(waitingStrip(["a", "b", "c"], false)).toEqual({ head: "a", rows: [] });
+    });
+    it("opens every item as a row, in the queue's order, with Show all", () => {
+        expect(waitingStrip(["a", "b", "c"], true)).toEqual({ head: "a", rows: ["a", "b", "c"] });
+    });
+    it("has no strip with nothing waiting", () => {
+        expect(waitingStrip([], true)).toEqual({ head: null, rows: [] });
     });
 });
 

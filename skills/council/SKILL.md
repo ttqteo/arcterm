@@ -10,7 +10,8 @@ expert proposes, the experts react to each other's proposals, and a coordinator 
 two modes, which you pick:
 
 - **`review`** — a thing to judge (a spec, a plan, a design, a draft, two directions already on the table). The report
-  ranks up to three directions, each with its first step, and lists the rest under Also raised, one line each.
+  ranks up to five directions, the most serious first, each with its first step, and lists the rest under Also raised,
+  one line each (a direction backed by nothing but a guess goes there too).
 - **`brainstorm`** — a problem or a goal with no answer yet. The report holds up to three ideas worth trying, each with
   its why and a first step, plus the wild ideas kept aside.
 

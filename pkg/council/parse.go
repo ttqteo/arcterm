@@ -81,9 +81,14 @@ type Round2Result struct {
 // maxPicks is how many of the others' proposals an expert names in round 2.
 const maxPicks = 3
 
-// maxDirections is how many directions a report holds in full: a Brainstorm's ideas worth trying, a Review's directions
-// (the rest of a Review's go under Also raised, one line each).
-const maxDirections = 3
+// maxDirections is how many directions a report holds in full: five findings for a Review, three ideas worth trying for a
+// Brainstorm. The rest of a Review's go under Also raised, one line each.
+func maxDirections(c *Council) int {
+	if isBrainstorm(c) {
+		return 3
+	}
+	return 5
+}
 
 // MaxAsks is how many questions to ask next a report suggests.
 const MaxAsks = 3
@@ -304,7 +309,8 @@ func parseStance(word string) (CouncilStance, error) {
 // ParseRound1 reads a round 1 reply into the expert's proposals and its overall view. A proposal that cites no
 // evidence gets one weak chip saying so; the runner takes that chip off a Brainstorm's ideas, which need none. A
 // proposal's wild flag is a Brainstorm's, and the runner clears it in a Review. A proposal's verify list becomes its
-// Runs, each a request with State empty; a Brainstorm asks for none, and the runner clears any it is given.
+// Runs, each a request with State empty; a Brainstorm asks for none, and the runner clears any it is given. A proposal's
+// checker and checkwhy are the seat its author named to check it and why, as written: the runner settles the seat.
 func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 	const what = "round 1"
 	var r struct {
@@ -315,6 +321,9 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Evidence evidenceList `json:"evidence"`
 			Verify   verifyList   `json:"verify"`
 			Wild     bool         `json:"wild"`
+			Checker  string       `json:"checker"`
+			CheckWhy string       `json:"checkwhy"`
+			Zone     string       `json:"zone"`
 		} `json:"proposals"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
@@ -338,6 +347,9 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Evidence: ev,
 			Runs:     []CouncilRun(p.Verify),
 			Wild:     p.Wild,
+			Checker:  strings.TrimSpace(p.Checker),
+			CheckWhy: strings.TrimSpace(p.CheckWhy),
+			Zone:     strings.TrimSpace(p.Zone),
 		})
 	}
 	return out, strings.TrimSpace(r.Overview), nil
@@ -468,8 +480,9 @@ func ParseAnswers(reply string) ([]Answer, error) {
 }
 
 // ParseSynthesis reads the coordinator's round 3 reply into the Summary (its At left for the runner) and the weak
-// notes. Directions come back ranked 1..n; a direction's Agreed is the coordinator's word, or, when it gave none,
-// true when no expert challenges or opposes it. A Brainstorm's reply adds each direction's first step and the wild
+// notes. Directions come back ranked 1..n. The shapes ask for no stances, agreed flags or outcomes (fill.go writes
+// them), but a reply that holds them, an older model's or a test's, is read: a direction's Agreed is the coordinator's
+// word, or, when it gave none, true when no expert it names challenges or opposes it. A Brainstorm's reply adds the wild
 // ideas kept aside, numbered 1..n; a kept idea with no title is skipped, since it names nothing.
 func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 	const what = "round 3"

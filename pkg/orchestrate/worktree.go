@@ -184,6 +184,7 @@ func removeWorktreeDir(ctx context.Context, projectPath, wt string) error {
 	if err := unlinkReparsePoints(wt); err != nil {
 		return fmt.Errorf("removing worktree: %w", err)
 	}
+	clearTreeUnlocked(ctx, wt)
 	if _, err := gitLocked(ctx, projectPath, "worktree", "remove", "--force", wt); err != nil {
 		// On Windows the dir can remain locked by an idle child shell or by
 		// junctioned node_modules/src-tauri/target/dist/bin. Git unregisters the
@@ -199,10 +200,37 @@ func removeWorktreeDir(ctx context.Context, projectPath, wt string) error {
 	if _, err := os.Stat(wt); err != nil {
 		return nil
 	}
-	if err := os.RemoveAll(wt); err != nil {
+	if err := removeHeldDir(ctx, wt); err != nil {
 		return fmt.Errorf("removing worktree dir %s: %w", wt, err)
 	}
 	return nil
+}
+
+// removeTreeEntry deletes one entry of a tree being removed. A var so a test can see what holds the repo lock meanwhile.
+var removeTreeEntry = os.RemoveAll
+
+// clearTreeUnlocked deletes everything in a linked tree but its .git file before git's removal takes repoAdminMu: git
+// deletes the tree while the lock is held, and a lane whose check:ts had npm-installed a full node_modules over the
+// junction took 10+ minutes to delete, with every run's worktree add, list and prune waiting behind it. git then
+// deletes what is left and unregisters the tree. Best effort: what a process holds stays, and git's removal and the
+// delete after it report it. The caller has unlinked the tree's junctions, which a delete would follow.
+func clearTreeUnlocked(ctx context.Context, wt string) {
+	// a .git directory is a repo of its own, not a linked tree: never empty what git would not remove
+	if fi, err := os.Lstat(filepath.Join(wt, ".git")); err != nil || !fi.Mode().IsRegular() {
+		return
+	}
+	entries, err := os.ReadDir(wt)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if ctx.Err() != nil {
+			return
+		}
+		if e.Name() != ".git" {
+			removeTreeEntry(filepath.Join(wt, e.Name()))
+		}
+	}
 }
 
 // RemoveWorktreeKeepBranch unregisters and deletes a linked worktree and keeps its branch: Settings → Storage
@@ -314,7 +342,7 @@ func removeLeftovers(ctx context.Context, projectPath, key string) error {
 			errs = append(errs, fmt.Errorf("removing left-behind worktree dir: %w", err))
 			continue
 		}
-		if err := os.RemoveAll(dir); err != nil {
+		if err := removeHeldDir(ctx, dir); err != nil {
 			errs = append(errs, fmt.Errorf("removing left-behind worktree dir %s: %w", dir, err))
 		}
 	}

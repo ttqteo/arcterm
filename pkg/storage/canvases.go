@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 )
@@ -46,6 +47,11 @@ type StorageCanvas struct {
 	ModTs       int64    `json:"modts"`       // unix ms of the newest board (the topic folder's own when it has none)
 	ThumbTs     int64    `json:"thumbts"`     // unix ms of thumb.png, 0 when there is none
 	Bytes       int64    `json:"bytes"`
+	// canvas.json's version links, read by ListCanvases and written by SetCanvasLink
+	Title       string   `json:"title,omitempty"`       // canvas.json's "title"
+	CreatedTs   int64    `json:"createdts"`             // unix ms the canvas was made (createdOnFiles.at); ModTs when canvas.json has none
+	Replaces    string   `json:"replaces,omitempty"`    // the topic of the older canvas this one replaces
+	NotReplaces []string `json:"notreplaces,omitempty"` // topics the person said this canvas does not replace
 }
 
 func designDirOf(project string) string {
@@ -69,21 +75,19 @@ func ListCanvases(projects []string) []StorageCanvas {
 		}
 		seen = append(seen, project)
 		design := designDirOf(project)
-		entries, err := os.ReadDir(design)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			dir := filepath.Join(design, e.Name())
-			if !e.IsDir() || !canvasSegment(e.Name()) || !isPlainDir(dir) {
-				continue
-			}
-			c := StorageCanvas{Topic: e.Name(), Project: project, ProjectName: filepath.Base(project), DesignDir: design, Dir: dir, Bytes: dirSize(dir)}
-			c.Boards, c.ModTs = canvasBoards(dir)
+		for _, topic := range canvasTopics(design) {
+			dir := filepath.Join(design, topic)
+			meta := readCanvasMeta(canvasIndexPath(dir))
+			c := StorageCanvas{Topic: topic, Project: project, ProjectName: filepath.Base(project), DesignDir: design, Dir: dir, Bytes: dirSize(dir)}
+			c.Boards, c.ModTs = canvasBoards(dir, meta.Order)
 			if c.ModTs == 0 {
 				c.ModTs = modMs(dir)
 			}
 			c.ThumbTs = regularModMs(filepath.Join(dir, canvasThumb))
+			c.Title, c.Replaces, c.NotReplaces = meta.Title, meta.Replaces, meta.NotReplaces
+			if c.CreatedTs = meta.CreatedTs; c.CreatedTs == 0 {
+				c.CreatedTs = c.ModTs
+			}
 			out = append(out, c)
 		}
 	}
@@ -100,9 +104,24 @@ func ListCanvases(projects []string) []StorageCanvas {
 	return out
 }
 
+// canvasTopics is the names of the topic folders in a design dir: a plain segment that is a folder, never a link.
+func canvasTopics(design string) []string {
+	entries, err := os.ReadDir(design)
+	if err != nil {
+		return nil
+	}
+	var topics []string
+	for _, e := range entries {
+		if e.IsDir() && canvasSegment(e.Name()) && isPlainDir(filepath.Join(design, e.Name())) {
+			topics = append(topics, e.Name())
+		}
+	}
+	return topics
+}
+
 // canvasBoards is the topic's board names (project/*.dc.html, extension stripped) and the newest board's mtime in
-// ms. canvas.json's order comes first, for the boards that exist; the rest follow by name.
-func canvasBoards(topicDir string) ([]string, int64) {
+// ms. order is canvas.json's "order", which comes first, for the boards that exist; the rest follow by name.
+func canvasBoards(topicDir string, order []string) ([]string, int64) {
 	root := filepath.Join(topicDir, "project")
 	entries, _ := os.ReadDir(root)
 	found := map[string]bool{}
@@ -118,7 +137,7 @@ func canvasBoards(topicDir string) ([]string, int64) {
 		}
 	}
 	boards := make([]string, 0, len(found))
-	for _, file := range canvasOrder(filepath.Join(root, "canvas.json")) {
+	for _, file := range order {
 		if name, ok := strings.CutSuffix(file, canvasBoardExt); ok && found[name] {
 			boards = append(boards, name)
 			delete(found, name)
@@ -132,23 +151,81 @@ func canvasBoards(topicDir string) ([]string, int64) {
 	return append(boards, rest...), newest
 }
 
-// canvasOrder is canvas.json's "order": nothing when the file is missing, large or malformed
-func canvasOrder(path string) []string {
+// canvasIndexPath is a topic's canvas.json
+func canvasIndexPath(topicDir string) string {
+	return filepath.Join(topicDir, "project", "canvas.json")
+}
+
+// canvasIndexState says what loadCanvasIndex found at the path
+type canvasIndexState int
+
+const (
+	indexOK        canvasIndexState = iota // a JSON object
+	indexMissing                           // no file
+	indexMalformed                         // a file, but not a JSON object
+	indexUnusable                          // a link, a folder, past canvasIndexMax or unreadable: never read and never rewritten
+)
+
+// loadCanvasIndex is canvas.json's top-level keys, each still raw JSON so a rewrite keeps the ones it does not own.
+func loadCanvasIndex(path string) (map[string]json.RawMessage, canvasIndexState) {
 	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, indexMissing
+	}
 	if err != nil || !info.Mode().IsRegular() || info.Size() > canvasIndexMax {
-		return nil
+		return nil, indexUnusable
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, indexUnusable
 	}
-	var idx struct {
-		Order []string `json:"order"`
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil || obj == nil { // null decodes to a nil map without an error
+		return nil, indexMalformed
 	}
-	if json.Unmarshal(raw, &idx) != nil {
-		return nil
+	return obj, indexOK
+}
+
+// canvasMeta is what Arc reads from a canvas.json, in one parse.
+type canvasMeta struct {
+	Order       []string // "order": board files, with .dc.html
+	Title       string
+	CreatedTs   int64 // createdOnFiles.at in unix ms; 0 when it is missing or does not parse
+	Replaces    string
+	NotReplaces []string
+}
+
+// readCanvasMeta is the zero canvasMeta when the file is missing, a link, large or malformed. A key of the wrong
+// type reads as absent, so one bad key never hides the others.
+func readCanvasMeta(path string) canvasMeta {
+	obj, state := loadCanvasIndex(path)
+	if state != indexOK {
+		return canvasMeta{}
 	}
-	return idx.Order
+	m := canvasMeta{
+		Order:       canvasKey[[]string](obj, "order"),
+		Title:       canvasKey[string](obj, "title"),
+		Replaces:    canvasKey[string](obj, "replaces"),
+		NotReplaces: canvasKey[[]string](obj, "notreplaces"),
+	}
+	created := canvasKey[struct {
+		At string `json:"at"`
+	}](obj, "createdOnFiles")
+	if at, err := time.Parse(time.RFC3339, created.At); err == nil && at.UnixMilli() > 0 {
+		m.CreatedTs = at.UnixMilli()
+	}
+	return m
+}
+
+// canvasKey decodes one key: the zero value when it is absent or not the type asked for (Unmarshal fills what it can
+// before it reports a mismatch, so a half-read value is dropped too)
+func canvasKey[T any](obj map[string]json.RawMessage, key string) T {
+	var v T
+	if raw, ok := obj[key]; ok && json.Unmarshal(raw, &v) == nil {
+		return v
+	}
+	var zero T
+	return zero
 }
 
 func modMs(path string) int64 {

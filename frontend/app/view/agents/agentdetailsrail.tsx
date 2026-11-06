@@ -56,9 +56,11 @@ import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab, type Re
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
+import { backgroundActivity, shownState } from "./bgactivity";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
+import { RailTree } from "./christmasrailtreeview";
 import { commitListAtom, loadCommitList, showInLog } from "./commitstore";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
@@ -66,6 +68,7 @@ import { finalRowFocusId, isFinalStageId } from "./finalstage";
 import { FinalStageRail } from "./finalstagerail";
 import { capFiles, statusColor } from "./gitstatus";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
+import { machineServersReadingAtom } from "./machineserversstore";
 import { prettyModel } from "./modellabel";
 import { PlanReviewSection } from "./planreviewsection";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
@@ -646,6 +649,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const liveEntries = useAtomValue(entriesAtomFor(agent.id));
     const subs = useAtomValue(subagentsByIdAtom)[agent.id] ?? [];
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id] ?? [];
+    const machineServers = useAtomValue(machineServersReadingAtom).servers;
     const focusSub = useAtomValue(focusSubagentAtom);
     const sub = focusSub?.parentId === agent.id ? focusSub : null;
     const subVM = sub ? subs.find((s) => s.id === sub.agentId) : undefined;
@@ -859,7 +863,9 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
     const live = agent.blockId != null && !ended;
-    const action = sub ? null : railAction(agent.state, live);
+    const bgActivity = backgroundActivity(bgTasks, machineServers);
+    const shownAgentState = shownState(agent.state, bgActivity);
+    const action = sub ? null : railAction(agent.state, bgActivity, live);
     const offerReset =
         ctxPct != null &&
         offersContextReset({ isClaude, state: agent.state, level: contextLevel(ctxPct, usage?.contextmax), live });
@@ -1087,7 +1093,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 state={
                     sub ? undefined : (
                         <div data-rail-state className="flex items-center gap-[8px]">
-                            <StatusDot state={ended ? "idle" : agent.state} />
+                            <StatusDot state={ended ? "idle" : shownAgentState} />
                             <span
                                 title={
                                     cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined
@@ -1095,7 +1101,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted"
                             >
                                 {railStatusLine({
-                                    state: agent.state,
+                                    state: shownAgentState,
                                     age,
                                     ended: ended != null,
                                     cache: cacheCountdown,
@@ -1393,6 +1399,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ) : undefined
             }
             edge={!fixedWidth ? <RailResizeGrip tab={wideTab} width={wide.width} max={wide.max} /> : undefined}
+            // the Overview tab's bottom corner: the Christmas pine, nothing off the theme
+            footer={<RailTree />}
             stripTabs={[
                 {
                     key: "overview",

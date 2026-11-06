@@ -73,6 +73,8 @@ func kindOf(prompt string) string {
 		return "precheck"
 	case strings.HasPrefix(prompt, "You read one round of a council discussion"):
 		return "roundcheck"
+	case strings.HasPrefix(prompt, zonesOpening):
+		return "zones" // keyed "zones/zones"; with no reply set, its canned answer reads as no zones
 	}
 	if m := roundLineRe.FindStringSubmatch(prompt); m != nil {
 		switch n, _ := strconv.Atoi(m[1]); {
@@ -94,7 +96,7 @@ func kindOf(prompt string) string {
 	return "?"
 }
 
-var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3, "precheck": 6, "roundcheck": 4}
+var callTokens = map[string]int64{"r1": 100, "r2": 10, "r3": 50, "ans": 5, "suggest": 7, "route": 3, "precheck": 6, "roundcheck": 4, "zones": 8}
 
 func (f *fakeCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	kind := kindOf(req.Prompt)
@@ -262,10 +264,30 @@ func round1JSON(expert string) string {
 	}))
 }
 
-// stancesFor is one stance per proposal in the prompt's review section, cycling accept, challenge, oppose.
+// otherLineRe matches a proposal a Review's reply pass lists as a title and a line, under "## Other proposals".
+var otherLineRe = regexp.MustCompile(`(?m)^- (P\d+) · `)
+
+// wholeIn are the ids of the proposals a reply pass hands the seat whole: under "## Proposals routed to you" in a Review
+// (every landed idea carries a checker), under "## Proposals to review" in a Brainstorm.
+func wholeIn(prompt string) []string {
+	return append(idsIn(proposalHeadRe, sectionText(prompt, "## Proposals to review")),
+		idsIn(proposalHeadRe, sectionText(prompt, "## Proposals routed to you"))...)
+}
+
+// shownIn are the ids of every proposal a reply pass puts up for review, in the order the ideas arrived: the ones read whole
+// and the ones read as a title. The canned seat answers on all of them, so a test that counts stances sees one per proposal
+// whatever the routing, and the stance a proposal gets does not depend on which heading it sits under.
+func shownIn(prompt string) []string {
+	ids := append(wholeIn(prompt), idsIn(otherLineRe, sectionText(prompt, "## Other proposals"))...)
+	num := func(id string) int { n, _ := strconv.Atoi(strings.TrimPrefix(id, "P")); return n }
+	slices.SortFunc(ids, func(a, b string) int { return num(a) - num(b) })
+	return ids
+}
+
+// stancesFor is one stance per proposal the prompt puts up for review, cycling accept, challenge, oppose.
 func stancesFor(req CallReq) []map[string]any {
 	stances := []map[string]any{}
-	for i, pid := range idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review")) {
+	for i, pid := range shownIn(req.Prompt) {
 		stances = append(stances, map[string]any{
 			"proposalid": pid, "stance": []string{"accept", "challenge", "oppose"}[i%3],
 			"reason": "Reason from " + req.Expert.Id + " on " + pid,
@@ -284,7 +306,8 @@ func answersFor(req CallReq, ids []string) []map[string]any {
 
 func round2JSON(req CallReq) string {
 	asks := idsIn(askLineRe, sectionText(req.Prompt, "## What the person asks you"))
-	picks := idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review"))
+	// a pass may pick any proposal it lists, the ones it already reviewed in an earlier pass too
+	picks := append(shownIn(req.Prompt), idsIn(otherLineRe, sectionText(req.Prompt, "## Already reviewed"))...)
 	if len(picks) > 3 {
 		picks = picks[:3]
 	}
@@ -417,12 +440,22 @@ func newHarness(t *testing.T) *harness {
 	prevSnapshot := takeSnapshot
 	takeSnapshot = func(context.Context, string) (string, error) { return "", nil }
 	t.Cleanup(func() { takeSnapshot = prevSnapshot })
-	h.r = &Runner{Caller: h.f, Agents: h.agents, Now: h.tick, OnChange: func(c *Council) {
+	h.r = &Runner{Caller: h.f, Agents: h.agents, Now: h.tick, noEarly: true, OnChange: func(c *Council) {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		h.seen = append(h.seen, *c)
 	}}
 	t.Cleanup(h.drain) // registered last, so it runs before the temp dirs go
+	return h
+}
+
+// newEarlyHarness is newHarness for a test of early round 2 (earlyRounds), the flow a Review that holds no drafts and has no
+// pause runs. The harness runs the barrier, the flow a council with drafts keeps, so a test that counts calls is not left
+// to which seat happens to be ready first; a test of early round 2 gates the calls it needs ordered.
+func newEarlyHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t)
+	h.r.noEarly = false
 	return h
 }
 
@@ -565,6 +598,22 @@ func repliesBy(c *Council, author string) []CouncilReply {
 
 func panelIds() []string { return []string{"ux", "ram", "newuser", "skeptic"} }
 
+// flowCouncil is testCouncil in a real project folder holding pkg/<seat>.go, the one line each seat's canned round 1 cites
+// (round1JSON), so the cite check reads every idea as Read code. On testCouncil's fake folder every cite is wrong, every
+// idea is a Guess, and the evidence gate folds a Review's whole top into Also raised.
+func flowCouncil(t *testing.T, id string) *Council {
+	t.Helper()
+	c := testCouncil(id)
+	c.Project = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(c.Project, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, seat := range panelIds() {
+		vWriteFile(t, filepath.Join(c.Project, "pkg", seat+".go"), "package "+seat+"\n")
+	}
+	return c
+}
+
 // ---- the rounds ----
 
 func TestStartRunsThreeRounds(t *testing.T) {
@@ -573,7 +622,8 @@ func TestStartRunsThreeRounds(t *testing.T) {
 	for _, id := range order {
 		h.f.gate(id + "/r1")
 	}
-	saved := h.start(testCouncil("c1"))
+	fc := flowCouncil(t, "c1")
+	saved := h.start(fc)
 	if saved.State != StateRunning || saved.Round != 1 || saved.Started == 0 || saved.Created == 0 {
 		t.Fatalf("Start returned %s round %d started %d created %d, want a running council in round 1", saved.State, saved.Round, saved.Started, saved.Created)
 	}
@@ -618,7 +668,7 @@ func TestStartRunsThreeRounds(t *testing.T) {
 		t.Fatalf("calls per round = %d, %d, %d, want 4, 4, 1", len(r1), len(r2), len(r3))
 	}
 	for _, req := range r1 {
-		if !req.Tools || req.Cwd != `D:\proj` || req.Expert.Model != "sonnet" || req.OnTool == nil {
+		if !req.Tools || req.Cwd != fc.Project || req.Expert.Model != "sonnet" || req.OnTool == nil {
 			t.Errorf("round 1 request = tools %v cwd %q model %q, want tools in the project folder on sonnet", req.Tools, req.Cwd, req.Expert.Model)
 		}
 	}
@@ -648,18 +698,23 @@ func TestStartRunsThreeRounds(t *testing.T) {
 		t.Errorf("%d stances in %d replies, want 12 and 12", stances, len(c.Replies))
 	}
 
-	// the summary keeps only what is on the council
+	// the summary keeps only what is on the council, and Go fills its stances and outcomes from the replies: the canned
+	// synthesis is an older model's reply that writes them, and none of what it wrote (a ghost's stance, the coordinator's,
+	// an accept where the seat challenged, an outcome for P99 or P4) survives
 	d := c.Summary.Directions[0]
 	if slices.Contains(d.From, "P99") || len(d.From) != 2 {
 		t.Errorf("direction 1 from %v, want P1 and P2 without the unknown P99", d.From)
 	}
-	for _, gone := range []string{"ghost", "lead"} {
-		if _, ok := d.Stances[gone]; ok {
-			t.Errorf("direction 1 stances %v hold %s, who is not on the panel", d.Stances, gone)
-		}
+	// P1 is ram's and P2 ux's; newuser and the skeptic each accepted P1 and challenged P2
+	if want := map[string]CouncilStance{"newuser": StanceChallenge, "skeptic": StanceChallenge}; !reflect.DeepEqual(d.Stances, want) || d.Agreed {
+		t.Errorf("direction 1 stances = %v agreed %v, want %v and not agreed", d.Stances, d.Agreed, want)
 	}
-	if _, ok := c.Summary.Outcomes["P99"]; ok || c.Summary.Outcomes["P1"] != "Direction 1" {
-		t.Errorf("outcomes = %v, want P1's and not the unknown P99's", c.Summary.Outcomes)
+	wantOutcomes := map[string]string{"P1": "Direction 1", "P2": "Merged into direction 1", "P3": "Direction 2", "P4": "Also raised"}
+	if !reflect.DeepEqual(c.Summary.Outcomes, wantOutcomes) {
+		t.Errorf("outcomes = %v, want %v: P4 was placed nowhere, so it is a line of Also raised", c.Summary.Outcomes, wantOutcomes)
+	}
+	if k := c.Summary.Kept; len(k) != 1 || !slices.Equal(k[0].From, []string{"P4"}) {
+		t.Errorf("kept = %+v, want P4 alone", k)
 	}
 	// the weak note landed on the proposal it names
 	if ev := proposalOf(t, c, "P4").Evidence; !slices.ContainsFunc(ev, func(e CouncilEvidence) bool { return e.Weak && strings.Contains(e.Note, "no measurement") }) {
@@ -971,11 +1026,11 @@ func TestApplyRound2KeepsOnlyValidPicks(t *testing.T) {
 	c := picksCouncil()
 	ux := c.Experts[0]
 	// its own P1, a ghost, a cut, a withdrawn and a repeat are dropped; the rest keep the expert's order
-	applyRound2(c, ux, Round2Result{Picks: []string{"P3", "P1", "P99", "P4", "P5", "P3", "P2", "P6", "P7"}}, 2, 5)
+	applyRound2(c, ux, Round2Result{Picks: []string{"P3", "P1", "P99", "P4", "P5", "P3", "P2", "P6", "P7"}}, 2, true, 5)
 	if got, want := c.Picks["ux"], []string{"P3", "P2", "P6"}; !slices.Equal(got, want) {
 		t.Errorf("picks = %v, want %v", got, want)
 	}
-	applyRound2(c, c.Experts[1], Round2Result{Picks: []string{"P2", "P99"}}, 2, 5)
+	applyRound2(c, c.Experts[1], Round2Result{Picks: []string{"P2", "P99"}}, 2, true, 5)
 	if _, ok := c.Picks["ram"]; ok {
 		t.Errorf("Picks[ram] = %v, want no entry when nothing valid is picked", c.Picks["ram"])
 	}
@@ -988,7 +1043,7 @@ func TestApplyRound2AnAcceptNeedsNoReasonButADoubtDoes(t *testing.T) {
 		{ProposalId: "P3", Stance: StanceChallenge, Reason: "  "},
 		{ProposalId: "P6", Stance: StanceOppose},
 		{ProposalId: "P7", Stance: StanceChallenge, Reason: "Breaks."},
-	}}, 2, 5)
+	}}, 2, true, 5)
 	if len(c.Replies) != 2 {
 		t.Fatalf("replies = %+v, want the empty accept and the reasoned challenge", c.Replies)
 	}
@@ -1017,7 +1072,7 @@ func TestApplyRound2ARevisionRepliesWithTheChangeNotTheArgument(t *testing.T) {
 		c := picksCouncil()
 		c.Proposals[0].Argument = "Old."
 		tc.rv.ProposalId = "P1"
-		applyRound2(c, c.Experts[0], Round2Result{Revisions: []Round2Revision{tc.rv}}, 2, 5)
+		applyRound2(c, c.Experts[0], Round2Result{Revisions: []Round2Revision{tc.rv}}, 2, true, 5)
 		if !tc.reply {
 			if len(c.Replies) != 0 {
 				t.Errorf("%s: replies %+v, want none", name, c.Replies)
@@ -2988,7 +3043,7 @@ func TestAnAnswersPassFailureCanBeRetried(t *testing.T) {
 
 func TestSummarizeRerunsTheSynthesis(t *testing.T) {
 	h := newHarness(t)
-	first := h.run(testCouncil("c1"))
+	first := h.run(flowCouncil(t, "c1")) // a real project, so no idea is a Guess and the gate keeps the direction
 	h.f.setText("lead/r3", titledSynthesis("Second take.", "Only direction"))
 	saved, err := h.r.Summarize("c1")
 	if err != nil {
@@ -4254,11 +4309,13 @@ func TestBrainstormRunKeepsKept(t *testing.T) {
 	}
 	h.f.setFn("lead/r3", func(req CallReq) string {
 		wild := idsIn(wildHeadRe, req.Prompt)
+		// the directions come from a tame idea: P1 is whichever seat answered first, ram's wild idea as often as not
+		tame := slices.DeleteFunc(idsIn(proposalHeadRe, req.Prompt), func(id string) bool { return slices.Contains(wild, id) })[0]
 		dirs := []map[string]any{}
 		for i, title := range []string{"Idea one", "Idea two", "Idea three", "Idea four"} {
 			dirs = append(dirs, map[string]any{
 				"rank": i + 1, "title": title, "reasoning": "Why " + title + ".", "firststep": "Start " + title,
-				"from": []string{"P1"}, "stances": map[string]string{"ux": "accept"},
+				"from": []string{tame}, "stances": map[string]string{"ux": "accept"},
 			})
 		}
 		return fence(mustJSON(map[string]any{
@@ -4355,6 +4412,173 @@ func TestBrainstormRunKeepsKept(t *testing.T) {
 	}
 }
 
+// panelZones is a zone call's reply giving each of seats a zone named "Zone <seat>".
+func panelZones(seats ...string) string {
+	var zones []map[string]string
+	for _, s := range seats {
+		zones = append(zones, map[string]string{"seat": s, "name": "Zone " + s, "covers": "What " + s + " covers."})
+	}
+	return fence(mustJSON(map[string]any{"zones": zones}))
+}
+
+func TestZoneStepSavesZonesAndRound1ReadsThem(t *testing.T) {
+	h := newHarness(t)
+	h.f.setText("zones/zones", panelZones("skeptic", "ux", "ram", "newuser"))
+	c := h.run(brainstormTestCouncil("z1"))
+	if c.State != StateDone || c.Error != "" {
+		t.Fatalf("final = %s %q, want done", c.State, c.Error)
+	}
+	want := []CouncilZone{
+		{Seat: "ux", Name: "Zone ux", Covers: "What ux covers."}, {Seat: "ram", Name: "Zone ram", Covers: "What ram covers."},
+		{Seat: "newuser", Name: "Zone newuser", Covers: "What newuser covers."}, {Seat: "skeptic", Name: "Zone skeptic", Covers: "What skeptic covers."},
+	}
+	if !reflect.DeepEqual(c.Zones, want) {
+		t.Errorf("zones = %+v, want %+v", c.Zones, want)
+	}
+	zc := h.f.calls("zones")
+	if len(zc) != 1 || zc[0].Tools || zc[0].Expert.Model != ModelZones || zc[0].Cwd != c.Project {
+		t.Fatalf("zone calls = %+v, want one no-tools %s call in the project folder", zc, ModelZones)
+	}
+	// it comes before round 1, and every round 1 prompt names its seat's zone and lists them all
+	first := h.f.indexes("zones")[0]
+	for _, i := range h.f.indexes("r1") {
+		if i < first {
+			t.Errorf("a round 1 call (%d) ran before the zone call (%d)", i, first)
+		}
+	}
+	r1 := h.f.calls("r1")
+	if len(r1) != 4 {
+		t.Fatalf("%d round 1 calls, want 4", len(r1))
+	}
+	for _, req := range r1 {
+		mustContain(t, req.Expert.Id+"'s round 1 prompt", req.Prompt, "Your zone is Zone "+req.Expert.Id+": What "+req.Expert.Id+" covers.",
+			"- Zone ux: What ux covers.", "- Zone skeptic: What skeptic covers.", `"zone":`)
+	}
+	mustContain(t, "synthesis", h.f.calls("r3")[0].Prompt, "## Zones", "different zones")
+	// the call is booked on the council and on the coordinator's row
+	if st := c.Stats["lead"]; st.Calls != 2 || st.Tokens != callTokens["zones"]+callTokens["r3"] {
+		t.Errorf("lead's stats = %+v, want the zone call and the synthesis", st)
+	}
+	if wantCalls := len(h.f.all()); c.Calls != wantCalls {
+		var kinds []string
+		for _, req := range h.f.all() {
+			kinds = append(kinds, kindOf(req.Prompt))
+		}
+		t.Errorf("calls = %d, want %d: %v", c.Calls, wantCalls, kinds)
+	}
+}
+
+func TestZoneStepWithNoZonesRunsRound1AsToday(t *testing.T) {
+	for name, set := range map[string]func(f *fakeCaller){
+		"a failed call":  func(f *fakeCaller) { f.setFail("zones/zones", errors.New("boom")) },
+		"too few zones":  func(f *fakeCaller) { f.setText("zones/zones", panelZones("ux", "ram", "newuser")) },
+		"an empty reply": func(f *fakeCaller) { f.setText("zones/zones", "  ") },
+		"garbage":        func(f *fakeCaller) { f.setText("zones/zones", "zones? sure") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			set(h.f)
+			c := h.run(brainstormTestCouncil("z2"))
+			if c.State != StateDone || c.Error != "" || c.Zones != nil {
+				t.Fatalf("final = %s %q zones %+v, want done with no zones", c.State, c.Error, c.Zones)
+			}
+			if n := len(h.f.calls("zones")); n != 1 {
+				t.Errorf("%d zone calls, want 1", n)
+			}
+			r1 := h.f.calls("r1")
+			if len(r1) != 4 {
+				t.Fatalf("%d round 1 calls, want 4", len(r1))
+			}
+			for _, req := range r1 {
+				mustContain(t, "round 1 prompt", req.Prompt, brainstormRound1Shape)
+				mustNotContain(t, "round 1 prompt", req.Prompt, "zone")
+			}
+		})
+	}
+}
+
+func TestZoneStepMakesNoCall(t *testing.T) {
+	t.Run("a one-seat panel", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setText("zones/zones", panelZones("ux"))
+		c := brainstormTestCouncil("z3")
+		c.Experts = []CouncilExpert{c.Experts[0], c.Experts[4]} // ux and the coordinator
+		c = h.run(c)
+		if n := len(h.f.calls("zones")); n != 0 || c.Zones != nil || c.State != StateDone {
+			t.Errorf("%d zone calls, zones %+v, state %s; want none and a done council", n, c.Zones, c.State)
+		}
+	})
+	t.Run("a Review", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setText("zones/zones", panelZones(panelIds()...))
+		c := h.run(flowCouncil(t, "z4"))
+		if n := len(h.f.calls("zones")); n != 0 || c.Zones != nil {
+			t.Errorf("%d zone calls, zones %+v; want none", n, c.Zones)
+		}
+	})
+	t.Run("a council already holding zones", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setText("zones/zones", panelZones(panelIds()...))
+		c := brainstormTestCouncil("z5")
+		held := []CouncilZone{{Seat: "ux", Name: "Kept ux"}, {Seat: "ram", Name: "Kept ram"}, {Seat: "newuser", Name: "Kept newuser"}, {Seat: "skeptic", Name: "Kept skeptic"}}
+		c.Zones = held
+		c = h.run(c)
+		if n := len(h.f.calls("zones")); n != 0 || !reflect.DeepEqual(c.Zones, held) {
+			t.Errorf("%d zone calls, zones %+v; want none and the zones kept", n, c.Zones)
+		}
+		mustContain(t, "round 1 prompt", h.f.calls("r1")[0].Prompt, "- Kept skeptic")
+	})
+}
+
+func TestRound1KeepsZone(t *testing.T) {
+	zoned := func(req CallReq) string {
+		zones := map[string]string{"ux": "zone UX", "ram": "Somewhere else", "newuser": "", "skeptic": " Zone ux "}
+		return fence(mustJSON(map[string]any{"overview": "x", "proposals": []map[string]any{
+			{"title": "Idea from " + req.Expert.Id, "argument": "a", "zone": zones[req.Expert.Id]},
+		}}))
+	}
+	zoneOf := func(c *Council) map[string]string {
+		out := map[string]string{}
+		for _, p := range c.Proposals {
+			out[p.Author] = p.Zone
+		}
+		return out
+	}
+
+	h := newHarness(t)
+	h.f.setText("zones/zones", panelZones(panelIds()...))
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", zoned)
+	}
+	got := zoneOf(h.run(brainstormTestCouncil("k1")))
+	// a case-different name becomes the stored one, an unknown one and none are cleared
+	if want := map[string]string{"ux": "Zone ux", "ram": "", "newuser": "", "skeptic": "Zone ux"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("brainstorm zones = %v, want %v", got, want)
+	}
+
+	// a Brainstorm with no zones keeps none
+	h = newHarness(t)
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", zoned)
+	}
+	for seat, z := range zoneOf(h.run(brainstormTestCouncil("k2"))) {
+		if z != "" {
+			t.Errorf("%s's idea zone = %q in a Brainstorm with no zones, want none", seat, z)
+		}
+	}
+
+	// a Review keeps none
+	h = newHarness(t)
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", zoned)
+	}
+	for seat, z := range zoneOf(h.run(flowCouncil(t, "k3"))) {
+		if z != "" {
+			t.Errorf("%s's proposal zone = %q in a Review, want none", seat, z)
+		}
+	}
+}
+
 func TestBrainstormRunLeavesNoKeptSectionWhenThereAreNoWildIdeas(t *testing.T) {
 	h := newHarness(t)
 	h.f.setFn("lead/r3", func(CallReq) string {
@@ -4380,13 +4604,14 @@ func TestAReviewDropsTheBrainstormFlags(t *testing.T) {
 		return fence(`{"overview": "x", "proposals": [{"title": "Idea from ux", "argument": "a", "wild": true}]}`)
 	})
 	h.f.setFn("ram/r2", func(req CallReq) string {
-		ids := idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review"))
+		ids := shownIn(req.Prompt)
 		return fence(mustJSON(map[string]any{"stances": []map[string]any{{"proposalid": ids[0], "stance": "accept", "builds": true, "reason": "Build."}}}))
 	})
 	h.f.setFn("lead/r3", func(CallReq) string {
-		return fence(`{"text": "x", "directions": [{"rank": 1, "title": "One", "firststep": "Start", "from": ["P1"]}], "kept": [{"title": "A mascot"}], "outcomes": {}}`)
+		// one direction from every idea: ux's own cites nothing (a Guess), the others read the project, so it is not gated
+		return fence(`{"text": "x", "directions": [{"rank": 1, "title": "One", "firststep": "Start", "from": ["P1", "P2", "P3", "P4"]}], "kept": [{"title": "A mascot"}], "outcomes": {}}`)
 	})
-	c := h.run(testCouncil("r1"))
+	c := h.run(flowCouncil(t, "r1"))
 	ux := repliesBy(c, "ram")
 	if len(ux) != 1 || ux[0].Builds {
 		t.Errorf("ram's replies = %+v, want one that does not build", ux)
@@ -4399,8 +4624,8 @@ func TestAReviewDropsTheBrainstormFlags(t *testing.T) {
 			t.Errorf("%s evidence = %+v, want the weak chip a Review gives", p.Id, p.Evidence)
 		}
 	}
-	if c.Summary == nil || c.Summary.Directions[0].FirstStep != "Start" || len(c.Summary.Kept) != 1 || c.Summary.Kept[0].Title != "A mascot" {
-		t.Errorf("summary = %+v, want the first step and the direction also raised kept in a Review", c.Summary)
+	if c.Summary == nil || len(c.Summary.Directions) != 1 || c.Summary.Directions[0].FirstStep != "Start" || len(c.Summary.Kept) != 1 || c.Summary.Kept[0].Title != "A mascot" {
+		t.Fatalf("summary = %+v, want the first step and the direction also raised kept in a Review", c.Summary)
 	}
 }
 
@@ -4413,7 +4638,7 @@ func TestApplyRound2Builds(t *testing.T) {
 		{ProposalId: "P3", Stance: StanceAccept, Builds: true},
 		{ProposalId: "P6", Stance: StanceAccept},
 	}}
-	applyRound2(brainstorm, brainstorm.Experts[0], res, 2, 5)
+	applyRound2(brainstorm, brainstorm.Experts[0], res, 2, true, 5)
 	if len(brainstorm.Replies) != 3 {
 		t.Fatalf("replies = %+v, want three", brainstorm.Replies)
 	}
@@ -4427,7 +4652,7 @@ func TestApplyRound2Builds(t *testing.T) {
 		t.Errorf("reply 2 = %+v, want a plain accept", r)
 	}
 
-	applyRound2(review, review.Experts[0], res, 2, 5)
+	applyRound2(review, review.Experts[0], res, 2, true, 5)
 	for _, r := range review.Replies {
 		if r.Builds {
 			t.Errorf("reply %+v builds in a Review", r)
@@ -4464,16 +4689,36 @@ func TestCleanSummaryForABrainstorm(t *testing.T) {
 		},
 	}
 	got := cleanSummary(c, in)
-	if len(got.Directions) != maxDirections || got.Directions[2].Title != "c" {
-		t.Errorf("directions = %+v, want the first %d", got.Directions, maxDirections)
+	if n := maxDirections(c); n != 3 || len(got.Directions) != 3 || got.Directions[2].Title != "c" {
+		t.Errorf("directions = %+v, want the first 3 (maxDirections = %d)", got.Directions, n)
 	}
 	if len(got.Kept) != 2 || !slices.Equal(got.Kept[0].From, []string{"P2"}) || len(got.Kept[1].From) != 0 {
 		t.Errorf("kept = %+v, want the known ids once; a kept idea that cites nothing real stays (it is the model's idea)", got.Kept)
 	}
-	if want := map[string]CouncilStance{"ux": StanceAccept}; !reflect.DeepEqual(got.Kept[0].Stances, want) {
-		t.Errorf("kept stances = %v, want %v", got.Kept[0].Stances, want)
+	// Go's fill gives the wild idea no stance it was sent: ram wrote P2, and nobody replied to it
+	if got.Kept[0].Stances == nil || len(got.Kept[0].Stances) != 0 {
+		t.Errorf("kept stances = %v, want the model's replaced by Go's (none were said)", got.Kept[0].Stances)
 	}
+	if got.Outcomes["P2"] != "Kept aside" || got.Outcomes["P1"] != "Direction 1" {
+		t.Errorf("outcomes = %v, want P1 Direction 1 and the wild P2 Kept aside", got.Outcomes)
+	}
+}
 
+// A Review's top holds five directions, a Brainstorm's three: maxDirections is a function of the council.
+func TestMaxDirectionsIsFiveForAReviewAndThreeForABrainstorm(t *testing.T) {
+	review := fixtureCouncil("c1", StateDone, 3)
+	brainstorm := fixtureCouncil("c2", StateDone, 3)
+	brainstorm.Mode = ModeBrainstorm
+	if got := maxDirections(review); got != 5 {
+		t.Errorf("a Review's maxDirections = %d, want 5", got)
+	}
+	if got := maxDirections(brainstorm); got != 3 {
+		t.Errorf("a Brainstorm's maxDirections = %d, want 3", got)
+	}
+	review.Mode = ModeReview
+	if got := maxDirections(review); got != 5 {
+		t.Errorf("an explicit Review's maxDirections = %d, want 5", got)
+	}
 }
 
 func TestCleanSummaryForAReview(t *testing.T) {
@@ -4485,20 +4730,26 @@ func TestCleanSummaryForAReview(t *testing.T) {
 		}
 	}
 	in := CouncilSummary{
-		Directions: []CouncilDirection{dir("a", "P1"), dir("b", "P1"), dir("c", "P1"), dir("d", "P2")},
+		Directions: []CouncilDirection{dir("a", "P1"), dir("b", "P1"), dir("c", "P1"), dir("d", "P1"), dir("e", "P1"), dir("f", "P2")},
 		Kept:       []CouncilDirection{{Title: "wording", Reasoning: "rename the chip", From: []string{"P1"}}},
-		Outcomes:   map[string]string{"P1": "Direction 1", "P2": "Merged into direction 4"},
+		Outcomes:   map[string]string{"P1": "Direction 1", "P2": "Merged into direction 6"},
 	}
 	got := cleanSummary(c, in)
-	if len(got.Directions) != maxDirections || got.Directions[2].Title != "c" || got.Directions[0].FirstStep != "Start a" {
-		t.Errorf("directions = %+v, want the first %d with their first steps", got.Directions, maxDirections)
+	if len(got.Directions) != 5 || got.Directions[4].Title != "e" || got.Directions[0].FirstStep != "Start a" {
+		t.Errorf("directions = %+v, want the first 5 with their first steps", got.Directions)
 	}
-	if len(got.Kept) != 2 || got.Kept[0].Title != "d" || got.Kept[0].Rank != 1 || got.Kept[0].Reasoning != "why d" ||
+	// the sixth moves to Also raised as one line, ahead of the model's own; Go's fill gives the stances it has said
+	if len(got.Kept) != 2 || got.Kept[0].Title != "f" || got.Kept[0].Rank != 1 || got.Kept[0].Reasoning != "why f" ||
 		got.Kept[0].FirstStep != "" || len(got.Kept[0].Stances) != 0 || got.Kept[1].Title != "wording" || got.Kept[1].Rank != 2 {
 		t.Errorf("kept = %+v, want the direction past the cap as one line, ahead of the model's own", got.Kept)
 	}
 	if got.Outcomes["P1"] != "Direction 1" || got.Outcomes["P2"] != "Also raised" {
 		t.Errorf("outcomes = %v, want a direction past the cap to read Also raised", got.Outcomes)
+	}
+	// with 3 directions or fewer, nothing moves
+	in.Directions = in.Directions[:3]
+	if got := cleanSummary(c, in); len(got.Directions) != 3 || len(got.Kept) != 2 {
+		t.Errorf("directions %d kept %d, want 3 and 2: a Review keeps what is under the cap", len(got.Directions), len(got.Kept))
 	}
 }
 
@@ -4517,11 +4768,13 @@ func TestCleanSummaryDropsWhatIsNotOnTheCouncil(t *testing.T) {
 	if !reflect.DeepEqual(d.From, []string{"P1", "P2"}) {
 		t.Errorf("from = %v, want the known ids once", d.From)
 	}
-	if want := map[string]CouncilStance{"skeptic": StanceChallenge, "newuser": StanceAccept}; !reflect.DeepEqual(d.Stances, want) {
-		t.Errorf("stances = %v, want %v: the authors, the coordinator and the stranger left out", d.Stances, want)
+	// Go's fill replaces the stances the model sent: only the skeptic replied (r1, a challenge of P1), and the authors, the
+	// coordinator and the stranger are out
+	if want := map[string]CouncilStance{"skeptic": StanceChallenge}; !reflect.DeepEqual(d.Stances, want) || d.Agreed {
+		t.Errorf("stances = %v agreed %v, want %v and not agreed", d.Stances, d.Agreed, want)
 	}
-	if want := map[string]string{"P1": "Direction 1"}; !reflect.DeepEqual(got.Outcomes, want) {
-		t.Errorf("outcomes = %v, want %v", got.Outcomes, want)
+	if want := map[string]string{"P1": "Direction 1", "P2": "Merged into direction 1"}; !reflect.DeepEqual(got.Outcomes, want) {
+		t.Errorf("outcomes = %v, want %v: Go's, for the proposals on the council", got.Outcomes, want)
 	}
 }
 
@@ -4769,7 +5022,8 @@ func TestLinkMentioned(t *testing.T) {
 }
 
 // A message with a link is stored with tools on whatever the composer sent, its router leaves them alone, and the calls
-// that answer it have WebFetch and are told so; the next message with no link has neither.
+// that answer it have WebFetch and are told so. The next message has no link, but it carries the one that had it (the
+// discussion since the report), so its answers keep both and may open the page again.
 func TestReplyWithLinkGetsWebFetch(t *testing.T) {
 	h := newHarness(t)
 	h.run(testCouncil("c1"))
@@ -4795,11 +5049,15 @@ func TestReplyWithLinkGetsWebFetch(t *testing.T) {
 		t.Fatalf("Reply: %v", err)
 	}
 	h.wait("c1")
-	for _, req := range h.f.calls("ans")[len(ans):] {
-		if req.Web {
-			t.Errorf("a follow-up with no link ran %s with WebFetch", req.Expert.Id)
+	next := h.f.calls("ans")[len(ans):]
+	if len(next) == 0 {
+		t.Fatal("no answer calls for the follow-up")
+	}
+	for _, req := range next {
+		if !req.Tools || !req.Web {
+			t.Errorf("a follow-up carrying the link ran %s with tools %v, web %v, want both", req.Expert.Id, req.Tools, req.Web)
 		}
-		mustNotContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, webNote)
+		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, webNote, "The update is live at https://blackdiamond.biglabs.net/")
 	}
 }
 
@@ -4905,16 +5163,22 @@ func TestCallAddDirsFromAttachments(t *testing.T) {
 			"The person's reply ["+asked+"]: @all Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
 	}
 
-	// the next follow-up has no attachment: no folder, and the tools are off as the client sent
+	// the next follow-up has no attachment, but it carries the message that had them (the discussion since the report):
+	// the tools stay on, with the same folders, so a question about the images can open them again
 	if _, err := h.r.Reply("c1", "", "", "@all Thanks, and without them?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	h.wait("c1")
-	for _, req := range h.f.calls("ans")[4:] {
-		if req.Tools || len(req.AddDirs) != 0 {
-			t.Errorf("a follow-up with no attachment ran with tools %v and folders %v, want neither", req.Tools, req.AddDirs)
+	next := h.f.calls("ans")[4:]
+	if len(next) == 0 {
+		t.Fatal("no answer calls for the follow-up")
+	}
+	for _, req := range next {
+		if !req.Tools || !slices.Equal(req.AddDirs, want) {
+			t.Errorf("a follow-up carrying the attachments ran with tools %v and folders %v, want tools and %v", req.Tools, req.AddDirs, want)
 		}
-		mustNotContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, "read these files", "arc-attachments")
+		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt,
+			"@all Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
 	}
 }
 
@@ -5230,7 +5494,7 @@ func (h *harness) prompts() []string {
 // agreeOnly answers a reply pass with an agreement, and nothing to add, on every proposal it was shown.
 func agreeOnly(req CallReq) string {
 	stances := []map[string]any{}
-	for _, pid := range idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review")) {
+	for _, pid := range shownIn(req.Prompt) {
 		stances = append(stances, map[string]any{"proposalid": pid, "stance": "accept", "reason": ""})
 	}
 	return fence(mustJSON(map[string]any{"stances": stances, "revisions": []any{}, "answers": []any{}, "picks": []string{}}))
@@ -6335,7 +6599,7 @@ func TestRunnerAgentSeatFollowsItsSessionToANewTab(t *testing.T) {
 	}
 }
 
-func TestRunnerVerifyRunsBeforeThePauseAndReachesEverySeatsRound2(t *testing.T) {
+func TestRunnerVerifyRunsBeforeThePauseAndReachesTheSeatsThatReadTheIdeaInRound2(t *testing.T) {
 	h := newHarness(t)
 	proj := checkProject(t)
 	useSnapshot(t, "snap123", nil)
@@ -6402,11 +6666,27 @@ func TestRunnerVerifyRunsBeforeThePauseAndReachesEverySeatsRound2(t *testing.T) 
 	if len(r2) != 4 {
 		t.Fatalf("%d round 2 calls, want 4", len(r2))
 	}
-	for _, req := range append(r2, h.f.calls("r3")...) {
+	// the synthesis reads every result; in round 2 a seat reads an idea whole, and so its results, when the idea is its own or
+	// routed to it, and the others by title (writeToReview)
+	for _, req := range h.f.calls("r3") {
 		mustContain(t, req.Expert.Id+"'s prompt", req.Prompt,
 			"`go test ./pkg/services -run TestSleeps`: passed, as its author expected",
 			"`go test ./pkg/services -run TestWakes`: failed (exit 1), as its author expected", "nobody woke",
 			"not run (not on the list")
+	}
+	result := map[string]string{
+		"ux":      "`go test ./pkg/services -run TestSleeps`: passed, as its author expected",
+		"skeptic": "`go test ./pkg/services -run TestWakes`: failed (exit 1), as its author expected",
+		"newuser": "not run (not on the list",
+	}
+	for _, req := range r2 {
+		for _, p := range done.Proposals {
+			if want, shown := result[p.Author], p.Author == req.Expert.Id || p.Checker == req.Expert.Id; shown && want != "" {
+				mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, want)
+			}
+		}
+	}
+	for _, req := range append(r2, h.f.calls("r3")...) {
 		mustNotContain(t, req.Expert.Id+"'s prompt", req.Prompt, "TestCache")
 	}
 	if p := proposalOf(t, done, ideaBy(t, done, "ram")); p.Runs[0].State != RunFail {
@@ -6445,46 +6725,78 @@ func TestRunnerVerifyOneRoundCouncilReachesTheSynthesis(t *testing.T) {
 	}
 }
 
-func TestRunnerChecksNothingInABrainstorm(t *testing.T) {
+func TestCheckClaimsBrainstormLabelsCitedIdeasAndRunsNothing(t *testing.T) {
 	h := newHarness(t)
 	proj := checkProject(t)
 	snaps := useSnapshot(t, "snap", nil)
 	g := newVerifyRig(t)
 	trees := &fakeTrees{}
 	h.r.Trees = trees
-	for _, id := range []string{"ux", "ram", "newuser", "skeptic"} {
-		// even a model that was not asked for them may send a verify list and quotes
-		h.f.setText(id+"/r1", claimJSON("Idea from "+id, []map[string]string{cite("pkg/ux.go:3", "func Sleep()"), cite("pkg/nope.go:1", "")},
-			askRun("go test ./pkg/services -run TestIdea", RunPass)))
-	}
+	// even a model that was not asked for them may send a verify list: a Brainstorm runs none
+	verify := askRun("go test ./pkg/services -run TestIdea", RunPass)
+	h.f.setText("ux/r1", claimJSON("Idea from ux", []map[string]string{cite("pkg/ux.go:3", "func Sleep()"), cite("pkg/nope.go:1", "")}, verify))
+	h.f.setText("ram/r1", claimJSON("Idea from ram", []map[string]string{cite("pkg/ram.go:900", "")}, verify))
+	h.f.setText("newuser/r1", claimJSON("Idea from newuser", nil, verify)) // an idea about what to build cites nothing
+	h.f.setText("skeptic/r1", claimJSON("Idea from skeptic", []map[string]string{cite("pkg/nope.go:1", "")}))
+	h.f.setFn("ux/r2", r2Citing(cite("pkg/ux.go:3", "func Sleep()")))
 	c := claimCouncil("c1", proj)
 	c.Mode = ModeBrainstorm
+	c.PauseAfterRound1 = true
 
-	done := h.run(c)
+	want := map[string]string{"ux": LabelRead, "ram": LabelGuess, "newuser": "", "skeptic": LabelGuess}
+	checkIdeas := func(when string, c *Council) {
+		t.Helper()
+		for author, label := range want {
+			p := proposalOf(t, c, ideaBy(t, c, author))
+			if p.Label != label || len(p.Runs) != 0 {
+				t.Errorf("%s: %s's idea = label %q runs %+v, want label %q and no runs", when, author, p.Label, p.Runs, label)
+			}
+		}
+		if p := proposalOf(t, c, ideaBy(t, c, "ux")); p.Evidence[0].Cite != CiteOK || p.Evidence[1].Cite != CiteWrong {
+			t.Errorf("%s: ux's evidence = %+v, want ok then wrong", when, p.Evidence)
+		}
+		if p := proposalOf(t, c, ideaBy(t, c, "newuser")); len(p.Evidence) != 0 {
+			t.Errorf("%s: newuser's evidence = %+v, want none", when, p.Evidence)
+		}
+	}
+
+	paused := h.run(c)
+	if paused.State != StateAwaiting || paused.Round != 1 {
+		t.Fatalf("after round 1: %s at round %d, want awaiting-you at round 1", paused.State, paused.Round)
+	}
+	checkIdeas("after round 1", paused)
+
+	if _, err := h.r.Continue("c1", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	done := h.wait("c1")
 	if done.State != StateDone {
 		t.Fatalf("council = %s %q, want done", done.State, done.Error)
 	}
+	checkIdeas("done", done)
 	if n := snaps.Load(); n != 0 || done.Snapshot != "" {
 		t.Errorf("snapshot taken %d times, kept %q: a Brainstorm has no tree to run anything in", n, done.Snapshot)
 	}
 	if len(trees.events) != 0 || len(g.commands()) != 0 {
 		t.Errorf("tree events %v, commands %q: a Brainstorm runs nothing", trees.events, g.commands())
 	}
-	for _, p := range done.Proposals {
-		if p.Label != "" || len(p.Runs) != 0 {
-			t.Errorf("idea %s = label %q runs %+v, want neither in a Brainstorm", p.Id, p.Label, p.Runs)
-		}
-		for _, e := range p.Evidence {
-			if e.Cite != "" || e.CiteNote != "" {
-				t.Errorf("idea %s evidence %+v was checked, want it left alone", p.Id, e)
-			}
-		}
-	}
+	// a Brainstorm's replies stay unchecked and unlabelled, though they cite
 	for _, x := range done.Replies {
 		if x.Label != "" {
 			t.Errorf("reply %s has label %q in a Brainstorm", x.Id, x.Label)
 		}
+		for _, e := range x.Evidence {
+			if e.Cite != "" {
+				t.Errorf("reply %s evidence %+v was checked in a Brainstorm", x.Id, e)
+			}
+		}
 	}
+	// the coordinator reads each idea's label, and the Brainstorm's label rule
+	r3 := h.f.calls("r3")
+	if len(r3) != 1 {
+		t.Fatalf("%d synthesis calls, want 1", len(r3))
+	}
+	mustContain(t, "synthesis prompt", r3[0].Prompt, "Label: Read code", "Label: Guess", brainstormLabelRule, brainstormLabelTie)
 }
 
 func TestRunnerVerifyStopMidVerifyRemovesTheTree(t *testing.T) {
@@ -6977,7 +7289,7 @@ var roundCheckIdRe = regexp.MustCompile(`(?m)^- \[(\w+)\]`)
 
 // roundsMessages are the ids the round check's prompt lists as what the seats said this round.
 func roundsMessages(req CallReq) []string {
-	return idsIn(roundCheckIdRe, sectionText(req.Prompt, "## What the seats said this round, oldest first"))
+	return idsIn(roundCheckIdRe, sectionText(req.Prompt, "## What was said this round, oldest first"))
 }
 
 // suggestRoundCheck makes the fake's round check suggest text, citing the first message it was shown.
@@ -6993,7 +7305,7 @@ func acceptAll(h *harness) {
 	for _, seat := range panelIds() {
 		h.f.setFn(seat+"/r2", func(req CallReq) string {
 			stances := []map[string]any{}
-			for _, pid := range idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review")) {
+			for _, pid := range shownIn(req.Prompt) {
 				stances = append(stances, map[string]any{"proposalid": pid, "stance": "accept", "reason": "Yes on " + pid})
 			}
 			return fence(mustJSON(map[string]any{"stances": stances, "revisions": []any{}, "answers": []any{}, "picks": []string{}}))
@@ -7130,7 +7442,7 @@ func TestRoundCheckRunsAfterAnAnswerBatch(t *testing.T) {
 	}
 	mustContain(t, "the batch's round check", checks[1].Prompt, "Answer from ram")
 	// the reply pass's replies are not this round's: they are in the context section, if anywhere
-	mustNotContain(t, "the batch's round check", sectionText(checks[1].Prompt, "## What the seats said this round, oldest first"), "Reason from")
+	mustNotContain(t, "the batch's round check", sectionText(checks[1].Prompt, "## What was said this round, oldest first"), "Reason from")
 	if c.Calls != done.Calls+2 || c.Tokens != done.Tokens+callTokens["ans"]+callTokens["roundcheck"] {
 		t.Errorf("calls %d tokens %d, want %d and %d: the one answer and its round check", c.Calls, c.Tokens, done.Calls+2, done.Tokens+callTokens["ans"]+callTokens["roundcheck"])
 	}
@@ -7358,5 +7670,518 @@ func TestRoundCheckAStoppedRunBooksNothing(t *testing.T) {
 	}
 	if s := checkSuggestion(c); s != nil {
 		t.Errorf("suggestion = %+v, want none from a check that was cut off", s)
+	}
+}
+
+// ---- early round 2 ----
+
+// slowSkeptic starts a Review on the early flow whose skeptic holds its round 1 call, so the other three seats finish round
+// 1 and start reviewing while it works. It returns once two reply calls are in: the first seat ready has nothing to review
+// yet, and each of the next two has the ideas of the seats ready before it.
+func slowSkeptic(t *testing.T) *harness {
+	t.Helper()
+	h := newEarlyHarness(t)
+	h.f.gate("skeptic/r1")
+	h.start(flowCouncil(t, "c1"))
+	h.f.entered(t, "skeptic/r1")
+	waitFor(t, "two early reviews", func() bool { return len(h.f.calls("r2")) >= 2 })
+	return h
+}
+
+// callsBy are the requests of kind that seat made, in order.
+func callsBy(f *fakeCaller, seat, kind string) []CallReq {
+	var out []CallReq
+	for _, req := range f.calls(kind) {
+		if req.Expert.Id == seat {
+			out = append(out, req)
+		}
+	}
+	return out
+}
+
+func TestEarlyRound2StartsBeforeASlowSeatsRound1Ends(t *testing.T) {
+	h := slowSkeptic(t)
+
+	// the council reads round 2 once the first review starts, while the skeptic is still in round 1
+	c := h.load("c1")
+	if c.State != StateRunning || c.Round != 2 {
+		t.Errorf("while the skeptic works: %s at round %d, want running at round 2", c.State, c.Round)
+	}
+	if got := len(c.Proposals); got != 3 {
+		t.Fatalf("%d ideas while the skeptic works, want the other three", got)
+	}
+	// every idea landed with the seat that reads it whole, never its author
+	for _, p := range c.Proposals {
+		if p.Checker == "" || p.Checker == p.Author {
+			t.Errorf("%s by %s carries checker %q, want another seat", p.Id, p.Author, p.Checker)
+		}
+	}
+	// an early pass holds only the ideas of seats that were ready, asks no picks, and so leaves every seat's picks unset
+	for _, req := range h.f.calls("r2") {
+		mustNotContain(t, req.Expert.Id+"'s early prompt", req.Prompt, "Title from skeptic", "name your picks")
+		mustContain(t, req.Expert.Id+"'s early prompt", req.Prompt, "This is round 2 of 3: cross-review")
+	}
+	if len(c.Picks) != 0 {
+		t.Errorf("picks = %v while a seat is in round 1, want none: an early pass asked for none", c.Picks)
+	}
+
+	h.f.release("skeptic/r1")
+	c = h.wait("c1")
+	if c.State != StateDone || c.Round != 3 || c.Error != "" || c.Summary == nil {
+		t.Fatalf("final = %s at round %d, error %q, summary %v, want done in round 3", c.State, c.Round, c.Error, c.Summary)
+	}
+
+	// the seat that finished last ran one pass, over everyone's ideas, and asked its picks; each other seat made an early pass
+	// and a catch-up (the seat that was ready first has nothing to review early, and so made the catch-up alone)
+	if sk := callsBy(h.f, "skeptic", "r2"); len(sk) != 1 {
+		t.Errorf("the skeptic made %d reply calls, want one pass", len(sk))
+	} else {
+		mustContain(t, "the skeptic's pass", sk[0].Prompt, "name your picks", "Title from ux", "Title from ram", "Title from newuser")
+	}
+	for _, seat := range []string{"ux", "ram", "newuser"} {
+		calls := callsBy(h.f, seat, "r2")
+		if len(calls) < 1 || len(calls) > 2 {
+			t.Fatalf("%s made %d reply calls, want an early pass and a catch-up", seat, len(calls))
+		}
+		last := calls[len(calls)-1]
+		mustContain(t, seat+"'s catch-up", last.Prompt, "name your picks", "Title from skeptic")
+	}
+	// each seat took one stance on each other seat's idea: the catch-up adds none on an idea an earlier pass answered
+	seen := map[string]bool{}
+	for _, r := range c.Replies {
+		if r.ParentId != "" || r.Stance == "" {
+			continue
+		}
+		key := r.Author + "/" + r.ProposalId
+		if seen[key] {
+			t.Errorf("%s took a second stance on %s", r.Author, r.ProposalId)
+		}
+		seen[key] = true
+	}
+	if len(seen) != 12 {
+		t.Errorf("%d stances, want 12: every seat on every other seat's idea", len(seen))
+	}
+	for _, seat := range panelIds() {
+		if len(c.Picks[seat]) == 0 {
+			t.Errorf("Picks[%s] empty, want the picks of its last pass", seat)
+		}
+	}
+	if h.f.indexes("r2")[0] > h.f.indexes("r3")[0] {
+		t.Errorf("the synthesis ran before a reply pass")
+	}
+}
+
+// A seat whose own claims are still being checked is not reviewed: its idea stays out of every early prompt until its
+// command has run, then each seat reads it in a catch-up.
+func TestEarlyRound2ReadsAnIdeaOnlyOnceItsClaimsAreChecked(t *testing.T) {
+	h := newEarlyHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	h.r.Trees = &fakeTrees{dir: "TREE"}
+	rig := newVerifyRig(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once, freed sync.Once
+	free := func() { freed.Do(func() { close(release) }) }
+	t.Cleanup(free)
+	rig.run = func(ctx context.Context, dir string, argv []string) (string, int, error) {
+		once.Do(func() { close(started) })
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return "ok", 0, nil
+	}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")},
+		askRun("go test ./pkg/services -run TestSleep", RunPass)))
+	h.f.setText("ram/r1", claimJSON("Cache less", []map[string]string{cite("pkg/ram.go:3", "")}))
+	h.f.setText("newuser/r1", claimJSON("Say less", nil))
+	h.f.setText("skeptic/r1", claimJSON("Break it", nil))
+	h.start(claimCouncil("c1", proj))
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("ux's command never started")
+	}
+	waitFor(t, "two early reviews", func() bool { return len(h.f.calls("r2")) >= 2 })
+	for _, req := range h.f.calls("r2") {
+		mustNotContain(t, req.Expert.Id+"'s early prompt", req.Prompt, "Sleep first", "name your picks")
+	}
+	if got := callsBy(h.f, "ux", "r2"); len(got) != 0 {
+		t.Errorf("ux made %d reply calls while its own command ran, want none", len(got))
+	}
+	if c := h.load("c1"); len(c.Picks) != 0 {
+		t.Errorf("picks = %v before every seat's claims are checked, want none", c.Picks)
+	}
+
+	free()
+	c := h.wait("c1")
+	if c.State != StateDone {
+		t.Fatalf("council = %s %q, want done", c.State, c.Error)
+	}
+	idea := proposalOf(t, c, ideaBy(t, c, "ux"))
+	if len(idea.Runs) != 1 || idea.Runs[0].State != RunPass || idea.Label != LabelRan {
+		t.Errorf("ux's idea = runs %+v label %q, want its command's result in and the claim labelled Ran", idea.Runs, idea.Label)
+	}
+	// each seat that reviewed early read ux's idea in a catch-up that asked its picks; ux ran one pass, with picks
+	for _, seat := range []string{"ram", "newuser", "skeptic"} {
+		calls := callsBy(h.f, seat, "r2")
+		last := calls[len(calls)-1]
+		mustContain(t, seat+"'s catch-up", last.Prompt, "Sleep first", "name your picks")
+	}
+	if ux := callsBy(h.f, "ux", "r2"); len(ux) != 1 {
+		t.Errorf("ux made %d reply calls, want its one pass", len(ux))
+	} else {
+		mustContain(t, "ux's pass", ux[0].Prompt, "name your picks")
+	}
+}
+
+// exclusiveTrees is a TreeMaker that notes how many trees are live at once. A council has one tree key, so a tree made
+// while another is live would replace it, and the first's removal would delete the second's.
+type exclusiveTrees struct {
+	mu                 sync.Mutex
+	live, most, madeIn int
+}
+
+func (x *exclusiveTrees) Make(ctx context.Context, project, commit, key string) (string, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.live++
+	x.madeIn++
+	x.most = max(x.most, x.live)
+	return "TREE", nil
+}
+
+func (x *exclusiveTrees) Remove(ctx context.Context, project, dir string) error {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.live--
+	return nil
+}
+
+func TestEarlyRound2RunsTwoSeatsCommandsOneAtATime(t *testing.T) {
+	h := newEarlyHarness(t)
+	proj := checkProject(t)
+	useSnapshot(t, "snap", nil)
+	trees := &exclusiveTrees{}
+	h.r.Trees = trees
+	rig := newVerifyRig(t)
+	rig.run = func(ctx context.Context, dir string, argv []string) (string, int, error) {
+		time.Sleep(40 * time.Millisecond) // long enough for the other seat's call to arrive
+		return "ok", 0, nil
+	}
+	h.f.setText("ux/r1", claimJSON("Sleep first", []map[string]string{cite("pkg/ux.go:3", "func Sleep()")}, askRun("go test ./pkg/services -run TestA", RunPass)))
+	h.f.setText("ram/r1", claimJSON("Cache less", []map[string]string{cite("pkg/ram.go:3", "")}, askRun("go test ./pkg/services -run TestB", RunPass)))
+	h.f.setText("newuser/r1", claimJSON("Say less", nil))
+	h.f.setText("skeptic/r1", claimJSON("Break it", nil))
+
+	c := h.run(claimCouncil("c1", proj))
+	if c.State != StateDone {
+		t.Fatalf("council = %s %q, want done", c.State, c.Error)
+	}
+	if trees.most != 1 || trees.madeIn != 2 || trees.live != 0 {
+		t.Errorf("trees: %d live at most, %d made, %d left, want one at a time, one for each seat, none left", trees.most, trees.madeIn, trees.live)
+	}
+	for _, seat := range []string{"ux", "ram"} {
+		p := proposalOf(t, c, ideaBy(t, c, seat))
+		if len(p.Runs) != 1 || p.Runs[0].State != RunPass || p.Label != LabelRan {
+			t.Errorf("%s's idea = runs %+v label %q, want its command run and the result kept", seat, p.Runs, p.Label)
+		}
+	}
+}
+
+// An idea's checker that fails round 1 reads nothing: at the barrier the idea goes to another seat, whose catch-up reads it
+// whole. A seat that finds no idea of the failed seat to review still gives its picks.
+func TestEarlyRound2ReroutesAnIdeaWhoseCheckerFailed(t *testing.T) {
+	h := newEarlyHarness(t)
+	h.f.setFail("skeptic/r1", errors.New("boom"))
+	h.f.gate("skeptic/r1")
+	h.f.setFn("ux/r1", func(CallReq) string {
+		return fence(mustJSON(map[string]any{"overview": "x", "proposals": []map[string]any{{
+			"title": "Title from ux", "argument": "Argument from ux", "evidence": []map[string]string{{"ref": "pkg/ux.go:1"}},
+			"checker": "skeptic", "checkwhy": "it breaks things",
+		}}}))
+	})
+	h.start(flowCouncil(t, "c1"))
+	h.f.entered(t, "skeptic/r1")
+	waitFor(t, "the three ideas", func() bool { return len(h.load("c1").Proposals) == 3 })
+	c := h.load("c1")
+	id := ideaBy(t, c, "ux")
+	if p := proposalOf(t, c, id); p.Checker != "skeptic" || p.CheckWhy != "it breaks things" {
+		t.Fatalf("ux's idea = checker %q why %q, want the seat it named and its reason", p.Checker, p.CheckWhy)
+	}
+
+	h.f.release("skeptic/r1")
+	c = h.wait("c1")
+	if c.State != StateDone || c.Failed["skeptic"].Round != 1 {
+		t.Fatalf("council = %s, failed %+v, want done with the skeptic failed in round 1", c.State, c.Failed)
+	}
+	p := proposalOf(t, c, id)
+	if p.Checker != "ram" && p.Checker != "newuser" {
+		t.Fatalf("ux's idea routes to %q after the barrier, want ram or newuser: not the failed seat, not its author", p.Checker)
+	}
+	whole := false
+	for _, req := range callsBy(h.f, p.Checker, "r2") {
+		whole = whole || slices.Contains(wholeIn(req.Prompt), id)
+	}
+	if !whole {
+		t.Errorf("%s never read %s whole, want its catch-up to hold the idea routed to it", p.Checker, id)
+	}
+	if got := callsBy(h.f, "skeptic", "r2"); len(got) != 0 {
+		t.Errorf("the failed skeptic made %d reply calls, want none", len(got))
+	}
+	for _, seat := range []string{"ux", "ram", "newuser"} {
+		if len(c.Picks[seat]) == 0 {
+			t.Errorf("Picks[%s] empty, want picks even when the seat that held its pass up gave no idea", seat)
+		}
+	}
+}
+
+func TestEarlyRound2AnAskPostedInRound1IsRoutedBeforeTheCatchUps(t *testing.T) {
+	h := newEarlyHarness(t)
+	h.f.gate("skeptic/r1")
+	h.f.gate("router/route")
+	h.f.setText("router/route", routeJSON("ram"))
+	h.start(flowCouncil(t, "c1"))
+	h.f.entered(t, "skeptic/r1")
+	if _, err := h.r.Reply("c1", "", "", wholeAsk, false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	h.f.entered(t, "router/route")
+	h.f.release("skeptic/r1")
+	time.Sleep(100 * time.Millisecond) // the barrier has reached the message the router has not answered
+	if n := len(h.f.calls("route")); n != 1 {
+		t.Fatalf("%d router calls, want 1: the barrier waits for the one in flight", n)
+	}
+	h.f.release("router/route")
+	c := h.wait("c1")
+	if c.State != StateDone {
+		t.Fatalf("council = %s %q, want done", c.State, c.Error)
+	}
+
+	var ask CouncilReply
+	for _, x := range c.Replies {
+		if x.Author == YouId {
+			ask = x
+		}
+	}
+	if !slices.Equal(ask.To, []string{"ram"}) || !ask.Answered || !answeredBy(c, ask.Id, "ram") {
+		t.Fatalf("the message = to %v answered %v, answered by ram %v, want it routed to ram and answered", ask.To, ask.Answered, answeredBy(c, ask.Id, "ram"))
+	}
+	n := 0
+	routed := h.f.indexes("route")[0]
+	for i, req := range h.f.all() {
+		if kindOf(req.Prompt) == "r2" && strings.Contains(req.Prompt, wholeAsk) {
+			n++
+			if req.Expert.Id != "ram" || i < routed {
+				t.Errorf("call %d by %s holds the message, want ram's, after the router (call %d)", i, req.Expert.Id, routed)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d reply calls hold the message, want one: ram's catch-up answers it once", n)
+	}
+	answers := 0
+	for _, x := range c.Replies {
+		if x.ParentId == ask.Id {
+			answers++
+		}
+	}
+	if answers != 1 {
+		t.Errorf("%d answers under the message, want 1", answers)
+	}
+}
+
+// A council of three rounds runs round 3 after the catch-ups, as a whole pass that asks the picks; round 2's passes ask
+// none, and no seat makes a second whole pass in round 2.
+func TestEarlyRound2ThreeRoundsRunRound3AfterTheCatchUps(t *testing.T) {
+	h := newEarlyHarness(t)
+	var mu sync.Mutex
+	var rounds []int
+	record := func(req CallReq) string {
+		n := 2
+		if strings.Contains(req.Prompt, "round 3 of 4") {
+			n = 3
+		}
+		mu.Lock()
+		rounds = append(rounds, n)
+		mu.Unlock()
+		return round2JSON(req)
+	}
+	h.f.setFn("ux/r2", record)
+	h.agents.setFn("witness/r2", record)
+	c := agentCouncil("three")
+	c.ByAgent, c.Rounds = true, 3
+	done := h.run(c)
+	if done.State != StateDone || done.Round != 4 {
+		t.Fatalf("council = %s at round %d %q, want done at round 4", done.State, done.Round, done.Error)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.IsSorted(rounds) || !slices.Contains(rounds, 3) || !slices.Contains(rounds, 2) {
+		t.Fatalf("reply passes ran in rounds %v, want every round 2 pass before round 3, and both rounds run", rounds)
+	}
+	var two int
+	for _, req := range callsBy(h.f, "ux", "r2") {
+		if strings.Contains(req.Prompt, "round 2 of 4") {
+			two++
+			mustNotContain(t, "ux's round 2 prompt", req.Prompt, "name your picks")
+		} else {
+			mustContain(t, "ux's round 3 prompt", req.Prompt, "name your picks")
+		}
+	}
+	if two > 2 {
+		t.Errorf("ux made %d round 2 calls, want at most an early pass and a catch-up", two)
+	}
+	if len(done.Picks["ux"]) == 0 {
+		t.Errorf("Picks = %v, want ux's from round 3, the last reply pass", done.Picks)
+	}
+}
+
+// Councils that pause, hold drafts or brainstorm keep the barrier: no reply call is made while a seat is in round 1.
+func TestEarlyRound2CouncilsThatPauseOrBrainstormKeepTheBarrier(t *testing.T) {
+	t.Run("held drafts", func(t *testing.T) {
+		// a live chat is seated and the person started the council from the app
+		_, held := holdsBarrier(t, agentCouncil("held"), "ux", 1, nil)
+		if held.State != StateAwaiting || held.Round != 1 || len(heldIds(held)) == 0 {
+			t.Errorf("%s at round %d holding %v, want awaiting-you at round 1 with the drafts", held.State, held.Round, heldIds(held))
+		}
+	})
+
+	t.Run("a pause after round 1", func(t *testing.T) {
+		pause := flowCouncil(t, "pause")
+		pause.PauseAfterRound1 = true
+		h, paused := holdsBarrier(t, pause, "skeptic", 3, nil)
+		if paused.State != StateAwaiting || paused.Round != 1 || len(h.f.calls("r2")) != 0 {
+			t.Errorf("%s at round %d, %d reply calls, want awaiting-you at round 1 with none", paused.State, paused.Round, len(h.f.calls("r2")))
+		}
+		for _, p := range paused.Proposals {
+			if p.Checker == "" || p.Checker == p.Author {
+				t.Errorf("%s carries checker %q at the pause, want a routed seat: the barrier flow routes too", p.Id, p.Checker)
+			}
+		}
+	})
+
+	t.Run("a Brainstorm", func(t *testing.T) {
+		// its idea names a checker all the same (a model may), and the runner drops it: its cross-check is whole
+		brainstorm := flowCouncil(t, "brain")
+		brainstorm.Mode = ModeBrainstorm
+		h, done := holdsBarrier(t, brainstorm, "skeptic", 3, func(h *harness) {
+			h.f.setText("ux/r1", fence(`{"overview": "x", "proposals": [{"title": "Idea from ux", "argument": "a", "checker": "ram", "checkwhy": "why"}]}`))
+		})
+		if done.State != StateDone || len(h.f.calls("r2")) != 4 {
+			t.Errorf("%s with %d reply calls, want done after one whole pass per seat", done.State, len(h.f.calls("r2")))
+		}
+		for _, p := range done.Proposals {
+			if p.Checker != "" || p.CheckWhy != "" {
+				t.Errorf("%s carries checker %q why %q in a Brainstorm, want none", p.Id, p.Checker, p.CheckWhy)
+			}
+		}
+	})
+}
+
+// holdsBarrier runs council c on the early flow with seat slow's round 1 held, checks that no reply call is made while it
+// is, then lets it end. others is how many ideas the other seats have landed when it checks; setup, when set, prepares the
+// harness's fakes before the run starts.
+func holdsBarrier(t *testing.T, c *Council, slow string, others int, setup func(h *harness)) (*harness, *Council) {
+	t.Helper()
+	h := newEarlyHarness(t)
+	if setup != nil {
+		setup(h)
+	}
+	h.f.gate(slow + "/r1")
+	h.start(c)
+	h.f.entered(t, slow+"/r1")
+	waitFor(t, "the other seats' ideas", func() bool { return len(h.load(c.Id).Proposals) >= others })
+	time.Sleep(150 * time.Millisecond) // a review the early flow starts would have called by now
+	if n := len(h.f.calls("r2")) + len(h.agents.calls("r2")); n != 0 {
+		t.Fatalf("%s: %d reply calls while %s is still in round 1, want none: the barrier holds", c.Id, n, slow)
+	}
+	h.f.release(slow + "/r1")
+	return h, h.wait(c.Id)
+}
+
+func TestEarlyRound2AStopEndsTheCouncilWithoutAHang(t *testing.T) {
+	h := newEarlyHarness(t)
+	h.f.gate("skeptic/r1")
+	for _, seat := range []string{"ux", "ram", "newuser"} {
+		h.f.gate(seat + "/r2")
+	}
+	h.start(flowCouncil(t, "c1"))
+	h.f.entered(t, "skeptic/r1")
+	waitFor(t, "an early review", func() bool { return len(h.f.calls("r2")) > 0 })
+	if _, err := h.r.Stop("c1"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	c := h.wait("c1")
+	if c.State != StateStopped || len(c.Activity) != 0 {
+		t.Errorf("council = %s with activity %v, want stopped with no seat working", c.State, c.Activity)
+	}
+	if n := len(h.f.calls("r3")); n != 0 {
+		t.Errorf("%d synthesis calls after a Stop, want none", n)
+	}
+}
+
+// A seat whose early pass failed sits the catch-up out: its failure is the round's, and the council goes on without it.
+func TestEarlyRound2ASeatWhoseEarlyPassFailedRunsNoCatchUp(t *testing.T) {
+	h := newEarlyHarness(t)
+	h.f.setFail("ram/r2", errors.New("boom"))
+	h.f.gate("ram/r1")
+	h.f.gate("skeptic/r1")
+	h.start(flowCouncil(t, "c1"))
+	h.f.entered(t, "skeptic/r1")
+	// ux and newuser are ready once one of them has an idea to review; ram then reviews both early, while the skeptic works
+	waitFor(t, "an early review", func() bool { return len(h.f.calls("r2")) >= 1 })
+	h.f.release("ram/r1")
+	waitFor(t, "ram's early pass to fail", func() bool { return h.load("c1").Failed["ram"].Round == 2 })
+	h.f.release("skeptic/r1")
+	c := h.wait("c1")
+	if c.State != StateDone || c.Failed["ram"].Round != 2 {
+		t.Fatalf("council = %s, failed %+v, want done with ram failed in round 2", c.State, c.Failed)
+	}
+	if got := callsBy(h.f, "ram", "r2"); len(got) != 1 {
+		t.Errorf("ram made %d reply calls, want its failed early pass alone: no catch-up", len(got))
+	}
+	if got := callsBy(h.f, "skeptic", "r2"); len(got) != 1 {
+		t.Errorf("the skeptic made %d reply calls, want its one pass", len(got))
+	}
+}
+
+func TestEarlyRound2NoSeatAnsweringRound1FailsTheCouncil(t *testing.T) {
+	h := newEarlyHarness(t)
+	for _, seat := range panelIds() {
+		h.f.setFail(seat+"/r1", errors.New("boom"))
+	}
+	c := h.run(flowCouncil(t, "c1"))
+	if c.State != StateFailed || c.Error != "every expert failed in round 1" {
+		t.Errorf("council = %s %q, want failed: every expert failed in round 1", c.State, c.Error)
+	}
+	if n := len(h.f.calls("r2")) + len(h.f.calls("r3")); n != 0 {
+		t.Errorf("%d reply or synthesis calls, want none", n)
+	}
+}
+
+func TestRouteCheckerNeverPicksAFailedSeat(t *testing.T) {
+	c := testCouncil("c1")
+	c.Failed = map[string]CouncilFailure{"ram": {Round: 1, Error: "boom"}}
+	// the seat the author named failed: the fewest-checks fallback picks among the seats that can answer, not the author
+	if got := routeChecker(c, CouncilProposal{Id: "P1", Author: "ux", Checker: "ram"}); got != "newuser" {
+		t.Errorf("checker = %q, want newuser: ram failed, ux wrote it", got)
+	}
+	if got := routeChecker(c, CouncilProposal{Id: "P1", Author: "ux", Checker: "skeptic"}); got != "skeptic" {
+		t.Errorf("checker = %q, want the seat the author named, which can answer", got)
+	}
+}
+
+func TestApplyRound2KeepsPicksOnlyFromAPassThatAskedForThem(t *testing.T) {
+	c := picksCouncil()
+	res := Round2Result{Picks: []string{"P2", "P3"}}
+	applyRound2(c, c.Experts[0], res, 2, false, 5)
+	if len(c.Picks) != 0 {
+		t.Fatalf("picks = %v from a pass that asked for none, want none kept", c.Picks)
+	}
+	applyRound2(c, c.Experts[0], res, 2, true, 5)
+	if got := c.Picks["ux"]; !slices.Equal(got, []string{"P2", "P3"}) {
+		t.Errorf("picks = %v from a pass that asked, want P2 and P3", got)
 	}
 }

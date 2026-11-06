@@ -660,6 +660,12 @@ export class RpcApiType {
         return client.wshRpcCall("effortmutate", data, opts);
     }
 
+    // command "effortpin" [call]
+    EffortPinCommand(client: WshClient, data: CommandEffortPinData, opts?: RpcOpts): Promise<CommandEffortPinRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortpin", data, opts);
+        return client.wshRpcCall("effortpin", data, opts);
+    }
+
     // command "eventpublish" [call]
     EventPublishCommand(client: WshClient, data: WaveEvent, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "eventpublish", data, opts);
@@ -1266,6 +1272,12 @@ export class RpcApiType {
         return client.wshRpcCall("path", data, opts);
     }
 
+    // command "pauserun" [call]
+    PauseRunCommand(client: WshClient, data: CommandPauseRunData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "pauserun", data, opts);
+        return client.wshRpcCall("pauserun", data, opts);
+    }
+
     // command "postchannelmessage" [call]
     PostChannelMessageCommand(client: WshClient, data: CommandPostChannelMessageData, opts?: RpcOpts): Promise<ChannelMessage> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "postchannelmessage", data, opts);
@@ -1404,6 +1416,12 @@ export class RpcApiType {
         return client.wshRpcCall("resolveids", data, opts);
     }
 
+    // command "resumerun" [call]
+    ResumeRunCommand(client: WshClient, data: CommandPauseRunData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resumerun", data, opts);
+        return client.wshRpcCall("resumerun", data, opts);
+    }
+
     // command "retryradarclustering" [call]
     RetryRadarClusteringCommand(client: WshClient, data: CommandRetryRadarClusteringData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "retryradarclustering", data, opts);
@@ -1528,6 +1546,12 @@ export class RpcApiType {
     ServiceStopCommand(client: WshClient, data: CommandServiceData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "servicestop", data, opts);
         return client.wshRpcCall("servicestop", data, opts);
+    }
+
+    // command "setcanvaslink" [call]
+    SetCanvasLinkCommand(client: WshClient, data: CommandSetCanvasLinkData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setcanvaslink", data, opts);
+        return client.wshRpcCall("setcanvaslink", data, opts);
     }
 
     // command "setchannelprofile" [call]
@@ -1774,6 +1798,12 @@ export class RpcApiType {
     WriteTempFileCommand(client: WshClient, data: CommandWriteTempFileData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "writetempfile", data, opts);
         return client.wshRpcCall("writetempfile", data, opts);
+    }
+
+    // command "xmastree" [call]
+    XmasTreeCommand(client: WshClient, opts?: RpcOpts): Promise<XmasTreeData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "xmastree", null, opts);
+        return client.wshRpcCall("xmastree", null, opts);
     }
 
 }

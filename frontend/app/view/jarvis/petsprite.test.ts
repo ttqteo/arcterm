@@ -24,10 +24,13 @@ import {
     SPIDEY_SENSE,
     SPIDEY_SWING,
     SPIDEY_UNMASK,
+    spideyCrawlRows,
     spideyFold,
+    spideyHangRows,
     spriteFor,
     spriteOfRows,
     type PetCell,
+    type PetCharacter,
     type PetMark,
     type PetPose,
 } from "./petsprite";
@@ -127,7 +130,7 @@ describe("tokens", () => {
         expect(THEME_BLOCK).toMatch(new RegExp(`(?:^|[\\s;{])${token}\\s*:`, "m"));
     });
 
-    it("maps exactly the eight codes of the spec, the flag's two, the Minion's five, and Spider-Man's fifteen", () => {
+    it("maps exactly the eight codes of the spec, the flag's two, the Minion's five, Spider-Man's fifteen and the Santa hat's two", () => {
         expect(PET_TOKENS).toEqual({
             b: "--color-accent",
             d: "--color-accent-600",
@@ -160,6 +163,8 @@ describe("tokens", () => {
             N: "--color-city-brick-light",
             Q: "--color-city-window",
             L: "--color-city-window-lit",
+            A: "--color-xmas-crimson",
+            F: "--color-xmas-snow",
         });
     });
 });
@@ -765,5 +770,146 @@ describe("Peter the boss", () => {
 
     it("defines the tie's token in the theme", () => {
         expect(THEME_BLOCK).toMatch(/--color-peter-tie:\s*#[0-9a-f]{6};/i);
+    });
+});
+
+describe("the Santa hat", () => {
+    const HAT_TOKENS: string[] = ["--color-xmas-crimson", "--color-xmas-snow"];
+    const isHat = (code: string) =>
+        code in PET_TOKENS && HAT_TOKENS.includes(PET_TOKENS[code as keyof typeof PET_TOKENS]);
+    // the cells that make each head, and what grows above it that a hat covers (the sprout, hair, Peter's tufts)
+    const HEAD: Record<PetCharacter, string> = { sprout: "bl", minion: "jh", spidey: "SH" };
+    const TUFT: Record<PetCharacter, string> = { sprout: "d", minion: "s", spidey: "H" };
+    const CHARACTERS: [PetCharacter, Record<PetPose, readonly string[]>][] = [
+        ["sprout", POSES],
+        ["minion", MINION_POSES],
+        ["spidey", SPIDEY_POSES],
+    ];
+    const headCount = (row: string, character: PetCharacter) =>
+        [...row].filter((c) => HEAD[character].includes(c)).length;
+    // the head's top row: the first wide enough to be a head, not a tuft or a strand
+    const headTop = (rows: readonly string[], character: PetCharacter) =>
+        rows.findIndex((row) => headCount(row, character) >= 4);
+
+    // The hat over `plain`: it has hat cells, none below the head's top row, and every other cell is the plain grid's,
+    // but for a tuft the hat covers. `upsideDown` reads the head from the bottom (the hang, the crawl).
+    function expectHat(
+        plain: readonly string[],
+        hatted: readonly string[],
+        character: PetCharacter,
+        upsideDown = false
+    ) {
+        expect(codesKnown(plain)).toBe(true);
+        expect(plain.join("").split("").some(isHat), "the plain grid has no hat").toBe(false);
+        expect(codesKnown(hatted)).toBe(true);
+        const top = upsideDown
+            ? plain.length - 1 - [...plain].reverse().findIndex((row) => headCount(row, character) >= 4)
+            : headTop(plain, character);
+        expect(top).toBeGreaterThanOrEqual(0);
+        const hat: [number, number][] = [];
+        hatted.forEach((row, y) =>
+            [...row].forEach((code, x) => {
+                if (isHat(code)) {
+                    hat.push([x, y]);
+                    return;
+                }
+                const before = plain[y]?.[x] ?? ".";
+                const above = upsideDown ? y > top : y < top;
+                if (above && code === "." && TUFT[character].includes(before)) {
+                    return;
+                }
+                expect(code, `${x},${y}`).toBe(before);
+            })
+        );
+        expect(hat.length).toBeGreaterThan(0);
+        // the trim covers the head's top row, and the rest of the hat is above it
+        expect(hat.some(([, y]) => y === top)).toBe(true);
+        for (const [x, y] of hat) {
+            expect(upsideDown ? y >= top : y <= top, `${x},${y}`).toBe(true);
+            expect(x).toBeGreaterThanOrEqual(0);
+        }
+        // nothing below the head's top row moves: the body is the plain pose's, never a dressed grid's
+        if (upsideDown) {
+            expect(hatted.slice(0, top)).toEqual(plain.slice(0, top));
+        } else {
+            expect(hatted.slice(top + 1)).toEqual(plain.slice(top + 1));
+        }
+        return hat;
+    }
+
+    it("draws in the Christmas decor's tokens, which the theme defines", () => {
+        expect(Object.values(PET_TOKENS)).toEqual(expect.arrayContaining(HAT_TOKENS));
+        for (const token of HAT_TOKENS) {
+            expect(THEME_BLOCK).toMatch(new RegExp(`${token}:\\s*#[0-9a-f]{6};`, "i"));
+        }
+    });
+
+    for (const [character, plain] of CHARACTERS) {
+        it.each(POSE_NAMES)(`sits on ${character}'s head in %s, over the plain pose`, (pose) => {
+            const rows = outfitRows(pose, "santa-hat", character);
+            expect(rows).toHaveLength(PET_GRID);
+            expect(rows.every((r) => r.length === PET_GRID)).toBe(true);
+            const hat = expectHat(plain[pose], rows, character);
+            // clear of every mark, so a mark never hides it
+            for (const { x, y, rows: m } of Object.values(MARKS)) {
+                m.forEach((r, dy) =>
+                    [...r].forEach((c, dx) => {
+                        if (c !== ".") {
+                            expect(
+                                hat.some(([hx, hy]) => hx === x + dx && hy === y + dy),
+                                `${pose} mark`
+                            ).toBe(false);
+                        }
+                    })
+                );
+            }
+        });
+
+        it(`holds nothing behind ${character} in the hat`, () => {
+            for (const pose of POSE_NAMES) {
+                expect(spriteFor(pose, [], "santa-hat", character).back).toEqual([]);
+            }
+        });
+    }
+
+    it.each(POSE_NAMES)("sits on Peter the boss's head in %s, over his shirt and tie", (pose) => {
+        expectHat(PETER_BOSS_POSES[pose], bossRows(pose, "santa-hat", "spidey"), "spidey");
+        expect(bossSprite(pose, [], "santa-hat", "spidey").back).toEqual([]);
+    });
+
+    it("sits on the boss turned to its side and back, in each walk frame and the stand", () => {
+        for (const [character] of CHARACTERS) {
+            for (const facing of ["side", "back"] as const) {
+                for (const pose of ["walk1", "walk2", "stand"] as const) {
+                    expectHat(
+                        bossRows(pose, null, character, facing),
+                        bossRows(pose, "santa-hat", character, facing),
+                        character
+                    );
+                    expect(bossSprite(pose, [], "santa-hat", character, facing).back).toEqual([]);
+                }
+            }
+        }
+    });
+
+    it("hangs off Spider-Man's head in the hang and the crawl, where his head is at the bottom", () => {
+        expect(spideyHangRows(null)).toBe(SPIDEY_HANG);
+        expect(spideyHangRows("vn-shirt")).toBe(SPIDEY_HANG);
+        expectHat(SPIDEY_HANG, spideyHangRows("santa-hat"), "spidey", true);
+        SPIDEY_CRAWL.forEach((frame, i) => {
+            expect(spideyCrawlRows(i, null)).toBe(frame);
+            const rows = spideyCrawlRows(i, "santa-hat");
+            expect(rows).toHaveLength(PET_GRID);
+            expectHat(frame, rows, "spidey", true);
+        });
+    });
+
+    it("sits on Spider-Man's head on the fold's rooftop, and only when asked", () => {
+        for (const swing of [false, true]) {
+            expect(spideyFold(2, swing, false)).toEqual(spideyFold(2, swing));
+            const rows = spideyFold(2, swing, true);
+            expect(rows).toHaveLength(20);
+            expectHat(spideyFold(2, swing), rows, "spidey");
+        }
     });
 });

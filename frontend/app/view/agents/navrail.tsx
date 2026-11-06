@@ -28,6 +28,7 @@ import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { workingCount } from "./agentsviewmodel";
 import { attentionAtom, cockpitWaitingCount, splitAttention } from "./attentionstore";
 import { channelMessagesAtom } from "./channelsstore";
+import { RailSantaHat } from "./christmashat";
 import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
 import { setupRailTitle } from "./memorymodel";
@@ -135,6 +136,7 @@ function RailAppItem({
             ) : null}
             <span className="relative z-[1]">
                 <AppWindow size={16} strokeWidth={1.8} />
+                <RailSantaHat iconSize={16} />
                 {dot ? (
                     <span
                         data-nav-app-dot={dot}
@@ -152,6 +154,15 @@ function RailAppItem({
     );
 }
 
+/** The Cockpit badge's count: every agent that needs you, plus the Cockpit's other attention items. The Christmas
+ *  lights (christmaslights.tsx) blink on the same number, so both read it here. */
+export function useCockpitWaitingCount(model: AgentsViewModel): number {
+    const split = splitAttention(useAtomValue(attentionAtom));
+    const agents = useAtomValue(model.agentsAtom);
+    const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
+    return cockpitWaitingCount(split.cockpit, agents, answered);
+}
+
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
     // Three disjoint "needs you" badges from one server-computed list: Cockpit counts the agents that need you
@@ -165,9 +176,9 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     // Agent also says how many agents are working, so a run doing its work is visible from Code or Diff, and the count
     // stays on Agent itself, where the focused terminal can hide the rows that show it
     const agents = useAtomValue(model.agentsAtom);
-    const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
+    const cockpitWaiting = useCockpitWaitingCount(model);
     const badges: Partial<Record<SurfaceKey, number>> = {
-        cockpit: cockpitWaitingCount(split.cockpit, agents, answered),
+        cockpit: cockpitWaiting,
         jarvis: split.jarvis.length,
         agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
         radar: split.radar.length,
@@ -238,6 +249,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     <DigitHint digit={digit}>
                         <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
                     </DigitHint>
+                    <RailSantaHat iconSize={tool ? 16 : 20} />
                     {badge > 0 ? (
                         <span
                             data-nav-badge={key}
@@ -310,7 +322,10 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     translateOpen && "bg-surface-selected text-primary hover:text-primary"
                 )}
             >
-                <Languages size={16} strokeWidth={1.8} />
+                <span className="relative">
+                    <Languages size={16} strokeWidth={1.8} />
+                    <RailSantaHat iconSize={16} />
+                </span>
                 {narrow ? null : <span className="text-[10px] font-semibold">Translate</span>}
             </button>
             {renderItem("setup", "Setup", memoryToReview)}

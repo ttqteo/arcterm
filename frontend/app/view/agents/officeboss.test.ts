@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     advance,
+    behindXmasTree,
     bossLook,
     canStand,
     canWalk,
@@ -23,8 +24,10 @@ import {
     BOSS_HALF_W,
     BOSS_HEADROOM,
     buildPlan,
+    giftArea,
     HWALL,
     LIFT_KEY,
+    TREE_KEY,
     type Plan,
     type PlanAgent,
     type Point,
@@ -77,6 +80,40 @@ const upstairs = buildPlan({
     now: 0,
     away: {},
     night: false,
+});
+// Christmas: the full floor with a finished agent hidden in b's chip and a done task at each table, so every room has a
+// tree (b's and Home's at their strip's plant, a's and c's at a free spot right of their table) and three have gifts
+const doneRun = (id: string, project: string) => ({
+    ...run(id, project),
+    tasks: [
+        { id: "t1", label: "t1", state: "done", asking: false },
+        { id: "t2", label: "t2", state: "running", asking: false },
+    ],
+});
+const merryInput = (christmas: boolean) => ({
+    agents: [
+        ...["a", "b", "c"].flatMap((p) => [ag(`${p}1`, p), ag(`${p}2`, p, "asking")]),
+        { ...ag("b3", "b", "idle"), finished: true },
+        ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
+    ],
+    runs: [doneRun("r1", "a"), doneRun("r2", "c")],
+    width: 900,
+    now: 0,
+    away: {},
+    night: false,
+    christmas,
+});
+const merry = buildPlan(merryInput(true));
+const plainMerry = buildPlan(merryInput(false));
+// alpha's tree at its desk row's plant, its gifts beside it
+const merryAlpha = buildPlan({
+    agents: [ag("a1", "alpha"), ag("a2", "alpha"), ag("b1", "beta"), ag("h1")],
+    runs: [doneRun("r1", "alpha")],
+    width: 1050,
+    now: 0,
+    away: {},
+    night: false,
+    christmas: true,
 });
 // one project: its three other rooms are empty
 const lone = buildPlan({ agents: [ag("a1", "alpha")], runs: [], width: 1050, now: 0, away: {}, night: false });
@@ -212,21 +249,75 @@ describe("officeboss", () => {
         expect(overFurniture(plan, pathBetween(plan, above, a1))).toEqual([]);
     });
 
-    it("walks every desk and seat to every other on a full floor round the furniture, never over it", () => {
-        const spots = [
-            ...full.desks.map((d) => d.spot),
-            ...full.seats.map((s) => s.spot),
-            full.board.spot,
-            full.lift.spot,
-        ];
-        for (const a of spots) {
-            for (const b of spots) {
-                const path = pathBetween(full, a, b);
-                expect(path[0]).toEqual(a);
-                expect(path[path.length - 1]).toEqual(b);
-                expect(overFurniture(full, path), JSON.stringify([a, b])).toEqual([]);
-                expect(offFloor(full, path), JSON.stringify([a, b])).toEqual([]);
+    it.each([
+        ["", full],
+        [" under Christmas, round the trees and gifts", merry],
+    ] as [string, Plan][])(
+        "walks every desk and seat to every other on a full floor round the furniture, never over it%s",
+        (_, p) => {
+            const spots = [...p.desks.map((d) => d.spot), ...p.seats.map((s) => s.spot), p.board.spot, p.lift.spot];
+            for (const a of spots) {
+                for (const b of spots) {
+                    const path = pathBetween(p, a, b);
+                    expect(path[0]).toEqual(a);
+                    expect(path[path.length - 1]).toEqual(b);
+                    expect(overFurniture(p, path), JSON.stringify([a, b])).toEqual([]);
+                    expect(offFloor(p, path), JSON.stringify([a, b])).toEqual([]);
+                }
             }
+        }
+    );
+
+    it("keeps the boss's feet off each room's Christmas tree and its gifts, only while Christmas shows", () => {
+        const rooms = merry.rooms.filter((r) => r.xmas);
+        expect(rooms.filter((r) => r.kind === "agents")).toHaveLength(4);
+        // a tree at a free spot (no plant there) and gifts beside a plant's tree are both among them
+        expect(rooms.some((r) => !r.plants && r.xmas!.gifts > 0)).toBe(true);
+        expect(rooms.some((r) => r.plants && r.xmas!.gifts > 0)).toBe(true);
+        // the points of a box the boss could stand on, were nothing there (a tree by a wall stands partly out of reach)
+        const floorIn = (p: Plan, b: { x: number; y: number; w: number; h: number }) => {
+            const out: Point[] = [];
+            for (let y = b.y + 1; y < b.y + b.h; y += 3) {
+                for (let x = b.x + 1; x < b.x + b.w; x += 3) {
+                    if (canStand(p, { x, y })) {
+                        out.push({ x, y });
+                    }
+                }
+            }
+            return out;
+        };
+        const potOf = (t: Point) => ({ x: t.x + 6, y: t.y + 26, w: 22, h: 18 });
+        const giftsOf = (g: { x: number; y: number; w: number; h: number }) => ({ ...g, y: g.y + 12, h: g.h - 12 });
+        for (const p of [merry, merryAlpha]) {
+            for (const r of p.rooms.filter((x) => x.xmas)) {
+                const pot = floorIn(p, potOf(r.xmas!.tree));
+                expect(pot.length, r.key).toBeGreaterThan(0);
+                expect(
+                    pot.filter((q) => canWalk(p, q)),
+                    `${r.key} pot`
+                ).toEqual([]);
+                const gifts = floorIn(p, giftsOf(giftArea(r)!));
+                expect(gifts.length, r.key).toBeGreaterThan(0);
+                const walkable = gifts.filter((q) => canWalk(p, q));
+                expect(walkable, `${r.key} gifts`).toEqual(r.xmas!.gifts > 0 ? [] : gifts);
+            }
+        }
+        // the same floor without Christmas: a free spot's tree and every gift pile are bare floor
+        for (const r of plainMerry.rooms.filter((x) => x.xmas && !x.plants)) {
+            const pot = floorIn(plainMerry, potOf(r.xmas!.tree));
+            expect(pot.length, r.key).toBeGreaterThan(0);
+            expect(
+                pot.every((q) => canWalk(plainMerry, q)),
+                r.key
+            ).toBe(true);
+        }
+        for (const r of plainMerry.rooms.filter((x) => x.xmas && x.xmas.gifts > 0)) {
+            const gifts = floorIn(plainMerry, giftsOf(giftArea(r)!));
+            expect(gifts.length, r.key).toBeGreaterThan(0);
+            expect(
+                gifts.every((q) => canWalk(plainMerry, q)),
+                r.key
+            ).toBe(true);
         }
     });
 
@@ -390,6 +481,8 @@ describe("officeboss", () => {
         ["a floor", plan, a1],
         ["a full floor", full, spotOf(full, "a1")!],
         ["a floor above G", upstairs, spotOf(upstairs, "b1")!],
+        ["a full floor under Christmas", merry, spotOf(merry, "a1")!],
+        ["a floor under Christmas, gifts by a desk row's tree", merryAlpha, spotOf(merryAlpha, "a1")!],
     ] as [string, Plan, Point][])(
         "leaves every desk, seat, chip, the board and the lift within a walk of every other, around all the furniture: %s",
         (_, p, start) => {
@@ -480,6 +573,65 @@ describe("officeboss", () => {
                 expect(offFloor(full, pathBetween(full, full.board.spot, spotOf(full, key)!)), key).toEqual([]);
             }
             expect(canWalk(full, full.board.spot)).toBe(true);
+        });
+    });
+
+    describe("the hall's Christmas tree", () => {
+        const treed = buildPlan({ ...merryInput(true), xmasTree: true });
+        const tree = treed.xmasTree!;
+        const spot = tree.spot;
+        const centre = { x: tree.box.x + tree.box.w / 2, y: tree.box.y + tree.box.h / 2 };
+
+        it("is furniture the boss's feet stay off, with its spot in front of it", () => {
+            expect(canWalk(treed, centre)).toBe(false);
+            expect(canStand(treed, centre)).toBe(true);
+            expect(canWalk(treed, spot)).toBe(true);
+        });
+
+        it("is the nearest stop from its spot, and only there", () => {
+            expect(deskAt(treed, spot)).toBe(TREE_KEY);
+            expect(deskAt(treed, { x: spot.x - 12, y: spot.y + 12 })).toBe(TREE_KEY);
+            expect(deskAt(treed, treed.board.spot)).toBe(BOARD_KEY);
+            expect(deskAt(treed, treed.lift.spot)).toBe(LIFT_KEY);
+            // no tree: its spot is no stop
+            expect(deskAt(merry, spot)).toBeUndefined();
+        });
+
+        it("is where spotOf stands for its key, and has none without the tree", () => {
+            expect(spotOf(treed, TREE_KEY)).toEqual(spot);
+            expect(spotOf(merry, TREE_KEY)).toBeUndefined();
+        });
+
+        it("answers { tree: true } only while the boss stands still at it with the cursor on it", () => {
+            expect(cardAt(treed, { at: spot, path: [] }, TREE_KEY)).toEqual({ tree: true });
+            expect(cardAt(treed, { at: treed.board.spot, path: [] }, TREE_KEY)).toBeUndefined();
+            expect(cardAt(treed, { at: spot, path: [spot, treed.board.spot] }, TREE_KEY)).toBeUndefined();
+            expect(cardAt(treed, { at: spot, path: [], holding: "left" }, TREE_KEY)).toBeUndefined();
+        });
+
+        it("stands before the boss only while its feet are above the tree's foot beside it", () => {
+            const foot = tree.box.y + tree.box.h;
+            // in the lane on its left, feet above its foot: behind it
+            expect(behindXmasTree(treed, { x: tree.box.x - 12, y: foot - 6 })).toBe(true);
+            // at its spot, below its foot: in front
+            expect(behindXmasTree(treed, spot)).toBe(false);
+            // far off to the left: no overlap
+            expect(behindXmasTree(treed, { x: tree.box.x - 2 * BOSS_HALF_W - 6, y: foot - 6 })).toBe(false);
+            // no tree, never behind it
+            expect(behindXmasTree(merry, { x: tree.box.x - 12, y: foot - 6 })).toBe(false);
+        });
+
+        it("walks the boss to the tree from every desk, seat, the board and the lift, round the furniture", () => {
+            const keys = [...treed.desks.map((d) => d.key), ...treed.seats.map((s) => s.key), BOARD_KEY, LIFT_KEY];
+            for (const key of keys) {
+                const path = pathBetween(treed, spotOf(treed, key)!, spot);
+                expect(path[path.length - 1], key).toEqual(spot);
+                expect(offFloor(treed, path), key).toEqual([]);
+                expect(overFurniture(treed, path), key).toEqual([]);
+                const back = pathBetween(treed, spot, spotOf(treed, key)!);
+                expect(back[back.length - 1], key).toEqual(spotOf(treed, key));
+                expect(overFurniture(treed, back), key).toEqual([]);
+            }
         });
     });
 

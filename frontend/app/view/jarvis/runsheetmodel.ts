@@ -14,6 +14,7 @@ import type { AgentVM } from "../agents/agentsviewmodel";
 import { finalStageActivity } from "../agents/finalstage";
 import { landPlace, landSlotOfRun } from "../agents/landline";
 import { canResume, currentPhaseIndex, isTerminal, leadWorker } from "../agents/runmodel";
+import { PAUSED_LABEL } from "../agents/runstage";
 import {
     cleanupOnly,
     firstLine,
@@ -124,8 +125,29 @@ export function sheetStatus(read: SheetRead): SheetStatus {
             return cancelledStatus(read);
         case "blocked":
             return blockedStatus(read);
+        case "paused":
+            return pausedStatus(read);
     }
     return read.dag == null ? undaggedStatus(read) : daggedStatus(read, read.dag);
+}
+
+// A paused run's agents are suspended, so nothing on the sheet moves: it says so in the tree's words, keeps the plan's
+// strip under them, and states who paused it. The run's own stage, tasks and questions stay as they were, held for the
+// resume, so none of them is read as waiting on the person.
+function pausedStatus(read: SheetRead): SheetStatus {
+    const { run, nowMs } = read;
+    const pausedTs = run.pause?.pausedts ?? 0;
+    const by = run.pause?.by === "manual" ? "you paused it" : "Arc paused it to free memory";
+    return {
+        verb: PAUSED_LABEL,
+        sub: `${by}: its agents are suspended and keep their sessions`,
+        tone: "muted",
+        pulse: false,
+        meter: read.dag?.group != null ? STRIP : null,
+        meta: pausedTs > 0 ? [{ text: `paused ${since(nowMs, pausedTs)} ago`, tone: "muted" }] : [],
+        next: "continues when memory frees, or when you resume it",
+        retry: false,
+    };
 }
 
 function doneStatus(read: SheetRead): SheetStatus {

@@ -5,11 +5,10 @@
 // child initiatives, then one newest-first feed over the effort's events, divided by day and grouped by
 // chunk within a day on a rail, one line per entry (effortfeed.ts).
 //
-// This is no longer how an initiative is opened. The Brief expands it in place and the plan, its chunks and
-// their per-chunk note trails live there (inlinetracker.ts) — so the plan section that used to fold below
-// this feed is gone rather than kept in sync with a second copy of itself. What is left is the escape
-// hatch the inline tracker links to as "initiative activity": every note on every chunk, in one stream,
-// which the per-chunk sidebar deliberately does not show.
+// This is no longer how an initiative is opened: it opens in the Brief's sheet on its plan (initiativesheet.tsx), so
+// the plan section that used to fold below this feed is gone rather than kept in sync with a second copy of itself.
+// What is left is the sheet's Activity ↗ view: every note on every chunk, in one stream, which the per-chunk view
+// deliberately does not show.
 
 import { turnTransition } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
@@ -18,7 +17,7 @@ import { formatAge } from "@/app/view/agents/agentsviewmodel";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { briefingStateAtom } from "./briefingstore";
 import { FAINT_TEXT, REGION_LABEL } from "./briefstyle";
@@ -406,7 +405,9 @@ function NotesFeed({ feed }: { feed: FeedEntry[] }) {
     );
 }
 
-export function EffortDetailView({ model }: { model: AgentsViewModel }) {
+// `onBack`: drawn as the initiative sheet's Activity view (spec decision 7), under the sheet's own head, which already
+// names the initiative: a back link to the plan takes the title block's place.
+export function EffortDetailView({ model, onBack }: { model: AgentsViewModel; onBack?: () => void }) {
     const subject = useAtomValue(activeSubjectAtom);
     const cache = useAtomValue(effortDetailAtom);
     const briefing = useAtomValue(briefingStateAtom);
@@ -473,9 +474,23 @@ export function EffortDetailView({ model }: { model: AgentsViewModel }) {
                         ))}
                     </div>
                 ) : null}
+                {onBack != null ? (
+                    <button
+                        type="button"
+                        data-jarvis-activity-back
+                        onClick={onBack}
+                        className={cn(
+                            "-mb-2 flex w-fit cursor-pointer items-center gap-1.5 text-[11.5px] text-ink-mid hover:text-ink-hi",
+                            FOCUS
+                        )}
+                    >
+                        <ArrowLeft size={12} aria-hidden />
+                        Back to the plan
+                    </button>
+                ) : null}
                 {effort != null && facts != null ? (
                     <>
-                        <div className="flex flex-col gap-1.5">
+                        <div className={cn("flex flex-col gap-1.5", onBack != null && "hidden")}>
                             <h1 className="m-0 text-pretty text-[19px] font-semibold leading-[1.3] tracking-[-.01em] text-ink-hi">
                                 {effort.title}
                             </h1>

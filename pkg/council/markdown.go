@@ -325,7 +325,7 @@ func writeMatrix(b *strings.Builder, c *Council) {
 		if p.Wild && isBrainstorm(c) {
 			title += " (wild idea)"
 		}
-		if w := labelWord(p.Label); w != "" {
+		if w := labelWord(docLabel(c, p.Label)); w != "" {
 			title += " (" + w + ")"
 		}
 		fmt.Fprintf(b, "| %s |", tableCell(p.Id+" · "+title))
@@ -452,6 +452,15 @@ func labelWord(label string) string {
 		return "Guess"
 	}
 	return ""
+}
+
+// docLabel is the label c's document shows for a claim: none in a Brainstorm, whose ideas are checked for the coordinator
+// but whose labels the UI hides, so the document hides them too; label itself otherwise.
+func docLabel(c *Council, label string) string {
+	if isBrainstorm(c) {
+		return ""
+	}
+	return label
 }
 
 // docTailLines is how much of a result's output the document keeps: all the record holds.
@@ -591,7 +600,7 @@ func proposalMessage(c *Council, p CouncilProposal, crops map[string]string) str
 	case p.Withdrawn:
 		about += " (withdrawn)"
 	}
-	writeMessage(&b, docName(c, p.Author), proposalLabel(c, p), about, p.Argument, p.Evidence, docChecks(p.Label, p.Runs), crops)
+	writeMessage(&b, docName(c, p.Author), proposalLabel(c, p), about, p.Argument, p.Evidence, docChecks(docLabel(c, p.Label), p.Runs), crops)
 	return b.String()
 }
 
@@ -611,7 +620,7 @@ func replyMessage(c *Council, r CouncilReply, crops map[string]string) string {
 	if t := strings.TrimSpace(r.Retitled); t != "" {
 		text = strings.TrimSpace("New title: " + oneLine(t) + ". " + text)
 	}
-	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), text, r.Evidence, docChecks(r.Label, nil), crops)
+	writeMessage(&b, docName(c, r.Author), replyLabel(c, r), strings.TrimSpace(about), text, r.Evidence, docChecks(docLabel(c, r.Label), nil), crops)
 	return b.String()
 }
 

@@ -14,11 +14,16 @@
 // for the CDP scenario `council-memory`.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
-import { cn } from "@/util/util";
-import { useAtom } from "jotai";
+import { cn, fireAndForget } from "@/util/util";
+import { atom, useAtom, useAtomValue } from "jotai";
+import { selectAtom } from "jotai/utils";
 import { ChevronDown, ChevronRight, Info, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { AgentVM } from "./agentsviewmodel";
+import { correctTarget } from "./claudecontextmodel";
 import type { Actions } from "./councilactions";
+import { docUpdateAgents, docUpdatePrompt } from "./councildocupdate";
+import { useKeptScroll } from "./councilkeptscroll";
 import {
     ADD_KINDS,
     cardKicker,
@@ -40,6 +45,9 @@ import {
 } from "./councilmemorymodel";
 import { memorySeenAtom } from "./councilmemoryseen";
 import { directionCouncil, memoryCouncil, type CouncilCall, type CouncilDirectionAction } from "./councilstore";
+import { sendLineComments } from "./linereviewsend";
+import { liveAgentsAtom } from "./liveagents";
+import { projectsAtom } from "./projectsstore";
 
 // the action keys: every move shares one of two prefixes, so the panel holds still while any one runs (a pin from the
 // channel included: its check is on the same direction)
@@ -118,6 +126,9 @@ export function MemoryPanel({
     const [pinning, setPinning] = useState<string | null>(null); // the entry whose Chốt is being checked
     const [earlierOpen, setEarlierOpen] = useState(false);
     const [seen, setSeen] = useAtom(memorySeenAtom);
+    // the tab is drawn again each time it shows (after Ideas or a thread): it keeps its place under `memory:<council>`
+    const scroller = useRef<HTMLDivElement>(null);
+    const onScroll = useKeptScroll(scroller, `memory:${c.id}`);
     // the time the tab was last open, taken as it opens: what came in after it carries a dot for as long as the tab shows
     const [since] = useState(() => seen[c.id]);
     const card = shownCard(c);
@@ -206,6 +217,8 @@ export function MemoryPanel({
 
     return (
         <div
+            ref={scroller}
+            onScroll={onScroll}
             id="council-rail-memory"
             role="tabpanel"
             aria-label="Memory"
@@ -558,7 +571,147 @@ export function MemoryPanel({
                     })}
                 </section>
             )}
+
+            <DocUpdate key={c.id} c={c} />
         </div>
+    );
+}
+
+type DocStatus = { tone: "success" | "error" | "muted"; text: string } | null;
+
+const sameAgents = (a: readonly AgentVM[], b: readonly AgentVM[]) =>
+    a.length === b.length && a.every((x, i) => x.id === b[i].id && x.name === b[i].name && x.state === b[i].state);
+
+// Update CLAUDE.md, under the list: arcterm keeps what the council settled in the CLAUDE.md block itself, and this asks a
+// live Claude agent of the project to bring the rest of the file in line (councildocupdate.ts): sent at once to the one
+// agent, through a Send to row when there are several, and copied when there is none. Nothing shows while the memory
+// settles nothing.
+function DocUpdate({ c }: { c: Council }) {
+    const [choosing, setChoosing] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [status, setStatus] = useState<DocStatus>(null);
+    // the roster ticks with every agent's state: the bar redraws only when the project's Claude agents change
+    const agentsAtom = useMemo(
+        () =>
+            selectAtom(
+                atom((get) => docUpdateAgents(get(liveAgentsAtom), get(projectsAtom), c.project)),
+                (agents) => agents,
+                sameAgents
+            ),
+        [c.project]
+    );
+    const agents = useAtomValue(agentsAtom);
+    const prompt = docUpdatePrompt(c);
+    if (prompt === "") {
+        return null;
+    }
+    const target = correctTarget(agents);
+
+    const run = (work: () => Promise<DocStatus>) => {
+        setBusy(true);
+        fireAndForget(async () => {
+            try {
+                const s = await work();
+                setStatus(s);
+                if (s?.tone === "success") {
+                    setChoosing(false);
+                }
+            } finally {
+                setBusy(false);
+            }
+        });
+    };
+    const sendTo = (agent: AgentVM) =>
+        run(async () => {
+            if (agent.state === "asking") {
+                return { tone: "muted", text: `${agent.name} is waiting on a question: answer it first` };
+            }
+            const r = await sendLineComments(agent, prompt);
+            if (r.ok === false) {
+                return { tone: "error", text: `Couldn't reach ${agent.name}: ${r.error}` };
+            }
+            return { tone: "success", text: `Sent to ${agent.name}: it shows you the diff before it commits` };
+        });
+    const copy = () =>
+        run(async () => {
+            try {
+                await navigator.clipboard.writeText(prompt);
+                return { tone: "success", text: "Copied: paste it to a Claude agent in this project" };
+            } catch (e) {
+                return { tone: "error", text: `Couldn't copy: ${String((e as Error)?.message ?? e)}` };
+            }
+        });
+    const click = () => {
+        setStatus(null);
+        if (target.kind === "agent") {
+            sendTo(target.agent);
+        } else if (target.kind === "menu") {
+            setChoosing((v) => !v);
+        } else {
+            copy();
+        }
+    };
+
+    return (
+        <section data-council-memory-docupdate className="flex flex-none flex-col gap-2 border-t border-border pt-3.5">
+            <p className="m-0 text-[12px] leading-[1.5] text-muted">
+                CLAUDE.md lists what this council settled in its Council decisions block. The rest of the file is the
+                agents&apos;: ask one to bring it in line.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    data-council-memory-action="docupdate"
+                    disabled={busy}
+                    onClick={click}
+                    title={
+                        target.kind === "copy"
+                            ? "No Claude agent is open in this project: copy the prompt to paste into one"
+                            : "Ask a Claude agent of this project to update the rest of CLAUDE.md"
+                    }
+                    className={secondaryButton}
+                >
+                    {target.kind === "agent"
+                        ? `Update CLAUDE.md with ${target.agent.name}`
+                        : target.kind === "copy"
+                          ? "Copy the CLAUDE.md prompt"
+                          : "Update CLAUDE.md…"}
+                </button>
+                {choosing && target.kind === "menu" ? (
+                    <>
+                        <span className="text-[12px] text-muted">Send to</span>
+                        {target.agents.map((a) => (
+                            <button
+                                key={a.id}
+                                type="button"
+                                data-council-memory-docupdate-send={a.name}
+                                disabled={busy}
+                                onClick={() => sendTo(a)}
+                                className={ghostButton}
+                            >
+                                {a.name}
+                            </button>
+                        ))}
+                    </>
+                ) : null}
+            </div>
+            {status != null ? (
+                <span
+                    role="status"
+                    data-council-memory-docupdate-status
+                    className={cn(
+                        "text-[12px]",
+                        status.tone === "success"
+                            ? "text-success"
+                            : status.tone === "error"
+                              ? "text-error-soft"
+                              : "text-muted"
+                    )}
+                >
+                    {status.text}
+                </span>
+            ) : null}
+        </section>
     );
 }
 

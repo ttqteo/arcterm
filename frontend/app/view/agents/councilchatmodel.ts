@@ -28,6 +28,7 @@ import {
     shortName,
 } from "./councildiscussionmodel";
 import { CHAT_THREAD } from "./councillistmodel";
+import { markSpans } from "./councilmarks";
 import {
     MIN_CHAT_KEY,
     answerers,
@@ -303,39 +304,77 @@ export interface ReplyPost extends Who {
     routedReply: string; // with `askToo`: the id of the person's message the chips reopen
 }
 
-/** The person's post a seat's answer answers, quoted at the top of its bubble as a messenger quotes the message replied
- *  to: its id, its text on one line, and whether that post is in the same list (`jump`: a click scrolls to it). */
+/** The message a post answers, quoted at the top of its bubble as a messenger quotes the message replied to: on a seat's
+ *  answer, the person's post it answers; on the person's reply, the seat's message they chose to reply to. Its id, who
+ *  wrote it (`You` for the person), its text on one line, and whether it is in the same list (`jump`: a click scrolls
+ *  to it). */
 export interface AnswerQuote {
     id: string;
+    name: string;
     text: string;
     jump: boolean;
 }
 
-// the person's post `r` answers, as its quote: null for the person's own post, and for a seat's reply that answers none
-function quoteOf(c: Council, r: CouncilReply): AnswerQuote | null {
-    if (r.author === YOU || !r.parentid) {
-        return null;
-    }
-    const ask = sentReplies(c).find((x) => x.id === r.parentid && x.author === YOU);
-    if (ask == null) {
-        return null;
-    }
-    const text = ask.text
+// a message's text on one line, its must-read marks (==…==) dropped; `Image` for one with images and no words
+function oneLine(r: CouncilReply): string {
+    const text = markSpans(r.text)
+        .map((s) => s.text)
+        .join("")
         .split(/\s+/)
         .filter((w) => w !== "")
         .join(" ");
-    const shown = text !== "" ? text : (ask.attachments ?? []).length > 0 ? "Image" : "";
-    return shown === "" ? null : { id: ask.id, text: shown, jump: false };
+    return text !== "" ? text : (r.attachments ?? []).length > 0 ? "Image" : "";
+}
+
+// what post `r` answers, as its quote: the person's post a seat's reply answers, or the seat's message the person's
+// reply was sent under; null for a post that answers neither
+function quoteOf(c: Council, r: CouncilReply): AnswerQuote | null {
+    if (!r.parentid) {
+        return null;
+    }
+    if (r.author === YOU) {
+        const to = replyTarget(c, r.parentid);
+        return to == null ? null : { id: to.id, name: to.name, text: to.text, jump: false };
+    }
+    const ask = sentReplies(c).find((x) => x.id === r.parentid && x.author === YOU);
+    const shown = ask == null ? "" : oneLine(ask);
+    return ask == null || shown === "" ? null : { id: ask.id, name: authorName(c, YOU), text: shown, jump: false };
+}
+
+/** A seat's message the person replies to: its id, who wrote it, its text on one line, and the idea it sits on (empty
+ *  in the channel). The line above a message box while it answers one, and the quote on the reply once it is sent. */
+export interface ReplyTarget {
+    id: string;
+    name: string;
+    text: string;
+    proposalid: string;
+}
+
+/** Pure: the message `id` names as one a reply can answer: a seat's sent message with words (not the person's own, not
+ *  a held draft, not an agreement with nothing to add); null for none, or for one that is gone. */
+export function replyTarget(c: Council, id: string | undefined): ReplyTarget | null {
+    if (id == null || id === "") {
+        return null;
+    }
+    const r = readableReplies(c).find((x) => x.id === id);
+    if (r == null || r.author === YOU) {
+        return null;
+    }
+    return { id: r.id, name: authorName(c, r.author), text: oneLine(r), proposalid: r.proposalid };
 }
 
 /** Pure: `items` with the quote kept only on an answer that does not sit right under the post it answers (the item above
  *  it, past the failure lines under a post, is neither that post nor another answer to it), each quote saying whether
- *  that post is in `items` to scroll to. Three questions sent in a row, then their answers, read as which answers which. */
+ *  that post is in `items` to scroll to. Three questions sent in a row, then their answers, read as which answers which.
+ *  The person's reply to a seat's message keeps its quote wherever it sits: they chose that message. */
 export function quoteAsked<T extends ChannelItem | ThreadItem>(items: readonly T[]): T[] {
-    const here = new Set(items.filter((i) => i.kind === "reply" && i.mine).map((i) => i.id));
+    const here = new Set(items.filter((i) => i.kind === "reply").map((i) => i.id));
     return items.map((item, i) => {
         if (item.kind !== "reply" || item.quote == null) {
             return item;
+        }
+        if (item.mine) {
+            return { ...item, quote: { ...item.quote, jump: here.has(item.quote.id) } };
         }
         let j = i - 1;
         while (j >= 0 && items[j].kind === "failure") {

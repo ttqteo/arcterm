@@ -19,6 +19,8 @@
 //
 // The last two steps are the Brainstorm report (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5): a done
 // fixture seeded as a Brainstorm, with a saved document written into the temp project first so Open the document opens it.
+// The kept ideas of both (Also raised, Wild ideas kept aside) start folded behind their heading and count: openKept opens
+// them, and one step seeds a Review of five directions and four ideas also raised to check the fold itself.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -73,23 +75,50 @@ async function mouseClick(h, sel) {
 
 // the Summary of the council (or of another seeded from the same fixture, by id), reopened (a step that left it for the
 // Discussion or Setup comes back this way) and drawn
-async function openSummary(h, ctx, id = ctx.councilId) {
+async function openSummary(h, ctx, id = ctx.councilId, count = 4) {
     await openCouncil(h, id, "summary");
     // the root of an earlier council's Summary may still be up for a moment, so the council it shows is named too
     const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(id)} &&
-        document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === 4`;
+        document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === ${count}`;
     if (!(await until(h, drawn))) {
-        throw new Error("the Summary did not draw its four directions");
+        throw new Error(`the Summary did not draw its ${count} directions`);
     }
 }
 
-// an action behind the `⋯` menu: open the menu, then click the item (false when it is missing or disabled)
+// the kept section's fold (Also raised, or Wild ideas kept aside), which starts folded: opened, and its ideas drawn.
+// False when the report has no kept section or its ideas did not draw.
+async function openKept(h) {
+    const toggle = `${SUMMARY} [data-council-kept-toggle]`;
+    if (!(await exists(h, toggle))) return false;
+    if ((await h.ev(`document.querySelector(${q(toggle)}).getAttribute("aria-expanded")`)) !== "true") {
+        await click(h, toggle);
+    }
+    return until(h, `!!document.querySelector(${q(`${SUMMARY} [data-council-kept-idea]`)})`);
+}
+
+// the tab bar's `⋯`, the report's one menu: the app's context menu, whose report rows carry data-council-action. It
+// takes the focus as it opens, so Escape goes to it
+const MENU_BUTTON = `${SUMMARY} [data-council-tabbar] [data-council-actions]`;
+const menuRow = (action) => `[data-menu-item][data-council-action="${action}"]`;
+async function openMenu(h) {
+    await click(h, MENU_BUTTON);
+    return until(h, `!!document.querySelector("[data-menu-item]")`);
+}
+async function closeMenu(h) {
+    await h.ev(`document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    return until(h, `!document.querySelector("[data-menu-item]")`);
+}
+
+// an action behind the `⋯` menu: open the menu, then click the row (false, the menu closed, when it is missing or off)
 async function menuClick(h, action) {
-    await click(h, "[data-council-menu]");
-    if (!(await until(h, `!!document.querySelector(${q(`[role="menuitem"][data-council-action="${action}"]`)})`))) {
+    await openMenu(h);
+    const row = menuRow(action);
+    const on = `!!document.querySelector(${q(row)}) && document.querySelector(${q(row)}).getAttribute("aria-disabled") !== "true"`;
+    if (!(await until(h, on, 2_000))) {
+        await closeMenu(h);
         return false;
     }
-    return click(h, `[role="menuitem"][data-council-action="${action}"]`);
+    return click(h, row);
 }
 
 // the first sentence of the fixture's summary text: what the report's bold line reads for a council with no answer
@@ -117,14 +146,13 @@ async function callSeen(h, name, pred, ms = 5_000) {
     }
 }
 
-// the `⋯` menu's items as `action=label`, opened and closed again (a click on its button toggles it)
+// the `⋯` menu's report rows as `action=label`, opened and closed again
 async function menuItems(h) {
-    await click(h, "[data-council-menu]");
-    await until(h, `!!document.querySelector('[role="menu"]')`);
+    await openMenu(h);
     const items = await h.ev(
-        `[...document.querySelectorAll('[role="menuitem"][data-council-action]')].map((b) => b.dataset.councilAction + "=" + b.innerText.trim())`
+        `[...document.querySelectorAll('[data-menu-item][data-council-action]')].map((b) => b.dataset.councilAction + "=" + b.dataset.menuItem)`
     );
-    await click(h, "[data-council-menu]");
+    await closeMenu(h);
     return items;
 }
 
@@ -147,8 +175,9 @@ const BRAINSTORM_FACTS = `(() => {
         heading: t(root.querySelector("[data-council-directions-heading]")),
         titles: all("[data-council-direction] [data-council-title]").map(t),
         steps: all("[data-council-direction] [data-council-first-step]").map(t),
-        meta: all("[data-council-direction] [data-council-meta]").map(t),
-        keptHeading: t(root.querySelector("[data-council-kept] h2")),
+        meta: all("[data-council-direction]").map((d) => t(d.querySelector("[data-council-meta]")) ?? ""),
+        chips: all("[data-council-direction]").map((d) => [...d.querySelectorAll("[data-council-chip]")].map((c) => c.dataset.councilChip)),
+        keptHeading: t(root.querySelector("[data-council-kept] [data-council-kept-heading]")),
         kept: all("[data-council-kept-idea]").map((k) => ({
             title: t(k.querySelector("[data-council-title]")),
             meta: t(k.querySelector("[data-council-meta]")),
@@ -165,6 +194,46 @@ const BRAINSTORM_FACTS = `(() => {
         docSaved: !!root.querySelector("[data-council-doc-saved]"),
     };
 })()`;
+
+// what the kept section's fold and the directions above it show: the direction cards, the toggle (its heading, count and
+// state) and, while it is open, the ideas in their grid
+const KEPT_FOLD_FACTS = `(() => {
+    const root = document.querySelector(${q(SUMMARY)});
+    const t = (el) => el?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+    const shown = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    };
+    const toggle = root.querySelector("[data-council-kept] [data-council-kept-toggle]");
+    const cards = [...root.querySelectorAll("[data-council-direction]")];
+    const ideas = [...root.querySelectorAll("[data-council-kept-idea]")];
+    return {
+        directions: cards.map((d) => t(d.querySelector("[data-council-title]"))),
+        directionsShown: cards.every(shown),
+        jumps: [...root.querySelectorAll("[data-council-jump]")].map((j) => j.dataset.councilJump).join(","),
+        heading: t(toggle?.querySelector("[data-council-kept-heading]")),
+        count: t(toggle?.querySelector("[data-council-kept-count]")),
+        toggleTag: toggle?.tagName ?? null,
+        expanded: toggle?.getAttribute("aria-expanded") ?? null,
+        controls: toggle?.getAttribute("aria-controls") ?? null,
+        ideas: ideas.map((k) => t(k.querySelector("[data-council-title]"))),
+        ideasShown: ideas.every(shown),
+        grid: ideas[0]?.parentElement ? getComputedStyle(ideas[0].parentElement).display : null,
+    };
+})()`;
+
+// scrolls the report's box so the element the selector `sel` matches first sits just under the box's top, below the
+// header (as far as the box scrolls), then says whether the first match of `inView` (default: the same element) is
+// wholly between the header and the box's bottom
+const frameOn = (h, sel, inView = sel) =>
+    h.ev(`(() => {
+        const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+        const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
+        const at = document.querySelector(${q(sel)});
+        box.scrollTop += at.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
+        const view = document.querySelector(${q(inView)}).getBoundingClientRect();
+        return view.top >= bar.getBoundingClientRect().bottom && view.bottom <= box.getBoundingClientRect().bottom;
+    })()`);
 
 // the "Was this useful?" row under the report, and what it shows: its question or thanks line, its buttons as
 // `rate=label`, and its Change link (null where it has none); null for the facts when the row is not drawn
@@ -217,17 +286,24 @@ export const councilSummary = {
         };
         await openSummary(h, ctx);
 
-        await step("the cover: the title, the tabs and the ⋯ menu; the glance: the state, its figures and each expert with its model and what it did", async () => {
+        await step("the header heads the page as the Discussion's and the Map's do (the tabs, the title, the step chip, the seats and the one ⋯ menu) and adds the mode, the clock, the replies and the tokens after the chip; the cover: the title; the glance: the state, its figures and each expert with its model and what it did", async () => {
             const cover = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const t = (s) => root.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
                 const bar = root.querySelector("[data-council-tabbar]");
+                const coverEl = root.querySelector("[data-council-cover]");
                 return {
-                    title: t("h1"),
+                    title: t("[data-council-cover] h1"),
+                    headerTitle: t("[data-council-tabbar] [data-council-summary-title]"),
+                    chip: t("[data-council-tabbar] [data-council-chip]"),
+                    headerMode: t("[data-council-tabbar] [data-council-details] [data-council-mode]"),
+                    headerCost: t("[data-council-tabbar] [data-council-details] [data-council-cost]"),
+                    seats: !!bar?.querySelector("[data-council-seats]"),
                     eyebrow: t("[data-council-cover] [data-council-eyebrow]"),
-                    summaryTab: !!root.querySelector("[data-council-tab='summary'][aria-selected='true']"),
-                    discussionTab: !!root.querySelector("[data-council-tab='discussion']"),
-                    menu: !!root.querySelector("[data-council-cover] [data-council-menu]"),
+                    summaryTab: !!bar?.querySelector("[data-council-tab='summary'][aria-selected='true']"),
+                    discussionTab: !!bar?.querySelector("[data-council-tab='discussion']"),
+                    barOnTop: !!bar && !!coverEl && bar.getBoundingClientRect().bottom <= coverEl.getBoundingClientRect().top + 1,
+                    menu: root.querySelectorAll("[data-council-actions]").length === 1 && !!bar?.querySelector("[data-council-actions]"),
                     state: t("[data-council-glance] [data-council-state]"),
                     facts: root.querySelector("[data-council-glance] [data-council-facts]")?.getAttribute("aria-label") ?? null,
                     inBar: !!bar?.querySelector("[data-council-expert], [data-council-state], [data-council-facts]"),
@@ -245,9 +321,15 @@ export const councilSummary = {
             const mode = loadCouncilFixture("done").mode === "brainstorm" ? "Brainstorm" : "Review";
             const ok =
                 cover.title === "Rail apps" &&
+                cover.headerTitle === "Rail apps" &&
+                cover.chip === "Done" &&
+                cover.headerMode === mode &&
+                /^\d+:\d\d · .*tokens$/.test(cover.headerCost ?? "") &&
+                cover.seats &&
                 cover.eyebrow === `Council · ${mode}` &&
                 cover.summaryTab &&
                 cover.discussionTab &&
+                cover.barOnTop &&
                 cover.menu &&
                 cover.state === "Done" &&
                 /^4 experts · \d+ min · [\d.]+M tokens$/.test(cover.facts ?? "") &&
@@ -263,22 +345,21 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify(cover) };
         });
 
-        await step("the tab bar sticks and its jump links scroll the box", async () => {
+        await step("the header stays over the box and its jump links scroll the box", async () => {
             const BAR = `${SUMMARY} [data-council-tabbar]`;
             const BOX = `${SUMMARY} [data-council-scroll]`;
             const entries = await h.ev(`[...document.querySelectorAll(${q(`${BAR} [data-council-jump]`)})].map((e) => e.dataset.councilJump + ":" + e.innerText.replace(/\\s+/g, " ").trim())`);
-            const sticky = await h.ev(`getComputedStyle(document.querySelector(${q(BAR)})).position`);
+            const barTop = await h.ev(`Math.round(document.querySelector(${q(BAR)}).getBoundingClientRect().top)`);
             // direction 1 open: its detail under the grid gives the box the room to scroll as far as the directions' link
             // asks (with every card closed a report this short cannot scroll its bar into place)
             await openDirection(h, 1);
             await sleep(600);
             await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
-            // where the directions' section would put the box's scrollTop: its top in the content, less the bar and 12px
+            // where the directions' section would put the box's scrollTop: its top in the content, less 12px
             const expected = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
-                const bar = document.querySelector(${q(BAR)});
                 const el = box.querySelector("[data-council-directions-heading]") ?? box.querySelector("[data-council-direction]");
-                const target = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - bar.offsetHeight - 12;
+                const target = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12;
                 return Math.max(0, Math.min(target, box.scrollHeight - box.clientHeight));
             })()`);
             await click(h, `${BAR} [data-council-jump='directions']`);
@@ -288,7 +369,8 @@ export const councilSummary = {
             const placed = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
                 const bar = document.querySelector(${q(BAR)});
-                return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
+                const b = bar.getBoundingClientRect();
+                return { scrollTop: box.scrollTop, barTop: Math.round(b.top), barBottom: Math.round(b.bottom), boxTop: Math.round(box.getBoundingClientRect().top) };
             })()`);
             // every card's chevron sits at its footer's right: its right edge on the card's content box (the card's rect
             // less its right padding) and its bottom on the footer's bottom, 2px of slack for the rounding
@@ -310,15 +392,15 @@ export const councilSummary = {
             // the matrix is no section of the Report any more (the Map tab holds it): the directions are the only link
             const ok =
                 entries.join("|") === ["directions:Directions 4"].join("|") &&
-                sticky === "sticky" &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
-                placed.barTop === placed.boxTop &&
+                placed.barTop === barTop &&
+                placed.barBottom <= placed.boxTop + 1 &&
                 midway < expected - 4 &&
                 chevronsOk;
-            return { ok, detail: JSON.stringify({ entries, sticky, expected, midway, placed, chevrons }) };
+            return { ok, detail: JSON.stringify({ entries, barTop, expected, midway, placed, chevrons }) };
         });
 
-        await step("the Report tab, clicked while shown, glides the box down past the cover to the tab bar", async () => {
+        await step("the Report tab, clicked while shown, glides the box down past the cover to the body under the header", async () => {
             const BAR = `${SUMMARY} [data-council-tabbar]`;
             const BOX = `${SUMMARY} [data-council-scroll]`;
             // direction 1 open gives the box room to scroll the bar to its top, as in the step above
@@ -337,7 +419,8 @@ export const councilSummary = {
             const placed = await h.ev(`(() => {
                 const box = document.querySelector(${q(BOX)});
                 const bar = document.querySelector(${q(BAR)});
-                return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
+                const b = bar.getBoundingClientRect();
+                return { scrollTop: box.scrollTop, barTop: Math.round(b.top), barBottom: Math.round(b.bottom), boxTop: Math.round(box.getBoundingClientRect().top) };
             })()`);
             // still the Report: the click scrolled, it opened no other view
             const stillReport = await exists(h, `${BAR} [data-council-tab='summary'][aria-selected='true']`);
@@ -349,7 +432,7 @@ export const councilSummary = {
                 stillReport &&
                 expected > 0 &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
-                placed.barTop === placed.boxTop &&
+                placed.barBottom <= placed.boxTop + 1 &&
                 midway < expected - 4;
             return { ok, detail: JSON.stringify({ pointer, stillReport, expected, midway, placed }) };
         });
@@ -489,7 +572,9 @@ export const councilSummary = {
                     brainstorm: body.querySelector('[data-council-action="brainstorm"]')?.innerText ?? null,
                     askAgain: body.querySelector('[data-council-action="ask-again"]')?.innerText ?? null,
                     meta: d.querySelector("[data-council-meta]")?.innerText ?? null,
-                    chips: Object.fromEntries([...d.querySelectorAll("[data-council-chip]")].map((c) => [c.dataset.councilChip, c.innerText.replace(/\\s+/g, " ").trim()])),
+                    chips: Object.fromEntries([...d.querySelectorAll("[data-council-chip]")].map((c) => [c.dataset.councilChip, c.title])),
+                    // the card shows each expert once, as an avatar: no stance word and no "from" names repeat it
+                    cardText: d.innerText,
                 };
             })()`);
             // a click on card 1 opens it and closes 3: one detail under the grid
@@ -499,7 +584,7 @@ export const councilSummary = {
                 one: document.querySelector(${q(DIRECTION(1))}).getAttribute("aria-expanded"),
                 three: document.querySelector(${q(DIRECTION(3))}).getAttribute("aria-expanded"),
             })`);
-            // frame the shot on the open card and the top of its detail: card 1's row goes just under the sticky bar;
+            // frame the shot on the open card and the top of its detail: card 1's row goes just under the header;
             // if the detail's top is still below the box, the detail is centred instead
             const FRAME = `(() => {
                 const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
@@ -507,7 +592,7 @@ export const councilSummary = {
                 const card = document.querySelector(${q(DIRECTION(1))});
                 const detail = document.querySelector(${q(DETAIL(1))});
                 const before = box.scrollTop;
-                box.scrollTop += card.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+                box.scrollTop += card.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
                 if (detail.getBoundingClientRect().top >= box.getBoundingClientRect().bottom - 40) {
                     detail.scrollIntoView({ block: "center" });
                 }
@@ -546,12 +631,13 @@ export const councilSummary = {
                 open.refs.includes("pkg/services/model.go:36") &&
                 open.brainstorm === "Start an agent on it" &&
                 open.askAgain === "Ask the experts again" &&
-                open.meta === "from UX and RAM · 1 file · 1 weak claim" &&
-                // the chip's text starts with the expert's avatar letter
-                open.chips.ram.endsWith(" Is against it") &&
-                open.chips.skeptic.endsWith(" Has doubts") &&
-                open.chips.newuser.endsWith(" Agrees") &&
-                open.chips.ux.endsWith(" Proposed") &&
+                open.meta === "1 file · 1 weak claim" &&
+                // each avatar's hover names the expert and its stance
+                open.chips.ram.endsWith(": Is against it") &&
+                open.chips.skeptic.endsWith(": Has doubts") &&
+                open.chips.newuser.endsWith(": Agrees") &&
+                open.chips.ux.endsWith(": Proposed") &&
+                !/\bfrom\b|Proposed/.test(open.cardText) &&
                 detailInFrame;
             await h.shot("cdp-shots/council-summary.png");
             return { ok, detail: JSON.stringify({ open, swapped, one, framedAfter }) };
@@ -1123,14 +1209,16 @@ export const councilSummary = {
                 },
             });
             await openBrainstormSummary(h, id);
+            // the kept ideas start folded: open them so the facts read them
+            await openKept(h);
             const facts = await h.ev(BRAINSTORM_FACTS);
-            // frame the shot on the cards: the directions heading goes just under the sticky bar, so the First step
+            // frame the shot on the cards: the directions heading goes just under the header, so the First step
             // boxes are in view
             const stepsInFrame = await h.ev(`(() => {
                 const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
                 const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
                 const head = document.querySelector(${q(`${SUMMARY} [data-council-directions-heading]`)});
-                box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+                box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
                 const br = box.getBoundingClientRect();
                 const bb = bar.getBoundingClientRect().bottom;
                 return [...document.querySelectorAll(${q(`${SUMMARY} [data-council-first-step]`)})].some((s) => {
@@ -1161,10 +1249,14 @@ export const councilSummary = {
                 facts.jumps === "directions,kept" &&
                 facts.keptGrid === "grid" &&
                 facts.keptBorder === "0px" &&
-                facts.meta[0].startsWith("Had it: Skeptic · built on by New user") &&
-                facts.meta[1].startsWith("Had it: UX") &&
-                !facts.meta[1].includes("built on by") &&
-                facts.meta[2].startsWith("Had it: UX and RAM") &&
+                // who had an idea is its avatars; the line of facts names only who built on it
+                /^New user\b[^·]* built on it/.test(facts.meta[0]) &&
+                !facts.meta[1].includes("built on it") &&
+                facts.meta.every((m) => !m.includes("Had it")) &&
+                facts.chips[0].includes("skeptic") &&
+                facts.chips[1].includes("ux") &&
+                facts.chips[2].includes("ux") &&
+                facts.chips[2].includes("ram") &&
                 facts.keptHeading === "Wild ideas kept aside" &&
                 facts.kept.length === 1 &&
                 facts.kept[0].title === TITLES[3] &&
@@ -1213,6 +1305,81 @@ export const councilSummary = {
                 review.docpath == null &&
                 reviewItems.includes("save-doc=Save as doc");
             return { ok, detail: JSON.stringify({ facts, items, review, reviewItems }) };
+        });
+
+        // The done fixture as the fullest Review (docs/superpowers/specs/2026-11-05-council-faster-sharper-design.md, "Report
+        // view"): a fifth direction, from the Skeptic's P6, and four more ideas also raised. The top shows in full; the four
+        // sit behind their heading and count until a click opens them.
+        const FIFTH = "Drop the cap of 3 apps";
+        const RAISED = [
+            { title: "Name the app in the rail icon's tooltip", why: "Cheap, but nobody asked for it." },
+            { title: "Let a pinned app be dragged to reorder", why: "Pins are few enough to reorder in settings." },
+            { title: "Show a woken app's memory beside its icon", why: "Waits on the measurement of a woken app." },
+            { title: "Group the pins by project", why: "Three pins do not need groups." },
+        ];
+        await step("a Review report shows five directions in full and folds the four also raised behind their heading and count: a click opens them, a second click folds them", async () => {
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-review-five",
+                edit: (c) => {
+                    const ds = c.summary.directions;
+                    c.summary.directions = [
+                        ...ds,
+                        { ...ds[3], rank: 5, title: FIFTH, from: ["P6"], stances: { ram: "accept", newuser: "accept" }, agreed: true },
+                    ];
+                    c.summary.kept = RAISED.map((r, i) => ({
+                        rank: i + 1,
+                        title: r.title,
+                        reasoning: r.why,
+                        from: [`P${i + 1}`],
+                        stances: {},
+                        agreed: true,
+                    }));
+                },
+            });
+            await openSummary(h, ctx, id, 5);
+            const toggle = `${SUMMARY} [data-council-kept-toggle]`;
+            const ideas = `${SUMMARY} [data-council-kept-idea]`;
+            // the directions' top at the sticky bar, the folded heading in the same frame
+            const foldedInFrame = await frameOn(h, DIRECTION(1), toggle);
+            await sleep(300);
+            await h.shot("cdp-shots/council-summary-also-raised-folded.png");
+            const folded = await h.ev(KEPT_FOLD_FACTS);
+            await click(h, toggle);
+            const drew = await until(h, `document.querySelectorAll(${q(ideas)}).length === ${RAISED.length}`);
+            const open = await h.ev(KEPT_FOLD_FACTS);
+            const openInFrame = await frameOn(h, toggle, `${ideas}[data-council-kept-idea="${RAISED.length}"]`);
+            await sleep(300);
+            await h.shot("cdp-shots/council-summary-also-raised-open.png");
+            await click(h, toggle);
+            const gone = await until(h, `!document.querySelector(${q(ideas)})`);
+            const refolded = await h.ev(KEPT_FOLD_FACTS);
+            // back on the Agent surface for the steps that follow
+            await h.goto("agent");
+            await openSummary(h, ctx);
+            const ok =
+                folded.directions.join("|") === [...TITLES, FIFTH].join("|") &&
+                folded.directionsShown &&
+                foldedInFrame &&
+                folded.jumps === "directions,kept" &&
+                folded.heading === "Also raised" &&
+                folded.count === String(RAISED.length) &&
+                folded.toggleTag === "BUTTON" &&
+                folded.expanded === "false" &&
+                folded.controls == null &&
+                folded.ideas.length === 0 &&
+                drew &&
+                open.expanded === "true" &&
+                open.controls === "council-kept-ideas" &&
+                open.directions.length === 5 &&
+                open.ideas.join("|") === RAISED.map((r) => r.title).join("|") &&
+                open.ideasShown &&
+                open.grid === "grid" &&
+                openInFrame &&
+                gone &&
+                refolded.expanded === "false" &&
+                refolded.ideas.length === 0 &&
+                refolded.directions.length === 5;
+            return { ok, detail: JSON.stringify({ folded, foldedInFrame, drew, open, openInFrame, gone, refolded }) };
         });
 
         await step("on a narrow pane the glance wraps under the text and the cards keep their width", async () => {
@@ -1292,7 +1459,7 @@ export const councilSummary = {
                 await h.shot("cdp-shots/council-summary-tabs-narrow-vi.png");
                 const iconOnly = (f) =>
                     f.tabs.length === 3 &&
-                    f.tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+                    f.tabs.every((t, i) => !t.wordShown && t.icon && t.title === `${t.word} (${"rcm"[i]})`) &&
                     f.tabs[1].countShown === true &&
                     f.tabs[1].aria === `Discussion ${f.tabs[1].count} ${f.tabs[1].count === "1" ? "idea" : "ideas"}` &&
                     f.parts.every(Boolean) &&

@@ -49,23 +49,17 @@ export interface ShownStrip {
     spots: TabSpots;
 }
 
-/** The views whose strip sits in the one place, the left of the Discussion's and the Map's header row. The Report's sits
- *  lower down its page, so a slide to or from it would fly the fill across the screen. */
-const SAME_PLACE: readonly CouncilTabId[] = ["discussion", "map"];
-
 /** Pure: where the grey fill of a strip that mounts on `view` starts, as the offset from its own tab (`x`) and the width
  *  of the tab it leaves over its own (`scale`), when it replaces `prev`, the strip on screen before it; null draws it in
- *  place: no strip before, another council's, the same view, the Report on either side, or a tab not measured. The two
- *  strips lay out alike, so the tab the fill lands on is where `prev` measured it. */
+ *  place: no strip before, another council's, the same view, or a tab not measured. The three views' strips sit in the
+ *  one place, the left of their shared header row, and lay out alike, so the tab the fill lands on is where `prev`
+ *  measured it. */
 export function fillSlideFrom(
     prev: ShownStrip | null,
     council: string,
     view: CouncilTabId
 ): { x: number; scale: number } | null {
     if (prev == null || prev.council !== council || prev.view === view) {
-        return null;
-    }
-    if (!SAME_PLACE.includes(prev.view) || !SAME_PLACE.includes(view)) {
         return null;
     }
     const from = prev.spots[prev.view];

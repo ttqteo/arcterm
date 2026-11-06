@@ -1,6 +1,6 @@
 // Seeds the Jarvis Brief design's three initiatives (docs/prototype/jarvis-brief-editing.dc.html,
-// seed() L986-1009) into the running dev app's store, so the brief-design-parity scenario and the
-// side-by-side review have the design's data to draw. Idempotent: a title that already exists is skipped.
+// seed() L986-1009) into the running dev app's store, so a side-by-side review has the design's data to
+// draw. Idempotent: a title that already exists is skipped.
 // Usage: node scripts/cdp/seed-brief.mjs   (CDP_PORT=<port> for a worktree dev app)
 import { attach } from "./attach.mjs";
 

@@ -53,6 +53,7 @@ func TestActiveLiteralsMatchTheirSources(t *testing.T) {
 		jarvis.RunStatus_AwaitingReview,
 		jarvis.RunStatus_Executing,
 		jarvis.RunStatus_Blocked,
+		jarvis.RunStatus_Paused, // a paused run still holds its place: the queue starts nothing in its stead
 	}
 	for _, status := range statuses {
 		if got := runqueue.Active([]*waveobj.Run{{Status: status}}); got != 1 {

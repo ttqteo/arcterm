@@ -220,7 +220,8 @@ A link inside an item view does a full open, even with `Mod` held.
 | `←` `↑` `↓` `→` (Office) | Walk the boss (hold `Shift` to run); walls stop it, doors let it through. In the dialog box `↑` `↓` move the ▶ and `←` `→` switch the question (or, at the notice board, the page) |
 | `j` / `k` (Office) | The boss walks to the next / previous desk or seat, the notice board last while something waits on you |
 | `n` (Office) | Show the way to the next Needs you for a second, then walk there, riding the lift first when it is on another floor; the notice board comes after the asking desks |
-| `Space` (Office) | The Office's A button (`Enter` does the same). At a desk, the notice board, the lift or a room's `+N` chip (the agents and runs that did not fit a desk or a table; `Space` on one opens its card in the panel on the right), open its dialog box; in the box, do what the ▶ points at (an answer, then Send; **Open** shows the full card in a panel on the office's right, **Terminal** goes to the agent's terminal); on the full card, it works as `Enter` above |
+| `Space` (Office) | The Office's A button (`Enter` does the same). At a desk, the notice board, the lift or a room's `+N` chip (the agents and runs that did not fit a desk or a table; `Space` on one opens its card in the panel on the right), open its dialog box; in the box, do what the ▶ points at (an answer, then Send; **Open** shows the full card in a panel on the office's right, **Terminal** goes to the agent's terminal); on the full card, it works as `Enter` above. At the lobby's Christmas tree (while it stands, 1 November to 1 January), open the tree's close-up card |
+| `←` `↑` `↓` `→` / `Space` / `Esc` (Office, the tree's close-up card) | The arrows move the dashed ring to the nearest ornament that way (to any spot while one is lifted); `Space` (or `Enter`) lifts the ornament under the ring, or puts the lifted one down there, swapping with an ornament already on that spot; `Esc` puts a lifted ornament back and closes the card. The card takes every other key until it closes |
 | `f` (Office) | Open the desk's full card in the panel on the office's right, or shut it; the panel's corner button makes it wider or narrower (the width stays for the next card). When the panel would cover the desk, the office slides left to keep it in view |
 | `PageUp` / `PageDown` (Office) | Ride the lift a floor up / down; `Space` at the lift opens its panel (`↑` `↓` choose a floor, `Space` rides, `Esc` stays) |
 | `g` (Office) | Pick up the room the boss stands in to move it: `←` `↑` `↓` `→` pick a slot of the floor, `PageUp` / `PageDown` ride the lift with the room (past the top floor, a new floor), `Space` puts it down (swapping with the room in the slot), `Esc` or `g` puts it back. Dragging a room by its title does the same with the mouse |
@@ -276,7 +277,8 @@ gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a view
 | `/` | In the grid: search topic, board and project names. `Enter` in the box opens the first match, `Esc` empties it, and a second `Esc` gives the keys back to the grid |
 | `Esc` | In the grid: back to the terminal |
 | `←` / `→` | In an open canvas: previous / next board, round the ends. `[` / `]` step too, but the hints show only the arrows: a Vietnamese Telex input method turns `[` `]` into `ơ` `ư` |
-| `Esc` | In an open canvas: back to the grid |
+| `Esc` | In an open canvas: close the link picker (the header's **Link an older version…**) if it is open, else back to the grid. Inside the picker's search box the first `Esc` closes the picker too |
+| `Esc` | In the version scan's review (the grid's **Scan for versions** button): cancel, back to the grid. Nothing is linked, and the scan counts as done |
 | `←` / `↑` / `↓` / `→` | In Clean up (the grid's **Clean up** button): move the card cursor over the suggested group, then Newer |
 | `Space` | In Clean up: tick or untick the card under the cursor. A click does the same; **Untick all** and **Move to trash** are in the bar |
 | `Esc` | In Clean up: cancel, back to the grid |
@@ -305,6 +307,15 @@ thread (click it, or `Tab` to it), not in a text field; elsewhere nothing here i
 | `p` | Chốt the idea under the cursor: pin its title as the council's direction (the Memory tab). The direction is checked against what the seats agreed first, so a clash is held there for you to Edit, Set anyway or Discard. Needs an idea under the cursor; a message is Chốt-ed with its **Chốt** button |
 | `Esc` | Close the open thread, which gives `j` / `k` back to the channel. With no thread open, `Esc` leaves the council for the terminal. In the message box or a thread's reply box, `Esc` returns focus to the channel or thread first |
 | `Enter` | In the message box: send. `Shift`+`Enter` adds a line. After an `@`, `↑` / `↓` pick a seat and `Enter` or `Tab` takes it, `Esc` closes the list |
+
+The view keys are live on any of a council's three views while focus is not in a text field; each tab of the header's
+strip shows its key:
+
+| Keys | Action |
+|---|---|
+| `r` | Show the Report (on the Report already: glide down to its body) |
+| `c` | Show the Discussion, the chat |
+| `m` | Show the Map |
 
 ### Agent: terminal grid
 
@@ -393,16 +404,25 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`N` | New initiative |
 | `i` | With a live run sheet open: focus its composer |
 | `/` | Filter the Brief's rows (`Esc` clears) |
-| `Enter` | Open the row under the cursor |
+| `j` / `k` | Move the Brief's cursor: the Waiting strip's item, the initiative cards row by row, the initiatives list, Activity, then Since you looked, Shipped and Ideas |
+| `Enter` | Open the row under the cursor (an initiative opens in the sheet) |
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
+| `p` | Pin the initiative under the cursor to the cards, or unpin it (with an initiative open in the sheet: that one) |
 | `v` | Review: walk the initiatives that changed since you last reviewed them, then the ones idle for two weeks. While a pass is on: `Enter` Mark reviewed and open the next, `j` / `k` (or `←` / `→`) move through the pass, `Esc` leaves it |
 | `Alt`+`↑` / `Alt`+`↓` | Move the chunk under the cursor up / down within its stage |
 | `e` | Expand / collapse the record band |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |
-| `j` / `k` | With a run sheet open: next / previous run in the list it counts (Runs, or Shipped for a finished run) |
+| `j` / `k` | With a run sheet open: next / previous run in the list it counts (Activity's live then earlier runs, or Shipped for a finished run) |
 | `1`…`9` | With a run sheet open: pick an option on the lead's question card |
 | `Enter` | Submit the answer |
 | `Esc` | Leave the composer (a second `Esc` closes the sheet) |
+| `j` / `k` | With an initiative open in the sheet: move the chunk cursor down / up its plan (the first press lands on the chunk picked up next); in a chunk opened inside the sheet, the next / previous chunk |
+| `Enter` | With an initiative open in the sheet: open the chunk under the cursor |
+| `w` | With an initiative open in the sheet: Work on it in a new agent, or go to the agent already open on it |
+| `Alt`+`↑` / `Alt`+`↓` | With an initiative open in the sheet: move the chunk under its cursor up / down within its stage |
+| `s` | In a chunk opened inside the sheet: open its status menu |
+| `1`…`6` | In a chunk opened inside the sheet: mark it pending, active, blocked, deferred, skipped or done (blocked asks for a one-line reason) |
+| `Esc` | In a chunk opened inside the sheet: back to the initiative (a second `Esc` closes the sheet) |
 | `→` / `Enter` | While a Jarvis tour shows: next step |
 | `←` | While a Jarvis tour shows: previous step |
 | `Esc` | While a Jarvis tour shows: end the tour |

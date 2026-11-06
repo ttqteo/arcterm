@@ -11,7 +11,20 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronRight, Copy, ExternalLink, Eye, FileText, Moon, Pin, PinOff, Play, Trash2 } from "lucide-react";
+import {
+    Bookmark,
+    BookmarkCheck,
+    ChevronRight,
+    Copy,
+    ExternalLink,
+    Eye,
+    FileText,
+    Moon,
+    Pin,
+    PinOff,
+    Play,
+    Trash2,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -19,6 +32,8 @@ import { formatAgeShort } from "./agentsviewmodel";
 import { isPinnedCouncil } from "./councilmodel";
 import { CouncilPinButton } from "./councilpin";
 import { setCouncilPinned } from "./councilstore";
+import { laterSince, laterTitle } from "./latermodel";
+import { laterMarksAtom, setLater } from "./laterstore";
 import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
 import {
     firstRows,
@@ -38,13 +53,9 @@ import { offersOpenAsleep, openSessionAsleep, runSessionPrimary } from "./sessio
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
     "flex w-full cursor-pointer items-center gap-[10px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
-// a session row is wrapped with its Quick look button, so the divider moves to the wrapper
-const SESSION_WRAP = "group relative border-t border-edge-mid first:border-t-0";
+// a session row opens Quick look; the full session pane is its Open, or the row's menu
 const SESSION_ROW =
-    "flex w-full cursor-pointer flex-col items-stretch gap-[2px] px-3 py-[9px] text-left hover:bg-surface-hover group-hover:bg-surface-hover";
-// over the row's right end, shown while the row is hovered or holds focus; the age under it fades
-const PEEK_BTN =
-    "absolute right-2 top-1/2 flex h-[26px] -translate-y-1/2 cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-strong bg-surface-raised px-[9px] text-[12px] text-secondary opacity-0 hover:border-accent hover:text-accent-soft focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100";
+    "flex w-full cursor-pointer flex-col items-stretch gap-[2px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
 // a child row sits 28px in, its divider starting there too
 const NESTED_ROW =
     "relative flex w-full cursor-pointer items-center gap-[10px] py-[9px] pl-10 pr-3 text-left before:absolute before:left-10 before:right-0 before:top-0 before:h-px before:bg-edge-mid hover:bg-surface-hover";
@@ -120,9 +131,17 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
-// A session row's menu: open its transcript, resume it (or open it asleep, for a harness that can sleep), copy its
-// title, and delete it when it can be (an ended Claude session; sessiondelete.ts).
-function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: React.MouseEvent, quickLook: () => void) {
+// A session row's menu: open its transcript, resume it (or open it asleep, for a harness that can sleep), mark it for
+// later (the same mark the Agent tree's rows carry, laterstore.ts), copy its title, and delete it when it can be (an
+// ended Claude session; sessiondelete.ts).
+function sessionMenu(
+    model: AgentsViewModel,
+    key: string,
+    s: LiveSession,
+    e: React.MouseEvent,
+    quickLook: () => void,
+    later: boolean
+) {
     const items: ContextMenuItem[] = [
         { label: "Quick look", icon: <Eye size={15} />, click: quickLook },
         { label: "Open transcript", icon: <FileText size={15} />, click: () => showSession(model, key) },
@@ -137,6 +156,20 @@ function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: Rea
     if (offersOpenAsleep(s)) {
         items.push({ label: "Open asleep", icon: <Moon size={15} />, click: () => openSessionAsleep(model, s) });
     }
+    items.push(
+        later
+            ? {
+                  label: "Done (clear later)",
+                  icon: <BookmarkCheck size={15} />,
+                  click: () => setLater(s.transcriptpath, false),
+              }
+            : {
+                  label: "Mark for later",
+                  icon: <Bookmark size={15} />,
+                  enabled: !!s.transcriptpath,
+                  click: () => setLater(s.transcriptpath, true),
+              }
+    );
     items.push(copyTitleItem(s.task || "(untitled session)"));
     if (s.transcriptpath) {
         items.push({
@@ -299,6 +332,7 @@ export function HistoryColumn({
     const h = history;
     const [q, setQ] = useAtom(historyQueryAtom(path));
     const now = useAtomValue(model.nowAtom);
+    const laterMarks = useAtomValue(laterMarksAtom);
     // the one council row unfolded: a council opens in two steps, the row's peek, then its Open council
     const [unfolded, setUnfolded] = useState<string | null>(null);
     // the session read in the Quick look dialog, over the page; Open there takes it to the full pane
@@ -376,38 +410,40 @@ export function HistoryColumn({
                 if (row.kind === "session") {
                     const s = row.session;
                     const quickLook = () => setPeek({ key: row.key, session: s });
+                    const laterAt = laterSince(laterMarks, s.transcriptpath);
+                    const laterTip = laterAt != null ? laterTitle(laterAt, now, formatAgeShort) : undefined;
                     return (
-                        <div key={row.key} className={SESSION_WRAP}>
-                            <button
-                                type="button"
-                                data-history-row={row.key}
-                                data-history-kind="session"
-                                title={s.task || undefined}
-                                onClick={() => showSession(model, row.key)}
-                                onContextMenu={(e) => sessionMenu(model, row.key, s, e, quickLook)}
-                                className={SESSION_ROW}
-                            >
-                                <span className="flex items-baseline gap-2">
-                                    <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
-                                        {marked(s.task || "(untitled session)", q)}
-                                    </span>
-                                    <span className="flex-none text-[11px] tabular-nums text-ink-faint group-focus-within:opacity-0 group-hover:opacity-0">
-                                        {formatAgeShort(now - s.lastactivets)}
-                                    </span>
+                        <button
+                            key={row.key}
+                            type="button"
+                            data-history-row={row.key}
+                            data-history-kind="session"
+                            title={s.task || undefined}
+                            onClick={quickLook}
+                            onContextMenu={(e) => sessionMenu(model, row.key, s, e, quickLook, laterAt != null)}
+                            className={SESSION_ROW}
+                        >
+                            <span className="flex items-baseline gap-2">
+                                <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
+                                    {marked(s.task || "(untitled session)", q)}
                                 </span>
-                                <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
-                            </button>
-                            <button
-                                type="button"
-                                data-history-peek={row.key}
-                                onClick={quickLook}
-                                title="Quick look: read it here, without leaving the Overview"
-                                className={PEEK_BTN}
-                            >
-                                <Eye size={13} aria-hidden />
-                                Quick look
-                            </button>
-                        </div>
+                                {laterTip != null ? (
+                                    <span
+                                        role="img"
+                                        aria-label={laterTip}
+                                        title={laterTip}
+                                        data-history-later
+                                        className="flex flex-none self-center text-accent"
+                                    >
+                                        <Bookmark size={12} fill="currentColor" aria-hidden />
+                                    </span>
+                                ) : null}
+                                <span className="flex-none text-[11px] tabular-nums text-ink-faint">
+                                    {formatAgeShort(now - s.lastactivets)}
+                                </span>
+                            </span>
+                            <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
+                        </button>
                     );
                 }
                 const isCouncil = row.kind === "council";

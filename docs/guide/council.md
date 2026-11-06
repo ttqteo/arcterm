@@ -13,7 +13,7 @@ Conversation History. Các trang liên quan: [Brainstorm](brainstorm.md), [Jarvi
 
 | Chế độ | Khi nào | Báo cáo cho ra gì |
 |---|---|---|
-| **Review** | Đánh giá một thứ đã có: một tính năng, spec, plan, bản nháp | Một câu trả lời, tối đa ba hướng đi xếp hạng, mỗi hướng có bước đầu tiên; phần còn lại nằm dưới **Also raised**, mỗi ý một dòng |
+| **Review** | Đánh giá một thứ đã có: một tính năng, spec, plan, bản nháp | Một câu trả lời, tối đa năm phát hiện xếp hạng theo mức nghiêm trọng, mỗi cái có lý lẽ, bằng chứng và bước đầu tiên; phần còn lại gập lại dưới **Also raised**, mỗi ý một dòng |
 | **Brainstorm** | Một vấn đề hay một mục tiêu chưa có lời giải | Tối đa ba ý đáng thử, mỗi ý có bước đầu tiên; các ý táo bạo được để riêng |
 
 arcterm tự chọn chế độ theo câu hỏi của bạn; chip chế độ trong **New council** cho bạn đổi lại.
@@ -84,6 +84,37 @@ Ngoài các vai, council còn xếp được ghế cho các **chat đang sống*
 
 Trong cây Agent, agent đang ngồi trong một council đang chạy hoặc đang chờ bạn ghi `in council` trên hàng của nó.
 
+## Các vòng chạy thế nào
+
+Council **Review** không có chỗ chờ giữa vòng 1 và vòng 2. Mỗi ghế đi hết một chuỗi của riêng nó: đưa ý (vòng 1), rồi Go
+kiểm các ý của chính ghế đó (trích dẫn, và các lệnh `verify` nó xin; xem [Lệnh kiểm chứng](#lệnh-kiểm-chứng)), rồi ghế đó
+bắt đầu đọc và cãi những ý người khác đã đưa. Ghế xong sớm không phải chờ ghế chậm nhất, vốn có thể còn đọc code thêm vài
+phút. Bạn thấy:
+
+- **Vòng 2 bắt đầu khi ý đầu tiên được đọc.** Council chuyển sang vòng 2 ngay khi ghế đầu tiên bắt đầu đọc, nên Discussion
+  hiện việc đọc chéo trong khi ghế chậm vẫn còn ở vòng 1 (avatar của nó cho biết nó đang làm gì).
+- **Ý chỉ được đọc sau khi đã kiểm.** Ý của một ghế không vào lời nhắc của ai cho tới khi trích dẫn của nó đã kiểm và lệnh nó
+  xin đã chạy xong, nên không ai cãi trên một nhãn còn đổi.
+- **Mỗi ý đi tới một người kiểm.** Khi đưa ý, tác giả chọn một ghế khác để kiểm ý đó và ghi một dòng lý do. Ghế đó nhận đủ
+  lý lẽ và bằng chứng của ý; các ghế khác chỉ thấy tiêu đề và câu đầu của lý lẽ, và vẫn thách thức được. Tác giả không chọn,
+  chọn ghế không có, ghế đã lỗi hay chính mình thì ý đi tới ghế đang có ít ý phải kiểm nhất. Nếu người kiểm của một ý lỗi
+  ở vòng 1, ý đó được giao lại cho ghế khác.
+- **Lượt bổ sung.** Khi mọi ghế đã xong phần của mình, ghế nào còn việc dở thì chạy thêm một lượt: các ý đến sau khi nó bắt
+  đầu đọc, ý được giao lại cho nó mà trước đó nó chỉ thấy tiêu đề, câu bạn hỏi lúc đang chạy, và ba lựa chọn hàng đầu (**picks**)
+  của nó nếu chưa nêu. Lượt này không lặp lại lập trường ghế đã nêu. Ghế xong sau cùng chỉ chạy một lượt, có picks.
+
+Council giữ chỗ chờ cũ (mọi ghế xong vòng 1 rồi mới sang vòng 2) khi nó có bản nháp đang giữ cho bạn, khi nó dừng sau vòng 1,
+với **Brainstorm** (xếp hạng dựa trên picks và số ý được xây tiếp, nên mọi ghế phải đọc mọi ý), và với ghế agent đang sống:
+ghế agent sang vòng 2 sau khi mọi ghế xong vòng 1, nhưng cũng đọc ý theo người kiểm của nó.
+
+Council **Brainstorm** chia vấn đề thành vùng trước vòng 1: một lượt gọi haiku đọc câu hỏi rồi giao cho mỗi ghế một vùng
+(một hành trình người dùng, một phần của tính năng, tùy câu hỏi), không vùng nào trùng nhau, mỗi vùng hợp với góc nhìn của
+ghế nhận nó. Mỗi ghế đưa phần lớn ý trong vùng của mình, có thể thêm một ý mạnh ngoài vùng, và ghi ý đó thuộc vùng nào.
+Coordinator chọn tối đa ba ý từ ba vùng khác nhau khi các ý cho phép, nên một vùng không chiếm hết cả ba chỗ. Council một
+ghế không chia vùng, và nếu lượt chia vùng lỗi thì vòng 1 chạy như trước. Ý nói về việc code đang làm gì hôm nay phải trích
+`path:line` (hay một vùng ảnh chụp màn hình) kèm đoạn trích; Go kiểm trích dẫn đó như với Review, và giữa hai ý ngang nhau,
+coordinator xếp ý đã đọc trong code (Read code) trước ý chỉ đoán (Guess). Ý về việc nên làm gì thì không cần bằng chứng.
+
 ## Đọc cuộc thảo luận
 
 Phần **Discussion** là một nhóm chat. Mỗi ý là một tin nhắn trong bong bóng mang màu của chuyên gia viết nó, avatar có hai
@@ -91,10 +122,11 @@ chữ cái (ĐV, KT) để phân biệt những ghế có tên đầu giống nh
 và mỗi câu trả lời nằm dưới phần trích của ý mà nó đáp lại. Câu hỏi của bạn nằm bên phải, gấp còn ba dòng, các giới hạn
 bạn đặt thành chip.
 
-Đầu Discussion (và Map) là một hàng gọn: ba tab dạng icon (Report, Discussion kèm số ý, Map), tiêu đề, chip trạng thái,
-rồi chồng avatar và nút **…** ở cuối. Chế độ (Review hay Brainstorm; rê chuột để xem lý do chọn), thời gian, số câu trả
-lời và số token nằm ở một dòng dưới đáy rail Ideas, thấy ở mọi tab của rail. Khi rail gập lại (hay ở vòng 1, lúc dừng chờ
-bạn, và trong Map), chúng vào nút **ⓘ** trên header, đọc khi rê chuột. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
+Report, Discussion và Map có chung một hàng đầu, đứng yên một chỗ khi chuyển tab: ba tab dạng icon (Report, Discussion
+kèm số ý, Map), tiêu đề, chip trạng thái, rồi chồng avatar và nút **…** ở cuối. Ở Report, sau chip là chế độ (Review hay
+Brainstorm; rê chuột để xem lý do chọn), thời gian, số câu trả lời và số token, và trước chồng avatar là các nút nhảy tới
+từng phần của báo cáo. Ở Discussion, những số đó nằm ở một dòng dưới đáy rail Ideas, thấy ở mọi tab của rail; Map không
+hiện chúng. Chồng avatar hiện hai ghế, ghế đang làm việc lên trước, phần còn lại gộp thành **+N**; rê chuột hay
 bấm vào để xem cả danh sách. Nút **…** mở menu: **Summarize** (hay **Summarize again**), **Resume**, **Pin** / **Unpin**,
 và **Stop council** khi council đang chạy.
 
@@ -143,8 +175,9 @@ Một trích dẫn không khớp (file không có, số dòng vượt cuối fil
 trích dẫn sai vẫn hiện riêng. "Gần dòng đó" là chính dòng hay đoạn được trích, cộng ba dòng mỗi bên, phân biệt hoa thường.
 Trích dẫn vào file hay thư mục bạn đính kèm cho council được kiểm theo đường dẫn đó (với file ngoài project, trích bằng
 đường dẫn tuyệt đối); trích dẫn của một ghế agent được kiểm theo thư mục làm việc của chính agent đó khi biết, không thì
-theo project; `screenshot:` không bị gắn nhãn hay đếm. Council **Brainstorm** không đòi bằng chứng, nên không có nhãn, không
-có thanh bằng chứng và không có bước chạy lệnh.
+theo project; `screenshot:` không bị gắn nhãn hay đếm. Council **Brainstorm** chỉ đòi bằng chứng cho ý nói về code hôm nay:
+Go kiểm trích dẫn của những ý đó và coordinator đọc nhãn khi chọn ý, nhưng màn hình và tài liệu đã lưu không hiện nhãn, không
+có thanh bằng chứng, không có bước chạy lệnh, và một ý Guess vẫn có thể vào top.
 
 ### Lệnh kiểm chứng
 
@@ -163,10 +196,12 @@ mỗi council, mỗi lệnh dừng sau **3 phút**, và mỗi lệnh xin một c
   dõi) thành một commit mà không đụng index hay file của bạn, và các lệnh chạy trong một cây tạm tách khỏi branch ở commit
   đó, tức là trên đúng đoạn code các chuyên gia đã đọc. Cây bị xóa khi council xong, lỗi hay bị dừng; checkout của bạn không
   bao giờ bị ghi. Project không phải git repo thì không chạy lệnh nào, và timeline nói rõ vì sao.
-- **Lúc nào**: ngay sau vòng 1, trước chỗ dừng sau vòng 1, để kết quả nằm trước mắt bạn khi chọn ý nào cần cắt. Ý bạn cắt thì
-  kết quả của nó không đi tiếp vào vòng 2. Council một vòng cũng chạy bước này, và kết quả đi tới bản tổng kết.
-- **Kết quả**: mỗi lệnh ghi pass hay fail, mã thoát, 40 dòng cuối của output và việc nó có đúng như dự đoán không. Kết quả được
-  đưa vào lời nhắc vòng 2 của **mọi** ghế, không chỉ người xin lệnh, nên vòng 2 cãi nhau trên kết quả.
+- **Lúc nào**: ngay khi vòng 1 của chính ghế xin lệnh xong, trước khi ai đọc ý đó. Council có chỗ dừng sau vòng 1 thì lệnh chạy
+  trước chỗ dừng, để kết quả nằm trước mắt bạn khi chọn ý nào cần cắt, và ý bạn cắt thì kết quả của nó không đi tiếp vào
+  vòng 2. Council một vòng cũng chạy bước này, và kết quả đi tới bản tổng kết. Các lệnh chạy lần lượt từng ghế một, vì chúng dùng
+  chung một cây tạm.
+- **Kết quả**: mỗi lệnh ghi pass hay fail, mã thoát, 40 dòng cuối của output và việc nó có đúng như dự đoán không. Kết quả đi cùng
+  ý vào lời nhắc vòng 2 của ghế được giao kiểm ý đó (và của chính tác giả) và vào bản tổng kết, nên vòng 2 cãi nhau trên kết quả.
 - **Chỉ kết quả đã thật sự thử ý đó mới tính.** Lệnh quá giờ, lệnh không khớp test nào ("no tests to run", "No test files
   found", "running 0 tests") hay không build được thì ghi **not run** kèm lý do, không bao giờ là pass hay fail, và không bao
   giờ làm một ý thành Ran hay Disproved.
@@ -221,9 +256,13 @@ Các nhãn cũng hiện trên chip bằng chứng trong Discussion và Report.
 
 ## Báo cáo
 
-Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi các hướng đi; các ý được xếp hạng theo ba lựa chọn hàng đầu của
-từng chuyên gia. Ai đồng ý với ý nào (**Agrees**, **Has doubts**, **Against**) nằm ở tab [**Map**](#tab-map): báo cáo có một
-dòng "See who agrees with which idea in Map" mở nó.
+Khi council xong, nó mở ở báo cáo: một câu trả lời trước, rồi năm phát hiện xếp hạng (ba ý với Brainstorm), mỗi cái có lý lẽ,
+bằng chứng, bước đầu tiên và ai không đồng ý; phần còn lại gập lại dưới **Also raised** (hay **Wild ideas kept aside**), mỗi ý
+một dòng, bấm tiêu đề để mở. Coordinator xếp theo mức hại nếu để nguyên (mất dữ liệu, hỏng luồng, hiện sai trạng thái, tốn
+tiền, rồi chỗ chưa trau chuốt), nhãn do Go đặt phân hơn kém khi ngang nhau. **Ý nhãn Guess hay Disproved không bao giờ nằm
+trong top**: Go chuyển chúng xuống phần gập, nên top có thể ít hơn năm; một hướng gộp nhiều ý lấy nhãn tốt nhất của các ý trong
+nó. Ai đồng ý với ý nào (**Agrees**, **Has doubts**, **Against**) nằm ở tab [**Map**](#tab-map): báo cáo có một dòng "See who
+agrees with which idea in Map" mở nó.
 
 - **Cột thông tin** bên cạnh, luôn hiện khi cuộn: trạng thái và chi phí, mục lục của báo cáo (bấm để nhảy tới; phần đang
   đọc có màu xám), từng chuyên gia với model của họ và những gì họ đã làm, và tài liệu đã lưu. Bấm một chuyên gia để
@@ -257,7 +296,7 @@ dòng "See who agrees with which idea in Map" mở nó.
 
 ## Ghim, xóa
 
-- **Pin** trong menu **…** ở đầu Discussion, Map và thanh tab của báo cáo **ghim** council, ở bất kỳ trạng thái nào, kể
+- **Pin** trong menu **…** ở hàng đầu của Report, Discussion và Map **ghim** council, ở bất kỳ trạng thái nào, kể
   cả đang chạy: council nằm trên cùng trong project của nó ở cây Agent, và mục đó đổi thành **Unpin** để bỏ ghim. Ngoài ra
   chỉ ghim được từ **Councils** và từ History của Overview project (mở một hàng council, hay chuột phải): cây không có
   nút Pin. Chỉ bạn ghim và bỏ ghim:

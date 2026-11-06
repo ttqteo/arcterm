@@ -52,6 +52,7 @@ import {
     Pin,
     PinOff,
     Plus,
+    Reply,
     Route,
     SendHorizontal,
     ThumbsDown,
@@ -101,6 +102,7 @@ import {
     readsFiles,
     readsNote,
     replyReach,
+    replyTarget,
     seatChips,
     seatLink,
     textEdit,
@@ -122,6 +124,7 @@ import {
     type QuestionPost,
     type ReachChips,
     type ReplyPost,
+    type ReplyTarget,
     type SkipLine,
     type ThreadItem,
     type TypingRow,
@@ -131,6 +134,7 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { CouncilDetailsFoot } from "./councildetails";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { messageMarkdown } from "./councilfinalmodel";
+import { useKeptScroll } from "./councilkeptscroll";
 import { councilList, newestReplyOn, railMeta, stanceGroups, type IdeaRow, type StanceTone } from "./councillistmodel";
 import { markSpans } from "./councilmarks";
 import { MemoryPanel, type AddDraft } from "./councilmemory";
@@ -156,26 +160,19 @@ import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import { councilRevealAtom } from "./councilreveal";
 import {
     NO_PILLS,
-    followsEnd,
     glideAt,
     glideMs,
     jumpPills,
-    keepPlace,
-    keptPlace,
     ownPosts,
-    placeOf,
     readingRow,
     returnTop,
     revealTop,
-    sentSince,
     stillLanded,
-    topFor,
     type JumpPills,
     type Landing,
     type ReadingPlace,
     type RevealBlock,
     type RowBox,
-    type ScrollPlace,
 } from "./councilscroll";
 import { sendState, shownItems, type SendState, type SendStatus } from "./councilseen";
 import { basename } from "./councilsetupmodel";
@@ -205,6 +202,7 @@ import {
     replyCouncil,
     retryAllExperts,
     retryExpert,
+    setDraftReplyTo,
     thumbCouncil,
     useEstimate,
 } from "./councilstore";
@@ -628,7 +626,17 @@ const TOOL_BUTTON =
 const PIN_WORD = "Pin to Report";
 const UNPIN_WORD = "Unpin";
 
-function MessageTools({ c, id, acts }: { c: Council; id: string; acts: Actions }) {
+function MessageTools({
+    c,
+    id,
+    acts,
+    onReply,
+}: {
+    c: Council;
+    id: string;
+    acts: Actions;
+    onReply?: () => void; // a seat's message the person can answer: Reply, first, puts it above the message box
+}) {
     const { state, copy } = useCopyFeedback();
     const markdown = messageMarkdown(c, id) ?? "";
     if (markdown === "") {
@@ -639,6 +647,21 @@ function MessageTools({ c, id, acts }: { c: Council; id: string; acts: Actions }
     const CopyIcon = state === "copied" ? Check : state === "failed" ? X : Copy;
     return (
         <span data-council-tools={id} className="inline-flex gap-[2px]">
+            {onReply != null && (
+                <button
+                    type="button"
+                    data-council-reply-to={id}
+                    aria-label="Reply"
+                    title="Reply to this message: it goes to the seat that wrote it"
+                    onClick={onReply}
+                    className={cn(
+                        TOOL_BUTTON,
+                        "w-[22px] bg-transparent px-0 text-muted hover:bg-surface-hover hover:text-secondary"
+                    )}
+                >
+                    <Reply size={12} strokeWidth={2} aria-hidden />
+                </button>
+            )}
             <button
                 type="button"
                 data-council-copy={id}
@@ -1325,16 +1348,19 @@ function PersonText({ councilId, item }: { councilId: string; item: ReplyPost })
 
 // at the top of the person's own bubble: whom it reaches, when that is not the usual ones and its text does not name
 // them, as chips in the seats' colours behind the router's mark (or an arrow, for seats the person chose), or that the
-// router is still choosing, or failed; the hover is the router's line, its reason with it
+// router is still choosing, or failed; the hover is the router's line, its reason with it. The row is only as wide as
+// its chips, and the line opens above it: across the whole bubble, a pointer crossing the message raised the reason
+// right over the text being read.
 function ReachRow({ to }: { to: ReachChips }) {
     const failed = to.by === "failed";
     const Icon = failed ? CircleAlert : to.by === "you" ? ArrowRight : Route;
     return (
         <div
             data-council-reach={to.by}
+            data-tip-placement="top-start"
             title={to.title === "" ? undefined : to.title}
             className={cn(
-                "flex min-w-0 flex-wrap items-center gap-[5px] text-[12px] leading-[1.4]",
+                "flex w-fit min-w-0 max-w-full flex-wrap items-center gap-[5px] text-[12px] leading-[1.4]",
                 failed ? "text-error-soft" : "text-muted"
             )}
         >
@@ -1360,13 +1386,21 @@ function flashPost(post: HTMLElement) {
     post.dataset.flashTimer = String(window.setTimeout(() => delete post.dataset.flash, FLASH_MS));
 }
 
-// at the top of a seat's bubble: the person's post it answers, when it is not right under it; a click scrolls to that
-// post, which sits in the same list (a seat's own view leaves the person's posts out: the quote is then only a quote)
+// glides the post's own scroller to it and rings it for a moment where it lands, so the eye follows it back
+function showPost(post: HTMLElement) {
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    revealIn(scrollerOf(post), post, "center", smooth);
+    flashPost(post);
+}
+
+// at the top of a bubble: on a seat's answer, the person's post it answers when it is not right under it; on the
+// person's reply, the seat's message they replied to. A click scrolls to that post, which sits in the same list (a
+// seat's own view leaves the person's posts out: the quote is then only a quote)
 function QuoteRow({ quote }: { quote: AnswerQuote }) {
     const body = (
         <>
             <CornerDownRight size={11} aria-hidden className="flex-none" />
-            <span className="flex-none font-semibold text-secondary">You</span>
+            <span className="flex-none font-semibold text-secondary">{quote.name}</span>
             <span className="min-w-0 truncate">{quote.text}</span>
         </>
     );
@@ -1386,20 +1420,15 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
             list = list.parentElement;
         }
         const post = list?.querySelector<HTMLElement>(at);
-        if (post == null) {
-            return;
+        if (post != null) {
+            showPost(post);
         }
-        // a glide up the channel, so the eye follows it back to the question; a jump with reduced motion
-        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        revealIn(scrollerOf(post), post, "center", smooth);
-        // and the question's bubble rings for a moment where it lands
-        flashPost(post);
     };
     return (
         <button
             type="button"
             data-council-quote={quote.id}
-            title="Go to your message"
+            title={quote.name === "You" ? "Go to your message" : `Go to ${quote.name}'s message`}
             onClick={jump}
             className={cn(
                 box,
@@ -1480,6 +1509,7 @@ function ReplyMessage({
     onOpenIdea,
     rise,
     status,
+    replyKey,
 }: {
     c: Council;
     item: ReplyPost;
@@ -1488,9 +1518,21 @@ function ReplyMessage({
     onOpenIdea?: (id: string) => void;
     rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
     status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
+    // the key of the message box under the list it sits in ("" the channel's, an idea's id its thread's); none for a list
+    // with no box
+    replyKey?: string;
 }) {
     const councilId = c.id;
     const openIdea = inThread ? undefined : onOpenIdea;
+    const setDrafts = useSetAtom(councilChatDraftAtom(councilId));
+    // a seat's message takes a reply in the box under the list it sits in, when that box posts where the message is: the
+    // channel's (and the Chat's) for one to the whole council, an idea thread's for one on that idea; one seat's view of
+    // the channel also shows replies on ideas, whose box is not there
+    const replyHere = !item.mine && replyKey != null && item.proposalid === replyKey;
+    const reply = () => {
+        setDrafts((d) => setDraftReplyTo(d, item.proposalid, item.id));
+        focusComposer(item.proposalid);
+    };
     // a withdrawal or a revision that gave no reason or title says it all in its pill: no empty bubble under it
     const bare =
         (item.pill === "out" || item.pill === "revised") &&
@@ -1520,7 +1562,7 @@ function ReplyMessage({
                         onOpenIdea={openIdea}
                         pinned={c.finalpick === item.id}
                         // at the right end of its byline with the time, shown on hover or focus, so a reply is no taller
-                        tools={<MessageTools c={c} id={item.id} acts={acts} />}
+                        tools={<MessageTools c={c} id={item.id} acts={acts} onReply={replyHere ? reply : undefined} />}
                         thumbs={
                             <>
                                 <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
@@ -2077,6 +2119,49 @@ function DraftImages({ councilId, boxKey, images }: { councilId: string; boxKey:
 // the council message box at its tallest: five lines of 21px (14px at leading 1.5) inside its 4.5px padding
 const COMPOSER_MAX_H = 5 * 21 + 9;
 
+// at the top of a message box while it answers a seat's message (that message's Reply): who wrote it and its first
+// words, a click going back to the message, and × (or Escape in the box) to send to whom the box reaches instead
+function ReplyingLine({ c, to, onStop }: { c: Council; to: ReplyTarget; onStop: () => void }) {
+    const show = () => {
+        const post = document.querySelector<HTMLElement>(
+            `[data-council-discussion="${CSS.escape(c.id)}"] [data-council-reply-post="${CSS.escape(to.id)}"]`
+        );
+        if (post != null) {
+            showPost(post);
+        }
+    };
+    return (
+        <div
+            data-council-replying={to.id}
+            className="flex min-w-0 items-center gap-[6px] text-[12.5px] leading-[1.4] text-muted"
+        >
+            <Reply size={12} strokeWidth={2} aria-hidden className="flex-none" />
+            <button
+                type="button"
+                data-council-replying-show
+                title={`Go to ${to.name}'s message`}
+                onClick={show}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-[5px] rounded-[4px] border-0 bg-transparent p-0 text-left text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                <span className="flex-none">
+                    Replying to <span className="font-semibold text-secondary">{to.name}</span>
+                </span>
+                {to.text !== "" && <span className="min-w-0 truncate">· {to.text}</span>}
+            </button>
+            <button
+                type="button"
+                data-council-replying-stop
+                aria-label="Stop replying (Esc)"
+                title="Stop replying (Esc)"
+                onClick={onStop}
+                className="flex h-[20px] w-[20px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                <X size={13} strokeWidth={2} aria-hidden />
+            </button>
+        </div>
+    );
+}
+
 function Composer({
     c,
     scope,
@@ -2117,19 +2202,24 @@ function Composer({
     const attached = images.filter((i) => i.error == null).length;
     const uploading = imagesPending(images);
     const files = useProjectFiles(c.project, mentionOpen(text, caret));
+    // the seat's message this box answers (a message's Reply), none once that message is gone: the reply goes to the seat
+    // that wrote it, under it, past the router
+    const replying = replyTarget(c, drafts.replyTo?.[proposalId]);
+    const parentId = replying?.id ?? "";
+    const stopReplying = () => setDrafts((d) => setDraftReplyTo(d, proposalId, ""));
 
     const found = mentionPicker(c, text, caret, chats, files);
     const picker = found != null && found.start !== dismissed ? found : null;
     // the chats this message adds: the ones whose `@<key>` is still in the text, so deleting it drops the pick
     const joining = pickedChats(c, text, chats);
-    const who = answerers(c, proposalId, "", text, joining);
+    const who = answerers(c, proposalId, parentId, text, joining);
     const followUp = isFollowUp(c);
     const k = followUp ? who.length : 0;
     // a chat answerer (seated, or joining) is priced at its context, a role expert at the flat price
     const chatTabs = who.flatMap((e) => (e.agent ? [e.agent] : []));
     const experts = who.length - chatTabs.length;
     // a message to the whole council is taken up by the router, which picks the seat or two that answer it
-    const routed = routedMessage(c, proposalId, "", text, joining);
+    const routed = routedMessage(c, proposalId, parentId, text, joining);
     const reads = readsFiles(drafts.tools, text, attached, routed);
     // Read files on Auto and nothing locking it: the router decides it for a message it takes, and Tools is the guess
     const toolsAuto = drafts.tools == null && !reads.locked;
@@ -2151,7 +2241,7 @@ function Composer({
             : ROUTER_PICKS_WHO
         : k > 0
           ? followupLabel(est, experts, reads.on, chatTabs.length)
-          : replyReach(c, proposalId, "", text, joining).label;
+          : replyReach(c, proposalId, parentId, text, joining).label;
     // the picker's rows are one list for the arrow keys: the seats, the files, then the chats
     const pickRows = picker == null ? [] : pickerRows(picker);
     const rowCount = pickRows.length;
@@ -2171,6 +2261,7 @@ function Composer({
         const r = await replyCouncil({
             id: c.id,
             proposalid: proposalId || undefined,
+            parentid: parentId || undefined,
             text: body,
             // an image or an @file is read by the seats that answer it, in a round as in a follow-up
             tools: reads.on ? true : undefined,
@@ -2184,7 +2275,9 @@ function Composer({
             setError(r.error);
         } else {
             // the next question decides for itself whether the seats read files
-            setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: "" }, tools: null }));
+            setDrafts((d) =>
+                setDraftReplyTo({ ...d, texts: { ...d.texts, [proposalId]: "" }, tools: null }, proposalId, "")
+            );
             clearCouncilImages(c.id, proposalId);
         }
     };
@@ -2267,10 +2360,15 @@ function Composer({
             e.preventDefault();
             void send();
         } else if (e.key === "Escape") {
-            // Escape leaves the box for the channel or the thread it sits in, so the next one closes the thread
+            // Escape first stops answering the message the box replies to; then it leaves the box for the channel or the
+            // thread it sits in, so the next one closes the thread
             e.preventDefault();
             e.stopPropagation();
-            returnTo()?.focus();
+            if (replying != null) {
+                stopReplying();
+            } else {
+                returnTo()?.focus();
+            }
         }
     };
     // a paste that carries images takes them (and inserts any text beside them); a paste of text is the browser's
@@ -2518,6 +2616,7 @@ function Composer({
             )}
             {/* 23px: the round send button's 15 plus the 8 around it, so the corners run with it and one line is a pill */}
             <div className="flex flex-col gap-[8px] rounded-[23px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
+                {replying != null && <ReplyingLine c={c} to={replying} onStop={stopReplying} />}
                 <DraftImages councilId={c.id} boxKey={proposalId} images={images} />
                 <div className="flex items-end gap-[8px]">
                     <div className="relative flex min-w-0 flex-1">
@@ -2646,6 +2745,17 @@ function Composer({
 }
 
 // ---- the report's questions to ask next ----
+
+// puts the caret in the message box of the list `key` names: the channel's under "", a thread's under its idea
+function focusComposer(key: string) {
+    requestAnimationFrame(() =>
+        document
+            .querySelector<HTMLTextAreaElement>(
+                `[data-composer-for="${CSS.escape(key)}"] [data-council-composer-input]`
+            )
+            ?.focus()
+    );
+}
 
 // puts a suggested question in the channel's or the thread's box in place of what it holds, caret at its end, as an
 // edit Ctrl+Z takes back (editBox); with no box on the page, or one the browser will not edit, `write` stores it
@@ -2862,6 +2972,8 @@ function ThreadPanel({
                             acts={acts}
                             rise={item.mine && entering.has(item.id)}
                             status={send.status?.postId === item.id ? send.status : undefined}
+                            // an idea's thread has its own box; the Chat's is the channel's, under the list
+                            replyKey={replies ? thread.id : ""}
                         />
                     ) : item.kind === "draft" ? (
                         <DraftCard key={item.id} c={c} item={item} acts={acts} />
@@ -2950,25 +3062,32 @@ const GROUP_BAR: Record<StanceTone, string> = {
  *  header with a dot in its colour, its name in words and a count; per idea a bar in its group's colour, its number and
  *  author, its title, and a quiet line with its replies and the stances on it. The grouping is derived on every render,
  *  so an idea moves group as a stance changes. A click scrolls the channel to the idea and puts the j / k cursor on it;
- *  the idea's own replies button opens its thread. */
+ *  the idea's own replies button opens its thread. The list is drawn again each time its tab shows (after Memory or a
+ *  thread), so it keeps its place under `ideas:<council>` (useKeptScroll). */
 function IdeasList({
+    councilId,
     ideas,
     on,
     freshOnly,
     onPick,
     onFreshOnly,
 }: {
+    councilId: string;
     ideas: readonly IdeaRow[];
     on: string | null; // the idea under the cursor or with its thread open
     freshOnly: boolean; // only the ideas with new replies (the caption's toggle); all of them once none has any
     onPick: (row: IdeaRow) => void;
     onFreshOnly: (only: boolean) => void;
 }) {
+    const scroller = useRef<HTMLDivElement>(null);
+    const onScroll = useKeptScroll(scroller, `ideas:${councilId}`);
     const withFresh = ideas.filter((r) => r.fresh > 0).length;
     const filtering = freshOnly && withFresh > 0;
     const groups = stanceGroups(filtering ? ideas.filter((r) => r.fresh > 0) : ideas);
     return (
         <div
+            ref={scroller}
+            onScroll={onScroll}
             id="council-rail-ideas"
             role="tabpanel"
             aria-label="Ideas"
@@ -3236,7 +3355,14 @@ function CouncilRail({
                     onAdding={setAdding}
                 />
             ) : (
-                <IdeasList ideas={ideas} on={on} freshOnly={freshOnly} onPick={onPick} onFreshOnly={onFreshOnly} />
+                <IdeasList
+                    councilId={c.id}
+                    ideas={ideas}
+                    on={on}
+                    freshOnly={freshOnly}
+                    onPick={onPick}
+                    onFreshOnly={onFreshOnly}
+                />
             )}
             <CouncilDetailsFoot c={c} />
         </aside>
@@ -3244,79 +3370,6 @@ function CouncilRail({
 }
 
 // ---- the chat ----
-
-/** Keeps a council scroller where the reader left it, under `key` (councilscroll.ts): back there after a remount (another
- *  council, the Summary, another agent) and after the surface comes back from display:none, which drops an element's
- *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows. A scroller with nothing kept
- *  starts at `start`: the end by default when it follows, else the top. One more of the person's own posts (`sent`,
- *  councilscroll.ownPosts) brings the end into view wherever the reader was, so what they just sent shows. Returns the
- *  scroller's onScroll. */
-export function useKeptScroll(
-    ref: RefObject<HTMLElement | null>,
-    key: string,
-    {
-        follow = false,
-        count = 0,
-        start,
-        sent = 0,
-    }: { follow?: boolean; count?: number; start?: "top" | "end"; sent?: number } = {}
-): () => void {
-    const startAtEnd = (start ?? (follow ? "end" : "top")) === "end";
-    const place = useRef<ScrollPlace | undefined>(undefined);
-    const restore = useCallback(() => {
-        const el = ref.current;
-        if (el != null && el.clientHeight > 0) {
-            el.scrollTop = topFor(place.current, el, startAtEnd);
-            // measured where it opened, so one that opens at the top follows new lines only once the reader is at the end
-            place.current ??= placeOf(el);
-        }
-    }, [ref, startAtEnd]);
-    useLayoutEffect(() => {
-        place.current = keptPlace(key);
-        restore();
-    }, [key, restore]);
-    useLayoutEffect(() => {
-        if (followsEnd(place.current, follow)) {
-            restore();
-        }
-    }, [count, follow, restore]);
-    const sentWas = useRef({ key, n: sent });
-    useLayoutEffect(() => {
-        const was = sentWas.current;
-        sentWas.current = { key, n: sent };
-        const el = ref.current;
-        if (sentSince(was, key, sent) && el != null && el.clientHeight > 0) {
-            el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
-            place.current = placeOf(el);
-            keepPlace(key, place.current);
-        }
-    }, [ref, key, sent]);
-    // shown again (its offset is gone), or resized while following (the thread opening rewraps the channel)
-    useEffect(() => {
-        const el = ref.current;
-        if (el == null || typeof ResizeObserver === "undefined") {
-            return;
-        }
-        let shown = el.clientHeight > 0;
-        const ro = new ResizeObserver(() => {
-            const now = el.clientHeight > 0;
-            if (now && (!shown || followsEnd(place.current, follow))) {
-                restore();
-            }
-            shown = now;
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, [ref, follow, restore]);
-    return useCallback(() => {
-        const el = ref.current;
-        // a hidden scroller has no height and clamps to the top: not the reader's place
-        if (el != null && el.clientHeight > 0) {
-            place.current = placeOf(el);
-            keepPlace(key, place.current);
-        }
-    }, [ref, key]);
-}
 
 // where a row of the channel sits in its scroller's content, as scrollTop counts
 function contentBox(row: Element, el: HTMLElement): RowBox {
@@ -3968,6 +4021,7 @@ export function CouncilChat({
                                             onOpenIdea={open}
                                             rise={item.mine && entering.has(item.id)}
                                             status={send.status?.postId === item.id ? send.status : undefined}
+                                            replyKey=""
                                         />
                                     );
                                 case "skip":

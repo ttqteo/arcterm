@@ -70,7 +70,23 @@ func MergeEffort(base, ours, theirs *waveobj.Effort) *waveobj.Effort {
 		Events:    unionByTs(ours.Events, theirs.Events, func(ev waveobj.EffortEvent) int64 { return ev.Ts }),
 		CreatedTs: minNonZero(ours.CreatedTs, theirs.CreatedTs),
 		UpdatedTs: max(ours.UpdatedTs, theirs.UpdatedTs),
+		PinnedTs:  mergePinnedTs(base.PinnedTs, ours.PinnedTs, theirs.PinnedTs),
 		Meta:      cloneMeta(newer.Meta),
+	}
+}
+
+// mergePinnedTs merges the pin three-way. It cannot follow the newer-UpdatedTs rule: a pin keeps
+// UpdatedTs, so the side that pinned may well be the older one. A side that changed it from base wins;
+// when both changed it, the larger wins (a pin beats an unpin, the later pin beats the earlier).
+func mergePinnedTs(base, ours, theirs int64) int64 {
+	oursChanged, theirsChanged := ours != base, theirs != base
+	switch {
+	case oursChanged && theirsChanged:
+		return max(ours, theirs)
+	case theirsChanged:
+		return theirs
+	default:
+		return ours
 	}
 }
 

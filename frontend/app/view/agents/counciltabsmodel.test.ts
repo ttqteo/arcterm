@@ -74,7 +74,7 @@ describe("councilTabs", () => {
 });
 
 describe("fillSlideFrom", () => {
-    // the strip as the Discussion and the Map draw it: Report 32px, Discussion 52px with its count, Map 32px
+    // the strip as every view's header draws it: Report 32px, Discussion 52px with its count, Map 32px
     const spots: TabSpots = {
         summary: { left: 3, width: 32 },
         discussion: { left: 37, width: 52 },
@@ -96,10 +96,10 @@ describe("fillSlideFrom", () => {
         expect(fillSlideFrom(strip("map"), "c1", "map")).toBeNull();
     });
 
-    it("never slides to or from the Report, whose strip sits elsewhere on the screen", () => {
-        expect(fillSlideFrom(strip("summary"), "c1", "discussion")).toBeNull();
-        expect(fillSlideFrom(strip("discussion"), "c1", "summary")).toBeNull();
-        expect(fillSlideFrom(strip("map"), "c1", "summary")).toBeNull();
+    it("slides to and from the Report, whose strip sits in the same header row", () => {
+        expect(fillSlideFrom(strip("summary"), "c1", "discussion")).toEqual({ x: -34, scale: 32 / 52 });
+        expect(fillSlideFrom(strip("discussion"), "c1", "summary")).toEqual({ x: 34, scale: 52 / 32 });
+        expect(fillSlideFrom(strip("map"), "c1", "summary")).toEqual({ x: 88, scale: 1 });
     });
 
     it("draws the fill in place when a tab was not measured or has no width", () => {

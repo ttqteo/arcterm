@@ -15,7 +15,7 @@ import { absolutePath, editTarget, foreignReason, needsAsk, parentDirs, repoKey,
 import { denial, isEngineTree } from "./guard-core";
 import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
-import { lintContext, lintMemory, parseMemory, referencedPaths, taskNames } from "./memlint-core";
+import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { idleArgs } from "./status-core";
@@ -458,7 +458,7 @@ async function promptStarted($: EngineInterface, originKind: string) {
 
 // lints the project's Claude memory dir at session start, so a memory gone stale on any machine is named there;
 // the person gets a toast, the model the list as a row it reads before the first prompt. silent when the dir
-// is clean or there is none. claude's SessionStart additionalContext or a prompt.compose section would be the
+// is none or holds QUIET_MAX issues or fewer. claude's SessionStart additionalContext or a prompt.compose section would be the
 // natural door, but a managed install's security plugin bypasses both for a user-tier plugin. a reload of the
 // mod (session.start again) appends the row again
 async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
@@ -484,7 +484,7 @@ async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
     const tasks = (await $.fs.exists("Taskfile.yml")) ? taskNames(await $.fs.read("Taskfile.yml")) : null;
     const index = await $.fs.read(`${dir}/MEMORY.md`);
     const problems = lintMemory({ index, memories, missingPaths, tasks, nowMs: await $.clock.now() });
-    if (problems.length === 0) {
+    if (!shouldReport(problems)) {
         return;
     }
     const kept = await $.session.append({

@@ -5,6 +5,7 @@ package council
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -92,10 +93,11 @@ func TestRound1PromptAsksForAQuoteAndVerifyRequests(t *testing.T) {
 		"At most 2", `"pass" or "fail"`, "absolute path")
 	mustContain(t, "round 1 prompt", p, round1Shape)
 
-	// a Brainstorm asks for no evidence, so for no quote and no check either
+	// a Brainstorm asks for a quote on a cite about today's code (brainstormGroundRule), and for no check
 	b := brainstormCouncil()
 	pb := Round1Prompt(b, b.Experts[0])
-	mustNotContain(t, "brainstorm round 1 prompt", pb, quoteRule, verifyRule, `"quote"`, `"verify"`, `"expect"`)
+	mustContain(t, "brainstorm round 1 prompt", pb, quoteRule, `"quote"`)
+	mustNotContain(t, "brainstorm round 1 prompt", pb, verifyRule, `"verify"`, `"expect"`)
 }
 
 func TestLangLine(t *testing.T) {
@@ -179,7 +181,9 @@ func TestSynthesisPrompt(t *testing.T) {
 	p := SynthesisPrompt(c)
 
 	mustContain(t, "synthesis prompt", p, "You are Lead", "the coordinator", "Merge and rank.", "Idle sleep for services", "Which direction first?", "no tools",
-		evidenceRule, synthesisShape, stanceRule, summaryRule, askRule)
+		evidenceRule, synthesisShape, summaryRule, askRule)
+	// Go fills the stances, the agreed flags and the outcomes: the coordinator is asked for none
+	mustNotContain(t, "synthesis prompt", p, stanceRule, `"stances"`, `"agreed"`, `"outcomes"`, "In \"stances\"", "In \"outcomes\"", "every proposal its fate")
 	// every proposal, the cut and the withdrawn ones too
 	mustContain(t, "synthesis prompt", p, "Title-one", "Title-two", "Title-three", "Title-four", "Title-five",
 		"The person cut this proposal at the pause", "Its author withdrew it in round 2")
@@ -191,9 +195,49 @@ func TestSynthesisPrompt(t *testing.T) {
 		"- [r7] RAM (oppose): Text-r7 no",
 		"- [r8] RAM (accept): Text-r8 agreed Evidence: z.go:9.",
 		"### To the whole council", "- [r4] the person: Text-r4 what about Mac?")
-	// who is missing, and the experts the stances are keyed by
-	mustContain(t, "synthesis prompt", p, "Skeptic (its round 1 call failed)", "do not guess their stance", "- ux (UX)", "- ram (RAM)")
+	// who is missing, and the experts an ask is addressed to
+	mustContain(t, "synthesis prompt", p, "Skeptic (its round 1 call failed)", "do not guess their stance", "- ux (UX)", "- ram (RAM)", `in "to"`)
 	mustNotContain(t, "synthesis prompt", p, "- lead (Lead)")
+}
+
+// The synthesis shows each proposal's and each stance's label, the words the document and the UI use; a proposal or a
+// reply nothing labels shows none. The experts' own prompts stay as they were.
+func TestSynthesisPromptShowsTheLabelOfEachClaim(t *testing.T) {
+	c := promptCouncil()
+	c.Proposals[0].Label = LabelRan
+	c.Proposals[1].Label = LabelRead
+	c.Proposals[2].Label = LabelGuess
+	c.Replies[0].Label = LabelDisproved // r1, the skeptic's challenge of P1
+	c.Replies[6].Label = LabelRead      // r7, RAM's objection to P2
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p,
+		"Evidence: a.go:1\nLabel: Ran\n", "Evidence: b.go:2\nLabel: Read code\n", "cites no evidence\nLabel: Guess\n",
+		"- [r1] Skeptic (challenge, label: Disproved): Text-r1 it breaks",
+		"- [r7] RAM (oppose, label: Read code): Text-r7 no",
+		"  - [r2] UX (accept, revised its proposal) replying to r1:") // no label, no tag
+	mustNotContain(t, "synthesis prompt", p, "Label: Disproved\n", "Label: \n")
+
+	// a proposal with no label, and a council whose checks did not run, show none
+	c = promptCouncil()
+	mustNotContain(t, "unlabelled synthesis prompt", SynthesisPrompt(c), "Label:", "label:")
+
+	c.Proposals[0].Label, c.Replies[0].Label = LabelRan, LabelRan
+	mustNotContain(t, "round 2 prompt", Round2Prompt(c, c.Experts[1]), "Label:", "label:")
+}
+
+// A Review is ranked by how bad a finding is if left alone, the label breaking ties, and a claim that only guesses or was
+// disproved stays out of the top; the picks are context, not the ranking.
+func TestSynthesisPromptRanksReviewBySeverityAndKeepsGuessesOutOfTheTop(t *testing.T) {
+	c := promptCouncil()
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p, "by how bad it is if left alone", "data loss", "a broken flow", "a wrong state shown", "cost", "polish",
+		"the label breaks a tie", "Ran", "Read code", "Guess", "Disproved", "keep at most 5", "one of the 5 places",
+		"all Guess or Disproved", `put it in "kept"`, `"firststep" is its first step`)
+	mustNotContain(t, "synthesis prompt", p, "keep at most 3", "rank the rest by how many experts picked them",
+		"Put the directions no expert challenges or opposes first")
+	// the picks stay as context
+	mustContain(t, "synthesis prompt", section(t, p, "## Picks"), "- P3 (Title-three): 2 (UX, RAM)", "Count the experts behind a direction")
 }
 
 func TestSynthesisPromptListsPicksPerProposal(t *testing.T) {
@@ -203,7 +247,9 @@ func TestSynthesisPromptListsPicksPerProposal(t *testing.T) {
 	picks := section(t, p, "## Picks")
 	mustContain(t, "picks section", picks, "- P1 (Title-one): 1 (RAM)", "- P2 (Title-two): 1 (UX)", "- P3 (Title-three): 2 (UX, RAM)", "- P4 (Title-four): 0")
 	mustNotContain(t, "picks section", picks, "before picks existed")
-	mustContain(t, "synthesis prompt", p, "rank the rest by how many experts picked them", "counts once")
+	// the picks are context for the coordinator, not a ranking rule
+	mustContain(t, "synthesis prompt", p, "Count the experts behind a direction, not its picks", "counts once")
+	mustNotContain(t, "synthesis prompt", p, "rank the rest by how many experts picked them")
 }
 
 // picks from seats on one model are one model's judgement: the coordinator is told so, and to write experts and models
@@ -342,7 +388,7 @@ func TestRound2PromptVerifyResults(t *testing.T) {
 
 	// a later reply pass shows them too
 	for _, e := range c.Experts[:3] {
-		everySeatSees(t, e.Name+"'s round 3 prompt", round2PromptFor(c, e, 3))
+		everySeatSees(t, e.Name+"'s round 3 prompt", round2PromptFor(c, e, 3, round2Scope{Picks: true}))
 	}
 
 	// a council with no result says nothing about results
@@ -562,6 +608,108 @@ func TestAnswersPromptCarriesTheReport(t *testing.T) {
 		"2. Sleep sooner\n", "- Wake on hover")
 }
 
+// discussionCouncil is promptCouncil after its report (At 100), with a chat in the Discussion after it, the way council
+// c65d51f5457dd6d4 had one: the person attaches a paper to UX (r10), UX answers that it read it (r11), RAM's answer is
+// dropped (r12), and the person asks UX about the paper again in a new message with no attachment (r13).
+func discussionCouncil() (*Council, string) {
+	c := promptCouncil()
+	c.Summary = &CouncilSummary{At: 100, Answer: "Show the state first.", Directions: []CouncilDirection{{Title: "Show the state"}}}
+	paper := filepath.Join("home", "related", "paper.pdf")
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r10", Author: YouId, Text: "Text-r10 @paper.pdf", To: []string{"ux"}, Tools: true, Attachments: []string{paper}, Answered: true, Ts: 200},
+		CouncilReply{Id: "r11", ParentId: "r10", Author: "ux", Text: "Text-r11 I read it: it compares with a hand-written harness", Round: 5, Ts: 210},
+		CouncilReply{Id: "r12", ParentId: "r10", Author: "ram", Text: "Text-r12 dropped", Round: 5, Ts: 211, Draft: DraftDropped},
+		CouncilReply{Id: "r13", Author: YouId, Text: "Text-r13 what does human-engineered mean in that paper?", To: []string{"ux"}, Ts: 300},
+	)
+	return c, paper
+}
+
+// A new message in the Discussion sits in no branch, so the seat answering it is shown the chat since the report: its own
+// earlier answers included, which a fresh call does not remember. Before this it answered r13 as if r10 and r11 had
+// never been said.
+func TestAnswersPromptCarriesTheDiscussionSinceTheReport(t *testing.T) {
+	c, paper := discussionCouncil()
+	ux := c.Experts[0]
+	r13 := c.Replies[len(c.Replies)-1]
+	p := AnswersPrompt(c, ux, []CouncilReply{r13})
+
+	talk := section(t, p, "## The discussion since the report")
+	mustContain(t, "discussion section", talk,
+		"- [r10] the person to UX: Text-r10 @paper.pdf\n"+attachmentBlockOf(paper),
+		"- [r11] UX to the whole council, replying to the person's r10: Text-r11 I read it",
+		"Lines by UX are your own earlier answers")
+	mustNotContain(t, "discussion section", talk, "Text-r12 dropped", "Text-r13", "Text-r1 it breaks", "Text-r4 what about Mac?")
+	if i, j := strings.Index(p, "## The discussion since the report"), strings.Index(p, "## Reply r13"); i < 0 || j < i {
+		t.Errorf("the discussion should come before the reply it leads to: at %d, reply at %d", i, j)
+	}
+	// the paper attached earlier in the chat turns the call's tools on, so the seat can open it again
+	mustContain(t, "answers prompt", p, readWhenNeeded)
+	mustNotContain(t, "answers prompt", p, "You have no tools this time")
+	tools, dirs := readsOf(personRepliesIn(c, []CouncilReply{r13}))
+	if !tools || !slices.Equal(dirs, []string{filepath.Dir(paper)}) {
+		t.Errorf("readsOf = %v %v, want tools on and the paper's folder", tools, dirs)
+	}
+	if !DiscussionReads(c) {
+		t.Error("DiscussionReads = false, want true: a new message would carry the paper")
+	}
+
+	// Let them read files alone on an earlier message was the person's choice for that message: it does not carry
+	toggled, _ := discussionCouncil()
+	toggled.Replies[len(toggled.Replies)-4].Attachments, toggled.Replies[len(toggled.Replies)-4].Text = nil, "Text-r10 look it up" // r10
+	if tools, _ := readsOf(personRepliesIn(toggled, []CouncilReply{r13})); tools || DiscussionReads(toggled) {
+		t.Error("an earlier message with tools on and nothing to open turned the follow-up's tools on")
+	}
+
+	// a call with no tools in the chat shows the words alone
+	c.Replies[len(c.Replies)-4].Tools = false // r10
+	plain := AnswersPrompt(c, ux, []CouncilReply{r13})
+	mustNotContain(t, "answers prompt with no tools", plain, "read these files", paper)
+	mustContain(t, "answers prompt with no tools", section(t, plain, "## The discussion since the report"), "Text-r11 I read it")
+	if DiscussionReads(c) {
+		t.Error("DiscussionReads = true with no tools in the chat")
+	}
+}
+
+// The discussion holds only what came before the replies being answered, never a message of their own branch twice, and
+// at most discussionRecent messages, the latest; a council with no report has none.
+func TestAnswersPromptDiscussionBounds(t *testing.T) {
+	c, _ := discussionCouncil()
+	ux := c.Experts[0]
+	// answering r10 (owed again for the test): nothing of the chat came before it
+	r10 := c.Replies[len(c.Replies)-4]
+	if strings.Contains(AnswersPrompt(c, ux, []CouncilReply{r10}), "## The discussion since the report") {
+		t.Error("a reply with nothing sent before it since the report got a discussion section")
+	}
+
+	// a reply under r11 carries r10 and r11 in its branch, not in the discussion
+	c.Replies = append(c.Replies, CouncilReply{Id: "r14", ParentId: "r11", Author: YouId, Text: "Text-r14 and then?", To: []string{"ux"}, Ts: 400})
+	p := AnswersPrompt(c, ux, []CouncilReply{c.Replies[len(c.Replies)-1]})
+	talk := section(t, p, "## The discussion since the report")
+	mustContain(t, "discussion section", talk, "Text-r13")
+	mustNotContain(t, "discussion section", talk, "Text-r10", "Text-r11")
+	mustContain(t, "reply r14", section(t, p, "## Reply r14"), "Text-r10", "Text-r11")
+
+	// a long chat keeps its last discussionRecent messages
+	long, _ := discussionCouncil()
+	for i := range discussionRecent + 3 {
+		long.Replies = append(long.Replies, CouncilReply{Id: fmt.Sprintf("x%d", i), Author: YouId, Text: fmt.Sprintf("Text-x%d.", i), To: []string{"ram"}, Answered: true, Ts: int64(500 + i)})
+	}
+	long.Replies = append(long.Replies, CouncilReply{Id: "r99", Author: YouId, Text: "Text-r99 last", To: []string{"ux"}, Ts: 900})
+	lp := AnswersPrompt(long, ux, []CouncilReply{long.Replies[len(long.Replies)-1]})
+	talk = section(t, lp, "## The discussion since the report")
+	if n := len(regexp.MustCompile(`(?m)^- \[`).FindAllString(talk, -1)); n != discussionRecent {
+		t.Errorf("the discussion holds %d messages, want %d:\n%s", n, discussionRecent, talk)
+	}
+	mustContain(t, "long discussion", talk, fmt.Sprintf("Text-x%d.", discussionRecent+2))
+	mustNotContain(t, "long discussion", talk, "Text-x0.", "Text-r10", "Text-r13")
+
+	// no report, no discussion
+	c.Summary = nil
+	if strings.Contains(AnswersPrompt(c, ux, []CouncilReply{c.Replies[len(c.Replies)-1]}), "## The discussion since the report") {
+		t.Error("a council with no report got a discussion section")
+	}
+}
+
 // brainstormCouncil is promptCouncil as a Brainstorm: the same ideas, the third one wild, and a build among the replies.
 func brainstormCouncil() *Council {
 	c := promptCouncil()
@@ -573,15 +721,53 @@ func brainstormCouncil() *Council {
 	return c
 }
 
-func TestBrainstormRound1PromptAsksForIdeasWithNoEvidence(t *testing.T) {
+func TestBrainstormRound1PromptAsksForIdeas(t *testing.T) {
 	c := brainstormCouncil()
 	p := Round1Prompt(c, c.Experts[0])
 	mustContain(t, "round 1 prompt", p,
 		"You are UX", "Can someone use it without being told how?", "brainstorms ideas",
 		"Problem or goal: Idle sleep for services", "Which direction first?", `D:\proj`,
 		"pkg/services/idle.go", `D:\shots\tree.png`, "This is round 1 of 3", "Read, Grep and Glob", "never edit",
-		"Do not judge", `"wild"`, brainstormRound1Shape, "```json")
+		"Do not judge", `"wild"`, brainstormGroundRule, brainstormRound1Shape, "```json")
 	mustNotContain(t, "round 1 prompt", p, evidenceRule, round1Shape, briefEvidenceRule, "Feature:", "cites nothing", "Title-one", "Text-r1")
+}
+
+func TestBrainstormRound1Grounding(t *testing.T) {
+	c := brainstormCouncil()
+	p := Round1Prompt(c, c.Experts[0])
+	// its own grounding rule, the quote the cite check looks for, and the evidence field: never a Review's evidence rule
+	mustContain(t, "round 1 prompt", p, brainstormGroundRule, quoteRule, `"evidence": [{"ref": "pkg/services/idle.go:42", "quote": "the exact text of that line"}]`)
+	mustContain(t, "grounding rule", brainstormGroundRule, "path:line", "screenshot:<file>#<name>@x,y,w,h", "fraction from 0 to 1",
+		"a screenshot cite with no box counts as no evidence", "what to build", "a guess")
+	mustNotContain(t, "round 1 prompt", p, evidenceRule, briefEvidenceRule, "cites nothing", "so it needs no evidence")
+	// an agent seat's first turn shares the task
+	agent := CouncilExpert{Id: "witness", Name: "Witness", Agent: "tab1"}
+	c.Experts = append(c.Experts, agent)
+	mustContain(t, "agent first prompt", AgentFirstPrompt(c, agent, 1), brainstormGroundRule, quoteRule, brainstormRound1Shape)
+
+	// the shape: the first example idea cites, the second does not; with zones both still carry a zone
+	for name, sc := range map[string]*Council{"no zones": brainstormCouncil(), "zones": zonedCouncil()} {
+		shape := brainstormRound1ShapeFor(sc)
+		props, _, err := ParseRound1(jsonFence(shape))
+		if err != nil || len(props) != 2 {
+			t.Fatalf("%s shape: %+v, %v", name, props, err)
+		}
+		if ev := props[0].Evidence; len(ev) != 1 || ev[0].Ref == "" || ev[0].Quote == "" || ev[0].Weak {
+			t.Errorf("%s shape: first idea's evidence = %+v, want one cite with its quote", name, ev)
+		}
+		if ev := props[1].Evidence; len(ev) != 1 || !ev[0].Weak || ev[0].Ref != "" {
+			t.Errorf("%s shape: second idea's evidence = %+v, want none (the parser's chip)", name, ev)
+		}
+		if zoned := hasZones(sc); zoned != (props[0].Zone != "" && props[1].Zone != "") {
+			t.Errorf("%s shape: zones %q %q", name, props[0].Zone, props[1].Zone)
+		}
+	}
+
+	// a Review's round 1 is as it was: the evidence rule and its own shape, none of the Brainstorm's grounding
+	review := promptCouncil()
+	rp := Round1Prompt(review, review.Experts[0])
+	mustContain(t, "review round 1 prompt", rp, evidenceRule, quoteRule, round1Shape)
+	mustNotContain(t, "review round 1 prompt", rp, brainstormGroundRule, brainstormRound1Shape)
 }
 
 func TestBrainstormRound2PromptBuildsOnTheOthersIdeas(t *testing.T) {
@@ -603,15 +789,145 @@ func TestBrainstormSynthesisPromptPicksAtMostThreeIdeasAndKeepsTheWildOnesAside(
 	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
 	p := SynthesisPrompt(c)
 	mustContain(t, "synthesis prompt", p, "This is round 3 of 3", "no tools", "at most 3 ideas worth trying", "first step", `"firststep"`,
-		`"kept"`, "wild ideas", "Kept aside", brainstormSynthesisShape, titleRule, summaryRule, "answers the question")
+		`"kept"`, "wild ideas", brainstormSynthesisShape, titleRule, summaryRule, "answers the question",
+		"Rank by how many experts picked it", "then by how many experts built on it")
 	mustContain(t, "synthesis prompt", p, "### P3 · Skeptic · Title-three (wild idea)", "- [r8] UX (accept, builds on it): Text-r8 add a badge")
-	mustNotContain(t, "synthesis prompt", p, evidenceRule, synthesisShape, `"weak"`, "marked weak")
+	mustNotContain(t, "synthesis prompt", p, evidenceRule, synthesisShape, `"weak"`, "marked weak", "Label:", "label:")
+	// Go fills a Brainstorm's stances, agreed flags and outcomes too
+	mustNotContain(t, "synthesis prompt", p, stanceRule, `"stances"`, `"agreed"`, `"outcomes"`, "In \"stances\"", "In \"outcomes\"", "its fate")
 	mustContain(t, "picks section", section(t, p, "## Picks"), "ideas of the others most worth trying", "- P3 (Title-three): 2 (UX, RAM)")
 
 	c.Question = " "
 	p = SynthesisPrompt(c)
 	mustContain(t, "synthesis prompt, no question", p, brainstormSynthesisShapeNoQuestion)
 	mustNotContain(t, "synthesis prompt, no question", p, `"answer"`, brainstormSynthesisShape)
+}
+
+func zonedCouncil() *Council {
+	c := brainstormCouncil()
+	c.Zones = []CouncilZone{
+		{Seat: "ux", Name: "First launch", Covers: "What a newcomer sees first."},
+		{Seat: "ram", Name: "Idle cost", Covers: "What a sleeping service holds."},
+		{Seat: "skeptic", Name: "Wake failures", Covers: "What breaks on wake."},
+	}
+	return c
+}
+
+func TestRound1PromptZone(t *testing.T) {
+	c := zonedCouncil()
+	ux, ram := c.Experts[0], c.Experts[1]
+	p := Round1Prompt(c, ux)
+	mustContain(t, "zoned round 1 prompt", p, "Your zone is First launch: What a newcomer sees first.",
+		"- First launch: What a newcomer sees first.", "- Idle cost: What a sleeping service holds.", "- Wake failures: What breaks on wake.",
+		"Most of your ideas sit in your own zone", "one idea outside it", `set "zone"`, `""`, brainstormRound1ShapeFor(c), `"zone":`)
+	mustNotContain(t, "zoned round 1 prompt", p, brainstormRound1Shape+"\n```")
+	mustContain(t, "ram's zoned round 1 prompt", Round1Prompt(c, ram), "Your zone is Idle cost: What a sleeping service holds.")
+
+	// an agent seat's first turn carries its zone the same way
+	agent := CouncilExpert{Id: "witness", Name: "Witness", Agent: "tab1"}
+	c.Experts = append(c.Experts, agent)
+	c.Zones = append(c.Zones, CouncilZone{Seat: "witness", Name: "Error paths", Covers: "What the person sees when it fails."})
+	first := AgentFirstPrompt(c, agent, 1)
+	mustContain(t, "agent first turn", first, "Your zone is Error paths: What the person sees when it fails.", "- First launch: What a newcomer sees first.",
+		"Most of your ideas sit in your own zone", brainstormRound1ShapeFor(c))
+
+	// with no zones, the prompts are today's, byte for byte
+	plain := brainstormCouncil()
+	if got := brainstormRound1ShapeFor(plain); got != brainstormRound1Shape {
+		t.Errorf("shape with no zones = %s, want brainstormRound1Shape", got)
+	}
+	noZone := Round1Prompt(plain, plain.Experts[0])
+	mustContain(t, "no-zone round 1 prompt", noZone, brainstormRound1Shape)
+	mustNotContain(t, "no-zone round 1 prompt", noZone, "zone")
+	// a Review with zones set by hand is still a Review's prompt
+	review := promptCouncil()
+	before := Round1Prompt(review, review.Experts[0])
+	review.Zones = zonedCouncil().Zones
+	if after := Round1Prompt(review, review.Experts[0]); after != before {
+		t.Errorf("a Review's round 1 prompt changed with zones:\n%s", after)
+	}
+}
+
+func TestBrainstormSynthesisZones(t *testing.T) {
+	c := zonedCouncil()
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	c.Proposals[0].Zone, c.Proposals[1].Zone = "First launch", "Idle cost"
+	p := SynthesisPrompt(c)
+	mustContain(t, "zones section", section(t, p, "## Zones"), "- First launch (UX): What a newcomer sees first.",
+		"- Idle cost (RAM): What a sleeping service holds.", "- Wake failures (Skeptic): What breaks on wake.")
+	idea := func(id string) string {
+		_, rest, _ := strings.Cut(p, "### "+id+" · ")
+		block, _, _ := strings.Cut(rest, "\n\n")
+		return block
+	}
+	for id, zone := range map[string]string{"P1": "First launch", "P2": "Idle cost", "P3": "none"} {
+		if b := idea(id); !strings.HasSuffix(b, "\nZone: "+zone) {
+			t.Errorf("%s's block = %q, want it to end with its zone, %s", id, b, zone)
+		}
+	}
+	mustContain(t, "zoned synthesis", p, "from 3 different zones where the ideas allow it", "Within a zone", "the zones' best ideas", "A second idea from a zone",
+		"no other zone has an idea anybody picked or built on", "zone none compete as one zone", "An idea nobody picked or built on",
+		"a wild idea never takes")
+	mustNotContain(t, "zoned synthesis", p, "Rank by how many experts picked it")
+
+	// with no zones, the synthesis is today's
+	plain := brainstormCouncil()
+	plain.Picks = c.Picks
+	np := SynthesisPrompt(plain)
+	mustContain(t, "no-zone synthesis", np, "Rank by how many experts picked it")
+	mustNotContain(t, "no-zone synthesis", np, "## Zones", "Zone:", "different zones")
+
+	// a Review's synthesis does not change with zones set by hand
+	review := promptCouncil()
+	before := SynthesisPrompt(review)
+	review.Zones = c.Zones
+	review.Proposals[0].Zone = "First launch"
+	if after := SynthesisPrompt(review); after != before {
+		t.Errorf("a Review's synthesis changed with zones:\n%s", after)
+	}
+}
+
+func TestBrainstormSynthesisLabels(t *testing.T) {
+	ideaBlock := func(p, id string) string {
+		_, rest, _ := strings.Cut(p, "### "+id+" · ")
+		block, _, _ := strings.Cut(rest, "\n\n")
+		return block
+	}
+	for name, build := range map[string]func() *Council{"no zones": brainstormCouncil, "zones": zonedCouncil} {
+		c := build()
+		c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+
+		// no idea carries a label: the synthesis is today's, with neither the rule nor the tie-break
+		p := SynthesisPrompt(c)
+		mustNotContain(t, name+" synthesis, no label", p, brainstormLabelRule, brainstormLabelTie, "Label:", "label:", "Read code")
+
+		// P1 read in the code, P2 a Guess, P3 cites nothing
+		c.Proposals[0].Label, c.Proposals[1].Label = LabelRead, LabelGuess
+		p = SynthesisPrompt(c)
+		if b := ideaBlock(p, "P1"); !strings.Contains(b, "\nLabel: Read code") {
+			t.Errorf("%s: P1's block = %q, want its label Read code", name, b)
+		}
+		if b := ideaBlock(p, "P2"); !strings.Contains(b, "\nLabel: Guess") {
+			t.Errorf("%s: P2's block = %q, want its label Guess", name, b)
+		}
+		if b := ideaBlock(p, "P3"); strings.Contains(b, "Label:") {
+			t.Errorf("%s: P3's block = %q, want no label on an idea that cites nothing", name, b)
+		}
+		mustContain(t, name+" synthesis", p, brainstormLabelRule, brainstormLabelTie)
+		mustContain(t, "label rule", brainstormLabelRule, "Read code", "Guess", "no claim about today's code")
+		mustContain(t, "tie-break", brainstormLabelTie, "otherwise even", "Read code", "before", "Guess", "never ranked above or below")
+		// the tie-break sits in rule 2, before rule 3
+		two, _, _ := strings.Cut(p, "\n3. ")
+		if !strings.Contains(two[strings.LastIndex(two, "\n2. "):], brainstormLabelTie) {
+			t.Errorf("%s: the tie-break is not in rule 2:\n%s", name, p)
+		}
+		mustNotContain(t, name+" synthesis", p, labelRule, evidenceRule, `"weak"`)
+		if hasZones(c) {
+			if b := ideaBlock(p, "P1"); !strings.Contains(b, "\nLabel: Read code\nZone: ") {
+				t.Errorf("%s: P1's block = %q, want the zone under the label", name, b)
+			}
+		}
+	}
 }
 
 func TestBrainstormAnswersPromptAsksForNoEvidence(t *testing.T) {
@@ -644,7 +960,7 @@ func TestReviewPromptsUnchanged(t *testing.T) {
 	mustContain(t, "round 1 prompt", prompts(plain)["round 1"], "Feature: Idle sleep for services", "reviews one feature", evidenceRule, round1Shape)
 	mustContain(t, "round 2 prompt", prompts(plain)["round 2"], "This is round 2 of 3: cross-review", round2Shape)
 	mustContain(t, "synthesis prompt", prompts(plain)["synthesis"], "This is round 3 of 3: synthesis", synthesisShape,
-		"keep at most 3", "only changes wording, names or formatting", `"firststep" is its first step`, "Also raised")
+		"keep at most 5", "only changes wording, names or formatting", `"firststep" is its first step`, "Also raised")
 
 	// the library's brief keeps its evidence rule in a Review
 	withRule := promptCouncil()
@@ -723,24 +1039,18 @@ func TestSynthesisAnswersAndPicksNameTheLastReplyRound(t *testing.T) {
 
 		p := SynthesisPrompt(review)
 		mustContain(t, "review synthesis", p, "In "+tc.round+" each expert named the proposals of the others most worth doing",
-			"Its author withdrew it in "+tc.round+".", `"Also raised", "Withdrawn in `+tc.round+`" or "Cut at the pause"`,
-			`"P4": "Withdrawn in `+tc.round+`", `)
-		mustNotContain(t, "review synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+			"Its author withdrew it in "+tc.round+".")
+		mustNotContain(t, "review synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in round")
 
 		p = SynthesisPrompt(brain)
 		mustContain(t, "brainstorm synthesis", p, "In "+tc.round+" each expert named the ideas of the others most worth trying",
-			"Its author withdrew it in "+tc.round+".", `"Not picked", "Withdrawn in `+tc.round+`" or "Cut at the pause"`)
-		mustNotContain(t, "brainstorm synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+			"Its author withdrew it in "+tc.round+".")
+		mustNotContain(t, "brainstorm synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in round")
 
 		for name, c := range map[string]*Council{"review": review, "brainstorm": brain} {
 			p = AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) // UX, who withdrew P5
 			mustContain(t, name+" answers", p, "You withdrew this one in "+tc.round+".")
 			mustNotContain(t, name+" answers", p, "withdrew this one in "+tc.none)
-		}
-
-		// the shape still parses once its example outcome names the round
-		if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(review, synthesisShape))); err != nil {
-			t.Errorf("%d rounds: the synthesis shape does not parse: %v", tc.rounds, err)
 		}
 	}
 	if SynthesisPrompt(build(0, false)) != SynthesisPrompt(build(2, false)) {
@@ -753,16 +1063,10 @@ func TestSynthesisAndAnswersOfACouncilOfOneRoundSpeakOfNoReplyPass(t *testing.T)
 		c.Rounds = 1
 		c.Picks = map[string][]string{"ux": {"P2"}}
 		p := SynthesisPrompt(c)
-		mustContain(t, name+" synthesis", p, "This is round 2 of 2", `or "Cut at the pause"`)
+		mustContain(t, name+" synthesis", p, "This is round 2 of 2")
 		mustNotContain(t, name+" synthesis", p, "## Picks", "each expert named", "withdrew it in round", "Withdrawn in round", `"P4"`)
 		mustNotContain(t, name+" answers", AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}), "withdrew this one in round")
 	}
-	one := promptCouncil()
-	one.Rounds = 1
-	if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(one, synthesisShape))); err != nil {
-		t.Errorf("the synthesis shape of one round does not parse: %v", err)
-	}
-	mustContain(t, "synthesis", SynthesisPrompt(one), `"Also raised" or "Cut at the pause"`)
 }
 
 // agentPromptCouncil is a council of three rounds with two live agents (Witness and Scout) beside the experts UX and RAM,
@@ -998,13 +1302,13 @@ func TestSeatHasNewsForAJoiningSeat(t *testing.T) {
 func TestRound2PromptShowsWhatWasSaidInALaterPass(t *testing.T) {
 	c := agentPromptCouncil()
 	ux := c.Experts[2]
-	p := round2PromptFor(c, ux, 3)
+	p := round2PromptFor(c, ux, 3, round2Scope{Picks: true})
 	mustContain(t, "round 3 prompt", p, "This is round 3 of 4: cross-review", laterPassNote, "What was said about it:", "[r1] UX", "Text-r1 sent challenge")
 	own := section(t, p, "## Your own proposals")
 	mustContain(t, "own section", own, "P2 · UX · Title-sent", "[r7] RAM", "[r4] RAM (oppose)")
 	mustNotContain(t, "round 3 prompt", p, "Text-r2 held", "Title-held", "Title-dropped")
 	// the first pass has no threads, and a council of two rounds says so in its numbers
-	first := round2PromptFor(c, ux, 2)
+	first := round2PromptFor(c, ux, 2, round2Scope{Picks: true})
 	mustContain(t, "round 2 prompt", first, "This is round 2 of 4")
 	mustNotContain(t, "round 2 prompt", first, "What was said about it:", laterPassNote)
 }
@@ -1112,7 +1416,7 @@ func directionKinds() []struct {
 	}{
 		{"round 1", promptCouncil, review},
 		{"round 2", promptCouncil, func(c *Council) string { return Round2Prompt(c, c.Experts[0]) }},
-		{"reply pass 3", promptCouncil, func(c *Council) string { return round2PromptFor(c, c.Experts[0], 3) }},
+		{"reply pass 3", promptCouncil, func(c *Council) string { return round2PromptFor(c, c.Experts[0], 3, round2Scope{Picks: true}) }},
 		{"answers", promptCouncil, func(c *Council) string { return AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) }},
 		{"brainstorm round 1", brainstormCouncil, review},
 		{"brainstorm round 2", brainstormCouncil, func(c *Council) string { return Round2Prompt(c, c.Experts[0]) }},
@@ -1313,4 +1617,354 @@ func TestSynthesisRulesForMemory(t *testing.T) {
 			mustNotContain(t, "entries alone", only, "settled and binding")
 		})
 	}
+}
+
+// ---- the shared pre-read ----
+
+// preRead is a council whose project folder holds these files (name to content), and that lists them in the order given.
+func preRead(t *testing.T, files map[string]string, order ...string) *Council {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := promptCouncil()
+	c.Project, c.Files, c.Screenshots = dir, order, nil
+	return c
+}
+
+func TestRound1PromptInlinesASmallFileInFull(t *testing.T) {
+	c := preRead(t, map[string]string{"small.go": "package small\n\nfunc One() {}\n"}, "small.go")
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, "Files to read first", "- small.go", "### small.go\n```\npackage small\n\nfunc One() {}\n```\n")
+	mustNotContain(t, "round 1 prompt", p, "not inlined")
+
+	// a file with no final line break is closed all the same, and one that holds a fence gets a longer one
+	c = preRead(t, map[string]string{"a.txt": "no break", "b.md": "see:\n```go\nx\n```\n"}, "a.txt", "b.md")
+	p = Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, "### a.txt\n```\nno break\n```\n", "### b.md\n````\nsee:\n```go\nx\n```\n````\n")
+}
+
+func TestRound1PromptInlinesFilesInListOrderAndByAbsolutePath(t *testing.T) {
+	c := preRead(t, map[string]string{"one.go": "MARK-one\n", "two.go": "MARK-two\n"}, "two.go", "one.go")
+	outside := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(outside, []byte("MARK-outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.Files = append(c.Files, outside)
+	p := Round1Prompt(c, c.Experts[0])
+	two, one, out := strings.Index(p, "MARK-two"), strings.Index(p, "MARK-one"), strings.Index(p, "MARK-outside")
+	if two < 0 || one < two || out < one {
+		t.Errorf("the contents are at two %d, one %d, outside %d: want them in the order listed\n%s", two, one, out, p)
+	}
+	mustContain(t, "round 1 prompt", p, "### "+outside+"\n")
+}
+
+func TestRound1PromptListsButDoesNotInlineAFileOverTheCap(t *testing.T) {
+	const cap = 48 * 1024
+	c := preRead(t, map[string]string{
+		"exact.go": "MARK-exact\n" + strings.Repeat("x", cap-len("MARK-exact\n")),
+		"big.go":   "MARK-big\n" + strings.Repeat("x", cap),
+	}, "exact.go", "big.go")
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, "MARK-exact", "- big.go (not inlined: over 48 KB)")
+	mustNotContain(t, "round 1 prompt", p, "MARK-big", "### big.go")
+}
+
+func TestRound1PromptStopsInliningPastTheTotal(t *testing.T) {
+	const size = 47 * 1024
+	files := map[string]string{"f4.go": "MARK-4\n"}
+	var order []string
+	for i := range 4 { // four of 47 KB: three fit under 160 KB, the fourth would make 188
+		name := fmt.Sprintf("f%d.go", i)
+		files[name] = fmt.Sprintf("MARK-%d\n", i) + strings.Repeat("x", size)
+		order = append(order, name)
+	}
+	order = append(order, "f4.go") // small, but after the one that did not fit
+	c := preRead(t, files, order...)
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, "MARK-0", "MARK-1", "MARK-2", "- f3.go (not inlined: the 160 KB total is used)", "- f4.go (not inlined: the 160 KB total is used)")
+	mustNotContain(t, "round 1 prompt", p, "MARK-3", "MARK-4", "### f3.go", "### f4.go")
+}
+
+func TestRound1PromptListsAFileItCannotRead(t *testing.T) {
+	c := preRead(t, map[string]string{"bin.dat": "ab\x00cd", "ok.go": "MARK-ok\n"}, "gone.go", "bin.dat", "ok.go")
+	if err := os.Mkdir(filepath.Join(c.Project, "folder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c.Files = append(c.Files, "folder")
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, "- gone.go (not inlined: could not be read)", "- bin.dat (not inlined: not a text file)",
+		"- folder (not inlined: could not be read)", "MARK-ok")
+	mustNotContain(t, "round 1 prompt", p, "### gone.go", "### bin.dat", "### folder")
+}
+
+func TestPreReadIsForRound1Only(t *testing.T) {
+	c := preRead(t, map[string]string{"small.go": "MARK-small\n"}, "small.go")
+	mustNotContain(t, "round 2 prompt", Round2Prompt(c, c.Experts[0]), "MARK-small", "small.go")
+	mustNotContain(t, "synthesis prompt", SynthesisPrompt(c), "MARK-small")
+	// a live agent reads with its own tools: it is told which files, as before, and holds no copy
+	ac := agentPromptCouncil()
+	ac.Project, ac.Files = c.Project, []string{"small.go"}
+	first := AgentFirstPrompt(ac, ac.Experts[0], 1)
+	mustContain(t, "agent first prompt", first, "Files to read first", "- small.go")
+	mustNotContain(t, "agent first prompt", first, "MARK-small", "not inlined")
+	// a Brainstorm's round 1 has the pre-read too
+	b := preRead(t, map[string]string{"small.go": "MARK-small\n"}, "small.go")
+	b.Mode = ModeBrainstorm
+	mustContain(t, "brainstorm round 1 prompt", Round1Prompt(b, b.Experts[0]), "### small.go\n```\nMARK-small\n```\n")
+}
+
+// ---- the checker a proposal names ----
+
+func TestRound1PromptAsksAReviewSeatForAChecker(t *testing.T) {
+	c := promptCouncil()
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p, `"checker"`, `"checkwhy"`, "ux (UX)", "ram (RAM)", "skeptic (Skeptic)", "Never name yourself", round1Shape)
+	mustNotContain(t, "round 1 prompt", p, "lead (Lead)", round1ShapeNoChecker) // the coordinator checks nothing
+
+	// a Brainstorm and a live agent seat's first turn ask for neither
+	b := brainstormCouncil()
+	mustNotContain(t, "brainstorm round 1 prompt", Round1Prompt(b, b.Experts[0]), `"checker"`, `"checkwhy"`, "Never name yourself")
+	ac := agentPromptCouncil()
+	mustNotContain(t, "agent first prompt", AgentFirstPrompt(ac, ac.Experts[0], 1), `"checker"`, `"checkwhy"`, "Never name yourself")
+
+	// a panel of one has no other seat to name: the prompt keeps its verify request and drops the checker
+	one := promptCouncil()
+	one.Experts = []CouncilExpert{one.Experts[0], one.Experts[3]}
+	p = Round1Prompt(one, one.Experts[0])
+	mustContain(t, "one-seat round 1 prompt", p, verifyRule, round1ShapeNoChecker)
+	mustNotContain(t, "one-seat round 1 prompt", p, `"checker"`, `"checkwhy"`, "Never name yourself", round1Shape)
+}
+
+// ---- the routed cross-check ----
+
+// checkerCouncil is promptCouncil after each proposal was routed to a checker: UX's P1 to RAM, RAM's P2 to UX with a
+// reason, Skeptic's P3 to RAM with one. P2 and P3 open with a sentence of their own and go on with a rest that only the
+// seat it is routed to reads. P1 is challenged by Skeptic (r1) and P2 opposed by RAM (r7).
+func checkerCouncil() *Council {
+	c := promptCouncil()
+	c.Proposals[0].Checker = "ram"
+	c.Proposals[1].Checker, c.Proposals[1].CheckWhy = "ux", "it changes what a person sees"
+	c.Proposals[1].Argument = "First-two. Rest-two of the argument."
+	c.Proposals[2].Checker, c.Proposals[2].CheckWhy = "ram", "it holds memory"
+	c.Proposals[2].Argument = "First-three. Rest-three of the argument."
+	return c
+}
+
+func TestRound2PromptWritesARoutedProposalInFullAndTheRestByTitle(t *testing.T) {
+	c := checkerCouncil()
+	ux := Round2Prompt(c, c.Experts[0]) // P2 is routed to UX, P3 to RAM
+	routed := section(t, ux, "## Proposals routed to you")
+	mustContain(t, "routed section", routed, "### P2 · RAM · Title-two", "First-two. Rest-two of the argument.", "b.go:2",
+		"Why it is routed to you: it changes what a person sees")
+	mustNotContain(t, "routed section", routed, "Title-three", "Title-one")
+	other := section(t, ux, "## Other proposals")
+	mustContain(t, "other section", other, "- P3 · Skeptic · Title-three: First-three.")
+	mustNotContain(t, "other section", other, "Rest-three", "cites no evidence", "Argument-two", "it holds memory", "###")
+	mustNotContain(t, "round 2 prompt", ux, "## Proposals to review", "Rest-three", "it holds memory", "Title-four")
+	mustContain(t, "round 2 prompt", ux, `"Proposals routed to you"`, `"Other proposals"`)
+
+	// RAM has two routed to it and nothing left to read by title
+	ram := Round2Prompt(c, c.Experts[1])
+	mustContain(t, "RAM's routed section", section(t, ram, "## Proposals routed to you"), "### P1 · UX · Title-one", "Argument-one",
+		"### P3 · Skeptic · Title-three", "Rest-three", "Why it is routed to you: it holds memory")
+	mustNotContain(t, "RAM's prompt", ram, "## Other proposals", "it changes what a person sees")
+	// a routed proposal with no reason from its author has no reason line
+	if got := strings.Count(section(t, ram, "## Proposals routed to you"), "Why it is routed to you"); got != 1 {
+		t.Errorf("RAM's routed section has %d reason lines, want 1 (P3's: P1 gave none)", got)
+	}
+
+	// everyone still reads their own proposals as ever
+	mustContain(t, "own section", section(t, ux, "## Your own proposals"), "P1 · UX · Title-one", "Argument-one")
+}
+
+func TestRound2TaskAsksAStanceOnRoutedProposalsOnly(t *testing.T) {
+	c := checkerCouncil()
+	task := section(t, Round2Prompt(c, c.Experts[0]), "## What to do")
+	mustContain(t, "task", task, `every proposal under "Proposals routed to you" one entry in "stances"`,
+		`only the title and first line`, `"Other proposals"`, "only when you have a challenge or an oppose", `"picks"`, "any proposal listed above")
+	// an older council's task is the one it always was
+	old := section(t, Round2Prompt(promptCouncil(), promptCouncil().Experts[0]), "## What to do")
+	mustContain(t, "older task", old, `every proposal under "Proposals to review" one entry in "stances"`, `the 3 proposals under "Proposals to review" most worth doing`)
+	mustNotContain(t, "older task", old, "Other proposals", "routed")
+}
+
+func TestRound2PromptAfterRound2WritesAChallengedProposalInFullForEverySeat(t *testing.T) {
+	c := checkerCouncil()
+	ux, ram, skeptic := c.Experts[0], c.Experts[1], c.Experts[2]
+	scope := round2Scope{Picks: true}
+
+	// UX reads P3 by title until it draws a doubt: an accept is no doubt, and a held challenge is not out in the room
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r8", ProposalId: "P3", Author: "ram", Stance: StanceAccept, Text: "Text-r8 fine", Round: 2},
+		CouncilReply{Id: "r9", ProposalId: "P3", Author: "ux", Stance: StanceChallenge, Text: "Text-r9 held doubt", Round: 2, Draft: DraftHeld})
+	p := round2PromptFor(c, ux, 3, scope)
+	mustContain(t, "round 3 prompt", section(t, p, "## Other proposals"), "P3 · Skeptic · Title-three: First-three.")
+	mustNotContain(t, "round 3 prompt", p, "Rest-three", "Text-r8", "Text-r9")
+	// P2 is routed to UX, so it comes in full with its thread
+	mustContain(t, "round 3 prompt", section(t, p, "## Proposals routed to you"), "### P2 · RAM · Title-two", "What was said about it:", "[r7] RAM (oppose): Text-r7 no")
+
+	// the challenge is sent: P3 comes in full, with what was said about it, to a seat it is not routed to
+	c.Replies[len(c.Replies)-1].Draft = ""
+	p = round2PromptFor(c, ux, 3, scope)
+	routed := section(t, p, "## Proposals routed to you")
+	mustContain(t, "round 3 prompt", routed, "### P3 · Skeptic · Title-three", "Rest-three", "What was said about it:", "[r9] UX (challenge): Text-r9 held doubt")
+	mustNotContain(t, "round 3 prompt", p, "## Other proposals", "it holds memory") // nothing is left by title, and the reason is RAM's
+
+	// Skeptic reads P1 (routed to RAM, challenged by Skeptic itself) and P2 (routed to UX, opposed) in full, none by title
+	p = round2PromptFor(c, skeptic, 3, scope)
+	mustContain(t, "Skeptic round 3 prompt", section(t, p, "## Proposals routed to you"), "### P1 · UX · Title-one", "### P2 · RAM · Title-two")
+	mustNotContain(t, "Skeptic round 3 prompt", p, "## Other proposals")
+	// RAM reads the proposal it was routed in full, and the one routed elsewhere that was challenged
+	p = round2PromptFor(c, ram, 3, scope)
+	mustContain(t, "RAM round 3 prompt", section(t, p, "## Proposals routed to you"), "### P1 · UX · Title-one", "### P3 · Skeptic · Title-three")
+
+	// round 2 shows no thread: a doubt has no say on the first pass
+	mustNotContain(t, "round 2 prompt", Round2Prompt(c, ux), "What was said about it:")
+	mustContain(t, "round 2 prompt", section(t, Round2Prompt(c, ux), "## Other proposals"), "P3 · Skeptic · Title-three: First-three.")
+}
+
+func TestRound2PromptWritesAProposalWithNoCheckerInFull(t *testing.T) {
+	c := checkerCouncil()
+	c.Proposals[2].Checker, c.Proposals[2].CheckWhy = "", "" // P3 is from before checkers
+	p := Round2Prompt(c, c.Experts[0])
+	mustContain(t, "routed section", section(t, p, "## Proposals routed to you"), "### P2 · RAM · Title-two", "### P3 · Skeptic · Title-three", "Rest-three")
+	mustNotContain(t, "round 2 prompt", p, "## Other proposals")
+
+	// a council none of whose proposals names a checker reads as it always did
+	old := Round2Prompt(promptCouncil(), promptCouncil().Experts[0])
+	mustContain(t, "older prompt", section(t, old, "## Proposals to review"), "### P2 · RAM · Title-two", "### P3 · Skeptic · Title-three")
+	mustNotContain(t, "older prompt", old, "## Proposals routed to you", "## Other proposals", "## Already reviewed", "Why it is routed to you")
+}
+
+func TestBrainstormRound2PromptIgnoresCheckers(t *testing.T) {
+	plain, routed := brainstormCouncil(), brainstormCouncil()
+	for i := range routed.Proposals {
+		routed.Proposals[i].Checker, routed.Proposals[i].CheckWhy = "ram", "why"
+	}
+	ux := plain.Experts[0]
+	for _, round := range []int{2, 3} {
+		want := round2PromptFor(plain, ux, round, round2Scope{Picks: true})
+		for name, scope := range map[string]round2Scope{
+			"whole":   {Picks: true},
+			"scoped":  {Only: []string{"P2"}, Picks: true},
+			"no pick": {Picks: false},
+		} {
+			if got := round2PromptFor(routed, ux, round, scope); got != want {
+				t.Errorf("round %d, %s: a Brainstorm's prompt changed with checkers\n--- got\n%s\n--- want\n%s", round, name, got, want)
+			}
+		}
+	}
+	mustNotContain(t, "brainstorm round 2 prompt", Round2Prompt(routed, ux), "routed", "Other proposals", "Already reviewed")
+}
+
+func TestRound2PromptScopeReviewsOnlyTheProposalsInScope(t *testing.T) {
+	c := checkerCouncil()
+	ux := c.Experts[0]
+	p := round2PromptFor(c, ux, 2, round2Scope{Only: []string{"P2"}, Picks: true})
+	mustContain(t, "scoped prompt", section(t, p, "## Proposals routed to you"), "### P2 · RAM · Title-two", "Rest-two")
+	seen := section(t, p, "## Already reviewed")
+	mustContain(t, "already reviewed", seen, "- P3 · Title-three")
+	mustNotContain(t, "already reviewed", seen, "First-three", "Skeptic", "Rest-three", "Title-two", "Title-four", "Title-one")
+	mustNotContain(t, "scoped prompt", p, "## Other proposals", "First-three", "Rest-three", "Title-four")
+
+	// nothing in scope: no proposal to review, and every other one reads as reviewed
+	p = round2PromptFor(c, ux, 2, round2Scope{Only: []string{}, Picks: true})
+	mustContain(t, "empty scope", section(t, p, "## Proposals routed to you"), "(none:")
+	mustContain(t, "empty scope", section(t, p, "## Already reviewed"), "- P2 · Title-two", "- P3 · Title-three")
+	mustNotContain(t, "empty scope", p, "Rest-two", "First-three", "## Other proposals")
+
+	// a nil scope is the whole prompt, with no list of what was reviewed
+	whole := round2PromptFor(c, ux, 2, round2Scope{Picks: true})
+	mustNotContain(t, "whole prompt", whole, "## Already reviewed")
+	if whole != Round2Prompt(c, ux) {
+		t.Error("Round2Prompt differs from the whole-council scope with picks on a council of two rounds")
+	}
+
+	// a council that routes nothing takes a scope the same way, under its own heading
+	old := promptCouncil()
+	p = round2PromptFor(old, ux, 2, round2Scope{Only: []string{"P2"}, Picks: true})
+	mustContain(t, "scoped older prompt", section(t, p, "## Proposals to review"), "### P2 · RAM · Title-two", "Argument-two")
+	mustContain(t, "scoped older prompt", section(t, p, "## Already reviewed"), "- P3 · Title-three")
+	mustNotContain(t, "scoped older prompt", p, "Argument-three", "## Proposals routed to you")
+}
+
+func TestRound2PromptScopeSaysWhetherToAskForPicks(t *testing.T) {
+	c := checkerCouncil()
+	ux := c.Experts[0]
+	with := round2PromptFor(c, ux, 2, round2Scope{Only: []string{"P2"}, Picks: true})
+	mustContain(t, "prompt with picks", with, `Then name your picks in "picks"`, "Never pick one of your own", round2Shape)
+	mustNotContain(t, "prompt with picks", with, round2ShapeNoPicks)
+
+	without := round2PromptFor(c, ux, 2, round2Scope{Only: []string{"P2"}, Picks: false})
+	mustContain(t, "prompt without picks", without, round2ShapeNoPicks)
+	mustNotContain(t, "prompt without picks", without, "picks", round2Shape)
+	// the older prompt too
+	old := promptCouncil()
+	mustNotContain(t, "older prompt without picks", round2PromptFor(old, ux, 2, round2Scope{}), "picks", round2Shape)
+	mustContain(t, "older prompt with picks", round2PromptFor(old, ux, 2, round2Scope{Picks: true}), "picks", round2Shape)
+
+	// Round2Prompt asks for picks only in the last reply pass, as applyRound2 keeps them
+	three := checkerCouncil()
+	three.Rounds = 3
+	mustNotContain(t, "round 2 of 3 reply passes", Round2Prompt(three, ux), "picks")
+	mustContain(t, "round 3 of 3 reply passes", round2PromptFor(three, ux, 3, round2Scope{Picks: true}), "picks")
+	mustContain(t, "round 2 of 2 reply passes", Round2Prompt(c, ux), "picks")
+}
+
+func TestFirstSentenceCutsAtTheSentenceOrTheCap(t *testing.T) {
+	long := strings.Repeat("word ", 60) // 300 characters and no full stop
+	for name, c := range map[string]struct{ in, want string }{
+		"two sentences":   {"I'd sleep sooner. Here is why.", "I'd sleep sooner."},
+		"a question":      {"Why wait? Because of memory.", "Why wait?"},
+		"one line only":   {"Sleep sooner:\n\n| a | b |\n|---|---|\n| 1 | 2 |", "Sleep sooner:"},
+		"a path, no stop": {"See pkg/services/idle.go:42 for it", "See pkg/services/idle.go:42 for it"},
+		"leading blanks":  {"\n  First. Second.", "First."},
+		"empty":           {"  ", ""},
+	} {
+		if got := firstSentence(c.in); got != c.want {
+			t.Errorf("%s: firstSentence(%q) = %q, want %q", name, c.in, got, c.want)
+		}
+	}
+	got := firstSentence(long)
+	if n := len([]rune(got)); n > 160 || !strings.HasSuffix(got, "…") {
+		t.Errorf("a 300-character sentence became %d characters, %q: want at most 160, ending in …", n, got)
+	}
+	if got := firstSentence(strings.Repeat("é", 160)); got != strings.Repeat("é", 160) {
+		t.Errorf("a sentence of exactly 160 characters was cut: %q", got)
+	}
+}
+
+func TestAgentPromptSplitsTheIdeasByChecker(t *testing.T) {
+	c := agentPromptCouncil()
+	c.Proposals[1].Argument = "First-sent. Rest-sent."
+	c.Proposals[1].Checker, c.Proposals[1].CheckWhy = "ram", "it holds memory" // P2 (UX), routed to RAM
+	witness := c.Experts[0]
+
+	// not routed to it: only the title and first line, and nothing routed to it
+	pass2 := AgentLaterPrompt(c, witness, 2)
+	mustContain(t, "other section", section(t, pass2, "## Other proposals"), "- P2 · UX · Title-sent: First-sent.")
+	mustContain(t, "routed section", section(t, pass2, "## Proposals routed to you"), "(none:")
+	mustNotContain(t, "round 2 prompt", pass2, "Rest-sent", "it holds memory", "Title-held")
+
+	// routed to it: in full, with the reason
+	c.Proposals[1].Checker = "witness"
+	pass2 = AgentLaterPrompt(c, witness, 2)
+	mustContain(t, "routed section", section(t, pass2, "## Proposals routed to you"), "### P2 · UX · Title-sent", "First-sent. Rest-sent.", "a.go:1", "Why it is routed to you: it holds memory")
+	mustNotContain(t, "round 2 prompt", pass2, "## Other proposals")
+
+	// a seat joining in the first reply pass reads the ones not routed to it by title as well
+	c.Proposals[0].Checker = "ram"
+	c.Proposals[0].Argument = "First-own. Rest-own."
+	late := AgentFirstPrompt(c, c.Experts[1], 2) // Scout: P1 and P2, neither routed to it
+	mustContain(t, "late first prompt", section(t, late, "## Other proposals"), "P1 · Witness · Title-own: First-own.", "P2 · UX · Title-sent: First-sent.")
+	mustNotContain(t, "late first prompt", late, "Rest-own", "Rest-sent")
+
+	// the agent turn of a council that routes nothing is the one it always was
+	plain := agentPromptCouncil()
+	mustContain(t, "plain agent prompt", AgentLaterPrompt(plain, witness, 2), "## Proposals to review", "Argument-sent")
+	mustNotContain(t, "plain agent prompt", AgentLaterPrompt(plain, witness, 2), "## Other proposals", "routed")
 }

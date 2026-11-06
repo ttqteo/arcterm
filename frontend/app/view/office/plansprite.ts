@@ -359,11 +359,27 @@ const SIDE_LEGS_B = [
 
 const blank = [".............."];
 
+// The Santa hat, Christmas only (christmas theme spec, "Office"): it takes the head's top HAT_ROWS rows in every look,
+// a crimson cap (X, x its shade) with its pompom to one side and a snow trim (W) across the brow, so the fringe and the
+// face under it stay the look's. Seen from the front the pompom falls right; from behind or the side it is mirrored,
+// and a raised arm's sleeve (drawn after) never covers it.
+// prettier-ignore
+const HAT = [
+    ".........OO...",
+    ".....OOOOWWO..",
+    "..OOXXXXOWWO..",
+    ".OXXXXXXXXxxO.",
+    "OWWWWWWWWWWWWO",
+];
+export const HAT_ROWS = HAT.length;
+const HAT_MIRRORED = HAT.map((r) => [...r].reverse().join(""));
+const hatted = (head: string[], hat: string[]): string[] => [...hat, ...head.slice(hat.length)];
+
 /** Every pose for a look. Bottom rows line up: a seated pose's last row sits 2 rows under the desk top. */
-function build(look: PlanLook): Record<PlanSprite, string[]> {
-    const F = FRONT[look];
-    const B = BACK[look];
-    const Sd = SIDE[look];
+function build(look: PlanLook, hat = false): Record<PlanSprite, string[]> {
+    const F = hat ? hatted(FRONT[look], HAT) : FRONT[look];
+    const B = hat ? hatted(BACK[look], HAT_MIRRORED) : BACK[look];
+    const Sd = hat ? hatted(SIDE[look], HAT_MIRRORED) : SIDE[look];
     return {
         sit: [...F, ...SIT],
         nod: [...blank, ...F, ...SIT.slice(0, 5)],
@@ -387,12 +403,14 @@ function build(look: PlanLook): Record<PlanSprite, string[]> {
         side2: [...Sd, ...SIDE_BODY_B, ...SIDE_LEGS_B],
     };
 }
-const built = new Map<PlanLook, Record<PlanSprite, string[]>>();
-export function planGrid(s: PlanSprite, look: PlanLook): string[] {
-    let set = built.get(look);
+const built = new Map<string, Record<PlanSprite, string[]>>();
+/** A pose's grid in a look, with the Santa hat when hat is set. */
+export function planGrid(s: PlanSprite, look: PlanLook, hat = false): string[] {
+    const key = `${look}|${hat}`;
+    let set = built.get(key);
     if (set == null) {
-        set = build(look);
-        built.set(look, set);
+        set = build(look, hat);
+        built.set(key, set);
     }
     return set[s];
 }
@@ -536,10 +554,13 @@ const PANTS = "--color-office-pants";
 const CUP = "--color-office-cup";
 const DARK = "--color-office-dark";
 const NIGHT = "--color-office-night";
+const HAT_CAP = "--color-xmas-crimson";
+const HAT_TRIM = "--color-xmas-snow";
 
 export interface PlanOutfit {
     shirt: string; // a --color-* token name
     look: number; // 1..4, skin and hair
+    hat?: boolean; // the Santa hat: set where the sprite is drawn while the Christmas decor shows, never stored
 }
 
 export function shirtOf(harness: string | undefined): string {
@@ -592,6 +613,12 @@ export function planColor(
             return shade(t.chair, 0.8);
         case "_":
             return read(t.shadow);
+        case "X":
+            return read(HAT_CAP);
+        case "x":
+            return shade(HAT_CAP, 0.8);
+        case "W":
+            return read(HAT_TRIM);
         default:
             return undefined;
     }
@@ -616,15 +643,15 @@ function tinted(c: Rgb | undefined, tints: (Rgb | undefined)[]): Rgb | undefined
 }
 
 /** The sprite in the outfit and the phase, drawn once; a near-side seat in a dark room or after hours is shaded. */
-/** The grid a person in this outfit is drawn from: its look's hair and build. */
+/** The grid a person in this outfit is drawn from: its look's hair and build, and the Santa hat when it wears one. */
 export function outfitGrid(s: PlanSprite, o: PlanOutfit): string[] {
-    return planGrid(s, clampLook(o.look) as PlanLook);
+    return planGrid(s, clampLook(o.look) as PlanLook, o.hat === true);
 }
 
 export function planSpriteUrl(s: PlanSprite, o: PlanOutfit, phase: OfficePhase = "day", shade: Shade = ""): string {
     const grid = outfitGrid(s, o);
     const tints = shade === "both" ? [DARK, NIGHT] : shade === "dark" ? [DARK] : shade === "night" ? [NIGHT] : [];
-    const key = `${s}|${o.shirt}|${o.look}|${phase}|${shade}`;
+    const key = `${s}|${o.shirt}|${o.look}|${phase}|${shade}${o.hat ? "|hat" : ""}`;
     return cachedSprite(
         "plan",
         key,
@@ -673,6 +700,8 @@ export const PLAN_TOKENS: string[] = [
     CUP,
     DARK,
     NIGHT,
+    HAT_CAP,
+    HAT_TRIM,
     "--color-asking",
     "--color-error",
     "--color-accent",

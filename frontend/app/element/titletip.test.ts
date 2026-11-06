@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { isFrameTag, keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
+import { DETAIL_TIP_DELAY_MS, isFrameTag, keyDismissesTip, splitTitle, tipDelay, tooltipOrigin } from "./titletip";
+
+describe("tipDelay", () => {
+    it("shows a control's name at once", () => {
+        expect(tipDelay("Copy the message as markdown")).toBe(0);
+        expect(tipDelay("Pin to Report: show it there as the Final proposal")).toBe(0);
+    });
+
+    it("waits on a detail: a sentence, or more than one line", () => {
+        expect(
+            tipDelay("Router chose Planner: the person asks whether to read harnessdev first, a plan for this week.")
+        ).toBe(DETAIL_TIP_DELAY_MS);
+        expect(tipDelay("src/a.ts:12\nthe call it makes")).toBe(DETAIL_TIP_DELAY_MS);
+    });
+});
 
 describe("splitTitle", () => {
     it("splits a trailing shortcut off the label", () => {

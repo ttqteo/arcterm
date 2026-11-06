@@ -8,7 +8,7 @@ export const MARK = "==";
 // what the model is told; fixed text, so the system prompt's cache never moves for it
 export const HIGHLIGHT_SECTION = [
     "Highlighting in replies: the person reads your replies in a terminal that draws text wrapped in ==double equals== highlighted, and strips the marks everywhere else (copies, the saved transcript).",
-    "- When a reply runs long (an explanation, a report of what you did, a summary with a list), wrap the 2-4 sentences the person must read to get the point in ==…==: what happened or changed, any warning or caveat that changes what they should do, and any decision left to them. A sentence inside a list item counts. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
+    "- When a reply runs long (an explanation, a report of what you did, a summary with a list), wrap the 2-4 sentences the person must read to get the point in ==…==: the answer to what they asked, first of all, what happened or changed, any warning or caveat that changes what they should do, and any decision left to them. A sentence inside a list item counts. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
     '- In a brainstorming or design turn, mark only the question you are waiting on the person to answer, as the last marked sentence, ending with "?". Never mark your own recommendation.',
     "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks. The one exception: when the person asks you to highlight a markdown file, write the ==…== into that file itself, not a copy, and don't repeat the file in your reply.",
     "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks. Do mark the sentence saying what it will do, above all what it closes, deletes or overwrites.",
@@ -16,7 +16,7 @@ export const HIGHLIGHT_SECTION = [
 
 // the same ask in one line, for the prompts after the first where the system prompt never got the section
 export const HIGHLIGHT_REMINDER =
-    "Highlighting: in a long reply (an explanation, a report, a summary with a list) wrap the 2-4 sentences the person must read in ==…== (whole sentences, a list item's too, never in code): what changed, any caveat that changes what they should do, any decision left to them, and what a `! command` to type will do; in a brainstorming turn mark only the question you wait on.";
+    "Highlighting: in a long reply (an explanation, a report, a summary with a list) wrap the 2-4 sentences the person must read in ==…== (whole sentences, a list item's too, never in code): the answer to what they asked, first of all, what changed, any caveat that changes what they should do, any decision left to them, and what a `! command` to type will do; in a brainstorming turn mark only the question you wait on.";
 
 export type SubmitState = { isInteractive: boolean; isCommand: boolean; isComposed: boolean; hasTold: boolean };
 
@@ -241,14 +241,14 @@ export function inlineRuns(line: string, marked: readonly [number, number][]): R
 const RUN_COMMAND = /^!\s+\S/;
 
 // the code spans of a line holding a command for the person to type, backticks included
-function commandSpans(line: string): [number, number][] {
+export function commandSpans(line: string): [number, number][] {
     return [...line.matchAll(/`([^`]+)`/g)]
         .filter((m) => RUN_COMMAND.test(m[1] ?? ""))
         .map((m) => [m.index, m.index + m[0].length] as [number, number]);
 }
 
 // the closing line of the fence opening at `from` when every line it holds is a command, -1 for any other fence
-function commandFenceEnd(lines: readonly string[], from: number): number {
+export function commandFenceEnd(lines: readonly string[], from: number): number {
     let at = from + 1;
     while (at < lines.length && !FENCE.test(lines[at] ?? "")) {
         if (!RUN_COMMAND.test((lines[at] ?? "").trim())) return -1;

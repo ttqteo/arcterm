@@ -35,3 +35,7 @@ func Members(job uintptr) ([]int, error) {
 func TerminateMember(o Owner, pid int) error {
 	return ErrNotMember
 }
+
+func TerminateOutside(pid int) error {
+	return ErrNotMember
+}

@@ -184,8 +184,13 @@ func routedSeatsByPrice(candidates []CouncilExpert, tools bool) []routedSeat {
 // the low end prices the cheapest candidate and the high end the two dearest, one when there is only one. With toolsAuto
 // Let them read files is on Auto: the router has not decided, so the low end reads no files and the high end does;
 // otherwise both ends use tools. Calls and CallsMax count the router's call and the round check's; Minutes is the high
-// end's; AgentTokens is the chats' share of the high end. No candidate is the zero estimate: nobody could answer.
+// end's; AgentTokens is the chats' share of the high end. No candidate is the zero estimate: nobody could answer. A
+// council whose Discussion carries a file of the person's (DiscussionReads) answers with tools whatever the composer
+// says, so both ends use them.
 func EstimateRouted(c *Council, tools, toolsAuto bool) CouncilEstimate {
+	if DiscussionReads(c) {
+		tools, toolsAuto = true, false
+	}
 	candidates := routeCandidates(c)
 	if len(candidates) == 0 {
 		return CouncilEstimate{}

@@ -74,7 +74,7 @@ function UserMessage({
             data-compact-user
             data-user-prompt
             onContextMenu={onContextMenu}
-            className="mt-4 rounded-[8px] border border-edge-faint bg-surface-raised px-3 py-2"
+            className="mt-4 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-2"
         >
             {said.text ? (
                 <div className="text-[13px] leading-[1.55] text-primary">
@@ -232,6 +232,7 @@ export function CompactTranscript({
     keyOffset = 0,
     scrollTo,
     placeId,
+    pinBg = "bg-background",
 }: {
     entries: AgentEntry[];
     active?: boolean;
@@ -250,6 +251,8 @@ export function CompactTranscript({
     // keeps where the reader is under this id (transcriptplace.ts) and opens there again: drawn back to that item, at
     // the same depth into it. A caller that sticks to the end checks transcriptPlace first and does not pin over it
     placeId?: string;
+    // the scroller's own background, which the pinned prompt's band paints (a dialog's ground is not the page's)
+    pinBg?: string;
 }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
     const items = useMemo(() => groupCompact(entries), [entries]);
@@ -475,7 +478,7 @@ export function CompactTranscript({
             data-compact-transcript
             className={cn("relative mx-auto w-full max-w-[760px] pb-2 leading-relaxed", className)}
         >
-            <PinnedPromptBar rootRef={rootRef} index={pinned} text={seen.prompts[pinned]} bg="bg-background" />
+            <PinnedPromptBar rootRef={rootRef} index={pinned} text={seen.prompts[pinned]} bg={pinBg} />
             {/* the top of the list, for checkTop to measure; out of the flow so it adds no height */}
             <div ref={topRef} aria-hidden className="pointer-events-none absolute left-0 top-0 h-px w-full" />
             {/* one wrapper per item, keyed by its first entry's key: the scroll to an item and the marker for a compaction find it */}

@@ -204,10 +204,11 @@ describe("directionRows", () => {
         ]);
     });
 
-    it("says where a direction came from, and how many files and weak claims it cites", () => {
+    it("says how many files and weak claims a direction cites, and leaves who proposed it to the chips", () => {
         const rows = directionRows(council());
-        expect(rows[0].meta).toBe("from UX and RAM · 1 file · 1 weak claim");
-        expect(rows[1].meta).toBe("from Skeptic · 1 file");
+        expect(rows[0].meta).toBe("1 file · 1 weak claim");
+        expect(rows[1].meta).toBe("1 file");
+        expect(rows[1].chips.some((x) => x.expert.id === "sk")).toBe(true);
     });
 
     it("names no proposal id and no Merged in a line of facts", () => {
@@ -220,15 +221,15 @@ describe("directionRows", () => {
             },
         });
         const [row] = directionRows(c);
-        expect(row.meta).toBe("from UX and RAM · 1 file · 1 weak claim");
+        expect(row.meta).toBe("1 file · 1 weak claim");
         expect(row.meta).not.toMatch(/\bP\d+\b|Merged/);
     });
 
-    it("names one author once when two of its proposals meet in a direction", () => {
+    it("gives one author one chip when two of its proposals meet in a direction", () => {
         const c = council({
             summary: { text: "", directions: [direction(1, ["P1", "P2"])], outcomes: {}, at: 15 },
         });
-        expect(directionRows(c)[0].meta.startsWith("from UX · ")).toBe(true);
+        expect(directionRows(c)[0].chips.filter((x) => x.expert.id === "ux")).toHaveLength(1);
     });
 
     it("leaves out what it cannot say", () => {
@@ -297,20 +298,20 @@ describe("a Brainstorm report", () => {
         expect(directionRows(council())[0].firstStep).toBe("");
     });
 
-    it("says who had the idea and who built on it, in panel order and once each, leaving the person out", () => {
+    it("says who built on the idea, in panel order and once each, leaving the person out", () => {
         const [first, second] = directionRows(brainstorm());
-        expect(first.meta).toBe("Had it: UX and RAM · built on by New user and Skeptic · 1 file · 1 weak claim");
-        expect(second.meta).toBe("Had it: Skeptic · 1 file");
+        expect(first.meta).toBe("New user and Skeptic built on it · 1 file · 1 weak claim");
+        expect(second.meta).toBe("1 file");
         expect(first.meta).not.toContain("You");
     });
 
     it("says nothing about builders when no reply builds on it", () => {
         const c = brainstorm({ replies: [] });
-        expect(directionRows(c)[1].meta).toBe("Had it: Skeptic · 1 file");
+        expect(directionRows(c)[0].meta).toBe("1 file · 1 weak claim");
     });
 
-    it("keeps the from line, not Had it, in a Review report", () => {
-        expect(directionRows(council())[1].meta).toBe("from Skeptic · 1 file");
+    it("says nothing about builders in a Review report", () => {
+        expect(directionRows(council())[1].meta).toBe("1 file");
     });
 
     it("lists the wild ideas kept aside with who had them and why", () => {
@@ -359,6 +360,77 @@ describe("a Brainstorm report", () => {
         expect(droppedLine(none)).toBe("");
         expect(droppedLine(council())).toBe("");
         expect(droppedLine(brainstorm({ summary: undefined }))).toBe("");
+    });
+});
+
+describe("a report's top and its folded rest", () => {
+    // the proposals the directions and kept items come from: nine ideas, four seats taking turns
+    const seats = ["ux", "ram", "nu", "sk"];
+    const ideas = Array.from({ length: 9 }, (_, i) => prop(`P${i + 1}`, seats[i % seats.length]));
+
+    // ranks are given out of order: the model sorts them
+    const review = council({
+        proposals: ideas,
+        replies: [],
+        summary: {
+            text: "",
+            directions: [3, 1, 5, 2, 4].map((n) => direction(n, [`P${n}`], { stances: { ram: "accept" } })),
+            kept: [4, 2, 1, 3].map((n) => direction(n, [`P${n + 5}`], { reasoning: `why ${n} was kept` })),
+            outcomes: {},
+            at: 15,
+        },
+    });
+
+    it("gives a Review's five directions and four kept items one row each, by rank, with no cap of its own", () => {
+        expect(directionRows(review).map((r) => r.direction.rank)).toEqual([1, 2, 3, 4, 5]);
+        expect(keptRows(review).map((r) => r.direction.rank)).toEqual([1, 2, 3, 4]);
+        expect(keptRows(review).map((r) => r.meta)).toEqual(["from RAM", "from New user", "from Skeptic", "from UX"]);
+        expect(keptHeading(review)).toBe("Also raised");
+    });
+
+    it("counts both in the outline and the jump links: the count the fold shows is the kept rows", () => {
+        expect(jumpLinks(review).map((e) => [e.id, e.count])).toEqual([
+            ["directions", 5],
+            ["kept", 4],
+        ]);
+        expect(outlineOf(review).filter((e) => e.depth === 1)).toHaveLength(5);
+    });
+
+    it("gives a Brainstorm's three directions three rows", () => {
+        const brainstorm = council({
+            ...review,
+            mode: "brainstorm",
+            summary: { ...review.summary!, directions: review.summary!.directions.slice(0, 3) },
+        });
+        expect(directionRows(brainstorm)).toHaveLength(3);
+        expect(keptHeading(brainstorm)).toBe("Wild ideas kept aside");
+        expect(keptRows(brainstorm)).toHaveLength(4);
+    });
+
+    it("gives an old report (three directions, stances the coordinator wrote, kept items) the rows it always gave", () => {
+        const old = council({
+            summary: {
+                ...council().summary!,
+                directions: [
+                    ...council().summary!.directions,
+                    direction(3, ["P1"], { stances: { ram: "challenge" }, agreed: false }),
+                ],
+                kept: [direction(2, ["P1"], { title: "Rename the chip" }), direction(1, ["P3"], { title: "Cap it" })],
+            },
+        });
+        expect(directionRows(old).map((r) => [r.direction.rank, r.tag, r.meta])).toEqual([
+            [1, "RAM is against it", "1 file · 1 weak claim"],
+            [2, "Everyone agrees", "1 file"],
+            [3, "RAM has doubts", ""],
+        ]);
+        expect(directionRows(old)[2].chips.map((x) => [x.expert.id, x.stance])).toEqual([
+            ["ux", "proposed"],
+            ["ram", "challenge"],
+        ]);
+        expect(keptRows(old).map((r) => [r.direction.title, r.meta])).toEqual([
+            ["Cap it", "from RAM"],
+            ["Rename the chip", "from UX"],
+        ]);
     });
 });
 

@@ -79,6 +79,16 @@ export function discussionBody(c: Council): DiscussionBody {
     return (c.proposals ?? []).length === 0 || (c.state === "running" && c.round <= 1) ? "experts" : "chat";
 }
 
+// past this many ideas and replies a council's chat takes long enough to draw (each message its markdown) that the
+// click opening it would sit unanswered: about a tenth of a second at 40, measured on a 158-message council
+const DRAW_LATER_PAST = 40;
+
+/** Pure: whether a council's chat draws after a skeleton (in a transition) rather than in the click that opens it: a big
+ *  one, by its ideas and replies; a small one draws at once, with no skeleton to flash. */
+export function drawsLater(c: Pick<Council, "proposals" | "replies">): boolean {
+    return (c.proposals ?? []).length + (c.replies ?? []).length > DRAW_LATER_PAST;
+}
+
 /** Pure: a council that waits for the one running council to end. */
 export function isQueued(c: Council): boolean {
     return c.state === "queued";
@@ -242,7 +252,7 @@ export function headerCost(c: Council, nowMs: number): string {
     return readableReplies(c).length === 0 ? parts.filter((p) => p !== "0 replies").join(" · ") : parts.join(" · ");
 }
 
-/** What the council's details show (the Ideas rail's foot, else the header's details icon): the mode in a word and the
+/** What the council's details show (the Ideas rail's foot, the Report's header): the mode in a word and the
  *  reason it was picked, then the clock, the replies and the tokens, each "" when it has none to show (no replies before
  *  any discussion, no clock before the start). `line` is the cost in one line, as a screen reader hears it; all three
  *  figures and the line are "" for a council that has not run or waits in the queue. */
@@ -264,18 +274,6 @@ export function councilDetails(c: Council, nowMs: number): CouncilDetails {
     const p = costParts(c, nowMs);
     const replies = readableReplies(c).length === 0 ? "" : p.replies;
     return { ...base, clock: p.clock, replies, tokens: p.tokens, line: headerCost(c, nowMs) };
-}
-
-/** Pure: whether the Ideas rail is on screen to hold the council's details, so the header's details icon stands down: the
- *  Discussion's chat shows (not round 1's cards or the pause), and the rail is unfolded or holds an open thread, and no
- *  citation's Sources took its place. */
-export function railHoldsDetails(r: {
-    chat: boolean;
-    folded: boolean;
-    threadOpen: boolean;
-    sourcesOpen: boolean;
-}): boolean {
-    return r.chat && !r.sourcesOpen && (!r.folded || r.threadOpen);
 }
 
 /** Pure: the call bar's words for a council. */

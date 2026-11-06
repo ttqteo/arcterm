@@ -2,16 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council report (docs/superpowers/specs/2026-10-22-council-agent-team-design.md "UI", board M-report-cover.dc.html):
-// one scroll box under a cover. The cover holds the title and its `⋯` menu, what was asked, the answer in one bold
-// sentence with the coordinator's text under it, and a glance box beside them: the state, three figures, the panel with
-// each model and what each seat did (a click opens the Discussion on that seat's messages alone), and where the council
-// saved itself, docs/council/, a click or the `⋯` menu opening that document. Under the cover a tab bar sticks to the top
-// (Report / Discussion / Map, and jump links to the sections below), then the body: the directions as cards (one open at a
+// the header row the three views share (councilheader.tsx: the tabs, the title, the step chip and, on the Report alone,
+// the mode, the clock, the replies and the tokens; jump links to the sections below, the seats, and the one `⋯` menu:
+// Save as doc or Open the document, Create initiative, Run again, then Resume and Pin) over one scroll box. In the box the
+// cover: the title, what was asked, the answer in one bold sentence with the coordinator's text under it, and a glance
+// box beside them: the state, three figures, the panel with each model and what each seat did (a click opens the
+// Discussion on that seat's messages alone), and where the council saved itself, docs/council/, a click or the `⋯` menu
+// opening that document. Under the cover the body: the directions as cards (one open at a
 // time, its detail under the grid: the coordinator's reasoning and each expert's position), and at the bottom one line that
 // opens the Map tab, where every idea stands against every expert. A finished council opens on it; Summarize on the
 // Discussion opens it too, and the Discussion tab goes back. A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first
 // step and who had and built on it) and keeps the wild ideas aside under them with a count of the rest. A Review's report
-// gives its first three directions a first step each and lists the rest under Also raised. While a seat message is pinned
+// shows every direction it ranked and lists the rest under Also raised. Both keep their kept ideas folded behind the
+// heading and count until a click opens them. While a seat message is pinned
 // (the Discussion's Pin to Report), the Final proposal section follows the directions and the kept ideas, summary or not.
 // Under the directions a quiet row asks "Was this
 // useful?" (Useful / Not really) and feeds the answer to the council benchmark. What it derives from the council is
@@ -39,7 +42,6 @@ import {
     Contrast,
     Copy,
     CornerDownRight,
-    Ellipsis,
     FileText,
     LayoutGrid,
     Loader2,
@@ -48,24 +50,17 @@ import {
     TriangleAlert,
 } from "lucide-react";
 import { motion } from "motion/react";
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type KeyboardEvent as ReactKeyboardEvent,
-    type ReactNode,
-    type RefObject,
-} from "react";
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
-import { CouncilAvatar, CouncilText, useKeptScroll } from "./councilchat";
+import { CouncilAvatar, CouncilText } from "./councilchat";
 import { askChips } from "./councilchatmodel";
 import { ClaimBadgeChip, WrongCiteChip } from "./councilchecks";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import { finalProposal, type FinalProposal } from "./councilfinalmodel";
-import { CouncilActions } from "./councilheader";
+import { CouncilHeaderRow } from "./councilheader";
+import { useKeptScroll } from "./councilkeptscroll";
 import { mapWords } from "./councilmapmodel";
 import {
     STANCE_WORD,
@@ -122,7 +117,6 @@ import {
     type OutlineEntry,
     type Position,
 } from "./councilsummarymodel";
-import { CouncilTabs } from "./counciltabs";
 import { runtimeStartupCommand } from "./launch";
 import { projectListAtom } from "./projectsstore";
 
@@ -143,6 +137,14 @@ const STANCE_PILL: Record<StanceLabel, string> = {
     challenge: "bg-warning/12 text-warning-soft",
     oppose: "bg-error/12 text-error-soft",
     proposed: "bg-pill text-secondary",
+};
+
+// a card's avatar of an expert that took a stance is ringed in its colour; one that only proposed is not
+const STANCE_RING: Record<StanceLabel, string> = {
+    accept: "ring-[1.5px] ring-success",
+    challenge: "ring-[1.5px] ring-warning",
+    oppose: "ring-[1.5px] ring-error",
+    proposed: "",
 };
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -303,32 +305,31 @@ function DirectionCard({
                 </span>
             ) : null}
             <span data-council-direction-footer className="mt-auto flex w-full items-end gap-2">
-                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[7px] gap-y-[6px]">
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[10px] gap-y-[6px]">
+                    {row.chips.length > 0 ? (
+                        <span data-council-chips className="flex flex-none items-center gap-[4px]">
+                            {row.chips.map((chip) => (
+                                // one avatar per expert: who proposed it is plain, a stance rings it in its colour;
+                                // the name and the stance are on hover (and read out), the tag above says the verdict
+                                <span
+                                    key={chip.expert.id}
+                                    data-council-chip={chip.expert.id}
+                                    data-council-chip-stance={chip.stance}
+                                    role="img"
+                                    aria-label={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
+                                    title={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
+                                    className={cn("flex rounded-full", STANCE_RING[chip.stance])}
+                                >
+                                    <Avatar c={c} id={chip.expert.id} name={chip.expert.name} small />
+                                </span>
+                            ))}
+                        </span>
+                    ) : null}
                     {row.meta !== "" ? (
                         <span data-council-meta className="text-[12.5px] text-muted">
                             {row.meta}
                         </span>
                     ) : null}
-                    {row.chips.map((chip) => (
-                        <span
-                            key={chip.expert.id}
-                            data-council-chip={chip.expert.id}
-                            title={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
-                            className={cn(
-                                "flex items-center gap-1 rounded-full py-[2px] pl-[2px] pr-[7px] text-[10.5px]",
-                                STANCE_PILL[chip.stance]
-                            )}
-                        >
-                            <Avatar
-                                c={c}
-                                id={chip.expert.id}
-                                name={chip.expert.name}
-                                small
-                                className="h-[16px] w-[16px] text-[8px]"
-                            />
-                            {STANCE_WORD[chip.stance]}
-                        </span>
-                    ))}
                 </span>
                 {open ? (
                     <ChevronUp
@@ -424,6 +425,44 @@ function KeptCard({ row }: { row: KeptRow }) {
     );
 }
 
+// The ideas kept aside under the ranked directions (Also raised, or Wild ideas kept aside): the long tail of the report,
+// so it starts folded behind its heading and count, and a click on them opens the grid. The fold is local state: folded
+// is the default, so losing it when the view unmounts costs nothing.
+function KeptSection({ c, rows }: { c: Council; rows: KeptRow[] }) {
+    const [open, setOpen] = useState(false);
+    const Chevron = open ? ChevronUp : ChevronDown;
+    return (
+        <section data-council-kept className="flex flex-col gap-4">
+            <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
+                <button
+                    type="button"
+                    data-council-kept-toggle
+                    aria-expanded={open}
+                    aria-controls={open ? "council-kept-ideas" : undefined}
+                    onClick={() => setOpen(!open)}
+                    className={cn(
+                        "group flex w-fit cursor-pointer items-baseline gap-[10px] rounded-[4px] border-0 bg-transparent p-0 text-left",
+                        FOCUS
+                    )}
+                >
+                    <span data-council-kept-heading>{keptHeading(c)}</span>
+                    <span data-council-kept-count className="text-[14px] font-medium tabular-nums text-muted">
+                        {rows.length}
+                    </span>
+                    <Chevron size={14} aria-hidden className="self-center text-muted group-hover:text-primary" />
+                </button>
+            </h2>
+            {open ? (
+                <div id="council-kept-ideas" className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-[14px]">
+                    {rows.map((row, i) => (
+                        <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
+                    ))}
+                </div>
+            ) : null}
+        </section>
+    );
+}
+
 // "Was this useful?" under the report, a quiet row: the question with Useful and Not really, then a thanks line with a
 // Change link that asks again. The answer feeds the council benchmark (rateCouncil); the rule for when it shows is
 // ratingRow's. It is keyed by council, so one council's Change state never carries to another.
@@ -512,88 +551,6 @@ function MapLink({ c }: { c: Council }) {
     );
 }
 
-// The report's less-used actions behind a `⋯`: Save as doc, Create initiative, Run again. Arrow keys move through them,
-// Escape closes and gives the focus back, a click outside closes.
-function ActionsMenu({ items }: { items: { id: string; label: string; disabled?: boolean; onPick: () => void }[] }) {
-    const [open, setOpen] = useState(false);
-    const wrap = useRef<HTMLDivElement>(null);
-    const trigger = useRef<HTMLButtonElement>(null);
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-        const onDown = (e: MouseEvent) => {
-            if (!wrap.current?.contains(e.target as Node)) {
-                setOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", onDown, true);
-        wrap.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
-        return () => document.removeEventListener("mousedown", onDown, true);
-    }, [open]);
-    const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (!open) {
-            return;
-        }
-        if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            setOpen(false);
-            trigger.current?.focus();
-        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            const els = Array.from(
-                wrap.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []
-            );
-            if (els.length > 0) {
-                const at = els.indexOf(document.activeElement as HTMLElement);
-                els[(at + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length].focus();
-            }
-        }
-    };
-    return (
-        <div ref={wrap} onKeyDown={onKeyDown} className="relative flex-none">
-            <button
-                ref={trigger}
-                type="button"
-                data-council-menu
-                aria-haspopup="menu"
-                aria-expanded={open}
-                aria-label="More actions"
-                onClick={() => setOpen((o) => !o)}
-                className={cn(BUTTON, "w-[28px] justify-center px-0")}
-            >
-                <Ellipsis size={14} aria-hidden />
-            </button>
-            {open ? (
-                <div
-                    role="menu"
-                    aria-label="More actions"
-                    className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[190px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md"
-                >
-                    {items.map((item) => (
-                        <button
-                            key={item.id}
-                            type="button"
-                            role="menuitem"
-                            data-council-action={item.id}
-                            disabled={item.disabled}
-                            onClick={() => {
-                                setOpen(false);
-                                trigger.current?.focus();
-                                item.onPick();
-                            }}
-                            className="flex h-[28px] w-full cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[13px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
 // the dot before the state word in the side column: the word is the status, the dot only draws it
 function StateMark({ state }: { state: string }) {
     if (state === "done") {
@@ -661,17 +618,9 @@ function glideTo(box: HTMLElement, top: number) {
     box.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
 }
 
-// The tab bar's jump links (board M-report-cover.dc.html): a button per section after the answer, scrolling the box so
-// the section's top lands 12px under the bar (as far as the box can scroll).
-function JumpLinks({
-    c,
-    scroller,
-    bar,
-}: {
-    c: Council;
-    scroller: RefObject<HTMLDivElement | null>;
-    bar: RefObject<HTMLDivElement | null>;
-}) {
+// The header's jump links (board M-report-cover.dc.html), before its seats: a button per section after the answer,
+// scrolling the box under the header so the section's top lands 12px under the box's top (as far as it can scroll).
+function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivElement | null> }) {
     const entries = useMemo(() => jumpLinks(c), [c]);
     if (entries.length === 0) {
         return null;
@@ -682,11 +631,10 @@ function JumpLinks({
         if (box == null || el == null) {
             return;
         }
-        const barHeight = bar.current?.offsetHeight ?? 0;
-        glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - barHeight - 12);
+        glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - 12);
     };
     return (
-        <nav aria-label="On this page" className="flex min-w-0 items-center gap-1">
+        <nav aria-label="On this page" className="flex min-w-0 flex-none items-center gap-1 @max-[700px]:hidden">
             {entries.map((e) => (
                 <button
                     key={e.id}
@@ -1056,10 +1004,9 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
     const scroller = useRef<HTMLDivElement>(null);
-    const tabBar = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
-    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself: the tab bar
-    // at the top of the box, where it sticks (the cover is the only thing above it)
+    // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself, at the top of
+    // the box under the header
     const toReport = () => {
         const box = scroller.current;
         const cover = box?.querySelector<HTMLElement>("[data-council-cover]");
@@ -1177,31 +1124,33 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const kept = useMemo(() => keptRows(c), [c]);
     const dropped = droppedLine(c);
     const doc = docAction(c);
-    const menuItems = [
+    // the report's own rows of the header's `⋯` menu, ahead of Resume and Pin (CouncilActions)
+    const menuItems: ContextMenuItem[] = [
         doc.id === "open-doc"
             ? {
-                  id: doc.id,
                   label: doc.label,
-                  disabled: busy === "open-doc",
-                  onPick: () => void openDocument(c.docpath ?? ""),
+                  enabled: busy !== "open-doc",
+                  click: () => void openDocument(c.docpath ?? ""),
+                  attrs: { "data-council-action": doc.id },
               }
             : {
-                  id: doc.id,
                   label: doc.label,
-                  disabled: summary == null || busy === "doc",
-                  onPick: () => void saveDoc(),
+                  enabled: summary != null && busy !== "doc",
+                  click: () => void saveDoc(),
+                  attrs: { "data-council-action": doc.id },
               },
         {
-            id: "initiative",
             label: "Create initiative",
-            disabled: summary == null || directions.length === 0 || busy === "initiative" || initiative != null,
-            onPick: () => void createInitiative(),
+            enabled: summary != null && directions.length > 0 && busy !== "initiative" && initiative == null,
+            click: () => void createInitiative(),
+            attrs: { "data-council-action": "initiative" },
         },
         {
-            id: "run-again",
             label: "Run again",
-            onPick: () => showCouncilSetup(c.project, draftFromCouncil(c)),
+            click: () => showCouncilSetup(c.project, draftFromCouncil(c)),
+            attrs: { "data-council-action": "run-again" },
         },
+        { type: "separator" },
     ];
     const finalSection =
         pinned != null ? (
@@ -1214,6 +1163,23 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
         ) : null;
     return (
         <>
+            {/* the header row the three views share, over the box like theirs, so a tab click moves nothing in it; the
+                tabs, the jump links and the ⋯ menu are what the scenarios find under data-council-tabbar */}
+            <header
+                data-council-tabbar
+                className="@container flex flex-none flex-col border-b border-border bg-surface"
+            >
+                <CouncilHeaderRow
+                    c={c}
+                    view="summary"
+                    titleAttr="data-council-summary-title"
+                    details
+                    aside={<JumpLinks c={c} scroller={scroller} />}
+                    items={menuItems}
+                    onCurrent={toReport}
+                    onOpenTerminal={(tab) => model.openTerminal(tab)}
+                />
+            </header>
             {summary != null && c.state === "running" ? (
                 <Banner tone="working">
                     <Loader2 size={13} aria-hidden className="animate-spin text-muted" />
@@ -1257,19 +1223,22 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     </button>
                 </Banner>
             ) : null}
-            <div ref={scroller} data-council-scroll onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+            {/* the page fades in as the view opens (a tab click, a council picked); the header stays put */}
+            <motion.div
+                ref={scroller}
+                variants={viewFade}
+                initial="initial"
+                animate="animate"
+                data-council-scroll
+                onScroll={onScroll}
+                className="min-h-0 flex-1 overflow-y-auto"
+            >
                 <div data-council-cover className="bg-surface">
                     <div className="mx-auto flex max-w-[1180px] flex-col gap-[22px] px-10 pt-[26px]">
                         <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-[10px]">
-                                <span
-                                    data-council-eyebrow
-                                    className="min-w-0 flex-1 text-[13px] font-medium text-muted"
-                                >
-                                    Council · {modeWord(c)}
-                                </span>
-                                <ActionsMenu items={menuItems} />
-                            </div>
+                            <span data-council-eyebrow className="text-[13px] font-medium text-muted">
+                                Council · {modeWord(c)}
+                            </span>
                             {initiative != null || error != null ? (
                                 <div className="flex flex-col gap-1 text-[12.5px]">
                                     {initiative != null ? (
@@ -1358,18 +1327,6 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         </div>
                     </div>
                 </div>
-                <div
-                    ref={tabBar}
-                    data-council-tabbar
-                    className="@container sticky top-0 z-10 border-b border-border bg-surface"
-                >
-                    <div className="mx-auto flex h-[46px] max-w-[1180px] items-stretch gap-6 px-10 @max-[900px]:gap-3 @max-[900px]:px-4">
-                        <CouncilTabs c={c} view="summary" onCurrent={toReport} className="self-center" />
-                        <span className="flex-1" />
-                        <JumpLinks c={c} scroller={scroller} bar={tabBar} />
-                        <CouncilActions c={c} className="self-center" />
-                    </div>
-                </div>
                 {summary != null ? (
                     <div className="mx-auto flex max-w-[1180px] flex-col gap-11 px-10 pb-[72px] pt-9">
                         {directions.length > 0 ? (
@@ -1409,23 +1366,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 ) : null}
                             </section>
                         ) : null}
-                        {kept.length > 0 ? (
-                            <section data-council-kept className="flex flex-col gap-4">
-                                <div className="flex items-baseline gap-[10px]">
-                                    <h2 className="m-0 text-[19px] font-semibold tracking-[-0.01em] text-primary">
-                                        {keptHeading(c)}
-                                    </h2>
-                                    <span className="text-[14px] font-medium tabular-nums text-muted">
-                                        {kept.length}
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-[14px]">
-                                    {kept.map((row, i) => (
-                                        <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
-                                    ))}
-                                </div>
-                            </section>
-                        ) : null}
+                        {kept.length > 0 ? <KeptSection key={c.id} c={c} rows={kept} /> : null}
                         {finalSection}
                         {asks.length > 0 ? (
                             <section data-council-asks-next className="flex flex-col gap-4">
@@ -1465,7 +1406,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         {finalSection}
                     </div>
                 ) : null}
-            </div>
+            </motion.div>
         </>
     );
 }
@@ -1473,12 +1414,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
 export function CouncilSummary({ model }: { model: AgentsViewModel }) {
     const id = useAtomValue(councilSelAtom);
     const c = useCouncil(id);
-    // the whole page fades in as the view opens (a tab click, a council picked): its tab bar sits inside the page
     return (
-        <motion.div
-            variants={viewFade}
-            initial="initial"
-            animate="animate"
+        <div
             data-council-summary
             data-council-id={id ?? undefined}
             aria-busy={c == null}
@@ -1491,6 +1428,6 @@ export function CouncilSummary({ model }: { model: AgentsViewModel }) {
             ) : (
                 <SummaryView model={model} c={c} />
             )}
-        </motion.div>
+        </div>
     );
 }

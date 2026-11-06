@@ -22,6 +22,17 @@ type StorageCommands interface {
 	// ListCanvasSessionsCommand lists the sessions that made one canvas (its topic folder), the latest first: the
 	// canvas viewer's Resume
 	ListCanvasSessionsCommand(ctx context.Context, dir string) ([]SessionActivity, error)
+	// SetCanvasLinkCommand writes one canvas's version link into its canvas.json: which older canvas it replaces and
+	// which it was said not to (Agent → Canvas gallery)
+	SetCanvasLinkCommand(ctx context.Context, data CommandSetCanvasLinkData) error
+}
+
+// CommandSetCanvasLinkData sets both fields of one canvas whole: the caller computes them with the version model, so
+// the server stays a guarded writer. An empty Replaces or NotReplaces removes its key.
+type CommandSetCanvasLinkData struct {
+	Dir         string   `json:"dir"`         // the topic folder: StorageCanvas.Dir
+	Replaces    string   `json:"replaces"`    // the older canvas's topic, or "" for none
+	NotReplaces []string `json:"notreplaces"` // topics this canvas was said not to replace
 }
 
 type CommandCleanStorageData struct {

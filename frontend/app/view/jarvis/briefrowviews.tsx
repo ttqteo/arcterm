@@ -3,21 +3,19 @@
 //
 // One row component per Brief region, each drawn to the design's own anatomy
 // (docs/prototype/jarvis-brief-editing.dc.html). The regions stopped sharing one LineRow because the
-// design gives them different anatomies: Waiting acts in place, Runs is two lines under a type badge,
-// Behind you is two lines under a wording column.
+// design gives them different anatomies: Waiting acts in place, an initiative row carries its segment bar,
+// Behind you is two lines under a wording column. Activity's runs and councils are cards (activityregion.tsx).
 
 import { cn } from "@/util/util";
-import { ArrowLeft, ArrowRight, Clock, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
+import { ArrowLeft, ArrowRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
-import type { CouncilLine } from "./briefcouncils";
 import type { QueueAct } from "./briefingmodel";
-import { initiativeLine, type BriefLine, type RunRowFace } from "./briefrows";
+import { initiativeLine, type BriefLine } from "./briefrows";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, REGION_LABEL, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
 import type { ChunkTone, EffortCardModel } from "./effortmodel";
 import type { InitiativeResume } from "./initiativework";
 import type { EventTone } from "./reviewmodel";
 
-const PULSE = "pulse-dot-slow";
 // a sub-initiative's row is indented this many px per level under the one it is part of
 const NEST_INDENT = 20;
 
@@ -140,27 +138,40 @@ function WorkOnButton({
     );
 }
 
-// each chunk in plan order, coloured by where it stands. Past SEGMENT_GAP_LIMIT chunks the gaps would eat
-// the segments, so the bar reads as one strip of the same colours.
+// each chunk in plan order: done in a soft green, the one being worked on in full green, every other one in the
+// strong edge (docs/superpowers/specs/2026-11-05-jarvis-revamp-design.md, decision 3). Blocked and deferred chunks
+// are said in words beside the bar (Blocked on, the status cell), so the bar stays two colours on a grey track. Past
+// SEGMENT_GAP_LIMIT chunks the gaps would eat the segments, so the bar reads as one strip of the same colours.
 const SEGMENT_GAP_LIMIT = 24;
 const SEGMENT_BG: Record<ChunkTone, string> = {
     done: "bg-success/45",
-    active: "bg-working",
-    blocked: "bg-asking",
-    deferred: "bg-ink-faint",
-    skipped: "bg-ink-faint",
+    active: "bg-success",
+    blocked: "bg-edge-strong",
+    deferred: "bg-edge-strong",
+    skipped: "bg-edge-strong",
     pending: "bg-edge-strong",
 };
+// md: the 6px bar of a card, the sheet and the popover; sm: the 4px bar of a list row
+const SEGMENT_SIZE = { md: "h-1.5 gap-[2px]", sm: "h-1 gap-[2px]" } as const;
 
-export function SegmentBar({ segments, className }: { segments: ChunkTone[]; className?: string }) {
+export function SegmentBar({
+    segments,
+    className,
+    size = "md",
+}: {
+    segments: ChunkTone[];
+    className?: string;
+    size?: keyof typeof SEGMENT_SIZE;
+}) {
     const gapless = segments.length > SEGMENT_GAP_LIMIT;
     return (
         <span
             aria-hidden
             data-jarvis-segment-bar
             className={cn(
-                "flex h-1.5 min-w-0",
-                gapless ? "gap-0 overflow-hidden rounded-[2px]" : "gap-[3px]",
+                "flex min-w-0",
+                SEGMENT_SIZE[size],
+                gapless && "gap-0 overflow-hidden rounded-[2px]",
                 className
             )}
         >
@@ -729,247 +740,6 @@ export function ReviewDone({ onBack }: { onBack: () => void }) {
             <button type="button" onClick={onBack} className={cn(REVIEW_BTN, "border-edge-mid text-secondary")}>
                 Back to the list
             </button>
-        </div>
-    );
-}
-
-const DOT = {
-    live: cn("bg-success", PULSE),
-    asking: cn("bg-asking", PULSE),
-    done: "bg-success/45",
-    idle: "bg-feed-glyph",
-};
-const TYPE_BADGE = {
-    orchestrator: "border-accent-soft/35 text-accent-soft",
-    agent: "border-edge-mid text-ink-mid",
-    "quick run": "border-edge-mid text-secondary",
-};
-
-export function RunRowView({
-    line,
-    face,
-    focused,
-    selected,
-    onOpenSheet,
-    onOpenChunk,
-    onAnswer,
-    onOpenAgent,
-    onStop,
-}: {
-    line: BriefLine;
-    face: RunRowFace;
-    focused: boolean;
-    selected: boolean;
-    onOpenSheet?: (e: React.MouseEvent) => void;
-    onOpenChunk: () => void;
-    onAnswer: () => void;
-    onOpenAgent: () => void;
-    onStop: () => void;
-}) {
-    const stop = (fn: () => void) => (e: React.MouseEvent) => {
-        e.stopPropagation();
-        fn();
-    };
-    return (
-        <div
-            data-jarvis-brief-row="session"
-            data-peek={onOpenSheet != null ? "" : undefined}
-            {...cursorAttrs(focused)}
-            onClick={onOpenSheet}
-            className={cn(
-                "flex items-center gap-3 py-[7px] hover:bg-surface-hover",
-                ROW_BORDER,
-                onOpenSheet != null && "cursor-pointer",
-                selected && "bg-surface-selected",
-                focused && CURSOR_RING
-            )}
-        >
-            <span className={cn("h-[7px] w-[7px] flex-none rounded-full", DOT[face.dot])} />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex min-w-0 items-center gap-2">
-                    <span
-                        className={cn(
-                            "flex-none rounded-[5px] border px-1.5 text-[10.5px] leading-[17px]",
-                            TYPE_BADGE[face.type]
-                        )}
-                    >
-                        {face.type}
-                    </span>
-                    <span
-                        title={line.title}
-                        className={cn("min-w-0 truncate text-[13px]", face.stopped ? "text-ink-mid" : "text-ink-hi")}
-                    >
-                        {line.title}
-                    </span>
-                </div>
-                <div className={cn("flex min-w-0 items-center gap-2", FAINT_TEXT)}>
-                    <span className="flex-none whitespace-nowrap">
-                        {face.meta} · {face.elapsed}
-                    </span>
-                    {face.chunkLabel !== "" ? (
-                        <button
-                            type="button"
-                            title="Open this chunk"
-                            onClick={stop(onOpenChunk)}
-                            className="flex min-w-0 cursor-pointer items-center gap-1 text-[10.5px] text-muted hover:text-accent-soft"
-                        >
-                            <CornerDownRight size={11} aria-hidden className="flex-none" />
-                            <span className="truncate">{face.chunkLabel}</span>
-                        </button>
-                    ) : null}
-                </div>
-            </div>
-            <span
-                className={cn(
-                    "w-[62px] flex-none text-right text-[11px] font-semibold tabular-nums",
-                    TONE_TEXT[face.stateTone]
-                )}
-            >
-                {face.state}
-            </span>
-            <div className="flex flex-none justify-end gap-1">
-                {face.asking ? (
-                    <button
-                        type="button"
-                        onClick={stop(onAnswer)}
-                        className="cursor-pointer rounded-[6px] border border-asking/35 bg-asking/12 px-2 py-[3px] text-[10.5px] font-bold text-asking hover:bg-asking/20"
-                    >
-                        Answer
-                    </button>
-                ) : null}
-                <button type="button" onClick={stop(onOpenAgent)} className={SMALL_BTN}>
-                    Open
-                </button>
-                {face.canStop ? (
-                    <button
-                        type="button"
-                        title="Stop this session"
-                        onClick={stop(onStop)}
-                        className={cn(SMALL_BTN, "text-ink-mid hover:border-error/50 hover:text-error")}
-                    >
-                        Stop
-                    </button>
-                ) : null}
-            </div>
-        </div>
-    );
-}
-
-// A council in the Councils region (briefcouncils.ts): the Runs row's anatomy, with the council's project and panel
-// size where a run has its project and elapsed time. The row and its button both open the council through the router,
-// on the view it was last shown on; the button says Report once it has one.
-export function CouncilRowView({
-    line,
-    focused,
-    onOpen,
-}: {
-    line: CouncilLine;
-    focused: boolean;
-    onOpen: (e?: React.MouseEvent) => void;
-}) {
-    return (
-        <div
-            data-jarvis-brief-row="council"
-            {...cursorAttrs(focused)}
-            onClick={onOpen}
-            className={cn(
-                "flex cursor-pointer items-center gap-3 py-[7px] hover:bg-surface-hover",
-                ROW_BORDER,
-                focused && CURSOR_RING
-            )}
-        >
-            <span className={cn("h-[7px] w-[7px] flex-none rounded-full", DOT[line.dot])} />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex min-w-0 items-center gap-2">
-                    <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 text-[10.5px] leading-[17px] text-ink-mid">
-                        council
-                    </span>
-                    <span
-                        title={line.title}
-                        className={cn("min-w-0 truncate text-[13px]", line.live ? "text-ink-hi" : "text-ink-mid")}
-                    >
-                        {line.title}
-                    </span>
-                </div>
-                <span className={cn("truncate whitespace-nowrap", FAINT_TEXT)}>
-                    {line.meta} · {line.age}
-                </span>
-            </div>
-            <span className={cn("flex-none text-right text-[11px] font-semibold", TONE_TEXT[line.stateTone])}>
-                {line.state}
-            </span>
-            <button
-                type="button"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onOpen(e);
-                }}
-                className={cn(SMALL_BTN, "flex-none")}
-            >
-                {line.hasReport && !line.live ? "Report" : "Open"}
-            </button>
-        </div>
-    );
-}
-
-// A plan waiting in the run queue (briefqueue.ts), drawn among the Runs: under the run or the queued plan it waits on,
-// one NEST_INDENT per link, a room-only one at the end. No buttons: Start now, Run next and Remove live in the sheet
-// the row opens, as every Brief row's actions do. It carries no data-peek: the sheet is all it opens, so a held Ctrl
-// has nothing to turn into a peek.
-export function QueuedRunRowView({
-    line,
-    focused,
-    selected,
-    onOpen,
-}: {
-    line: BriefLine;
-    focused: boolean;
-    selected: boolean;
-    onOpen: () => void;
-}) {
-    const q = line.queued!;
-    const depth = line.depth ?? 0;
-    return (
-        <div
-            data-jarvis-brief-row="queued"
-            data-brief-queued={q.entryId}
-            data-brief-queued-depth={depth}
-            {...cursorAttrs(focused)}
-            onClick={onOpen}
-            style={depth > 0 ? { marginLeft: depth * NEST_INDENT } : undefined}
-            className={cn(
-                "flex cursor-pointer items-center gap-3 py-[7px] hover:bg-surface-hover",
-                ROW_BORDER,
-                selected && "bg-surface-selected",
-                focused && CURSOR_RING
-            )}
-        >
-            <Clock size={11} aria-hidden className={cn("flex-none", q.blocked ? "text-warning" : "text-muted")} />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex min-w-0 items-center gap-2">
-                    <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 text-[10.5px] leading-[17px] text-ink-mid">
-                        queued
-                    </span>
-                    <span title={line.title} className="min-w-0 truncate text-[13px] text-ink-mid">
-                        {line.title}
-                    </span>
-                </div>
-                <div className={cn("flex min-w-0 items-center gap-2", FAINT_TEXT)}>
-                    <span data-brief-queued-meta className="min-w-0 truncate">
-                        {line.meta} · {line.age}
-                    </span>
-                </div>
-            </div>
-            <span
-                data-brief-queued-state
-                title={q.blocked && q.reason ? q.reason : undefined}
-                className={cn(
-                    "w-[62px] flex-none text-right text-[11px] font-semibold tabular-nums",
-                    q.blocked ? "text-warning" : "text-muted"
-                )}
-            >
-                {line.state}
-            </span>
         </div>
     );
 }

@@ -151,6 +151,29 @@ func TestParseRound1GivesAProposalWithNoEvidenceFieldTheWeakChip(t *testing.T) {
 	}
 }
 
+func TestParseRound1Zone(t *testing.T) {
+	reply := jsonFence(`{"overview": "x", "proposals": [
+		{"title": "A", "argument": "a", "zone": "  First launch "},
+		{"title": "B", "argument": "b", "zone": ""},
+		{"title": "C", "argument": "c", "evidence": [{"ref": "a.go:1"}], "zone": "Idle cost"}
+	]}`)
+	props, _, err := ParseRound1(reply)
+	if err != nil || len(props) != 3 {
+		t.Fatalf("ParseRound1 = %+v, %v", props, err)
+	}
+	if props[0].Zone != "First launch" || props[1].Zone != "" || props[2].Zone != "Idle cost" {
+		t.Errorf("zones = %q, %q, %q; want the trimmed names, and none for the second", props[0].Zone, props[1].Zone, props[2].Zone)
+	}
+
+	// the zoned shape reads through the parser too
+	c := zonesCouncil()
+	c.Zones = []CouncilZone{{Seat: "ux", Name: "First launch"}, {Seat: "ram", Name: "Idle cost"}, {Seat: "skeptic", Name: "Wake failures"}}
+	if props, _, err := ParseRound1(jsonFence(brainstormRound1ShapeFor(c))); err != nil || len(props) != 2 || props[0].Zone == "" ||
+		!strings.Contains(props[1].Argument, "| Idle wait |") {
+		t.Errorf("zoned brainstorm shape: %+v, %v", props, err)
+	}
+}
+
 func TestParseRound1NoProposalsIsFine(t *testing.T) {
 	props, overview, err := ParseRound1(jsonFence(`{"overview": "nothing to change", "proposals": []}`))
 	if err != nil || len(props) != 0 || overview != "nothing to change" {
@@ -206,6 +229,26 @@ func TestParseRound1Verify(t *testing.T) {
 		if props[i].Runs != nil {
 			t.Errorf("proposal %d runs = %+v, want none", i+1, props[i].Runs)
 		}
+	}
+}
+
+func TestParseRound1ReadsTheCheckerAndWhy(t *testing.T) {
+	props, _, err := ParseRound1(jsonFence(`{"overview": "", "proposals": [
+	  {"title": "Sleep sooner", "argument": "A", "checker": " ram ", "checkwhy": " it knows what stays in memory "},
+	  {"title": "Show the state", "argument": "B"},
+	  {"title": "Wake on hover", "argument": "C", "checker": "skeptic"}
+	]}`))
+	if err != nil || len(props) != 3 {
+		t.Fatalf("got %+v, %v", props, err)
+	}
+	if props[0].Checker != "ram" || props[0].CheckWhy != "it knows what stays in memory" {
+		t.Errorf("first proposal: checker %q, why %q; want both read, trimmed", props[0].Checker, props[0].CheckWhy)
+	}
+	if props[1].Checker != "" || props[1].CheckWhy != "" {
+		t.Errorf("a proposal with neither: checker %q, why %q; want both empty", props[1].Checker, props[1].CheckWhy)
+	}
+	if props[2].Checker != "skeptic" || props[2].CheckWhy != "" {
+		t.Errorf("a checker with no why: checker %q, why %q", props[2].Checker, props[2].CheckWhy)
 	}
 }
 
@@ -547,26 +590,50 @@ func TestShapesParse(t *testing.T) {
 			strings.ContainsAny(cmd, "|&;<>`$") {
 			t.Errorf("round1Shape: its example command %q is not a plain `go test <package> -run <pattern>`", cmd)
 		}
+		// and, on each proposal, the seat that should check it and why
+		for i, p := range props {
+			if p.Checker == "" || p.CheckWhy == "" {
+				t.Errorf("round1Shape: proposal %d has checker %q, why %q; want both shown", i+1, p.Checker, p.CheckWhy)
+			}
+		}
 	}
 	// the shape an agent seat gets asks for the quote and no verify request
 	if props, _, err := ParseRound1(jsonFence(round1ShapeNoVerify)); err != nil || len(props) != 2 || props[0].Evidence[0].Weak ||
 		props[0].Evidence[0].Quote == "" || props[0].Runs != nil || !hasPicture(props[1].Argument) {
 		t.Errorf("round1ShapeNoVerify: %+v, %v", props, err)
 	}
-	if strings.Contains(round1ShapeNoVerify, "verify") {
-		t.Errorf("round1ShapeNoVerify still shows verify:\n%s", round1ShapeNoVerify)
+	if strings.Contains(round1ShapeNoVerify, "verify") || strings.Contains(round1ShapeNoVerify, "check") {
+		t.Errorf("round1ShapeNoVerify still shows verify or a checker:\n%s", round1ShapeNoVerify)
+	}
+	// a Review with one seat has nobody to name: its shape keeps the verify request and shows no checker
+	if props, _, err := ParseRound1(jsonFence(round1ShapeNoChecker)); err != nil || len(props) != 2 || len(props[0].Runs) != 1 ||
+		props[0].Checker != "" || props[0].CheckWhy != "" || strings.Contains(round1ShapeNoChecker, "check") {
+		t.Errorf("round1ShapeNoChecker: %+v, %v", props, err)
 	}
 	if r, err := ParseRound2(jsonFence(round2Shape)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 || len(r.Picks) != 3 {
 		t.Errorf("round2Shape: %+v, %v", r, err)
+	}
+	// a pass that asks for no picks shows none
+	if r, err := ParseRound2(jsonFence(round2ShapeNoPicks)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 ||
+		len(r.Picks) != 0 || strings.Contains(round2ShapeNoPicks, "picks") {
+		t.Errorf("round2ShapeNoPicks: %+v, %v", r, err)
 	}
 	if a, err := ParseAnswers(jsonFence(answersShape)); err != nil || len(a) != 1 || a[0].Stance != StanceAccept || len(a[0].Evidence) != 1 {
 		t.Errorf("answersShape: %+v, %v", a, err)
 	}
 	sum, weak, err := ParseSynthesis(jsonFence(synthesisShape))
-	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || len(sum.Outcomes) != 4 ||
-		len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" || len(sum.Asks) != 2 || sum.Asks[0].To != "skeptic" ||
+	// the lean shape holds no stances, agreed flags or outcomes: Go fills them (fill.go)
+	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || len(sum.Outcomes) != 0 ||
+		len(weak) != 1 || len(sum.Directions[0].Stances) != 0 || sum.Answer == "" || len(sum.Asks) != 2 || sum.Asks[0].To != "skeptic" ||
 		sum.Asks[1].To != "" {
 		t.Errorf("synthesisShape: %+v, %+v, %v", sum, weak, err)
+	}
+	for _, shape := range []string{synthesisShape, brainstormSynthesisShape} {
+		for _, key := range []string{`"stances"`, `"agreed"`, `"outcomes"`} {
+			if strings.Contains(shape, key) {
+				t.Errorf("a synthesis shape asks for %s: Go fills it", key)
+			}
+		}
 	}
 	if _, _, err := ParseSynthesis(jsonFence(synthesisShapeNoQuestion)); err != nil {
 		t.Errorf("synthesisShapeNoQuestion: %v", err)
@@ -589,6 +656,38 @@ func TestShapesParse(t *testing.T) {
 	sum, _, err = ParseSynthesis(jsonFence(brainstormSynthesisShapeNoQuestion))
 	if err != nil || len(sum.Directions) != 1 || sum.Answer != "" {
 		t.Errorf("brainstormSynthesisShapeNoQuestion: %+v, %v", sum, err)
+	}
+}
+
+// A reply written to the lean shape holds no stances, agreed flags or outcomes; one from an older model or a test still
+// holds them, and they read as before (Go's fill overwrites them later).
+func TestParseSynthesisReadsTheLeanShapeAndAnOlderReply(t *testing.T) {
+	lean, _, err := ParseSynthesis(jsonFence(`{"text": "Two.", "directions": [
+		{"rank": 2, "title": "Poll less", "reasoning": "Saves RAM.", "firststep": "Log the gaps", "from": ["P3"]},
+		{"rank": 1, "title": "Show the state", "reasoning": "Cheap.", "firststep": "Add the badge", "from": ["P1", "P2"]}],
+		"kept": [{"title": "Rename the chip", "reasoning": "the name is wrong", "from": ["P5"]}]}`))
+	if err != nil || len(lean.Directions) != 2 || lean.Directions[0].Title != "Show the state" || lean.Directions[0].Rank != 1 {
+		t.Fatalf("lean reply = %+v, %v, want the directions ranked 1 and 2", lean, err)
+	}
+	if d := lean.Directions[0]; d.Stances == nil || len(d.Stances) != 0 || !d.Agreed || d.FirstStep != "Add the badge" {
+		t.Errorf("direction = %+v, want empty stances, agreed and its first step", d)
+	}
+	if lean.Outcomes == nil || len(lean.Outcomes) != 0 || len(lean.Kept) != 1 {
+		t.Errorf("outcomes = %v, kept = %+v, want no outcomes (not nil) and the kept line", lean.Outcomes, lean.Kept)
+	}
+
+	old, _, err := ParseSynthesis(jsonFence(`{"text": "One.", "directions": [
+		{"rank": 1, "title": "Show", "from": ["P1"], "stances": {"ux": "accept", "skeptic": "challenge"}, "agreed": false}],
+		"outcomes": {"P1": "Direction 1", "P4": "Withdrawn in round 2"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]CouncilStance{"ux": StanceAccept, "skeptic": StanceChallenge}
+	if d := old.Directions[0]; !reflect.DeepEqual(d.Stances, want) || d.Agreed {
+		t.Errorf("older reply direction = %+v, want its stances %v and not agreed", d, want)
+	}
+	if old.Outcomes["P4"] != "Withdrawn in round 2" || len(old.Outcomes) != 2 {
+		t.Errorf("older reply outcomes = %v, want both read", old.Outcomes)
 	}
 }
 

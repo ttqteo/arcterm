@@ -210,7 +210,7 @@ async function round2(h, ctx, rec) {
 
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     const mode = await text(h, "[data-council-mode]");
-    rec("round 2: the details icon names the mode, `Review`", mode === "Review", mode);
+    rec("round 2: the Ideas rail's details name the mode, `Review`", mode === "Review", mode);
 
     const chips = await seatChips(h);
     const skeptic = chips.find((c) => c.id === "skeptic");
@@ -470,16 +470,19 @@ const tabFacts = (h) =>
             icon: !!b.querySelector("svg"),
             count: count ? count.textContent.trim() : null,
             countShown: count ? count.getBoundingClientRect().width > 2 : null,
+            key: b.querySelector("[data-council-tab-key]")?.textContent.trim() ?? null,
+            shortcut: b.getAttribute("aria-keyshortcuts"),
             width: Math.round(b.getBoundingClientRect().width),
             height: Math.round(b.getBoundingClientRect().height),
         };
     })`);
 
 // the tabs are icons at every width: the word is each tab's title and aria-label, and the Discussion's number of ideas
-// shows beside its icon, its words in the aria-label
+// shows beside its icon, its words in the aria-label; each tab draws its key (r c m) after them, named in its title
 const iconTabs = (tabs, map) =>
     tabs.map((t) => t.word).join("|") === `Report|Discussion|${map}` &&
-    tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+    tabs.map((t) => t.key).join("") === "rcm" &&
+    tabs.every((t) => !t.wordShown && t.icon && t.title === `${t.word} (${t.key})` && t.shortcut === t.key) &&
     tabs[0].aria === "Report" &&
     tabs[2].aria === map &&
     tabs[1].countShown === true &&
@@ -527,23 +530,23 @@ async function header(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-header.png");
 
-    // the rail folded: the details go back to the header's details icon, its tooltip the mode and the cost line; unfolded,
-    // they return to the rail's foot
+    // the rail folded: the details fold away with it (the Report's header holds them), and the header row stays as it was;
+    // unfolded, they are back at the rail's foot
     await click(h, "[data-council-rail-fold]");
-    await until(h, `!document.querySelector("[data-council-rail]") && !!document.querySelector("[data-council-discussion] header [data-council-details]")`);
+    await until(h, `!document.querySelector("[data-council-rail]")`);
     const folded = await headerRow(h);
-    const tip = await attr(h, "[data-council-discussion] header [data-council-details]", "title");
     await h.shot("cdp-shots/council-discussion-header-folded.png");
     await click(h, "[data-council-rail-unfold]");
     const unfolded = await until(h, `!!document.querySelector("[data-council-rail] [data-council-rail-details]") && !document.querySelector("[data-council-discussion] header [data-council-details]")`);
     rec(
-        "header: with the Ideas rail folded the header holds a details icon whose tooltip reads the mode and the cost line, and unfolding the rail moves them back to its foot",
-        folded?.details === true &&
+        "header: with the Ideas rail folded the header row holds no details (no icon, no figures), and unfolding the rail brings them back to its foot",
+        folded?.details === null &&
+            !folded.cost &&
+            !folded.costShown &&
             folded.foot === null &&
             folded.lastIn &&
-            /^Review\n\d+:\d\d · \d+ repl(y|ies) · [\d.]+M tokens$/.test(tip ?? "") &&
             unfolded,
-        { folded, tip, unfolded }
+        { folded, unfolded }
     );
 
     // the actions menu: the round runs, so it holds Summarize, Pin and, past a separator, Stop council
@@ -737,7 +740,7 @@ async function brainstorm(h, ctx, rec) {
     await until(h, `document.querySelector("[data-council-mode]")?.textContent === "Brainstorm"`);
 
     const mode = await text(h, "[data-council-mode]");
-    rec("brainstorm: the details icon names the mode, `Brainstorm`", mode === "Brainstorm", mode);
+    rec("brainstorm: the Ideas rail's details name the mode, `Brainstorm`", mode === "Brainstorm", mode);
 
     const labels = await h.ev(`[...document.querySelectorAll("[data-council-idea]")].map((e) => e.getAttribute("data-item-label"))`);
     rec(
@@ -777,12 +780,11 @@ async function queued(h, ctx, rec) {
         channel: document.querySelectorAll("[data-council-channel], [data-council-item]").length,
         bar: document.querySelectorAll("[data-council-calls]").length,
         stop: document.querySelectorAll("[data-council-stop]").length,
-        mode: (document.querySelector("[data-council-mode]")?.textContent ?? "")${NORM},
     })`);
     await closeActions(h);
     rec(
         "queued: the chip reads `Queued` and the body is the one line `Queued`, with no cards, channel or Stop in the actions menu",
-        chip === "Queued" && line === "Queued" && body.cards === 0 && body.channel === 0 && body.bar === 0 && body.stop === 0 && body.mode === "Review",
+        chip === "Queued" && line === "Queued" && body.cards === 0 && body.channel === 0 && body.bar === 0 && body.stop === 0,
         { chip, line, body }
     );
     await h.shot("cdp-shots/council-discussion-queued.png");

@@ -11,6 +11,7 @@ import {
     forgetConfiguredChannel,
     hydrateRunConfigFromProfile,
     parallelismAtom,
+    pickRunShape,
     planPathAtom,
     planPreviewAtom,
     requestRouteOpen,
@@ -27,6 +28,7 @@ import {
     setRunShape,
     setStart,
     setWorkerRoute,
+    shapePickedAtom,
     startAtom,
     stepParallelism,
     workerRouteAtom,
@@ -36,6 +38,7 @@ const pin = (model: string): RoutePin => ({ runtime: "claude", model }) as Route
 
 beforeEach(() => {
     forgetConfiguredChannel();
+    globalStore.set(shapePickedAtom, false);
     resetRunConfig();
 });
 
@@ -51,7 +54,7 @@ describe("resetRunConfig", () => {
         expect(globalStore.get(runShapeAtom)).toBe("quick");
         expect(globalStore.get(runRouteAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
     });
 
     // carrying "orchestrator, 6 wide" onto the next channel would arm a dispatch the user
@@ -99,7 +102,7 @@ describe("stepParallelism", () => {
     // value for every click in the batch, so a fast double-click advanced one step. Measured over CDP
     // before the fix — twelve clicks moved 4 -> 5.
     it("accumulates every click in a batch", () => {
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        setParallelism(DEFAULT_PARALLELISM);
 
         stepParallelism(1);
         stepParallelism(1);
@@ -117,7 +120,21 @@ describe("stepParallelism", () => {
         for (let i = 0; i < 20; i++) {
             stepParallelism(-1);
         }
-        expect(globalStore.get(parallelismAtom)).toBe(1);
+        // below 1 is auto, and − at auto stays there rather than wrapping round
+        expect(globalStore.get(parallelismAtom)).toBeNull();
+    });
+
+    // the profile's Parallel workers "auto" (0) leaves the width to the lead; the launcher shows it as auto
+    it("starts at auto and steps up from it to the default width", () => {
+        expect(globalStore.get(parallelismAtom)).toBeNull();
+        stepParallelism(1);
+        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+    });
+
+    it("goes back to auto from a width of 1", () => {
+        setParallelism(1);
+        stepParallelism(-1);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
     });
 });
 
@@ -152,7 +169,7 @@ describe("resetRunConfigForChannel", () => {
         resetRunConfigForChannel("ch-2");
 
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
     });
 
     it("treats leaving a channel for a non-channel subject as a change", () => {
@@ -237,7 +254,7 @@ describe("endRunConfigDraft", () => {
         endRunConfigDraft(null);
 
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
         expect(globalStore.get(configTouchedAtom)).toBe(false);
     });
@@ -263,7 +280,7 @@ describe("hydrateRunConfigFromProfile", () => {
     it("leaves the launcher's defaults alone where the profile is silent", () => {
         hydrateRunConfigFromProfile({ playbook: [] } as JarvisProfile);
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
     });
 
@@ -299,7 +316,7 @@ describe("hydrateRunConfigFromProfile", () => {
         hydrateRunConfigFromProfile({ playbook: [], defaultmode: "quick" } as JarvisProfile);
 
         expect(globalStore.get(runShapeAtom)).toBe("quick");
-        expect(globalStore.get(parallelismAtom)).toBe(DEFAULT_PARALLELISM);
+        expect(globalStore.get(parallelismAtom)).toBeNull();
         expect(globalStore.get(workerRouteAtom)).toBeNull();
     });
 
@@ -341,6 +358,39 @@ describe("autonomous", () => {
         setAutonomous(true);
         resetRunConfig();
         expect(globalStore.get(autonomousAtom)).toBe(false);
+    });
+});
+
+// The New dialog's Quick run / Orchestrate rows: picking one is a door, so the project's profile still fills the run.
+describe("pickRunShape", () => {
+    it("leaves the draft untouched, so the profile's Approvals still arrives", () => {
+        pickRunShape("orchestrator");
+        expect(globalStore.get(configTouchedAtom)).toBe(false);
+
+        hydrateRunConfigFromProfile({ playbook: [], autonomous: true, parallelism: 5 } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(true);
+        expect(globalStore.get(parallelismAtom)).toBe(5);
+    });
+
+    it("keeps the picked row over the profile's default shape", () => {
+        pickRunShape("orchestrator");
+        hydrateRunConfigFromProfile({ playbook: [], defaultmode: "quick" } as JarvisProfile);
+        expect(globalStore.get(runShapeAtom)).toBe("orchestrator");
+    });
+
+    it("keeps the picked row across a project switch", () => {
+        pickRunShape("orchestrator");
+        resetRunConfigForChannel("chan-a", true);
+        resetRunConfigForChannel("chan-b", true);
+        hydrateRunConfigFromProfile(null);
+        expect(globalStore.get(runShapeAtom)).toBe("orchestrator");
+    });
+
+    it("ends with the draft, back to the profile's shape", () => {
+        pickRunShape("orchestrator");
+        endRunConfigDraft({ playbook: [] } as JarvisProfile);
+        expect(globalStore.get(shapePickedAtom)).toBe(false);
+        expect(globalStore.get(runShapeAtom)).toBe("quick");
     });
 });
 

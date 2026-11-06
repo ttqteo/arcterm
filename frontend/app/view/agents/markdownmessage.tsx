@@ -45,9 +45,10 @@ const MD_COMPONENTS: Components = {
             {children}
         </a>
     ),
-    // the copy button sits outside the scroller, so it stays on the corner while a wide table scrolls
+    // the copy button sits outside the scroller, so it stays on the corner while a wide table scrolls; the box
+    // shrinks to a short table instead of running the panel's width
     table: ({ node, children }) => (
-        <div className="group relative">
+        <div className="group relative w-fit max-w-full">
             <div className="agent-table-wrap">
                 <table>{children}</table>
             </div>

@@ -413,6 +413,13 @@ describe("answerers", () => {
         expect(ids(answerers(c, "", "", "anyone?"))).toEqual(["ux", "ram", "nu", "sk"]);
     });
 
+    it("is the seats on the path to a channel message it replies to, with no proposal, as wavesrv's replyTargets", () => {
+        expect(ids(answerers(c, "", "r3", "why?"))).toEqual(["ram", "sk"]);
+        expect(ids(answerers(c, "", "r1", "why?"))).toEqual(["sk"]);
+        // a mention still wins
+        expect(ids(answerers(c, "", "r3", "@UX why?"))).toEqual(["ux"]);
+    });
+
     it("is every expert for an @all or an @everyone, a whole word in any case, in a thread too", () => {
         const all = ["ux", "ram", "nu", "sk"];
         expect(ids(answerers(c, "", "", "@all what do you think"))).toEqual(all);

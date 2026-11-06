@@ -85,6 +85,14 @@ impl Rgba {
         }
     }
 
+    fn rect(&mut self, x: u32, y: u32, w: u32, h: u32, rgb: [u8; 3]) {
+        for yy in y..y + h {
+            for xx in x..x + w {
+                self.set(xx, yy, [rgb[0], rgb[1], rgb[2], 0xff]);
+            }
+        }
+    }
+
     fn fade(&mut self, f: f32) {
         for p in self.px.chunks_mut(4) {
             p[3] = (p[3] as f32 * f).round() as u8;
@@ -115,6 +123,57 @@ pub fn mac_icon(dim: bool, titled: bool) -> Rgba {
     let top = if titled { 2 } else { 4 };
     let mut out = Rgba::blank(36, 36);
     out.blit(&g, 0, top);
+    if dim {
+        out.fade(DIM);
+    }
+    out
+}
+
+/// The Christmas mark's three tones (canvas xmas-mark, board C4): the t's pine, the star's and the gold lights' gold,
+/// the red lights' red. The icon is colour, not a template, so it carries its own tones for each menu bar: the app
+/// bar's lit ones on a dark bar, and on a light bar the deep ones (xmas-pine, xmas-crimson and a deep gold), where the
+/// lit ones washed out.
+pub struct XmasTones {
+    pub pine: [u8; 3],
+    pub gold: [u8; 3],
+    pub red: [u8; 3],
+}
+
+pub const XMAS_ON_DARK: XmasTones = XmasTones { pine: [0x4f, 0x9a, 0x6c], gold: [0xd4, 0xa2, 0x6a], red: [0xd0, 0x28, 0x3c] };
+pub const XMAS_ON_LIGHT: XmasTones = XmasTones { pine: [0x2f, 0x6b, 0x4a], gold: [0x9c, 0x6b, 0x2b], red: [0xa0, 0x06, 0x1b] };
+
+/// Whether the chevron's block `i` (0 its top end, 4 its tip, 8 its bottom end) is a gold light: the lights go in
+/// pairs of red and gold out from the tip, red at both ends and at the tip (christmasmark.tsx LIGHTS).
+pub fn xmas_light_is_gold(i: usize) -> bool {
+    matches!(i.abs_diff(4), 1 | 2)
+}
+
+/// macOS under the Christmas decor: mac_icon's mark, as big and as high, in colour: the t in pine with a star on its
+/// stem and two baubles under its crossbar, the chevron a string of red and gold lights. The star is a plus as tall as
+/// the air over the stem allows: 7 px alone, 5 beside the title, whose mark sits 2 px higher.
+pub fn mac_xmas_icon(dim: bool, titled: bool, dark_bar: bool) -> Rgba {
+    let t = if dark_bar { &XMAS_ON_DARK } else { &XMAS_ON_LIGHT };
+    let top = if titled { 2 } else { 4 };
+    let mut out = Rgba::blank(36, 36);
+    for (n, &(cx, cy, cw, ch)) in CELLS.iter().enumerate() {
+        // CELLS holds the t's four runs, then the chevron's nine blocks from its top end
+        let rgb = if n < 4 {
+            t.pine
+        } else if xmas_light_is_gold(n - 4) {
+            t.gold
+        } else {
+            t.red
+        };
+        out.rect(cx * 3, top + cy * 3, cw * 3, ch * 3, rgb);
+    }
+    let stem = top + 3;
+    let arm = (stem - 3) / 2;
+    out.rect(3, stem - 3 - arm, 3, 3, t.gold);
+    out.rect(4, stem - 3 - 2 * arm, 1, 3 + 2 * arm, t.gold);
+    out.rect(3 - arm, stem - 2 - arm, 3 + 2 * arm, 1, t.gold);
+    // the baubles hang under the crossbar, either side of the stem
+    out.rect(0, top + 12, 3, 3, t.red);
+    out.rect(10, top + 12, 3, 3, t.gold);
     if dim {
         out.fade(DIM);
     }
@@ -356,6 +415,57 @@ mod tests {
         assert_eq!(alpha(&m, 35, 14), 255); // the chevron's point, cell (11, 4)
         assert_eq!(alpha(&m, 21, 28), 255); // the chevron's foot, cell (7, 8)
         assert_eq!(alpha(&m, 2, 5), 0);
+    }
+
+    fn rgb(img: &Rgba, x: u32, y: u32) -> [u8; 3] {
+        let i = ((y * img.width + x) * 4) as usize;
+        [img.px[i], img.px[i + 1], img.px[i + 2]]
+    }
+
+    #[test]
+    fn xmas_lights_go_in_pairs_out_from_a_red_tip() {
+        let gold: Vec<bool> = (0..9).map(xmas_light_is_gold).collect();
+        assert_eq!(gold, [false, false, true, true, false, true, true, false, false]);
+    }
+
+    #[test]
+    fn mac_xmas_icon_is_the_mark_in_pine_red_and_gold() {
+        let m = mac_xmas_icon(false, false, true);
+        assert_eq!((m.width, m.height), (36, 36));
+        let t = &XMAS_ON_DARK;
+        assert_eq!(rgb(&m, 3, 7), t.pine); // the t's stem, cell (1, 1)
+        assert_eq!(rgb(&m, 21, 4), t.red); // the chevron's top end, cell (7, 0)
+        assert_eq!(rgb(&m, 27, 10), t.gold); // its third block, cell (9, 2)
+        assert_eq!(rgb(&m, 35, 16), t.red); // its tip, cell (11, 4)
+        assert_eq!(rgb(&m, 4, 3), t.gold); // the star's middle, over the stem
+        assert_eq!(rgb(&m, 0, 16), t.red); // a bauble under the crossbar
+        assert_eq!(rgb(&m, 10, 16), t.gold);
+        // the star reaches the icon's top edge and stays on the stem's column
+        assert_eq!(alpha(&m, 4, 0), 255);
+        assert_eq!(alpha(&m, 3, 0), 0);
+        // no black: it is no template, so nothing in it is meant to be tinted
+        assert!(m.px.chunks(4).all(|p| p[3] == 0 || (p[0], p[1], p[2]) != (0, 0, 0)));
+        assert!(mac_xmas_icon(true, false, true).px.chunks(4).all(|p| p[3] <= 115)); // dimmed to 45%
+    }
+
+    #[test]
+    fn mac_xmas_icon_takes_the_deep_tones_on_a_light_bar() {
+        let m = mac_xmas_icon(false, false, false);
+        let t = &XMAS_ON_LIGHT;
+        assert_eq!(rgb(&m, 3, 7), t.pine);
+        assert_eq!(rgb(&m, 21, 4), t.red);
+        assert_eq!(rgb(&m, 27, 10), t.gold);
+    }
+
+    #[test]
+    fn beside_the_title_the_xmas_mark_sits_2_px_higher_with_a_smaller_star() {
+        let m = mac_xmas_icon(false, true, true);
+        assert_eq!(rgb(&m, 3, 5), XMAS_ON_DARK.pine); // the t's stem, cell (1, 1)
+        assert_eq!(rgb(&m, 35, 14), XMAS_ON_DARK.red); // the chevron's tip
+        assert!((0..36).all(|x| (29..36).all(|y| alpha(&m, x, y) == 0)));
+        // a 5 px star: its arms reach x 2..7, not the 7 px star's 1..8
+        assert_eq!(alpha(&m, 2, 2), 255);
+        assert_eq!(alpha(&m, 1, 2), 0);
     }
 
     #[test]

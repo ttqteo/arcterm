@@ -9,9 +9,10 @@
 import type { Dir } from "./officeboss";
 import { newFloor, stepSlot, type Placements, type RoomPlace } from "./officelayout";
 
-/** What is up over the office: nothing (the boss walks), the desk's dialog box, the desk's full card, or a room the boss
- *  carries (g), which takes every key until it is dropped or put back. */
-export type OfficeLayer = "walk" | "dialog" | "card" | "carry";
+/** What is up over the office: nothing (the boss walks), the desk's dialog box, the desk's full card, a room the boss
+ *  carries (g), which takes every key until it is dropped or put back, or the lobby tree's close-up card (A at the
+ *  tree), which takes every key until B closes it. */
+export type OfficeLayer = "walk" | "dialog" | "card" | "carry" | "tree";
 
 export type OfficeKeyAction =
     | { do: "walk"; dir: Dir }
@@ -30,6 +31,8 @@ export type OfficeKeyAction =
     | { do: "slot"; dir: Dir }
     | { do: "drop" }
     | { do: "cancel" }
+    | { do: "treeMove"; dir: Dir }
+    | { do: "treeLift" }
     | { do: "none" }
     | { do: "pass" };
 
@@ -49,8 +52,9 @@ export function officeKeyName(key: string): string {
 
 /** Pure: what a key does in the office. A chord (Cmd, Ctrl or Alt held) is never the office's; then a carried room
  *  takes every key (arrows to a neighbouring slot, PageUp / PageDown to another floor, ↵ drops, Esc and g put it back,
- *  nothing else acts); then the open menu takes every key (one it names shuts it first: isMenuShortcut); then the layer
- *  decides. "pass" leaves the key to the Cockpit's own (1–9, t, r, b, Space, and Enter on the full card). */
+ *  nothing else acts); so does the tree's close-up card (arrows move its cursor, ↵ lifts or puts down, Esc goes back);
+ *  then the open menu takes every key (one it names shuts it first: isMenuShortcut); then the layer decides. "pass"
+ *  leaves the key to the Cockpit's own (1–9, t, r, b, Space, and Enter on the full card). */
 export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mods: KeyMods = {}): OfficeKeyAction {
     if (mods.meta || mods.ctrl || mods.alt) {
         return { do: "pass" };
@@ -67,6 +71,15 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
             return { do: "drop" };
         }
         return key === "Escape" || key === "g" ? { do: "cancel" } : { do: "none" };
+    }
+    if (layer === "tree") {
+        if (dir) {
+            return { do: "treeMove", dir };
+        }
+        if (key === "Enter") {
+            return { do: "treeLift" };
+        }
+        return key === "Escape" ? { do: "back" } : { do: "none" };
     }
     if (menuOpen) {
         if (dir === "up" || dir === "down") {
@@ -125,8 +138,8 @@ export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mo
     return key === "Enter" && layer === "walk" ? { do: "talk" } : { do: "pass" };
 }
 
-/** Pure: one step back, as B does: the full card goes back to the dialog box, the dialog box to walking, and a carried
- *  room is put down and the boss walks on. */
+/** Pure: one step back, as B does: the full card goes back to the dialog box, the dialog box to walking, a carried
+ *  room is put down and the boss walks on, and the tree's close-up card closes back to the hall. */
 export function backFrom(layer: OfficeLayer): OfficeLayer {
     return layer === "card" ? "dialog" : "walk";
 }

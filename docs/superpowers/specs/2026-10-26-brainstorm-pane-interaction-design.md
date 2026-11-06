@@ -44,8 +44,9 @@ While the judge runs, the pane shows the question view instead of the bare worki
 
 - the question's part link and number, its text and its `why`, as on any open question;
 - a judge status line ("The judge is weighing 9 approaches", the `working` text) where the options will go;
-- the approach list being weighed, headed "What the judge is weighing · N", unranked, in the agent's order: each row
-  shows the approach's name and description;
+- the approach list being weighed, headed "Answer now, or wait for the judge" over "The agent's N approaches,
+  unranked…", in the agent's order: each row shows the approach's name and description and has a tick box, whatever
+  the agent's `multi`, since whether the options add up is the judge's call (amended 2026-11-06);
 - the answer box, open (not locked), with the placeholder "Or answer now in your own words…".
 
 The Design button behaves as on any open question.
@@ -148,7 +149,7 @@ These settle what the builder check left open (Agent's calls, approved in the Sp
 A new scenario in `scripts/cdp/scenarios-brainstorm-judge.mjs`, `brainstorm-judge-wait`, writes a file in the judge's
 wait, with a `reading` judge record on the tab, and checks each of these with a screenshot:
 
-- the wait: the question text and `why`, the status line with the `working` text, the "What the judge is weighing · N"
+- the wait: the question text and `why`, the status line with the `working` text, the "Answer now, or wait for the judge"
   heading, one row per approach in the agent's order with its facts count, the box open with "Or answer now in your
   own words…", and no Guess for me;
 - Design over the wait, and "Back to the question" returning to it;

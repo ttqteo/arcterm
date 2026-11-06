@@ -14,6 +14,8 @@ type RunCommands interface {
 	CreateRunCommand(ctx context.Context, data CommandCreateRunData) (*CommandCreateRunRtnData, error)                // create + start a goal Run (spawns phase 1's worker)
 	AdvanceRunCommand(ctx context.Context, data CommandAdvanceRunData) error                                          // complete a phase / approve or send back a gate (spawns the next worker)
 	CancelRunCommand(ctx context.Context, data CommandCancelRunData) error                                            // cancel a Run
+	PauseRunCommand(ctx context.Context, data CommandPauseRunData) error                                              // pause a top-level run and everything under it, freeing the RAM it holds; keeps every session
+	ResumeRunCommand(ctx context.Context, data CommandPauseRunData) error                                             // resume a paused top-level run: reopen each agent in its own session
 	StopRunWorkerCommand(ctx context.Context, data CommandStopRunWorkerData) error                                    // stop one surviving worker of a cancelled run
 	SealRunEvidenceCommand(ctx context.Context, data CommandSealRunEvidenceData) error                                // derive+seal a done run's evidence if absent (idempotent backfill)
 	LandRunCommand(ctx context.Context, data CommandLandRunData) (*waveobj.RunLand, error)                            // merge a done branch-landed run's wave/<runId> back into its base, or hold it with the reason
@@ -88,6 +90,12 @@ type CommandAdvanceRunData struct {
 }
 
 type CommandCancelRunData struct {
+	ChannelId string `json:"channelid"`
+	RunId     string `json:"runid"`
+}
+
+// CommandPauseRunData names the top-level run PauseRunCommand pauses and ResumeRunCommand resumes.
+type CommandPauseRunData struct {
 	ChannelId string `json:"channelid"`
 	RunId     string `json:"runid"`
 }

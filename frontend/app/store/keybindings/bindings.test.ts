@@ -1,11 +1,20 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import type { GalleryCanvas } from "@/app/view/agents/canvasgallery";
-import { canvasGalleryAtom, canvasListAtom, cleanupAtom, startCleanup } from "@/app/view/agents/canvasgallerystore";
+import {
+    canvasGalleryAtom,
+    canvasListAtom,
+    cleanupAtom,
+    linkPickerAtom,
+    openLinkPicker,
+    scanAtom,
+    startCleanup,
+} from "@/app/view/agents/canvasgallerystore";
 import type { LauncherKind } from "@/app/view/agents/launcher";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,14 +68,17 @@ import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
-import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
+import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
+import { initiativeSheetAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
 import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
-import { noteChunkAtom } from "@/app/view/jarvis/jarvisstore";
+import { briefCursorInitiativeAtom } from "@/app/view/jarvis/jarvisstore";
+import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
+import { togglePin } from "@/app/view/jarvis/effortstore";
 import { enterReview, exitReview, reviewModeAtom, reviewedAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
@@ -81,6 +93,7 @@ import {
     buildFilesBindings,
     buildFinalShotsBindings,
     buildGlobalBindings,
+    buildInitiativeSheetBindings,
     buildJarvisBindings,
     buildJarvisTourBindings,
     buildListNavBindings,
@@ -96,6 +109,10 @@ import type { KeyContext } from "./types";
 vi.mock("@/app/view/jarvis/openref", async (orig) => ({
     ...(await orig<typeof import("@/app/view/jarvis/openref")>()),
     peekTarget: vi.fn(async () => ({ ok: true })),
+}));
+vi.mock("@/app/view/jarvis/effortstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/jarvis/effortstore")>()),
+    togglePin: vi.fn(async () => {}),
 }));
 
 vi.mock("@/app/view/agents/floatstore", async (orig) => ({
@@ -2149,6 +2166,7 @@ describe("Agent → Canvas gallery keys", () => {
         modts,
         thumbts: 0,
         bytes: 1,
+        createdts: modts,
     });
     const DAY = 24 * 60 * 60 * 1000;
     const GRID_KEYS = [
@@ -2174,7 +2192,13 @@ describe("Agent → Canvas gallery keys", () => {
         "canvases:tick",
         "canvases:cleanup-cancel",
     ];
+    const SCAN_KEYS = ["canvases:scan-cancel"];
     const live = (ids: string[]) => ids.map((id) => find(id).when!(agentCtx));
+    // the Escape bindings of the Agent surface (and the global ones) that claim the key right now
+    const escapes = () =>
+        [...buildGlobalBindings(stubModel()), ...buildAgentBindings(stubModel())]
+            .filter((b) => b.keys === "Escape" && b.when?.(agentCtx) === true)
+            .map((b) => b.id);
 
     beforeEach(() => {
         globalStore.set(centerModeAtom, "canvases");
@@ -2220,6 +2244,48 @@ describe("Agent → Canvas gallery keys", () => {
         expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
         gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
         expect(live(CLEANUP_KEYS)).toEqual(CLEANUP_KEYS.map(() => false));
+    });
+
+    it("gives the version scan's review its Escape and takes every other view's keys away", () => {
+        gallery({ view: "scan", dir: null });
+        expect(live(SCAN_KEYS)).toEqual([true]);
+        expect(live([...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS])).toEqual(
+            [...GRID_KEYS, ...VIEWER_KEYS, ...CLEANUP_KEYS].map(() => false)
+        );
+        for (const view of ["grid", "viewer", "cleanup"] as const) {
+            gallery({ view, dir: "/p/.superpowers/design/alpha" });
+            expect(live(SCAN_KEYS)).toEqual([false]);
+        }
+        // not while a text field has focus: the Escape there is the field's own
+        gallery({ view: "scan", dir: null });
+        expect(find("canvases:scan-cancel").when!(typing)).toBe(false);
+    });
+
+    it("lets exactly one Escape claim the key in the viewer and in the scan's review, never the one that leaves the centre", () => {
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        expect(escapes()).toEqual(["canvases:back"]);
+        gallery({ view: "scan", dir: null });
+        expect(escapes()).toEqual(["canvases:scan-cancel"]);
+        gallery({ view: "grid", dir: null });
+        expect(escapes()).toEqual(["agent:leave-center"]);
+    });
+
+    it("cancels the scan's review on Escape: back to the grid, nothing ticked", () => {
+        gallery({ view: "scan", dir: null, cursor: 2 });
+        globalStore.set(scanAtom, { pairs: [], ticked: new Set(["/p/.superpowers/design/alpha"]), linking: false });
+        find("canvases:scan-cancel").run(agentCtx);
+        expect(galleryNow()).toMatchObject({ view: "grid", dir: null, cursor: 0 });
+        expect(globalStore.get(scanAtom).ticked).toEqual(new Set());
+    });
+
+    it("closes the link picker on the first Escape in a canvas, and leaves the canvas on the second", () => {
+        gallery({ view: "viewer", dir: "/p/.superpowers/design/alpha", cursor: 0 });
+        openLinkPicker();
+        find("canvases:back").run(agentCtx);
+        expect(globalStore.get(linkPickerAtom).open).toBe(false);
+        expect(galleryNow()).toMatchObject({ view: "viewer", dir: "/p/.superpowers/design/alpha" });
+        find("canvases:back").run(agentCtx);
+        expect(galleryNow()).toMatchObject({ view: "grid", dir: null });
     });
 
     describe("in clean up", () => {
@@ -2636,7 +2702,6 @@ describe("review mode on the Jarvis surface", () => {
     afterEach(() => {
         exitReview();
         globalStore.set(listNavAtom, null);
-        globalStore.set(noteChunkAtom, null);
     });
 
     it("hands j, k and Enter to the list while no review is on", () => {
@@ -2667,14 +2732,6 @@ describe("review mode on the Jarvis surface", () => {
         expect(claim("Escape", { ...nav, surface: "usage" })).toBe("surface:back-home");
         expect(claim("j", { ...nav, editable: true })).toBeNull();
         expect(claim("Enter", { ...nav, editable: true })).toBeNull();
-    });
-
-    it("lets the Chunk sidebar have Escape first, then the review", () => {
-        enterReview(["a", "b"], 100);
-        globalStore.set(noteChunkAtom, "initiatives:effort:e1/chunk:x");
-        expect(claim("Escape")).toBe("jarvis:close-notes");
-        globalStore.set(noteChunkAtom, null);
-        expect(claim("Escape")).toBe("jarvis:review-exit");
     });
 
     it("steps with the arrows and j/k around the pass, and Enter marks the one it is on and moves on", () => {
@@ -3119,5 +3176,189 @@ describe("council chat keys", () => {
             const keys = active.map((b) => b.keys);
             expect(new Set(keys).size).toBe(keys.length);
         }
+    });
+});
+
+// the initiative in the Brief's sheet (spec decisions 7 and 9): its keys, and what yields to them
+describe("the initiative sheet's keys", () => {
+    const nav: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
+    const key = (k: string, alt = false) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: alt, meta: false, alt }) as any;
+    const model = stubModel("a1");
+    const step = vi.fn();
+    const open = vi.fn();
+    const back = vi.fn();
+    const setStatus = vi.fn();
+    const statusMenu = vi.fn();
+    // the plan view's handlers, and the chunk view's; the global and list keys are registered first, as the root does
+    const planKeys = buildInitiativeSheetBindings({ step, open });
+    const chunkKeys = buildInitiativeSheetBindings({ step, back, setStatus, statusMenu });
+    const all = (sheet = planKeys) => [
+        ...buildGlobalBindings(model),
+        ...buildListNavBindings(model),
+        ...buildJarvisBindings(model),
+        ...sheet,
+    ];
+    const claim = (k: string, sheet = planKeys, alt = false) => {
+        const r = matchBinding(key(k, alt), nav, all(sheet));
+        return r.kind === "run" ? r.binding : null;
+    };
+    // the sheet is a ModalShell (variant sheet): registered, it holds Escape away from back-home
+    let unregister = () => {};
+    const openSheet = (chunk: string | null = null) => {
+        unregister();
+        unregister = registerModal("brief-sheet", "sheet");
+        globalStore.set(activeSubjectAtom, { kind: "effort", id: "e1" });
+        globalStore.set(briefSheetOpenAtom, true);
+        globalStore.set(initiativeSheetAtom, { view: "plan", chunk });
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+        globalStore.set(diffScopeAtom, null);
+    });
+    afterEach(() => {
+        unregister();
+        unregister = () => {};
+        globalStore.set(listNavAtom, null);
+        globalStore.set(briefSheetOpenAtom, false);
+        globalStore.set(activeSubjectAtom, null);
+        globalStore.set(initiativeSheetAtom, { view: "plan", chunk: null });
+        globalStore.set(sheetChunkMoveAtom, null);
+        globalStore.set(chunkMoveAtom, null);
+    });
+
+    it("leaves j, k and Enter to the page while no initiative is in the sheet", () => {
+        expect(claim("j")?.id).toBe("list:next-j");
+        expect(claim("Enter")?.id).toBe("list:activate");
+        // a run in the sheet keeps the page's j/k: they step the runs (briefsurface.tsx runNav)
+        globalStore.set(activeSubjectAtom, { kind: "channel", id: "ch1" });
+        globalStore.set(briefSheetOpenAtom, true);
+        expect(claim("j")?.id).toBe("list:next-j");
+    });
+
+    it("steps the plan's chunk cursor with j/k and opens the chunk under it with Enter", () => {
+        openSheet();
+        claim("j")!.run(nav);
+        expect(step).toHaveBeenLastCalledWith(1);
+        claim("k")!.run(nav);
+        expect(step).toHaveBeenLastCalledWith(-1);
+        claim("Enter")!.run(nav);
+        expect(open).toHaveBeenCalled();
+        // the plan view has no status keys: s and the digits pass
+        expect(claim("s")).toBeNull();
+        expect(claim("1")).toBeNull();
+    });
+
+    it("gives a chunk view s, 1–6 in status order and Escape back", () => {
+        openSheet("Spec");
+        claim("s", chunkKeys)!.run(nav);
+        expect(statusMenu).toHaveBeenCalled();
+        const order = ["1", "2", "3", "4", "5", "6"].map((d) => {
+            claim(d, chunkKeys)!.run(nav);
+            return setStatus.mock.lastCall?.[0];
+        });
+        expect(order).toEqual(["pending", "active", "blocked", "deferred", "skipped", "done"]);
+        claim("Escape", chunkKeys)!.run(nav);
+        expect(back).toHaveBeenCalled();
+    });
+
+    it("lets a key whose handler the view left out pass", () => {
+        openSheet("Spec");
+        // the plan view's set, with a chunk open (Task 7 swaps the body): Escape matches, runs nothing and passes
+        expect(claim("Escape", planKeys)?.run(nav)).toBe(false);
+        expect(back).not.toHaveBeenCalled();
+    });
+
+    it("moves the sheet's chunk with Alt+arrows while the sheet is open, the page's otherwise", () => {
+        const sheetMove = vi.fn();
+        const pageMove = vi.fn();
+        globalStore.set(sheetChunkMoveAtom, () => sheetMove);
+        globalStore.set(chunkMoveAtom, () => pageMove);
+        claim("ArrowDown", planKeys, true)!.run(nav);
+        expect(pageMove).toHaveBeenCalledWith("down");
+        openSheet();
+        claim("ArrowUp", planKeys, true)!.run(nav);
+        expect(sheetMove).toHaveBeenCalledWith("up");
+        // the sheet open with no chunk under its cursor: the key passes, the page's chunk stays put
+        globalStore.set(sheetChunkMoveAtom, null);
+        expect(claim("ArrowUp", planKeys, true)).toBeNull();
+        expect(pageMove).toHaveBeenCalledTimes(1);
+    });
+
+    it("stands down in a field and on every other surface", () => {
+        openSheet("Spec");
+        for (const b of chunkKeys) {
+            expect(b.when!({ ...nav, editable: true })).toBe(false);
+            expect(b.when!({ ...nav, surface: "cockpit" })).toBe(false);
+        }
+    });
+});
+
+// the Brief's own initiative keys (spec 2026-11-05-jarvis-revamp-design.md, Keyboard): p pins, w works on, and the
+// council sheet holds the page's j/k as the initiative sheet does
+describe("the Brief's initiative keys", () => {
+    const nav: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
+    const key = (k: string) =>
+        ({ key: k, code: "", control: false, shift: false, cmd: false, option: false, meta: false, alt: false }) as any;
+    const model = stubModel("a1");
+    const all = () => [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings(model)];
+    const claim = (k: string, on: KeyContext = nav) => {
+        const r = matchBinding(key(k), on, all());
+        return r.kind === "run" ? r.binding : null;
+    };
+    const workOn = vi.fn();
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+        globalStore.set(diffScopeAtom, null);
+    });
+    afterEach(() => {
+        exitReview();
+        globalStore.set(listNavAtom, null);
+        globalStore.set(briefCursorInitiativeAtom, null);
+        globalStore.set(councilSheetAtom, null);
+        globalStore.set(briefSheetOpenAtom, false);
+        globalStore.set(activeSubjectAtom, null);
+    });
+
+    it("pins the initiative under the page cursor with p", () => {
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        claim("p")!.run(nav);
+        expect(togglePin).toHaveBeenCalledWith("effort:e1");
+    });
+
+    it("pins the initiative open in the sheet with p, whatever the page cursor is on", () => {
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        globalStore.set(activeSubjectAtom, { kind: "effort", id: "e2" });
+        globalStore.set(briefSheetOpenAtom, true);
+        claim("p")!.run(nav);
+        expect(togglePin).toHaveBeenCalledWith("effort:e2");
+    });
+
+    it("lets p pass with no initiative under the cursor, in a review pass, in a field and off the Brief", () => {
+        expect(claim("p")).toBeNull();
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        expect(claim("p", { ...nav, editable: true })).toBeNull();
+        expect(claim("p", { ...nav, surface: "cockpit" })?.id).not.toBe("jarvis:pin-initiative");
+        enterReview(["effort:e1"], 100);
+        expect(claim("p")).toBeNull();
+    });
+
+    it("works on the initiative under the page cursor with w, though a list row draws no button", () => {
+        globalStore.set(briefCursorInitiativeAtom, { oref: "effort:e1", workOn });
+        claim("w")!.run(nav);
+        expect(workOn).toHaveBeenCalled();
+    });
+
+    it("holds the page's j/k while a council's report is in the sheet", () => {
+        expect(claim("j")?.id).toBe("list:next-j");
+        globalStore.set(councilSheetAtom, "c1");
+        globalStore.set(briefSheetOpenAtom, true);
+        expect(claim("j")).toBeNull();
+        expect(claim("k")).toBeNull();
+        expect(claim("Enter")).toBeNull();
     });
 });

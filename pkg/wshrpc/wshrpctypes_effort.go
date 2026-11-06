@@ -17,6 +17,30 @@ type EffortCommands interface {
 	EffortListCommand(ctx context.Context, data CommandEffortListData) (*CommandEffortListRtnData, error)
 	EffortGetCommand(ctx context.Context, data CommandEffortGetData) (*CommandEffortGetRtnData, error)
 	EffortDeleteCommand(ctx context.Context, data CommandEffortDeleteData) error
+	// EffortPinCommand pins or unpins an effort to the Brief's cards. A pin is a view preference: it writes
+	// no event or note and keeps UpdatedTs.
+	EffortPinCommand(ctx context.Context, data CommandEffortPinData) (*CommandEffortPinRtnData, error)
+}
+
+// CommandEffortPinData pins (Pin true) or unpins an effort. Past the cap (jarvis.MaxPinnedEfforts), a pin
+// without ReplaceOldest changes nothing and answers CapReached with the oldest pin; with ReplaceOldest it
+// unpins that one and pins this one in one call.
+type CommandEffortPinData struct {
+	EffortOID     string `json:"effortoid"`
+	Pin           bool   `json:"pin"`
+	ReplaceOldest bool   `json:"replaceoldest,omitempty"`
+}
+
+type CommandEffortPinRtnData struct {
+	Pinned     bool          `json:"pinned"`               // the effort's pin state after the call
+	CapReached bool          `json:"capreached,omitempty"` // the pin was refused: the cap is full
+	Oldest     *EffortPinRef `json:"oldest,omitempty"`     // the oldest pin, when CapReached
+}
+
+// EffortPinRef names a pinned effort, for the cap-reached answer.
+type EffortPinRef struct {
+	OID   string `json:"oid"`
+	Title string `json:"title"`
 }
 
 type CommandEffortCreateData struct {
@@ -110,6 +134,7 @@ type EffortSummary struct {
 	Total       int                  `json:"total"`
 	ActiveChunk string               `json:"activechunk,omitempty"` // first chunk with status active, else first non-done label
 	UpdatedTs   int64                `json:"updatedts"`
+	PinnedTs    int64                `json:"pinnedts,omitempty"` // when it was pinned to the Brief's cards; 0 = not pinned
 	LastNote    *EffortLastNote      `json:"lastnote,omitempty"` // the newest note on the effort or any chunk
 }
 
