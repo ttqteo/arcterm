@@ -502,6 +502,57 @@ func TestPauseDagCancelsARunningSetupAtOnce(t *testing.T) {
 	}
 }
 
+// a Setup waiting for a heavy-job slot holds the dag lock with no bound on the wait: a cancel cuts it off at once, as
+// a pause does, instead of waiting behind it
+func TestCancelCutsOffARunningSetupAtOnce(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setPlanCommands(t, "", setupCmd)
+	var spawned []string
+	stubSpawn(t, &spawned)
+	stubSuspend(t, nil)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	stubPlanCommand(t, func(ctx context.Context, _, command string) error {
+		if command != setupCmd {
+			return nil
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return nil
+		}
+	})
+	ticked := make(chan error, 1)
+	go func() { ticked <- Schedule(f.ctx, f.dagID) }()
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Setup never started")
+	}
+	cancelled := make(chan error, 1)
+	go func() { cancelled <- Cancel(f.ctx, f.dagID) }()
+	select {
+	case err := <-cancelled:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancel waited for Setup instead of cutting it off")
+	}
+	if err := <-ticked; err != nil {
+		t.Fatal(err)
+	}
+	if g := f.dag(t); g.Status != DagStatus_Cancelled {
+		t.Fatalf("dag status %q, want cancelled", g.Status)
+	}
+	if len(spawned) != 0 {
+		t.Fatalf("a worker was spawned after its Setup was cut off: %d", len(spawned))
+	}
+}
+
 // the final stage's own Setup runs under the dag lock too (advanceFinal): cut off by a pause it fails nothing
 func TestPausedDagFinalTreeSetupIsCutOffNotFailed(t *testing.T) {
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})

@@ -30,8 +30,8 @@ const DagStatus_Paused = "paused"
 // causes already finds the run and its dag paused, and the guards that read them (jarvis.RunPaused, the dag's
 // PausedTs) leave it alone.
 
-// errSetupPaused is the cause a pause cancels a Setup with (context.Cause).
-var errSetupPaused = errors.New("the dag was paused")
+// errSetupPaused is the cause a pause or a cancel cuts a Setup off with (context.Cause).
+var errSetupPaused = errors.New("the dag was paused or cancelled")
 
 // dagSetups holds the cancel of every plan Setup (and base Check) running for a dag, as finalRuns holds the final
 // commands': Setup runs under the dag lock for up to SetupTimeout, which a pause would otherwise wait out. pausing

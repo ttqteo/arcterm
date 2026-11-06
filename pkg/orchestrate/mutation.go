@@ -624,6 +624,10 @@ func cancelDag(ctx context.Context, dagID string, runEnded bool) (bool, error) {
 	// the lock can be held for minutes (Setup) and the wait spends the caller's rpc budget; a cancel must still
 	// land after its caller stops waiting, or the run keeps going
 	ctx = context.WithoutCancel(ctx)
+	// a Setup holds that lock while it waits for a heavy-job slot, with no bound on the wait (its timeout starts once
+	// the slot is granted): cut it off, as a pause does. The cut task stays pending, and the dag is cancelled under it.
+	endStopping := stopDagSetup(dagID)
+	defer endStopping()
 	var c *cancelledDag
 	if err := withDagMutation(dagID, func() error {
 		var err error
