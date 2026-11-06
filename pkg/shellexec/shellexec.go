@@ -20,6 +20,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
+	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/util/pamparse"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -37,6 +38,8 @@ type CommandOptsType struct {
 	SwapToken   *shellutil.TokenSwapEntry `json:"swapToken,omitempty"`
 	ForceJwt    bool                      `json:"forcejwt,omitempty"`
 	BlockId     string                    `json:"-"` // registers the shell's job as owned by this block
+	// LowPriority runs the process and every descendant below normal CPU priority (jobobject.LowerPriority)
+	LowPriority bool `json:"-"`
 }
 
 type ShellProc struct {
@@ -250,6 +253,12 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 		return nil, err
 	}
 	cmdWrap := MakeCmdWrap(ecmd, cmdPty, isShell, cmdOpts.BlockId)
+	if cmdOpts.LowPriority {
+		// a run agent: it and the builds and typechecks it starts yield the CPU to what the person is doing
+		if err := jobobject.LowerPriority(cmdWrap.jobHandle, ecmd.Process); err != nil {
+			blocklogger.Infof(logCtx, "lowering the priority of pid %d: %v\n", ecmd.Process.Pid, err)
+		}
+	}
 	return &ShellProc{Cmd: cmdWrap, ConnName: connName, CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 

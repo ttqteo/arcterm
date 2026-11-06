@@ -238,7 +238,9 @@
           "type": "number"
         },
         "jobs:slots": {
-          "type": "integer"
+          "type": "integer",
+          "maximum": 4,
+          "minimum": 1
         },
         "jobs:mode": {
           "type": "string"

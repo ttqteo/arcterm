@@ -178,8 +178,20 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
         } catch {
             return undefined;
         }
+        // a turn cancelled while the command waits (or runs) ends wsh jobslot: it leaves the queue, or frees the
+        // slot, instead of waiting for a verdict nobody uses. ctx.signal is the turn's AbortSignal (pi 0.73)
+        const signal: AbortSignal | undefined = ctx?.signal;
+        const onAbort = (): void => {
+            child.kill();
+        };
+        signal?.addEventListener?.("abort", onAbort, { once: true });
+        child.once("close", () => signal?.removeEventListener?.("abort", onAbort));
         const refusal = await awaitVerdict(child, ctx);
         showQueue(ctx, undefined);
+        if (signal?.aborted) {
+            child.kill();
+            return { block: true, reason: "The turn was cancelled while the command waited for a heavy-job slot." };
+        }
         // a call with no id has no result to release the slot at: the queue only orders its start
         if (refusal !== null || toolCallId === "") {
             child.kill();

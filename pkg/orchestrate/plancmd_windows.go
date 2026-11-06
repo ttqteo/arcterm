@@ -8,6 +8,7 @@ package orchestrate
 import (
 	"context"
 	"errors"
+	"log"
 	"os/exec"
 	"sync/atomic"
 
@@ -56,6 +57,10 @@ func runShellCmd(c *exec.Cmd, owner jobobject.Owner) error {
 		if owner.Kind != "" {
 			jobobject.Register(j, c.Process.Pid, owner)
 		}
+	}
+	// a Setup, Verify or Final is a build or a test suite: it yields the CPU to what the person is doing
+	if perr := jobobject.LowerPriority(uintptr(job.Load()), c.Process); perr != nil {
+		log.Printf("lowering the priority of plan command pid %d: %v", c.Process.Pid, perr)
 	}
 	err := c.Wait()
 	if j := job.Load(); j != 0 {

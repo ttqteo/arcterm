@@ -19,6 +19,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
   shown by the `terminal-status-line` scenario; this branch needs a Mac, which no run here has (`agenttree.tsx`
   terminal rows, `pkg/resmon`).
 
+- [ ] (arcterm) **A run's agents run below normal priority.** After the next build, start an engine run; while a
+  worker types, Task Manager → Details (add the Base priority column) shows its `claude.exe`/`node.exe`, the `bash.exe`
+  of its commands and a `tsc`/`go` they start as Below normal, and your own agents and arcterm itself as Normal; the
+  same for the engine's Verify/Final `bash.exe`. On a Mac, `ps -o pid,nice,comm` shows them at nice 10 (that branch
+  compiled under `GOOS=darwin` vet only, never ran). `jobobject.LowerPriority`, block meta `cmd:lowpriority`.
+- [ ] (arcterm) **Cancelling a pi turn takes its command out of the job queue.** With `jobs:mode` `slots` and
+  `jobs:slots` 1, have one agent run a typecheck, then have a pi agent run another: pi's footer shows it queued; press
+  Escape in pi → the Jobs popover drops pi's entry at once, and nothing holds a slot after the first one ends.
+  `pi/extensions/waveterm-tools.ts` (ctx.signal, read from pi 0.73.1's types, never run live).
 - [ ] (arcterm) **The transcript's ↓ button scrolls smoothly.** In a sleeping or ended agent's transcript, scroll up
   a few screens and click the round ↓ at the bottom: the feed glides down to the last line (instant with Reduce motion
   on), the button leaves and does not flash back, and scrolling up mid-glide stops it. `sticktobottom.tsx`.

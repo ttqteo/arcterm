@@ -39,6 +39,7 @@ type MetaTSType struct {
 	CmdShell            bool     `json:"cmd:shell,omitempty"`        // shell expansion for cmd+args (defaults to true)
 	CmdJwt              bool     `json:"cmd:jwt,omitempty"`          // force adding JWT to environment
 	CmdFirstCommand     string   `json:"cmd:firstcommand,omitempty"` // typed into a shell block at its first prompt, then cleared
+	CmdLowPriority      bool     `json:"cmd:lowpriority,omitempty"`  // the process tree runs below normal CPU priority (run agents)
 
 	// these can be nested under "[conn]"
 	CmdEnv            map[string]string `json:"cmd:env,omitempty"`

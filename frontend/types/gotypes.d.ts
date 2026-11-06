@@ -3753,6 +3753,7 @@ declare global {
         "cmd:shell"?: boolean;
         "cmd:jwt"?: boolean;
         "cmd:firstcommand"?: string;
+        "cmd:lowpriority"?: boolean;
         "cmd:env"?: {[key: string]: string};
         "cmd:cwd"?: string;
         "cmd:initscript"?: string;
