@@ -795,6 +795,7 @@ func createCmdStrAndOpts(blockId string, blockMeta waveobj.MetaMapType, connName
 		}
 	}
 	cmdOpts.ForceJwt = blockMeta.GetBool(waveobj.MetaKey_CmdJwt, false)
+	cmdOpts.LowPriority = blockMeta.GetBool(waveobj.MetaKey_CmdLowPriority, false)
 	return cmdStr, &cmdOpts, nil
 }
 

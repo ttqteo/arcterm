@@ -107,21 +107,30 @@ func KillTreeKeeping(job uintptr) {
 	}
 }
 
-// disarm drops KILL_ON_JOB_CLOSE, keeping BREAKAWAY_OK.
+// disarm drops KILL_ON_JOB_CLOSE, keeping the job's other limits (BREAKAWAY_OK, a priority class).
 func disarm(job uintptr) error {
-	return setLimits(job, windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+	return updateLimits(job, func(b *windows.JOBOBJECT_BASIC_LIMIT_INFORMATION) {
+		b.LimitFlags &^= windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	})
 }
 
-// arm sets KILL_ON_JOB_CLOSE again, the limits Attach gave the job.
+// arm sets KILL_ON_JOB_CLOSE again, keeping the job's other limits.
 func arm(job uintptr) error {
-	return setLimits(job, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE|windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+	return updateLimits(job, func(b *windows.JOBOBJECT_BASIC_LIMIT_INFORMATION) {
+		b.LimitFlags |= windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	})
 }
 
-func setLimits(job uintptr, flags uint32) error {
-	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
-		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: flags},
+// updateLimits reads the job's limits, lets edit change the basic ones, and writes them back, so one limit can
+// change without dropping the others.
+func updateLimits(job uintptr, edit func(*windows.JOBOBJECT_BASIC_LIMIT_INFORMATION)) error {
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	size := uint32(unsafe.Sizeof(info))
+	if err := windows.QueryInformationJobObject(windows.Handle(job), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), size, nil); err != nil {
+		return fmt.Errorf("QueryInformationJobObject: %w", err)
 	}
-	_, err := windows.SetInformationJobObject(windows.Handle(job), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
+	edit(&info.BasicLimitInformation)
+	_, err := windows.SetInformationJobObject(windows.Handle(job), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), size)
 	return err
 }
 

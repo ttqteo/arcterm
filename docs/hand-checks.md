@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **A run's agents run below normal priority.** After the next build, start an engine run; while a
+  worker types, Task Manager → Details (add the Base priority column) shows its `claude.exe`/`node.exe`, the `bash.exe`
+  of its commands and a `tsc`/`go` they start as Below normal, and your own agents and arcterm itself as Normal; the
+  same for the engine's Verify/Final `bash.exe`. On a Mac, `ps -o pid,nice,comm` shows them at nice 10 (that branch
+  compiled under `GOOS=darwin` vet only, never ran). `jobobject.LowerPriority`, block meta `cmd:lowpriority`.
 - [ ] (arcterm) **The transcript's ↓ button scrolls smoothly.** In a sleeping or ended agent's transcript, scroll up
   a few screens and click the round ↓ at the bottom: the feed glides down to the last line (instant with Reduce motion
   on), the button leaves and does not flash back, and scrolling up mid-glide stops it. `sticktobottom.tsx`.
