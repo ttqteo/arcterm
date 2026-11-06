@@ -111,7 +111,7 @@ Mở một run từ **Waiting on you**, **Runs**, **Shipped**, hoặc Conversati
 
 `j` / `k` chuyển sang run kế / trước trong danh sách mà sheet đang đếm. Khi run xong, sheet thành mặt **Done**: báo cáo của lead hoặc **what landed** cùng bằng chứng đã niêm phong ([Orchestrator → Kết thúc run](orchestrator.md#kết-thúc-run)).
 
-![Run sheet của một run orchestrator đang Executing: thanh tiến độ, danh sách task với lý do chưa chạy, dòng next: và dock](images/jarvis-run-sheet.png)
+![Run sheet của một run orchestrator đang Working: thanh tiến độ với ba chấm cuối, danh sách task với lý do chưa chạy, dòng next:, Timing và dock](images/jarvis-run-sheet.png)
 
 ### Final check
 
