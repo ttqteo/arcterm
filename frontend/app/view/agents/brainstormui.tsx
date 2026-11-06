@@ -921,11 +921,11 @@ const FACTS_SLOT = "mx-[10px] w-[104px]";
 
 // one approach the judge is weighing: the row sends it as the answer; its facts stay behind their own button, closed
 // until opened, so reading them never answers. The row's border lights only over the part that answers, so the facts
-// button never reads as part of it
+// button never reads as part of it. Every row has a tick box: whether the options add up is the judge's call, still
+// to come, so the wait never rules out sending several together
 function ApproachRow({
     a,
     i,
-    multi,
     picks,
     ans,
     open,
@@ -933,7 +933,6 @@ function ApproachRow({
 }: {
     a: Approach;
     i: number;
-    multi: boolean;
     picks: ReturnType<typeof usePicks>;
     ans: Answer;
     open: boolean;
@@ -948,7 +947,7 @@ function ApproachRow({
             )}
         >
             <div className="flex items-center">
-                {multi ? <TickBox i={i} picks={picks} ans={ans} compact /> : null}
+                <TickBox i={i} picks={picks} ans={ans} compact />
                 <button
                     type="button"
                     data-brainstorm-approach
@@ -1026,7 +1025,6 @@ export function JudgingMain({
 }) {
     const q = f.question!;
     const approaches = q.approaches!;
-    const multi = q.multi === true;
     const ans = useAnswer(agent);
     const picks = usePicks(
         ans,
@@ -1057,22 +1055,23 @@ export function JudgingMain({
                     {f.working}
                 </div>
                 <div className="flex flex-col gap-[8px]">
-                    <div className="flex items-baseline gap-[8px]">
-                        <h2 data-brainstorm-judge-list className={SECTION_HEAD}>
-                            What the judge is weighing · {approaches.length}
-                        </h2>
-                        <span data-brainstorm-pick-hint={multi ? "multi" : "one"} className="text-[12px] text-muted">
-                            {multi
-                                ? "the agent’s list, unranked; pick one or more: click a row to send it alone, tick rows to send them together, or wait for the judge’s options"
-                                : "the agent’s list, unranked; pick one: click it to answer now, or wait for the judge’s options and pick"}
-                        </span>
+                    <div className="flex items-center gap-[8px]">
+                        <div className="flex min-w-0 flex-col gap-[2px]">
+                            <h2 data-brainstorm-judge-list className={SECTION_HEAD}>
+                                Answer now, or wait for the judge
+                            </h2>
+                            <span data-brainstorm-pick-hint="multi" className="text-[12.5px] text-secondary">
+                                The agent’s {plural(approaches.length, "approach", "approaches")}, unranked. Click one
+                                to answer with it, or tick several to send them together.
+                            </span>
+                        </div>
                         {withFacts.length > 0 ? (
                             <button
                                 type="button"
                                 data-brainstorm-facts-all
                                 aria-pressed={allOpen}
                                 onClick={() => setOpenFacts(allOpen ? new Set() : new Set(withFacts))}
-                                className={cn(CHIP, "ml-auto flex-none self-center")}
+                                className={cn(CHIP, "ml-auto flex-none")}
                             >
                                 {allOpen ? "Hide all facts" : "Show all facts"}
                             </button>
@@ -1084,7 +1083,6 @@ export function JudgingMain({
                                 key={i}
                                 a={a}
                                 i={i}
-                                multi={multi}
                                 picks={picks}
                                 ans={ans}
                                 open={openFacts.has(i)}
@@ -1092,7 +1090,7 @@ export function JudgingMain({
                             />
                         ))}
                     </div>
-                    {multi ? <SendPicked picks={picks} ans={ans} /> : null}
+                    <SendPicked picks={picks} ans={ans} />
                 </div>
                 <AnswerBox ans={ans} options={true} placeholder="Or answer now in your own words…" />
                 <div className="flex flex-col gap-[10px]">

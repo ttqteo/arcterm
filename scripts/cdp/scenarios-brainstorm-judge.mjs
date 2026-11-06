@@ -124,6 +124,7 @@ const WAIT_TOPIC = "pane-interaction-judge-wait";
 const WAIT_NAME = "brainstorm-judge-wait";
 const WAIT_WORKING = "The judge is weighing 7 approaches.";
 const WAIT_PLACEHOLDER = "Or answer now in your own words…";
+const WAIT_HEAD = "Answer now, or wait for the judge";
 const WAIT_APPROACHES = [
     { name: "Live activity line", description: "The Working view shows what the agent is doing right now.", facts: ["Arc has the activity line.", "The pane uses none of it."] },
     { name: "Agent narrates progress", description: "The agent writes short progress steps mid-turn.", facts: ["The file is written once per turn.", "Steps would need a new field."] },
@@ -315,6 +316,7 @@ function judgeWaitScenario(kit) {
                 judging: !!pane?.querySelector("[data-brainstorm-judging]"),
                 status: flat(pane?.querySelector("[data-brainstorm-judge-status]")),
                 list: flat(pane?.querySelector("[data-brainstorm-judge-list]")),
+                ticks: pane?.querySelectorAll("[data-brainstorm-judging] [data-brainstorm-tick]").length ?? 0,
                 rows: [...(pane?.querySelectorAll("[data-brainstorm-approach]") ?? [])].map((b) => ({
                     option: b.getAttribute("data-brainstorm-option"),
                     text: flat(b),
@@ -398,12 +400,13 @@ function judgeWaitScenario(kit) {
             const w1 = await waitFor(h, drawn);
             await h.shot("cdp-shots/brainstorm-judge-wait-1.png");
             rec(
-                "1. the wait: the question and its why, the status line, What the judge is weighing · 7, the 7 approaches in file order with their facts counts and a letter on each, the box open with its placeholder, no Guess for me, and the agent's tree line names the judge",
+                "1. the wait: the question and its why, the status line, the Answer now, or wait for the judge heading, the 7 approaches in file order with their facts counts, a letter and a tick box on each, the box open with its placeholder, no Guess for me, and the agent's tree line names the judge",
                 s1.ok &&
                     w1.ok &&
                     w1.treeLine === `judge weighing question ${WAIT_Q.n}` &&
                     s1.why === WAIT_Q.why &&
-                    w1.list === `What the judge is weighing · ${WAIT_APPROACHES.length}` &&
+                    w1.list === WAIT_HEAD &&
+                    w1.ticks === WAIT_APPROACHES.length &&
                     w1.placeholder === WAIT_PLACEHOLDER &&
                     w1.boxDisabled === false &&
                     !w1.buttons.includes("Guess for me") &&
@@ -539,7 +542,7 @@ function judgeWaitScenario(kit) {
             bsWrite(ctx, WAIT_IN_CHECK);
             const w8 = await waitFor(h, (w) => w.view === "check" && drawn(w), 7000);
             await h.shot("cdp-shots/brainstorm-judge-wait-8-check.png");
-            rec("8. the builder check's pane shows the wait: the status line, the heading and the 7 rows", w8.ok && w8.list === `What the judge is weighing · ${WAIT_APPROACHES.length}`, {
+            rec("8. the builder check's pane shows the wait: the status line, the heading and the 7 rows", w8.ok && w8.list === WAIT_HEAD, {
                 view: w8.view,
                 status: w8.status,
                 list: w8.list,
