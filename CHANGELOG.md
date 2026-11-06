@@ -26,6 +26,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A folded reply keeps the bold heading of the section a highlighted sentence sits in, so "the list is not built"
+  still says which part it is about.
+- A folded reply whose opening ends on a colon ("answering when it will be done:") keeps the paragraph after it, which
+  holds the answer, and claude is asked to highlight the answer to your question first.
+- The prompt pinned to the top of a transcript shows as the top card of a stack when earlier prompts lie above it:
+  one card's edge peeks out under it.
 - A council's Report, Discussion and Map share one header row, so the tabs and the ⋯ menu stay in place when you
   switch. The Report's row shows the mode, the clock, the replies and the tokens after the status chip, and the lone ⓘ
   button is gone from the Discussion and the Map.
@@ -44,6 +50,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   "… 1 more", and a numbered list keeps its numbers, so "type 2" in the reply still points at its item.
 - A brainstorm's decision titles are written with their diacritics in Vietnamese, as the rest of the pane is, instead
   of sometimes showing as "Quy mo chay".
+- A short table in an agent's reply sits in a frame as wide as the table, instead of one stretched across the pane.
+- In a sleeping or ended agent's transcript, nothing shows above the pinned prompt any more: a strip of what scrolled
+  past used to peek out over it.
 - An app with Keep running that you stopped stays stopped when arcterm restarts, instead of starting again on its
   own; opening it or pressing Start runs it, and from then on it starts with arcterm as before.
 

@@ -5,6 +5,8 @@
 // turn's reply still says what it answers. A click scrolls back to the prompt. Shared by the live feed
 // (narrationtimeline.tsx) and the compact read (compacttranscript.tsx); each marks its prompts with data-user-prompt.
 // The scroll back is smooth, so the reply visibly runs back up to the prompt it answers, unless motion is reduced.
+// The band sticks at the scroller's padding edge, so a scroller that holds it has no top padding: content scrolling
+// past would show in the gap above the band.
 
 import { cn } from "@/util/util";
 import { ArrowUp } from "lucide-react";
@@ -91,18 +93,30 @@ export function PinnedPromptBar({
         root.dispatchEvent(new Event(PROMPT_JUMP_EVENT, { bubbles: true }));
         target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
     };
+    // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more
     return (
         <div data-pinned-prompt className="sticky top-0 z-10 h-0">
-            <div className={cn("pb-1.5 pt-1", bg)}>
-                <button
-                    type="button"
-                    onClick={jump}
-                    title="Back to this prompt"
-                    className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-[5px] text-left hover:border-accent/50"
-                >
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
-                    <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
-                </button>
+            <div className={cn("pb-2 pt-1", bg)}>
+                <div className="relative">
+                    {index > 0 ? (
+                        <div
+                            aria-hidden
+                            className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-accent/20 bg-accent/[0.06]"
+                        />
+                    ) : null}
+                    {/* the scroller's ground under the tinted card, so the card behind does not show through it */}
+                    <div className={cn("relative rounded-[8px]", bg)}>
+                        <button
+                            type="button"
+                            onClick={jump}
+                            title="Back to this prompt"
+                            className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-[5px] text-left hover:border-accent/50"
+                        >
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
+                            <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );

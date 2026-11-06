@@ -667,7 +667,7 @@ export function RunDetail({
                         model={model}
                         session={memberSession}
                         empty={memberEmpty(member)}
-                        className="px-4 pb-4 pt-1"
+                        className="px-4 pb-4"
                     />
                 </div>
             </div>

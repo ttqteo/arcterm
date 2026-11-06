@@ -216,6 +216,57 @@ describe("summary of a marked reply", () => {
         expect(summary(text, ["Marked."])).toBe("```\n! task install\n```\n\nVerdict.\n\nMarked.");
     });
 
+    it("keeps the paragraph a verdict ending on a colon points at, which holds the answer", () => {
+        const when = [
+            'Launched it. Answering "when will it be done":',
+            "",
+            "**Estimate: overnight, done by morning.** It depends on two unknowns.",
+            "",
+            "- **Cases.** About 32 run.",
+            "",
+            "Leave the machine running. I will be told when it ends.",
+        ].join("\n");
+        expect(summary(when, ["Leave the machine running."])).toBe(
+            [
+                'Launched it. Answering "when will it be done":',
+                "",
+                "**Estimate: overnight, done by morning.** It depends on two unknowns.",
+                "",
+                "Leave the machine running.",
+            ].join("\n")
+        );
+        expect(summary(when)).toBe(
+            [
+                'Launched it. Answering "when will it be done":',
+                "",
+                "**Estimate: overnight, done by morning.** It depends on two unknowns.",
+                "",
+                "- **Cases.** About 32 run.",
+            ].join("\n")
+        );
+    });
+
+    it("keeps a section's bold heading above its marks, once, so a mark still says which part it belongs to", () => {
+        const sections = [
+            "Both are done.",
+            "",
+            "**Gap**",
+            "- Dropped the padding.",
+            "",
+            "**Stack**",
+            "- One card shows. It sits under the bar.",
+            "- The list is not built.",
+        ].join("\n");
+        expect(summary(sections, ["One card shows.", "The list is not built."])).toBe(
+            ["Both are done.", "", "**Stack**", "", "- One card shows.", "- The list is not built."].join("\n")
+        );
+    });
+
+    it("keeps a markdown heading the same way, across the blank line after it", () => {
+        const sections = ["Verdict.", "", "## Caveats", "", "Not tried in the app. Rest."].join("\n");
+        expect(summary(sections, ["Not tried in the app."])).toBe("Verdict.\n\n## Caveats\n\nNot tried in the app.");
+    });
+
     // layout draws marks in order and waits on one it cannot find, so the fold hands back only those it kept
     it("hands back the marks it kept, in the order they show", () => {
         expect(folded("- **A.** Item mark.\n- B.\n\nVerdict here. More.", ["gone", "Item mark.", "More."])).toEqual({

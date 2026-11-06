@@ -1701,3 +1701,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   run's DAG width is the lead's (or the plan's) pick, not 3. + steps to 3; − at 1 returns to auto. Set the profile to 5
   → a fresh New run shows 5. Vitest and `task check:ts` only (`runconfigstore.ts`, `WorkerStepper` `unsettable`,
   `newrun.ts`); no dev app was up.
+- [ ] (arcterm) **A short table's frame fits the table.** Agent → a reply with a 3-column table: the rounded frame
+  ends at the last column, not the pane's edge; hover → the copy button sits on the table's top-right corner. A table
+  wider than the pane still fills it and scrolls inside. CSS only (`markdownmessage.tsx` table wrapper `w-fit
+  max-w-full`); no dev app was up.
+- [ ] (arcterm) **Pinned prompt: no gap above, one stacked card under.** A sleeping agent with three or more turns →
+  scroll down until the second prompt pins: nothing peeks above the bar (before, a 12px strip of the transcript did);
+  one thin card edge shows under the bar, never two. Scroll back into the first turn → the first prompt pins with no
+  edge under it. Same in an ended agent's transcript, the rail transcript and a session's read. Prettier/ESLint only
+  (`pinnedpromptbar.tsx`; top padding dropped in `sleepingtranscript.tsx`, `endedtranscript.tsx`,
+  `sessionsdetail.tsx`); no dev app was up.

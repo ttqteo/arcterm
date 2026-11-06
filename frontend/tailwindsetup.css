@@ -696,7 +696,7 @@ svg [aria-label="tip"] g path {
     font-style: italic;
 }
 /* cells wrap, so a table fits its panel; one still too wide (a long path or code) scrolls inside it instead of
-   forcing the panel wider (see markdownmessage.tsx) */
+   forcing the panel wider; a short one keeps its own width, its box no wider than it (see markdownmessage.tsx) */
 .agent-table-wrap {
     overflow-x: auto;
     border: 1px solid rgba(255, 255, 255, 0.08);
