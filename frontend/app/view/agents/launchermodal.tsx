@@ -19,6 +19,7 @@
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { MOTION } from "@/app/element/motiontokens";
 import { DialogButton } from "@/app/modals/dialogbutton";
 import { focusTrapTarget } from "@/app/modals/modalfocus";
 import { ModalShell } from "@/app/modals/modalshell";
@@ -29,7 +30,8 @@ import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -84,16 +86,8 @@ import {
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
-import {
-    createPeekLoader,
-    PEEK_COUNT,
-    peekClosesOn,
-    peekOffered,
-    type PeekLoader,
-    type PeekPick,
-    type PeekState,
-} from "./launcherpeek";
-import { LauncherPeekPanel } from "./launcherpeekpanel";
+import { createPeekLoader, PEEK_COUNT, resumeStepShows, type PeekLoader, type PeekState } from "./launcherpeek";
+import { LauncherPeekPane } from "./launcherpeekpanel";
 import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
@@ -180,6 +174,10 @@ import { useWorkerCapacity } from "./workercapacitystore";
 // the draft's Clear are tabIndex -1 because they are for the pointer
 const FOCUSABLE =
     'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+
+// the resume step's agent and project in the title, each a way back to its column
+const CRUMB =
+    "flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[7px] border border-edge-mid bg-surface-raised px-2 text-[12.5px] font-medium text-secondary hover:border-edge-strong hover:bg-surface-hover hover:text-primary";
 
 // the project path of the council the centre shows, read as showCouncil reads it: its own atom, else the list of all
 function shownCouncilProject(): string | undefined {
@@ -474,13 +472,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const flagMenuShown = isAgent && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
 
-    // Quick look (launcherpeek.ts): a Claude session's last 5 messages in a panel under the columns. Its state lives in
-    // the dialog, not an atom, so nothing outlives it; one loader (and its cache) per opening, dropped at close.
-    const [peekOpen, setPeekOpen] = useState(false);
+    // The resume step (launcherpeek.ts): for Claude Code in a project with sessions, the Task box on top, the sessions on
+    // the left and the picked session's last 5 messages on the right, in place of the three columns. Going back (← from
+    // the sessions, or the agent or project in the title) shows the columns to change your mind; each opening starts on
+    // the step. Its state lives in the dialog, not an atom, so nothing outlives it; one loader (and its cache) per
+    // opening, dropped at close.
+    const [resumeStep, setResumeStep] = useState(true);
+    const stepShown = resumeStepShows(resumeStep, runtime, thirdList);
+    // the column focus moves to once the step switch has rendered it: the switch unmounts the one that had focus
+    const stepFocusRef = useRef<"start" | "project" | "resume" | null>(null);
     const [peek, setPeek] = useState<{ id: string; state: PeekState } | null>(null);
     const peekLoaderRef = useRef<PeekLoader | null>(null);
-    const peekOnOffer = peekOffered(runtime, resume);
-    const peekShown = peekOpen && peekOnOffer;
     const peekLoader = () => {
         if (peekLoaderRef.current == null) {
             peekLoaderRef.current = createPeekLoader({
@@ -495,16 +497,22 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         return peekLoaderRef.current;
     };
-    const closePeek = () => {
-        setPeekOpen(false);
-        setPeek(null);
-        peekLoaderRef.current?.cancel();
-    };
-    const togglePeek = () => {
-        if (peekShown) {
-            closePeek();
+    // back to the three columns, focus on the column named; from the step that column is not drawn yet, so the focus
+    // waits for the render (the effect under the read's)
+    const leaveStep = (to: "start" | "project") => {
+        setResumeStep(false);
+        const el = (to === "project" ? projectRef : startRef).current;
+        if (el != null) {
+            el.focus();
         } else {
-            setPeekOpen(true);
+            stepFocusRef.current = to;
+        }
+    };
+    // into the step from the columns: focus reached the Session column (→ from Project, Tab, or a click on a row)
+    const enterStep = () => {
+        if (!resumeStep && resumeStepShows(true, runtime, thirdList)) {
+            stepFocusRef.current = "resume";
+            setResumeStep(true);
         }
     };
 
@@ -665,12 +673,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         setError(null);
     }, [kind, runtime, project?.name, tool?.id]);
 
-    // Quick look follows the picked session as ↑↓ or a click move it (D6). The old session's messages go at once; a
-    // cached read answers inside request, so the loading state is set first.
-    const peekSessionId = peekShown ? (resume?.id ?? null) : null;
-    const peekStamp = peekShown ? (resume?.lastactivets ?? 0) : 0;
+    // The step's read follows the picked session as ↑↓ or a click move it (D6). The old session's messages go at once; a
+    // cached read answers inside request, so the loading state is set first. New session, or leaving the step, drops a
+    // read still on its way.
+    const peekSessionId = stepShown ? (resume?.id ?? null) : null;
+    const peekStamp = stepShown ? (resume?.lastactivets ?? 0) : 0;
     useEffect(() => {
-        if (!peekShown || resume == null) {
+        if (!stepShown || resume == null) {
+            peekLoaderRef.current?.cancel();
             return;
         }
         const id = resume.id;
@@ -683,26 +693,27 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         });
     }, [peekSessionId, peekStamp]);
 
-    // another agent, another project or New session closes it (peekClosesOn)
-    const peekPick: PeekPick = { runtime, project: pickKey, sessionId: resume?.id ?? null };
-    const peekPickRef = useRef(peekPick);
+    // a step switch unmounts the column that had focus; focus moves to the one asked for once it is drawn
     useEffect(() => {
-        const prev = peekPickRef.current;
-        peekPickRef.current = peekPick;
-        if (peekClosesOn(prev, peekPick)) {
-            closePeek();
+        const to = stepFocusRef.current;
+        stepFocusRef.current = null;
+        if (to === "resume") {
+            rootRef.current?.querySelector<HTMLElement>('[data-launcher-resume] [role="radio"][tabindex="0"]')?.focus();
+        } else if (to != null) {
+            (to === "project" ? projectRef : startRef).current?.focus();
         }
-    }, [runtime, pickKey, resume?.id]);
+    }, [stepShown]);
 
-    // the dialog closed: the panel and every read and cached answer of this opening go with it
+    // the dialog closed: every read and cached answer of this opening go with it, and the next opening starts on the
+    // step (reset here, not at open, so a reopen never draws the columns for a frame first)
     useEffect(() => {
         if (open) {
             return;
         }
         peekLoaderRef.current?.dispose();
         peekLoaderRef.current = null;
-        setPeekOpen(false);
         setPeek(null);
+        setResumeStep(true);
     }, [open]);
     useEffect(() => () => peekLoaderRef.current?.dispose(), []);
 
@@ -992,7 +1003,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
                 accountMenuOpen: accountMenuShown,
-                peekOpen: peekShown,
                 resumePicked: resume != null,
                 textField: textField != null,
             },
@@ -1088,10 +1098,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 launch();
                 return;
             case "resume-secondary":
-                // a Claude session's second button is Quick look; the others keep Open asleep or Transcript
-                if (peekOnOffer) {
-                    togglePeek();
-                } else if (resume != null) {
+                if (resume != null) {
                     resumeSecondary(resume);
                 }
                 return;
@@ -1104,8 +1111,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     globalStore.set(launcherBranchListAtom, false);
                 } else if (action.what === "account") {
                     globalStore.set(launcherAccountMenuAtom, false);
-                } else if (action.what === "peek") {
-                    closePeek();
                 } else if (action.what === "filter") {
                     applyFilter("");
                 }
@@ -1184,6 +1189,36 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 >
                     <div className="flex shrink-0 items-center gap-[10px] border-b border-border py-[13px] pl-[18px] pr-3">
                         <h2 className="m-0 text-[15px] font-semibold text-primary">{launcherTitle(kind)}</h2>
+                        {stepShown ? (
+                            // the step hides the Start and Project columns: what they hold stays in view, and a click
+                            // goes back to them to change it
+                            <div data-launcher-crumbs className="flex min-w-0 items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    data-launcher-crumb="start"
+                                    title="Change the agent (←)"
+                                    onClick={() => leaveStep("start")}
+                                    className={CRUMB}
+                                >
+                                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                                        <StartMark id={selectedRow} />
+                                    </span>
+                                    {startList.find((r) => r.id === selectedRow)?.name ?? runtime}
+                                </button>
+                                <ChevronRight size={12} strokeWidth={2} className="shrink-0 text-ink-faint" />
+                                <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    data-launcher-crumb="project"
+                                    title={`${where?.path ?? ""}\nChange the project (←)`.trim()}
+                                    onClick={() => leaveStep("project")}
+                                    className={cn(CRUMB, "min-w-0")}
+                                >
+                                    <span className="truncate">{project?.name ?? ""}</span>
+                                </button>
+                            </div>
+                        ) : null}
                         {restored ? (
                             <span data-launcher-restored className="flex items-center gap-1.5 text-[11.5px] text-muted">
                                 · draft restored
@@ -1259,258 +1294,293 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             </>
                         )}
                     </div>
-                    {/* the Start column sets the band's height; the other two lay out inside it and scroll */}
-                    <div className="shrink-0">
-                        <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]">
-                            <div
-                                ref={startRef}
-                                role="radiogroup"
-                                aria-label="Start"
-                                tabIndex={0}
-                                data-launcher-column="start"
-                                onFocus={() => setZone("start")}
-                                onBlur={() => setZone(null)}
-                                className="flex min-h-[300px] flex-col gap-px border-r border-border px-2 py-3 outline-none"
-                            >
-                                <ColumnLabel
-                                    label="Agent"
-                                    focused={startFocused}
-                                    hint={
-                                        startFocused
-                                            ? `↑↓ · 1–${Math.min(startList.length, 9)}`
-                                            : zone === "task"
-                                              ? `alt 1–${Math.min(startList.length, 9)}`
-                                              : ""
-                                    }
-                                />
-                                {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
-                                <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
-                                {startList.filter((r) => r.kind === "run").map(renderStartRow)}
-                                <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
-                                {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
-                                <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
-                                {startList.filter((r) => r.kind === "council").map(renderStartRow)}
-                            </div>
-                            <div
-                                ref={projectRef}
-                                role="radiogroup"
-                                aria-label="Project"
-                                tabIndex={0}
-                                data-launcher-column="project"
-                                onFocus={() => setZone("project")}
-                                onBlur={() => {
-                                    // a list narrowed by a query you can no longer see reads as projects gone missing
-                                    setZone(null);
-                                    setFilter("");
-                                }}
-                                className="relative min-w-0 border-r border-border outline-none"
-                            >
+                    {stepShown ? (
+                        // the resume step: the sessions and the picked one's read where the columns were, about as tall
+                        // as the columns' band so a step switch leaves the dialog's height alone; in a short window the
+                        // read gives way before the Task box does
+                        <motion.div
+                            key="step"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+                            data-launcher-step="resume"
+                            className="grid h-[360px] min-h-[220px] grid-cols-[272px_minmax(0,1fr)] [flex-shrink:4]"
+                        >
+                            <div data-launcher-column="third" className="relative min-w-0 border-r border-border">
                                 <div className="absolute inset-0 flex flex-col px-2 py-3">
-                                    <ColumnLabel
-                                        label="Project"
-                                        focused={projectFocused}
-                                        hint={ownFolder ? "" : projectHint}
+                                    <ResumeList
+                                        choices={choices}
+                                        scopeKey={scopeKey}
+                                        pickedId={resume?.id ?? null}
+                                        onBack={() => leaveStep("project")}
                                     />
-                                    {ownFolder ? (
-                                        <div
-                                            data-launcher-project-unused
-                                            className="px-2 pb-2 text-[11.5px] leading-normal text-muted"
-                                        >
-                                            Not used: {tool!.name} runs in its own folder.
-                                        </div>
-                                    ) : null}
-                                    {filter !== "" ? (
-                                        <FilterLine
-                                            query={filter}
-                                            shown={visible.length}
-                                            total={candidates.length}
-                                            attr="data-launcher-filter"
+                                </div>
+                            </div>
+                            <LauncherPeekPane
+                                session={resume}
+                                peek={
+                                    resume != null && peek?.id === resume.id
+                                        ? peek.state
+                                        : { status: "loading", since: Date.now() }
+                                }
+                                projectName={project?.name ?? ""}
+                            />
+                        </motion.div>
+                    ) : (
+                        /* the Start column sets the band's height; the other two lay out inside it and scroll */
+                        <motion.div
+                            key="columns"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+                            className="shrink-0"
+                        >
+                            <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]">
+                                <div
+                                    ref={startRef}
+                                    role="radiogroup"
+                                    aria-label="Start"
+                                    tabIndex={0}
+                                    data-launcher-column="start"
+                                    onFocus={() => {
+                                        // working in the columns is changing your mind: the step waits until the sessions
+                                        setZone("start");
+                                        setResumeStep(false);
+                                    }}
+                                    onBlur={() => setZone(null)}
+                                    className="flex min-h-[300px] flex-col gap-px border-r border-border px-2 py-3 outline-none"
+                                >
+                                    <ColumnLabel
+                                        label="Agent"
+                                        focused={startFocused}
+                                        hint={
+                                            startFocused
+                                                ? `↑↓ · 1–${Math.min(startList.length, 9)}`
+                                                : zone === "task"
+                                                  ? `alt 1–${Math.min(startList.length, 9)}`
+                                                  : ""
+                                        }
+                                    />
+                                    {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
+                                    <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
+                                    {startList.filter((r) => r.kind === "run").map(renderStartRow)}
+                                    <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
+                                    {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
+                                    <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
+                                    {startList.filter((r) => r.kind === "council").map(renderStartRow)}
+                                </div>
+                                <div
+                                    ref={projectRef}
+                                    role="radiogroup"
+                                    aria-label="Project"
+                                    tabIndex={0}
+                                    data-launcher-column="project"
+                                    onFocus={() => {
+                                        setZone("project");
+                                        setResumeStep(false);
+                                    }}
+                                    onBlur={() => {
+                                        // a list narrowed by a query you can no longer see reads as projects gone missing
+                                        setZone(null);
+                                        setFilter("");
+                                    }}
+                                    className="relative min-w-0 border-r border-border outline-none"
+                                >
+                                    <div className="absolute inset-0 flex flex-col px-2 py-3">
+                                        <ColumnLabel
+                                            label="Project"
+                                            focused={projectFocused}
+                                            hint={ownFolder ? "" : projectHint}
                                         />
-                                    ) : null}
-                                    {candidates.length === 0 ? (
-                                        <div className="flex flex-col items-start gap-2.5 px-2 py-1">
-                                            <span
-                                                data-launcher-empty
-                                                className="text-[12.5px] leading-normal text-ink-mid"
-                                            >
-                                                No projects yet. Agents and runs start in a project folder.
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={register}
-                                                className="cursor-pointer rounded-[7px] border border-accent/30 bg-accentbg px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-soft hover:bg-accent/20"
-                                            >
-                                                Register a project
-                                            </button>
-                                        </div>
-                                    ) : null}
-                                    {candidates.length > 0 || picks.length > 0 ? (
-                                        <>
+                                        {ownFolder ? (
                                             <div
-                                                className={cn(
-                                                    "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto",
-                                                    ownFolder && "opacity-40"
-                                                )}
+                                                data-launcher-project-unused
+                                                className="px-2 pb-2 text-[11.5px] leading-normal text-muted"
                                             >
-                                                {visible.map((p, i) => {
-                                                    const selected = p.name === pickKey;
-                                                    return (
-                                                        <div
-                                                            key={p.name}
-                                                            role="radio"
-                                                            aria-checked={selected}
-                                                            data-project-row={p.name}
-                                                            title={p.path}
-                                                            onClick={() => pickProject(p.name)}
-                                                            className={cn(
-                                                                rowTone(selected, projectFocused),
-                                                                "shrink-0 gap-[10px] py-2"
-                                                            )}
-                                                        >
-                                                            <Keycap k={digitOf(i)} lit={projectFocused} />
-                                                            <span
+                                                Not used: {tool!.name} runs in its own folder.
+                                            </div>
+                                        ) : null}
+                                        {filter !== "" ? (
+                                            <FilterLine
+                                                query={filter}
+                                                shown={visible.length}
+                                                total={candidates.length}
+                                                attr="data-launcher-filter"
+                                            />
+                                        ) : null}
+                                        {candidates.length === 0 ? (
+                                            <div className="flex flex-col items-start gap-2.5 px-2 py-1">
+                                                <span
+                                                    data-launcher-empty
+                                                    className="text-[12.5px] leading-normal text-ink-mid"
+                                                >
+                                                    No projects yet. Agents and runs start in a project folder.
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={register}
+                                                    className="cursor-pointer rounded-[7px] border border-accent/30 bg-accentbg px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-soft hover:bg-accent/20"
+                                                >
+                                                    Register a project
+                                                </button>
+                                            </div>
+                                        ) : null}
+                                        {candidates.length > 0 || picks.length > 0 ? (
+                                            <>
+                                                <div
+                                                    className={cn(
+                                                        "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto",
+                                                        ownFolder && "opacity-40"
+                                                    )}
+                                                >
+                                                    {visible.map((p, i) => {
+                                                        const selected = p.name === pickKey;
+                                                        return (
+                                                            <div
+                                                                key={p.name}
+                                                                role="radio"
+                                                                aria-checked={selected}
+                                                                data-project-row={p.name}
+                                                                title={p.path}
+                                                                onClick={() => pickProject(p.name)}
                                                                 className={cn(
-                                                                    "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
-                                                                    selected ? "text-primary" : "text-muted-foreground"
+                                                                    rowTone(selected, projectFocused),
+                                                                    "shrink-0 gap-[10px] py-2"
                                                                 )}
                                                             >
-                                                                {p.name}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {picks.length === 0 && filter !== "" ? (
-                                                    <span
-                                                        data-launcher-nomatch
-                                                        className="px-2 py-1.5 text-[12px] text-muted"
-                                                    >
-                                                        No project matches “{filter}”. Esc clears the filter.
-                                                    </span>
-                                                ) : null}
-                                            </div>
-                                            {picks.includes(HOME_PICK) ? (
-                                                <>
-                                                    {visible.length > 0 ? (
-                                                        <div
-                                                            aria-hidden
-                                                            className="mx-2 my-1 h-px shrink-0 bg-border"
-                                                        />
+                                                                <Keycap k={digitOf(i)} lit={projectFocused} />
+                                                                <span
+                                                                    className={cn(
+                                                                        "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
+                                                                        selected
+                                                                            ? "text-primary"
+                                                                            : "text-muted-foreground"
+                                                                    )}
+                                                                >
+                                                                    {p.name}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {picks.length === 0 && filter !== "" ? (
+                                                        <span
+                                                            data-launcher-nomatch
+                                                            className="px-2 py-1.5 text-[12px] text-muted"
+                                                        >
+                                                            No project matches “{filter}”. Esc clears the filter.
+                                                        </span>
                                                     ) : null}
-                                                    {/* pinned under the list, and 0 in place of a digit, so a project added
+                                                </div>
+                                                {picks.includes(HOME_PICK) ? (
+                                                    <>
+                                                        {visible.length > 0 ? (
+                                                            <div
+                                                                aria-hidden
+                                                                className="mx-2 my-1 h-px shrink-0 bg-border"
+                                                            />
+                                                        ) : null}
+                                                        {/* pinned under the list, and 0 in place of a digit, so a project added
                                                     never moves it; its own data attribute, since Home is no registered
                                                     project and the scenarios that count data-project-row count those.
                                                     Its folder and ask-only are in the tooltip, as a project's path is */}
-                                                    <div
-                                                        role="radio"
-                                                        aria-checked={atHome}
-                                                        data-launcher-home
-                                                        title={
-                                                            runtime === "claude"
-                                                                ? `${home}: no project. Claude Code starts ask-only under ~/.arc/claude-ask.json.`
-                                                                : `${home}: no project.`
-                                                        }
-                                                        onClick={() => pickProject(HOME_PICK)}
-                                                        className={cn(
-                                                            rowTone(atHome, projectFocused),
-                                                            "shrink-0 gap-[10px] py-2",
-                                                            ownFolder && "opacity-40"
-                                                        )}
-                                                    >
-                                                        <Keycap k="0" lit={projectFocused} />
-                                                        <House
-                                                            size={13}
-                                                            strokeWidth={2}
+                                                        <div
+                                                            role="radio"
+                                                            aria-checked={atHome}
+                                                            data-launcher-home
+                                                            title={
+                                                                runtime === "claude"
+                                                                    ? `${home}: no project. Claude Code starts ask-only under ~/.arc/claude-ask.json.`
+                                                                    : `${home}: no project.`
+                                                            }
+                                                            onClick={() => pickProject(HOME_PICK)}
                                                             className={cn(
-                                                                "shrink-0",
-                                                                atHome ? "text-primary" : "text-muted"
-                                                            )}
-                                                        />
-                                                        <span
-                                                            className={cn(
-                                                                "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
-                                                                atHome ? "text-primary" : "text-muted-foreground"
+                                                                rowTone(atHome, projectFocused),
+                                                                "shrink-0 gap-[10px] py-2",
+                                                                ownFolder && "opacity-40"
                                                             )}
                                                         >
-                                                            {HOME_NAME}
-                                                        </span>
-                                                    </div>
-                                                </>
-                                            ) : null}
-                                        </>
-                                    ) : null}
+                                                            <Keycap k="0" lit={projectFocused} />
+                                                            <House
+                                                                size={13}
+                                                                strokeWidth={2}
+                                                                className={cn(
+                                                                    "shrink-0",
+                                                                    atHome ? "text-primary" : "text-muted"
+                                                                )}
+                                                            />
+                                                            <span
+                                                                className={cn(
+                                                                    "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
+                                                                    atHome ? "text-primary" : "text-muted-foreground"
+                                                                )}
+                                                            >
+                                                                {HOME_NAME}
+                                                            </span>
+                                                        </div>
+                                                    </>
+                                                ) : null}
+                                            </>
+                                        ) : null}
+                                    </div>
+                                </div>
+                                {/* the pick's own list: an agent's sessions, the tools, or a run's model, start and width */}
+                                {/* focus reaching a Claude session list here goes on into the resume step */}
+                                <div data-launcher-column="third" onFocus={enterStep} className="relative min-w-0">
+                                    <div className="absolute inset-0 flex flex-col px-2 py-3">
+                                        {isRun ? (
+                                            <RunColumn />
+                                        ) : isTool ? (
+                                            <ToolList
+                                                tools={toolList}
+                                                error={toolsError}
+                                                tool={tool}
+                                                focused={toolsFocused}
+                                                listRef={toolListRef}
+                                                onFocus={() => setZone("tools")}
+                                                onBlur={() => setZone(null)}
+                                                onPick={pickLauncherTool}
+                                                onAll={openToolLibrary}
+                                            />
+                                        ) : isCouncil ? (
+                                            <>
+                                                <ColumnLabel label="Council" focused={false} />
+                                                <span
+                                                    data-launcher-council-note
+                                                    className="px-2 text-[12px] leading-normal text-muted"
+                                                >
+                                                    Setup opens in the Agent surface: write what to review or
+                                                    brainstorm, then Start council. A council costs 0.5–1.5M tokens.
+                                                </span>
+                                            </>
+                                        ) : thirdList === "resume" ? (
+                                            <ResumeList
+                                                choices={choices}
+                                                scopeKey={scopeKey}
+                                                pickedId={resume?.id ?? null}
+                                                onBack={() => projectRef.current?.focus()}
+                                            />
+                                        ) : (
+                                            <>
+                                                <ColumnLabel label="Session" focused={false} />
+                                                <span
+                                                    data-launcher-session-note
+                                                    className="px-2 text-[12px] leading-normal text-muted"
+                                                >
+                                                    {runtime === "terminal"
+                                                        ? "A plain shell has no session to resume."
+                                                        : atHome
+                                                          ? "Home starts a new session. Pick a project to resume one of its sessions."
+                                                          : sessions == null
+                                                            ? "Reading sessions…"
+                                                            : "No session of this agent here yet: it starts a new one."}
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                            {/* the pick's own list: an agent's sessions, the tools, or a run's model, start and width */}
-                            <div data-launcher-column="third" className="relative min-w-0">
-                                <div className="absolute inset-0 flex flex-col px-2 py-3">
-                                    {isRun ? (
-                                        <RunColumn />
-                                    ) : isTool ? (
-                                        <ToolList
-                                            tools={toolList}
-                                            error={toolsError}
-                                            tool={tool}
-                                            focused={toolsFocused}
-                                            listRef={toolListRef}
-                                            onFocus={() => setZone("tools")}
-                                            onBlur={() => setZone(null)}
-                                            onPick={pickLauncherTool}
-                                            onAll={openToolLibrary}
-                                        />
-                                    ) : isCouncil ? (
-                                        <>
-                                            <ColumnLabel label="Council" focused={false} />
-                                            <span
-                                                data-launcher-council-note
-                                                className="px-2 text-[12px] leading-normal text-muted"
-                                            >
-                                                Setup opens in the Agent surface: write what to review or brainstorm,
-                                                then Start council. A council costs 0.5–1.5M tokens.
-                                            </span>
-                                        </>
-                                    ) : thirdList === "resume" ? (
-                                        <ResumeList
-                                            choices={choices}
-                                            scopeKey={scopeKey}
-                                            pickedId={resume?.id ?? null}
-                                            onBack={() => projectRef.current?.focus()}
-                                        />
-                                    ) : (
-                                        <>
-                                            <ColumnLabel label="Session" focused={false} />
-                                            <span
-                                                data-launcher-session-note
-                                                className="px-2 text-[12px] leading-normal text-muted"
-                                            >
-                                                {runtime === "terminal"
-                                                    ? "A plain shell has no session to resume."
-                                                    : atHome
-                                                      ? "Home starts a new session. Pick a project to resume one of its sessions."
-                                                      : sessions == null
-                                                        ? "Reading sessions…"
-                                                        : "No session of this agent here yet: it starts a new one."}
-                                            </span>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {/* Quick look sits under the columns, so opening it only pushes the footer down: the Task box and the
-                    columns never move (D3) */}
-                    {peekShown && resume != null ? (
-                        <LauncherPeekPanel
-                            session={resume}
-                            peek={peek?.id === resume.id ? peek.state : { status: "loading", since: Date.now() }}
-                            asleepDisabled={primaryDisabled}
-                            onAsleep={() => resumeSecondary(resume)}
-                            onClose={() => {
-                                closePeek();
-                                // the clicked button unmounts with the panel: keep focus in the dialog, under its keys
-                                rootRef.current?.focus();
-                            }}
-                        />
-                    ) : null}
+                        </motion.div>
+                    )}
                     <div className="flex shrink-0 items-center gap-3 border-t border-border px-[18px] py-[13px]">
                         {error != null ? (
                             <span
@@ -1548,20 +1618,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
-                        {resume != null && peekOnOffer ? (
-                            // a Claude session: its last messages here, Open asleep in the panel's header (D2)
-                            <DialogButton
-                                variant="secondary"
-                                hint="shift+enter"
-                                data-launcher-peek-toggle
-                                aria-pressed={peekShown}
-                                title="Quick look: the session's last 5 messages (Shift+Enter)"
-                                onClick={togglePeek}
-                                className={cn(peekShown && "border-accent bg-surface-selected text-primary")}
-                            >
-                                Quick look
-                            </DialogButton>
-                        ) : resume != null && canOpenAsleep ? (
+                        {resume != null && canOpenAsleep ? (
                             <DialogButton
                                 variant="secondary"
                                 hint="shift+enter"

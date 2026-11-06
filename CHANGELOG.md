@@ -30,6 +30,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- New agent, Claude Code: in a project with sessions the dialog opens on a resume step, with the Task box on top, your
+  sessions on the left and the picked session's last 5 messages on the right, shown at once and formatted as in the
+  transcript. The agent and project sit in the title: click one, or press ← from the sessions, to change it. Esc now
+  closes the dialog in one press, and Shift+Enter opens the session asleep again.
 - The lobby Christmas tree grows with the tasks your runs finish on every machine that syncs the same vault, not
   only this one. Where you hung the ornaments stays your own on each machine.
 

@@ -9,11 +9,9 @@ import {
     PEEK_READING_DELAY_MS,
     createPeekLoader,
     peekCacheKey,
-    peekClosesOn,
     peekMeta,
-    peekOffered,
     peekView,
-    splitFences,
+    resumeStepShows,
     type PeekOutcome,
     type PeekResult,
 } from "./launcherpeek";
@@ -54,13 +52,16 @@ function deferred<T>() {
     return { promise, resolve, reject };
 }
 
-describe("peekOffered", () => {
-    it("is offered only for Claude Code with a session picked", () => {
-        expect(peekOffered("claude", session("a"))).toBe(true);
-        expect(peekOffered("claude", null)).toBe(false);
-        expect(peekOffered("pi", session("a"))).toBe(false);
-        expect(peekOffered("codex", session("a"))).toBe(false);
-        expect(peekOffered("agy", session("a"))).toBe(false);
+describe("resumeStepShows", () => {
+    it("shows for Claude Code once the project has sessions, until you go back", () => {
+        expect(resumeStepShows(true, "claude", "resume")).toBe(true);
+        expect(resumeStepShows(false, "claude", "resume")).toBe(false);
+    });
+    it("never for another agent, nor without a session list (Home, no sessions yet, a tool)", () => {
+        expect(resumeStepShows(true, "pi", "resume")).toBe(false);
+        expect(resumeStepShows(true, "codex", "resume")).toBe(false);
+        expect(resumeStepShows(true, "claude", null)).toBe(false);
+        expect(resumeStepShows(true, "claude", "tools")).toBe(false);
     });
 });
 
@@ -293,41 +294,5 @@ describe("peekMeta", () => {
     });
     it("leaves empty parts out", () => {
         expect(peekMeta(session("a", { model: "", branch: "", tokenstotal: 0 }), 1_000)).toBe("just now");
-    });
-});
-
-describe("splitFences", () => {
-    it("keeps text without a fence as one plain segment", () => {
-        expect(splitFences("one\ntwo")).toEqual([{ code: false, text: "one\ntwo" }]);
-    });
-    it("draws a fenced block as code and the rest as plain text", () => {
-        const text = "Run this:\n```bash\nnpm test\n```\nThen look.";
-        expect(splitFences(text)).toEqual([
-            { code: false, text: "Run this:" },
-            { code: true, text: "npm test" },
-            { code: false, text: "Then look." },
-        ]);
-    });
-    it("a fence left open (a clipped message) runs to the end as code", () => {
-        expect(splitFences("see\n```\nconst a = 1;\nconst b…")).toEqual([
-            { code: false, text: "see" },
-            { code: true, text: "const a = 1;\nconst b…" },
-        ]);
-    });
-    it("an empty text has no segments", () => {
-        expect(splitFences("")).toEqual([]);
-    });
-});
-
-describe("peekClosesOn", () => {
-    const base = { runtime: "claude", project: "arcterm", sessionId: "a" as string | null };
-    it("moving between sessions keeps it open", () => {
-        expect(peekClosesOn(base, { ...base, sessionId: "b" })).toBe(false);
-        expect(peekClosesOn(base, base)).toBe(false);
-    });
-    it("another agent, another project or New session closes it", () => {
-        expect(peekClosesOn(base, { ...base, runtime: "pi" })).toBe(true);
-        expect(peekClosesOn(base, { ...base, project: "other" })).toBe(true);
-        expect(peekClosesOn(base, { ...base, sessionId: null })).toBe(true);
     });
 });

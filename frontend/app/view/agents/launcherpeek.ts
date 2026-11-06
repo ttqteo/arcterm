@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for the New agent dialog's Quick look panel: a Claude session's last 5 messages, under the columns
-// (docs/superpowers/specs/2026-11-06-launcher-session-peek-design.md). When it is offered, the debounced and cached
-// read (the fetch is injected), the panel's states, its meta line, and how a message's text splits into plain text
-// and code fences. No React, no RPC imports.
+// Pure model for the New agent dialog's resume step: the Task box on top, the sessions on the left and the picked Claude
+// session's last 5 messages on the right (docs/superpowers/specs/2026-11-06-launcher-session-peek-design.md, "The
+// resume step"). When the step shows, the debounced and cached read (the fetch is injected), the read's states and its
+// meta line. No React, no RPC imports.
 
 import { formatAgo, formatTokens } from "./agentsviewmodel";
 import type { Runtime } from "./launch";
@@ -35,9 +35,11 @@ export const PEEK_EMPTY = "This session has no messages yet.";
 export const PEEK_CAPPED_NONE = "No messages in the last 8 MB. Open asleep to read the whole session.";
 export const PEEK_CAPPED_NOTE = "Only the last 8 MB was read. Open asleep to read the whole session.";
 
-// Quick look is Claude Code's alone, and only for a session (not New session): D1.
-export function peekOffered(runtime: Runtime | string, resume: SessionInfo | null): boolean {
-    return runtime === "claude" && resume != null;
+// The resume step is Claude Code's alone (only its transcripts are read: D1), and needs the session list: a project
+// with no sessions yet, Home, a terminal or a tool keeps the three columns. `wanted` is false once you go back to the
+// columns (← or the title's agent or project), to change your mind; each opening starts with it true.
+export function resumeStepShows(wanted: boolean, runtime: Runtime | string, third: "resume" | "tools" | null): boolean {
+    return wanted && runtime === "claude" && third === "resume";
 }
 
 // A session that has moved on since its last read reads again (D7).
@@ -205,53 +207,4 @@ export function peekMeta(
         s.tokenstotal > 0 ? `${formatTokens(s.tokenstotal)} tokens` : "",
     ];
     return parts.filter((p) => p !== "").join(" · ");
-}
-
-export interface TextSegment {
-    code: boolean;
-    text: string;
-}
-
-const FENCE = /^\s*(```|~~~)/;
-
-// A message's text as plain text (line breaks kept) and code fences, which draw monospace. Markdown is not rendered
-// (D8). A fence left open, as in a message clipped at 1,500 characters, runs to the end as code.
-export function splitFences(text: string): TextSegment[] {
-    const out: TextSegment[] = [];
-    let code = false;
-    let marker = "";
-    let lines: string[] = [];
-    const flush = () => {
-        const body = lines.join("\n");
-        const kept = code ? body : body.replace(/^\n+|\n+$/g, "");
-        if (kept !== "") {
-            out.push({ code, text: kept });
-        }
-        lines = [];
-    };
-    for (const line of text.split("\n")) {
-        const m = FENCE.exec(line);
-        if (m != null && (!code || m[1] === marker)) {
-            flush();
-            code = !code;
-            marker = code ? m[1] : "";
-            continue;
-        }
-        lines.push(line);
-    }
-    flush();
-    return out;
-}
-
-export interface PeekPick {
-    runtime: Runtime | string;
-    project: string;
-    // the picked session's id; null is New session
-    sessionId: string | null;
-}
-
-// Picking another agent, another project or New session closes the panel; moving between sessions keeps it open and
-// it follows the pick (D6).
-export function peekClosesOn(prev: PeekPick, next: PeekPick): boolean {
-    return prev.runtime !== next.runtime || prev.project !== next.project || next.sessionId == null;
 }

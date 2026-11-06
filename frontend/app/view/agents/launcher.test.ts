@@ -553,31 +553,20 @@ describe("launcherKey", () => {
         expect(launcherKey(at("textarea"), key("Escape"))).toEqual({ kind: "close" });
         expect(launcherKey(at("other"), key("Escape"))).toEqual({ kind: "close" });
     });
-    it("Escape closes the menus first, then Quick look, then the dialog", () => {
-        const peek = (extra: Partial<LauncherKeyCtx> = {}): LauncherKeyCtx => ({
+    it("Escape in the resume step closes the menus first, then the dialog at once", () => {
+        const step = (extra: Partial<LauncherKeyCtx> = {}): LauncherKeyCtx => ({
             ...at("resume", "", { resumePicked: true }),
-            peekOpen: true,
             ...extra,
         });
-        expect(launcherKey(peek({ flagMenuOpen: true }), key("Escape"))).toEqual({
-            kind: "dismiss-inner",
-            what: "flags",
-        });
-        expect(launcherKey(peek({ branchListOpen: true }), key("Escape"))).toEqual({
-            kind: "dismiss-inner",
-            what: "branches",
-        });
-        expect(launcherKey(peek({ accountMenuOpen: true }), key("Escape"))).toEqual({
+        expect(launcherKey(step({ accountMenuOpen: true }), key("Escape"))).toEqual({
             kind: "dismiss-inner",
             what: "account",
         });
-        expect(launcherKey(peek(), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "peek" });
-        expect(launcherKey(peek({ zone: "task" }), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "peek" });
-        expect(launcherKey(peek({ filter: "oki" }), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "peek" });
-        expect(launcherKey(peek({ peekOpen: false }), key("Escape"))).toEqual({ kind: "close" });
+        expect(launcherKey(step(), key("Escape"))).toEqual({ kind: "close" });
+        expect(launcherKey(step({ zone: "task" }), key("Escape"))).toEqual({ kind: "close" });
     });
-    it("Shift+Enter with Quick look open still asks the dialog for its second action; in the Task box it is a newline", () => {
-        const ctx: LauncherKeyCtx = { ...at("resume", "", { resumePicked: true }), peekOpen: true };
+    it("Shift+Enter on a picked session is the dialog's second action (Open asleep); in the Task box it is a newline", () => {
+        const ctx: LauncherKeyCtx = at("resume", "", { resumePicked: true });
         expect(launcherKey(ctx, key("Enter", { shift: true }))).toEqual({ kind: "resume-secondary" });
         expect(launcherKey({ ...ctx, zone: "task" }, key("Enter", { shift: true }))).toEqual({ kind: "none" });
         expect(launcherKey(ctx, key("Enter"))).toEqual({ kind: "launch" });

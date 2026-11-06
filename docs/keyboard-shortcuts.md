@@ -69,18 +69,23 @@ Under it, three columns sit side by side: Start, Project, and the pick's own lis
 run's model, or its start and width). They keep one height: a long Project, Session or Tool list scrolls inside its
 column. The Tool row is the last in Start, so the other rows keep their digits.
 
+For Claude Code in a project that has sessions, the dialog opens on the **resume step** instead: the Task box on top,
+the Session list on the left and the picked session's last 5 messages on the right. The agent and the project sit in
+the title; `←` from the Session list, or a click on either, goes back to the three columns to change them, and
+reaching the Session column again (`→`, `Tab` or a click) returns to the step.
+
 | Keys | Action |
 |---|---|
 | `1`…`9` | Pick that row in the focused column (Start, Project or Session); in Session `1` is New session |
 | `Alt`+`1`…`9` | In the task or goal box: pick that Start row without leaving the box |
 | `0` | In the Project column: Home, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
-| `→` / `←` | Step Start, Project, then the Session or Tool column, and back |
+| `→` / `←` | Step Start, Project, then the Session or Tool column, and back. In the resume step, `←` from the Session list goes back to the columns |
 | letters | In the Start, Project or Session column, start typing the task (or a run's goal): focus moves to that box with the letter in it. A pick with no such box (a terminal, a tool, a council, a run from a plan file) filters the Project column by name instead; `Backspace` shortens the filter |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
-| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a Claude session picked: open or close Quick look, a panel under the columns with the session's last 5 messages (`↑` `↓` in the Session column move it to the next session; `Esc` closes it before the dialog; Open asleep sits in its header). With another agent's session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
+| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 

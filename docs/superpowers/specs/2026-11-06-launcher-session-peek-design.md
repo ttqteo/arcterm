@@ -26,6 +26,24 @@ Prototype: `.superpowers/design/launcher-session-peek/project/A2-under-columns.d
   out tool output, skill bodies, slash commands, command output, task notices, interruptions, the compaction
   summary, and `wsh agents send` messages).
 
+## The resume step (revised 2026-11-06)
+
+Used, the panel under the columns was too small: on a 1280×716 window the dialog already sat at its 86vh cap, so the
+panel shrank to about two messages. The person chose to read the session where the columns were instead (canvas
+`launcher-quick-look`, board `A-two-steps`). This replaces D2, D3, D5 and D6; D1, D4, D7 and D8 stand.
+
+- For Claude Code in a project with sessions (`resumeStepShows` in `launcherpeek.ts`), the dialog opens on the resume
+  step: the Task box on top, the Session list (272px) on the left and the picked session's read on the right, about as
+  tall as the columns' band, so a step switch leaves the dialog's height alone.
+- The read follows the pick at once, no button. Your messages are drawn in the transcript's box and Claude's as
+  rendered markdown (`MarkdownMessage`), the way the compact transcript draws them; a new answer fades in
+  (`MOTION.durMicro`). New session shows one line in its place.
+- The agent and the project sit in the title as two small buttons. A click on either, or `←` from the Session list, goes
+  back to the three columns to change them; working in the Start or Project column keeps the columns, and focus
+  reaching the Session column again (`→`, `Tab`, a click) returns to the step. Each opening starts on the step.
+- Esc closes the dialog at once, and Shift+Enter is Open asleep again, in the footer: the read is not a panel to close
+  or toggle.
+
 ## Decisions
 
 ### D1. Only Claude Code
