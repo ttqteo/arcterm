@@ -197,14 +197,16 @@ Calls made where the spec leaves the shape open, each with why.
 
 1. **A replaced Review takes the status `superseded`** (the person's call, plan review round 1), with
    `SupersededBy string` naming the change that took its place; that change carries `FromReview string`.
-   Delete-from-review and an Ask proposal both set the pair. `superseded` is not pending, so every
-   existing `Pending` / `isPending` caller (rail counts, the Setup badge, `checkResult`, jarvisvolunteer)
-   stops counting it with no change. Undo of a delete with `FromReview` removes the delete change and sets
-   the Review back to `open` with `SupersededBy` cleared; Keep on an agent proposal with `FromReview`
-   (Back to review) does the same to the Review. If a check has since dropped the Review (its memory file
-   changed or was deleted), Undo leaves the delete change open, as an undo does today. Why: one mechanism
-   serves Delete→Undo and Back to review, the Review keeps its id and evidence, and no pending-count
-   caller has to learn about the link.
+   Delete-from-review and an Ask proposal both set the pair. `superseded` is not pending: Go's `Pending`
+   needs no change, and the frontend's `isPending` became an allow-list (`""`, `open`, `conflict`) like
+   it, so the rail counts, the Setup badge, `checkResult` and jarvisvolunteer all stop counting it.
+   Apply, Keep and Delete refuse a superseded Review. Undo of a delete with `FromReview` removes the delete
+   change and sets the Review back to `open` with `SupersededBy` cleared; Keep on an agent proposal with
+   `FromReview` (Back to review) does the same to the Review. A check keeps a superseded Review for as
+   long as its superseding change stays (an applied delete stays for its 30-day backup); if a check has
+   dropped the Review (its memory file was changed by hand), Undo leaves the delete change open, as an
+   undo does today. Why: one mechanism serves Delete→Undo and Back to review, and the Review keeps its id
+   and evidence.
 2. **Wire fields on `MemChange`**: `Body` (memory text, frontmatter stripped; Reviews and agent proposals),
    `Verdict` (the §3 sentence), `DocLines []MemDocLine{Doc, Line, Text}` (§3 item 2), `Source`
    (`""` or `"agent"`), `ProposedAt` (unix ms), `AskReason` / `AskedAt` (the judge's `fine` reason stored
@@ -252,5 +254,6 @@ Calls made where the spec leaves the shape open, each with why.
     applied or kept changes, which the state keeps for their backup or indefinitely, stay reachable in the
     table view.
 13. **After Delete the selection moves on.** Delete, like Still true, Keep and Apply, selects the next open
-    item in the queue; the delete's row stays as `Deleted · Undo`, and `k` (or a click) returns to it,
+    item in the queue; the delete's row stays as `Deleted · Undo`, and a click on that row returns to it (`j`/`k` step only
+    through the open items, which sit above the decided rows),
     whose card shows the applied delete with Undo. Undo of a Delete selects the Review it reopened.
