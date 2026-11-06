@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **A stopped Keep running app stays stopped across a restart.** In the installed app, Setup → Tools:
+  portfolio (Keep running on) → Stop, quit and reopen arcterm → it reads stopped/sleeping and nothing listens on 8386;
+  `services.json` in the data dir has `"off": true` for it. Open it (rail or tree) → it starts, `off` is gone, and the
+  next restart starts it on its own again. Unit tests only (71461e840).
 - [ ] (arcterm) **A council report's tab bar on top, one `⋯`.** Open a finished council's Report: the bar with the
   Report / Discussion / Map tabs, the jump links (Ideas worth trying · Wild ideas kept aside) and one `⋯` sits at the
   top, above "Council · Brainstorm" and the title, and stays there as you scroll. The `⋯` lists Save as doc (or Open the
