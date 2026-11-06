@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
 import { useViewingSync } from "./agentsleep";
 import { AgentSurface } from "./agentsurface";
+import { streamableTranscriptAgents } from "./agentsviewmodel";
 import { AppFrames } from "./apppane";
 import { AppSurface } from "./appsurface";
 import { primeChannels } from "./channelsstore";
@@ -36,9 +37,11 @@ import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
 import { useSleeperTitles } from "./sleepertitles";
 import { StorageNudge } from "./storagenudge";
+import { useSubagentTracking } from "./subagenttracking";
 import { ToolPicker } from "./toolpicker";
 import { TranslateRailPanel } from "./translatepanel";
 import { UsageSurface } from "./usagesurface";
+import { useCardStreams } from "./usecardstreams";
 
 // One always-mounted synchronization hook: seed the shared preferred-harness state from the persisted
 // setting and load the harness catalog once at boot, so every surface reads the same selection.
@@ -118,6 +121,26 @@ function usePruneDocNotes(model: AgentsViewModel) {
     }, [askIds.join(",")]);
 }
 
+// The one owner of the transcript streams, git tracking and subagent / background-task tracking. The stream registry
+// is a per-id singleton (a second driver's unmount would stop the first's streams), and the shell is always mounted,
+// so the Agent surface keeps its rail's live entries, Subagents and Background tasks whichever surface was visited.
+function AgentStreams({ model }: { model: AgentsViewModel }) {
+    const agents = useAtomValue(model.agentsAtom);
+    const now = useAtomValue(model.structuralNowAtom);
+    const focusId = useAtomValue(model.focusIdAtom);
+    useCardStreams(
+        streamableTranscriptAgents(agents, now, { focusId }).map((a) => ({
+            id: a.id,
+            path: a.transcriptPath!,
+            agent: a.agent,
+            blockId: a.blockId,
+        })),
+        { trackGit: true }
+    );
+    useSubagentTracking(agents);
+    return null;
+}
+
 export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     usePrunePendingLaunches(model);
     useResetAnswerDraftsOnAskChange(model);
@@ -145,6 +168,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     const floating = useAtomValue(floatModeAtom);
     return (
         <div className="flex h-full w-full">
+            <AgentStreams model={model} />
             {floating ? null : <NavRail model={model} />}
             <div className="relative min-w-0 flex-1 bg-background">
                 {/* Agent surface stays mounted so its live terminal is never torn down on tab switch

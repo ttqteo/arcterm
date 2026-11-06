@@ -21,14 +21,13 @@ import {
     moveCursor,
     nextAskId,
     applyAgentOrder,
-    streamableTranscriptAgents,
     matchesProjectFilter,
     dedupBackgroundAgents,
     partitionBackgrounded,
     syncCardOrder,
     type AgentVM,
 } from "./agentsviewmodel";
-import { diffStatsByIdAtom } from "./cardgitstore";
+import { diffStatsByIdAtom, refreshCardGit } from "./cardgitstore";
 import {
     buildGridCards,
     cardMatchesChip,
@@ -115,11 +114,9 @@ import {
 } from "./officedialog";
 import type { OfficeMenuId } from "./officecontrols";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
-import { useCardStreams } from "./usecardstreams";
 import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
 import { StartupLoader } from "./startuploader";
-import { useSubagentTracking } from "./subagenttracking";
 import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
 import { openLauncher } from "./launcherstore";
 import { landOn } from "@/app/view/jarvis/returnsurface";
@@ -147,7 +144,6 @@ function useModelAtom<T>(a: PrimitiveAtom<T>): [T, (v: T | ((p: T) => T)) => voi
 export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const seeded = useAtomValue(rosterSeededAtom);
-    useSubagentTracking(agents);
     const { asking, working, idle } = groupAgents(agents);
 
     // channel-aware "needs you": excludes asks Jarvis already auto-answered, so it matches the Channels
@@ -156,8 +152,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const channelMessages = useAtomValue(channelMessagesAtom);
     const answeredAsks = answeredAskIdsAcross(Object.values(channelMessages));
 
-    // `structuralNow` feeds structural computations below (usage-window rollover, the idle-grace window,
-    // and which transcripts stay streamed). Subscribe to the coarse (~15s) structural clock REACTIVELY —
+    // `structuralNow` feeds structural computations below (usage-window rollover and the idle-grace window).
+    // Subscribe to the coarse (~15s) structural clock REACTIVELY —
     // coarse enough to avoid the per-second grid reconcile, but reactive so these decisions still roll
     // over on their own in a quiescent fleet (no chunk/status churn to piggyback on). The live "age/quiet"
     // cues that need per-second precision live in self-subscribing leaves (QuietDot, CockpitEventsRail,
@@ -188,14 +184,16 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         }
     }, [asking]);
 
-    // open a live transcript stream + git tracking per rendered active agent; keep recently-idle
-    // streams during the grace window so final transcript writes cannot race the stop event.
-    useCardStreams(
-        streamableTranscriptAgents([...asking, ...working, ...recentlyIdle], structuralNow)
-            .filter((a) => a.transcriptPath)
-            .map((a) => ({ id: a.id, path: a.transcriptPath!, agent: a.agent, blockId: a.blockId })),
-        { trackGit: true },
-    );
+    // the shell streams these cards and loads their git once, often at boot, where a load can time out and is
+    // not retried until the agent's next transcript activity; a visit re-reads them, as it did when the Cockpit
+    // owned the streams. only ids the shell streams, so no stats outlive their stream.
+    useEffect(() => {
+        for (const a of [...asking, ...working, ...recentlyIdle]) {
+            if (a.transcriptPath) {
+                void refreshCardGit(a.id, a.transcriptPath, a.blockId);
+            }
+        }
+    }, []);
 
     // anchored order (kept ids hold their slot; new ids append) + manual drag reorder. This is what
     // stops a working->asking transition from jumping: the id already holds a slot, so it stays put.

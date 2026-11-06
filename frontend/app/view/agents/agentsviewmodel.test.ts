@@ -574,16 +574,43 @@ describe("isRecentlyIdle", () => {
 describe("streamableTranscriptAgents", () => {
     const NOW = 1_000_000;
 
-    it("keeps streams open for rendered recently-idle agents", () => {
+    const PAST_GRACE = NOW - 360_000;
+    const ids = (agents: AgentVM[], opts: Parameters<typeof streamableTranscriptAgents>[2] = {}) =>
+        streamableTranscriptAgents(agents, NOW, opts).map((a) => a.id);
+
+    it("streams asking, working and recently idle agents in roster order", () => {
         const agents = [
+            mk("recent", "idle", { transcriptPath: "/r.jsonl", idleSince: NOW - 30_000 }),
             mk("asking", "asking", { transcriptPath: "/a.jsonl" }),
             mk("working", "working", { transcriptPath: "/w.jsonl" }),
-            mk("recent", "idle", { transcriptPath: "/r.jsonl", idleSince: NOW - 30_000 }),
-            mk("old", "idle", { transcriptPath: "/o.jsonl", idleSince: NOW - 360_000 }),
-            mk("missing", "working"),
         ];
-
-        expect(streamableTranscriptAgents(agents, NOW).map((a) => a.id)).toEqual(["asking", "working", "recent"]);
+        expect(ids(agents)).toEqual(["recent", "asking", "working"]);
+    });
+    it("streams the focused idle agent", () => {
+        const agents = [mk("old", "idle", { transcriptPath: "/o.jsonl", idleSince: PAST_GRACE })];
+        expect(ids(agents, { focusId: "old" })).toEqual(["old"]);
+    });
+    it("skips a focused terminal", () => {
+        const agents = [mk("t", "idle", { kind: "terminal", transcriptPath: "/t.jsonl" })];
+        expect(ids(agents, { focusId: "t" })).toEqual([]);
+    });
+    it("drops an idle agent past grace that is not focused", () => {
+        const agents = [
+            mk("old", "idle", { transcriptPath: "/o.jsonl", idleSince: PAST_GRACE }),
+            mk("other", "working", { transcriptPath: "/w.jsonl" }),
+        ];
+        expect(ids(agents, { focusId: "other" })).toEqual(["other"]);
+    });
+    it("skips agents with no transcript", () => {
+        const agents = [mk("working", "working"), mk("focused", "idle")];
+        expect(ids(agents, { focusId: "focused" })).toEqual([]);
+    });
+    it("lists an agent once", () => {
+        const agents = [
+            mk("a", "working", { transcriptPath: "/a.jsonl" }),
+            mk("a", "working", { transcriptPath: "/a.jsonl" }),
+        ];
+        expect(ids(agents, { focusId: "a" })).toEqual(["a"]);
     });
 });
 

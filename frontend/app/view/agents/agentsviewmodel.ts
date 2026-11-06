@@ -943,13 +943,25 @@ export function isRecentlyIdle(agent: AgentVM, now: number, graceMs = IDLE_GRACE
     return agent.state === "idle" && agent.idleSince != null && now - agent.idleSince < graceMs;
 }
 
-/** pure: agents whose transcript should stay streamed into the cockpit panel. just-finished
- *  agents keep rendering during the idle grace window, so their stream stays open too; otherwise a
- *  fast final Codex/Claude write can race the stop event and never reach the panel. */
-export function streamableTranscriptAgents(agents: AgentVM[], now: number): AgentVM[] {
-    return agents.filter(
-        (a) => a.transcriptPath && (a.state === "asking" || a.state === "working" || isRecentlyIdle(a, now))
-    );
+/** pure: agents whose transcript stays streamed, on every surface. just-finished agents keep streaming through the
+ *  idle grace window, so a fast final Codex/Claude write cannot race the stop event; the focused agent streams so the
+ *  Agent surface's rail has live entries for it. roster order, no duplicates. */
+export function streamableTranscriptAgents(agents: AgentVM[], now: number, opts: { focusId?: string } = {}): AgentVM[] {
+    const seen = new Set<string>();
+    return agents.filter((a) => {
+        if (!a.transcriptPath || seen.has(a.id)) {
+            return false;
+        }
+        const wanted =
+            a.state === "asking" ||
+            a.state === "working" ||
+            isRecentlyIdle(a, now) ||
+            (a.id === opts.focusId && a.kind !== "terminal");
+        if (wanted) {
+            seen.add(a.id);
+        }
+        return wanted;
+    });
 }
 
 /** Pure: overlay a pending ask onto an agent. A live ask makes the agent `asking` regardless of

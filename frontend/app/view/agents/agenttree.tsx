@@ -266,7 +266,6 @@ import { DigitHint } from "./digithint";
 import { ServerMark, StatusDot } from "./statusdot";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
-import { useSubagentTracking } from "./subagenttracking";
 import { rowFieldsAtom } from "./rowfieldsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
@@ -3622,8 +3621,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const tokens = useAtomValue(liveTokensAtom);
 
     useRunDigests(Object.values(lineage.runs));
-
-    useSubagentTracking(agents);
 
     // no-cascade guard (single constant key — the surface has one roster): mounting or switching to the
     // surface seeds silently, so only agents that arrive after mount fade in. See motiontokens.ts.
