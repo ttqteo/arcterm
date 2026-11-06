@@ -2197,7 +2197,7 @@ export function buildCouncilBindings(): Binding[] {
             id: "council:chot",
             keys: "p",
             group: "Agent",
-            label: "Chốt the focused idea: pin it as the council's direction",
+            label: "Set the focused idea as the council's direction",
             when: (ctx) => keys(ctx) && globalStore.get(councilChatNavAtom)?.focusedId != null,
             paletteHidden: true,
             run: () => {

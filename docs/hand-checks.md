@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The transcript's ↓ button scrolls smoothly.** In a sleeping or ended agent's transcript, scroll up
+  a few screens and click the round ↓ at the bottom: the feed glides down to the last line (instant with Reduce motion
+  on), the button leaves and does not flash back, and scrolling up mid-glide stops it. `sticktobottom.tsx`.
 - [ ] (arcterm) **New agent: pick the Claude account for one launch.** After the next build, with two or more Claude
   accounts in Settings → Claude account, open New agent on Claude Code → the footer reads `Claude: <account> ⌄`;
   click it → a menu above lists your /login account then each token account, the one in use ticked, `active` (or
@@ -294,9 +297,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **A council's memory with the real checks, in the installed app.** In a council past round 1, send a
   message that settles one point and drops another → after the seats answer, the Memory tab (`Memory · N`, its dot on
   while you are elsewhere) lists new `Agreed` / `Ruled out` / `Open` rows from the haiku round check, at most three, each
-  badge's tooltip saying what it means. Hover a row (WKWebView, not the headless Chrome the Final used) → Chốt · Edit ·
-  ⓘ · ✕ show on one line with the badge unbroken, and ⓘ's popover reads `Auto · round N` / `rN · time` inside the rail.
-  Chốt a row → it becomes the Direction pinned on top and leaves the list; Chốt one that clashes → the held card, and
+  badge's tooltip saying what it means. Hover a row (WKWebView, not the headless Chrome the Final used) → Set as direction (pin) ·
+  Edit · ⓘ · ✕ show on one line with the badge unbroken, and ⓘ's popover reads `Auto · round N` / `rN · time` inside the
+  rail. Set a row as direction → it becomes the Direction pinned on top and leaves the list; set one that clashes → the held card, and
   Discard keeps the row. Ask the seats again → none argues an Agreed row or proposes a Ruled out one. Remove an auto row
   → the next round does not add it back. Also see what Unpin leaves: the earlier directions then show nowhere until a
   new direction is set (spec 2026-11-05 hangs Earlier on the direction row only). The `council-memory` scenario drives

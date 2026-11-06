@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - Setup → Memory reviews one memory at a time, with its text, Delete and Ask an agent.
+- A council's pin button on an idea, a message or a Memory row is now called Set as direction, and its tooltip says what
+  that does: the line becomes the one every seat reads first, after a check against what the seats agreed.
 - A Brainstorm council splits the problem into zones, one per seat, and picks its top 3 ideas from different zones where
   it can, so one part of the problem no longer takes every place; an idea that says what the code does today cites the
   line, and between two even ideas the one read in the code ranks first.
@@ -60,6 +62,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The ↓ button in a transcript now scrolls smoothly down to the latest line instead of jumping there.
 - With every initiative archived, Jarvis's Brief shows the "No initiative yet" box with its New initiative button again,
   over Show N archived, instead of saying every initiative is on a card above when there are no cards.
 - A project's Overview shows an agent's whole name in Running and Finished, not the first 15 letters: the line of

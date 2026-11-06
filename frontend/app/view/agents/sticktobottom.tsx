@@ -25,6 +25,10 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
     // a pinned prompt's jump released the tail and its smooth scroll has not yet left the bottom zone, where the first
     // frames still read as near the bottom and would re-stick
     const leavingRef = useRef(false);
+    // jumpToBottom's smooth scroll is on its way down: its first frames still read as far from the bottom and would
+    // release the tail (and bring the pill back) unless ignored; scrolling up meanwhile cancels it
+    const arrivingRef = useRef(false);
+    const lastTopRef = useRef(0);
     const [atBottom, setAtBottom] = useState(() => stickRef.current);
     const stuckFor = useRef(placeId); // the placeId stickRef was last set for
 
@@ -37,6 +41,7 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
             stuckFor.current = placeId;
             stickRef.current = opensAtEnd(placeId);
             leavingRef.current = false;
+            arrivingRef.current = false;
             setAtBottom(stickRef.current);
         }
         const pin = () => {
@@ -63,6 +68,7 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
         const release = () => {
             stickRef.current = false;
             leavingRef.current = true;
+            arrivingRef.current = false;
             setAtBottom(false);
         };
         el.addEventListener(PROMPT_JUMP_EVENT, release);
@@ -75,6 +81,15 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
             return;
         }
         const near = isNearBottom(el);
+        const top = el.scrollTop;
+        const wentUp = top < lastTopRef.current;
+        lastTopRef.current = top;
+        if (arrivingRef.current) {
+            if (!near && !wentUp) {
+                return;
+            }
+            arrivingRef.current = false;
+        }
         if (leavingRef.current) {
             if (near) {
                 return;
@@ -90,10 +105,16 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
         if (!el) {
             return;
         }
-        el.scrollTop = el.scrollHeight;
         stickRef.current = true;
         leavingRef.current = false;
         setAtBottom(true);
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || isNearBottom(el)) {
+            el.scrollTop = el.scrollHeight;
+            return;
+        }
+        arrivingRef.current = true;
+        lastTopRef.current = el.scrollTop;
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     };
 
     return { scrollRef, onScroll, atBottom, jumpToBottom };

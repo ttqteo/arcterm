@@ -304,7 +304,7 @@ thread (click it, or `Tab` to it), not in a text field; elsewhere nothing here i
 |---|---|
 | `j` / `k` | Move the cursor to the next / previous idea of the channel (ringed). It stops at either end |
 | `Enter` | Open the thread of the idea under the cursor. With a button focused (Send to the others, Edit, Drop, an idea's reply chip) `Enter` presses that button instead |
-| `p` | Chốt the idea under the cursor: pin its title as the council's direction (the Memory tab). The direction is checked against what the seats agreed first, so a clash is held there for you to Edit, Set anyway or Discard. Needs an idea under the cursor; a message is Chốt-ed with its **Chốt** button |
+| `p` | Set the idea under the cursor as the council's direction: its title becomes the line every seat reads first (the Memory tab). The direction is checked against what the seats agreed first, so a clash is held there for you to Edit, Set anyway or Discard. Needs an idea under the cursor; a message is set with its **Set as direction** pin button |
 | `Esc` | Close the open thread, which gives `j` / `k` back to the channel. With no thread open, `Esc` leaves the council for the terminal. In the message box or a thread's reply box, `Esc` returns focus to the channel or thread first |
 | `Enter` | In the message box: send. `Shift`+`Enter` adds a line. After an `@`, `↑` / `↓` pick a seat and `Enter` or `Tab` takes it, `Esc` closes the list |
 

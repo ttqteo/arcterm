@@ -457,7 +457,7 @@ export const councilMemory = {
             focused === true &&
                 entry(auto, "m1").focusInside === true &&
                 entry(auto, "m1").actionsOpacity === "1" &&
-                entry(auto, "m1").actions.join("|") === "Chốt|Edit|Remove" &&
+                entry(auto, "m1").actions.join("|") === "Set as direction|Edit|Remove" &&
                 entry(auto, "m1").popover?.text.startsWith("Auto · round 3") &&
                 entry(auto, "m1").popover.messages.join() === "r21" &&
                 entry(auto, "m2").actionsOpacity === "0" &&
