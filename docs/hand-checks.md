@@ -9,13 +9,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) History → right-click a session row → Copy session id sits between Copy title and Copy transcript
   path; pasting gives the session's id (for Claude, the transcript file's name without `.jsonl`). No dev app was
   running to try it (`projecthistory.tsx` `sessionMenu`, 5db413c1e).
-- [ ] (arcterm) New agent's resume step: Mod+N with Claude Code on a project that has sessions → the dialog opens with
-  the Task box on top, the Session list left and the picked session's last messages right (your messages boxed,
-  Claude's as markdown); ↑↓ in the list moves the read with a short fade; ← (or the agent / project button in the
-  title) shows the three columns with focus on Project, and → back into Session returns to the step with focus on the
-  picked row; Esc closes the dialog in one press; Shift+Enter opens the session asleep; a project with no sessions and
-  Terminal keep the columns. Check the dialog keeps its height across the switch. Not run in a dev app
-  (`launchermodal.tsx`, `launcherpeekpanel.tsx`, 73435fc7a).
+- [ ] (arcterm) New agent's resume step: Mod+N with Claude Code → the three columns as before, New session picked; →
+  into Session and ↓ onto a past session → the dialog turns into the step (Task box on top, the Session list left, the
+  picked session's last messages right: your messages boxed, Claude's as markdown) with focus still on that row; ↑↓
+  moves the read with a short fade; ↑ back to New session → the columns return, focus on New session; ← (or the agent /
+  project button in the title) shows the columns with focus on Project, and → back into Session returns to the step;
+  Esc closes the dialog in one press; Shift+Enter opens the session asleep. Check the dialog keeps its height across
+  the switch. Not run in a dev app (`launchermodal.tsx`, `launcherpeekpanel.tsx`, 73435fc7a, c0b0f4078).
 
 - [ ] (arcterm) Kael sync 11-06: a real `snapshot-dev.mjs` boot on the packaged store: with the main dev app stopped,
   run `task dev:snapshot` on your install → the app opens on a copy of your projects, runs and vault; no run resumes
