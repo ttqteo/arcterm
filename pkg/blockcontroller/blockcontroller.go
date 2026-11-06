@@ -539,6 +539,10 @@ func debugLog(ctx context.Context, fmtStr string, args ...interface{}) {
 	log.Printf(fmtStr, args...)
 }
 
+// MetaKey_ClaudeAccount is the Claude account a block was launched on from the New dialog's account pick: an account id,
+// or claudeaccount.DefaultPick for Default. It stays on the block, so a respawn (a resume, a restart) keeps the account.
+const MetaKey_ClaudeAccount = "agent:claudeaccount"
+
 func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, blockMeta waveobj.MetaMapType, remoteName string, shellType string) *shellutil.TokenSwapEntry {
 	token := &shellutil.TokenSwapEntry{
 		Token: uuid.New().String(),
@@ -575,7 +579,12 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 		}
 		cwd := blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
 		projects := wconfig.GetWatcher().GetFullConfig().Projects
-		maps.Copy(token.Env, claudeaccount.ProjectLaunchEnv(project, cwd, projects, wavebase.GetHomeDir()))
+		// an account picked for this launch in the New dialog (MetaKey_ClaudeAccount) wins over the project's
+		env := claudeaccount.PickedLaunchEnv(blockMeta.GetString(MetaKey_ClaudeAccount, ""))
+		if env == nil {
+			env = claudeaccount.ProjectLaunchEnv(project, cwd, projects, wavebase.GetHomeDir())
+		}
+		maps.Copy(token.Env, env)
 	}
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
 	if err != nil {

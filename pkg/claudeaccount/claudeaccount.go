@@ -240,6 +240,28 @@ func LaunchEnv(id string) map[string]string {
 	return map[string]string{tokenVar: t, accountVar: id}
 }
 
+// DefaultPick is the New dialog's pick of Default (the /login account) for one launch, whatever account is active or
+// the project names. Account ids start with "a", so it never names one.
+const DefaultPick = "login"
+
+// PickedLaunchEnv is the environment of a launch made on the account picked for it in the New dialog: DefaultPick puts
+// back the values wavesrv was started with (an empty value unsets the var), an account id is LaunchEnv's. nil for no
+// pick and for an account whose token is gone, and the launch then takes its project's account or the active one.
+func PickedLaunchEnv(pick string) map[string]string {
+	if pick != DefaultPick {
+		return LaunchEnv(pick)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	env := map[string]string{tokenVar: "", accountVar: ""}
+	for k := range env {
+		if v := inherited[k]; v != nil {
+			env[k] = *v
+		}
+	}
+	return env
+}
+
 // ProjectLaunchEnv is LaunchEnv for the Claude account of a launch's project: the named project, else the registered
 // project whose path holds dir. nil when that project has no account (or there is none), so the launch inherits the
 // active account.

@@ -544,6 +544,10 @@ describe("launcherKey", () => {
             kind: "dismiss-inner",
             what: "branches",
         });
+        expect(launcherKey({ ...at("other", "oki"), accountMenuOpen: true }, key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "account",
+        });
         expect(launcherKey(at("project", "oki"), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "filter" });
         expect(launcherKey(at("project"), key("Escape"))).toEqual({ kind: "close" });
         expect(launcherKey(at("textarea"), key("Escape"))).toEqual({ kind: "close" });

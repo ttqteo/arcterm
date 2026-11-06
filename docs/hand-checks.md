@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **New agent: pick the Claude account for one launch.** After the next build, with two or more Claude
+  accounts in Settings → Claude account, open New agent on Claude Code → the footer reads `Claude: <account> ⌄`;
+  click it → a menu above lists your /login account then each token account, the one in use ticked, `active` (or
+  `project`) beside the usual one; pick another, Launch → the new agent's usage meters and `/status` show the picked
+  account, and the active account in Settings is unchanged. Escape closes the menu, not the dialog. Only unit tests and
+  the typecheck ran; the menu was never drawn (`launchermodal.tsx` AccountPicker, `blockcontroller` MetaKey_ClaudeAccount).
 - [ ] (arcterm) **Overview shows an agent's whole name.** Agent → a project's Overview with an agent at work whose name
   is longer than ~15 letters ("Rail trong brainstorm mode") → its Running row shows the whole name and the "running …"
   line beside it shortens instead; a short name still lines its detail up with the others; a very long one stops at

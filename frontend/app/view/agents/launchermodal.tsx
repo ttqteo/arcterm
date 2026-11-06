@@ -29,14 +29,21 @@ import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
+import { Check, ChevronDown, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import { RailSantaHat } from "./christmashat";
-import { launchAccountName, projectLaunchAccount } from "./claudeaccount";
+import {
+    accountLaunchMeta,
+    launchAccountChoices,
+    launchAccountName,
+    pickedLaunchAccount,
+    projectLaunchAccount,
+    type AccountChoice,
+} from "./claudeaccount";
 import { councilAtom, councilListAtom, councilSelAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
@@ -89,6 +96,8 @@ import {
     closeLauncher,
     endLauncherDraft,
     endLauncherLaunch,
+    launcherAccountAtom,
+    launcherAccountMenuAtom,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
@@ -197,6 +206,86 @@ function StartMark({ id }: { id: StartRowId }) {
     );
 }
 
+// The footer of a claude launch with accounts to pick: its account, a click away from a menu of the others. The pick is
+// for this launch only; Settings → Claude account sets the active one, a project's settings its own.
+function AccountPicker({
+    choices,
+    current,
+    active,
+    projectOwn,
+    label,
+    open,
+}: {
+    choices: AccountChoice[];
+    current: string;
+    active: string;
+    projectOwn: string | null;
+    label: string;
+    open: boolean;
+}) {
+    const setOpen = (v: boolean) => globalStore.set(launcherAccountMenuAtom, v);
+    return (
+        <div
+            className="relative min-w-0 flex-1"
+            onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                    setOpen(false);
+                }
+            }}
+        >
+            <button
+                type="button"
+                tabIndex={-1}
+                data-launcher-footer="account"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                title="Run this agent on another Claude account"
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    "-ml-1.5 flex max-w-full cursor-pointer items-center gap-1 rounded-[6px] px-1.5 py-[3px] text-[12px]",
+                    open ? "bg-accentbg text-accent-soft" : "text-muted hover:bg-surface-hover hover:text-primary"
+                )}
+            >
+                <span className="truncate">{label}</span>
+                <ChevronDown size={12} strokeWidth={2} className="shrink-0" />
+            </button>
+            {open ? (
+                <div
+                    role="menu"
+                    data-launcher-account-menu
+                    className="absolute bottom-full left-0 z-10 mb-1 flex min-w-[220px] max-w-[320px] flex-col rounded-[10px] border border-edge-mid bg-modalbg p-1 shadow-popover"
+                >
+                    {choices.map((c) => {
+                        const on = c.id === current;
+                        const note = c.id === projectOwn ? "project" : c.id === active ? "active" : "";
+                        return (
+                            <button
+                                key={c.pick}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={on}
+                                tabIndex={-1}
+                                onClick={() => {
+                                    globalStore.set(launcherAccountAtom, c.pick);
+                                    setOpen(false);
+                                }}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-2 rounded-[7px] px-2 py-[6px] text-left text-[12.5px]",
+                                    on ? "bg-accentbg text-accent-soft" : "text-primary hover:bg-surface-hover"
+                                )}
+                            >
+                                <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                                {note ? <span className="shrink-0 text-[11px] text-muted">{note}</span> : null}
+                                <Check size={13} strokeWidth={2} className={cn("shrink-0", on ? "" : "invisible")} />
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const door = useAtomValue(model.launcherAtom);
     const open = door != null;
@@ -229,6 +318,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const prefill = useAtomValue(launcherPrefillAtom);
     const flagMenuOpen = useAtomValue(launcherFlagMenuAtom);
     const branchListOpen = useAtomValue(launcherBranchListAtom);
+    const accountPick = useAtomValue(launcherAccountAtom);
+    const accountMenuOpen = useAtomValue(launcherAccountMenuAtom);
     const shape = useAtomValue(runShapeAtom);
     const start = useAtomValue(startAtom);
     const planPath = useAtomValue(planPathAtom);
@@ -312,6 +403,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const claudeIdentity = useAtomValue(claudeIdentityAtom);
     const registry = useAtomValue(projectsAtom);
+    // a claude launch runs on its project's account, else the active one, unless the footer picks another for it
+    const claudeLaunch = isAgent && runtime === "claude";
+    const accountChoices = claudeLaunch ? launchAccountChoices(claudeIdentity) : [];
+    const usualAccount = projectLaunchAccount(
+        activeAccount,
+        atHome ? undefined : registry[project?.name ?? ""]?.claudeaccount,
+        claudeIdentity.accounts
+    );
+    const launchAccount = pickedLaunchAccount(accountPick, accountChoices, usualAccount);
+    const accountMenuShown = accountMenuOpen && accountChoices.length > 1;
     const footer = footerLine({
         kind,
         shape,
@@ -319,17 +420,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         project: where,
         branchNote,
         blocker,
-        account:
-            isAgent && runtime === "claude"
-                ? launchAccountName(
-                      projectLaunchAccount(
-                          activeAccount,
-                          atHome ? undefined : registry[project?.name ?? ""]?.claudeaccount,
-                          claudeIdentity.accounts
-                      ),
-                      claudeIdentity
-                  )
-                : "",
+        account: claudeLaunch ? launchAccountName(launchAccount, claudeIdentity) : "",
     });
     const config: RunConfig = {
         shape,
@@ -620,6 +711,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 branch,
                 ...spec,
                 ...(resume ? { resumeOf: resume.transcriptpath } : {}),
+                ...(claudeLaunch ? { accountMeta: accountLaunchMeta(launchAccount, usualAccount) } : {}),
                 ...(asleep && resume
                     ? { asleep: { since: resume.lastactivets, transcriptPath: resume.transcriptpath } }
                     : {}),
@@ -814,6 +906,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 filter,
                 flagMenuOpen: flagMenuShown,
                 branchListOpen: branchListShown,
+                accountMenuOpen: accountMenuShown,
                 resumePicked: resume != null,
                 textField: textField != null,
             },
@@ -920,6 +1013,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     globalStore.set(launcherFlagMenuAtom, false);
                 } else if (action.what === "branches") {
                     globalStore.set(launcherBranchListAtom, false);
+                } else if (action.what === "account") {
+                    globalStore.set(launcherAccountMenuAtom, false);
                 } else if (action.what === "filter") {
                     applyFilter("");
                 }
@@ -1319,6 +1414,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             >
                                 {error}
                             </span>
+                        ) : accountChoices.length > 1 && !footer.blocked ? (
+                            <AccountPicker
+                                choices={accountChoices}
+                                current={launchAccount}
+                                active={activeAccount}
+                                projectOwn={usualAccount !== activeAccount ? usualAccount : null}
+                                label={footer.lead}
+                                open={accountMenuShown}
+                            />
                         ) : (
                             <span
                                 data-launcher-footer="line"

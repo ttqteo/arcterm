@@ -203,6 +203,34 @@ func TestLaunchEnv(t *testing.T) {
 	}
 }
 
+func TestPickedLaunchEnv(t *testing.T) {
+	useTemp(t)
+	t.Setenv(tokenVar, "inherited")
+	os.Unsetenv(accountVar)
+	captureInherited()
+	a, err := Add("Work", "sk-ant-oat01-work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env := PickedLaunchEnv(a.Id); env[tokenVar] != "sk-ant-oat01-work" || env[accountVar] != a.Id {
+		t.Fatalf("an account pick: %v", env)
+	}
+	// Default puts back what wavesrv inherited, and blanks (unsets) what it did not
+	env := PickedLaunchEnv(DefaultPick)
+	if v, ok := env[tokenVar]; !ok || v != "inherited" {
+		t.Fatalf("Default pick token: %v", env)
+	}
+	if v, ok := env[accountVar]; !ok || v != "" {
+		t.Fatalf("Default pick account var: %v", env)
+	}
+	if env := PickedLaunchEnv(""); env != nil {
+		t.Fatalf("no pick: %v, want nil", env)
+	}
+	if env := PickedLaunchEnv("agone"); env != nil {
+		t.Fatalf("a pick whose token is gone: %v, want nil", env)
+	}
+}
+
 func TestProjectLaunchEnv(t *testing.T) {
 	projects := map[string]wconfig.ProjectKeywords{
 		"work":     {Path: "/code/work", ClaudeAccount: "a1"},
