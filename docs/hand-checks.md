@@ -6,6 +6,19 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync 11-06: a real `snapshot-dev.mjs` boot on the packaged store: with the main dev app stopped,
+  run `task dev:snapshot` on your install → the app opens on a copy of your projects, runs and vault; no run resumes
+  and no agent relaunches (nothing starts outside `%LOCALAPPDATA%\arc-snap\scratch`), no vault push or commit reaches
+  your real vault, and a block whose cwd is a real folder refuses to start with the reason (red in its terminal, "failed
+  to start" on an agent's row). Ctrl-C ends it. It needs your packaged install, which a run's checkout does not have, so
+  no real boot was seen (`scripts/cdp/snapshot-dev.mjs`, `cmd/server` `snapshotSkips`, `pkg/blockcontroller`
+  `ResyncController`).
+- [ ] (arcterm) Kael sync 11-06: the terminal status line on macOS: open a terminal in the Agent tree and run a
+  long command (`sleep 30`) → its row stays the one line it was, with no dot, command or port chip, and nothing errors
+  in the console (the sampler reads no terminals on a Mac, so `terminalStatusLine` is `null`). The Windows draw is
+  shown by the `terminal-status-line` scenario; this branch needs a Mac, which no run here has (`agenttree.tsx`
+  terminal rows, `pkg/resmon`).
+
 - [ ] (arcterm) **The transcript's ↓ button scrolls smoothly.** In a sleeping or ended agent's transcript, scroll up
   a few screens and click the round ↓ at the bottom: the feed glides down to the last line (instant with Reduce motion
   on), the button leaves and does not flash back, and scrolling up mid-glide stops it. `sticktobottom.tsx`.

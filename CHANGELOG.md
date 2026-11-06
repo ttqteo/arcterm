@@ -28,6 +28,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - In the New agent dialog, the `Claude: <account>` line at the bottom is now a menu: pick another of your Claude accounts (or your /login one) and that one agent runs on it, without switching the active account or the project's. A resumed session started this way keeps its account; a later account switch's restart moves it to the new one.
 - A council's views have keys: `r` the Report, `c` the Discussion, `m` the Map, each drawn beside its tab.
+- **Terminal rows say what they run** (from the kaeltran16 fork): under its name, each terminal in the Agent tree shows a
+  dot, the command its shell is running with how long it has run ("node server.js  3s") or "idle", and a chip with the
+  port its processes listen on (":5173 +1" for several). Windows only for now; on a Mac the row stays one line.
+  <!-- try: go:agent -->
 
 ### Changed
 
@@ -75,6 +79,24 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   past used to peek out over it.
 - An app with Keep running that you stopped stays stopped when arcterm restarts, instead of starting again on its
   own; opening it or pressing Start runs it, and from then on it starts with arcterm as before.
+- **Vault notes with Windows line endings** (from the kaeltran16 fork): a memory, task or decision saved with CRLF line
+  endings or a byte-order mark keeps its status, objective and id when arcterm reads it, and changing its status no
+  longer stacks a second front-matter block on top of the first. The file keeps its own line endings.
+- **Conversation History titles and finish marks** (from the kaeltran16 fork): a session is titled by its first real
+  prompt, not by an `effort:` reference, a local command's output or the "Work by these principles" preamble; a session
+  written to in the last five minutes no longer shows a "finished" event; and pi's subagent runs are no longer listed
+  as sessions of their own.
+- **Agents that fail to start say so** (from the kaeltran16 fork): an agent whose controller refuses to start now reads
+  "failed to start" with the reason in the Agent header and its tree row, and its terminal prints the error in red,
+  instead of staying a booting, working row forever.
+- **Tools used stay filled off the Cockpit** (from the kaeltran16 fork): the Agent surface's details rail shows an
+  agent's live Tools, Subagents and Background tasks without opening the Cockpit first, and keeps them after you leave
+  it.
+- **Background subagents end at their notification** (from the kaeltran16 fork): a subagent started in the background
+  now ends when its completion notice arrives, as a success or a failure, instead of a neutral "done"; the plumbing
+  handback row is gone from the transcript, a subagent's interior, Tools and the Cockpit card.
+- **Focus after a palette pick** (from the kaeltran16 fork): picking Cockpit from the search palette with nothing
+  focused leaves the Cockpit's `j`, `k` and Enter working at once, instead of dead until you click.
 
 ## 1.0.4 — 2026-11-06
 
