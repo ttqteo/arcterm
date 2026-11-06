@@ -15,7 +15,7 @@ import type { Runtime } from "./launch";
 import { draftShown, type LauncherKind } from "./launcher";
 import { imageRoom, type TaskImage } from "./launcherimages";
 import { appendPage, RESUME_PAGE, resumeScopeKey } from "./launcherresume";
-import { planPathAtom, setRunShape, setStart } from "./runconfigstore";
+import { pickRunShape, planPathAtom, startAtom } from "./runconfigstore";
 
 export const launcherKindAtom = atom<LauncherKind>("agent") as PrimitiveAtom<LauncherKind>;
 // the agent row; null until the first open defaults it from the harness preference
@@ -295,8 +295,11 @@ export function applyLauncherPrefill(projectNames: string[]): boolean {
     if (p.picked != null) {
         pickLauncherProject(p.picked, globalStore.get(launcherProjectAtom));
     }
-    setRunShape(p.shape);
-    setStart(p.start);
+    // A prefill (a brainstorm's Approve, a canvas's Build this…) is a door, like the dialog's Orchestrate row: it must
+    // not mark the run config touched by hand, or the project's saved profile (Approvals, workers, width) never fills
+    // the dialog. pickRunShape keeps its shape over the profile's; the start is set directly for the same reason.
+    pickRunShape(p.shape);
+    globalStore.set(startAtom, p.start);
     globalStore.set(launcherGoalAtom, p.goal);
     globalStore.set(launcherPrototypeAtom, p.prototype);
     return true;

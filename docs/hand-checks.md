@@ -161,6 +161,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   corner, clear of its glow. Let an orchestrator run land with its final check passed → its row in the Agent tree reads
   Complete beside a small gift instead of the check; a run that landed unverified keeps its check. No CDP scenario
   opens either state (`cockpitemptystate.tsx`, `agenttree.tsx` RunCompleteLabel, f4d4c99cb).
+- [ ] (arcterm) **A brainstorm's Approve follows the Profile's Approvals.** With Jarvis → Profile → Approvals:
+  Autonomous saved, approve a brainstorm's design (Approve and start an orchestrator run) → the New dialog opens on
+  Orchestrate with the goal and Prototype filled and Approvals on Autonomous. (fix(launcher): `applyLauncherPrefill`
+  in `launcherstore.ts` uses `pickRunShape`)
 - [ ] (arcterm) **New → Orchestrate follows the Profile's Approvals.** Jarvis → Profile → Global → Approvals:
   Autonomous → Save. Open New, pick Orchestrate with arcterm picked → Approvals shows Autonomous. Pick another
   project, then back → still Orchestrate. Change Workers by hand, switch project → your pick stays. (fix(launcher):

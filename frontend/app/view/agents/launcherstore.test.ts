@@ -44,7 +44,20 @@ import {
     RESUME_PICK_KEEP_MS,
     takeLauncherHandback,
 } from "./launcherstore";
-import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
+import {
+    autonomousAtom,
+    configTouchedAtom,
+    forgetConfiguredChannel,
+    hydrateRunConfigFromProfile,
+    parallelismAtom,
+    planPathAtom,
+    resetRunConfig,
+    resetRunConfigForChannel,
+    runShapeAtom,
+    setRunShape,
+    shapePickedAtom,
+    startAtom,
+} from "./runconfigstore";
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { GetRecentSessionsCommand: vi.fn() } }));
 const recent = vi.mocked(RpcApi.GetRecentSessionsCommand);
@@ -77,6 +90,8 @@ beforeEach(() => {
     globalStore.set(launcherOwnProjectAtom, null);
     globalStore.set(launcherBusyAtom, false);
     endLauncherDraft();
+    forgetConfiguredChannel();
+    globalStore.set(shapePickedAtom, false);
     resetRunConfig();
 });
 
@@ -352,6 +367,24 @@ describe("applyLauncherPrefill", () => {
     });
     it("does nothing without a prefill", () => {
         expect(applyLauncherPrefill(["arcterm"])).toBe(false);
+    });
+    // a brainstorm's Approve opens the dialog this way: a door, not a hand edit, so the project's saved profile
+    // (Approvals, workers, width) still fills it, and the shape it picked survives the profile and the project switch
+    it("leaves the draft untouched, so the project's profile still fills Approvals", () => {
+        globalStore.set(launcherPrefillAtom, prefill);
+        applyLauncherPrefill(["arcterm"]);
+        expect(globalStore.get(configTouchedAtom)).toBe(false);
+        resetRunConfigForChannel("chan-arcterm", true);
+        hydrateRunConfigFromProfile({
+            playbook: [],
+            autonomous: true,
+            parallelism: 5,
+            defaultmode: "quick",
+        } as JarvisProfile);
+        expect(globalStore.get(autonomousAtom)).toBe(true);
+        expect(globalStore.get(parallelismAtom)).toBe(5);
+        expect(globalStore.get(runShapeAtom)).toBe("orchestrator");
+        expect(globalStore.get(startAtom)).toBe("goal");
     });
 
     describe("the handback of the run it starts", () => {
