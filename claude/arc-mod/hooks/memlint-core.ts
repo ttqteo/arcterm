@@ -8,6 +8,13 @@
 
 export const STALE_DAYS = 30;
 
+// a lint with this many issues or fewer stays quiet: one or two stale notes are not worth a session's first reply
+export const QUIET_MAX = 3;
+
+export function shouldReport(problems: string[]): boolean {
+    return problems.length > QUIET_MAX;
+}
+
 export type MemoryFile = { name: string; text: string; mtimeMs: number };
 
 export type Memory = { file: string; name?: string; body: string; touchedMs: number };
