@@ -28,6 +28,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, msg)
 		os.Exit(128)
 	}
+	// no test reads the real config watcher or secret store: the judge runs on claude unless a test
+	// pins another runtime (model_test.go's modelTestRuntime)
+	headlessRuntimeFn = func() string { return "claude" }
+	openRouterKeyFn = func() (bool, error) { return false, nil }
 	os.Exit(m.Run())
 }
 

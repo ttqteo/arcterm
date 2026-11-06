@@ -5,6 +5,7 @@ package memhygiene
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -122,6 +123,12 @@ func judgeBudgetBrief(inv *Inventory, batch []Memory, docName string) string {
 // what else exists, the batch's bodies with their evidence, and the instruction docs so it can spot a
 // memory that repeats them. docTarget is the doc a move-to-doc change writes (DocTarget).
 func JudgePrompt(inv *Inventory, batch []Memory, docs map[string]string, docTarget string) string {
+	return judgePrompt(inv, batch, docs, docTarget, false)
+}
+
+// judgePrompt is JudgePrompt with the explain option Ask an agent sets: the reply also gives a
+// one-sentence reason for each memory it leaves unchanged, and each change's title is its reason.
+func judgePrompt(inv *Inventory, batch []Memory, docs map[string]string, docTarget string, explain bool) string {
 	docName := filepath.Base(docTarget)
 	var b strings.Builder
 	b.WriteString(`You review a project's Claude Code auto memory. Sessions load the index, MEMORY.md, and read a topic file only when its index line looks relevant. Claude Code loads only the first ` + strconv.Itoa(LimitLines) + ` lines or ` + strconv.Itoa(LimitBytes) + ` bytes of the index, so the index must stay small and current.
@@ -142,9 +149,13 @@ An index line is one line: "- [short title](file-name.md) — the hook that tell
 Reply with strict JSON only, no prose, in this shape:
 {"changes": [{"kind": "delete|trim|merge|move-to-doc|add-to-index", "title": "a short reason, for a table row", "files": ["memory-file.md"], "evidence": [{"tone": "ok|warn|none", "text": "one line of evidence", "code": "optional file, path or quote shown in monospace"}], "old": "", "new": "", "index_line": "", "merge_name": "", "merge_body": "", "section": "", "passage": ""}]}
 Leave out the fields a kind doesn't use.
-
 `)
-	b.WriteString("## The whole index (MEMORY.md)\n\n")
+	if explain {
+		b.WriteString(`Make each change's "title" its one-sentence reason. For a memory you leave unchanged, add a top-level "fine" list beside "changes", one entry per memory, saying in one sentence why it stays:
+"fine": [{"memory": "<name>", "reason": "<one sentence>"}]
+`)
+	}
+	b.WriteString("\n## The whole index (MEMORY.md)\n\n")
 	if len(inv.IndexLines) == 0 {
 		b.WriteString("(no index)\n")
 	}
@@ -236,23 +247,52 @@ type judgeChange struct {
 // A reply with no complete JSON object (malformed or truncated) is an error, so the caller keeps the
 // last good result.
 func ParseJudge(reply string, inv *Inventory, docTarget string) ([]wshrpc.MemChange, error) {
+	changes, _, err := parseJudge(reply, inv, docTarget)
+	return changes, err
+}
+
+// judgeFine is the explain prompt's reason for a memory it leaves unchanged.
+type judgeFine struct {
+	Memory string `json:"memory"`
+	Reason string `json:"reason"`
+}
+
+// parseJudge is ParseJudge that also reads the explain prompt's "fine" list, empty when the reply has
+// none. A "fine" that is there but malformed is an error, like a malformed "changes".
+func parseJudge(reply string, inv *Inventory, docTarget string) ([]wshrpc.MemChange, []judgeFine, error) {
 	var raw []judgeChange
 	if err := judgeExtract(reply, "changes", &raw); err != nil {
-		return nil, fmt.Errorf("memory hygiene judge reply: %w", err)
+		return nil, nil, fmt.Errorf("memory hygiene judge reply: %w", err)
+	}
+	var fine []judgeFine
+	var noKey *judgeNoKeyError
+	if err := judgeExtract(reply, "fine", &fine); err != nil && !errors.As(err, &noKey) {
+		return nil, nil, fmt.Errorf("memory hygiene judge reply: %w", err)
 	}
 	index, err := ReadText(inv.IndexPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out []wshrpc.MemChange
 	for i, jc := range raw {
 		change, err := judgeBuild(jc, inv, docTarget, len(index.EOL))
 		if err != nil {
-			return nil, fmt.Errorf("memory hygiene judge reply, change %d (%q): %w", i+1, jc.Title, err)
+			return nil, nil, fmt.Errorf("memory hygiene judge reply, change %d (%q): %w", i+1, jc.Title, err)
 		}
 		out = append(out, change)
 	}
-	return out, nil
+	return out, fine, nil
+}
+
+// judgeNoKeyError is judgeExtract finding no complete JSON object with the key, which for an optional
+// key means it is absent.
+type judgeNoKeyError struct {
+	key   string
+	bytes int
+}
+
+func (e *judgeNoKeyError) Error() string {
+	return fmt.Sprintf("no complete JSON object with %q in %d bytes (malformed or truncated)", e.key, e.bytes)
 }
 
 // judgeExtract decodes key's value from the first JSON object in reply that has key. Scanning every
@@ -274,7 +314,7 @@ func judgeExtract(reply, key string, v any) error {
 		}
 		i += 1 + next
 	}
-	return fmt.Errorf("no complete JSON object with %q in %d bytes (malformed or truncated)", key, len(reply))
+	return &judgeNoKeyError{key: key, bytes: len(reply)}
 }
 
 func judgeBuild(jc judgeChange, inv *Inventory, docTarget string, eolLen int) (wshrpc.MemChange, error) {

@@ -224,7 +224,8 @@ func entryUndo(st *State, c *wshrpc.MemChange) error {
 	return nil
 }
 
-// entryBegin marks a registered project as checking, refusing one that already is. It moves the next
+// entryBegin marks a registered project as checking, refusing one that already is or that is asking an
+// agent. It moves the next
 // sweep a week out up front, so a check that fails or is cut short waits for the next weekly sweep
 // instead of making a model call every hour.
 func entryBegin(project string) error {
@@ -235,8 +236,13 @@ func entryBegin(project string) error {
 		if st.Checking {
 			return fmt.Errorf("memory hygiene: %s is already being checked", project)
 		}
+		now := time.Now()
+		// a live ask or one waiting behind it; a stale marker reads as failed (askLive)
+		if askLive(st, now) {
+			return fmt.Errorf("memory hygiene: %s is asking an agent", project)
+		}
 		st.Checking = true
-		st.NextCheckAt = time.Now().Add(checkInterval).UnixMilli()
+		st.NextCheckAt = now.Add(checkInterval).UnixMilli()
 		return nil
 	})
 	return err
