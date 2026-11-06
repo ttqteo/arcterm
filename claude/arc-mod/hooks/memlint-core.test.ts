@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Memory } from "./memlint-core";
-import { lintContext, lintMemory, parseMemory, referencedPaths, referencedTasks, taskNames } from "./memlint-core";
+import {
+    lintContext,
+    lintMemory,
+    parseMemory,
+    referencedPaths,
+    referencedTasks,
+    shouldReport,
+    taskNames,
+} from "./memlint-core";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-10-14");
@@ -95,6 +103,15 @@ describe("lintMemory", () => {
     it("flags a memory untouched for 30 days, not one touched 29 days ago", () => {
         const memories = [mem("a.md", "a", "", NOW - 30 * DAY), mem("b.md", "b", "", NOW - 29 * DAY)];
         expect(lint(memories, index)).toEqual(["a.md untouched for 30 days: still true? already in AGENTS.md?"]);
+    });
+});
+
+describe("shouldReport", () => {
+    it("stays quiet up to three issues and reports from four", () => {
+        expect(shouldReport([])).toBe(false);
+        expect(shouldReport(["p1"])).toBe(false);
+        expect(shouldReport(["p1", "p2", "p3"])).toBe(false);
+        expect(shouldReport(["p1", "p2", "p3", "p4"])).toBe(true);
     });
 });
 
