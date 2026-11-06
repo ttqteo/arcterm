@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -187,4 +188,20 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestWriteStatusCRLF(t *testing.T) {
+	v, p := writeVaultWithDossier(t)
+	orig := strings.ReplaceAll(string(mustRead(t, p)), "\n", "\r\n")
+	if err := os.WriteFile(p, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := ContentHash([]byte(orig))
+	if _, err := v.Write("t-1", wspec, []RegionEdit{{Kind: FrontmatterKey, Name: "status", Value: "completed"}}, base); err != nil {
+		t.Fatalf("Write to a CRLF record must pass the machine-only guard: %v", err)
+	}
+	got := string(mustRead(t, p))
+	if want := strings.Replace(orig, "status: draft", "status: completed", 1); got != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
 }

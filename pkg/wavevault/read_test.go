@@ -180,3 +180,18 @@ func ids(ns []Node) []string {
 	}
 	return out
 }
+
+func TestMemoryNoteCRLF(t *testing.T) {
+	v := seedVault(t)
+	raw := "---\r\nid: m-crlf\r\ndescription: crlf note\r\n---\r\n\r\nBody.\r\n"
+	if err := os.WriteFile(filepath.Join(v.Root, "memory", "m-crlf.md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nb, err := v.Retriever(AllScope()).Read("m-crlf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nb.Node.ID != "m-crlf" || nb.Node.Frontmatter["description"] != "crlf note" {
+		t.Fatalf("node = %+v", nb.Node)
+	}
+}

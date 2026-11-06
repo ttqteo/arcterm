@@ -166,3 +166,19 @@ func TestLoadDossierProjectsHumanNotes(t *testing.T) {
 		t.Fatalf("Notes leaked machine-block content: %q", d.Notes)
 	}
 }
+
+func TestLoadDossierCRLF(t *testing.T) {
+	v := newVault(t)
+	raw := "---\r\nid: crlf-1\r\nstatus: completed\r\nobjective: ship it\r\nupdated: 1753324800000\r\n---\r\n\r\n" +
+		"<!-- jarvis:begin state -->\r\nall good\r\n<!-- jarvis:end state -->\r\n"
+	if _, err := v.Create("tasks/active", "crlf-1.md", raw); err != nil {
+		t.Fatal(err)
+	}
+	d, err := LoadDossier(v.Retriever(wavevault.AllScope()), "crlf-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Objective != "ship it" || d.Status != "completed" || d.Updated != 1753324800000 || d.State != "all good" {
+		t.Fatalf("dossier = %+v", d)
+	}
+}
