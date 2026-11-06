@@ -30,6 +30,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- While the judge weighs a brainstorm question, the agent's approaches are headed "Answer now, or wait for the judge",
+  so it is plain the rows answer, and every row has a tick box to send several together, as the judge's options may
+  allow.
 - A folded reply keeps the bold heading of the section a highlighted sentence sits in, so "the list is not built"
   still says which part it is about.
 - A folded reply whose opening ends on a colon ("answering when it will be done:") keeps the paragraph after it, which

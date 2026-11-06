@@ -326,9 +326,8 @@ node -e "const fs=require('fs'),[f,j]=process.argv.slice(1),b=JSON.parse(fs.read
 ```
 
 `<path>` is `judge.json` beside `brainstorm.json`: `{ "options", "read", "multi", "judge": {
-"added", "dropped" } }`. `approaches` stays in the question for a rerun. The judge's `multi`
-replaces yours: set `multi` on the approach question only for the wait, when the approaches could be
-taken together.
+"added", "dropped" } }`. `approaches` stays in the question for a rerun. `multi` is the judge's:
+leave it off the approach question, since the wait offers a tick box on every approach.
 
 When the judge's options differ in UI, the same turn draws them before the copy: read `<path>`,
 draw one board per option in its order (**Options as boards**), then copy with this variant, which
