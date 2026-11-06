@@ -251,7 +251,7 @@ const PANEL_JS = `() => {
             badge: badgeOf(dir),
             editing: !!dir.querySelector("[data-council-memory-editor]"),
             editText: dir.querySelector("[data-council-memory-edit-text]")?.value ?? null,
-            earlier: dir.querySelector('[data-council-memory-action="earlier"]') ? norm(dir.querySelector('[data-council-memory-action="earlier"]')) : null,
+            earlier: dir.querySelector('[data-council-memory-action="earlier"]')?.getAttribute("aria-label") ?? null,
             earlierOpen: dir.querySelector('[data-council-memory-action="earlier"]')?.getAttribute("aria-expanded") === "true",
             rows: [...dir.querySelectorAll("[data-council-memory-earlier-row]")].map((r) => ({
                 parts: [...r.children].map((s) => norm(s)),

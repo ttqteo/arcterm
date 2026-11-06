@@ -42,6 +42,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A Brainstorm council splits the problem into zones, one per seat, and picks its top 3 ideas from different zones where
   it can, so one part of the problem no longer takes every place; an idea that says what the code does today cites the
   line, and between two even ideas the one read in the code ranks first.
+- The app bar's Christmas lights hang only in gaps wide enough for three bulbs or more, so the narrow gaps around New
+  and the fold button no longer hold a lone bulb.
 - An agent's Brainstorm view no longer keeps the details rail on its right, so the brainstorm's own Boards and
   Decided rail get the width; it comes back with the terminal.
 - While the judge weighs a brainstorm question, the agent's approaches are headed "Answer now, or wait for the judge",
@@ -68,6 +70,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - The ↓ button in a transcript now scrolls smoothly down to the latest line instead of jumping there.
+- After an update, arcterm installs its own version's Claude mod and hooks again: it used to pick an old `wsh` left
+  behind by an earlier install, so the Claude mod stayed at that old version.
+- A council reply you send to a long message no longer stretches off the left edge of the Discussion: the quote shortens
+  to fit and your text shows beside it.
 - With every initiative archived, Jarvis's Brief shows the "No initiative yet" box with its New initiative button again,
   over Show N archived, instead of saying every initiative is on a card above when there are no cards.
 - A project's Overview shows an agent's whole name in Running and Finished, not the first 15 letters: the line of

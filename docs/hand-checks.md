@@ -40,6 +40,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   portfolio (Keep running on) → Stop, quit and reopen arcterm → it reads stopped/sleeping and nothing listens on 8386;
   `services.json` in the data dir has `"off": true` for it. Open it (rail or tree) → it starts, `off` is gone, and the
   next restart starts it on its own again. Unit tests only (71461e840).
+- [ ] (arcterm) **A council reply to a long message stays in the column.** After the next build, in a council's
+  Discussion, press Reply (↶) on a seat's long message, type a short line and send → your bubble sits at the right,
+  no wider than the column; its quote row shows the seat's name and the message cut with `…`, and your line shows
+  under it. Before, the bubble stretched off the left edge and your text was out of sight. Checked only on a copy of
+  the bubble's markup in the dev app, not on a real council (`councilchat.tsx` ReplyMessage bubble, `max-w-full`).
 - [ ] (arcterm) **A council's r / c / m keys.** Open a council: each tab of the Report / Discussion / Map strip shows its
   key (r, c, m) after its icon and the Discussion's count, the strip still one row. With focus out of a text box, `c`
   opens the Discussion, `m` the Map, `r` the Report (on the Report already, it glides to the body); typing r c m in the
@@ -1716,6 +1721,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Initiative "only" bar wraps.** Jarvis → an initiative with a long chunk title → Notes → click the
   chunk → the "only" bar on top shows the whole title over several lines, the "only" label, tone dot and "show all"
   sitting on its first line. Prettier only (`NotesFeed` in `effortdetailview.tsx`); no dev app was up.
+- [ ] (arcterm) **Council Memory icons.** A council → Memory → hover the Direction → Earlier reads as a history icon
+  with its count, Edit a pencil, Unpin a crossed-out pin, each with its word as a tooltip; Unpin spins while it runs;
+  hover an entry → Chốt a pin, Edit a pencil. Prettier and ESLint only (`councilmemory.tsx`); no dev app was up.
 - [ ] (arcterm) **Overview Quick look and Back.** Agent → a project's Overview → click a History session row → the
   transcript opens in a dialog over the Overview, with Activity/Transcript, Resume and Open; Esc or a click outside
   closes it. Scroll a long transcript down → the pinned prompt at the top sits on the dialog's own ground, no darker
@@ -1746,3 +1754,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   edge under it. Same in an ended agent's transcript, the rail transcript and a session's read. Prettier/ESLint only
   (`pinnedpromptbar.tsx`; top padding dropped in `sleepingtranscript.tsx`, `endedtranscript.tsx`,
   `sessionsdetail.tsx`); no dev app was up.
+- [ ] (arcterm) **Council Map: a long cite wraps inside the idea column.** A council report → Map, an idea whose
+  "Đã đọc code" line cites a long path (`obsidian_harness/20261104_harness_overview.html:108`): the cite chip wraps
+  within the idea column instead of running under the first seat's column. `councilmap.tsx` (`CheckLine` cite span:
+  `wrap-anywhere`, `max-w-full`); no dev app was up.
