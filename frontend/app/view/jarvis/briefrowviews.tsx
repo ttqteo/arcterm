@@ -30,18 +30,18 @@ const KIND_CHIP: Partial<Record<BriefLine["kindTone"], string>> = {
 export function WaitingRow({
     line,
     focused,
-    act,
+    acts,
     onOpen,
     onAct,
 }: {
     line: BriefLine;
     focused: boolean;
-    act: QueueAct;
+    // every button the row carries, in order: one for most rows, Unblock and Done for a blocked chunk
+    acts: QueueAct[];
     onOpen?: (e: React.MouseEvent) => void;
-    onAct: () => void;
+    onAct: (act: QueueAct) => void;
 }) {
     const sub = [line.why.replace(/\.$/, ""), line.meta].filter((p) => p !== "").join(" · ");
-    const go = act.label === "Go to agent";
     return (
         <div
             data-jarvis-brief-row="queue"
@@ -72,30 +72,46 @@ export function WaitingRow({
                         {sub}
                     </span>
                     {line.age !== "" ? (
-                        <span className="flex-none whitespace-nowrap">
+                        <span data-jarvis-queue-age className="flex-none whitespace-nowrap">
                             {sub !== "" ? "· " : ""}
                             {line.age}
                         </span>
                     ) : null}
                 </span>
+                {line.detail !== "" ? (
+                    // a note written after the block, which often says it cleared: what Unblock and Done act on
+                    <span
+                        data-jarvis-queue-latest
+                        title={line.detail}
+                        className="min-w-0 truncate text-[11px] text-ink-mid"
+                    >
+                        {line.detail}
+                    </span>
+                ) : null}
             </span>
-            <button
-                type="button"
-                data-jarvis-queue-act={act.kind}
-                title={go ? "Go to the agent open on this initiative" : undefined}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onAct();
-                }}
-                className={cn(
-                    "min-w-[66px] flex-none cursor-pointer whitespace-nowrap rounded-[6px] border px-2.5 py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                    act.label === "Approve" || go
-                        ? "border-success/35 bg-success/12 text-success"
-                        : "border-edge-mid text-secondary"
-                )}
-            >
-                {act.label}
-            </button>
+            {acts.map((act) => {
+                const go = act.label === "Go to agent";
+                return (
+                    <button
+                        key={act.kind}
+                        type="button"
+                        data-jarvis-queue-act={act.kind}
+                        title={go ? "Go to the agent open on this initiative" : undefined}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onAct(act);
+                        }}
+                        className={cn(
+                            "min-w-[66px] flex-none cursor-pointer whitespace-nowrap rounded-[6px] border px-2.5 py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            act.label === "Approve" || go
+                                ? "border-success/35 bg-success/12 text-success"
+                                : "border-edge-mid text-secondary"
+                        )}
+                    >
+                        {act.label}
+                    </button>
+                );
+            })}
         </div>
     );
 }

@@ -54,6 +54,25 @@ describe("buildEffortCard", () => {
             "done", "done", "active", "deferred", "blocked", "skipped", "pending", "pending",
         ]);
         expect(m.blockedChunks).toEqual(["Phase 5"]);
+        // no note recorded this block, so it has no age and nothing it needs
+        expect(m.blockedDetail).toEqual({ "Phase 5": { since: null, needs: "", latest: undefined } });
+    });
+
+    it("carries a blocked chunk's since, needs and newest note beside its label", () => {
+        const latest = { ts: 300, text: "the blocker is gone on DEV", chunk: "Phase 5", author: "agent" };
+        const m = buildEffortCard({
+            ...base,
+            chunks: [
+                { label: "Phase 4", status: "done" },
+                { label: "Phase 5", status: "blocked", blocked: { since: 100, needs: "needs: a DEV soak", latest } },
+                { label: "Phase 6", status: "blocked", blocked: {} },
+            ],
+        } as EffortSummary);
+        expect(m.blockedChunks).toEqual(["Phase 5", "Phase 6"]);
+        expect(m.blockedDetail).toEqual({
+            "Phase 5": { since: 100, needs: "needs: a DEV soak", latest },
+            "Phase 6": { since: null, needs: "", latest: undefined },
+        });
     });
 
     it("draws every chunk but the skipped ones as a bar segment, in plan order", () => {

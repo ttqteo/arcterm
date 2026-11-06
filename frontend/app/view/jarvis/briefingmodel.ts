@@ -5,7 +5,7 @@
 // ordering, exact worker suppression, window filtering, wording and navigation normalization happens
 // here; React components do not reinterpret wire kinds inline.
 
-import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { formatAge, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct, type AttentionAct } from "./attentionact";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
 import { openAgentFor } from "./initiativework";
@@ -83,6 +83,9 @@ export interface DeltaRow {
     wording: string;
     detail: string | null;
     oref: string | null;
+    // the project path, and a run event's initiative: Behind you names the one and folds into the other
+    project?: string;
+    effortOid?: string;
 }
 export interface ShippedRow {
     oref: string;
@@ -192,7 +195,10 @@ export interface QueueRow {
     queueId?: string;
     // an agent is open on a due chunk's initiative, so its Work on reads Go to agent (attentionact.ts)
     agentOpen?: boolean;
+    // a blocked initiative chunk: what Unblock and Done write to, and the open that lands on it
+    chunk?: QueueChunk;
 }
+export type QueueChunk = { effortOref: string; label: string; needs: string; latest?: EffortLastNote };
 
 // dag-gate/dag-blocked are absent from the rail's map and fell through to the raw wire kind, which
 // already reads as a label; spelled out here so every kind the server can emit has a written form.
@@ -310,46 +316,51 @@ export function buildAttentionQueue(input: {
             agentOpen: dueORef != null && !!a.effortoid && openAgentFor(a.effortoid, input.roster ?? []) != null,
         };
     });
-    // a blocked chunk is attention the server's attention leg never sees; it has no waiting-since to
-    // interleave on, so it follows the wire rows rather than competing with them for priority.
+    // Blocked chunks and blocked records are attention the server's attention leg never sees. They follow the wire
+    // rows rather than compete with them for priority, oldest first among themselves: the longest wait is the likeliest
+    // to be stale. One with no recorded age sorts last.
     // a chunk both blocked and due is one waiting thing: its due row already stands for it
     const due = new Set(
         rows.flatMap((r) =>
             r.wireKind === "chunk-due" && r.nav?.kind === "effort" ? [r.nav.oref + ":" + r.title] : []
         )
     );
+    const blocked: QueueRow[] = [];
     for (const e of input.efforts) {
         for (const label of e.blockedChunks) {
             if (due.has(e.oref + ":" + label)) {
                 continue;
             }
-            rows.push({
+            const trail = e.blockedDetail?.[label];
+            const needs = trail?.needs ?? "";
+            blocked.push({
                 key: "chunk:" + e.oref + ":" + label,
                 kind: "chunk blocked",
                 title: label,
                 source: e.title,
                 detail: e.title,
-                ts: null,
+                ts: trail?.since ?? null,
                 action: "Open",
                 nav: { kind: "effort", oref: e.oref },
                 tone: "asking",
                 // a blocked chunk IS the initiative's row, so naming the initiative again beside the
                 // chunk would say the same thing twice; detail already carries the title.
                 attrib: "",
-                why: "",
+                why: needs,
                 cites: [],
                 wireKind: "chunk-blocked",
                 channelId: "",
                 runId: null,
                 taskId: "",
                 retry: false,
+                chunk: { effortOref: e.oref, label, needs, latest: trail?.latest },
             });
         }
     }
     // a record with blockers waits on you as much as a gate does (design L1010: everything that needs you
     // is in this one queue), so it leaves Runs and joins here, opening its record.
     for (const b of input.blockers ?? []) {
-        rows.push({
+        blocked.push({
             key: "blocker:" + b.oref,
             kind: "blocked",
             wireKind: "blocker",
@@ -369,6 +380,8 @@ export function buildAttentionQueue(input: {
             retry: false,
         });
     }
+    const age = (r: QueueRow) => r.ts ?? Number.POSITIVE_INFINITY;
+    rows.push(...blocked.sort((a, b) => age(a) - age(b)));
     return rows;
 }
 
@@ -423,11 +436,55 @@ export function queueKindLabel(row: QueueRow): KindWord {
     return kindWord(row.wireKind, row.retry);
 }
 
-export type QueueAct = AttentionAct;
+// A blocked chunk's row settles it in place: Unblock returns it to pending, Done finishes it. The Brief writes the chunk's
+// status itself (briefqueueactions.ts), so these two are not among the acts the Cockpit and the peek share.
+export type ChunkAct = { label: "Unblock"; kind: "unblock-chunk" } | { label: "Done"; kind: "done-chunk" };
+export type QueueAct = AttentionAct | ChunkAct;
 
 // What the row's button does in place (design L1598-1609); the creature's peek offers the same one (attentionact.ts).
-export function queueAction(row: QueueRow): QueueAct {
+export function queueAction(row: QueueRow): AttentionAct {
     return attentionAct(row);
+}
+
+// a blocked chunk is often stale (its last note says the blocker cleared), so it settles in the row; the row's own click
+// still opens it
+const CHUNK_ACTS: ChunkAct[] = [
+    { label: "Unblock", kind: "unblock-chunk" },
+    { label: "Done", kind: "done-chunk" },
+];
+
+// every button a row carries, in order
+export function queueActions(row: QueueRow): QueueAct[] {
+    return row.chunk != null ? CHUNK_ACTS : [queueAction(row)];
+}
+
+export type ChunkActDeps = {
+    setChunkStatus: (oref: string, chunk: string, status: string, note?: string) => Promise<void>;
+    undo: { notify: (text: string, undo?: () => void) => void; error: (text: string) => void };
+};
+
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+// Unblock writes the chunk back to pending and Done finishes it; either says so in the toast, and the toast's Undo blocks
+// the chunk again with the note it was blocked on, so the row comes back saying what it waits on (its age restarts). A
+// write the server refuses shows its own words in place of a success toast.
+export async function actOnChunk(deps: ChunkActDeps, row: QueueRow, kind: ChunkAct["kind"]): Promise<void> {
+    const chunk = row.chunk;
+    if (chunk == null) {
+        return;
+    }
+    const done = kind === "done-chunk";
+    try {
+        await deps.setChunkStatus(chunk.effortOref, chunk.label, done ? "done" : "pending");
+    } catch (e) {
+        deps.undo.error(messageOf(e));
+        return;
+    }
+    deps.undo.notify(`${done ? "Done" : "Unblocked"} · ${chunk.label}`, () => {
+        deps.setChunkStatus(chunk.effortOref, chunk.label, "blocked", chunk.needs || undefined).catch((e) =>
+            deps.undo.error(messageOf(e))
+        );
+    });
 }
 
 // the rows Acknowledge all settles: exactly the ones whose own button is Acknowledge
@@ -440,6 +497,42 @@ export function ackableRuns(rows: QueueRow[]): { channelId: string; runId: strin
 // the Waiting head's "oldest 23h": the longest anything has waited, or null when no row knows its wait
 export function oldestWaitingTs(rows: QueueRow[]): number | null {
     return rows.reduce<number | null>((o, r) => (r.ts == null ? o : o == null ? r.ts : Math.min(o, r.ts)), null);
+}
+
+const KIND_PLURAL: Record<KindWord, string> = {
+    gate: "gates",
+    ask: "asks",
+    failed: "failed",
+    blocked: "blocked",
+    triage: "triage",
+    due: "due",
+    plan: "plans",
+    unverified: "unverified",
+    held: "held",
+    "not started": "not started",
+    rule: "rules",
+    council: "councils",
+};
+
+// What the queue holds in one line: a count for each kind word in queue order (ten blockers read as "10 blocked", not as
+// the word ten times), then how many initiatives the blocked chunks span, then the longest wait. A single one of a kind
+// reads as its bare word.
+export function summarizeAttentionQueue(rows: QueueRow[], now: number): string {
+    const kinds = new Map<KindWord, number>();
+    for (const r of rows) {
+        const k = queueKindLabel(r);
+        kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    }
+    const parts = [...kinds].map(([k, c]) => (c === 1 ? k : `${c} ${KIND_PLURAL[k]}`));
+    const initiatives = new Set(rows.flatMap((r) => (r.chunk != null ? [r.chunk.effortOref] : []))).size;
+    if (initiatives > 0) {
+        parts.push(`${initiatives} initiative${initiatives === 1 ? "" : "s"}`);
+    }
+    const oldest = oldestWaitingTs(rows);
+    if (oldest != null) {
+        parts.push(`oldest ${formatAge(now - oldest)}`);
+    }
+    return parts.join(" · ");
 }
 
 // needing-eyes first (blocked run / blocker / asking agent), recency within tier, identity last.
@@ -540,6 +633,8 @@ function dossierWording(detail: string | undefined): string {
     }
     return "Record updated";
 }
+
+const RUN_EVENTS = new Set(["run-created", "run-done"]);
 
 const DELTA_WORDING: Record<string, string> = {
     "run-created": "Run started",
@@ -653,8 +748,10 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
         .flatMap((p) => p.delta ?? [])
         .filter((ev) => ev.ts >= actualCursor && ev.kind !== "session" && !matchesAttention(ev, attentionItems));
     const promotedOrefs = new Set(windowedShipped.map((s) => "run:" + s.runoid));
+    // a shipped run's start and its finish both repeat its Shipped row, so neither stays in the delta; a run that has
+    // not shipped keeps its start
     const delta: DeltaRow[] = rawDelta
-        .filter((ev) => ev.kind !== "run-done" || !promotedOrefs.has(ev.navtarget ?? ""))
+        .filter((ev) => !RUN_EVENTS.has(ev.kind) || !promotedOrefs.has(ev.navtarget ?? ""))
         .map((ev) => {
             const wording = ev.kind === "dossier" ? dossierWording(ev.detail) : (DELTA_WORDING[ev.kind] ?? ev.kind);
             return {
@@ -665,6 +762,8 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
                 wording,
                 detail: ev.detail ?? null,
                 oref: ev.navtarget || null,
+                project: ev.project ?? "",
+                effortOid: ev.effortoid ?? "",
             };
         });
 

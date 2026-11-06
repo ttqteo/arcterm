@@ -358,6 +358,7 @@ type TimelineEvent struct {
 	Title     string `json:"title"`
 	Detail    string `json:"detail,omitempty"`
 	NavTarget string `json:"navtarget,omitempty"`
+	EffortOID string `json:"effortoid,omitempty"` // a run event's initiative, so Behind you folds the run into it
 }
 
 // SourceHealth reports each ledger leg's read status. Attention is always "volatile": the pending-ask

@@ -213,13 +213,17 @@ func Timeline(runs []*waveobj.Run, sessions []agentsessions.SessionInfo, decisio
 		if isDagWorker(r) {
 			continue
 		}
-		add(wshrpc.TimelineEvent{Ts: r.CreatedTs, Kind: "run-created", Project: r.ProjectPath, Title: r.Goal, Detail: "status: " + r.Status, NavTarget: "run:" + r.OID})
+		effortOID := ""
+		if r.EffortRef != nil {
+			effortOID = r.EffortRef.EffortOID
+		}
+		add(wshrpc.TimelineEvent{Ts: r.CreatedTs, Kind: "run-created", Project: r.ProjectPath, Title: r.Goal, Detail: "status: " + r.Status, NavTarget: "run:" + r.OID, EffortOID: effortOID})
 		if r.CompletedTs > 0 {
 			detail := ""
 			if r.Evidence != nil {
 				detail = r.Evidence.Summary
 			}
-			add(wshrpc.TimelineEvent{Ts: r.CompletedTs, Kind: "run-done", Project: r.ProjectPath, Title: r.Goal, Detail: detail, NavTarget: "run:" + r.OID})
+			add(wshrpc.TimelineEvent{Ts: r.CompletedTs, Kind: "run-done", Project: r.ProjectPath, Title: r.Goal, Detail: detail, NavTarget: "run:" + r.OID, EffortOID: effortOID})
 		}
 	}
 	for _, s := range sessions {
@@ -228,7 +232,14 @@ func Timeline(runs []*waveobj.Run, sessions []agentsessions.SessionInfo, decisio
 	for _, d := range decisions {
 		add(wshrpc.TimelineEvent{Ts: d.CreatedTs, Kind: "decision", Title: d.Summary})
 	}
+	runOIDs := make(map[string]bool, len(runs))
+	for _, r := range runs {
+		runOIDs[r.OID] = true
+	}
 	for _, d := range dossiers {
+		if shadowsRun(d, runOIDs) {
+			continue
+		}
 		add(wshrpc.TimelineEvent{Ts: d.Updated, Kind: "dossier", Title: d.Objective, Detail: "status: " + d.Status, NavTarget: "task:" + d.ID})
 	}
 	for _, e := range efforts {
@@ -245,6 +256,17 @@ func Timeline(runs []*waveobj.Run, sessions []agentsessions.SessionInfo, decisio
 	}
 	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Ts > evs[j].Ts })
 	return evs
+}
+
+// shadowsRun reports a record captured for a run (jarviscapture refs it as "run-<oid>"): its status
+// follows the run's, so its update event repeats the run's own started and done events.
+func shadowsRun(d jarvisdossier.Dossier, runOIDs map[string]bool) bool {
+	for _, ref := range d.Refs {
+		if oid, ok := strings.CutPrefix(ref, "run-"); ok && runOIDs[oid] {
+			return true
+		}
+	}
+	return false
 }
 
 // Delta is the bring-up answer: everything new since sinceMs (Timeline windowed) plus attention
@@ -275,9 +297,13 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 		Status: e.Status, ParentOID: e.ParentOID, UpdatedTs: e.UpdatedTs, PinnedTs: e.PinnedTs,
 	}
 	for _, c := range e.Chunks {
-		s.Chunks = append(s.Chunks, wshrpc.EffortChunkSummary{
+		cs := wshrpc.EffortChunkSummary{
 			Label: c.Label, Status: c.Status, Stage: c.Stage, Owner: c.Owner, WorkRefs: c.WorkRefs,
-		})
+		}
+		if c.Status == "blocked" {
+			cs.Blocked = blockedOf(c)
+		}
+		s.Chunks = append(s.Chunks, cs)
 		if c.Status == "done" {
 			s.Done++
 		}
@@ -326,13 +352,47 @@ func lastNoteOf(e *waveobj.Effort) *wshrpc.EffortLastNote {
 	if newest == nil {
 		return nil
 	}
-	text, _, _ := strings.Cut(strings.TrimSpace(newest.Text), "\n")
-	if r := []rune(text); len(r) > LastNoteMaxChars {
-		text = string(r[:LastNoteMaxChars])
-	}
 	return &wshrpc.EffortLastNote{
-		Ts: newest.Ts, Text: strings.TrimSpace(text), Chunk: chunk, Author: newest.Author, Session: newest.Session,
+		Ts: newest.Ts, Text: noteLine(newest.Text), Chunk: chunk, Author: newest.Author, Session: newest.Session,
 	}
+}
+
+// noteLine cuts a note to its first line, capped: the shape every summary carries
+func noteLine(text string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	if r := []rune(line); len(r) > LastNoteMaxChars {
+		line = string(r[:LastNoteMaxChars])
+	}
+	return strings.TrimSpace(line)
+}
+
+// blockedStatusNote is the prefix setChunkStatus writes on the note that blocks a chunk
+// (pkg/jarvis/effortops.go): "marked blocked · <what it needs>"
+const blockedStatusNote = "marked blocked"
+
+// blockedOf reads a blocked chunk's trail: when it was marked blocked and what it needs (the note given
+// with the status), plus the newest note when one came after, which is often the one saying the blocker
+// cleared. A chunk blocked before the trail recorded statuses has no marking note and reports neither.
+func blockedOf(c waveobj.EffortChunk) *wshrpc.EffortChunkBlocked {
+	var mark, newest *waveobj.EffortNote
+	for i := range c.Notes {
+		n := &c.Notes[i]
+		if strings.HasPrefix(n.Text, blockedStatusNote) && (mark == nil || n.Ts >= mark.Ts) {
+			mark = n
+		}
+		if newest == nil || n.Ts >= newest.Ts {
+			newest = n
+		}
+	}
+	b := &wshrpc.EffortChunkBlocked{}
+	if mark != nil {
+		b.Since = mark.Ts
+		b.Needs = noteLine(strings.TrimPrefix(strings.TrimPrefix(mark.Text, blockedStatusNote), " · "))
+	}
+	if newest != nil && newest != mark {
+		b.Latest = &wshrpc.EffortLastNote{Ts: newest.Ts, Text: noteLine(newest.Text), Chunk: c.Label, Author: newest.Author}
+	}
+	return b
 }
 
 // Efforts projects the non-archived efforts, newest-updated first (input already sorted).

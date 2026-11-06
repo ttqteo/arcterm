@@ -13,6 +13,39 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
+func TestTimelineDropsRecordsThatShadowARun(t *testing.T) {
+	runs := []*waveobj.Run{trun("r1", "done", 100, 500, ev("shipped a"))}
+	dossiers := []jarvisdossier.Dossier{
+		{ID: "shadow", Objective: "goal-r1", Status: "completed", Updated: 600, Refs: []string{"run-r1"}},
+		{ID: "gone", Objective: "a run not loaded", Status: "active", Updated: 650, Refs: []string{"run-r9"}},
+		{ID: "own", Objective: "a record of its own", Status: "active", Updated: 700},
+	}
+	var kept []string
+	for _, e := range Timeline(runs, nil, nil, dossiers, nil, 0) {
+		if e.Kind == "dossier" {
+			kept = append(kept, e.NavTarget)
+		}
+	}
+	if len(kept) != 2 || kept[0] != "task:own" || kept[1] != "task:gone" {
+		t.Fatalf("dossier events = %v, want the shadow of r1 dropped and the rest kept", kept)
+	}
+}
+
+func TestTimelineRunEventsNameTheirInitiative(t *testing.T) {
+	r := trun("r1", "done", 100, 500, ev("shipped a"))
+	r.EffortRef = &waveobj.RunEffortRef{EffortOID: "eff-1", ChunkLabel: "c"}
+	plain := trun("r2", "done", 100, 500, ev("shipped b"))
+	for _, e := range Timeline([]*waveobj.Run{r, plain}, nil, nil, nil, nil, 0) {
+		want := ""
+		if e.NavTarget == "run:r1" {
+			want = "eff-1"
+		}
+		if e.EffortOID != want {
+			t.Fatalf("%s event of %s effortoid = %q, want %q", e.Kind, e.NavTarget, e.EffortOID, want)
+		}
+	}
+}
+
 func trun(id, status string, created, completed int64, evidence *waveobj.RunEvidence) *waveobj.Run {
 	return &waveobj.Run{OID: id, ID: id, Goal: "goal-" + id, Status: status, ProjectPath: "/p/one",
 		CreatedTs: created, CompletedTs: completed, Evidence: evidence}

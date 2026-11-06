@@ -95,16 +95,19 @@ import { briefFleet } from "./brieffleet";
 import { BRIEFING_FIXTURES } from "./briefingfixtures";
 import {
     ackableRuns,
+    actOnChunk,
     buildAttentionQueue,
     capRegion,
     DELTA_CAP,
     groupDelta,
     IDEA_CAP,
     projectBriefing,
-    queueAction,
+    queueActions,
     SEVEN_DAYS_MS,
     SHIPPED_CAP,
+    summarizeAttentionQueue,
     waitingStrip,
+    type QueueAct,
     type QueueRow,
 } from "./briefingmodel";
 import {
@@ -127,6 +130,7 @@ import {
     behindGroups,
     filterAsMenu,
     filterLines,
+    foldOpen,
     initiativeLine,
     initiativeProjects,
     keepsProject,
@@ -136,6 +140,7 @@ import {
     projectCounts,
     projectName,
     queueLine,
+    quietCount,
     runRowFace,
     sessionLine,
     sessionWindow,
@@ -172,6 +177,7 @@ import {
     linkEffort,
     loadArchivedEfforts,
     loadEffortDetail,
+    setChunkStatus,
     setEffortStatus,
     togglePin,
     unarchiveEffort,
@@ -755,6 +761,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const initiativesOpen = expanded.initiatives === true;
     const ideasOpen = expanded.ideas === true;
     const behindOpen = expanded.behind === true;
+    // The filter narrows what is drawn, and a search reaches every fold (briefrows.ts foldOpen): a match hidden behind
+    // "+N more" would read as no match.
+    const [query, setQuery] = useState("");
+    const filtering = query.trim() !== "";
 
     // archived initiatives come off the effort list, not the briefing, and show only on request
     const [showArchived, setShowArchived] = useState(false);
@@ -790,7 +800,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         () => archivedKept.filter((c) => keepsProject(project, c.project)),
         [archivedKept, project]
     );
-    const ideaWindow = useMemo(() => capRegion(effortGroups.ideas, IDEA_CAP, ideasOpen), [effortGroups, ideasOpen]);
+    const ideaWindow = useMemo(
+        () => capRegion(effortGroups.ideas, IDEA_CAP, foldOpen(ideasOpen, query)),
+        [effortGroups, ideasOpen, query]
+    );
     // moment 1: which ideas are new to YOU (the Since you looked region is new by construction, so it is not marked)
     const cursorTs = snapshot?.actualCursor ?? 0;
     const freshIdeas = useMemo(
@@ -871,15 +884,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         }
     }, [reviewCurrentORef, reviewCurrentTs]);
 
-    const deltaWindow = useMemo(() => capRegion(model_?.delta ?? [], DELTA_CAP, behindOpen), [model_, behindOpen]);
+    const deltaWindow = useMemo(
+        () => capRegion(model_?.delta ?? [], DELTA_CAP, foldOpen(behindOpen, query)),
+        [model_, behindOpen, query]
+    );
     const deltaGroups = useMemo(() => groupDelta(deltaWindow.rows, Date.now()), [deltaWindow]);
 
     // The filter and the one-region view narrow what is drawn, and the nav ids are the drawn rows' own, so j/k can
     // never land on a row the filter hid.
-    const [query, setQuery] = useState("");
     const [only, setOnly] = useState<OnlyId | null>(null);
     const toggleOnly = (id: OnlyId) => setOnly((cur) => (cur === id ? null : id));
-    const filtering = query.trim() !== "";
     const matches = useCallback(
         (c: EffortCardModel) => !filtering || filterLines([initiativeLine(c)], query).length > 0,
         [filtering, query]
@@ -893,8 +907,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         [model_, activityFilter]
     );
     const shipped = useMemo(
-        () => capRegion(shippedAll, SHIPPED_CAP, shippedOpen || filtering),
-        [shippedAll, shippedOpen, filtering]
+        () => capRegion(shippedAll, SHIPPED_CAP, foldOpen(shippedOpen, query)),
+        [shippedAll, shippedOpen, query]
     );
     // leaving the Brief or the app inside the window still performs the delete the user did not undo;
     // beforeunload is best-effort, the RPCs are already in flight when the page goes
@@ -917,6 +931,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const allTrackers = useMemo(() => [...effortGroups.trackers, ...archivedKept], [effortGroups, archivedKept]);
     const pinnedN = countPinned(allTrackers);
     const heading = pinnedHeading(pinnedN, countLive(allTrackers));
+    // the live trackers nobody has touched for a week (the pin counts leave them in; the count says they stopped)
+    const quietN = useMemo(() => quietCount(effortGroups.trackers, Date.now()), [effortGroups]);
     const cards = useMemo(() => cardSet.filter(matches), [cardSet, matches]);
     const listAll = useMemo(() => {
         const projectTrackers = effortGroups.trackers.filter((e) => keepsProject(project, e.project));
@@ -924,8 +940,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         return items.filter(matches);
     }, [effortGroups, project, agents, cardSet, matches]);
     const list = useMemo(
-        () => listWindow(listAll, initiativesOpen || filtering),
-        [listAll, initiativesOpen, filtering]
+        () => listWindow(listAll, foldOpen(initiativesOpen, query)),
+        [listAll, initiativesOpen, query]
     );
     // the archived ones close the list, on request
     const archivedItems = useMemo<ListItem[]>(
@@ -1026,7 +1042,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         const councils = activityCouncils(councilList, councilProjects, now).filter(
             (c) => filterLines([c.line], query).length > 0
         );
-        return buildActivity({ runs, councils, filter: activityFilter, earlierOpen, now });
+        return buildActivity({
+            runs,
+            councils,
+            filter: activityFilter,
+            earlierOpen: foldOpen(earlierOpen, query),
+            now,
+        });
     }, [
         runRows,
         liveRuns,
@@ -1061,12 +1083,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 queue.map((q) => queueLine(q, now)),
                 query
             ),
-            behind: behindGroups(deltaGroups, shipped.rows, now)
+            behind: behindGroups(deltaGroups, shipped.rows, now, { efforts: effortIndex, projects: councilProjects })
                 .map((g) => ({ ...g, lines: filterLines(g.lines, query) }))
                 .filter((g) => g.lines.length > 0),
         };
-    }, [queue, deltaGroups, shipped, query]);
-    const strip = waitingStrip(lines.waiting, waitingOpen || filtering);
+    }, [queue, deltaGroups, shipped, query, effortIndex, councilProjects]);
+    const strip = waitingStrip(lines.waiting, foldOpen(waitingOpen, query));
     const mainShown = only !== "activity";
     const sideShown = only == null || only === "activity";
     const behindLines = useMemo(
@@ -1079,8 +1101,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // j/k walks the rows in the order they are drawn (briefnav.ts): the strip's item (its rows with Show all open), the
     // cards row by row, the list, Activity, then Since you looked, Shipped and Ideas
     const activityShown = useMemo(
-        () => [...activity.live, ...activity.earlier, ...(staleOpen ? activity.older : [])],
-        [activity, staleOpen]
+        () => [...activity.live, ...activity.earlier, ...(foldOpen(staleOpen, query) ? activity.older : [])],
+        [activity, staleOpen, query]
     );
     const navIds = useMemo(
         () =>
@@ -1153,6 +1175,20 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     // an initiative opens in the sheet through the router (openref.ts selectEffort), as every way in does
     const openInitiative = useCallback((oref: string, e?: React.MouseEvent) => openLine({ oref }, e), [openLine]);
+    // The waiting row a line stands for, and what opening it does: a blocked chunk lands on itself in its initiative's
+    // plan (the sheet's chunk view, where its notes are written), anything else on the row's target. Ctrl or Cmd still
+    // peeks the initiative, as every other row's click does.
+    const queueOf = useCallback((l: BriefLine) => queue.find((q) => "waiting:" + q.key === l.id), [queue]);
+    const openWaiting = useCallback(
+        (q: QueueRow | undefined, l: BriefLine, e?: React.MouseEvent) => {
+            if (q?.chunk != null && !(e?.ctrlKey || e?.metaKey)) {
+                openInitiativeChunk(q.chunk.effortOref, q.chunk.label);
+            } else {
+                openLine(l.target, e);
+            }
+        },
+        [openLine]
+    );
     const stageRun = useAtomValue(stageRunAtom);
     // what the cursor's id opens on Enter, and peeks on Space
     const navTarget = useMemo(() => {
@@ -1184,10 +1220,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             openCouncilSheet(council);
             return;
         }
+        // Enter on a blocked chunk's row lands on the chunk, as its click does
+        const waiting = lines.waiting.find((l) => l.id === cursor);
+        if (waiting != null && queueOf(waiting)?.chunk != null) {
+            openWaiting(queueOf(waiting), waiting);
+            return;
+        }
         if (cursorTarget != null) {
             openLine(cursorTarget);
         }
-    }, [cursor, navTarget, cursorTarget, openLine]);
+    }, [cursor, navTarget, cursorTarget, openLine, lines.waiting, queueOf, openWaiting]);
     const runList = useAtomValue(briefRunListAtom);
     // With a run sheet open on a run of the published list, j/k step the sheet through that list (design
     // L1830): the rows are the ones its n / N counts, and landing on one opens it. The cursor is still the
@@ -1542,17 +1584,19 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     // Waiting's in-place button: Approve and Retry act on the exact phase or task the server named, and
     // anything else opens the row's run
-    const queueOf = (l: BriefLine) => queue.find((q) => "waiting:" + q.key === l.id);
-    const actOnQueue = (l: BriefLine) => {
+    const actOnQueue = (l: BriefLine, picked: QueueAct) => {
         const q = queueOf(l);
         if (q == null) {
             return;
         }
-        const act = queueAction(q);
+        // a blocked chunk settles in its row: Unblock and Done write its status, and the toast's Undo blocks it again
+        if (picked.kind === "unblock-chunk" || picked.kind === "done-chunk") {
+            fireAndForget(() => actOnChunk({ setChunkStatus, undo: briefUndo }, q, picked.kind));
+            return;
+        }
+        const act = picked;
         if (act.kind === "open") {
-            if (l.target != null) {
-                openLine(l.target);
-            }
+            openWaiting(q, l);
             return;
         }
         if (act.kind === "work-on") {
@@ -1570,7 +1614,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             })
         );
     };
-    const queueActOf = (l: BriefLine) => queueAction(queueOf(l) as QueueRow);
+    const queueActsOf = (l: BriefLine) => queueActions(queueOf(l) as QueueRow);
+    const queueSummary = summarizeAttentionQueue(queue, Date.now());
     const ackable = ackableRuns(queue);
     // every run is accepted on its own, so one refused ack leaves the rest accepted and names how many failed
     const ackAll = () =>
@@ -1835,15 +1880,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                         <WaitingStrip
                                             lines={lines.waiting}
                                             total={queue.length}
-                                            open={waitingOpen || filtering}
+                                            open={foldOpen(waitingOpen, query)}
                                             onToggle={() => toggleRegion("waiting")}
-                                            actOf={queueActOf}
+                                            actsOf={queueActsOf}
                                             onAct={actOnQueue}
                                             onOpen={(l, e) => {
                                                 setCursor(l.id);
-                                                openLine(l.target, e);
+                                                openWaiting(queueOf(l), l, e);
                                             }}
                                             cursor={cursor}
+                                            summary={queueSummary}
                                         />
                                         <section
                                             data-jarvis-brief-region="initiatives"
@@ -1855,6 +1901,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 pinSlot={pass == null && !filtering && showPinSlot(pinnedN)}
                                                 review={
                                                     <div className="flex flex-none items-center gap-2">
+                                                        {quietN > 0 ? (
+                                                            // what stopped without anyone saying so: the list sorts these down behind its fold
+                                                            <span
+                                                                data-jarvis-initiatives-quiet
+                                                                title="Initiatives with no update in 7 days or more, not paused"
+                                                                className="text-[11.5px] tabular-nums text-muted"
+                                                            >
+                                                                {quietN} quiet 7d+
+                                                            </span>
+                                                        ) : null}
                                                         <ReviewTools
                                                             count={reviewItems.length}
                                                             pass={
@@ -1978,7 +2034,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             onFilter={setActivityFilter}
                                             earlierOpen={earlierOpen}
                                             onToggleEarlier={() => setEarlierOpen(!earlierOpen)}
-                                            olderOpen={staleOpen}
+                                            olderOpen={foldOpen(staleOpen, query)}
                                             onToggleOlder={() => setStaleOpen(!staleOpen)}
                                             queued={queuedN}
                                             onOpenQueue={() => {
