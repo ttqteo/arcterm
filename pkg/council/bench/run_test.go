@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -288,7 +289,7 @@ func TestRunRowFields(t *testing.T) {
 		Kind: KindRun, Date: got.Date, Harness: "2026-10-22.1", Case: "a", Variant: VariantCouncil, Run: 1, Council: "c1",
 		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 1_400_000, Minutes: 1.5, Messages: 5, JudgeTokens: 123_456,
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
 	}
 	if got.Date == "" {
@@ -639,7 +640,7 @@ func TestRunTeamDoneOutcomeIsJudgedAndScored(t *testing.T) {
 		Kind: KindRun, Date: got.Date, Harness: council.HarnessVersion, Case: "a", Variant: VariantTeam, Run: 1, Council: "lead-1",
 		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 4_100_000, Minutes: 31.4, Messages: 9, JudgeTokens: 90_000,
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
 	}
 }

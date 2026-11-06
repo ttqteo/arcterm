@@ -294,9 +294,11 @@ type CouncilBenchRtnData struct {
 // CouncilBenchResultsRtnData is the results file read back: a row per harness version and variant for the bench runs,
 // and per harness version and mode for the ratings, the newest version first, so one version's score is never read as
 // another's. Verdict is the go / no-go on the council against the agent team, read from the cases tagged for that pass;
-// it is left out when no case carries the tag, or the cases cannot be read.
+// it is left out when no case carries the tag, or the cases cannot be read. Results is every run line of the file, in
+// file order.
 type CouncilBenchResultsRtnData struct {
 	Runs    []bench.CouncilBenchRow       `json:"runs"`
+	Results []bench.CouncilBenchResult    `json:"results"`
 	Ratings []bench.CouncilBenchRatingRow `json:"ratings"`
 	Verdict *bench.CouncilBenchDecision   `json:"verdict,omitempty"`
 }

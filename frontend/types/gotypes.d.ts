@@ -2547,6 +2547,7 @@ declare global {
         timeline?: {[key: string]: CouncilStep[]};
         lang?: string;
         snapshot?: string;
+        zones?: CouncilZone[];
     };
 
     // council.CouncilActivity
@@ -2595,9 +2596,32 @@ declare global {
         not: number;
     };
 
+    // bench.CouncilBenchResult
+    type CouncilBenchResult = {
+        kind: string;
+        date: string;
+        harness: string;
+        case: string;
+        variant: string;
+        run: number;
+        council: string;
+        state: string;
+        recall: number;
+        keys: number;
+        kept?: number;
+        wrong: number;
+        tokens: number;
+        minutes: number;
+        messages: number;
+        judgetokens?: number;
+        matches?: {[key: string]: number};
+        keptmatches?: {[key: string]: number};
+    };
+
     // wshrpc.CouncilBenchResultsRtnData
     type CouncilBenchResultsRtnData = {
         runs: CouncilBenchRow[];
+        results: CouncilBenchResult[];
         ratings: CouncilBenchRatingRow[];
         verdict?: CouncilBenchDecision;
     };
@@ -2774,6 +2798,7 @@ declare global {
         label?: string;
         checker?: string;
         checkwhy?: string;
+        zone?: string;
     };
 
     // council.CouncilRegion
@@ -2897,6 +2922,13 @@ declare global {
         answer?: string;
         asks?: CouncilAsk[];
         at: number;
+    };
+
+    // council.CouncilZone
+    type CouncilZone = {
+        seat: string;
+        name: string;
+        covers: string;
     };
 
     // wshrpc.DagAskItem
