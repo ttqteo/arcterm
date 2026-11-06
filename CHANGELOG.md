@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- With every initiative archived, Jarvis's Brief shows the "No initiative yet" box with its New initiative button again,
+  over Show N archived, instead of saying every initiative is on a card above when there are no cards.
 - A project's Overview shows an agent's whole name in Running and Finished, not the first 15 letters: the line of
   what it is doing beside it shortens instead.
 - A folded `claude` reply whose list has one item past the four it shows draws all of them, rather than four and
