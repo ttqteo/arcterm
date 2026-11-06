@@ -8,11 +8,13 @@ import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { sentAskIdsAtom } from "./agentaskstore";
 import { showTerminal } from "./agentcenter";
+import { getStartErrorAtom } from "./agentcontrollerstore";
 import {
     groupAgents,
     mergePendingLaunches,
     nextAskId,
     toggleSelection,
+    withStartError,
     type AgentVM,
     type PendingLaunch,
 } from "./agentsviewmodel";
@@ -163,8 +165,13 @@ export class AgentsViewModel implements ViewModel {
         this.agentsAtom = atom((get) => {
             const now = Date.now();
             const brainstorms = get(brainstormsAtom);
+            // a controller that refused to start reads idle with the reason, before any overlay can fold it to working
             return mergePendingLaunches(get(base), get(pendingAtom), now).map((agent) =>
-                withBrainstorm(agent, shownBrainstormFile(brainstorms[agent.id]), now)
+                withBrainstorm(
+                    agent.blockId ? withStartError(agent, get(getStartErrorAtom(agent.blockId))) : agent,
+                    shownBrainstormFile(brainstorms[agent.id]),
+                    now
+                )
             );
         });
         this.lineageAtom = lineageAtomFor(this.agentsAtom);

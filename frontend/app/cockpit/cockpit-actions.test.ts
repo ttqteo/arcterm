@@ -106,6 +106,30 @@ describe("launchAgent", () => {
         expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
     });
 
+    it("adds a pending launch that carries its runtime, so the booting row names it", async () => {
+        const model = fakeModel();
+        const earlier = { tabId: "tab-0", blockId: "blk-0", name: "Earlier", project: "proj", ts: 1 };
+        globalStore.set(model.pendingLaunchesAtom, [earlier]);
+        const now = vi.spyOn(Date, "now").mockReturnValue(1234);
+        try {
+            await launchAgent(model, {
+                runtime: "claude",
+                startupCommand: "claude",
+                task: "",
+                projectPath: "C:/proj",
+                projectName: "proj",
+                label: "Fix login",
+            });
+        } finally {
+            // only this spy: restoreAllMocks would also reset the file's other mocks' implementations
+            now.mockRestore();
+        }
+        expect(globalStore.get(model.pendingLaunchesAtom)).toStrictEqual([
+            earlier,
+            { tabId: "tab-1", blockId: "blk-1", name: "Fix login", project: "proj", ts: 1234, runtime: "claude" },
+        ]);
+    });
+
     it("opens a plain terminal on the Agent surface with the keyboard, as an agent", async () => {
         const model = fakeModel();
         await launchAgent(model, {

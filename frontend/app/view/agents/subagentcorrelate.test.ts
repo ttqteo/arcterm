@@ -39,6 +39,14 @@ describe("correlateSubagents", () => {
         expect(correlateSubagents([spawn({ async: true })], [file({ done: true })])[0].state).toBe("done");
     });
 
+    it("ends a background agent at its notification: completed is success, failed is failure, whatever its file says", () => {
+        const done = (over: Partial<SubagentSpawn>) => spawn({ async: true, done: true, ...over });
+        for (const fileDone of [false, true]) {
+            expect(correlateSubagents([done({})], [file({ done: fileDone })])[0].state).toBe("success");
+            expect(correlateSubagents([done({ failed: true })], [file({ done: fileDone })])[0].state).toBe("failure");
+        }
+    });
+
     it("maps an unmatched, unfinished file to working", () => {
         expect(correlateSubagents([], [file({ firstprompt: "orphan", done: false })])[0].state).toBe("working");
     });

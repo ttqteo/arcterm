@@ -122,6 +122,7 @@ func (st *tickState) tick() *sample {
 		}
 		return s
 	}
+	listen := readListenPorts()
 	arcRows := arcTree(table, st.hostPid, st.selfPid, inJob, func(pid int) int64 { return stat(pid).createTs })
 
 	tracked := make(map[int]bool, len(inJob)+len(arcRows))
@@ -142,7 +143,7 @@ func (st *tickState) tick() *sample {
 			continue // exited since the membership read
 		}
 		s := stat(pid)
-		p.CreateTs, p.Cpu, p.Mem = s.createTs, -1, -1
+		p.CreateTs, p.Cpu, p.Mem, p.Ports = s.createTs, -1, -1, listen[pid]
 		if s.ok {
 			id := procId{pid, s.createTs}
 			p.Mem = s.mem

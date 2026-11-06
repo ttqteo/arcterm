@@ -242,7 +242,7 @@ export async function inUse(port) {
     return hits.some(Boolean);
 }
 
-function killTree(pid) {
+export function killTree(pid) {
     try {
         if (process.platform === "win32") {
             execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });

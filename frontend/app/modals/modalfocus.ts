@@ -79,17 +79,36 @@ export function setModalFocusFallback(f: FocusFallback): () => void {
     };
 }
 
+/** The element a surface marks with data-focus-home as the owner of its keyboard (the Cockpit container: its j/k/Enter
+ *  are its own onKeyDown). Only a showing one counts: an off-screen surface that stays mounted keeps its node in the
+ *  DOM. */
+export function visibleFocusHome(): HTMLElement | null {
+    for (const el of document.querySelectorAll<HTMLElement>("[data-focus-home]")) {
+        if (el.checkVisibility()) {
+            return el;
+        }
+    }
+    return null;
+}
+
 export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement | null): () => void {
     if (panel != null && !panel.contains(previous)) {
         panel.focus();
     }
     return () => {
-        // a confirmed close tears down what had focus; refocusing a detached node would silently
+        // A close hands focus to the first of these that takes it: the element it was taken from, the registered
+        // fallback (setModalFocusFallback), then the visible [data-focus-home] element.
+        //
+        // A confirmed close tears down what had focus; refocusing a detached node would silently
         // land focus on <body> instead of leaving it where the browser already put it. A hidden one
-        // (the Agent surface's xterm after a palette pick navigated away) cannot take focus either.
+        // (the Agent surface's xterm after a palette pick navigated away) cannot take focus either. <body> (what was
+        // "focused" when the modal opened over nothing) passes both checks but ignores focus(), which would leave
+        // focus in this panel until it unmounted and dropped it to <body>: so the hand-back counts only when it took.
         if (previous?.isConnected && previous.checkVisibility()) {
             handBack(previous);
-            return;
+            if (document.activeElement === previous) {
+                return;
+            }
         }
         // with nowhere to hand focus back, don't leave it in this panel: it outlives the close through
         // the exit animation, and a surface mounting in the same commit cannot claim focus past it
@@ -99,7 +118,7 @@ export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement 
         } else if (active != null && active !== document.body) {
             return;
         }
-        const next = fallback?.(previous);
+        const next = fallback?.(previous) ?? visibleFocusHome();
         if (next != null) {
             handBack(next, { preventScroll: true });
         }

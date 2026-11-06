@@ -53,6 +53,9 @@ import {
     waitForOffice,
 } from "./cockpitofficescenarios.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
+import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
+import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
+import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
 import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
@@ -61,8 +64,10 @@ import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
+import terminalStatusLineScenarios from "./scenarios-terminal-status-line.mjs";
 import { xmasTreeFixture, xmasTreeScenarios } from "./xmastreescenarios.mjs";
 import {
     arrangeSetupFixture,
@@ -62776,6 +62781,11 @@ export const SCENARIOS = [
     ...railTranscriptScenarios(RT_KIT),
     ...xmasTreeScenarios(XMAS_TREE_KIT),
     ...monitorTasksScenarios(RT_KIT),
+    ...agentStartFailedScenarios(RT_KIT),
+    ...agentStreamsScenarios(RT_KIT),
+    ...agentSubagentsScenarios(RT_KIT),
+    ...modalFocusHomeScenarios(RT_KIT),
+    ...terminalStatusLineScenarios(RT_KIT),
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),

@@ -3,7 +3,12 @@
 
 package agentsessions
 
-import "testing"
+import (
+	"os"
+	"reflect"
+	"testing"
+	"time"
+)
 
 func TestClipText(t *testing.T) {
 	if got := clipText("  hello   world  "); got != "hello world" {
@@ -204,5 +209,117 @@ func TestScanProvider_populatesEventsAndStatus(t *testing.T) {
 	}
 	if s.StartedTs != 1783684800000 {
 		t.Errorf("startedTs = %d", s.StartedTs)
+	}
+}
+
+const (
+	waitUser     = `{"type":"user","timestamp":"2026-07-10T12:00:00.000Z","message":{"content":"Plan the migration"}}`
+	waitAsk1     = `{"type":"assistant","timestamp":"2026-07-10T12:00:05.000Z","message":{"content":[{"type":"tool_use","id":"ask1","name":"AskUserQuestion","input":{"questions":[{"question":"Proceed?"}]}}]}}`
+	waitAnswer1  = `{"type":"user","timestamp":"2026-07-10T12:00:20.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"ask1","content":"yes"}]}}`
+	waitReadCall = `{"type":"assistant","timestamp":"2026-07-10T12:00:25.000Z","message":{"content":[{"type":"tool_use","id":"r1","name":"Read","input":{}}]}}`
+	waitAsk2     = `{"type":"assistant","timestamp":"2026-07-10T12:00:30.000Z","message":{"content":[{"type":"tool_use","id":"ask2","name":"AskUserQuestion","input":{"questions":[{"question":"Which table first?"}]}}]}}`
+	waitPrompt   = `{"type":"user","timestamp":"2026-07-10T12:00:20.000Z","message":{"content":"never mind, just read it"}}`
+)
+
+func lastEventType(se sessionEvents) string {
+	if len(se.Events) == 0 {
+		return ""
+	}
+	return se.Events[len(se.Events)-1].Type
+}
+
+func TestClaudeWaitingUnansweredAsk(t *testing.T) {
+	got := extractClaudeEvents([]string{waitUser, waitAsk1})
+	if got.Status != "waiting" {
+		t.Errorf("status = %q, want waiting for an unanswered ask", got.Status)
+	}
+	if lastEventType(got) == "finished" {
+		t.Error("a waiting session has no finished event")
+	}
+}
+
+func TestClaudeWaitingClearedByToolResult(t *testing.T) {
+	got := extractClaudeEvents([]string{waitUser, waitAsk1, waitAnswer1})
+	if got.Status != "done" {
+		t.Errorf("status = %q, want done once the ask has its tool_result", got.Status)
+	}
+	if lastEventType(got) != "finished" {
+		t.Errorf("last event = %q, want finished", lastEventType(got))
+	}
+}
+
+// the review's case: the ask was answered and the agent went on with a commit-less tool call, so the
+// last real event is still the ask, yet nothing waits on the user
+func TestClaudeWaitingClearedByAnswerOrLaterTurn(t *testing.T) {
+	for name, lines := range map[string][]string{
+		"answered then a tool call":         {waitUser, waitAsk1, waitAnswer1, waitReadCall},
+		"a later user turn, no tool result": {waitUser, waitAsk1, waitPrompt, waitReadCall},
+	} {
+		if got := extractClaudeEvents(lines); got.Status != "done" {
+			t.Errorf("%s: status = %q, want done", name, got.Status)
+		}
+	}
+}
+
+// Claude Code writes one record per content block, so a tool call beside the ask in the same turn is a later
+// assistant record: it does not answer the ask, only a tool_result or a user turn does
+func TestClaudeWaitingStaysThroughAParallelToolCall(t *testing.T) {
+	got := extractClaudeEvents([]string{waitUser, waitAsk1, waitReadCall})
+	if got.Status != "waiting" {
+		t.Errorf("status = %q, want waiting while the ask has no tool_result and no user turn followed", got.Status)
+	}
+}
+
+func TestClaudeWaitingSecondAskPending(t *testing.T) {
+	got := extractClaudeEvents([]string{waitUser, waitAsk1, waitAnswer1, waitReadCall, waitAsk2})
+	if got.Status != "waiting" {
+		t.Errorf("status = %q, want waiting on the second ask", got.Status)
+	}
+}
+
+func TestWithoutRecentFinish(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	events := []SessionEvent{{Type: "started", Ts: 1}, {Type: "committed", Ts: 2}, {Type: "finished", Ts: 3}}
+	orig := append([]SessionEvent(nil), events...)
+
+	fresh := withoutRecentFinish(events, now.Add(-4*time.Minute), now)
+	if want := events[:2]; !reflect.DeepEqual(fresh, want) {
+		t.Errorf("4 min old: got %+v, want the finished event dropped %+v", fresh, want)
+	}
+	if !reflect.DeepEqual(events, orig) {
+		t.Errorf("input slice changed: %+v", events)
+	}
+	if quiet := withoutRecentFinish(events, now.Add(-6*time.Minute), now); !reflect.DeepEqual(quiet, orig) {
+		t.Errorf("6 min old: got %+v, want it kept", quiet)
+	}
+	noFinish := events[:2]
+	if got := withoutRecentFinish(noFinish, now.Add(-time.Minute), now); !reflect.DeepEqual(noFinish, got) {
+		t.Errorf("no finished event: got %+v, want unchanged", got)
+	}
+}
+
+// the scan hands the read-time drop its transcript's mtime: a file just written has not finished, one that has
+// gone quiet has
+func TestScanProvider_dropsFinishedWhileTheTranscriptIsFresh(t *testing.T) {
+	dir := t.TempDir()
+	lines := []string{
+		`{"type":"user","timestamp":"2026-07-10T12:00:00.000Z","cwd":"/home/me/web","message":{"content":"Tidy the header"}}`,
+		`{"type":"assistant","timestamp":"2026-07-10T12:00:05.000Z","message":{"content":[{"type":"text","text":"All tidy."}]}}`,
+	}
+	writeJSONL(t, dir, "fresh.jsonl", lines...)
+	quiet := writeJSONL(t, dir, "quiet.jsonl", lines...)
+	old := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(quiet, old, old); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]SessionInfo{}
+	for _, s := range scanProvider(claudeProvider(dir), 0, 10) {
+		byID[s.ID] = s
+	}
+	if s := byID["fresh"]; s.Status != "done" || lastEventType(sessionEvents{Events: s.Events}) == "finished" {
+		t.Errorf("fresh: status %q, last event %q, want done with no finished event", s.Status, lastEventType(sessionEvents{Events: s.Events}))
+	}
+	if s := byID["quiet"]; lastEventType(sessionEvents{Events: s.Events}) != "finished" {
+		t.Errorf("quiet: last event %q, want finished", lastEventType(sessionEvents{Events: s.Events}))
 	}
 }

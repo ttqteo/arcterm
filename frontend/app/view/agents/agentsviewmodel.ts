@@ -116,6 +116,7 @@ export interface AgentVM {
     builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab: Arc's record of the brainstorm's builder check
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab: Arc's record of the brainstorm's judge
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
+    startError?: string; // its controller refused to start: it reads idle, not booting, with this reason
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
     edited?: boolean; // idle: its last turn changed files no later commit took, so the cockpit offers to ship it (shipmodel.ts)
@@ -942,13 +943,25 @@ export function isRecentlyIdle(agent: AgentVM, now: number, graceMs = IDLE_GRACE
     return agent.state === "idle" && agent.idleSince != null && now - agent.idleSince < graceMs;
 }
 
-/** pure: agents whose transcript should stay streamed into the cockpit panel. just-finished
- *  agents keep rendering during the idle grace window, so their stream stays open too; otherwise a
- *  fast final Codex/Claude write can race the stop event and never reach the panel. */
-export function streamableTranscriptAgents(agents: AgentVM[], now: number): AgentVM[] {
-    return agents.filter(
-        (a) => a.transcriptPath && (a.state === "asking" || a.state === "working" || isRecentlyIdle(a, now))
-    );
+/** pure: agents whose transcript stays streamed, on every surface. just-finished agents keep streaming through the
+ *  idle grace window, so a fast final Codex/Claude write cannot race the stop event; the focused agent streams so the
+ *  Agent surface's rail has live entries for it. roster order, no duplicates. */
+export function streamableTranscriptAgents(agents: AgentVM[], now: number, opts: { focusId?: string } = {}): AgentVM[] {
+    const seen = new Set<string>();
+    return agents.filter((a) => {
+        if (!a.transcriptPath || seen.has(a.id)) {
+            return false;
+        }
+        const wanted =
+            a.state === "asking" ||
+            a.state === "working" ||
+            isRecentlyIdle(a, now) ||
+            (a.id === opts.focusId && a.kind !== "terminal");
+        if (wanted) {
+            seen.add(a.id);
+        }
+        return wanted;
+    });
 }
 
 /** Pure: overlay a pending ask onto an agent. A live ask makes the agent `asking` regardless of
@@ -1121,6 +1134,7 @@ export interface PendingLaunch {
     name: string;
     project: string;
     ts: number; // launch time (UnixMilli) — drives the booting row's age
+    runtime?: string; // so the booting header names its runtime rather than Unknown
 }
 
 /** Pure: a pending launch -> a "booting" working AgentVM. No transcriptPath (none exists yet); the
@@ -1131,11 +1145,20 @@ export function pendingToVM(p: PendingLaunch, now: number): AgentVM {
         name: p.name,
         task: "",
         state: "working",
+        agent: p.runtime,
         project: p.project,
         blockId: p.blockId,
         activeMs: Math.max(0, now - p.ts),
         stateSince: p.ts,
     };
+}
+
+/** Pure: an agent whose controller refused to start reads idle with the reason, never as still booting. */
+export function withStartError(agent: AgentVM, err: string | undefined): AgentVM {
+    if (!err) {
+        return agent;
+    }
+    return { ...agent, state: "idle", startError: err };
 }
 
 /** Pure: overlay booting launches onto the base roster. A pending entry whose tabId already exists in

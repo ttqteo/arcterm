@@ -8,8 +8,11 @@ package resmon
 import (
 	"errors"
 	"fmt"
+	"log"
+	"slices"
 	"unsafe"
 
+	"github.com/shirou/gopsutil/v4/net"
 	"golang.org/x/sys/windows"
 )
 
@@ -108,4 +111,28 @@ func splitCmdline(cmdline string) []string {
 		return nil
 	}
 	return argv
+}
+
+const tcpListen = "LISTEN"
+
+// readListenPorts maps each pid to the tcp ports (v4 and v6) it listens on, sorted and without repeats; nil
+// when the tables cannot be read, which reads as "no ports", never as a wrong port.
+func readListenPorts() map[int][]int {
+	conns, err := net.Connections("tcp")
+	if err != nil {
+		log.Printf("resmon: reading the tcp tables: %v", err)
+		return nil
+	}
+	ports := map[int][]int{}
+	for _, c := range conns {
+		pid, port := int(c.Pid), int(c.Laddr.Port)
+		if c.Status != tcpListen || pid <= 0 || slices.Contains(ports[pid], port) {
+			continue
+		}
+		ports[pid] = append(ports[pid], port)
+	}
+	for _, p := range ports {
+		slices.Sort(p)
+	}
+	return ports
 }

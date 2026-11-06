@@ -152,6 +152,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
             name: opts.label || opts.projectName,
             project: opts.projectName,
             ts: Date.now(),
+            runtime: opts.runtime,
         };
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
     }

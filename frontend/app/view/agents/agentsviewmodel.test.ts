@@ -54,6 +54,7 @@ import {
     toggleSelection,
     usageLevel,
     withAsk,
+    withStartError,
     workingCount,
     type AgentActionEntry,
     type AgentAskQuestion,
@@ -573,16 +574,43 @@ describe("isRecentlyIdle", () => {
 describe("streamableTranscriptAgents", () => {
     const NOW = 1_000_000;
 
-    it("keeps streams open for rendered recently-idle agents", () => {
+    const PAST_GRACE = NOW - 360_000;
+    const ids = (agents: AgentVM[], opts: Parameters<typeof streamableTranscriptAgents>[2] = {}) =>
+        streamableTranscriptAgents(agents, NOW, opts).map((a) => a.id);
+
+    it("streams asking, working and recently idle agents in roster order", () => {
         const agents = [
+            mk("recent", "idle", { transcriptPath: "/r.jsonl", idleSince: NOW - 30_000 }),
             mk("asking", "asking", { transcriptPath: "/a.jsonl" }),
             mk("working", "working", { transcriptPath: "/w.jsonl" }),
-            mk("recent", "idle", { transcriptPath: "/r.jsonl", idleSince: NOW - 30_000 }),
-            mk("old", "idle", { transcriptPath: "/o.jsonl", idleSince: NOW - 360_000 }),
-            mk("missing", "working"),
         ];
-
-        expect(streamableTranscriptAgents(agents, NOW).map((a) => a.id)).toEqual(["asking", "working", "recent"]);
+        expect(ids(agents)).toEqual(["recent", "asking", "working"]);
+    });
+    it("streams the focused idle agent", () => {
+        const agents = [mk("old", "idle", { transcriptPath: "/o.jsonl", idleSince: PAST_GRACE })];
+        expect(ids(agents, { focusId: "old" })).toEqual(["old"]);
+    });
+    it("skips a focused terminal", () => {
+        const agents = [mk("t", "idle", { kind: "terminal", transcriptPath: "/t.jsonl" })];
+        expect(ids(agents, { focusId: "t" })).toEqual([]);
+    });
+    it("drops an idle agent past grace that is not focused", () => {
+        const agents = [
+            mk("old", "idle", { transcriptPath: "/o.jsonl", idleSince: PAST_GRACE }),
+            mk("other", "working", { transcriptPath: "/w.jsonl" }),
+        ];
+        expect(ids(agents, { focusId: "other" })).toEqual(["other"]);
+    });
+    it("skips agents with no transcript", () => {
+        const agents = [mk("working", "working"), mk("focused", "idle")];
+        expect(ids(agents, { focusId: "focused" })).toEqual([]);
+    });
+    it("lists an agent once", () => {
+        const agents = [
+            mk("a", "working", { transcriptPath: "/a.jsonl" }),
+            mk("a", "working", { transcriptPath: "/a.jsonl" }),
+        ];
+        expect(ids(agents, { focusId: "a" })).toEqual(["a"]);
     });
 });
 
@@ -1125,6 +1153,29 @@ describe("pendingToVM", () => {
             blockId: "b1",
             activeMs: 4000,
         });
+    });
+
+    it("carries the runtime, so the booting header names it", () => {
+        const p: PendingLaunch = { tabId: "t1", blockId: "b1", name: "n", project: "p", ts: 0, runtime: "pi" };
+        expect(pendingToVM(p, 0).agent).toBe("pi");
+    });
+});
+
+describe("withStartError", () => {
+    it("folds a working agent to idle with the error", () => {
+        const out = withStartError(mk("t1", "working"), "remote connections are not supported");
+        expect(out).toMatchObject({ id: "t1", state: "idle", startError: "remote connections are not supported" });
+    });
+
+    it("leaves an agent without an error untouched", () => {
+        const agent = mk("t1", "working");
+        expect(withStartError(agent, undefined)).toBe(agent);
+    });
+
+    it("drops the agent from the working count", () => {
+        const agent = mk("t1", "working");
+        expect(workingCount([agent])).toBe(1);
+        expect(workingCount([withStartError(agent, "refused")])).toBe(0);
     });
 });
 

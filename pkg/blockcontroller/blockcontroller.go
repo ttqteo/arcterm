@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"maps"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -310,17 +311,43 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	status := controller.GetRuntimeStatus()
 	if status.ShellProcStatus == Status_Init {
 		if (controllerName == BlockController_Shell || controllerName == BlockController_Cmd) && !isLocalConnName(connName) {
-			return fmt.Errorf("cannot start shellproc: remote connections are not supported (%q)", connName)
+			err := fmt.Errorf("cannot start shellproc: remote connections are not supported (%q)", connName)
+			log.Printf("block %s: %v\n", blockId, err)
+			return err
+		}
+		// a snapshot store (scripts/cdp/snapshot-dev.mjs) is a copy: the cwds it holds are real checkouts that live agents
+		// and runs of the user's own app work in, and RestoreLiveAgents would relaunch one at boot
+		if err := snapshotStartRefusal(wavebase.IsSnapshot(), wavebase.SnapshotScratchDir(), blockData.Meta.GetString(waveobj.MetaKey_CmdCwd, "")); err != nil {
+			log.Printf("block %s: %v\n", blockId, err)
+			return err
 		}
 
 		// Start controller
 		err = controller.Start(ctx, blockData.Meta, rtOpts, force)
 		if err != nil {
-			return fmt.Errorf("error starting controller: %w", err)
+			err = fmt.Errorf("error starting controller: %w", err)
+			log.Printf("block %s: %v\n", blockId, err)
+			return err
 		}
 	}
 
 	return nil
+}
+
+// snapshotStartRefusal is why a snapshot app may not start a process in cwd, or nil when it may: only the snapshot's
+// scratch dir qualifies, and a cwd that is empty (the shell then defaults to the home dir), relative or climbs out of it
+// does not. Always nil outside a snapshot.
+func snapshotStartRefusal(snapshot bool, scratch, cwd string) error {
+	if !snapshot {
+		return nil
+	}
+	if filepath.IsAbs(cwd) {
+		rel, err := filepath.Rel(scratch, cwd)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil
+		}
+	}
+	return fmt.Errorf("snapshot store: not starting a process in %q, only inside %s", cwd, scratch)
 }
 
 func GetBlockControllerRuntimeStatus(blockId string) *BlockControllerRuntimeStatus {

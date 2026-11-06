@@ -375,17 +375,20 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // its turn ended but background work it started still runs: working, or waiting when that work only watches
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
-    const shown = shownState(agent.state, backgroundActivity(bgTasks, machineServers));
+    // a controller that refused to start reads as failed, never as still booting; it started nothing, so no background
+    // work can make it read otherwise
+    const failed = !ended && agent.startError != null;
+    const shown = failed ? "idle" : shownState(agent.state, backgroundActivity(bgTasks, machineServers));
     // the dev servers it left listening, which do not count as work: a green server glyph and their ports
     const servers = ended ? [] : launchedServers(bgTasks, machineServers);
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[shown];
-    const stateText = ended ? (landed ? "landed" : "done") : liveText;
-    const stateColor = ended ? "var(--color-success)" : STATE_COLOR[shown];
+    const stateText = ended ? (landed ? "landed" : "done") : failed ? "failed to start" : liveText;
+    const stateColor = ended ? "var(--color-success)" : failed ? "var(--color-error)" : STATE_COLOR[shown];
     // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
     const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);
     const queued = !ended && agent.state === "working" ? queuedJob : null;
     // m4: one-shot settle on the state pill when the focused agent reaches idle
-    const settling = useSettle(!ended && shown === "idle");
+    const settling = useSettle(!ended && !failed && shown === "idle");
     const review = parseDocReview(agent.ask);
     const dialogOpen = useAtomValue(docReviewAtom) != null;
     const docReview = useAtomValue(docReviewStateAtom(agent.id));
@@ -590,7 +593,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             onContextMenu={openHeaderMenu}
             className="flex shrink-0 select-none items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
         >
-            {stage ? null : ended ? (
+            {stage ? null : ended || failed ? (
                 <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
                 <StatusDot state={shown} pulse={shown !== "idle"} className="!h-[8px] !w-[8px]" />
@@ -617,15 +620,27 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             <QueuedJobTag job={queued} />
                         ) : (
                             <span
+                                data-agent-state-pill
                                 className={cn(
                                     "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
+                                    failed && "text-error",
                                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
                                 )}
-                                style={{ color: stateColor }}
+                                style={failed ? undefined : { color: stateColor }}
                             >
                                 {stateText}
                             </span>
                         )}
+                        {failed ? (
+                            // why, in the row: the full text is the title when the pane is too narrow for it
+                            <span
+                                data-agent-start-error
+                                title={agent.startError}
+                                className="min-w-0 shrink truncate font-mono text-[11px] font-medium text-error"
+                            >
+                                {agent.startError}
+                            </span>
+                        ) : null}
                         <span className="flex-none self-center">
                             <ServerMark servers={servers} ports />
                         </span>
