@@ -40,8 +40,9 @@ panel shrank to about two messages. The person chose to read the session where t
 - The read follows the pick at once, no button. Your messages are drawn in the transcript's box and Claude's as
   rendered markdown (`MarkdownMessage`), the way the compact transcript draws them; a new answer fades in
   (`MOTION.durMicro`).
-- The agent and the project sit in the title as two small buttons. A click on either, or `←` from the Session list, goes
-  back to the three columns to change them; working in the Start or Project column keeps the columns, and focus
+- The agent and the project sit in the title as two small buttons. A click on either, on Back in the footer (added after
+  the person found no way back: the chips do not read as one), or `←` from the Session list, goes back to the three
+  columns to change them; working in the Start or Project column keeps the columns, and focus
   reaching the Session column again (`→`, `Tab`, a click) returns to the step.
 - Esc closes the dialog at once, and Shift+Enter is Open asleep again, in the footer: the read is not a panel to close
   or toggle.

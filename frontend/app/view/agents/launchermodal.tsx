@@ -30,7 +30,19 @@ import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, ChevronRight, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
+import {
+    Check,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    House,
+    Network,
+    SquareTerminal,
+    Users,
+    Wrench,
+    X,
+    Zap,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
@@ -1617,6 +1629,21 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 {footer.tail}
                             </span>
                         )}
+                        {stepShown && resume != null ? (
+                            // the step's way back for the pointer, which the title's chips do not read as; the keyboard
+                            // has ← from the sessions, so it is no Tab stop
+                            <DialogButton
+                                variant="secondary"
+                                tabIndex={-1}
+                                data-launcher-back
+                                title="Back to the columns to change the agent or project (← from the sessions)"
+                                onClick={() => leaveStep("project")}
+                                className="pl-[11px]"
+                            >
+                                <ChevronLeft size={14} strokeWidth={2.2} className="-mr-0.5" />
+                                Back
+                            </DialogButton>
+                        ) : null}
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
