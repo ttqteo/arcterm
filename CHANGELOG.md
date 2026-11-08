@@ -38,6 +38,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The lobby Christmas tree grows with the tasks your runs finish on every machine that syncs the same vault, not
   only this one. Where you hung the ornaments stays your own on each machine.
 
+### Fixed
+
+- On a Mac, new terminals and agents no longer fail to start with "too many open files" after a while with several
+  agents open: following an agent's transcript no longer holds open every other session file of its project.
+
 ## 1.0.5 — 2026-11-06
 
 ### Added

@@ -6,13 +6,16 @@ package wshserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -252,10 +255,35 @@ func (t *transcriptTailer) readNew(path string) ([]string, error) {
 	return lines, nil
 }
 
+// transcriptWaitInterval is how often a stream looks for a transcript file that is not there (yet).
+const transcriptWaitInterval = 250 * time.Millisecond
+
+// watchTranscriptFile watches the transcript file itself, and reports false with no error while the
+// file does not exist.
+//
+// The stream never watches the file's directory: on macOS fsnotify's kqueue backend opens one
+// descriptor per entry of a watched directory, and Claude Code keeps every session of a project in one
+// directory (~480 files for arcterm on 2026-11-08). One directory watch per visible agent ran wavesrv
+// out of descriptors, and new terminals then failed to start with "too many open files".
+func watchTranscriptFile(watcher *fsnotify.Watcher, path string) (bool, error) {
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err := watcher.Add(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("watching transcript: %w", err)
+	}
+	return true, nil
+}
+
 // streamTranscript emits the transcript backlog (last tailLines, or the whole file for a negative
-// tailLines — Pi's full-history stream) then watches the containing directory and pushes
-// newly-appended lines as they arrive. Returns when ctx is cancelled or on a fatal error (the
-// caller forwards the error onto the channel).
+// tailLines — Pi's full-history stream) then watches the file (see watchTranscriptFile) and pushes
+// newly-appended lines as they arrive. While the file does not exist (a freshly spawned worker
+// reports its path before Claude creates the JSONL) or after it was removed, the stream looks for it
+// every transcriptWaitInterval. Returns when ctx is cancelled or on a fatal error (the caller
+// forwards the error onto the channel).
 func streamTranscript(ctx context.Context, path string, tailLines int, ch chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]) error {
 	if path == "" {
 		return fmt.Errorf("transcript path is required")
@@ -272,15 +300,15 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 		return fmt.Errorf("creating watcher: %w", err)
 	}
 	defer watcher.Close()
-	if err := watcher.Add(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("watching transcript dir: %w", err)
+	watching, err := watchTranscriptFile(watcher, path)
+	if err != nil {
+		return err
 	}
 
 	tailer := &transcriptTailer{}
 	backlog, err := tailer.readNew(path)
-	// a not-yet-existing file is expected: a freshly-spawned worker reports its transcript path before
-	// Claude creates the JSONL. Stay open with an empty backlog and let the dir watch pick up the file's
-	// Create event — don't abort, or the stream dies permanently until the panel remounts.
+	// a not-yet-existing file is expected: stay open with an empty backlog and pick the file up when it
+	// appears — don't abort, or the stream dies permanently until the panel remounts.
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading transcript: %w", err)
 	}
@@ -289,11 +317,36 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 	}
 	ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]{Response: wshrpc.AgentTranscriptUpdate{Lines: backlog}}
 
+	sendNew := func() {
+		lines, err := tailer.readNew(path)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				log.Printf("transcript tail read: %v\n", err)
+			}
+			return
+		}
+		if len(lines) == 0 {
+			return
+		}
+		ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]{Response: wshrpc.AgentTranscriptUpdate{Lines: lines}}
+	}
+
 	target := filepath.Clean(path)
 	for {
+		var wait <-chan time.Time
+		if !watching {
+			wait = time.After(transcriptWaitInterval)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-wait:
+			if watching, err = watchTranscriptFile(watcher, path); err != nil {
+				return err
+			}
+			if watching {
+				sendNew()
+			}
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil
@@ -301,18 +354,17 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 			if filepath.Clean(event.Name) != target {
 				continue
 			}
+			if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
+				// the watch was on the old file: drop it (kqueue and inotify already did on a remove, so
+				// the error is ignored) and look for the path to come back
+				_ = watcher.Remove(path)
+				watching = false
+				continue
+			}
 			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 				continue
 			}
-			lines, err := tailer.readNew(path)
-			if err != nil {
-				log.Printf("transcript tail read: %v\n", err)
-				continue
-			}
-			if len(lines) == 0 {
-				continue
-			}
-			ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate]{Response: wshrpc.AgentTranscriptUpdate{Lines: lines}}
+			sendNew()
 		case werr, ok := <-watcher.Errors:
 			if !ok {
 				return nil

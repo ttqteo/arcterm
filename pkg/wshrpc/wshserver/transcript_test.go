@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -572,6 +573,104 @@ func TestStreamTranscriptFileCreatedLater(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("streamTranscript did not return after cancel")
 	}
+}
+
+// openFDCount counts this process's open descriptors through /dev/fd (macOS and Linux both have it).
+func openFDCount(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/dev/fd")
+	if err != nil {
+		t.Skipf("no /dev/fd: %v", err)
+	}
+	return len(entries)
+}
+
+// A stream must cost a few descriptors, not one per file beside the transcript. Claude Code keeps every
+// session of a project in one directory (~480 for arcterm on 2026-11-08), and on macOS fsnotify's kqueue
+// backend opens a descriptor for each entry of a watched directory: one stream per visible agent then
+// ran wavesrv out of descriptors, and new terminals failed with "too many open files".
+func TestStreamTranscriptDoesNotOpenTheSiblingFiles(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 300; i++ {
+		writeFile(t, filepath.Join(dir, fmt.Sprintf("other-%03d.jsonl", i)), "{}\n")
+	}
+	path := filepath.Join(dir, "s.jsonl")
+	writeFile(t, path, `{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}`+"\n")
+
+	before := openFDCount(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	const streams = 3
+	var wg sync.WaitGroup
+	for i := 0; i < streams; i++ {
+		ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 16)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = streamTranscript(ctx, path, 100, ch)
+		}()
+		select {
+		case msg := <-ch:
+			if msg.Error != nil {
+				t.Fatalf("backlog: %v", msg.Error)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for backlog")
+		}
+	}
+	opened := openFDCount(t) - before
+	cancel()
+	wg.Wait()
+	if opened > streams*10 {
+		t.Fatalf("%d streams opened %d descriptors, want at most %d", streams, opened, streams*10)
+	}
+}
+
+// The watch is on the file, so a file replaced under the stream (removed, then written again) must
+// still deliver: the stream waits for the path to come back and watches the new file.
+func TestStreamTranscriptFollowsAReplacedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.jsonl")
+	writeFile(t, path, `{"n":1}`+"\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 16)
+	done := make(chan struct{})
+	go func() {
+		_ = streamTranscript(ctx, path, 100, ch)
+		close(done)
+	}()
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for backlog")
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	writeFile(t, path, `{"n":2}`+"\n")
+	time.Sleep(200 * time.Millisecond)
+	appendFile(t, path, `{"n":3}`+"\n")
+
+	var got []string
+	deadline := time.After(4 * time.Second)
+	for len(got) == 0 || got[len(got)-1] != `{"n":3}` {
+		select {
+		case msg := <-ch:
+			if msg.Error != nil {
+				t.Fatalf("after replace: %v", msg.Error)
+			}
+			got = append(got, msg.Response.Lines...)
+		case <-done:
+			t.Fatalf("stream returned after the file was replaced; got %v", got)
+		case <-deadline:
+			t.Fatalf("timeout after replace; got %v", got)
+		}
+	}
+	cancel()
+	<-done
 }
 
 func TestListSubagents(t *testing.T) {
