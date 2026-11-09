@@ -84,6 +84,28 @@ type AgentStatusData struct {
 	Usage          *AgentUsage `json:"usage,omitempty"`
 	// Hook is the Claude Code hook event behind a report (AgentHook_*), empty from any other reporter
 	Hook string `json:"hook,omitempty"`
+	// ToolKey is set only on a PostToolUse report: agentperm.ToolKey of the tool that ran, which retires the
+	// permission request that granted it (the PermissionRequest payload has no tool_use_id to match on)
+	ToolKey string `json:"toolkey,omitempty"`
+}
+
+// AgentPermissionRequest is one permission prompt Claude Code is showing in an agent's terminal.
+// Summary is the one line the chat card shows (Bash: the command; file tools: the path; ...). Answerable says
+// whether the chat may answer it with Allow (`1`); a prompt that is not (ExitPlanMode, MCP tools...) is
+// answered in the terminal.
+type AgentPermissionRequest struct {
+	Id         string `json:"id"`
+	ToolName   string `json:"toolname"`
+	Summary    string `json:"summary"`
+	Answerable bool   `json:"answerable"`
+	Ts         int64  `json:"ts"` // UnixMilli the request was raised
+}
+
+// AgentPermissionData is the payload of Event_AgentPermission: the whole pending queue of one agent block,
+// head first. Requests is always serialized: an empty queue is how the card clears.
+type AgentPermissionData struct {
+	ORef     string                   `json:"oref"`
+	Requests []AgentPermissionRequest `json:"requests"`
 }
 
 // VolunteerData is the payload of Event_JarvisVolunteer: one thing Jarvis chose to say unprompted.

@@ -32,6 +32,7 @@ var WaveEventDataTypes = map[string]reflect.Type{
 	wps.Event_Notify:           reflect.TypeOf(wshrpc.NotifyCommandData{}),
 	wps.Event_OpenFile:         reflect.TypeOf(wshrpc.OpenFileData{}),
 	wps.Event_AgentAsk:         reflect.TypeOf(baseds.AgentAskData{}),
+	wps.Event_AgentPermission:  reflect.TypeOf(baseds.AgentPermissionData{}),
 	wps.Event_JarvisVolunteer:  reflect.TypeOf(baseds.VolunteerData{}),
 	wps.Event_Slept:            reflect.TypeOf(baseds.SleptData{}),
 	wps.Event_JobQueue:         reflect.TypeOf(wshrpc.JobQueueData{}),
