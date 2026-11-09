@@ -24,8 +24,9 @@ import (
 // permAllowKey and permDenyKey are what Claude Code's permission prompt takes: `1` is its first choice, Yes, and Esc
 // rejects the request (and ends the turn).
 const (
-	permAllowKey = "1"
-	permDenyKey  = "\x1b"
+	permAllowKey       = "1"
+	permAllowSecondKey = "2" // the second option: Yes, and don't ask again
+	permDenyKey        = "\x1b"
 )
 
 // errNotAnswerable is the refusal of an Allow on a prompt whose choices the chat does not know (ExitPlanMode's plan
@@ -97,6 +98,9 @@ func (ws *WshServer) AgentPermissionAnswerCommand(ctx context.Context, data wshr
 // answerPermission types the answer into the block when the request is the head of its queue, and only then drops
 // it: a refused or failed answer leaves the queue as it was.
 func answerPermission(data wshrpc.CommandAgentPermissionAnswerData, blockId string) error {
+	if data.Choice < 0 || data.Choice > 2 {
+		return fmt.Errorf("choice %d is out of range: 0, 1 or 2", data.Choice)
+	}
 	permLock.Lock()
 	defer permLock.Unlock()
 	req, ok := agentperm.GlobalRegistry.ClaimHead(data.ORef, data.Id)
@@ -109,6 +113,9 @@ func answerPermission(data wshrpc.CommandAgentPermissionAnswerData, blockId stri
 	key := permDenyKey
 	if data.Allow {
 		key = permAllowKey
+		if data.Choice == 2 {
+			key = permAllowSecondKey
+		}
 	}
 	if err := permSendInput(blockId, []byte(key)); err != nil {
 		return fmt.Errorf("typing the answer: %w", err)

@@ -252,7 +252,8 @@ the box.
 ## Round 3: what the TUI does that chat did not (2026-11-09)
 
 Asked for after the first live use: a message sent while Claude is still answering, and the upgrades listed after
-round 2, all of them. Decided in the conversation; the plan is `docs/superpowers/plans/2026-11-09-agent-chat-upgrades.md`.
+round 2, all of them. Decided in the conversation; the plan was `docs/superpowers/plans/2026-11-09-agent-chat-upgrades.md`
+(shipped in run fed0d00e with a fix round, `2026-11-09-agent-chat-upgrades-fix.md`; both deleted, in git history).
 
 ### A message sent while Claude works
 

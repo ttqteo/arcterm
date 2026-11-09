@@ -153,6 +153,16 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
         } catch {
             continue;
         }
+        // A message queued while Claude worked and taken in mid-turn is written as an attachment, not a user record. Only
+        // its `prompt` mode is a message of yours (a task-notification is drawn from its own record); it then goes the
+        // user record's way, so text rules, task notifications and pasted images stay one code path.
+        if (rec?.type === "attachment") {
+            const queued = rec.attachment;
+            if (queued?.type !== "queued_command" || queued.commandMode !== "prompt") {
+                continue;
+            }
+            rec = { type: "user", message: { content: queued.prompt }, timestamp: rec.timestamp };
+        }
         if (rec.type === "assistant") {
             const content = rec?.message?.content;
             if (!Array.isArray(content)) {
@@ -201,6 +211,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     // scratch fields (stripped before return): tool_use timestamp for duration, tool name for result
                     // routing, and the raw Bash command (the target line shows the human description instead).
                     (action as any)._useTs = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
+                    if (Number.isFinite((action as any)._useTs)) {
+                        action.startedAt = (action as any)._useTs;
+                    }
                     (action as any)._tool = block.name;
                     if (block.name === "Bash" && typeof block.input?.command === "string") {
                         (action as any)._command = block.input.command;
@@ -307,11 +320,8 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 if (Number.isFinite(resTs) && Number.isFinite(useTs) && resTs >= useTs) {
                     action.durationMs = resTs - useTs;
                 }
-                if (block.is_error === true) {
-                    action.outcome = "fail";
-                } else if (action.verb === "ran") {
-                    action.outcome = "ok";
-                }
+                // a result that landed is an outcome, whatever the tool: a tool with none is still running (inFlight)
+                action.outcome = block.is_error === true ? "fail" : "ok";
             }
             if (images.length > 0) {
                 if (prompt != null) {

@@ -1855,6 +1855,23 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   picture, from a file under `~/.arc/attachments`. Type `@` in an agent of a registered project: its files list under
   the box, Enter or Tab picks one as `@<path>`, Escape closes the list and leaves the box focused (`chatcomposer.tsx`,
   `filemention.tsx`).
+  **Second round.** In a real session, send a message while Claude works: your bubble shows dimmed and captioned
+  Queued, then turns into the ordinary bubble where Claude took it (a `/command` draws no bubble of its own). Type `/`
+  as the box's first character: Claude Code's commands and your skills list, and `/model` flips the cell to Terminal for
+  its menu. The footer's chip against Shift+Tab in the TUI: the same mode in the same order, and while a dialog covers
+  the TUI's own footer the chip keeps the last mode. On a real Bash prompt (`echo hi > x.txt`) the card's second button
+  reads the prompt's own "Yes, and …" option 2 and answers it; try the card in a tall pane with a short conversation, and
+  with two queued answerable requests (the second card's label should match its own dialog). Send while the card is up:
+  the Send button is disabled with its reason. The `agent-chat` scenario (steps 20 to 26) drives all of this on fixtures:
+  a `queued_command` line and the Queued bubble, the hold behind a card, ↑, the `/` menu over a mocked command list, the
+  chip and the second button from Claude Code 2.1.319's captured screens written to the fixture terminal, a tool with no
+  result drawn as running, and Copy on hover. What it cannot show is a live Claude Code: the real ordering of the queued
+  line against a turn, the real dialog behind the screens, and Shift+Tab's actual cycle (`chatpending.ts`, `slashmenu.tsx`,
+  `chatfooter.tsx`, `permissioncard.tsx`). The captured screens are the real 2.1.319 binary drawing against a mock API,
+  and only the redirect form of the Bash prompt was captured: also try a plain command (such as `touch y.txt`) and check
+  that the second button reads that prompt's own option 2. Open a subagent in the cell while it works, then after it
+  stops: a tool it left with no result spins only while it works (`subagentinterior.tsx`). Hover a bubble: Copy sits in
+  the gap under it, which is now wider under Claude's bubbles (about 20px, was 8px); judge whether that reads right.
 - [ ] (arcterm) **Permission prompt in Chat.** In a real Claude session that is not on bypass permissions, ask for
   something that needs a prompt (a Bash command such as `echo hi > x.txt`): the chat shows the card with the command,
   Allow and Deny. Allow runs the command; Deny stops the turn. Answering the same prompt in the terminal instead (flip

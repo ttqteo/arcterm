@@ -10,6 +10,7 @@
 // Only the last CHAT_RENDER_STEP items are drawn at first; "Show earlier" draws that many more and, once all are drawn,
 // asks the caller for earlier entries. The place the reader left it is kept under `placeId` (transcriptplace.ts).
 
+import { CopyButton } from "@/app/element/copybutton";
 import { composerReveal } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
@@ -18,7 +19,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
-import { toolCountLabel, workedFor, type WorkItem } from "./compacttimeline";
+import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
 import { CouncilAvatar, CouncilText } from "./councilchat";
 import { splitAttachedImages } from "./launcherimages";
 import {
@@ -29,6 +30,7 @@ import {
     TaskNotificationRow,
     ToolDetailBody,
     ToolLine,
+    useNow,
 } from "./narrationtimeline";
 import { scrollParent } from "./pinnedpromptbar";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
@@ -45,6 +47,21 @@ function keyIndex(key: string): number {
 function Caret({ open }: { open: boolean }) {
     const Icon = open ? ChevronDown : ChevronRight;
     return <Icon size={11} strokeWidth={2.2} aria-hidden className="shrink-0" />;
+}
+
+// Copy in the gap under a bubble's bottom edge (the bubble keeps a margin that holds it), shown while the bubble is hovered or the button has focus (the bubble is `group`)
+function BubbleCopy({ text, align }: { text: string; align: "left" | "right" }) {
+    return (
+        <div
+            data-chat-copy
+            className={cn(
+                "absolute top-full z-10 mt-0 rounded-md bg-surface opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
+                align === "left" ? "left-1" : "right-1"
+            )}
+        >
+            <CopyButton title="Copy" content={text} className="p-1 text-[12px]" />
+        </div>
+    );
 }
 
 type CopyMenu = (text: string) => (e: React.MouseEvent) => void;
@@ -70,10 +87,11 @@ function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "y
             data-chat-you
             data-user-prompt
             onContextMenu={onContextMenu(item.text)}
-            className="max-w-[70%] self-end rounded-lg bg-surface-raised px-[14px] py-[9px] text-[13px] leading-[1.55] text-primary"
+            className="group relative mb-1 max-w-[70%] self-end rounded-lg bg-surface-raised px-[14px] py-[9px] text-[13px] leading-[1.55] text-primary"
         >
             {said.text ? <PromptText text={said.text} /> : null}
             {item.images || said.paths.length > 0 ? <PromptImages images={item.images} paths={said.paths} /> : null}
+            {said.text ? <BubbleCopy text={said.text} align="right" /> : null}
         </div>
     );
 }
@@ -125,16 +143,23 @@ function WorkPill({
     work,
     open,
     autoOpen,
+    live,
     onToggle,
 }: {
     work: WorkItem;
     open: boolean;
     autoOpen: boolean;
+    // the session is working: a tool with no result is running, and the stretch counts up to now
+    live: boolean;
     onToggle: () => void;
 }) {
     const mode = burstRenderMode({ userOpened: open, autoOpen });
     const shown = mode !== "collapsed";
-    const lines = work.actions.map((action, k) => <ToolLine key={work.startIndex + k} action={action} inline />);
+    const running = work.actions.some((a) => inFlight(a, live));
+    const now = useNow(running);
+    const lines = work.actions.map((action, k) => (
+        <ToolLine key={work.startIndex + k} action={action} inline running={inFlight(action, live)} settled={!live} />
+    ));
     return (
         <div data-chat-work className="flex flex-col">
             <button
@@ -146,7 +171,8 @@ function WorkPill({
             >
                 <Caret open={shown} />
                 <span>
-                    {workedFor(work.durationMs)} · {toolCountLabel(work.actions.length)}
+                    {running ? workingFor(stretchMs(work, now, live)) : workedFor(work.durationMs)} ·{" "}
+                    {toolCountLabel(work.actions.length)}
                 </span>
                 {work.failed > 0 ? <span className="tabular-nums text-error">· {work.failed} failed</span> : null}
             </button>
@@ -251,6 +277,7 @@ export function ChatConversation({
     placeId,
     onLoadEarlier,
     active,
+    working,
     className,
 }: {
     entries: AgentEntry[];
@@ -261,8 +288,13 @@ export function ChatConversation({
     onLoadEarlier?: () => void;
     // the session is live: its last stretch of work is open while it is the last thing drawn
     active?: boolean;
+    // the session is working, so a tool with no result is running (a spinner, counted in the stretch); one a session
+    // that stopped left without a result is drawn neutral. Defaults to `active`; a session waiting on an answer is
+    // `active` but not working
+    working?: boolean;
     className?: string;
 }) {
+    const toolsLive = working ?? !!active;
     const items = useMemo(() => chatItems(entries), [entries]);
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
@@ -430,9 +462,10 @@ export function ChatConversation({
                         key={key}
                         data-chat-prose
                         onContextMenu={copyMenu(part.text)}
-                        className="min-w-0 max-w-full self-start rounded-lg bg-surface-raised px-[14px] py-[9px]"
+                        className="group relative mb-3 min-w-0 max-w-full self-start rounded-lg bg-surface-raised px-[14px] py-[9px]"
                     >
                         <CouncilText text={part.text} className="text-[13px] leading-[1.6] text-primary" />
+                        <BubbleCopy text={part.text} align="left" />
                     </div>
                 );
             case "work":
@@ -443,6 +476,7 @@ export function ChatConversation({
                         open={opened.has(key)}
                         // the work the agent is doing now: nothing but its files chip after it in the last item
                         autoOpen={!!active && last && item.parts.slice(p + 1).every((q) => q.kind === "files")}
+                        live={toolsLive}
                         onToggle={() => toggle(key)}
                     />
                 );

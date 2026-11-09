@@ -507,6 +507,8 @@ export class TermWrap {
                     return true;
                 },
                 focus: () => this.terminal.focus(),
+                lines: (count) => this.recentLines(count),
+                ready: () => this.loaded,
             }),
         });
         // a lost glyph texture (see startFitAudit) also redraws when the terminal takes focus

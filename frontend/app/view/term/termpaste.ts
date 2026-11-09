@@ -11,6 +11,11 @@ export interface TermHandle {
     // false when the terminal cannot take input yet (nothing was pasted)
     paste: (text: string) => boolean;
     focus: () => void;
+    // the bottom `count` rows of the terminal's buffer as text, where a TUI draws its prompt and dialogs
+    lines: (count: number) => string[];
+    // false until the terminal has loaded its first data (its rows are not the program's screen yet); a handle that
+    // leaves it out is always ready
+    ready?: () => boolean;
 }
 
 const handles = new Map<string, TermHandle>();
@@ -28,6 +33,16 @@ export function registerTermHandle(blockId: string, handle: TermHandle): () => v
 // false when the block has no mounted terminal, or one that is not ready for input
 export function pasteIntoTerm(blockId: string, text: string): boolean {
     return handles.get(blockId)?.paste(text) ?? false;
+}
+
+// The bottom `count` rows of the block's terminal, or null when the block has no mounted terminal or one that has not
+// loaded yet. The cockpit reads Claude Code's footer and dialogs off these rows (tuiscreen.ts).
+export function readTermLines(blockId: string, count: number): string[] | null {
+    const handle = handles.get(blockId);
+    if (!handle || handle.ready?.() === false) {
+        return null;
+    }
+    return handle.lines(count);
 }
 
 export function focusTerm(blockId: string): void {

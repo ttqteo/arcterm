@@ -11,9 +11,18 @@
 
 import { cn, fireAndForget } from "@/util/util";
 import { useEffect, useState } from "react";
+import { readTermLines } from "../term/termpaste";
 import type { AgentVM } from "./agentsviewmodel";
-import { cardShown, moreWaiting, permissionSummaryLine, permissionTitle, waitingFor } from "./permissionmodel";
+import {
+    cardShown,
+    moreWaiting,
+    permissionSummaryLine,
+    permissionTitle,
+    secondChoice,
+    waitingFor,
+} from "./permissionmodel";
 import { answerPermission, usePermission, usePermissionRequestState } from "./permissionstore";
+import { tuiPermissionOptions } from "./tuiscreen";
 
 const PRIMARY_BTN =
     "flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[6px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
@@ -35,6 +44,30 @@ function useNow(active: boolean): number {
     return now;
 }
 
+// how many rows off the bottom of the terminal hold the dialog, and how often the card re-reads them while it shows
+const SCREEN_ROWS = 30;
+const SECOND_POLL_MS = 1000;
+
+// The label of the prompt's own second "Yes, and …" option, read off the terminal under the chat on show and each
+// second while an answerable request is up; null otherwise.
+function useSecondChoice(blockId: string | undefined, active: boolean): string | null {
+    const [label, setLabel] = useState<string | null>(null);
+    useEffect(() => {
+        if (!active || blockId == null) {
+            setLabel(null);
+            return;
+        }
+        const read = () => {
+            const lines = readTermLines(blockId, SCREEN_ROWS);
+            setLabel(lines == null ? null : secondChoice(tuiPermissionOptions(lines)));
+        };
+        read();
+        const timer = setInterval(read, SECOND_POLL_MS);
+        return () => clearInterval(timer);
+    }, [blockId, active]);
+    return label;
+}
+
 export function PermissionCard({ agent, onOpenTerminal }: { agent: AgentVM; onOpenTerminal: () => void }) {
     const oref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
     const requests = usePermission(oref);
@@ -44,6 +77,7 @@ export function PermissionCard({ agent, onOpenTerminal }: { agent: AgentVM; onOp
     // draws for the error line alone once the queue is empty.
     const shown = oref != null && (head != null || error != null) && cardShown(agent);
     const now = useNow(shown && head != null);
+    const second = useSecondChoice(agent.blockId, shown && head != null && head.answerable);
     if (!shown) {
         return null;
     }
@@ -64,7 +98,8 @@ export function PermissionCard({ agent, onOpenTerminal }: { agent: AgentVM; onOp
             </div>
         );
     }
-    const answer = (allow: boolean) => fireAndForget(() => answerPermission(oref, head.id, allow));
+    const answer = (allow: boolean, choice?: 2) =>
+        fireAndForget(() => answerPermission(oref, head.id, { allow, choice }));
     const more = moreWaiting(requests.length - 1);
     return (
         <div
@@ -98,6 +133,18 @@ export function PermissionCard({ agent, onOpenTerminal }: { agent: AgentVM; onOp
                         >
                             Allow
                         </button>
+                        {second != null && (
+                            <button
+                                type="button"
+                                data-perm-second
+                                disabled={busy}
+                                title={second}
+                                className={cn(SECONDARY_BTN, "min-w-0 max-w-[320px] truncate")}
+                                onClick={() => answer(true, 2)}
+                            >
+                                {second}
+                            </button>
+                        )}
                         <button
                             type="button"
                             data-permission-deny

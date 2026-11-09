@@ -12,8 +12,9 @@ import { motion } from "motion/react";
 import { useEffect } from "react";
 import { ChatConversation } from "./chatconversation";
 import { liveEntriesByIdAtom, startTranscriptStream, stopTranscriptStream } from "./livetranscript";
+import { subagentWorking } from "./session-models/sessionviewmodel";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
-import { focusSubagentAtom, type FocusSubagent } from "./subagentsstore";
+import { focusSubagentAtom, subagentsByIdAtom, type FocusSubagent } from "./subagentsstore";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; parentName: string }) {
@@ -28,6 +29,8 @@ export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; pare
     const back = () => globalStore.set(focusSubagentAtom, null);
 
     const entries = useAtomValue(liveEntriesByIdAtom)[streamId] ?? [];
+    // a tool the subagent left with no result spins only while the subagent works
+    const working = subagentWorking(useAtomValue(subagentsByIdAtom)[sub.parentId], sub.agentId);
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, streamId);
     return (
         <motion.div
@@ -51,7 +54,7 @@ export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; pare
             <div className="relative min-h-0 flex-1">
                 <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] pb-[12px]">
                     {entries.length > 0 ? (
-                        <ChatConversation entries={entries} placeId={streamId} active />
+                        <ChatConversation entries={entries} placeId={streamId} active working={working} />
                     ) : (
                         <TranscriptSkeleton />
                     )}

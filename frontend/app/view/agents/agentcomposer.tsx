@@ -61,6 +61,8 @@ export interface AgentSendTarget {
 export interface AgentSend {
     text: string;
     setText: (text: string) => void;
+    /** The exact text a send types: the box's text with its attachments' blocks. */
+    message: string;
     /** Something to send (text, or a ready attachment), a live block, and no wake in flight. */
     canSend: boolean;
     /** A wake is relaunching this agent, from this box or from anywhere else. */
@@ -121,7 +123,7 @@ export function useAgentSend(
         setText("");
         return true;
     };
-    return { text, setText, canSend, waking, send };
+    return { text, setText, message, canSend, waking, send };
 }
 
 export const AgentComposer = forwardRef<

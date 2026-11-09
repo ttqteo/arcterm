@@ -6,10 +6,13 @@ import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
 import {
     filesChangedLabel,
     groupCompact,
+    inFlight,
     mergeEditFiles,
+    stretchMs,
     toolCountLabel,
     userNeedsClamp,
     workedFor,
+    workingFor,
     type WorkItem,
 } from "./compacttimeline";
 
@@ -158,5 +161,50 @@ describe("labels", () => {
         expect(toolCountLabel(5)).toBe("5 tools");
         expect(filesChangedLabel(1)).toBe("1 file changed");
         expect(filesChangedLabel(3)).toBe("3 files changed");
+    });
+});
+
+describe("inFlight", () => {
+    const a = (extra: Partial<AgentActionEntry>) => action("ran", extra) as AgentActionEntry;
+
+    it("is true for an action with no outcome, only while the session is live", () => {
+        expect(inFlight(a({}), true)).toBe(true);
+        expect(inFlight(a({}), false)).toBe(false);
+    });
+
+    it("is false for an action that has an outcome", () => {
+        expect(inFlight(a({ outcome: "ok" }), true)).toBe(false);
+        expect(inFlight(a({ outcome: "fail" }), true)).toBe(false);
+    });
+});
+
+describe("stretchMs", () => {
+    const work = (actions: AgentEntry[]) => works(actions)[0];
+
+    it("adds how long each in-flight action has run to the finished durations while live", () => {
+        const w = work([
+            action("read", { outcome: "ok", durationMs: 2000 }),
+            action("ran", { startedAt: 10_000 }),
+            action("ran", { startedAt: 12_000 }),
+        ]);
+        expect(stretchMs(w, 15_000, true)).toBe(2000 + 5000 + 3000);
+    });
+
+    it("is the finished durations alone when the session is not live", () => {
+        const w = work([action("read", { outcome: "ok", durationMs: 2000 }), action("ran", { startedAt: 10_000 })]);
+        expect(stretchMs(w, 15_000, false)).toBe(2000);
+    });
+
+    it("counts nothing for an in-flight action with no start time, and never a negative time", () => {
+        const w = work([action("ran", {}), action("ran", { startedAt: 20_000 })]);
+        expect(stretchMs(w, 15_000, true)).toBe(0);
+    });
+});
+
+describe("workingFor", () => {
+    it("reads as workedFor does, in the present tense", () => {
+        expect(workingFor(38_000)).toBe("Working for 38s");
+        expect(workingFor(192_000)).toBe("Working for 3m 12s");
+        expect(workingFor(200)).toBe("Working");
     });
 });

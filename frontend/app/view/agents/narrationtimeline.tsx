@@ -16,11 +16,12 @@ import {
     Copy,
     ImageOff,
     Layers,
+    Loader2,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { MOTION, composerReveal, shouldFadeEntry } from "@/app/element/motiontokens";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
     burstRenderMode,
     conversationText,
@@ -64,6 +65,40 @@ function ExitChip({ exit }: { exit: number }) {
             exit {exit}
         </span>
     );
+}
+
+/** The clock in ms, re-read each second while `active`; a frozen read of it otherwise. */
+export function useNow(active: boolean): number {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!active) {
+            return;
+        }
+        setNow(Date.now());
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, [active]);
+    return now;
+}
+
+// "12s", "3m 5s": how long a running tool has gone, in whole seconds so it ticks without a decimal
+function runningFor(ms: number): string {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return s < 60 ? `${s}s` : s % 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s / 60}m`;
+}
+
+// a tool with no result yet: a spinner where the mark goes, no colour (it has neither passed nor failed)
+function RunningSquare() {
+    return (
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted">
+            <Loader2 size={12} strokeWidth={2.4} aria-hidden className="animate-spin motion-reduce:animate-none" />
+        </span>
+    );
+}
+
+// a tool with no result in a session that is not working: neither ✓ nor ✗, since nothing says how it ended
+function SettledSquare() {
+    return <span className="flex h-4 w-4 shrink-0 rounded-[4px] bg-surface-hover" aria-hidden />;
 }
 
 function StatusSquare({ ok }: { ok: boolean }) {
@@ -312,8 +347,22 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
 // past the per-kind budget opens the viewport modal. The bare-line look is preserved when detail
 // is absent (e.g. Codex actions, or Claude tools with no captured body).
 // `inline` (chat): a long detail opens in place too, in a taller scroll box, and the full view is its button only
-export function ToolLine({ action, inline }: { action: AgentActionEntry; inline?: boolean }) {
+// `running`: its result has not landed in a working session (a spinner and the time since it started); `settled`: the
+// session is not working, so a tool with no result draws neutral. Without either (the compact views) it draws as ever.
+export function ToolLine({
+    action,
+    inline,
+    running,
+    settled,
+}: {
+    action: AgentActionEntry;
+    inline?: boolean;
+    running?: boolean;
+    settled?: boolean;
+}) {
     const [open, setOpen] = useState(false);
+    const now = useNow(!!running);
+    const neutral = !running && !!settled && action.outcome == null;
     const ok = action.outcome !== "fail";
     const detail = action.detail;
     const long = detail ? detailExceedsInline(detail) : false;
@@ -330,8 +379,13 @@ export function ToolLine({ action, inline }: { action: AgentActionEntry; inline?
     };
     return (
         <div>
-            <div onClick={onClick} className={cn(TOOL_ROW, detail && "cursor-pointer hover:bg-surface-hover")}>
-                <StatusSquare ok={ok} />
+            <div
+                onClick={onClick}
+                data-tool-running={running ? "" : undefined}
+                data-tool-settled={neutral ? "" : undefined}
+                className={cn(TOOL_ROW, detail && "cursor-pointer hover:bg-surface-hover")}
+            >
+                {running ? <RunningSquare /> : neutral ? <SettledSquare /> : <StatusSquare ok={ok} />}
                 <span className={VERB}>{action.verb}</span>
                 {action.path != null ? (
                     <PathLink path={action.path} className={TARGET}>
@@ -346,7 +400,11 @@ export function ToolLine({ action, inline }: { action: AgentActionEntry; inline?
                     </span>
                 ) : null}
                 <div className="min-w-[6px] flex-1" />
-                {action.durationMs ? (
+                {running && action.startedAt != null ? (
+                    <span className={cn("shrink-0 tabular-nums", FAINT_TEXT)}>
+                        {runningFor(now - action.startedAt)}
+                    </span>
+                ) : action.durationMs ? (
                     <span className={cn("shrink-0", FAINT_TEXT)}>{formatDuration(action.durationMs)}</span>
                 ) : null}
                 {detail ? <Affordance toModal={toModal} open={open} /> : null}

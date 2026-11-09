@@ -53,6 +53,12 @@ export interface SubagentVM {
     transcriptPath?: string; // disk-backed source: the child's own transcript file (undefined for the legacy hook path)
 }
 
+/** Pure: whether the subagent `agentId` is working in `subs` (its parent's list). A missing list, a missing entry and
+ *  every other state read as not working, so a tool it left with no result stops spinning. */
+export function subagentWorking(subs: SubagentVM[] | undefined, agentId: string): boolean {
+    return subs?.find((s) => s.id === agentId)?.state === "working";
+}
+
 // Couples to the Phase 0 reporter's color constants. Phase 2 replaces this with an explicit
 // `state` field carried by the `wsh agentstatus` event.
 export const COLOR_WORKING = "#3fb950";

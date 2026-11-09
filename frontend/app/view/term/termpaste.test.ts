@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { focusTerm, pasteIntoTerm, registerTermHandle } from "./termpaste";
+import { focusTerm, pasteIntoTerm, readTermLines, registerTermHandle } from "./termpaste";
 
 function handle() {
-    return { paste: vi.fn(() => true), focus: vi.fn() };
+    return { paste: vi.fn(() => true), focus: vi.fn(), lines: vi.fn((_count: number): string[] => []) };
 }
 
 describe("pasteIntoTerm", () => {
@@ -28,7 +28,7 @@ describe("pasteIntoTerm", () => {
         offB();
     });
     it("says so when the terminal is mounted but not ready for input", () => {
-        const h = { paste: vi.fn(() => false), focus: vi.fn() };
+        const h = { paste: vi.fn(() => false), focus: vi.fn(), lines: vi.fn((_count: number): string[] => []) };
         const off = registerTermHandle("pb-5", h);
         expect(pasteIntoTerm("pb-5", "x")).toBe(false);
         expect(h.paste).toHaveBeenCalledWith("x");
@@ -40,6 +40,7 @@ describe("pasteIntoTerm", () => {
                 throw new Error("terminal gone");
             }),
             focus: vi.fn(),
+            lines: vi.fn((_count: number): string[] => []),
         };
         const off = registerTermHandle("pb-6", h);
         expect(() => pasteIntoTerm("pb-6", "x")).toThrow("terminal gone");
@@ -85,5 +86,29 @@ describe("focusTerm", () => {
         focusTerm("pb-unknown");
         expect(h.focus).toHaveBeenCalledOnce();
         off();
+    });
+});
+
+describe("readTermLines", () => {
+    it("reads the bottom rows through the registered terminal", () => {
+        const h = { ...handle(), lines: vi.fn((_count: number) => ["❯", "  ⏵⏵ auto mode on"]) };
+        const off = registerTermHandle("pl-1", h);
+        expect(readTermLines("pl-1", 12)).toEqual(["❯", "  ⏵⏵ auto mode on"]);
+        expect(h.lines).toHaveBeenCalledWith(12);
+        off();
+    });
+    it("is null when the block has no mounted terminal", () => {
+        expect(readTermLines("pl-none", 12)).toBeNull();
+    });
+    it("is null while the terminal has not loaded", () => {
+        const h = { ...handle(), ready: () => false };
+        const off = registerTermHandle("pl-2", h);
+        expect(readTermLines("pl-2", 12)).toBeNull();
+        expect(h.lines).not.toHaveBeenCalled();
+        off();
+    });
+    it("is null once the terminal unregistered", () => {
+        registerTermHandle("pl-3", handle())();
+        expect(readTermLines("pl-3", 12)).toBeNull();
     });
 });
