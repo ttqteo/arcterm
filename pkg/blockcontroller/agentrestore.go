@@ -79,11 +79,19 @@ func ResumeArgs(harness, session string, baseArgs []string) ([]string, bool) {
 }
 
 // StripSessionArgs is args without any session the harness's launch flags already name. Never nil, so a caller
-// writing it into block meta writes an empty list, not a delete.
+// writing it into block meta writes an empty list, not a delete. For claude a leading `attach <short id>` (how the
+// cockpit's Background Attach opens a session) names the session too and is dropped (launch.ts resumeArgsForClaude).
 func StripSessionArgs(harness string, args []string) []string {
 	stale := agentStaleSessionFlags[harness]
 	kept := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
+	start := 0
+	if harness == "claude" && len(args) > 0 && args[0] == "attach" {
+		start = 1
+		if hasFlagValue(args, 0) {
+			start = 2
+		}
+	}
+	for i := start; i < len(args); i++ {
 		switch a := args[i]; {
 		case stale.withValue[a]:
 			if hasFlagValue(args, i) {

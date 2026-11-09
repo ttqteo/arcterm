@@ -1190,6 +1190,15 @@ export function backgroundAgentToVM(bg: BackgroundAgentData, projectName: string
     };
 }
 
+/** Pure: the command that opens background session `sessionId` in a tab. `claude attach <short id>` opens the
+ *  daemon's own session there, so the daemon keeps running it and its listed state moves on to done; a
+ *  `claude --resume` would run the conversation outside the daemon and leave the listing frozen at its last
+ *  state ("needs input" forever). An entry with no short id falls back to the resume. */
+export function backgroundAttachCommand(listing: BackgroundAgentData[], sessionId: string): string {
+    const shortId = listing.find((a) => a.sessionid === sessionId)?.id;
+    return shortId ? `claude attach ${shortId}` : `claude --resume ${sessionId}`;
+}
+
 /** Pure: drop background agents that are already tracked as live hook-fed agents. A live agent's
  *  session id is the stem of its transcript filename (sessionIdFromTranscript); a background agent's
  *  id IS its session id. Same id => same session => show it once (the live, richer one wins). */

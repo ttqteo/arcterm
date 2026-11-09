@@ -141,15 +141,19 @@ func List(ctx context.Context) ([]Agent, error) {
 	return Parse(out)
 }
 
-// SessionIDs is every Claude session a closing agent tab could be showing: the one its launch resumed
-// (`--resume <id>` in its args; how Attach opens a background session) and the ones its transcripts
-// are named for (a transcript's file stem is its session id). Empty ones and duplicates are dropped.
+// SessionIDs is every Claude session a closing agent tab could be showing: the one its launch attached to
+// (`attach <short id>` as its args; how Attach opens a background session) or resumed (`--resume <id>`), and
+// the ones its transcripts are named for (a transcript's file stem is its session id). Empty ones and
+// duplicates are dropped. An attach key is a short id, which StopTargets matches as well as a session id.
 func SessionIDs(args []string, transcriptPaths ...string) []string {
 	var out []string
 	add := func(id string) {
 		if id != "" && !slices.Contains(out, id) {
 			out = append(out, id)
 		}
+	}
+	if len(args) >= 2 && args[0] == "attach" {
+		add(args[1])
 	}
 	for i, a := range args {
 		if a == "--resume" && i+1 < len(args) {
@@ -166,13 +170,14 @@ func SessionIDs(args []string, transcriptPaths ...string) []string {
 	return out
 }
 
-// StopTargets is what to pass `claude stop` for each listed background session among sessionIds: its
-// short id, else its session id. An interactive session is never a target: it runs in a terminal of
-// its own, which closing that terminal ends.
+// StopTargets is what to pass `claude stop` for each listed background session among sessionIds (a
+// session id, or the short id a tab attached by): its short id, else its session id. An interactive
+// session is never a target: it runs in a terminal of its own, which closing that terminal ends.
 func StopTargets(agents []Agent, sessionIds []string) []string {
 	var out []string
 	for _, a := range agents {
-		if a.Kind != "background" || !slices.Contains(sessionIds, a.SessionId) {
+		named := slices.Contains(sessionIds, a.SessionId) || (a.ID != "" && slices.Contains(sessionIds, a.ID))
+		if a.Kind != "background" || !named {
 			continue
 		}
 		if a.ID != "" {

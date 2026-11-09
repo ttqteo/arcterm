@@ -295,7 +295,7 @@ func (ws *WshServer) GetBackgroundAgentsCommand(ctx context.Context, data wshrpc
 	out := make([]wshrpc.BackgroundAgentData, len(agents))
 	for i, a := range agents {
 		out[i] = wshrpc.BackgroundAgentData{
-			SessionId: a.SessionId, Cwd: a.Cwd, Kind: a.Kind,
+			Id: a.ID, SessionId: a.SessionId, Cwd: a.Cwd, Kind: a.Kind,
 			Name: a.Name, State: a.State, StartedTs: a.StartedTs,
 		}
 	}

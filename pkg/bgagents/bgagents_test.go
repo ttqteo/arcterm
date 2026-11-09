@@ -134,6 +134,18 @@ func TestSessionIDs(t *testing.T) {
 	if got = SessionIDs([]string{"--resume"}); len(got) != 0 {
 		t.Errorf("want none for a dangling --resume, got %v", got)
 	}
+	// an Attach tab runs `claude attach <short id>`: the short id names the session too
+	got = SessionIDs([]string{"attach", "1903f81a"}, "")
+	if strings.Join(got, ",") != "1903f81a" {
+		t.Errorf("want the attach key, got %v", got)
+	}
+	if got = SessionIDs([]string{"attach"}); len(got) != 0 {
+		t.Errorf("want none for a dangling attach, got %v", got)
+	}
+	// "attach" as a later argument (a prompt word) is not the subcommand
+	if got = SessionIDs([]string{"--model", "opus", "attach", "x"}); len(got) != 0 {
+		t.Errorf("want none for attach past the first argument, got %v", got)
+	}
 }
 
 func TestStopTargets(t *testing.T) {
@@ -147,6 +159,10 @@ func TestStopTargets(t *testing.T) {
 	// only daemon-hosted sessions the closed tab named: by short id, else by session id; never an interactive one
 	if strings.Join(got, ",") != "61c3c450,noshort-full" {
 		t.Errorf("want 61c3c450,noshort-full, got %v", got)
+	}
+	// a tab that attached by short id names the session by that id
+	if got = StopTargets(agents, []string{"other"}); strings.Join(got, ",") != "other" {
+		t.Errorf("want other matched by its short id, got %v", got)
 	}
 	if got = StopTargets(agents, nil); len(got) != 0 {
 		t.Errorf("want none for no session ids, got %v", got)

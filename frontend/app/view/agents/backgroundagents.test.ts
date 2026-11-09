@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backgroundAgentToVM, dedupBackgroundAgents, type AgentVM } from "./agentsviewmodel";
+import { backgroundAgentToVM, backgroundAttachCommand, dedupBackgroundAgents, type AgentVM } from "./agentsviewmodel";
 
 const NOW = 1_000_000;
 
@@ -45,5 +45,17 @@ describe("dedupBackgroundAgents", () => {
         const live: AgentVM[] = [{ id: "t", name: "l", task: "", state: "idle", transcriptPath: "/x/p/other.jsonl" }];
         const background = [backgroundAgentToVM(bg("s9", "idle"), "p", NOW)];
         expect(dedupBackgroundAgents(background, live)).toHaveLength(1);
+    });
+});
+
+describe("backgroundAttachCommand", () => {
+    it("attaches to the daemon's session by its short id, so the daemon keeps running it", () => {
+        const listing = [{ ...bg("1903f81a-1b3e", "blocked"), id: "1903f81a" }, bg("s2", "idle")];
+        expect(backgroundAttachCommand(listing, "1903f81a-1b3e")).toBe("claude attach 1903f81a");
+    });
+    it("falls back to a resume when the entry has no short id or is not listed", () => {
+        const listing = [bg("s2", "idle")];
+        expect(backgroundAttachCommand(listing, "s2")).toBe("claude --resume s2");
+        expect(backgroundAttachCommand([], "gone")).toBe("claude --resume gone");
     });
 });

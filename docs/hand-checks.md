@@ -23,6 +23,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   folder, and onto empty space below the rows (the root); a folder onto itself or its own subfolder shows the no-drop
   pointer; a name already in the target gives a "Couldn't move" toast; a moved file open in a File tab stays open; the
   same drag onto a terminal still types the paths. Not run in a dev app (`railtreepane.tsx`, `railmove.ts`).
+- [ ] (arcterm) Cockpit → Background → Attach: the new tab runs `claude attach <short id>` and shows the session;
+  answer it, let it finish → `claude agents --json` lists it as one `background` entry (no second `interactive` one)
+  and its row leaves "needs input"; close the tab → the session is stopped. Also attach a job whose daemon died long
+  ago (a stale "blocked" row) and see whether `claude attach` brings it back; if it errors, Attach needs a
+  `claude respawn` first. Unit-tested only (`backgroundAttachCommand`, `pkg/bgagents`).
 - [ ] (arcterm) History → right-click a session row → Copy session id sits between Copy title and Copy transcript
   path; pasting gives the session's id (for Claude, the transcript file's name without `.jsonl`). No dev app was
   running to try it (`projecthistory.tsx` `sessionMenu`, 5db413c1e).

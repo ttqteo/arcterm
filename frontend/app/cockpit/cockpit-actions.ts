@@ -17,7 +17,8 @@ import {
     wakeErrorToast,
     type AsleepLaunch,
 } from "@/app/view/agents/agentsleep";
-import type { AgentVM, PendingLaunch } from "@/app/view/agents/agentsviewmodel";
+import { backgroundAttachCommand, type AgentVM, type PendingLaunch } from "@/app/view/agents/agentsviewmodel";
+import { backgroundAgentsAtom } from "@/app/view/agents/backgroundagentsstore";
 import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
 import { archivedSession, nextToReopen, recentlyClosedAtom } from "@/app/view/agents/recentlyclosed";
@@ -258,19 +259,20 @@ async function goToHolder(model: AgentsViewModel, holder: Holder, message: strin
     }
 }
 
-// Attach = resume a detached background agent inside a fresh Wave terminal block. `claude --resume
-// <sessionId>` is the primitive; for a session the Claude Code daemon still runs it turns into
-// `claude attach`, so the tab only holds the client and closing it stops the session by id
-// (WorkspaceService.CloseTab -> bgagents.Stop). Task is empty so resume reattaches without replaying
-// a prompt. Once it boots, the hook reporter registers it and the session-id dedup collapses the
-// background-lane entry into the now-live agent.
+// Attach = open a background agent inside a fresh Wave terminal block with `claude attach <short id>`
+// (backgroundAttachCommand). The daemon keeps running the session, so its listed state moves on to done; a
+// `claude --resume` of a session the daemon no longer runs started it outside the daemon instead, and the
+// listing stayed frozen at "needs input". The tab only holds the attach client, and closing it stops the
+// session (WorkspaceService.CloseTab -> bgagents.Stop, which reads the attach key). The session's hooks report
+// into the attached tab (agentobserve/hosted.go), and the session-id dedup collapses the background-lane entry
+// into the now-live agent. An entry with no short id falls back to `claude --resume`.
 export async function attachBackgroundAgent(
     model: AgentsViewModel,
     bg: { sessionId: string; cwd: string; project: string }
 ): Promise<void> {
     await launchAgent(model, {
         runtime: "claude",
-        startupCommand: `claude --resume ${bg.sessionId}`,
+        startupCommand: backgroundAttachCommand(globalStore.get(backgroundAgentsAtom), bg.sessionId),
         task: "",
         projectPath: bg.cwd,
         projectName: bg.project || "background",

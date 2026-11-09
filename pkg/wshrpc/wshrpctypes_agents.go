@@ -551,6 +551,7 @@ type CommandRemoveBackgroundAgentData struct {
 // BackgroundAgentData is one entry from `claude agents --json`, normalized. No PR/model/token
 // fields — the listing carries none.
 type BackgroundAgentData struct {
+	Id        string `json:"id,omitempty"` // the short id `claude attach` takes; background entries only
 	SessionId string `json:"sessionid"`
 	Cwd       string `json:"cwd"`
 	Kind      string `json:"kind"` // "background" | "interactive"

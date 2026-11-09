@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Attach on a Cockpit Background session opens that session in its tab with `claude attach`, so it keeps running in
+  the background and its row moves on to done when it finishes, instead of staying on "needs input" forever.
 - Claude agents always start in the fullscreen renderer when your Claude settings ask for it (`/tui fullscreen`):
   closing or restarting an agent in its first seconds no longer makes the next ones open in the classic renderer,
   or turns fullscreen off altogether.

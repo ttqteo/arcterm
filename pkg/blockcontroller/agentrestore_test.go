@@ -95,6 +95,7 @@ func TestResumeArgs(t *testing.T) {
 		{"claude with no launch flags", "claude", "abc", nil, []string{"--resume", "abc"}, true},
 		{"claude drops a resume it already carried", "claude", "new", []string{"--resume", "old", "--continue", "--model", "opus"}, []string{"--resume", "new", "--model", "opus"}, true},
 		{"claude drops a bare resume (its own picker), not the flag after it", "claude", "new", []string{"--resume", "--settings", "ask.json"}, []string{"--resume", "new", "--settings", "ask.json"}, true},
+		{"claude drops the attach a Background Attach launched with", "claude", "abc-full", []string{"attach", "abc"}, []string{"--resume", "abc-full"}, true},
 		{"pi takes the transcript path whole", "pi", `C:\t\s.jsonl`, []string{"--session", "old", "--model", "x"}, []string{"--session", `C:\t\s.jsonl`, "--model", "x"}, true},
 		{"agy", "agy", "c1", []string{"--sandbox", "-c", "--conversation", "old"}, []string{"--conversation", "c1", "--sandbox"}, true},
 		{"opencode", "opencode", "ses_1", []string{"-s", "old", "--continue", "--x"}, []string{"-s", "ses_1", "--x"}, true},

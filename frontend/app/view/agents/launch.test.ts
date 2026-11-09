@@ -331,6 +331,9 @@ describe("resumeArgsForClaude", () => {
     it("preserves value-taking options (does not mistake the value for a prompt)", () => {
         expect(resumeArgsForClaude("s1", ["--model", "opus"])).toEqual(["--resume", "s1", "--model", "opus"]);
     });
+    it("drops the attach <short id> a Background Attach launched with", () => {
+        expect(resumeArgsForClaude("s1-full", ["attach", "s1"])).toEqual(["--resume", "s1-full"]);
+    });
     it("drops a prior --resume <id> so resuming twice never stacks", () => {
         expect(resumeArgsForClaude("s2", ["--resume", "s1", "--verbose"])).toEqual(["--resume", "s2", "--verbose"]);
     });
