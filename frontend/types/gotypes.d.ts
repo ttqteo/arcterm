@@ -1470,12 +1470,16 @@ declare global {
     type CommandGetSessionPeekData = {
         transcriptpath: string;
         count: number;
+        before?: number;
+        answered?: boolean;
     };
 
     // wshrpc.CommandGetSessionPeekRtnData
     type CommandGetSessionPeekRtnData = {
         messages: SessionPeekMessage[];
         capped: boolean;
+        before: number;
+        answered: boolean;
     };
 
     // wshrpc.CommandGetSessionUsageData

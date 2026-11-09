@@ -35,9 +35,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Float window is a button in the agent header, beside Fullscreen, instead of a row in the … menu.
 - New agent, Claude Code: pick a past session and the dialog turns into a resume step, with the Task box on top,
   your sessions on the left and the picked session's last 5 messages on the right, shown at once and formatted as in
-  the transcript. New session keeps the usual columns. The agent and project sit in the title: click one, Back in the
-  footer, or press ← from the sessions, to change them. Esc now closes the dialog in one press, and Shift+Enter opens the session asleep
-  again.
+  the transcript; scroll up to read older ones, back to the session's start. New session keeps the usual columns. The
+  agent and project sit in the title: click one, Back in the footer (Alt+←), or press ← from the sessions, to change
+  them. Esc now closes the dialog in one press. The step has no Open asleep button: Open asleep stays in History and
+  Conversations' menus.
 - The lobby Christmas tree grows with the tasks your runs finish on every machine that syncs the same vault, not
   only this one. Where you hung the ornaments stays your own on each machine.
 

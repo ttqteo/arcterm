@@ -255,6 +255,127 @@ func TestClaudeTailMessagesClampsTheCount(t *testing.T) {
 	}
 }
 
+// readAllPeekPages pages a transcript from its end to its start, n messages a page, and returns the pages newest first.
+func readAllPeekPages(t *testing.T, path string, n int) []PeekPage {
+	t.Helper()
+	var pages []PeekPage
+	cur := PeekCursor{}
+	for range 100 {
+		page, err := ClaudeTailPage(path, n, cur)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages = append(pages, page)
+		if page.Next.Before == 0 {
+			return pages
+		}
+		if cur.Before != 0 && page.Next.Before >= cur.Before {
+			t.Fatalf("page %d did not move toward the start: %d after %d", len(pages), page.Next.Before, cur.Before)
+		}
+		cur = page.Next
+	}
+	t.Fatal("paging never reached the file's start")
+	return nil
+}
+
+// pagedMessages joins the pages back oldest first.
+func pagedMessages(pages []PeekPage) []PeekMessage {
+	var out []PeekMessage
+	for i := len(pages) - 1; i >= 0; i-- {
+		out = append(out, pages[i].Messages...)
+	}
+	return out
+}
+
+// Paging one message at a time gives what one read gives: a page that stops on an answer keeps the narration before
+// it out of the next page.
+func TestClaudeTailPageReadsOnTowardTheStart(t *testing.T) {
+	lines := []string{
+		peekPrompt(t, "fix it"),
+		peekAnswer(t, "Let me check X."),
+		peekToolUse(),
+		peekToolResult(t, 100),
+		peekAnswer(t, "Now Y."),
+		peekToolUse(),
+		peekToolResult(t, 100),
+		peekAnswer(t, "Fixed."),
+		peekPrompt(t, "commit"),
+		peekToolUse(),
+		peekToolResult(t, 100),
+		peekPrompt(t, "and now?"),
+		peekAnswer(t, "Done."),
+	}
+	path := writePeekFile(t, t.TempDir(), lines, peekPrompt(t, "still writing"))
+	want := []string{"user: fix it", "assistant: Fixed.", "user: commit", "user: and now?", "assistant: Done."}
+	for _, n := range []int{1, 2, 3, 5} {
+		pages := readAllPeekPages(t, path, n)
+		assertPeek(t, pagedMessages(pages), want...)
+		for i, p := range pages[:len(pages)-1] {
+			if len(p.Messages) != n || p.Capped {
+				t.Fatalf("n=%d page %d: %d messages, capped %v", n, i, len(p.Messages), p.Capped)
+			}
+		}
+	}
+	// the last page reached the start: nothing older
+	// five messages exactly: the one page reached the start, nothing older
+	pages := readAllPeekPages(t, path, 5)
+	if len(pages) != 1 || pages[0].Next.Before != 0 {
+		t.Fatalf("n=5: %d pages, last %+v", len(pages), pages[len(pages)-1])
+	}
+	// four: a second page holds the first prompt and says nothing is older
+	pages = readAllPeekPages(t, path, 4)
+	if len(pages) != 2 || pages[0].Next.Before == 0 || pages[1].Next.Before != 0 {
+		t.Fatalf("n=4: %d pages, %+v", len(pages), pages)
+	}
+	assertPeek(t, pages[1].Messages, "user: fix it")
+}
+
+// A page that stops at the 8 MB cap hands on a cursor that reads past it: the messages older than the cap are reached,
+// and the turn the cap cut keeps one answer.
+func TestClaudeTailPageReadsPastTheCap(t *testing.T) {
+	var lines []string
+	lines = append(lines, peekPrompt(t, "long ago"), peekAnswer(t, "old"), peekPrompt(t, "mid"), peekAnswer(t, "narration"))
+	for range 90 { // ~9 MB of tool results
+		lines = append(lines, peekToolResult(t, 100<<10))
+	}
+	lines = append(lines, peekAnswer(t, "between"), peekPrompt(t, "recent"), peekToolUse())
+	path := writePeekFile(t, t.TempDir(), lines, "")
+
+	pages := readAllPeekPages(t, path, 5)
+	if !pages[0].Capped || pages[0].Next.Before == 0 || !pages[0].Next.Answered {
+		t.Fatalf("first page: capped %v, next %+v", pages[0].Capped, pages[0].Next)
+	}
+	assertPeek(t, pages[0].Messages, "assistant: between", "user: recent")
+	assertPeek(t, pagedMessages(pages), "user: long ago", "assistant: old", "user: mid", "assistant: between",
+		"user: recent")
+}
+
+// A line cut by the cap is read whole by the next page, not dropped.
+func TestClaudeTailPageReadsTheLineTheCapCut(t *testing.T) {
+	lines := []string{peekPrompt(t, "first"), peekPrompt(t, "cut by the cap")}
+	for range 80 {
+		lines = append(lines, peekToolResult(t, 100<<10))
+	}
+	// one last line sized so the cap lands in the middle of the cut prompt's line
+	size := int64(0)
+	for _, l := range lines {
+		size += int64(len(l)) + 1
+	}
+	cutStart := int64(len(lines[0])) + 1
+	last := cutStart + int64(len(lines[1]))/2 + peekScanCap - size // the last line's length with its newline
+	lines = append(lines, peekToolResult(t, int(last)-1-len(peekToolResult(t, 0))))
+	path := writePeekFile(t, t.TempDir(), lines, "")
+	info, _ := os.Stat(path)
+	if c := info.Size() - peekScanCap; c <= cutStart || c >= cutStart+int64(len(lines[1])) {
+		t.Fatalf("test setup: the cap at %d is not inside the line at [%d, %d)", c, cutStart, cutStart+int64(len(lines[1])))
+	}
+	pages := readAllPeekPages(t, path, 5)
+	if !pages[0].Capped || len(pages[0].Messages) != 0 {
+		t.Fatalf("first page: %+v", pages[0])
+	}
+	assertPeek(t, pagedMessages(pages), "user: first", "user: cut by the cap")
+}
+
 func TestClaudeTailMessagesMissingFile(t *testing.T) {
 	_, _, err := ClaudeTailMessages(filepath.Join(t.TempDir(), "gone.jsonl"), 5)
 	if !errors.Is(err, os.ErrNotExist) {

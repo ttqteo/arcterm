@@ -22,9 +22,20 @@ export interface PeekResult {
     messages: PeekMessage[];
     // the backward read stopped at its 8 MB cap before the file's start
     capped: boolean;
+    // where the page before this one starts (a byte offset; 0 once the read reached the file's start) and whether it
+    // starts inside a turn whose answer is already shown: sent back as is for that page
+    before: number;
+    answered: boolean;
 }
 
+// the first read: the last 5 messages
 export const PEEK_COUNT = 5;
+// each scroll to the top reads this many older ones
+export const PEEK_OLDER_COUNT = 10;
+// how near the top a scroll reads the older page
+export const PEEK_OLDER_EDGE_PX = 48;
+export const PEEK_READING_OLDER = "Reading older messages…";
+export const PEEK_START = "Start of the session";
 // how long the pick must be still before the panel reads it (D7)
 export const PEEK_DEBOUNCE_MS = 150;
 // how long the message area stays empty before it says "Reading…", so a fast read never flashes (D8)
@@ -32,8 +43,6 @@ export const PEEK_READING_DELAY_MS = 150;
 export const PEEK_CACHE_LIMIT = 20;
 
 export const PEEK_EMPTY = "This session has no messages yet.";
-export const PEEK_CAPPED_NONE = "No messages in the last 8 MB. Open asleep to read the whole session.";
-export const PEEK_CAPPED_NOTE = "Only the last 8 MB was read. Open asleep to read the whole session.";
 
 // The resume step is Claude Code's alone (only its transcripts are read: D1), and shows once a past session is picked:
 // New session, a project with no sessions yet, Home, a terminal or a tool keep the three columns. `wanted` is false
@@ -165,39 +174,92 @@ export type PeekState =
     | { status: "done"; result: PeekResult }
     | { status: "error"; error: string };
 
+// The older pages a scroll to the top has read, above the first read's messages. One per session pick: a new pick, or
+// a new first read of the same session, starts it again.
+export interface PeekCursor {
+    before: number;
+    answered: boolean;
+}
+
+export interface PeekOlder {
+    // oldest first, all older than the first read's
+    messages: PeekMessage[];
+    // the next older page; null once the file's start is reached
+    cursor: PeekCursor | null;
+    loading: boolean;
+    error: string | null;
+}
+
+export function peekCursor(r: Pick<PeekResult, "before" | "answered">): PeekCursor | null {
+    return r.before > 0 ? { before: r.before, answered: r.answered } : null;
+}
+
+export function peekOlderStart(first: PeekResult | null): PeekOlder {
+    return { messages: [], cursor: first == null ? null : peekCursor(first), loading: false, error: null };
+}
+
+export function peekOlderBegin(o: PeekOlder): PeekOlder {
+    return { ...o, loading: true, error: null };
+}
+
+export function peekOlderLoaded(o: PeekOlder, page: PeekResult): PeekOlder {
+    return { messages: [...page.messages, ...o.messages], cursor: peekCursor(page), loading: false, error: null };
+}
+
+export function peekOlderFailed(o: PeekOlder, error: string): PeekOlder {
+    return { ...o, loading: false, error };
+}
+
+// Whether the pane reads the next older page now: there is one, none is on its way, the last did not fail, and the
+// scroll is near the top or the messages do not fill the pane (no scroll to make, so it reads on by itself; a page
+// that found nothing in its 8 MB reads on the same way).
+export function peekOlderWanted(o: PeekOlder, scroll: { top: number; client: number; height: number }): boolean {
+    if (o.cursor == null || o.loading || o.error != null) {
+        return false;
+    }
+    return scroll.top <= PEEK_OLDER_EDGE_PX || scroll.height <= scroll.client + 1;
+}
+
 export interface PeekView {
     state: "loading" | "ready" | "empty" | "capped" | "error";
     // loading only: the delay has passed, so "Reading…" shows
     showReading: boolean;
-    // oldest first
+    // oldest first: the older pages read so far, then the first read's
     messages: PeekMessage[];
-    // the capped note, a muted line above the oldest message when 1–4 were found
-    note: string | null;
-    // the line drawn in place of messages: empty, or capped with none found
+    // the muted line above the oldest message: an older page on its way, its error, or the session's start once a
+    // scroll has reached it
+    top: string | null;
+    // the line drawn in place of messages: a session with none
     line: string | null;
     error: string | null;
 }
 
-// D8's states.
-export function peekView(state: PeekState, now: number): PeekView {
-    const view: PeekView = { state: "ready", showReading: false, messages: [], note: null, line: null, error: null };
+// D8's states. "capped" is a first read that found nothing in its 8 MB but has older text to read on into.
+export function peekView(state: PeekState, now: number, older: PeekOlder | null = null): PeekView {
+    const view: PeekView = { state: "ready", showReading: false, messages: [], top: null, line: null, error: null };
     if (state.status === "loading") {
         return { ...view, state: "loading", showReading: now - state.since >= PEEK_READING_DELAY_MS };
     }
     if (state.status === "error") {
         return { ...view, state: "error", error: state.error };
     }
-    const { messages, capped } = state.result;
-    if (capped && messages.length === 0) {
-        return { ...view, state: "capped", line: PEEK_CAPPED_NONE };
-    }
-    if (capped && messages.length < PEEK_COUNT) {
-        return { ...view, state: "capped", messages, note: PEEK_CAPPED_NOTE };
+    const messages = [...(older?.messages ?? []), ...state.result.messages];
+    const more = older != null ? older.cursor != null : state.result.before > 0;
+    let top: string | null = null;
+    if (older?.loading) {
+        top = PEEK_READING_OLDER;
+    } else if (older?.error != null) {
+        top = `Can't read older messages: ${older.error}`;
+    } else if (!more && (older?.messages.length ?? 0) > 0) {
+        top = PEEK_START;
     }
     if (messages.length === 0) {
-        return { ...view, state: "empty", line: PEEK_EMPTY };
+        if (more) {
+            return { ...view, state: "capped", top: top ?? PEEK_READING_OLDER };
+        }
+        return { ...view, state: "empty", line: PEEK_EMPTY, top };
     }
-    return { ...view, messages };
+    return { ...view, messages, top };
 }
 
 // The header's meta line: "<age> · <model> · <branch> · <tokens>", the parts a session lacks left out. formatAgo

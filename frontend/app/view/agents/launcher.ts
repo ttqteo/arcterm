@@ -363,6 +363,8 @@ export interface LauncherKeyCtx {
     accountMenuOpen?: boolean;
     // a session row of the Resume list is picked, not New session: only a session has a transcript to read
     resumePicked: boolean;
+    // the resume step shows (launcherpeek.ts): the picked Claude session read beside the list, in place of the columns
+    stepShown?: boolean;
     // the pick has a Task box (an agent that takes one) or a Goal box (a run started from a goal)
     textField: boolean;
 }
@@ -379,6 +381,8 @@ export interface LauncherKeyIn {
     composing?: boolean;
     // the paste shortcut: Ctrl+V, Cmd+V on a Mac, or Shift+Insert
     paste?: boolean;
+    // Alt (Option) alone of the three, with ←
+    altLeft?: boolean;
 }
 
 export type LauncherKeyAction =
@@ -393,6 +397,7 @@ export type LauncherKeyAction =
     | { kind: "write" }
     | { kind: "launch" }
     | { kind: "resume-secondary" }
+    | { kind: "back" }
     | { kind: "dismiss-inner"; what: LauncherInner }
     | { kind: "close" };
 
@@ -427,6 +432,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     if (k.paste) {
         return ctx.textField && zone !== "task" && zone !== "textarea" && zone !== "input" ? WRITE : NONE;
     }
+    // the footer's Back: the resume step back to the columns from anywhere in the dialog, the Task box included
+    if (k.altLeft) {
+        return ctx.stepShown ? { kind: "back" } : NONE;
+    }
     // The Task (or Goal) box is where the dialog opens: Enter launches and Shift+Enter is its newline, as in a chat box,
     // and Alt+1–9 picks a Start row without leaving it. The project and the session are a Tab away, in their columns.
     if (zone === "task") {
@@ -443,10 +452,13 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         if (zone !== "start" && zone !== "project" && zone !== "tools" && zone !== "resume" && zone !== "input") {
             return NONE;
         }
-        // opening a session asleep (or reading it back, for an agent that cannot sleep) costs nothing; resuming it
-        // starts the agent and reloads its whole context. The footer's second button names Shift+Enter, so it holds
-        // wherever Enter launches.
-        return k.shift && ctx.resumePicked ? { kind: "resume-secondary" } : { kind: "launch" };
+        // reading a session back costs nothing; resuming it starts the agent and reloads its whole context. The
+        // columns' Transcript button names Shift+Enter, so it holds wherever Enter launches; the resume step reads the
+        // session beside the list and has no second button, so there Shift+Enter does nothing rather than resume.
+        if (k.shift && ctx.resumePicked) {
+            return ctx.stepShown ? NONE : { kind: "resume-secondary" };
+        }
+        return { kind: "launch" };
     }
     // the Tool list is lettered, not numbered: a letter picks the nth tool and ↑↓ walk it; ← steps back to Project
     if (zone === "tools") {

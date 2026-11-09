@@ -47,7 +47,6 @@ import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
-import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
 import { RailSantaHat } from "./christmashat";
 import {
@@ -98,7 +97,16 @@ import {
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
-import { createPeekLoader, PEEK_COUNT, resumeStepShows, type PeekLoader, type PeekState } from "./launcherpeek";
+import {
+    createPeekLoader,
+    PEEK_COUNT,
+    PEEK_OLDER_COUNT,
+    resumeStepShows,
+    type PeekCursor,
+    type PeekLoader,
+    type PeekResult,
+    type PeekState,
+} from "./launcherpeek";
 import { LauncherPeekPane } from "./launcherpeekpanel";
 import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
@@ -495,17 +503,23 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const stepFocusRef = useRef<"start" | "project" | "resume" | null>(null);
     const [peek, setPeek] = useState<{ id: string; state: PeekState } | null>(null);
     const peekLoaderRef = useRef<PeekLoader | null>(null);
+    // one page of the picked session's messages: the last PEEK_COUNT, or with a cursor the page before it
+    const readPeekPage = async (s: SessionInfo, count: number, cursor?: PeekCursor): Promise<PeekResult> => {
+        const rtn = await RpcApi.GetSessionPeekCommand(TabRpcClient, {
+            transcriptpath: s.transcriptpath,
+            count,
+            ...(cursor != null ? { before: cursor.before, answered: cursor.answered } : {}),
+        });
+        return {
+            messages: rtn?.messages ?? [],
+            capped: !!rtn?.capped,
+            before: rtn?.before ?? 0,
+            answered: !!rtn?.answered,
+        };
+    };
     const peekLoader = () => {
         if (peekLoaderRef.current == null) {
-            peekLoaderRef.current = createPeekLoader({
-                fetch: async (s) => {
-                    const rtn = await RpcApi.GetSessionPeekCommand(TabRpcClient, {
-                        transcriptpath: s.transcriptpath,
-                        count: PEEK_COUNT,
-                    });
-                    return { messages: rtn?.messages ?? [], capped: !!rtn?.capped };
-                },
-            });
+            peekLoaderRef.current = createPeekLoader({ fetch: (s) => readPeekPage(s, PEEK_COUNT) });
         }
         return peekLoaderRef.current;
     };
@@ -782,9 +796,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         showSession(model, sessionKey(s));
     };
 
-    // Open asleep: the picked session on the roster with its transcript and a box to wake it, its process not started
-    // (asleepLaunchMeta). The Task is not sent: what was typed stays in the dialog for a later New.
-    const launchAgentRow = async (p: ProjectRow, asleep = false) => {
+    const launchAgentRow = async (p: ProjectRow) => {
         let branch: string | undefined;
         if (wantsWorktree) {
             if (!chosenBranch) {
@@ -799,7 +811,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         // the task with its images: codex starting fresh takes them as --image after the prompt, the rest as a block
         const { task: fullTask, extraArgs } = composeTaskWithImages(
             runtime,
-            runtimeShowsTask(runtime) && !asleep ? task : "",
+            runtimeShowsTask(runtime) ? task : "",
             images.flatMap((i) => (i.path ? [i.path] : [])),
             resume != null
         );
@@ -827,9 +839,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 ...spec,
                 ...(resume ? { resumeOf: resume.transcriptpath } : {}),
                 ...(claudeLaunch ? { accountMeta: accountLaunchMeta(launchAccount, usualAccount) } : {}),
-                ...(asleep && resume
-                    ? { asleep: { since: resume.lastactivets, transcriptPath: resume.transcriptpath } }
-                    : {}),
             });
             // Remember off: flags are single-use, cleared for the next agent
             if (!globalStore.get(naRememberFlagsAtom)) {
@@ -839,29 +848,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             if (!atHome) {
                 noteRecentProject(p.name);
             }
-            if (!asleep || task.trim() === "") {
-                endLauncherDraft();
-            }
+            endLauncherDraft();
             close();
         } catch (e) {
             setError(String(e));
         } finally {
             endLauncherLaunch();
         }
-    };
-
-    // the footer's second button for a picked session: Open asleep for an agent that can sleep, the transcript for one
-    // that cannot (codex has no resume to wake into)
-    const canOpenAsleep = resume != null && SLEEPABLE_AGENTS.has(runtime);
-    const resumeSecondary = (s: SessionInfo) => {
-        if (!canOpenAsleep) {
-            viewTranscript(s);
-            return;
-        }
-        if (project == null || imagesWriting) {
-            return;
-        }
-        void launchAgentRow(project, true);
     };
 
     const startRun = (p: ProjectRow) => {
@@ -1023,6 +1016,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 branchListOpen: branchListShown,
                 accountMenuOpen: accountMenuShown,
                 resumePicked: resume != null,
+                stepShown,
                 textField: textField != null,
             },
             {
@@ -1037,6 +1031,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 paste:
                     ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "v") ||
                     (e.shiftKey && !mod && e.key === "Insert"),
+                altLeft: e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === "ArrowLeft",
             }
         );
         if (action.kind === "none") {
@@ -1118,8 +1113,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 return;
             case "resume-secondary":
                 if (resume != null) {
-                    resumeSecondary(resume);
+                    viewTranscript(resume);
                 }
+                return;
+            case "back":
+                leaveStep("project");
                 return;
             case "dismiss-inner":
                 // the inner thing takes this Escape; ModalShell's would close the dialog
@@ -1338,6 +1336,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <LauncherPeekPane
                                 session={resume}
                                 peek={peek?.id === resume.id ? peek.state : { status: "loading", since: Date.now() }}
+                                fetchOlder={(s, cursor) => readPeekPage(s, PEEK_OLDER_COUNT, cursor)}
                             />
                         </motion.div>
                     ) : (
@@ -1631,12 +1630,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         )}
                         {stepShown && resume != null ? (
                             // the step's way back for the pointer, which the title's chips do not read as; the keyboard
-                            // has ← from the sessions, so it is no Tab stop
+                            // has Alt+← from anywhere in the dialog (← from the sessions), so it is no Tab stop
                             <DialogButton
                                 variant="secondary"
                                 tabIndex={-1}
+                                hint="alt+←"
                                 data-launcher-back
-                                title="Back to the columns to change the agent or project (← from the sessions)"
+                                title="Back to the columns to change the agent or project (Alt+←, or ← from the sessions)"
                                 onClick={() => leaveStep("project")}
                                 className="pl-[11px]"
                             >
@@ -1647,18 +1647,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
-                        {resume != null && canOpenAsleep ? (
-                            <DialogButton
-                                variant="secondary"
-                                hint="shift+enter"
-                                data-launcher-asleep
-                                title="Open it asleep: its transcript in the sidebar, started when you wake it or send a message (Shift+Enter)"
-                                disabled={primaryDisabled}
-                                onClick={() => resumeSecondary(resume)}
-                            >
-                                Open asleep
-                            </DialogButton>
-                        ) : resume != null ? (
+                        {/* the step reads the session beside the list, so only the columns offer its transcript */}
+                        {resume != null && !stepShown ? (
                             <DialogButton
                                 variant="secondary"
                                 hint="shift+enter"
