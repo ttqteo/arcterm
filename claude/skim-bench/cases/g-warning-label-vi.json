@@ -1,0 +1,26 @@
+{
+    "reply": "Đã sửa xong lỗi badge của Jarvis.\n\n**Đã làm:**\n- Badge Jarvis không còn đếm run đã land.\n- Badge Cockpit chỉ đếm agent đang chờ bạn.\n- Thêm test cho cả hai bộ đếm trong `navrail.test.ts`.\n\n**Cần bạn để ý:**\n- Bản build cũ vẫn giữ số đếm sai cho đến khi bạn cài bản mới.\n- Mình chưa kiểm tra trên Mac, vì máy này chỉ có Windows.\n\nTypecheck và vitest đều qua.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "Bản build cũ vẫn giữ số đếm sai cho đến khi bạn cài bản mới.",
+            "criterion": 2
+        },
+        {
+            "text": "Mình chưa kiểm tra trên Mac, vì máy này chỉ có Windows.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Badge Jarvis đã thay đổi thế nào?",
+            "a": "Không còn đếm run đã land."
+        },
+        {
+            "q": "Điều gì chưa được kiểm tra?",
+            "a": "Chưa kiểm tra trên Mac."
+        }
+    ],
+    "labels": {}
+}

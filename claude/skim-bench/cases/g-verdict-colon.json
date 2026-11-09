@@ -1,0 +1,22 @@
+{
+    "reply": "The badge was wrong for one reason:\n\nthe Jarvis count read the runs list before the land event updated it, so a just-landed run counted for one more render.\n\n- The count now reads the runs after the event.\n- A test pins the order.\n- The Cockpit badge had the same bug and the same fix.\n\n**Still open:**\n- The Radar badge flickers on a project switch; it is a different cause, in the findings store.\n\nTypecheck and vitest pass.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "The Radar badge flickers on a project switch; it is a different cause, in the findings store.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Why was the badge wrong?",
+            "a": "The count read the runs list before the land event updated it."
+        },
+        {
+            "q": "What is still open?",
+            "a": "The Radar badge flickers on a project switch."
+        }
+    ],
+    "labels": {}
+}

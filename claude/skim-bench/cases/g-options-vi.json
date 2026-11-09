@@ -1,0 +1,33 @@
+{
+    "reply": "Mình đã đọc xong log của lần treo lúc 17:44.\n\nBước `git worktree remove` cho task t-11 chạy đến hết hạn, còn frontend chỉ đợi 15 giây nên báo lỗi trước.\n\nCó ba cách sửa, bạn chọn một:\n\n(a) Tăng thời gian chờ của frontend lên 60 giây.\n(b) Cho bước dọn worktree chạy nền, không giữ khoá.\n(c) Bỏ qua worktree không xoá được và ghi lại để dọn sau.\n\nMình nghiêng về (b), vì nó sửa đúng nguyên nhân.\n\nChưa sửa gì trong code.",
+    "marks": [
+        "Có ba cách sửa, bạn chọn một:",
+        "Mình nghiêng về (b), vì nó sửa đúng nguyên nhân."
+    ],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "(a) Tăng thời gian chờ của frontend lên 60 giây.",
+            "criterion": 3
+        },
+        {
+            "text": "(b) Cho bước dọn worktree chạy nền, không giữ khoá.",
+            "criterion": 3
+        },
+        {
+            "text": "(c) Bỏ qua worktree không xoá được và ghi lại để dọn sau.",
+            "criterion": 3
+        }
+    ],
+    "questions": [
+        {
+            "q": "Bước nào chạy đến hết hạn?",
+            "a": "git worktree remove cho task t-11."
+        },
+        {
+            "q": "Agent nghiêng về cách nào?",
+            "a": "(b), cho bước dọn worktree chạy nền."
+        }
+    ],
+    "labels": {}
+}

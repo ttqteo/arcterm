@@ -1,0 +1,17 @@
+{
+    "reply": "Nên giữ bộ lọc ở phía server, vì ba lý do.\n\n- **Dữ liệu đã nằm sẵn ở đó:** wavesrv đã giữ toàn bộ danh sách agent cùng trạng thái của chúng trong bộ nhớ, nên lọc ở đó không phải chép thêm một bản nào sang frontend và không phải đồng bộ hai bản với nhau.\n- **Frontend nhẹ hơn:** mỗi lần người dùng gõ vào ô tìm kiếm, frontend chỉ nhận về đúng những agent khớp thay vì cả danh sách, và với 30 agent đang chạy thì khác biệt này thấy rõ trên máy 8 GB.\n- **Một nguồn sự thật:** cả lệnh `wsh agents list` lẫn cockpit đều đọc cùng một hàm lọc, nên kết quả ở terminal và trên giao diện không bao giờ lệch nhau như lần trước đã xảy ra với bộ đếm.\n\nPhần thay đổi nằm trong `pkg/agents/filter.go`.\n\nĐã chạy test của package và typecheck, cả hai đều qua.\n\nChưa thử trên app đang chạy.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "Bộ lọc nên đặt ở đâu?",
+            "a": "Ở phía server (wavesrv)."
+        },
+        {
+            "q": "Lý do 'một nguồn sự thật' nói gì?",
+            "a": "wsh agents list và cockpit đọc cùng một hàm lọc nên kết quả không lệch."
+        }
+    ],
+    "labels": {}
+}

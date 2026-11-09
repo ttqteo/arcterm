@@ -1,0 +1,21 @@
+{
+    "reply": "Keep the agent cache in wavesrv, not in the frontend.\n\n- **What it holds:** Every agent's last status line, its token count and the tail of its transcript, which is everything the cockpit needs to draw the roster before a single websocket message arrives after a reload.\n- **Why wavesrv:** The frontend unmounts every surface but Agent on a switch, so a cache that lived in a surface would be thrown away each time the person looked at another surface and rebuilt from nothing.\n- **What it costs:** About 40 KB per agent at the transcript tail we keep, so even the busiest day we have seen, with 30 agents open, stays near 1.2 MB of RAM in wavesrv.\n- **What breaks:** Nothing that exists today reads the old frontend cache directly; the two places that did were moved to the roster store in the last refactor and their tests still pass on the new path.\n\nThe change is in `pkg/agentcache`, with tests beside it.\n\nTypecheck and the package tests pass.\n\nI have not tried it in the running app yet.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "Where should the agent cache live?",
+            "a": "In wavesrv, not in the frontend."
+        },
+        {
+            "q": "Roughly how much RAM does it cost per agent?",
+            "a": "About 40 KB."
+        },
+        {
+            "q": "Why not keep it in a surface?",
+            "a": "Surfaces other than Agent unmount on a switch, so the cache would be lost."
+        }
+    ],
+    "labels": {}
+}

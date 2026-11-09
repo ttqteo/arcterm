@@ -1,0 +1,26 @@
+{
+    "reply": "The council bench run finished: the team beat the solo lead on 7 of 10 cases.\n\n## Scores\n- Team: 7 wins, 2 losses, 1 tie.\n- Mean judge score 4.1 against 3.6.\n\n## Cost\n- The team spent 2.3 times the tokens of the solo lead.\n\n## Surprises\n- The team lost both refactoring cases; its reviewers argued past the time limit.\n\n## Next\n- Rerun the two refactoring cases with a 20-minute limit.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "The team lost both refactoring cases; its reviewers argued past the time limit.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "How did the team do against the solo lead?",
+            "a": "It won 7 of 10 cases."
+        },
+        {
+            "q": "How much more did the team cost?",
+            "a": "2.3 times the tokens."
+        },
+        {
+            "q": "Which cases did the team lose?",
+            "a": "Both refactoring cases."
+        }
+    ],
+    "labels": {}
+}

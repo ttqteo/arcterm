@@ -1,0 +1,17 @@
+{
+    "reply": "Six small fixes landed on main.\n\n- The palette opens on Ctrl+K again.\n- `j` and `k` skip collapsed folders.\n- The diff surface scrolls to the first change.\n- A closed terminal leaves the split.\n- The footer clock follows the system format.\n- Notes keep their scroll on save.\n\nAll six have tests.\n\nNothing waits on you.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "How many fixes landed?",
+            "a": "Six."
+        },
+        {
+            "q": "Does anything wait on the person?",
+            "a": "No."
+        }
+    ],
+    "labels": {}
+}

@@ -1,0 +1,28 @@
+{
+    "reply": "Done: the service restarts after a crash, at most three times a minute.\n\nIt backs off 2 s, 4 s, then 8 s, and stops after the third crash in a minute; the Tools page then shows it as crashed with its last log line.\n\n- The restart counter resets after a minute without a crash.\n- Stop from the Tools page never triggers a restart.\n- Keep running still stops a service that keeps crashing.\n\n## Before you rely on it\nA service that crashes on start because a port is taken will use its three restarts in 14 s and stay down. Free the port and press Restart.\n\nTests cover the backoff and the reset.",
+    "marks": [
+        "Done: the service restarts after a crash, at most three times a minute."
+    ],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "A service that crashes on start because a port is taken will use its three restarts in 14 s and stay down.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "How often can a service restart?",
+            "a": "At most three times a minute."
+        },
+        {
+            "q": "What happens when the port is taken?",
+            "a": "It uses its three restarts in 14 s and stays down."
+        },
+        {
+            "q": "Does Stop trigger a restart?",
+            "a": "No."
+        }
+    ],
+    "labels": {}
+}

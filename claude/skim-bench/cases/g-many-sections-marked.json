@@ -1,0 +1,29 @@
+{
+    "reply": "The jobs queue now holds a heavy command until its RAM fits.\n\n## How it decides\nEach heavy command has a RAM estimate in `pkg/memgate`. A command waits while the commit charge plus its estimate would pass the RAM.\n\n## What you will see\nA waiting command shows on the Jobs popover with its estimate and the time it has waited.\n\n## What changed for agents\nNothing they type changes; the Claude mod and the pi extension call `wsh jobslot` before each command.\n\n## Risk\nA command whose estimate is far too high waits forever on an 8 GB machine; the popover's Skip is the way out.",
+    "marks": [
+        "The jobs queue now holds a heavy command until its RAM fits.",
+        "A command whose estimate is far too high waits forever on an 8 GB machine; the popover's Skip is the way out."
+    ],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "A command whose estimate is far too high waits forever on an 8 GB machine; the popover's Skip is the way out.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Where are the RAM estimates kept?",
+            "a": "In pkg/memgate."
+        },
+        {
+            "q": "Where does a waiting command show?",
+            "a": "On the Jobs popover."
+        },
+        {
+            "q": "What is the risk?",
+            "a": "A command with a far-too-high estimate waits forever on an 8 GB machine."
+        }
+    ],
+    "labels": {}
+}
