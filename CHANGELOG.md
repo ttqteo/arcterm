@@ -46,6 +46,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's attention rows with a long task name cut the name short instead of hiding why the task stopped and pushing
+  its retry/skip/escalate tag past the edge; hover the name to read it whole.
+- The Route DAG, a project's Branches graph and an opening design canvas load on a blank area instead of placeholder
+  blocks shaped like something they are not.
 - Attach on a Cockpit Background session opens that session in its tab with `claude attach`, so it keeps running in
   the background and its row moves on to done when it finishes, instead of staying on "needs input" forever.
 - Claude agents always start in the fullscreen renderer when your Claude settings ask for it (`/tui fullscreen`):

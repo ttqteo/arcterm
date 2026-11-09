@@ -6,7 +6,6 @@
 // row the Diff surface itself. The rows are projectgraph.ts's; the lanes and the gutter are the Log's own (gitgraph.ts,
 // gitgraphgeom.ts, graphgutter.tsx).
 
-import { SkeletonLine } from "@/app/element/skeleton";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
@@ -133,14 +132,9 @@ export function GraphCard({
         return (
             <section data-graph-card aria-label="Branches" aria-busy="true" className={SECTION}>
                 {header(null)}
-                <div aria-hidden className="flex flex-col">
-                    {["w-[46%]", "w-[38%]", "w-[52%]", "w-[30%]"].map((w, i) => (
-                        <div key={i} style={{ height: GRAPH_CARD_ROW_H }} className="flex items-center gap-[10px]">
-                            <SkeletonLine className="h-[9px] w-[9px] rounded-full" />
-                            <SkeletonLine className={cn("h-[8px]", w)} />
-                        </div>
-                    ))}
-                </div>
+                {/* blank, not skeleton rows: the lanes are only known once the commits are read; it keeps four
+                    rows' height so the card does not jump when they land */}
+                <div aria-hidden style={{ height: 4 * GRAPH_CARD_ROW_H }} />
             </section>
         );
     }

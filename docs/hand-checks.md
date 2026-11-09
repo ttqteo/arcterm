@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Graphs load blank: open a run's Route DAG, a project's Branches card, and a design canvas from the
+  gallery after a reload → while each loads the area is plain background (the Branches card keeps its height), no grey
+  placeholder blocks, then the content appears. Typecheck only (`dagmodal.tsx`, `daggraph.tsx`,
+  `projectgraphcard.tsx`, `canvasgalleryview.tsx`; `GraphSkeleton` deleted).
+- [ ] (arcterm) Run sheet attention rows with a long task name: a failed task named in a full sentence → its orange
+  row truncates the name with an ellipsis, still shows the reason ("failed"), and the `retry/skip/escalate` pill
+  sits inside the border; hovering the name shows it whole (`AttentionRow`, `runsheet.tsx`).
 - [ ] (arcterm) Window app id (Windows, packaged build): arcterm has one taskbar button, merged with its pin, and an
   agent toast reads "arcterm". The main window carries the app id instead of the process
   (`set_window_app_user_model_id`, `src-tauri/src/main.rs`); release-only code (`cfg(not(debug_assertions))`), which
