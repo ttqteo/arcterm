@@ -4,16 +4,21 @@
 // The writes behind a drop of OS files on the Agent panel's Files tree (railfiledrop.ts has the rules): each dropped
 // file goes to wavesrv in chunks (FileDropWriteCommand), a dropped folder is made first and its files written under it,
 // then the tree reloads with the copies selected. A strip in the pane says how far the copy is, and one toast names
-// whatever was not copied. Impure glue.
+// whatever was not copied. The tree's own rows dropped on one of its folders move there instead (moveRowsInto,
+// railmove.ts). Impure glue.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { toRel } from "@/app/cockpit/openfileroute";
+import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { renamedPath } from "@/app/view/code/codemutate";
+import { renameCodePinsIn } from "@/app/view/code/codestore";
 import { joinRepoPath } from "@/util/paths";
 import { arrayToBase64 } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
+import { railPanelsAtom } from "./agentrailstore";
+import type { FileRef } from "./agentrailtabs";
 import {
     afterDropState,
     chunkRanges,
@@ -23,6 +28,7 @@ import {
     readDrop,
     type DropEntryLike,
 } from "./railfiledrop";
+import { moveFailedToast, planMove } from "./railmove";
 import { railTreeStateAtom, reloadTree } from "./railtreestore";
 
 const CHUNK_TIMEOUT_MS = 30000;
@@ -162,4 +168,71 @@ export async function copyDropInto(
         const stateAtom = railTreeStateAtom(agentId);
         globalStore.set(stateAtom, afterDropState(globalStore.get(stateAtom), dirRel, copied));
     }
+}
+
+function moveReason(e: unknown): string {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /already exists/.test(msg) ? "something with that name is already there" : msg;
+}
+
+// Moves the tree's own rows (`rels`, repo-relative) into `dirRel` of the tree at `cwd` (railmove.ts has the rules). The
+// pins and the panel's open files on what moved follow it, so a moved file open in the File tab stays open; then the
+// tree reloads with what moved selected.
+export async function moveRowsInto(
+    cwd: string,
+    agentId: string,
+    rels: readonly string[],
+    dirRel: string
+): Promise<void> {
+    const plan = planMove(rels, dirRel);
+    const failed = [...plan.skipped];
+    const moved: string[] = [];
+    for (const step of plan.moves) {
+        try {
+            await RpcApi.FileMoveCommand(TabRpcClient, {
+                srcuri: joinRepoPath(cwd, step.from),
+                desturi: joinRepoPath(cwd, step.to),
+                opts: { recursive: true },
+            });
+        } catch (e) {
+            failed.push({ name: step.from, reason: moveReason(e) });
+            continue;
+        }
+        moved.push(step.to);
+        renameCodePinsIn(cwd, step.from, step.to);
+        carryPanelFiles(cwd, agentId, step.from, step.to);
+    }
+    const toast = moveFailedToast(failed);
+    if (toast != null) {
+        pushToast({ ...toast, level: "warn" });
+    }
+    if (moved.length > 0) {
+        await reloadTree(cwd, agentId);
+        const stateAtom = railTreeStateAtom(agentId);
+        globalStore.set(stateAtom, afterDropState(globalStore.get(stateAtom), dirRel, moved));
+    }
+}
+
+function carryPanelFiles(cwd: string, agentId: string, from: string, to: string): void {
+    const carry = (ref: FileRef): FileRef => {
+        if (!isUnderRoot(cwd, ref.abs)) {
+            return ref;
+        }
+        const rel = toRel(cwd, ref.abs);
+        const next = renamedPath(rel, from, to);
+        return next === rel ? ref : { ...ref, abs: joinRepoPath(cwd, next) };
+    };
+    globalStore.set(railPanelsAtom, (panels) => {
+        const p = panels[agentId];
+        if (p == null) {
+            return panels;
+        }
+        const files = p.files.map((f) => ({
+            ...f,
+            back: f.back.map(carry),
+            current: f.current == null ? null : carry(f.current),
+            forward: f.forward.map(carry),
+        }));
+        return { ...panels, [agentId]: { ...p, files } };
+    });
 }

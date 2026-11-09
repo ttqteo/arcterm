@@ -802,6 +802,11 @@ export async function renamePath(rel: string, newName: string): Promise<void> {
     await refetchIndex();
 }
 
+// a move made outside this tree (the Agent panel's Files tab) carries the pins on what it moved, a folder's included
+export function renameCodePinsIn(projectPath: string, rel: string, next: string): void {
+    globalStore.set(codePinsStoredAtom, renamePins(globalStore.get(codePinsAtom), projectPath, rel, next));
+}
+
 function carryRename(project: CodeProject, rel: string, next: string): void {
     globalStore.set(codeDraftsAtom, (d) => renameDraftKeys(d, draftKey(project, rel), draftKey(project, next)));
     globalStore.set(codePinsStoredAtom, renamePins(globalStore.get(codePinsAtom), project.path, rel, next));

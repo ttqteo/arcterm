@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Agent panel → Files: drag a file onto a folder → the folder gets an accent ring, the strip says "Drop
+  to move into <dir>/", and the drop moves it (the folder opens, the file selected there); drag a multi-selection, a
+  folder, and onto empty space below the rows (the root); a folder onto itself or its own subfolder shows the no-drop
+  pointer; a name already in the target gives a "Couldn't move" toast; a moved file open in a File tab stays open; the
+  same drag onto a terminal still types the paths. Not run in a dev app (`railtreepane.tsx`, `railmove.ts`).
 - [ ] (arcterm) History → right-click a session row → Copy session id sits between Copy title and Copy transcript
   path; pasting gives the session's id (for Claude, the transcript file's name without `.jsonl`). No dev app was
   running to try it (`projecthistory.tsx` `sessionMenu`, 5db413c1e).

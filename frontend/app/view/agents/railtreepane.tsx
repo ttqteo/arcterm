@@ -7,7 +7,8 @@
 // open, selected and under the cursor lives in an atom per agent (railtreestore.ts): the pane unmounts when the tab or
 // the surface changes. The files pinned in Code for this folder list above the tree, and pin from here too: one list
 // (codepins.ts), so a pin on either side shows on the other. Files and folders dropped from the OS (Finder, Explorer)
-// are copied into the folder under the pointer (railfiledrop.ts); the originals stay where they are.
+// are copied into the folder under the pointer (railfiledrop.ts); the originals stay where they are. The tree's own rows
+// dropped on one of its folders move there (railmove.ts).
 
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { FileIcon } from "@/app/element/fileicon";
@@ -38,10 +39,11 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { openFileInPanel, railPanelsAtom } from "./agentrailstore";
 import { activeFile } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
-import { encodePathsDrag, setDraggedPathsCount } from "./pathdrop";
+import { encodePathsDrag, isPathsDrag, setDraggedPathsCount } from "./pathdrop";
 import { dropDirFor, dropHintLabel, type DropEntryLike } from "./railfiledrop";
-import { copyDropInto, railDropProgressAtom } from "./railfiledropstore";
+import { copyDropInto, moveRowsInto, railDropProgressAtom } from "./railfiledropstore";
 import { filterRows, matchSpan } from "./railfilter";
+import { moveHintLabel, planMove, setTreeDrag, treeDrag } from "./railmove";
 import {
     clickRow,
     collapseAll,
@@ -108,6 +110,8 @@ export function RailTreePane({
     const seen = useRef<TreeReloadObservation | null>(null);
     // the folder (repo-relative, "" the root) OS files over the tree would be copied into
     const [dropDir, setDropDir] = useState<string | null>(null);
+    // whether what is over the tree is its own rows, which move, rather than OS files, which copy
+    const [dropMoves, setDropMoves] = useState(false);
     const copying = useAtomValue(railDropProgressAtom)[cwd];
     // the filter box: while it holds text the tree lists only the files whose name has it, their folders open
     const [query, setQuery] = useState("");
@@ -236,18 +240,37 @@ export function RailTreePane({
         }
     };
 
-    // An OS file drag over the tree: the row under the pointer names the folder, the root when there is none. Only an
-    // OS drag ("Files"): a drag of the tree's own rows carries paths, and stays a drag onto a terminal.
+    // A drag over the tree: the row under the pointer names the folder, the root when there is none. OS files ("Files")
+    // are copied in; the tree's own rows move, and only when the drop would move something. A drag of paths from
+    // anywhere else is not the tree's to take.
     const rowAt = (target: EventTarget | null): TreeRow | null => {
         const path = (target as Element | null)?.closest?.("[data-rail-tree-row]")?.getAttribute("data-rail-tree-row");
         return path == null ? null : (rows.find((r) => r.path === path) ?? null);
     };
+    const ownDrag = (types: readonly string[]) => {
+        const drag = treeDrag();
+        return isPathsDrag(types) && drag?.cwd === cwd ? drag : null;
+    };
     const onFilesOver = (ev: React.DragEvent<HTMLDivElement>) => {
+        const own = ownDrag(ev.dataTransfer.types);
+        if (own != null) {
+            const dir = dropDirFor(rowAt(ev.target));
+            if (planMove(own.rels, dir).moves.length === 0) {
+                setDropDir(null); // no default prevented: the pointer says it cannot drop here
+                return;
+            }
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = "move";
+            setDropMoves(true);
+            setDropDir(dir);
+            return;
+        }
         if (!isFileDrag(ev.dataTransfer.types)) {
             return;
         }
         ev.preventDefault();
         ev.dataTransfer.dropEffect = "copy";
+        setDropMoves(false);
         setDropDir(dropDirFor(rowAt(ev.target)));
     };
     const onFilesLeave = (ev: React.DragEvent<HTMLDivElement>) => {
@@ -256,6 +279,15 @@ export function RailTreePane({
         }
     };
     const onFilesDrop = (ev: React.DragEvent<HTMLDivElement>) => {
+        const own = ownDrag(ev.dataTransfer.types);
+        if (own != null) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            setDropDir(null);
+            setTreeDrag(null);
+            fireAndForget(() => moveRowsInto(cwd, agentId, own.rels, dropDirFor(rowAt(ev.target))));
+            return;
+        }
         if (!isFileDrag(ev.dataTransfer.types)) {
             return;
         }
@@ -304,14 +336,21 @@ export function RailTreePane({
                 }}
                 onDragStart={(ev) => {
                     const { s, rows: now } = current();
-                    const paths = dragPaths(s, now, row.path).map((p) => joinRepoPath(cwd, p));
+                    const rels = dragPaths(s, now, row.path);
+                    const paths = rels.map((p) => joinRepoPath(cwd, p));
                     for (const { mime, data } of encodePathsDrag(paths)) {
                         ev.dataTransfer.setData(mime, data);
                     }
-                    ev.dataTransfer.effectAllowed = "copy";
+                    // copy for a terminal, which types the paths; move for a folder of this tree
+                    ev.dataTransfer.effectAllowed = "copyMove";
                     setDraggedPathsCount(paths.length);
+                    setTreeDrag({ cwd, rels });
                 }}
-                onDragEnd={() => setDraggedPathsCount(0)}
+                onDragEnd={() => {
+                    setDraggedPathsCount(0);
+                    setTreeDrag(null);
+                    setDropDir(null);
+                }}
                 onContextMenu={(ev) => {
                     // a folder has only the path items: pins are files
                     const on = pinned.includes(row.path);
@@ -445,7 +484,11 @@ export function RailTreePane({
                         data-rail-drop-strip
                         className="flex-none truncate border-t border-border px-3 py-1.5 text-[11px] text-accent-soft"
                     >
-                        {dropDir != null ? dropHintLabel(dropDir) : copying?.label}
+                        {dropDir != null
+                            ? dropMoves
+                                ? moveHintLabel(dropDir)
+                                : dropHintLabel(dropDir)
+                            : copying?.label}
                     </div>
                 ) : null}
                 {/* no .gitignore to honor here, so the walk's fixed skip set is stated, as under the Code tree */}

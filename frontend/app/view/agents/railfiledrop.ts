@@ -198,7 +198,7 @@ export function afterDropState(s: RailTreeState, dir: string, copied: readonly s
     return { expanded, selected: [...copied], anchor: copied[0], cursor: copied[0] };
 }
 
-function whereLabel(dir: string): string {
+export function whereLabel(dir: string): string {
     return dir === "" ? "the project root" : `${dir}/`;
 }
 
