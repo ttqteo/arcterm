@@ -75,9 +75,7 @@ export function inFlight(action: AgentActionEntry, live: boolean): boolean {
 export function stretchMs(work: WorkItem, now: number, live: boolean): number {
     return work.actions.reduce(
         (n, a) =>
-            n +
-            (a.durationMs ?? 0) +
-            (inFlight(a, live) && a.startedAt != null ? Math.max(0, now - a.startedAt) : 0),
+            n + (a.durationMs ?? 0) + (inFlight(a, live) && a.startedAt != null ? Math.max(0, now - a.startedAt) : 0),
         0
     );
 }

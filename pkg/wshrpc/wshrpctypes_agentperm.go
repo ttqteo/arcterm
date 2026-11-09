@@ -35,7 +35,7 @@ type CommandAgentPermissionAnswerData struct {
 	ORef  string `json:"oref"`
 	Id    string `json:"id"`
 	Allow bool   `json:"allow"`
-	// Choice picks which option an Allow types: 0 or 1 the first (`1`), 2 the second (`2`). Any other value is an
-	// error; a Deny ignores it.
+	// Choice picks which option an Allow types: 0 or 1 the first (`1`), 2 the second (`2`). Any value but 0, 1 or 2 is an
+	// error, Allow or Deny; a Deny types no option.
 	Choice int `json:"choice,omitempty"`
 }

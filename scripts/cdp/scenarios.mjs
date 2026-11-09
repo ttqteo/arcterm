@@ -42116,6 +42116,8 @@ function acWriteFixtures(dir) {
         sub: AC.writeSubagent(dir, AC_SESSION, AC_SUB_ID, [
             AC.userText("survey the sync client for stale retries", o(0)),
             AC.assistantText("The subagent found two stale retries.", o(2)),
+            // a last tool_use with no result: step 16 draws it settled while the subagent is not working, running while it is
+            AC.toolUse("toolu_ac_subtool", "Read", { file_path: edited }, o(4)),
         ]),
     };
 }
@@ -42898,12 +42900,44 @@ const agentChat = {
                     prose: pane?.querySelector("[data-chat-prose]")?.textContent.trim() ?? null,
                 };
             })()`);
+            // its last tool has no result: with no entry for the subagent in subagentsByIdAtom (or one not working) it draws
+            // settled, and once the entry says working it draws running
+            const subTool = (attr) => `!!(${AC_INTERIOR})?.querySelector("[${attr}]")`;
+            const openSubWork = async (attr) => {
+                if (!(await h.ev(subTool(attr)))) {
+                    await h.ev(`[...((${AC_INTERIOR})?.querySelectorAll("[data-chat-work] [data-fold]") ?? [])].pop()?.click()`);
+                }
+            };
+            const setSubEntry = (state) =>
+                AC.agentPage(
+                    h,
+                    `const S = await mod("app/view/agents/subagentsstore.ts");
+                    const cur = globalStore.get(S.subagentsByIdAtom);
+                    const rest = (cur[${JSON.stringify(A)}] ?? []).filter((s) => s.id !== ${JSON.stringify(AC_SUB_ID)});
+                    globalStore.set(S.subagentsByIdAtom, {
+                        ...cur,
+                        [${JSON.stringify(A)}]: ${state == null ? "rest" : `[...rest, { id: ${JSON.stringify(AC_SUB_ID)}, type: "Explore", state: ${JSON.stringify(state)} }]`},
+                    });
+                    return cur;`
+                );
+            ctx.prevSubs = await setSubEntry(null);
+            await openSubWork("data-tool-settled");
+            const settledSub = await polishWaitFor(h, `${subTool("data-tool-settled")} && !(${subTool("data-tool-running")})`, 5000);
             await h.shot("cdp-shots/agent-chat-16-subagent.png");
+            await setSubEntry("success");
+            await polishNap(300);
+            const doneSub = await polishWaitFor(h, `${subTool("data-tool-settled")} && !(${subTool("data-tool-running")})`, 3000);
+            await setSubEntry("working");
+            await openSubWork("data-tool-running");
+            const runningSub = await polishWaitFor(h, `${subTool("data-tool-running")} && !(${subTool("data-tool-settled")})`, 5000);
+            await h.shot("cdp-shots/agent-chat-16-subagent-running.png");
             rec(
-                "16. a subagent opened in the cell draws bubbles",
-                subUp && sub16.you === "survey the sync client for stale retries" && sub16.prose === "The subagent found two stale retries.",
-                sub16
+                "16. a subagent opened in the cell draws bubbles; its tool with no result draws settled with no entry or one not working, and running once the entry is working",
+                subUp && sub16.you === "survey the sync client for stale retries" && sub16.prose === "The subagent found two stale retries." &&
+                    settledSub && doneSub && runningSub,
+                { sub16, settledSub, doneSub, runningSub }
             );
+            await setSubEntry(null);
 
             // 17. in a split of two Claude cells, an Alt-drop of E's row onto A's cell, which shows Chat, leaves E's mention in
             // A's message box with focus in it, and types nothing into A's block. E is dragged, not B: a split's cells share one
@@ -43112,6 +43146,16 @@ const agentChat = {
             await acQueue(h, orefA, [perm("perm-6", "Bash", "echo hi > x.txt")]);
             const secondUp = await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-perm-second]")`, 6000);
             const second25 = await h.ev(`${acCard(A)}?.querySelector("[data-perm-second]")?.textContent.trim() ?? null`);
+            // the card sits at the chat's tail: bring its last button into view so the shot shows all three
+            await h.ev(`(() => {
+                const c = ${acCard(A)};
+                let sc = c?.parentElement;
+                while (sc && getComputedStyle(sc).overflowY !== "auto" && getComputedStyle(sc).overflowY !== "scroll") sc = sc.parentElement;
+                if (sc) sc.scrollTop = sc.scrollHeight;
+                c?.scrollIntoView({ block: "nearest" });
+                return true;
+            })()`);
+            await polishNap(250);
             await h.shot("cdp-shots/agent-chat-25-second-choice.png");
             const answersBefore = (await acCalls(h, "agentpermissionanswer")).length;
             await h.ev(`${acCard(A)}?.querySelector("[data-perm-second]")?.click()`);
@@ -43144,6 +43188,9 @@ const agentChat = {
                 const row = ${acLayer(A)}?.querySelector("[data-tool-running]");
                 return { text: row?.textContent.replace(/\\s+/g, " ").trim() ?? null, settled: !!${acLayer(A)}?.querySelector("[data-tool-settled]"), fold: ${lastFold}?.textContent.trim() ?? null };
             })()`);
+            // the spinner row is in the live stretch at the chat's tail: bring it into view for the shot
+            await h.ev(`(() => { ${acLayer(A)}?.querySelector("[data-tool-running]")?.scrollIntoView({ block: "center" }); return true; })()`);
+            await polishNap(250);
             await h.shot("cdp-shots/agent-chat-26-tool-running.png");
             await AC.setRoster(h, acRoster(ctx));
             // the stretch is no longer the live one, so it may have folded; its pill opens it again
@@ -43207,6 +43254,11 @@ const agentChat = {
             AC.agentPage(h, `const S = await mod("app/view/agents/subagentsstore.ts"); globalStore.set(S.focusSubagentAtom, null); return true;`)
         );
         // step 19 floats the window: a throw before it left Float again must not strand the next scenario in it
+        await step("restore the subagent list", () =>
+            ctx.prevSubs === undefined
+                ? null
+                : AC.agentPage(h, `const S = await mod("app/view/agents/subagentsstore.ts"); globalStore.set(S.subagentsByIdAtom, ${JSON.stringify(ctx.prevSubs)}); return true;`)
+        );
         await step("leave Float", () =>
             floatMiniWait(h, `(document.querySelector("[data-float-exit]")?.click(), !document.querySelector("[data-float-bar]"))`, 8000)
         );

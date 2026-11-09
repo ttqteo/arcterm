@@ -56,11 +56,7 @@ export function pushSent(history: string[], text: string): string[] {
 
 /** ↑ / ↓ through the history from position `at` (null: the empty box). Up from the empty box gives the newest; down
  *  from the newest gives the empty box; up at the oldest stays. */
-export function recall(
-    history: string[],
-    at: number | null,
-    dir: "up" | "down"
-): { at: number | null; text: string } {
+export function recall(history: string[], at: number | null, dir: "up" | "down"): { at: number | null; text: string } {
     if (history.length === 0) {
         return { at: null, text: "" };
     }

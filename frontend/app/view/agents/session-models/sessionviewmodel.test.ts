@@ -18,6 +18,7 @@ import {
     reorderWithinGroup,
     waitingTarget,
     rollUpStatus,
+    subagentWorking,
     sessionRunORef,
     sessionTitle,
     subagentExpanded,
@@ -827,5 +828,29 @@ describe("findSessionTermBlock", () => {
                 resolved("term", { view: "term", "cmd:cwd": "" }),
             ])
         ).toBeUndefined();
+    });
+});
+
+describe("subagentWorking", () => {
+    const subs = [
+        { id: "a1", type: "Explore", state: "working" as const },
+        { id: "a2", type: "Plan", state: "success" as const },
+        { id: "a3", type: "Plan", state: "failure" as const },
+        { id: "a4", type: "Plan", state: "done" as const },
+    ];
+
+    it("is true only for the entry that is working", () => {
+        expect(subagentWorking(subs, "a1")).toBe(true);
+    });
+
+    it("is false for every other state", () => {
+        expect(subagentWorking(subs, "a2")).toBe(false);
+        expect(subagentWorking(subs, "a3")).toBe(false);
+        expect(subagentWorking(subs, "a4")).toBe(false);
+    });
+
+    it("is false for a missing entry or a missing list", () => {
+        expect(subagentWorking(subs, "nope")).toBe(false);
+        expect(subagentWorking(undefined, "a1")).toBe(false);
     });
 });

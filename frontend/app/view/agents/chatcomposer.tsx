@@ -9,10 +9,10 @@
 // text and its attachments are local to the box.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { focusTerm } from "@/app/view/term/termpaste";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { focusTerm } from "@/app/view/term/termpaste";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Square } from "lucide-react";
@@ -174,7 +174,15 @@ export function ChatComposer({
     const recallKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
         const dir = e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : null;
         const ta = e.currentTarget;
-        if (dir == null || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || ta.readOnly || e.nativeEvent.isComposing) {
+        if (
+            dir == null ||
+            e.shiftKey ||
+            e.altKey ||
+            e.ctrlKey ||
+            e.metaKey ||
+            ta.readOnly ||
+            e.nativeEvent.isComposing
+        ) {
             return false;
         }
         const r = recalled.current;
@@ -184,7 +192,10 @@ export function ChatComposer({
             return false;
         }
         if (!empty) {
-            const caretLine = dir === "up" ? !text.slice(0, ta.selectionStart).includes("\n") : !text.slice(ta.selectionEnd).includes("\n");
+            const caretLine =
+                dir === "up"
+                    ? !text.slice(0, ta.selectionStart).includes("\n")
+                    : !text.slice(ta.selectionEnd).includes("\n");
             if (!caretLine) {
                 return false;
             }

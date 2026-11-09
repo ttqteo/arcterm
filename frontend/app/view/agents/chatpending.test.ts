@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
-import { PENDING_MAX_MS, pendingStill, pendsAsBubble, pushSent, recall, sendHold, userTextCount, type PendingMessage } from "./chatpending";
+import {
+    PENDING_MAX_MS,
+    pendingStill,
+    pendsAsBubble,
+    pushSent,
+    recall,
+    sendHold,
+    userTextCount,
+    type PendingMessage,
+} from "./chatpending";
 
 const user = (text: string): AgentEntry => ({ kind: "user", text });
 const msg = (text: string): AgentEntry => ({ kind: "message", text });
@@ -32,7 +41,11 @@ describe("pendingStill", () => {
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS)).toEqual([]);
     });
     it("matches each pending against its own text", () => {
-        const out = pendingStill([p({ id: "a" }), p({ id: "b", text: "two", seen: 0 })], [user("hello"), user("two")], 2000);
+        const out = pendingStill(
+            [p({ id: "a" }), p({ id: "b", text: "two", seen: 0 })],
+            [user("hello"), user("two")],
+            2000
+        );
         expect(out.map((x) => x.id)).toEqual(["a"]);
     });
 });

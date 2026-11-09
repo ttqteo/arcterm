@@ -318,7 +318,9 @@ describe("workingText", () => {
     });
 
     it("falls back to the activity line when the running tool has no target", () => {
-        expect(workingText("working", "Bash: npm test", [action("ran", { target: "" })])).toBe("Working · Bash: npm test");
+        expect(workingText("working", "Bash: npm test", [action("ran", { target: "" })])).toBe(
+            "Working · Bash: npm test"
+        );
     });
 });
 
