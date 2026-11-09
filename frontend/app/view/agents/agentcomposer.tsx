@@ -4,9 +4,10 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
-import type { AgentVM } from "./agentsviewmodel";
+import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { appendAttachments, type Attachment } from "./composerattachments";
 import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
@@ -19,8 +20,54 @@ export function canSendComposer(text: string, blockId?: string): boolean {
     return text.trim() !== "" && blockId != null;
 }
 
+/** Pure: a Stop button has something to stop: the agent is working or asking, and awake (an asleep agent has no
+ *  process to send Esc to). `sleeping` is the roster's record (`AgentVM.sleeping`) or a plain flag. */
+export function canStop(state: AgentState, sleeping?: boolean | AgentVM["sleeping"]): boolean {
+    return !sleeping && (state === "working" || state === "asking");
+}
+
+/** Grows a textarea with its text, between `minH` and `maxH` (px), then lets it scroll. The height is the border box:
+ *  scrollHeight leaves out the border, so without it a box of two lines or more came out short and showed a scrollbar.
+ *  The 1px more covers scrollHeight's rounding at a page zoom (cockpit.zoom 1.25 left a wrapped placeholder 1px short). */
+export function useGrowingTextarea(
+    ref: RefObject<HTMLTextAreaElement | null>,
+    text: string,
+    minH: number,
+    maxH: number
+): void {
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) {
+            return;
+        }
+        el.style.height = "auto";
+        const border = el.offsetHeight - el.clientHeight;
+        el.style.height = `${Math.min(Math.max(el.scrollHeight + border + 1, minH), maxH)}px`;
+    }, [text]);
+}
+
 export interface AgentComposerHandle {
     fill: (text: string) => void;
+}
+
+/** What a send needs to know of the agent: its tab id (the wake draft's key), its name (the wake error's), and whether
+ *  it sleeps. */
+export interface AgentSendTarget {
+    id: string;
+    name?: string;
+    sleeping?: AgentVM["sleeping"];
+}
+
+export interface AgentSend {
+    text: string;
+    setText: (text: string) => void;
+    /** Something to send (text, or a ready attachment), a live block, and no wake in flight. */
+    canSend: boolean;
+    /** A wake is relaunching this agent, from this box or from anywhere else. */
+    waking: boolean;
+    /** Sends the box. Answers whether it did (false when `canSend` is not); the box's text is cleared by it, the
+     *  attachments' tray is the caller's. */
+    send: () => boolean;
 }
 
 // Sends free text to an agent's terminal block. "\r" submits (the PTY treats CR as Enter), mirroring
@@ -28,16 +75,13 @@ export interface AgentComposerHandle {
 // its agent, the message goes through Wake instead, which delivers it once the agent is back, and the text stays in
 // the box until then (and for good when the wake fails). A sleeping agent's text is its wake draft (wakingstore), so
 // it outlives the box: picking another agent mid-wake and coming back still shows what is being sent.
-export const AgentComposer = forwardRef<
-    AgentComposerHandle,
-    {
-        blockId?: string;
-        agent?: { id: string; name?: string; sleeping?: AgentVM["sleeping"] };
-        placeholder: string;
-        className?: string;
-        onEscape?: () => void;
-    }
->(function AgentComposer({ blockId, agent, placeholder, className, onEscape }, ref) {
+// The one send path of both composers (this file's and chatcomposer.tsx's): `attachments`, when given, ride the message
+// as the "read these files" block (appendAttachments), and alone they make a message.
+export function useAgentSend(
+    blockId: string | undefined,
+    agent: AgentSendTarget | undefined,
+    attachments?: Attachment[]
+): AgentSend {
     const draftId = agent?.sleeping ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
     const [localText, setLocalText] = useState("");
@@ -46,6 +90,51 @@ export const AgentComposer = forwardRef<
     const [sending, setSending] = useState(false);
     // a wake started anywhere else (the card's Wake, a row's menu) holds the box too: a message now would be a second wake
     const waking = useWaking(agent?.id) || sending;
+    const message = appendAttachments(text.trim(), attachments ?? []);
+    const canSend = canSendComposer(message, blockId) && !waking;
+    const send = (): boolean => {
+        if (!canSend) {
+            return false;
+        }
+        if (agent?.sleeping) {
+            const id = agent.id;
+            setSending(true);
+            fireAndForget(async () => {
+                try {
+                    await wakeAgent(id, { message });
+                    setWakeDraft(id, "");
+                } catch (e) {
+                    wakeErrorToast(agent.name, e);
+                } finally {
+                    setSending(false);
+                }
+            });
+            return true;
+        }
+        fireAndForget(() =>
+            RpcApi.ControllerInputCommand(TabRpcClient, {
+                blockid: blockId!,
+                inputdata64: stringToBase64(message + "\r"),
+            })
+        );
+        setText("");
+        return true;
+    };
+    return { text, setText, canSend, waking, send };
+}
+
+export const AgentComposer = forwardRef<
+    AgentComposerHandle,
+    {
+        blockId?: string;
+        agent?: AgentSendTarget;
+        placeholder: string;
+        className?: string;
+        onEscape?: () => void;
+    }
+>(function AgentComposer({ blockId, agent, placeholder, className, onEscape }, ref) {
+    const { text, setText, canSend, waking, send } = useAgentSend(blockId, agent);
+    const draftId = agent?.sleeping ? agent.id : undefined;
     const taRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(
         ref,
@@ -57,46 +146,7 @@ export const AgentComposer = forwardRef<
         }),
         [draftId]
     );
-    useLayoutEffect(() => {
-        const el = taRef.current;
-        if (!el) {
-            return;
-        }
-        el.style.height = "auto";
-        // the height is the border box: scrollHeight leaves out the border, so without it a box of two lines or more
-        // came out 2px short and showed a scrollbar. The 1px more covers scrollHeight's rounding at a page zoom
-        // (cockpit.zoom 1.25 left a wrapped placeholder 1px short)
-        const border = el.offsetHeight - el.clientHeight;
-        el.style.height = `${Math.min(Math.max(el.scrollHeight + border + 1, ComposerMinH), ComposerMaxH)}px`;
-    }, [text]);
-    const canSend = canSendComposer(text, blockId) && !waking;
-    const send = () => {
-        if (!canSend) {
-            return;
-        }
-        if (agent?.sleeping) {
-            const id = agent.id;
-            setSending(true);
-            fireAndForget(async () => {
-                try {
-                    await wakeAgent(id, { message: text.trim() });
-                    setWakeDraft(id, "");
-                } catch (e) {
-                    wakeErrorToast(agent.name, e);
-                } finally {
-                    setSending(false);
-                }
-            });
-            return;
-        }
-        fireAndForget(() =>
-            RpcApi.ControllerInputCommand(TabRpcClient, {
-                blockid: blockId!,
-                inputdata64: stringToBase64(text.trim() + "\r"),
-            })
-        );
-        setText("");
-    };
+    useGrowingTextarea(taRef, text, ComposerMinH, ComposerMaxH);
     return (
         <div
             data-agent-composer
@@ -123,7 +173,7 @@ export const AgentComposer = forwardRef<
             />
             <button
                 type="button"
-                onClick={send}
+                onClick={() => send()}
                 disabled={!canSend}
                 className="shrink-0 cursor-pointer rounded-[5px] border border-edge-mid px-2.5 py-1 text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-40"
             >
