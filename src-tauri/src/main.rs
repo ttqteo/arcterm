@@ -242,11 +242,17 @@ fn use_resource_window_icons(hwnd: isize) {
 // app id by that id alone, so wavesrv, the agents and the WebView2 processes, which carry none, stood
 // apart from arcterm as their own rows. Packaged only: dev shares the identifier and must stay separate.
 // Returns the line to log on failure, as applog is not open yet when the window is built.
+//
+// The string must be COM memory (CoTaskMemAlloc, as InitPropVariantFromString makes it), cleared with
+// PropVariantClear after SetValue. Pointing pwszVal at a Rust Vec corrupted the heap (0xc0000374) and
+// every packaged launch died before applog opened, so the log showed nothing (build cdfa1afd4, 2026-11-09).
+// Dev builds compile this out, so only a packaged build exercises it: launch one after changing it.
 #[cfg(all(windows, not(debug_assertions)))]
 fn set_window_app_user_model_id(window: &tauri::WebviewWindow, identifier: &str) -> Option<String> {
     use windows::core::PWSTR;
     use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
-    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    use windows::Win32::System::Com::CoTaskMemAlloc;
+    use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT};
     use windows::Win32::System::Variant::VT_LPWSTR;
     use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
 
@@ -254,15 +260,22 @@ fn set_window_app_user_model_id(window: &tauri::WebviewWindow, identifier: &str)
         Ok(h) => h,
         Err(e) => return Some(format!("[tauri] no window handle for the app id: {}", e)),
     };
-    // the store copies the string, so the buffer only has to outlive SetValue
-    let mut wide: Vec<u16> = identifier.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut value = PROPVARIANT::default();
+    let wide: Vec<u16> = identifier.encode_utf16().chain(std::iter::once(0)).collect();
     let set = unsafe {
+        let buf = CoTaskMemAlloc(wide.len() * std::mem::size_of::<u16>()) as *mut u16;
+        if buf.is_null() {
+            return Some("[tauri] no memory for the window's app id".to_string());
+        }
+        std::ptr::copy_nonoverlapping(wide.as_ptr(), buf, wide.len());
+        let mut value = PROPVARIANT::default();
         let inner = &mut *value.Anonymous.Anonymous;
         inner.vt = VT_LPWSTR;
-        inner.Anonymous.pwszVal = PWSTR(wide.as_mut_ptr());
-        SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd)
-            .and_then(|store| store.SetValue(&PKEY_AppUserModel_ID, &value).and_then(|_| store.Commit()))
+        inner.Anonymous.pwszVal = PWSTR(buf);
+        let set = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd)
+            .and_then(|store| store.SetValue(&PKEY_AppUserModel_ID, &value).and_then(|_| store.Commit()));
+        // the store keeps its own copy; this frees ours
+        let _ = PropVariantClear(&mut value);
+        set
     };
     set.err().map(|e| format!("[tauri] setting the window's app id failed: {}", e))
 }
@@ -481,7 +494,7 @@ fn main() {
             }
             if !scrubbed_env.is_empty() {
                 applog::log_line(&format!(
-                    "[tauri] opened from an agent's shell; dropped {} so agents keep their transcripts",
+                    "[tauri] opened from an agent's shell; dropped {} so agents keep their transcripts and colors",
                     scrubbed_env.join(" ")
                 ));
             }
