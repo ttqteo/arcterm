@@ -42,6 +42,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Claude agents always start in the fullscreen renderer when your Claude settings ask for it (`/tui fullscreen`):
+  closing or restarting an agent in its first seconds no longer makes the next ones open in the classic renderer,
+  or turns fullscreen off altogether.
 - On a Mac, new terminals and agents no longer fail to start with "too many open files" after a while with several
   agents open: following an agent's transcript no longer holds open every other session file of its project.
 

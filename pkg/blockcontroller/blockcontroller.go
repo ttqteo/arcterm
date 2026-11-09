@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -612,6 +613,11 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 			env = claudeaccount.ProjectLaunchEnv(project, cwd, projects, wavebase.GetHomeDir())
 		}
 		maps.Copy(token.Env, env)
+	}
+	if isLocalConnName(remoteName) {
+		// claude starts fullscreen when its settings say so, which a Windows block kill otherwise trips off (claudetui.go)
+		cwd := wavebase.ExpandHomeDirSafe(blockMeta.GetString(waveobj.MetaKey_CmdCwd, ""))
+		maps.Copy(token.Env, claudeTuiEnv(os.LookupEnv, claudeConfigDir(), cwd))
 	}
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
 	if err != nil {
