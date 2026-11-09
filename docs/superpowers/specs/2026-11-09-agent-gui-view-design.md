@@ -248,3 +248,63 @@ vocabulary.
 `focusTerminalOf` in `agentsurface.tsx` focuses the chat box of a cell showing Chat instead of the xterm under it (which
 `checkVisibility` still reports visible under the overlay); flipping to Terminal focuses the xterm, flipping to Chat
 the box.
+
+## Round 3: what the TUI does that chat did not (2026-11-09)
+
+Asked for after the first live use: a message sent while Claude is still answering, and the upgrades listed after
+round 2, all of them. Decided in the conversation; the plan is `docs/superpowers/plans/2026-11-09-agent-chat-upgrades.md`.
+
+### A message sent while Claude works
+
+The box already types it into the PTY, and Claude Code queues it, as in the TUI. What chat lacked is drawing it. Claude
+Code 2.1.319 writes a queued message one of two ways: taken in **mid-turn**, as an `attachment` record
+`{"type":"queued_command","prompt":…,"commandMode":"prompt","origin":{"kind":"human"}}` (the prompt a string, or text
+and image blocks), next to `queue-operation` records; or, taken at the turn's end, as a plain `user` record. The
+projection draws the first as your bubble too (only `commandMode` `prompt`). Between Send and the transcript line, a
+**pending bubble** stands at the end of the conversation, dimmed, captioned "Queued" while the agent works and
+"Sending…" otherwise; it goes when the transcript holds that text once more than when it was sent, or after 2 minutes.
+
+A send is **held** while a permission card or an AskUserQuestion is up: typed into Claude Code's dialog, the text's
+first digit would pick an option ("2 more things" picks option 2). The Send button says why.
+
+### Tools in flight
+
+A tool call whose result has not landed is drawn as running in a live session (a spinner where the ✓ goes, no colour),
+and the stretch reads "Working for 38s · 7 tools", counting up to now; the working line names the running tool's own
+description when the transcript has it. In a session that is not working, a tool with no result is drawn neutral (no ✓,
+no ✗). Before this, a running tool read "RAN ✓" and the stretch counted only finished tools, so chat and the TUI
+disagreed at the same moment. Claude Code's own group summaries ("Searched for 4 patterns, ran 8 shell commands") are
+drawn by the TUI process and never reach the transcript; chat keeps its own "N tools" wording.
+
+### Recall, the `/` menu, the footer
+
+- **↑** in an empty box puts back the last message sent from this box to this agent (the last 20, this session only);
+  ↓ walks forward and back to empty.
+- **`/`** as the box's first character opens a picker like the `@` one: Claude Code's built-in commands (a list kept in
+  the frontend), then skills and commands from a new `ListClaudeCommandsCommand{cwd}`: `~/.claude/skills`,
+  `<cwd>/.claude/skills`, `~/.claude/commands`, `<cwd>/.claude/commands`, and the skills and commands of each enabled
+  installed plugin (`~/.claude/plugins/installed_plugins.json`, `enabledPlugins` in `~/.claude/settings.json`) and each
+  folder in that file's `env.CLAUDE_CODE_PLUGIN_DIRS`, named `<plugin>:<name>`. Sending a built-in that opens a TUI
+  menu with nothing after it (`/model`, `/resume`, `/config`…) flips the cell to Terminal so the menu is seen.
+- **Footer** in the box's bottom row: the model, the context use (`ctx 43%`, from `agent.usage`), and the permission
+  mode as a chip. The mode is read off the TUI's own footer line in the xterm under the chat (the cell keeps it mounted
+  and fed); clicking the chip types Shift+Tab (`\x1b[Z`), which cycles it. While a dialog covers the TUI's footer the
+  chip keeps the last mode it read.
+
+### The permission card's second choice
+
+The card reads the dialog's numbered options off the same xterm. When option 2 starts with "Yes" (Bash's "Yes, and
+don't ask again for … commands in …", an edit's "Yes, allow all edits during this session"), the card shows it as a
+third button in the TUI's own words, and it types `2` through `AgentPermissionAnswerCommand`, which gains `choice`
+(`2`; `0` or `1` is Yes). Only for an answerable request, as Allow.
+
+### Copy
+
+Hovering a bubble (Claude's or yours) shows Copy, which copies its text (Claude's as Markdown). Every fenced code block
+in Markdown gets a copy button (`codeblock.tsx`, so the council and the rail have it too).
+
+### Not done
+
+- **Todo checklist:** none of the 103 Claude transcripts of the last three days calls `TodoWrite` or a `Task*` tool, so
+  Claude Code 2.1.319 here keeps no todo list to draw.
+- **Jump to latest:** already there (`JumpToLatestPill`, `sticktobottom.tsx`).
