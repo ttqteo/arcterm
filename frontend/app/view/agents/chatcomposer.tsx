@@ -20,6 +20,7 @@ import { useEffect, useLayoutEffect, useRef, type DragEvent, type KeyboardEvent 
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
+import { ChatFooter } from "./chatfooter";
 import { insertAt, registerChatInsert } from "./chatinsert";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
@@ -293,6 +294,7 @@ export function ChatComposer({
             {mention.list}
             <div className="flex items-center gap-1.5">
                 {asleep ? null : <AttachButton onClick={attach} />}
+                <ChatFooter agent={agent} />
                 <div className="flex-1" />
                 {showStop ? (
                     <button
