@@ -1837,3 +1837,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   "Đã đọc code" line cites a long path (`obsidian_harness/20261104_harness_overview.html:108`): the cite chip wraps
   within the idea column instead of running under the first seat's column. `councilmap.tsx` (`CheckLine` cite span:
   `wrap-anywhere`, `max-w-full`); no dev app was up.
+- [ ] (arcterm) **Chat over a live Claude agent.** Start a Claude agent → its cell opens in Chat. Send "hello" → your
+  bubble shows and the reply streams in under it, with the "Working · …" line while it works and Stop sending Esc.
+  Ctrl+Shift+K flips to the real TUI and back (the box takes focus in Chat, the terminal in Terminal), and a long
+  conversation scrolls to the end and keeps your place after a flip. Only the empty conversation, the split cells and
+  the flips were tried in the dev app (fixture agents with no transcript); a real session's bubbles, its stream and a
+  scenario for them come with the agent-chat scenario (`chatpane.tsx`, `agentsurface.tsx`).

@@ -78,7 +78,8 @@ function wholeFile(runtime: string | undefined, path: string): boolean {
 
 type Load = "loaded" | "reread" | "stale" | "failed";
 
-function useTranscriptWindow(path: string, runtime: string | undefined) {
+// exported: the chat pane (chatpane.tsx) reads the same windowed transcript, there is no second reader
+export function useTranscriptWindow(path: string, runtime: string | undefined) {
     const [view, setView] = useState<View | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [noEarlier, setNoEarlier] = useState(false);

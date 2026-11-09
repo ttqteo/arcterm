@@ -60,6 +60,9 @@ import { CanvasGallery } from "./canvasgalleryview";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
+import { shownChatMode } from "./chatmode";
+import { chatModeAtom } from "./chatmodestore";
+import { ChatLayer } from "./chatpane";
 import { closedNeighbour, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { CouncilHistory } from "./councilhistoryview";
 import { CouncilPane } from "./councilpane";
@@ -119,6 +122,18 @@ import { TerminalPaneHead } from "./terminalpaneheadview";
 import { useSessionsScan } from "./usesessionsscan";
 import { WorktreeGoneCard } from "./worktreegonecard";
 import { goneTerminalIdsAtom, useWorktreeGoneChecks } from "./worktreegonestore";
+
+// What takes the keyboard in an agent's cell: its chat box while the cell shows Chat (the xterm is still mounted
+// underneath it, so it would also pass checkVisibility, and typing would go to a terminal nobody can see), else its
+// xterm. Null when neither is showing. Reads the DOM, so it is what is on screen, whichever mode the store says.
+function cellInputOf(wrap: HTMLElement | null | undefined, id: string): HTMLElement | null {
+    const box = wrap?.querySelector<HTMLElement>(`[data-agent-chat="${id}"] [data-agent-chat-composer] textarea`);
+    if (box != null) {
+        return box.checkVisibility() ? box : null;
+    }
+    const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${id}"] .xterm-helper-textarea`);
+    return term?.checkVisibility() ? term : null;
+}
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     const focusId = useAtomValue(model.focusIdAtom);
@@ -402,8 +417,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             const pane = swapped === "review" ? wrap.querySelector<HTMLElement>("[data-doc-review-pane]") : null;
             (pane ?? wrap).focus();
         } else if (swapped == null && prev.on != null && prev.id === agent.id) {
-            const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
-            (term ?? wrap).focus();
+            (cellInputOf(wrap, agent.id) ?? wrap).focus();
         }
     }, [agent?.id, swapped]);
 
@@ -419,20 +433,35 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             wrapRef.current?.focus();
         } else if (centerMode === "terminal" && prev !== "terminal" && agent != null) {
             const wrap = wrapRef.current;
-            const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
-            (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
+            (cellInputOf(wrap, agent.id) ?? wrap)?.focus({ preventScroll: true });
         }
     }, [centerMode]);
 
-    // Moves DOM focus into an agent's xterm when it is showing (not into a hidden pane, which cannot take it).
+    // Moves DOM focus into an agent's cell when it is showing: its chat box in Chat, its xterm in Terminal (not into a
+    // hidden pane, which cannot take it). The name stays: every route that puts the keyboard in a cell calls it.
     const focusTerminalOf = (id: string) => {
-        const term = wrapRef.current?.querySelector<HTMLElement>(
-            `[data-agent-terminal="${id}"] .xterm-helper-textarea`
-        );
-        if (term?.checkVisibility()) {
-            term.focus({ preventScroll: true });
-        }
+        cellInputOf(wrapRef.current, id)?.focus({ preventScroll: true });
     };
+
+    // The agent in focus flips between Chat and Terminal (the header's control, the grid bar's switch, Mod+Shift+K,
+    // Alt+C, a permission card's link): the keyboard follows it, Terminal to its xterm and Chat to its box. A press on a
+    // button leaves focus on the button, which the flip would otherwise leave behind. Only on a flip of the same
+    // agent's mode (picking another agent is the effects below's), and only while its cell shows the mode (a sleeping
+    // agent shows its wake box, and a cell not on screen has nothing to take focus).
+    const shownMode = shownChatMode(agent, useAtomValue(chatModeAtom(agent?.id ?? "")));
+    const lastMode = useRef<{ id: string; mode: typeof shownMode } | null>(null);
+    useEffect(() => {
+        const prev = lastMode.current;
+        lastMode.current = agent != null ? { id: agent.id, mode: shownMode } : null;
+        if (agent == null || prev == null || prev.id !== agent.id || prev.mode === shownMode || agent.sleeping != null) {
+            return;
+        }
+        if (surface !== "agent" || centerMode !== "terminal" || swapped != null) {
+            return;
+        }
+        // the layer mounts (or leaves) in the commit that changed the mode, so the DOM is already what it will be
+        focusTerminalOf(agent.id);
+    }, [agent?.id, shownMode]);
 
     // A dialog closing over this surface that cannot hand focus back (a palette pick hid the cell it was opened from)
     // gives it to the picked agent's terminal or this surface, never <body> (modalfocusfallback.ts).
@@ -444,11 +473,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 }
                 const wrap = wrapRef.current;
                 const picked = globalStore.get(model.focusIdAtom);
-                const term =
-                    picked == null
-                        ? null
-                        : wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${picked}"] .xterm-helper-textarea`);
-                return agentFocusFallback(previous, term ?? null, wrap);
+                const input = picked == null ? null : cellInputOf(wrap, picked);
+                return agentFocusFallback(previous, input, wrap);
             }),
         []
     );
@@ -540,8 +566,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
         globalStore.set(model.typingFollowsAtom, null);
         const wrap = wrapRef.current;
-        const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
-        (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
+        (cellInputOf(wrap, agent.id) ?? wrap)?.focus({ preventScroll: true });
     }, [typingFollows, agent?.id]);
 
     // An asking agent's picker takes ↑/↓, Enter and digits, the same keys the tree moves with, and the agent comes first:
@@ -575,8 +600,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             return;
         }
         const pane = wrap.querySelector<HTMLElement>("[data-doc-review-pane]");
-        const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
-        (pane ?? (term?.checkVisibility() ? term : wrap)).focus({ preventScroll: true });
+        (pane ?? cellInputOf(wrap, agent.id) ?? wrap).focus({ preventScroll: true });
     }, [surface]);
 
     // The x on a cell's bar unmounts the button that held focus and hides the removed pane, and showTerminal() is a no-op
@@ -589,10 +613,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             return;
         }
         const wrap = wrapRef.current;
-        const term = wrap?.querySelector<HTMLElement>(
-            `[data-agent-terminal="${globalStore.get(model.focusIdAtom)}"] .xterm-helper-textarea`
-        );
-        (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
+        (cellInputOf(wrap, globalStore.get(model.focusIdAtom) ?? "") ?? wrap)?.focus({ preventScroll: true });
     }, [removals]);
     const onRemoveCell = (id: string) => {
         if (!currentGrid(model).ids.includes(id)) {
@@ -817,9 +838,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 ) : null}
                                             </div>
                                             {/* asleep, its terminal holds only the kill: the conversation covers it,
-                                                the pane staying mounted under it at its size */}
+                                                the pane staying mounted under it at its size. Awake in Chat (a Claude
+                                                agent's default), the live conversation covers it the same way; in
+                                                Terminal nothing does. Never on the docked terminal (no cell). */}
                                             {a.sleeping != null && cell != null ? (
                                                 <SleepingTranscript agent={a} barred={multi} />
+                                            ) : cell != null ? (
+                                                <ChatLayer model={model} agent={a} barred={multi} />
                                             ) : null}
                                             {/* a terminal whose folder is gone: the card over its dimmed last screen, the
                                                 pane staying mounted under it; the bar above it (a grid cell's or the
