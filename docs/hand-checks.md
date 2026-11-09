@@ -26,8 +26,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   picked session's last messages right: your messages boxed, Claude's as markdown) with focus still on that row; ↑↓
   moves the read with a short fade; ↑ back to New session → the columns return, focus on New session; ← (or the agent /
   project button in the title) shows the columns with focus on Project, and → back into Session returns to the step;
-  Esc closes the dialog in one press; Shift+Enter opens the session asleep. Check the dialog keeps its height across
-  the switch. Not run in a dev app (`launchermodal.tsx`, `launcherpeekpanel.tsx`, 73435fc7a, c0b0f4078).
+  Esc closes the dialog in one press; Shift+Enter does nothing there (no Open asleep in the footer); Alt+← from the
+  Task box shows the columns, and Back shows its `alt+←` hint. Check the dialog keeps its height across the switch. Pick
+  a long session and scroll to the top of its messages → "Reading older messages…", then 10 older ones land above
+  with what you were reading staying put; keep going → "Start of the session" at the top. A session whose last 8 MB
+  is all tool output reads on by itself until a message shows. Not run in a dev app (`launchermodal.tsx`,
+  `launcherpeekpanel.tsx`, 73435fc7a, c0b0f4078, branch `feat/launcher-peek-older`).
 
 - [ ] (arcterm) Kael sync 11-06: a real `snapshot-dev.mjs` boot on the packaged store: with the main dev app stopped,
   run `task dev:snapshot` on your install → the app opens on a copy of your projects, runs and vault; no run resumes

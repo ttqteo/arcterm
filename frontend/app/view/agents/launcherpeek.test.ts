@@ -3,13 +3,20 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-    PEEK_CAPPED_NONE,
-    PEEK_CAPPED_NOTE,
     PEEK_EMPTY,
+    PEEK_OLDER_EDGE_PX,
     PEEK_READING_DELAY_MS,
+    PEEK_READING_OLDER,
+    PEEK_START,
     createPeekLoader,
     peekCacheKey,
+    peekCursor,
     peekMeta,
+    peekOlderBegin,
+    peekOlderFailed,
+    peekOlderLoaded,
+    peekOlderStart,
+    peekOlderWanted,
     peekView,
     resumeStepShows,
     type PeekOutcome,
@@ -33,13 +40,15 @@ function session(id: string, extra: Partial<SessionInfo> = {}): SessionInfo {
     };
 }
 
-const result = (n: number, capped = false): PeekResult => ({
+const result = (n: number, capped = false, before = 0, prefix = "m"): PeekResult => ({
     messages: Array.from({ length: n }, (_, i) => ({
         role: i % 2 === 0 ? "user" : "assistant",
-        text: `m${i}`,
+        text: `${prefix}${i}`,
         ts: i,
     })),
     capped,
+    before,
+    answered: false,
 });
 
 function deferred<T>() {
@@ -244,11 +253,11 @@ describe("peekView", () => {
             state: "ready",
             showReading: false,
             messages: r.messages,
-            note: null,
+            top: null,
             line: null,
             error: null,
         });
-        expect(peekView({ status: "done", result: result(2) }, 0)).toMatchObject({ state: "ready", note: null });
+        expect(peekView({ status: "done", result: result(2) }, 0)).toMatchObject({ state: "ready", top: null });
     });
     it("empty says the session has no messages yet", () => {
         expect(peekView({ status: "done", result: result(0) }, 0)).toMatchObject({
@@ -258,23 +267,33 @@ describe("peekView", () => {
         });
         expect(PEEK_EMPTY).toBe("This session has no messages yet.");
     });
-    it("capped with none found points at Open asleep", () => {
-        expect(peekView({ status: "done", result: result(0, true) }, 0)).toMatchObject({
+    it("capped with none found reads on, never says the session is empty", () => {
+        const r = result(0, true, 4096);
+        expect(peekView({ status: "done", result: r }, 0, peekOlderStart(r))).toMatchObject({
             state: "capped",
-            line: PEEK_CAPPED_NONE,
-            note: null,
+            top: PEEK_READING_OLDER,
+            line: null,
             messages: [],
         });
-        expect(PEEK_CAPPED_NONE).toBe("No messages in the last 8 MB. Open asleep to read the whole session.");
     });
-    it("capped with 1–4 found puts the note above the oldest message", () => {
-        const r = result(3, true);
-        expect(peekView({ status: "done", result: r }, 0)).toMatchObject({
-            state: "capped",
-            note: PEEK_CAPPED_NOTE,
-            line: null,
-            messages: r.messages,
-        });
+    it("older pages go above the first read's messages, with the line for the page on its way, its error or the start", () => {
+        const first = result(2, false, 900);
+        let o = peekOlderStart(first);
+        expect(peekView({ status: "done", result: first }, 0, o).top).toBeNull();
+        o = peekOlderBegin(o);
+        expect(peekView({ status: "done", result: first }, 0, o).top).toBe(PEEK_READING_OLDER);
+        o = peekOlderLoaded(o, result(2, false, 400, "old"));
+        let v = peekView({ status: "done", result: first }, 0, o);
+        expect(v.messages.map((m) => m.text)).toEqual(["old0", "old1", "m0", "m1"]);
+        expect(v.top).toBeNull();
+        o = peekOlderFailed(peekOlderBegin(o), "gone");
+        expect(peekView({ status: "done", result: first }, 0, o).top).toBe("Can't read older messages: gone");
+        o = peekOlderLoaded(peekOlderBegin(o), result(1, false, 0, "start"));
+        v = peekView({ status: "done", result: first }, 0, o);
+        expect(v.messages.map((m) => m.text)).toEqual(["start0", "old0", "old1", "m0", "m1"]);
+        expect(v.top).toBe(PEEK_START);
+        // a session read whole in its first read says nothing about its start
+        expect(peekView({ status: "done", result: result(3) }, 0, peekOlderStart(result(3))).top).toBeNull();
     });
     it("an error shows the real error text", () => {
         expect(peekView({ status: "error", error: "permission denied" }, 0)).toMatchObject({
@@ -282,6 +301,33 @@ describe("peekView", () => {
             error: "permission denied",
             messages: [],
         });
+    });
+});
+
+describe("older pages", () => {
+    it("a cursor only while there is text before the page", () => {
+        expect(peekCursor({ before: 0, answered: true })).toBeNull();
+        expect(peekCursor({ before: 12, answered: true })).toEqual({ before: 12, answered: true });
+    });
+    it("reads the next page near the top, or when the messages do not fill the pane", () => {
+        const o = peekOlderStart(result(5, false, 1000));
+        const tall = { client: 300, height: 900 };
+        expect(peekOlderWanted(o, { top: 600, ...tall })).toBe(false);
+        expect(peekOlderWanted(o, { top: PEEK_OLDER_EDGE_PX, ...tall })).toBe(true);
+        expect(peekOlderWanted(o, { top: 0, client: 300, height: 300 })).toBe(true);
+        // not while one is on its way, after one failed, or once the start is reached
+        expect(peekOlderWanted(peekOlderBegin(o), { top: 0, ...tall })).toBe(false);
+        expect(peekOlderWanted(peekOlderFailed(o, "x"), { top: 0, ...tall })).toBe(false);
+        expect(peekOlderWanted(peekOlderStart(result(5)), { top: 0, ...tall })).toBe(false);
+        expect(peekOlderWanted(peekOlderStart(null), { top: 0, ...tall })).toBe(false);
+    });
+    it("a loaded page hands on its own cursor", () => {
+        const o = peekOlderLoaded(peekOlderBegin(peekOlderStart(result(5, false, 1000))), {
+            ...result(10, false, 300),
+            answered: true,
+        });
+        expect(o).toMatchObject({ cursor: { before: 300, answered: true }, loading: false, error: null });
+        expect(o.messages).toHaveLength(10);
     });
 });
 

@@ -316,7 +316,7 @@ describe("launcherKey", () => {
     const at = (
         zone: LauncherKeyCtx["zone"],
         filter = "",
-        open: { flagMenuOpen?: boolean; branchListOpen?: boolean; resumePicked?: boolean } = {}
+        open: { flagMenuOpen?: boolean; branchListOpen?: boolean; resumePicked?: boolean; stepShown?: boolean } = {}
     ): LauncherKeyCtx => ({
         zone,
         startCount: 4,
@@ -326,6 +326,7 @@ describe("launcherKey", () => {
         flagMenuOpen: !!open.flagMenuOpen,
         branchListOpen: !!open.branchListOpen,
         resumePicked: !!open.resumePicked,
+        stepShown: !!open.stepShown,
         textField: true,
         homeShown: true,
         third: "resume",
@@ -474,11 +475,11 @@ describe("launcherKey", () => {
         expect(launcherKey(at("resume"), key("ArrowUp"))).toEqual({ kind: "none" });
         expect(launcherKey(at("resume"), key("3"))).toEqual({ kind: "none" });
     });
-    it("Shift+Enter on a picked session takes the footer's second button (Open asleep, or Transcript) instead of resuming it", () => {
+    it("Shift+Enter on a picked session takes the footer's Transcript instead of resuming it", () => {
         const picked = at("resume", "", { resumePicked: true });
         expect(launcherKey(picked, key("Enter", { shift: true }))).toEqual({ kind: "resume-secondary" });
         expect(launcherKey(picked, key("Enter"))).toEqual({ kind: "launch" });
-        // the New session row has no session to open asleep or read
+        // the New session row has no session to read
         expect(launcherKey(at("resume"), key("Enter", { shift: true }))).toEqual({ kind: "launch" });
         // wherever Enter launches, as the footer's second button says; the Task box keeps it as its newline
         expect(launcherKey(at("project", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
@@ -565,11 +566,21 @@ describe("launcherKey", () => {
         expect(launcherKey(step(), key("Escape"))).toEqual({ kind: "close" });
         expect(launcherKey(step({ zone: "task" }), key("Escape"))).toEqual({ kind: "close" });
     });
-    it("Shift+Enter on a picked session is the dialog's second action (Open asleep); in the Task box it is a newline", () => {
-        const ctx: LauncherKeyCtx = at("resume", "", { resumePicked: true });
-        expect(launcherKey(ctx, key("Enter", { shift: true }))).toEqual({ kind: "resume-secondary" });
+    it("in the resume step Shift+Enter does nothing: there is no second button, and it must not resume", () => {
+        const ctx: LauncherKeyCtx = at("resume", "", { resumePicked: true, stepShown: true });
+        expect(launcherKey(ctx, key("Enter", { shift: true }))).toEqual({ kind: "none" });
         expect(launcherKey({ ...ctx, zone: "task" }, key("Enter", { shift: true }))).toEqual({ kind: "none" });
         expect(launcherKey(ctx, key("Enter"))).toEqual({ kind: "launch" });
+    });
+    it("Alt+← is the footer's Back from anywhere in the resume step, the Task box included", () => {
+        const altLeft = { ...key("ArrowLeft", { mod: true }), altLeft: true };
+        for (const zone of ["resume", "task", "textarea", "start"] as const) {
+            expect(launcherKey(at(zone, "", { resumePicked: true, stepShown: true }), altLeft)).toEqual({
+                kind: "back",
+            });
+        }
+        // the columns have no Back: the key is left to the browser
+        expect(launcherKey(at("task", "", { resumePicked: true }), altLeft)).toEqual({ kind: "none" });
     });
     it("leaves modified keys alone: Mod+Enter is the dialog's submit, Mod+digit and Mod+Tab are not picks", () => {
         expect(launcherKey(at("start"), key("Enter", { mod: true }))).toEqual({ kind: "none" });

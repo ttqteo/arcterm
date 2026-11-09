@@ -70,8 +70,10 @@ run's model, or its start and width). They keep one height: a long Project, Sess
 column. The Tool row is the last in Start, so the other rows keep their digits.
 
 With Claude Code, picking a past session (not New session) turns the dialog into the **resume step**: the Task box on
-top, the Session list on the left and the picked session's last 5 messages on the right. The agent and the project sit
-in the title; `←` from the Session list, or a click on either, goes back to the three columns to change them, and
+top, the Session list on the left and the picked session's last 5 messages on the right; scrolling to the top of them
+reads 10 older ones at a time, back to the session's start. The agent and the project sit in the title; `Alt`+`←` from
+anywhere in the step (the footer's Back), `←` from the Session list, or a click on either, goes back to the three
+columns to change them, and
 reaching the Session column again (`→`, `Tab` or a click) returns to the step. Picking New session from the list
 brings the columns back.
 
@@ -82,11 +84,12 @@ brings the columns back.
 | `0` | In the Project column: Home, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
 | `→` / `←` | Step Start, Project, then the Session or Tool column, and back. In the resume step, `←` from the Session list goes back to the columns |
+| `Alt`+`←` | In the resume step, from anywhere (the Task box too): Back to the columns |
 | letters | In the Start, Project or Session column, start typing the task (or a run's goal): focus moves to that box with the letter in it. A pick with no such box (a terminal, a tool, a council, a run from a plan file) filters the Project column by name instead; `Backspace` shortens the filter |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
-| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
+| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked in the columns: read its transcript instead of resuming it. In the resume step it does nothing, as the session is read beside the list |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 

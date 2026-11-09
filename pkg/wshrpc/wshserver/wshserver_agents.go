@@ -53,15 +53,24 @@ func (ws *WshServer) GetSessionPeekCommand(ctx context.Context, data wshrpc.Comm
 	if !strings.HasSuffix(data.TranscriptPath, ".jsonl") {
 		return nil, fmt.Errorf("transcriptpath must be a .jsonl file: %s", data.TranscriptPath)
 	}
-	msgs, capped, err := agentsessions.ClaudeTailMessages(data.TranscriptPath, data.Count)
+	if data.Before < 0 {
+		return nil, fmt.Errorf("before must not be negative: %d", data.Before)
+	}
+	page, err := agentsessions.ClaudeTailPage(data.TranscriptPath, data.Count,
+		agentsessions.PeekCursor{Before: data.Before, Answered: data.Answered})
 	if err != nil {
 		return nil, fmt.Errorf("reading session peek: %w", err)
 	}
-	out := make([]wshrpc.SessionPeekMessage, len(msgs))
-	for i, m := range msgs {
+	out := make([]wshrpc.SessionPeekMessage, len(page.Messages))
+	for i, m := range page.Messages {
 		out[i] = wshrpc.SessionPeekMessage{Role: m.Role, Text: m.Text, Ts: m.Ts}
 	}
-	return &wshrpc.CommandGetSessionPeekRtnData{Messages: out, Capped: capped}, nil
+	return &wshrpc.CommandGetSessionPeekRtnData{
+		Messages: out,
+		Capped:   page.Capped,
+		Before:   page.Next.Before,
+		Answered: page.Next.Answered,
+	}, nil
 }
 
 func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.CommandGetSubagentsData) (*wshrpc.CommandGetSubagentsRtnData, error) {
