@@ -236,16 +236,35 @@ fn use_resource_window_icons(hwnd: isize) {
 // but Tauri never gives the process one, so the taskbar saw two apps in one exe: launched from that
 // shortcut the window was `dev.arc.app`, launched from a pin made without it (a reinstall unpins and
 // the user re-pins) it was the bare exe path, and the running window got its own button beside the
-// pin. Claiming the identifier for the process makes every launch path one taskbar app. Must run
-// before the first window exists. Packaged only: dev shares the identifier and must stay separate.
+// pin. Claiming the identifier for the window makes every launch path one taskbar app; the taskbar
+// moves a button that is already up when the id arrives. It goes on the window, not the process
+// (SetCurrentProcessExplicitAppUserModelID): Task Manager groups a process that claims a registered
+// app id by that id alone, so wavesrv, the agents and the WebView2 processes, which carry none, stood
+// apart from arcterm as their own rows. Packaged only: dev shares the identifier and must stay separate.
+// Returns the line to log on failure, as applog is not open yet when the window is built.
 #[cfg(all(windows, not(debug_assertions)))]
-fn set_app_user_model_id(identifier: &str) {
-    use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-    let wide: Vec<u16> = identifier.encode_utf16().chain(std::iter::once(0)).collect();
-    let hr = unsafe { SetCurrentProcessExplicitAppUserModelID(wide.as_ptr()) };
-    if hr != 0 {
-        applog::log_line(&format!("[tauri] SetCurrentProcessExplicitAppUserModelID failed: {:#x}", hr));
-    }
+fn set_window_app_user_model_id(window: &tauri::WebviewWindow, identifier: &str) -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    use windows::Win32::System::Variant::VT_LPWSTR;
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
+
+    let hwnd = match window.hwnd() {
+        Ok(h) => h,
+        Err(e) => return Some(format!("[tauri] no window handle for the app id: {}", e)),
+    };
+    // the store copies the string, so the buffer only has to outlive SetValue
+    let mut wide: Vec<u16> = identifier.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut value = PROPVARIANT::default();
+    let set = unsafe {
+        let inner = &mut *value.Anonymous.Anonymous;
+        inner.vt = VT_LPWSTR;
+        inner.Anonymous.pwszVal = PWSTR(wide.as_mut_ptr());
+        SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd)
+            .and_then(|store| store.SetValue(&PKEY_AppUserModel_ID, &value).and_then(|_| store.Commit()))
+    };
+    set.err().map(|e| format!("[tauri] setting the window's app id failed: {}", e))
 }
 
 // The bundle ships wsh version-named (e.g. wsh-0.14.5-windows.x64.exe), not a plain
@@ -334,8 +353,6 @@ fn main() {
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
     let cache_note = clear_webview_cache_at_launch(&context.config().identifier);
-    #[cfg(all(windows, not(debug_assertions)))]
-    set_app_user_model_id(&context.config().identifier);
     // WebView2 reads these env vars before the webview is created, so they must be set here in
     // main (before the Tauri builder), not in the setup hook. Dev-only: compiled out of packaged.
     #[cfg(debug_assertions)]
@@ -419,6 +436,10 @@ fn main() {
             if let Some(hwnd) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
                 use_resource_window_icons(hwnd.0 as isize);
             }
+            #[cfg(all(windows, not(debug_assertions)))]
+            let app_id_note = app
+                .get_webview_window(MAIN_WINDOW_LABEL)
+                .and_then(|w| set_window_app_user_model_id(&w, &app.config().identifier));
             macwindow::free_close_window_key();
             macwindow::watch_arrivals(app.handle());
             if let Some(w) = app.get_webview_window("main") {
@@ -452,6 +473,10 @@ fn main() {
             );
             applog::init(&paths::data_home_dirs(&data_base).0);
             if let Some(note) = &cache_note {
+                applog::log_line(note);
+            }
+            #[cfg(all(windows, not(debug_assertions)))]
+            if let Some(note) = &app_id_note {
                 applog::log_line(note);
             }
             if !scrubbed_env.is_empty() {
