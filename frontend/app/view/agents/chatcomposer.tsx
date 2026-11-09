@@ -4,13 +4,16 @@
 // The message box of the chat view (a Claude agent's cell in Chat, and its sleeping overlay): the board's rounded box
 // with the text on top and, under it, the attach button on the left and Stop and Send on the right. What it sends and
 // how a sleeping agent is woken is useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds
-// attachments (composerattachments.ts), Stop, and the look. Callers key it by agent id: its text and its attachments
-// are local to the box.
+// attachments (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your
+// bubble draws as a picture), the `@` file picker (filemention.tsx), Stop, and the look. Callers key it by agent id: its
+// text and its attachments are local to the box.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
+import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, type DragEvent } from "react";
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
@@ -18,12 +21,17 @@ import type { AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
 import { insertAt, registerChatInsert } from "./chatinsert";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
+import { useFileMention } from "./filemention";
+import { chatFilesRoot } from "./launchermention";
+import { projectsAtom } from "./projectsstore";
 
 // two lines, as the board's box; grows as the text wraps, then scrolls
 const ChatMinH = 38;
 const ChatMaxH = 200;
 
 const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
+
+const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
 
 let picking = false; // the native dialog takes a moment to appear; a second click must not open another
 
@@ -56,7 +64,7 @@ export function ChatComposer({
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
     const asleep = agent.sleeping != null;
-    const att = useComposerAttachments();
+    const att = useComposerAttachments({ keep: true });
     // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
     const { text, setText, canSend, waking, send } = useAgentSend(
         agent.blockId,
@@ -65,6 +73,17 @@ export function ChatComposer({
     );
     const taRef = useRef<HTMLTextAreaElement>(null);
     useGrowingTextarea(taRef, text, ChatMinH, ChatMaxH);
+    const block = useAtomValue(
+        agent.blockId ? WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", agent.blockId)) : NO_BLOCK
+    );
+    const projects = useAtomValue(projectsAtom);
+    const mention = useFileMention({
+        text,
+        setText,
+        filesRoot: chatFilesRoot(block?.meta?.["cmd:cwd"], agent.project, projects),
+        inputRef: taRef,
+        name: "chat",
+    });
     // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which a write to the
     // textarea's value would lose to the next render; the caret is put after it once the new text is drawn.
     const latest = useRef({ text, setText });
@@ -153,9 +172,18 @@ export function ChatComposer({
                 value={text}
                 readOnly={waking}
                 aria-label="Message"
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                    setText(e.target.value);
+                    mention.onCaret(e.target);
+                }}
+                onSelect={(e) => mention.onCaret(e.currentTarget)}
                 onPaste={asleep ? undefined : att.onPaste}
                 onKeyDown={(e) => {
+                    // the `@` picker's keys (↑↓, Enter and Tab to pick, Escape to close) come first
+                    mention.onKeyDown(e);
+                    if (e.defaultPrevented) {
+                        return;
+                    }
                     if (e.key === "Enter" && !e.shiftKey) {
                         // Enter that commits an IME composition (Telex, Pinyin…) is not a send
                         if (e.nativeEvent.isComposing) {
@@ -172,6 +200,7 @@ export function ChatComposer({
                 placeholder={placeholder}
                 className="block min-w-0 resize-none overflow-y-auto bg-transparent text-[13px] leading-[19px] text-primary outline-none placeholder:text-muted"
             />
+            {mention.list}
             <div className="flex items-center gap-1.5">
                 {asleep ? null : <AttachButton onClick={attach} />}
                 <div className="flex-1" />

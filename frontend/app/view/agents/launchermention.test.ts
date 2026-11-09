@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileMentionAt, fileMentionMatches, insertFileMention } from "./launchermention";
+import { chatFilesRoot, fileMentionAt, fileMentionMatches, insertFileMention } from "./launchermention";
 
 describe("fileMentionAt", () => {
     it("opens on a bare @ at the start", () => {
@@ -66,5 +66,22 @@ describe("insertFileMention", () => {
             text: "@src/foo.ts x",
             caret: 12,
         });
+    });
+});
+
+describe("chatFilesRoot", () => {
+    const registry = { arcterm: { path: "/w/arcterm" } };
+
+    it("lists the agent's own folder, a worktree included", () => {
+        expect(chatFilesRoot("/w/arcterm/.worktrees/x", "arcterm", registry)).toBe("/w/arcterm/.worktrees/x");
+    });
+
+    it("falls back to the project's folder with no cwd", () => {
+        expect(chatFilesRoot(undefined, "arcterm", registry)).toBe("/w/arcterm");
+    });
+
+    it("has no picker outside a registered project", () => {
+        expect(chatFilesRoot("/Users/me", undefined, registry)).toBe("");
+        expect(chatFilesRoot("/tmp/x", "scratch", registry)).toBe("");
     });
 });

@@ -4,8 +4,8 @@
 // A Claude agent's conversation as chat draws it (the agent-chat board, B-bubbles.dc.html): your messages as bubbles on
 // the right, a prompt arcterm typed (a run's launch prompt, a wake, a message from another agent) as an outlined card
 // naming who sent it, and everything the agent said and did between two of them behind one avatar: its prose as
-// Markdown, a stretch of tools as one "Worked for 38s · 5 tools" pill that opens to the tool lines, and the files that
-// work edited as a chip each that opens its diff. The items are chatmodel.ts's; the pieces shared with the other
+// Markdown in a bubble on the left, and outside the bubbles a stretch of tools as one plain "Worked for 38s · 5 tools"
+// line that opens to the tool lines, and the files that work edited as a chip each that opens its diff. The items are chatmodel.ts's; the pieces shared with the other
 // transcript views (a tool line, a diff, the compaction and interruption markers) are narrationtimeline.tsx's.
 // Only the last CHAT_RENDER_STEP items are drawn at first; "Show earlier" draws that many more and, once all are drawn,
 // asks the caller for earlier entries. The place the reader left it is kept under `placeId` (transcriptplace.ts).
@@ -118,8 +118,9 @@ function SentCard({ item }: { item: Extract<ChatItem, { kind: "sent" }> }) {
     );
 }
 
-// "Worked for 38s · 5 tools ›": a stretch of tools as one pill, opening to its tool lines. A live session's last one is
-// open while the agent works, drawn plain so it never strobes (burstRenderMode)
+// "› Worked for 38s · 5 tools": a stretch of tools as one plain line between the agent's bubbles, opening to its tool
+// lines, which open in place (never the full-view modal, which is their button). A live session's last one is open
+// while the agent works, drawn plain so it never strobes (burstRenderMode)
 function WorkPill({
     work,
     open,
@@ -133,7 +134,7 @@ function WorkPill({
 }) {
     const mode = burstRenderMode({ userOpened: open, autoOpen });
     const shown = mode !== "collapsed";
-    const lines = work.actions.map((action, k) => <ToolLine key={work.startIndex + k} action={action} />);
+    const lines = work.actions.map((action, k) => <ToolLine key={work.startIndex + k} action={action} inline />);
     return (
         <div data-chat-work className="flex flex-col">
             <button
@@ -141,7 +142,7 @@ function WorkPill({
                 data-fold
                 aria-expanded={shown}
                 onClick={onToggle}
-                className="flex cursor-pointer items-center gap-[6px] self-start rounded-full bg-surface-hover px-[10px] py-[3px] text-[12px] text-muted hover:text-secondary"
+                className="flex cursor-pointer items-center gap-[6px] self-start py-[2px] text-[12px] text-muted hover:text-secondary"
             >
                 <Caret open={shown} />
                 <span>
@@ -422,10 +423,16 @@ export function ChatConversation({
     ): ReactNode => {
         const key = `${item.key}#${p}`;
         switch (part.kind) {
+            // what the agent said: a bubble on the left, as yours is on the right; its tools and files sit outside it
             case "prose":
                 return (
-                    <div key={key} data-chat-prose onContextMenu={copyMenu(part.text)}>
-                        <CouncilText text={part.text} className="text-[13px] leading-[1.6] text-secondary" />
+                    <div
+                        key={key}
+                        data-chat-prose
+                        onContextMenu={copyMenu(part.text)}
+                        className="min-w-0 max-w-full self-start rounded-lg bg-surface-raised px-[14px] py-[9px]"
+                    >
+                        <CouncilText text={part.text} className="text-[13px] leading-[1.6] text-primary" />
                     </div>
                 );
             case "work":

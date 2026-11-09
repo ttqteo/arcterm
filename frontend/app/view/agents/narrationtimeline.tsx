@@ -311,11 +311,13 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
 // A single tool action row. Clickable when it carries detail: short detail expands inline, detail
 // past the per-kind budget opens the viewport modal. The bare-line look is preserved when detail
 // is absent (e.g. Codex actions, or Claude tools with no captured body).
-export function ToolLine({ action }: { action: AgentActionEntry }) {
+// `inline` (chat): a long detail opens in place too, in a taller scroll box, and the full view is its button only
+export function ToolLine({ action, inline }: { action: AgentActionEntry; inline?: boolean }) {
     const [open, setOpen] = useState(false);
     const ok = action.outcome !== "fail";
     const detail = action.detail;
-    const toModal = detail ? detailExceedsInline(detail) : false;
+    const long = detail ? detailExceedsInline(detail) : false;
+    const toModal = long && !inline;
     const onClick = () => {
         if (!detail) {
             return;
@@ -360,7 +362,7 @@ export function ToolLine({ action }: { action: AgentActionEntry }) {
                         exit="exit"
                         className={DETAIL_PANEL}
                     >
-                        <div className="max-h-[200px] overflow-auto">
+                        <div className={cn(long ? "max-h-[320px]" : "max-h-[200px]", "overflow-auto")}>
                             <ToolDetailBody detail={detail} variant="inline" />
                         </div>
                         <div className="flex items-center gap-2 border-t border-edge-faint px-1.5 py-[3px]">

@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The `@` file picker of the New launcher's Task box: where an `@` being typed sits, which of the project's files it
-// lists, and the task text once one is picked, `@<path>` relative to the project as Claude Code reads it. Pure; the
-// file list is codestore.ts's (the one Code and the palette's Files scope read), its ranking codefinder.ts's.
+// The `@` file picker of the New launcher's Task box and the chat box (filemention.tsx): where an `@` being typed sits,
+// which of the project's files it lists, and the text once one is picked, `@<path>` relative to the project as Claude
+// Code reads it. Pure; the file list is codestore.ts's (the one Code and the palette's Files scope read), its ranking
+// codefinder.ts's.
 
 import { rankPaths } from "@/app/view/code/codefinder";
 
@@ -50,4 +51,19 @@ export function insertFileMention(
         text: text.slice(0, start) + (rest.startsWith(" ") ? mention : `${mention} `) + rest,
         caret: start + mention.length + 1,
     };
+}
+
+/** Pure: the folder whose files a chat box's `@` lists: the agent's own folder (its block's `cmd:cwd`, a run worker's
+ *  worktree included), but only for an agent of a registered project, so one started in Home (too big to walk) or in a
+ *  stray folder gets no picker (""). With no cwd, the project's own folder. */
+export function chatFilesRoot(
+    cwd: string | undefined,
+    project: string | undefined,
+    registry: Record<string, { path?: string }>
+): string {
+    const projectPath = (project && registry[project]?.path) || "";
+    if (projectPath === "") {
+        return "";
+    }
+    return cwd || projectPath;
 }

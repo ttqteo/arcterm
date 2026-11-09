@@ -9,8 +9,10 @@ import {
     classifyKind,
     isOversize,
     MAX_ATTACHMENT_BYTES,
+    messageWithAttachments,
     type Attachment,
 } from "./composerattachments";
+import { splitAttachedImages } from "./launcherimages";
 
 function att(over: Partial<Attachment>): Attachment {
     return { id: "1", name: "f", kind: "file", status: "ready", size: 1, path: "/tmp/f", ...over };
@@ -41,6 +43,33 @@ describe("appendAttachments", () => {
     it("returns just the block when the base text is blank", () => {
         expect(appendAttachments("   ", [att({ path: "C:\\a\\x.png" })])).toBe(
             "Attachments (read these files):\n- C:\\a\\x.png"
+        );
+    });
+});
+
+describe("messageWithAttachments", () => {
+    it("returns the text alone when nothing is ready", () => {
+        expect(messageWithAttachments("hi", [att({ status: "uploading", path: undefined })])).toBe("hi");
+    });
+    it("puts images last as the Attached images block, which a bubble reads back as pictures", () => {
+        const out = messageWithAttachments("look", [
+            att({ id: "1", kind: "image", path: "/a/shot.png" }),
+            att({ id: "2", path: "/a/err.log" }),
+        ]);
+        expect(out).toBe("look\n\nAttachments (read these files):\n- /a/err.log\n\nAttached images:\n- /a/shot.png");
+        expect(splitAttachedImages(out)).toEqual({
+            text: "look\n\nAttachments (read these files):\n- /a/err.log",
+            paths: ["/a/shot.png"],
+        });
+    });
+    it("sends images alone as just their block", () => {
+        expect(messageWithAttachments("", [att({ kind: "image", path: "/a/x.png" })])).toBe(
+            "Attached images:\n- /a/x.png"
+        );
+    });
+    it("keeps files that are not images in the read-these-files block", () => {
+        expect(messageWithAttachments("fix", [att({ path: "/a/err.log" })])).toBe(
+            "fix\n\nAttachments (read these files):\n- /a/err.log"
         );
     });
 });

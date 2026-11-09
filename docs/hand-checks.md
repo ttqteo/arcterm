@@ -1849,7 +1849,12 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   to the prompt; closing the float note or the translate panel gives the keyboard back to the box. The `agent-chat`
   scenario drives the bubbles, the box, the flips, the split, the Alt-drop and the float note on fixture agents over a
   transcript file; a real session's stream and the translate panel's close are what is left to try here
-  (`chatpane.tsx`, `agentsurface.tsx`, `cellinput.ts`).
+  (`chatpane.tsx`, `agentsurface.tsx`, `cellinput.ts`). Claude's replies are bubbles on the left and its "Worked for …"
+  line sits outside them, plain; a long tool output opens in place under its line, not in a dialog. Paste a screenshot
+  into the box (and on Windows, one WebView2 hands over empty): a thumbnail shows, and once sent your bubble shows the
+  picture, from a file under `~/.arc/attachments`. Type `@` in an agent of a registered project: its files list under
+  the box, Enter or Tab picks one as `@<path>`, Escape closes the list and leaves the box focused (`chatcomposer.tsx`,
+  `filemention.tsx`).
 - [ ] (arcterm) **Permission prompt in Chat.** In a real Claude session that is not on bypass permissions, ask for
   something that needs a prompt (a Bash command such as `echo hi > x.txt`): the chat shows the card with the command,
   Allow and Deny. Allow runs the command; Deny stops the turn. Answering the same prompt in the terminal instead (flip

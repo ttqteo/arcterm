@@ -7,7 +7,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
-import { appendAttachments, type Attachment } from "./composerattachments";
+import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
@@ -76,7 +76,8 @@ export interface AgentSend {
 // the box until then (and for good when the wake fails). A sleeping agent's text is its wake draft (wakingstore), so
 // it outlives the box: picking another agent mid-wake and coming back still shows what is being sent.
 // The one send path of both composers (this file's and chatcomposer.tsx's): `attachments`, when given, ride the message
-// as the "read these files" block (appendAttachments), and alone they make a message.
+// (messageWithAttachments: images as the "Attached images:" block chat draws as pictures, other files as the "read
+// these files" block), and alone they make a message.
 export function useAgentSend(
     blockId: string | undefined,
     agent: AgentSendTarget | undefined,
@@ -90,7 +91,7 @@ export function useAgentSend(
     const [sending, setSending] = useState(false);
     // a wake started anywhere else (the card's Wake, a row's menu) holds the box too: a message now would be a second wake
     const waking = useWaking(agent?.id) || sending;
-    const message = appendAttachments(text.trim(), attachments ?? []);
+    const message = messageWithAttachments(text.trim(), attachments ?? []);
     const canSend = canSendComposer(message, blockId) && !waking;
     const send = (): boolean => {
         if (!canSend) {

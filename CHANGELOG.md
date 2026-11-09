@@ -26,7 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- A Claude agent's cell opens in Chat: its conversation as bubbles with a message box under it (Stop and attachments included), an Allow / Deny card when Claude Code asks for permission, and the choices of a question it asks as buttons. The real terminal is one flip away, in the header's Chat / Terminal switch or with Ctrl+Shift+K (Cmd+Shift+K on a Mac); a split's cells each have their own switch. <!-- big -->
+- A Claude agent's cell opens in Chat: its conversation as bubbles with a message box under it (Stop, attachments, pasted images that show in your message, and `@` for a project file included), an Allow / Deny card when Claude Code asks for permission, and the choices of a question it asks as buttons. The real terminal is one flip away, in the header's Chat / Terminal switch or with Ctrl+Shift+K (Cmd+Shift+K on a Mac); a split's cells each have their own switch. <!-- big -->
 - In an agent's Files tab, drag files or folders onto a folder of the tree to move them there; pins and open file tabs
   follow. Dragging onto a terminal still types the paths.
 - A session's menu in History has Copy session id, beside Copy title and Copy transcript path.

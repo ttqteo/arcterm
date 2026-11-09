@@ -1,16 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Attachments on the New run goal: a pasted file is persisted to a wavesrv temp file via WriteTempFileCommand,
-// a file picked in the native dialog is referenced where it is, and either reaches the run as a path in its
-// goal text. Pure helpers below are unit-tested (composerattachments.test.ts); the useComposerAttachments hook
-// (impure: RPC + object URLs) is verified over CDP by the new-run-attachments scenario.
+// Attachments on the New run goal and the chat box: a pasted file is persisted to a wavesrv temp file via
+// WriteTempFileCommand, a file picked in the native dialog is referenced where it is, and either reaches the run or the
+// agent as a path in its text. Pure helpers below are unit-tested (composerattachments.test.ts); the
+// useComposerAttachments hook (impure: RPC + object URLs) is verified over CDP by the new-run-attachments scenario.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { extractClipboardData, MIME_TO_EXT } from "@/app/view/term/termutil";
 import { fireAndForget } from "@/util/util";
 import base64 from "base64-js";
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "react";
+import { composeTaskWithImages } from "./launcherimages";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB; base64 inflates ~33%, bounding the RPC payload
 
@@ -55,6 +57,19 @@ export function appendAttachments(text: string, atts: Attachment[]): string {
     return text.trim() ? `${text}\n\n${block}` : block;
 }
 
+// A message to an agent with its attachments: other files as the "read these files" block (appendAttachments), and
+// images last as the "Attached images:" block a launch's task carries (composeTaskWithImages), which chat draws as
+// pictures in your bubble (splitAttachedImages reads it back only as the message's last lines). Ready ones only.
+export function messageWithAttachments(text: string, atts: Attachment[]): string {
+    const ready = atts.filter((a) => a.status === "ready" && a.path);
+    const images = ready.filter((a) => a.kind === "image").map((a) => a.path);
+    const withFiles = appendAttachments(
+        text,
+        ready.filter((a) => a.kind !== "image")
+    );
+    return composeTaskWithImages("claude", withFiles, images, false).task;
+}
+
 // Picked files are referenced in place, so they are ready at once and carry no size cap. A path already
 // attached is skipped, and so is a repeat within the same pick.
 export function attachmentsFromPaths(paths: string[], existing: Attachment[]): Attachment[] {
@@ -96,8 +111,10 @@ export interface UseComposerAttachments {
     onPaste: (e: ClipboardEvent) => void;
 }
 
-// Owns attachment state and its two sources: paste (a temp copy) and picked paths (referenced in place).
-export function useComposerAttachments(): UseComposerAttachments {
+// Owns attachment state and its two sources: paste (a temp copy) and picked paths (referenced in place). `keep` writes
+// the copies under ~/.arc/attachments, which no temp sweep removes: a chat message names the file, and its bubble shows
+// the picture from there long after a sweep would have taken it.
+export function useComposerAttachments({ keep }: { keep?: boolean } = {}): UseComposerAttachments {
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const filesRef = useRef<Map<string, File>>(new Map()); // retained for retry(); not part of the serializable chip
     const previewsRef = useRef<Set<string>>(new Set()); // outstanding object URLs to revoke
@@ -111,13 +128,17 @@ export function useComposerAttachments(): UseComposerAttachments {
             try {
                 const buf = await file.arrayBuffer();
                 const data64 = base64.fromByteArray(new Uint8Array(buf));
-                const path = await RpcApi.WriteTempFileCommand(TabRpcClient, { filename: file.name, data64 });
+                const path = await RpcApi.WriteTempFileCommand(TabRpcClient, {
+                    filename: file.name,
+                    data64,
+                    keep: keep || undefined,
+                });
                 update(id, { status: "ready", path });
             } catch (e) {
                 update(id, { status: "error", error: `Could not save ${file.name}: ${String(e)}` });
             }
         },
-        [update]
+        [update, keep]
     );
 
     const add = useCallback(
@@ -187,14 +208,27 @@ export function useComposerAttachments(): UseComposerAttachments {
         []
     );
 
-    // only intercept when the clipboard carries files; plain text paste is left untouched.
+    // only intercept when the clipboard carries files; plain text paste is left untouched. WebView2 can hand over a
+    // pasted image with no bytes (termutil's extractDataTransferItems): such a paste reads its images again from the
+    // Clipboard API, as the terminal's paste does
     const onPaste = useCallback(
         (e: ClipboardEvent) => {
             const files = filesFromClipboard(e);
-            if (files.length > 0) {
-                e.preventDefault();
-                add(files);
+            if (files.length === 0) {
+                return;
             }
+            e.preventDefault();
+            const full = files.filter((f) => f.size > 0);
+            if (full.length > 0) {
+                add(full);
+                return;
+            }
+            fireAndForget(async () => {
+                const images = await clipboardImages();
+                if (images.length > 0) {
+                    add(images);
+                }
+            });
         },
         [add]
     );
@@ -215,4 +249,22 @@ function filesFromClipboard(e: ClipboardEvent): File[] {
         .filter((i) => i.kind === "file")
         .map((i) => i.getAsFile())
         .filter((f): f is File => f != null);
+}
+
+// the clipboard's images read through the Clipboard API, named as a paste of the browser's own would be
+async function clipboardImages(): Promise<File[]> {
+    try {
+        const out: File[] = [];
+        for (const item of await navigator.clipboard.read()) {
+            const data = await extractClipboardData(item);
+            if (data?.image != null && data.image.size > 0) {
+                const ext = MIME_TO_EXT[data.image.type] ?? "png";
+                out.push(new File([data.image], `image.${ext}`, { type: data.image.type }));
+            }
+        }
+        return out;
+    } catch (err) {
+        console.error("composer: clipboard read failed", err);
+        return [];
+    }
 }
