@@ -3,16 +3,18 @@
 //
 // A done task's worker in the Agent surface's center: its session has ended, so it is read back as narration
 // from the transcript its session wrote, the way a subagent's is. The transcript is found by the session id
-// the engine launched the worker under, so it still reads after the worker's tab is gone.
+// the engine launched the worker under, so it still reads after the worker's tab is gone. A Claude worker's draws as
+// chat does (chatconversation.tsx), the bubbles its live cell showed; another harness's keeps the compact look.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { ChatConversation } from "./chatconversation";
+import { CompactTranscript } from "./compacttranscript";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { entriesAtomFor } from "./livetranscriptatoms";
-import { CompactTranscript } from "./compacttranscript";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { railVisibleAtom } from "./railstore";
 import { leadAgentOf } from "./runlineage";
@@ -57,6 +59,7 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
         return () => stopTranscriptStream(agent.id);
     }, [agent.id, agent.transcriptPath, agent.agent]);
 
+    const chat = (agent.agent || "claude").toLowerCase() === "claude";
     const missing = childRunId == null || paths[childRunId] === "";
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -79,7 +82,11 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
                 <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] pb-[12px]">
                     {entries.length > 0 ? (
                         <AgentPathLinks agent={agent}>
-                            <CompactTranscript entries={entries} active={false} placeId={placeId} />
+                            {chat ? (
+                                <ChatConversation entries={entries} placeId={placeId} />
+                            ) : (
+                                <CompactTranscript entries={entries} active={false} placeId={placeId} />
+                            )}
                         </AgentPathLinks>
                     ) : missing ? (
                         <div className="flex h-full items-center justify-center text-[12px] text-muted">

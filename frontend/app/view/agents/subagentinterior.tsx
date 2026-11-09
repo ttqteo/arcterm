@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The subagent interior: a child's transcript rendered as narration in the focused view's center pane,
+// The subagent interior: a child's transcript drawn as chat (a subagent is Claude's) in the focused view's center pane,
 // swapped in over the (kept-mounted) parent terminal. Tails the child's own transcript file via the
 // shared livetranscript stream (keyed sub:<agentId>); breadcrumb / Esc returns to the parent.
 
@@ -10,8 +10,8 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { useAtomValue } from "jotai";
 import { motion } from "motion/react";
 import { useEffect } from "react";
+import { ChatConversation } from "./chatconversation";
 import { liveEntriesByIdAtom, startTranscriptStream, stopTranscriptStream } from "./livetranscript";
-import { NarrationTimeline } from "./narrationtimeline";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { focusSubagentAtom, type FocusSubagent } from "./subagentsstore";
 import { TranscriptSkeleton } from "./transcriptskeleton";
@@ -28,7 +28,7 @@ export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; pare
     const back = () => globalStore.set(focusSubagentAtom, null);
 
     const entries = useAtomValue(liveEntriesByIdAtom)[streamId] ?? [];
-    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries);
+    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, streamId);
     return (
         <motion.div
             className="flex min-h-0 flex-1 flex-col"
@@ -37,16 +37,21 @@ export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; pare
             transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
         >
             <div className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-2 text-[11px]">
-                <button type="button" onClick={back} title="Back to parent (Esc)" className="cursor-pointer text-muted hover:text-primary">
+                <button
+                    type="button"
+                    onClick={back}
+                    title="Back to parent (Esc)"
+                    className="cursor-pointer text-muted hover:text-primary"
+                >
                     ◂ {parentName}
                 </button>
                 <span className="text-edge-strong">›</span>
                 <span className="text-accent">{sub.label}</span>
             </div>
             <div className="relative min-h-0 flex-1">
-                <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-3 py-2">
+                <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] pb-[12px]">
                     {entries.length > 0 ? (
-                        <NarrationTimeline entries={entries} accentLatest active />
+                        <ChatConversation entries={entries} placeId={streamId} active />
                     ) : (
                         <TranscriptSkeleton />
                     )}
