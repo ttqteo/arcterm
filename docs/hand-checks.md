@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Task Manager grouping (Windows, packaged build): open Task Manager → Processes → one "arcterm (N)"
+  entry holds wavesrv.x64.exe, every Claude Code / shell an agent runs and the WebView2 processes, none as its own row;
+  arcterm still has one taskbar button, merged with its pin, and an agent toast still reads "arcterm". The main window
+  now carries the app id instead of the process (`set_window_app_user_model_id`, `src-tauri/src/main.rs`); release-only
+  code, typechecked, the mechanism tried in a PowerShell test window, never in a built arcterm.
 - [ ] (arcterm) Agent header Float button: an agent's header shows a picture-in-picture button left of Fullscreen; click
   it → the agent floats and the button reads pressed (accent); click again → it leaves float. The … menu no longer lists
   Float window.

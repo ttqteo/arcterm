@@ -48,6 +48,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   or turns fullscreen off altogether.
 - On a Mac, new terminals and agents no longer fail to start with "too many open files" after a while with several
   agents open: following an agent's transcript no longer holds open every other session file of its project.
+- On Windows, Task Manager shows your agents, their shells, the backend and the WebView under the one arcterm entry
+  instead of as separate rows, so you can see at a glance how much memory arcterm and its agents take.
 
 ## 1.0.5 — 2026-11-06
 

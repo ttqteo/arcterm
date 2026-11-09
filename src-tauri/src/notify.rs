@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 pub const ACTIVATED_EVENT: &str = "os-notify-activated";
 
 /// The AppUserModelID a toast is shown under. A release build registers the bundle identifier (main.rs
-/// set_app_user_model_id, and the installer's shortcut); a dev build has none registered, and Windows drops a toast
+/// set_window_app_user_model_id, and the installer's shortcut); a dev build has none registered, and Windows drops a toast
 /// from an unregistered id, so it borrows PowerShell's and the toast reads "Windows PowerShell".
 #[cfg(windows)]
 fn app_id(is_dev: bool, identifier: &str) -> String {
