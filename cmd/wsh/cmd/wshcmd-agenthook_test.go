@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 )
@@ -59,6 +60,83 @@ func TestPlanEmission(t *testing.T) {
 				t.Fatalf("attachModelTitle = %v, want %v", em.AttachModelTitle, tt.wantMT)
 			}
 		})
+	}
+}
+
+func TestPlanEmissionPermissionRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		ev         ccHookEvent
+		wantDetail string
+	}{
+		{"bash", ccHookEvent{HookEventName: "PermissionRequest", ToolName: "Bash", ToolInput: json.RawMessage(`{"command":"go test ./..."}`)}, "running go test ./..."},
+		{"edit", ccHookEvent{HookEventName: "PermissionRequest", ToolName: "Edit", ToolInput: json.RawMessage(`{"file_path":"/a/b/foo.go"}`)}, "editing foo.go"},
+		{"plan", ccHookEvent{HookEventName: "PermissionRequest", ToolName: "ExitPlanMode", ToolInput: json.RawMessage(`{"plan":"x"}`)}, "ExitPlanMode"},
+		{"no payload", ccHookEvent{HookEventName: "PermissionRequest"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := planEmission(tt.ev)
+			if em.State != baseds.AgentState_Waiting {
+				t.Fatalf("state = %q, want waiting", em.State)
+			}
+			if em.Detail != tt.wantDetail {
+				t.Fatalf("detail = %q, want %q", em.Detail, tt.wantDetail)
+			}
+			if em.AttachModelTitle {
+				t.Fatal("a permission report must not re-read the transcript for the model and title")
+			}
+		})
+	}
+}
+
+func TestPermissionRaiseFor(t *testing.T) {
+	ev := ccHookEvent{HookEventName: "PermissionRequest", ToolName: "Bash", ToolInput: json.RawMessage(`{"command":"ls"}`)}
+	got, ok := permissionRaiseFor(ev, "claude", "", "block:abc")
+	if !ok || got.ORef != "block:abc" || got.ToolName != "Bash" || string(got.ToolInput) != `{"command":"ls"}` {
+		t.Fatalf("raise = %+v, %v; want the oref, tool and raw input", got, ok)
+	}
+	for name, c := range map[string]struct {
+		ev            ccHookEvent
+		agent, shadow string
+	}{
+		"another event":       {ccHookEvent{HookEventName: "Notification", ToolName: "Bash"}, "claude", ""},
+		"no tool name":        {ccHookEvent{HookEventName: "PermissionRequest"}, "claude", ""},
+		"not the claude path": {ev, "opencode", ""},
+		"a shadow report":     {ev, "claude", "/x/shadow.json"},
+	} {
+		if _, ok := permissionRaiseFor(c.ev, c.agent, c.shadow, "block:abc"); ok {
+			t.Errorf("%s: raised a request", name)
+		}
+	}
+}
+
+func TestToolKeyFor(t *testing.T) {
+	input := json.RawMessage(`{"command":"ls","description":"list"}`)
+	post := ccHookEvent{HookEventName: "PostToolUse", ToolName: "Bash", ToolInput: input}
+	want := agentperm.ToolKey("Bash", input)
+	if got := toolKeyFor(post, "claude", ""); got != want {
+		t.Fatalf("PostToolUse key = %q, want agentperm.ToolKey = %q", got, want)
+	}
+	// the raise and the report must agree on a reordered input: they are the same call
+	reordered := post
+	reordered.ToolInput = json.RawMessage(`{"description":"list","command":"ls"}`)
+	if toolKeyFor(reordered, "claude", "") != want {
+		t.Fatal("key order changed the key")
+	}
+	for name, c := range map[string]struct {
+		ev            ccHookEvent
+		agent, shadow string
+	}{
+		"pre tool":            {ccHookEvent{HookEventName: "PreToolUse", ToolName: "Bash", ToolInput: input}, "claude", ""},
+		"stop":                {ccHookEvent{HookEventName: "Stop"}, "claude", ""},
+		"no tool name":        {ccHookEvent{HookEventName: "PostToolUse"}, "claude", ""},
+		"not the claude path": {post, "opencode", ""},
+		"a shadow report":     {post, "claude", "/x/shadow.json"},
+	} {
+		if got := toolKeyFor(c.ev, c.agent, c.shadow); got != "" {
+			t.Errorf("%s: key = %q, want none", name, got)
+		}
 	}
 }
 

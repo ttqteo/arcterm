@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -86,5 +87,68 @@ func TestBlockInputAnswersAPermissionPrompt(t *testing.T) {
 	noteBlockInput(ctx, block, []byte("\r"))
 	if got := retained(); got.State != baseds.AgentState_Working || got.Title != "Docker" {
 		t.Fatalf("after the answer: %+v, want working with its title", got)
+	}
+}
+
+// a key typed in the terminal settles the permission queue; the status report is independent of it
+func TestNoteBlockInputClearsPermission(t *testing.T) {
+	ctx := context.Background()
+	f := newPermFixture(t)
+	queue := func() []string {
+		var out []string
+		for _, r := range agentperm.GlobalRegistry.Snapshot(f.oref) {
+			out = append(out, r.Summary)
+		}
+		return out
+	}
+	published := func() int { return len(f.published()) }
+	raise := func(summary string) { f.raise("Bash", `{"command":"`+summary+`"}`) }
+
+	raise("one")
+	raise("two")
+	raise("three")
+	before := published()
+
+	// an arrow, text or a focus report answers nothing and publishes nothing
+	for _, in := range []string{"\x1b[B", "a", "ls\r", "\x1b[I"} {
+		noteBlockInput(ctx, permBlock, []byte(in))
+	}
+	if got := queue(); len(got) != 3 || published() != before {
+		t.Fatalf("keys that answer nothing changed the queue to %v (published %d -> %d)", got, before, published())
+	}
+
+	// a digit or Enter answers the prompt on screen: the head goes, one snapshot is published
+	noteBlockInput(ctx, permBlock, []byte("1"))
+	if got := queue(); len(got) != 2 || got[0] != "two" || published() != before+1 {
+		t.Fatalf("after 1 the queue is %v (published %d -> %d), want two and three", got, before, published())
+	}
+	noteBlockInput(ctx, permBlock, []byte("\r"))
+	if got := queue(); len(got) != 1 || got[0] != "three" {
+		t.Fatalf("after Enter the queue is %v, want three", got)
+	}
+
+	// Esc is no answering key for the status report, but it rejects the request: all of them go
+	raise("four")
+	noteBlockInput(ctx, permBlock, []byte("\x1b"))
+	if got := queue(); len(got) != 0 {
+		t.Fatalf("after Esc the queue is %v, want empty", got)
+	}
+	// nothing left: another key publishes nothing
+	after := published()
+	noteBlockInput(ctx, permBlock, []byte("1"))
+	noteBlockInput(ctx, permBlock, []byte("\x1b"))
+	if published() != after {
+		t.Fatal("keys on an empty queue published a snapshot")
+	}
+	if got := f.typedKeys(); len(got) != 0 {
+		t.Fatalf("noting the terminal's keys typed %q back into it", got)
+	}
+}
+
+func TestAnsweredStatusDropsTheToolKey(t *testing.T) {
+	last := baseds.AgentStatusData{ORef: "block:x", State: baseds.AgentState_Waiting, ToolKey: "Bash:abc", Ts: 100}
+	next, ok := answeredStatus(last, 200)
+	if !ok || next.ToolKey != "" {
+		t.Fatalf("answered = %+v, %v: a copied tool key would retire a request a second time", next, ok)
 	}
 }

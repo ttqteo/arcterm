@@ -42,16 +42,31 @@ func answeredStatus(last baseds.AgentStatusData, now int64) (baseds.AgentStatusD
 	next.Committed = false
 	next.Edited = false
 	next.Usage = nil
+	// a tool key belongs to the one PostToolUse report that carried it; a copy would retire a permission request again
+	next.ToolKey = ""
 	next.Ts = now
 	return next, true
 }
 
-// noteBlockInput reports working for a waiting agent whose terminal just took a key that answers its prompt.
+// noteBlockInput applies a key typed into a block's terminal: it settles the block's pending permission requests,
+// and reports working for a waiting agent whose terminal took a key that answers its prompt.
 func noteBlockInput(ctx context.Context, blockId string, input []byte) {
-	if blockId == "" || !answersPrompt(input) {
+	if blockId == "" {
 		return
 	}
 	oref := waveobj.MakeORef(waveobj.OType_Block, blockId).String()
+	// before the answersPrompt gate: Esc answers no prompt, but it rejects a permission request
+	notePermissionKey(oref, input)
+	if !answersPrompt(input) {
+		return
+	}
+	reportPromptAnswered(ctx, oref)
+}
+
+// reportPromptAnswered publishes working for oref's agent if its last status is waiting: its prompt was just
+// answered, and no hook fires until the tool it granted ends. The chat's Allow reports through here as well, since
+// it types its key without going through noteBlockInput.
+func reportPromptAnswered(ctx context.Context, oref string) {
 	for _, prev := range wps.Broker.ReadEventHistory(wps.Event_AgentStatus, oref, 1) {
 		var last baseds.AgentStatusData
 		if utilfn.ReUnmarshal(&last, prev.Data) != nil {

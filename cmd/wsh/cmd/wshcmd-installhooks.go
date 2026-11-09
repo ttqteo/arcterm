@@ -33,9 +33,10 @@ type managedHook struct {
 	Matcher string // "" => no matcher key (matches all)
 	Args    string // wsh subcommand + flags, e.g. "agent-hook", "ask", "ask --clear"
 	Timeout int
-	// Async runs the hook in the background, so claude does not wait for it. Only the two reports that
-	// fire on every tool call take it: the rest fire once a turn, and a headless claude kills an async
-	// hook still running at teardown, which would lose a Stop.
+	// Async runs the hook in the background, so claude does not wait for it. The two reports that fire on every
+	// tool call take it, and so does the permission report: a PermissionRequest hook may decide the prompt, and this
+	// one only reports it, so claude must not wait on it before it shows the prompt. The rest fire once a turn, and
+	// a headless claude kills an async hook still running at teardown, which would lose a Stop.
 	Async bool
 }
 
@@ -51,6 +52,8 @@ var managedHooks = []managedHook{
 	// synchronous: its output is the turn's added context, which a background hook's never reaches
 	{Event: "PostToolUse", Matcher: "Skill", Args: "agent-hook --skill-context", Timeout: 10},
 	{Event: "Notification", Args: "agent-hook", Timeout: 10},
+	// the permission prompt, with its tool and input: waiting, and a request for the chat view's Allow / Deny card
+	{Event: "PermissionRequest", Args: "agent-hook", Timeout: 10, Async: true},
 	{Event: "Stop", Args: "agent-hook", Timeout: 10},
 	{Event: "SubagentStop", Args: "agent-hook", Timeout: 10},
 	{Event: "UserPromptSubmit", Args: "agent-hook", Timeout: 10},

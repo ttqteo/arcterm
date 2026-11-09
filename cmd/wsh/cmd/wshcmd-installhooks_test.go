@@ -759,6 +759,40 @@ func TestMergeKeepsForeignHooksUnderUnmanagedEvents(t *testing.T) {
 	}
 }
 
+// the permission report only reports the prompt (it decides nothing), so it runs in the background
+func TestManagedHooksPermissionRequestAsync(t *testing.T) {
+	var found []managedHook
+	for _, mh := range managedHooks {
+		if mh.Event == "PermissionRequest" {
+			found = append(found, mh)
+		}
+	}
+	want := managedHook{Event: "PermissionRequest", Args: "agent-hook", Timeout: 10, Async: true}
+	if len(found) != 1 || found[0] != want {
+		t.Fatalf("PermissionRequest hooks = %+v, want exactly %+v", found, want)
+	}
+	if !managedHookAsync("PermissionRequest", "", "agent-hook") {
+		t.Fatal("managedHookAsync does not report the PermissionRequest hook as async")
+	}
+	merged := mergeAgentHooks(map[string]any{}, testWsh)
+	groups, _ := merged["hooks"].(map[string]any)["PermissionRequest"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("PermissionRequest groups written = %d, want 1", len(groups))
+	}
+	hook := groups[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if async, _ := hook["async"].(bool); !async {
+		t.Fatalf("the written PermissionRequest hook is not async: %v", hook)
+	}
+	if !strings.HasSuffix(hook["command"].(string), " agent-hook") {
+		t.Fatalf("the written PermissionRequest command = %v", hook["command"])
+	}
+	// and a second merge does not stack a copy
+	again := mergeAgentHooks(merged, testWsh)
+	if n := len(again["hooks"].(map[string]any)["PermissionRequest"].([]any)); n != 1 {
+		t.Fatalf("PermissionRequest groups after two merges = %d, want 1", n)
+	}
+}
+
 func TestCompactionHooksAreManaged(t *testing.T) {
 	skipUnlessWindows(t)
 	for _, want := range []managedHook{
@@ -1217,6 +1251,8 @@ func TestPerToolReportsRunInTheBackground(t *testing.T) {
 	}{
 		{"PreToolUse", "|agent-hook", true},
 		{"PostToolUse", "|agent-hook", true},
+		// the permission report decides nothing, so claude does not wait on it either
+		{"PermissionRequest", "|agent-hook", true},
 		// the ask hooks answer claude, and a headless claude kills a background Stop at teardown
 		{"PreToolUse", "AskUserQuestion|ask", false},
 		{"PostToolUse", "AskUserQuestion|ask --clear", false},
