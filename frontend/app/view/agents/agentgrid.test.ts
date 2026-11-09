@@ -12,6 +12,7 @@ import {
     gridFallbackFocus,
     gridHold,
     normalizeGrid,
+    onScreenGrid,
     parseGrid,
     placementFor,
     placementStyle,
@@ -486,6 +487,17 @@ describe("visibleCells", () => {
     });
 });
 
+describe("onScreenGrid", () => {
+    it("is the split while the focus is one of its cells, or no cell at all", () => {
+        expect(onScreenGrid(g(["a", "b"], "a"), "b", live("a", "b"))).toEqual(g(["a", "b"], "a"));
+        expect(onScreenGrid(g(["a", "b"], "a"), "ended", live("a", "b"))).toEqual(g(["a", "b"], "a"));
+        expect(onScreenGrid(g(["a", "b"], "a"), undefined, live("a", "b"))).toEqual(g(["a", "b"], "a"));
+    });
+    it("is the focused tab alone when it is a live tab outside the split", () => {
+        expect(onScreenGrid(g(["a", "b"], "a"), "c", live("a", "b", "c"))).toEqual(g(["c"], "c"));
+    });
+});
+
 describe("reconcileGrid", () => {
     it("leaves the saved grid alone until the roster has been read", () => {
         // the focus is live and not a cell, and a saved agent is missing: seeded or not, a rule would act on both
@@ -503,10 +515,23 @@ describe("reconcileGrid", () => {
             g(["a", "b"], "b")
         );
     });
-    it("replaces the focused cell with a focused agent that is not in the grid", () => {
+    it("keeps a split as it is when the focused agent is no cell of it (the agent shows alone)", () => {
         expect(
             reconcileGrid(g(["a", "b"], "a"), { focusId: "c", eligible: live("a", "b", "c"), seeded: true })
-        ).toEqual(g(["c", "b"], "c"));
+        ).toEqual(g(["a", "b"], "a"));
+    });
+    it("lets a grid of one cell follow the focused agent", () => {
+        expect(reconcileGrid(g(["a"], "a"), { focusId: "c", eligible: live("a", "c"), seeded: true })).toEqual(
+            g(["c"], "c")
+        );
+    });
+    it("still prunes a split it keeps aside, and a split pruned to one cell follows the focus again", () => {
+        expect(
+            reconcileGrid(g(["a", "b", "c"], "a"), { focusId: "d", eligible: live("a", "b", "d"), seeded: true })
+        ).toEqual(g(["a", "b"], "a"));
+        expect(reconcileGrid(g(["a", "b"], "a"), { focusId: "d", eligible: live("a", "d"), seeded: true })).toEqual(
+            g(["d"], "d")
+        );
     });
     it("ignores a focus that is not a live agent (a terminal, a done worker)", () => {
         expect(reconcileGrid(g(["a", "b"], "a"), { focusId: "term", eligible: live("a", "b"), seeded: true })).toEqual(

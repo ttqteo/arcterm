@@ -208,6 +208,32 @@ describe("removeFromGrid", () => {
     });
 });
 
+describe("a tab chosen outside the split", () => {
+    // a and b are the split; c, chosen from the sidebar, shows alone and the split is kept for when a or b comes back
+    it("is the grid on screen alone, and the saved split stays as it was", () => {
+        const m = model(["a", "b", "c"], "c");
+        globalStore.set(agentGridAtom, g(["a", "b"], "b"));
+        expect(currentGrid(m)).toEqual(g(["c"], "c"));
+        expect(isInSplit(m, "a")).toBe(true);
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b"], "b"));
+    });
+    it("opens a new split beside itself, which replaces the one kept aside", () => {
+        const m = model(["a", "b", "c", "d"], "c");
+        globalStore.set(agentGridAtom, g(["a", "b"], "b"));
+        expect(openInSplit(m, "d")).toBe(true);
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["c", "d"], "d"));
+    });
+    it("leaves End split and Remove from split acting on the split kept aside, not on what shows", () => {
+        const m = model(["a", "b", "c", "d"], "d");
+        globalStore.set(agentGridAtom, g(["a", "b", "c"], "b"));
+        removeFromSplit(m, "a");
+        expect(globalStore.get(agentGridAtom).ids).toEqual(["b", "c"]);
+        endSplitOf(m, "c");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["b"], "b"));
+        expect(globalStore.get(m.focusIdAtom)).toBe("d");
+    });
+});
+
 describe("openInSplit", () => {
     it("adds the agent beside the focused cell and focuses it", () => {
         const m = model(["a", "b"], "a");

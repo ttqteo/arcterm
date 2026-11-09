@@ -38308,22 +38308,29 @@ const agentGrid = {
             await fitStep("7b. the remaining terminals refit");
             await markStep("7c. C's terminal is hidden, not unmounted, and nothing remounted", ALL);
 
-            // 8. the focus rule from the tree
+            // 8. the focus rule from the tree: a row whose agent has no cell shows it alone, the split kept aside
             await click(gridRow(B));
             await settle();
             lay = await gridLayout(h);
+            rec("8. a row whose agent has no cell shows that agent alone, the split left as it was", order(lay) === want(B), lay);
+            const backToSplit = await click(gridCell(D));
+            await settle();
+            lay = await gridLayout(h);
             rec(
-                "8. a row whose agent has no cell replaces the focused cell",
-                order(lay) === want(D, B, A) && cellAt(lay, B).focused === true,
-                lay
+                "8b. D's cell in the split row brings the kept split back as it was, D focused",
+                backToSplit === true && order(lay) === want(D, E, A) && cellAt(lay, D).focused === true,
+                { backToSplit, lay }
             );
+            // B takes E's cell by a drop, so the steps below run on [D, B, A]
+            const d8 = await gridDrag(h, { source: gridRow(B), target: E, zone: "center" });
+            await settle();
             const clickedD = await click(gridCell(D));
             await settle();
             lay = await gridLayout(h);
             rec(
-                "8b. D's cell in the split row focuses that cell and leaves the list alone",
-                clickedD === true && order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
-                { clickedD, lay }
+                "8c. B dropped on E takes its cell, and D's cell in the split row focuses D and leaves the list alone",
+                gridDropOk(d8, "center") && clickedD === true && order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
+                { drag: d8, clickedD, lay }
             );
 
             // 9. fullscreen shows the focused cell alone and brings the grid back

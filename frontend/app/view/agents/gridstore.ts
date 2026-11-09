@@ -17,6 +17,7 @@ import {
     collapseToFocused,
     EMPTY_PROJECT_GRIDS,
     MAX_CELLS,
+    onScreenGrid,
     parseProjectGrids,
     reconcileProjectGrids,
     removeCell,
@@ -87,9 +88,11 @@ function currentGrids(model: GridModel): ProjectGrids {
     });
 }
 
-// The grid on screen as currentGrids has it.
+// The grid on screen: the shown project's grid as currentGrids has it, or the focused tab alone when it is no cell of
+// that project's split (onScreenGrid). A drop or Open in split from there starts a new grid, which replaces the split.
 export function currentGrid(model: GridModel): GridState {
-    return shownGrid(currentGrids(model));
+    const tabs = roster(model);
+    return onScreenGrid(shownGrid(currentGrids(model)), globalStore.get(model.focusIdAtom), eligibleIds(tabs));
 }
 
 // The grids the sidebar draws its split rows from, as the surface reconciles them: the docked terminal is no cell.
@@ -191,14 +194,15 @@ export function endSplit(model: GridModel): void {
 }
 
 // Remove from split, for a cell of any project's split (its row in the sidebar's split row, its menu): on the split on
-// screen it is removeFromGrid; on another project's it changes that grid only.
+// screen it is removeFromGrid; on one not on screen (another project's, or this project's while a tab outside it shows
+// alone) it changes that grid only.
 export function removeFromSplit(model: GridModel, id: string): void {
     const grids = currentGrids(model);
     const project = splitProject(grids, id);
     if (project == null) {
         return;
     }
-    if (project === grids.project) {
+    if (currentGrid(model).ids.includes(id)) {
         removeFromGrid(model, id);
         return;
     }
@@ -212,7 +216,7 @@ export function endSplitOf(model: GridModel, id: string): void {
     if (project == null) {
         return;
     }
-    if (project === grids.project) {
+    if (currentGrid(model).ids.includes(id)) {
         endSplit(model);
         return;
     }
