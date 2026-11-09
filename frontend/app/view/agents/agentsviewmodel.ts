@@ -61,6 +61,7 @@ export type AgentEntry =
           note?: string;
           summary?: string; // e.g. "14 matches", "80 lines", "24 passing"
           durationMs?: number; // tool_use → tool_result wall time, when timestamps present
+          startedAt?: number; // UnixMilli of the tool_use record, when it carried a timestamp: a tool in flight counts from it
           detail?: ActionDetail; // rich, expandable detail; absent = bare line
       };
 

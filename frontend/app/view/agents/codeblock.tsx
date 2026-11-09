@@ -1,8 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCopyFeedback, type CopyState } from "@/app/element/copyfeedback";
-import { CrossFade } from "@/app/element/crossfade";
+import { CopyButton } from "@/app/element/copybutton";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
@@ -15,7 +14,6 @@ const codeWrapAtom = atomWithStorage<boolean>("cockpit.codeblock.wrap", true);
 // Styled fenced-code block for transcript prose (Wave-transcript-feed.dc.html code block).
 // lang label + optional path + wrap/copy affordances + line-number gutter + tokenized source.
 export function CodeBlock({ code, lang, path }: { code: string; lang?: string; path?: string }) {
-    const { state, copy } = useCopyFeedback();
     const [wrap, setWrap] = useAtom(codeWrapAtom);
     const lines = code.replace(/\n$/, "").split("\n");
     const plain = isPlainLang(lang);
@@ -41,9 +39,11 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                 >
                     Wrap
                 </button>
-                <button type="button" onClick={() => copy(code)} className={cnHeadButton(COPY_TONE[state])}>
-                    <CrossFade swapKey={state}>{COPY_LABEL[state]}</CrossFade>
-                </button>
+                {/* in the head's right end, the block's top-right corner: outside the scroller under it, so it stays put
+                    when a long line scrolls */}
+                <span data-code-copy className="flex">
+                    <CopyButton title="Copy code" content={code} className="text-[12px] text-muted" />
+                </span>
             </div>
             <div className="overflow-x-auto">
                 <div className={cn("py-[9px]", !wrap && "min-w-min")}>
@@ -74,9 +74,6 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
         </div>
     );
 }
-
-const COPY_LABEL: Record<CopyState, string> = { idle: "Copy", copied: "Copied", failed: "Copy failed" };
-const COPY_TONE: Record<CopyState, string> = { idle: "text-muted", copied: "text-success", failed: "text-error" };
 
 function cnHeadButton(color: string): string {
     return (

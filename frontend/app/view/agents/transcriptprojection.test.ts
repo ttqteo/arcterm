@@ -20,7 +20,7 @@ const LINES: string[] = [
             ],
         },
     }),
-    JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false }] } }), // edited, non-ran -> no outcome
+    JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false }] } }), // edited, a result landed -> ok
     JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "t2", name: "Bash", input: { command: "go test ./...", description: "go test ./..." } }] } }),
     JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t2", is_error: true }] } }), // ran + error -> fail
     JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "t3", name: "Bash", input: { description: "go build" } }] } }),
@@ -34,7 +34,7 @@ describe("projectTranscript", () => {
         expect(projectTranscript(LINES)).toEqual([
             { kind: "user", text: "fix the race" },
             { kind: "message", text: "The clone re-reads the source block by id, so a stale id slips through." },
-            { kind: "action", verb: "edited", target: "sessionmodel.go", path: "/home/u/proj/sessionmodel.go" },
+            { kind: "action", verb: "edited", target: "sessionmodel.go", path: "/home/u/proj/sessionmodel.go", outcome: "ok" },
             { kind: "action", verb: "ran", target: "go test ./...", outcome: "fail" },
             { kind: "action", verb: "ran", target: "go build", outcome: "ok" },
         ]);
@@ -438,6 +438,25 @@ describe("projectTranscript detail", () => {
         ]);
         expect(out[0]).toMatchObject({ kind: "action", verb: "skill", target: "commit" });
         expect((out[0] as any).detail).toEqual({ kind: "skill", name: "commit" });
+    });
+
+    it("sets startedAt from the tool_use record's timestamp, and leaves it off without one", () => {
+        const out = projectTranscript([
+            L({ type: "assistant", timestamp: "2026-07-08T00:00:00.000Z", message: { content: [{ type: "tool_use", id: "s1", name: "Bash", input: { command: "x" } }] } }),
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "s2", name: "Read", input: { file_path: "/a/b.ts" } }] } }),
+        ]);
+        expect((out[0] as any).startedAt).toBe(Date.parse("2026-07-08T00:00:00.000Z"));
+        expect("startedAt" in out[1]).toBe(false);
+    });
+
+    it("marks a tool whose result landed ok, whatever the tool, and leaves one with no result unmarked", () => {
+        const out = projectTranscript([
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/a/b.ts" } }] } }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "r1", is_error: false, content: "x" }] } }),
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "r2", name: "Read", input: { file_path: "/a/c.ts" } }] } }),
+        ]);
+        expect((out[0] as any).outcome).toBe("ok");
+        expect((out[1] as any).outcome).toBeUndefined();
     });
 
     it("computes durationMs from record timestamps", () => {
@@ -1191,7 +1210,7 @@ describe("projectTranscript AskUserQuestion", () => {
     it("puts a single answer in the summary and marks the picked option", () => {
         const [action] = projectTranscript([ask([store]), result({ answers: { "Which store?": "SQLite" } })]) as any[];
         expect(action.summary).toBe("SQLite");
-        expect(action.outcome).toBeUndefined();
+        expect(action.outcome).toBe("ok");
         expect(action.detail.questions[0].picked).toEqual(["SQLite"]);
         expect(action.detail.questions[0].typed).toBeUndefined();
     });

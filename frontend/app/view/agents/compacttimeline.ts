@@ -65,6 +65,23 @@ function workOf(startIndex: number, actions: AgentActionEntry[]): WorkItem {
     };
 }
 
+/** Pure: is the tool still running? Its result has not landed, in a session that is working: a tool a killed session left
+ *  without one is not running, however long ago it started. */
+export function inFlight(action: AgentActionEntry, live: boolean): boolean {
+    return live && action.outcome == null;
+}
+
+/** Pure: how long a stretch of tools took, counting a tool in flight from its start to `now` while `live`. */
+export function stretchMs(work: WorkItem, now: number, live: boolean): number {
+    return work.actions.reduce(
+        (n, a) =>
+            n +
+            (a.durationMs ?? 0) +
+            (inFlight(a, live) && a.startedAt != null ? Math.max(0, now - a.startedAt) : 0),
+        0
+    );
+}
+
 /** Pure: the transcript's render items with every run of tool calls, however short, folded into one WorkItem. */
 export function groupCompact(entries: AgentEntry[]): CompactItem[] {
     const out: CompactItem[] = [];
@@ -110,6 +127,11 @@ export function workedFor(durationMs: number): string {
     }
     const h = Math.floor(m / 60);
     return m % 60 ? `Worked for ${h}h ${m % 60}m` : `Worked for ${h}h`;
+}
+
+/** Pure: the same while the stretch is still going: "Working for 38s"; plain "Working" under a second. */
+export function workingFor(durationMs: number): string {
+    return workedFor(durationMs).replace(/^Worked/, "Working");
 }
 
 /** Pure: how many tool calls a work line holds, as the word the line shows after its title. */

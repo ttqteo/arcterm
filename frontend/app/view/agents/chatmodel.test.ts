@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
-import { CHAT_RENDER_STEP, chatItems, shownItems, workingLine, type ChatItem } from "./chatmodel";
+import { CHAT_RENDER_STEP, chatItems, shownItems, workingLine, workingText, type ChatItem } from "./chatmodel";
 
 // the engine's own texts, written by pkg/orchestrate's TestViewModFixtures (the arc view mod reads them the same way)
 const TESTDATA = fileURLToPath(new URL("../../../../claude/arc-view-mod/testdata/", import.meta.url));
@@ -297,6 +297,28 @@ describe("workingLine", () => {
         expect(workingLine("idle", "Bash: npm test")).toBeNull();
         expect(workingLine("asking", "Bash: npm test")).toBeNull();
         expect(workingLine("idle", undefined)).toBeNull();
+    });
+});
+
+describe("workingText", () => {
+    it("names the running tool's own description when the last entry is one with no result", () => {
+        const entries: AgentEntry[] = [{ kind: "user", text: "go" }, action("ran", { target: "go build ./..." })];
+        expect(workingText("working", "running B=$(…", entries)).toBe("Working · go build ./...");
+    });
+
+    it("keeps the activity line when the last tool has its result, or the last entry is not a tool", () => {
+        const done = [action("ran", { target: "go build", outcome: "ok" })];
+        expect(workingText("working", "Bash: npm test", done)).toBe("Working · Bash: npm test");
+        const said: AgentEntry[] = [action("ran", { target: "go build" }), { kind: "message", text: "done" }];
+        expect(workingText("working", undefined, said)).toBe("Working…");
+    });
+
+    it("is null when the agent is not working, whatever the entries", () => {
+        expect(workingText("idle", "x", [action("ran", { target: "go build" })])).toBeNull();
+    });
+
+    it("falls back to the activity line when the running tool has no target", () => {
+        expect(workingText("working", "Bash: npm test", [action("ran", { target: "" })])).toBe("Working · Bash: npm test");
     });
 });
 

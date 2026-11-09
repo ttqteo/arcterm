@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
-import { workingLine } from "./chatmodel";
+import { workingText } from "./chatmodel";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
 import { pendingStill } from "./chatpending";
@@ -83,7 +83,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         }
     }, [stamp]);
 
-    const working = workingLine(agent.state, agent.activity);
+    const working = workingText(agent.state, agent.activity, entries);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
     const asking = agent.ask != null && !agent.ask.hold;
     // a read that has not landed yet shows a skeleton; one that failed (a transcript file that is not written yet, most
@@ -138,6 +138,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 entries={entries}
                                 placeId={placeId}
                                 active={agent.state !== "idle"}
+                                working={agent.state === "working"}
                                 onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                             />
                         </AgentPathLinks>

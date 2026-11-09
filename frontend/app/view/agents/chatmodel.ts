@@ -166,6 +166,19 @@ export function workingLine(state: AgentState, activity: string | undefined): st
     return what ? `Working · ${what}` : "Working…";
 }
 
+/** Pure: the working line, naming the running tool's own description when the last entry is a tool with no result yet. */
+export function workingText(state: AgentState, activity: string | undefined, entries: AgentEntry[]): string | null {
+    const line = workingLine(state, activity);
+    if (line == null) {
+        return null;
+    }
+    const last = entries[entries.length - 1];
+    if (last?.kind === "action" && last.outcome == null && last.target.trim() !== "") {
+        return `Working · ${last.target.trim()}`;
+    }
+    return line;
+}
+
 /** How many more items a "Show earlier" reveals, and how many the view starts with. */
 export const CHAT_RENDER_STEP = 120;
 
