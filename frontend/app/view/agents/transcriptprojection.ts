@@ -153,6 +153,16 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
         } catch {
             continue;
         }
+        // A message queued while Claude worked and taken in mid-turn is written as an attachment, not a user record. Only
+        // its `prompt` mode is a message of yours (a task-notification is drawn from its own record); it then goes the
+        // user record's way, so text rules, task notifications and pasted images stay one code path.
+        if (rec?.type === "attachment") {
+            const queued = rec.attachment;
+            if (queued?.type !== "queued_command" || queued.commandMode !== "prompt") {
+                continue;
+            }
+            rec = { type: "user", message: { content: queued.prompt }, timestamp: rec.timestamp };
+        }
         if (rec.type === "assistant") {
             const content = rec?.message?.content;
             if (!Array.isArray(content)) {

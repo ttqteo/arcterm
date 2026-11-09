@@ -1220,3 +1220,53 @@ describe("projectTranscript AskUserQuestion", () => {
         expect(action.detail.questions[0].picked).toEqual([]);
     });
 });
+
+describe("projectTranscript: a message queued while Claude worked", () => {
+    const queued = (prompt: unknown, commandMode = "prompt") =>
+        JSON.stringify({
+            type: "attachment",
+            attachment: { type: "queued_command", prompt, commandMode, origin: { kind: "human" } },
+            timestamp: "2026-11-09T15:06:17.661Z",
+        });
+    const assistant = (text: string) => JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } });
+
+    it("draws a queued_command prompt as your message, in order", () => {
+        const entries = projectTranscript([assistant("before"), queued("bị overlay kìa"), assistant("after")]);
+        expect(entries).toEqual([
+            { kind: "message", text: "before" },
+            { kind: "user", text: "bị overlay kìa" },
+            { kind: "message", text: "after" },
+        ]);
+    });
+
+    it("keeps the text and the pictures of a block-array prompt in one entry", () => {
+        const entries = projectTranscript([
+            queued([
+                { type: "text", text: "match this" },
+                { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } },
+            ]),
+        ]);
+        const viaUser = projectTranscript([
+            JSON.stringify({
+                type: "user",
+                message: {
+                    content: [
+                        { type: "text", text: "match this" },
+                        { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } },
+                    ],
+                },
+            }),
+        ]);
+        expect(entries).toEqual([{ kind: "user", text: "match this", images: ["data:image/png;base64,AAA"] }]);
+        expect(entries).toEqual(viaUser);
+    });
+
+    it("draws nothing for a task-notification command mode or a queue-operation record", () => {
+        const entries = projectTranscript([
+            queued("<task-notification>x</task-notification>", "task-notification"),
+            JSON.stringify({ type: "queue-operation", operation: "enqueue", content: "bị overlay kìa" }),
+            JSON.stringify({ type: "attachment", attachment: { type: "hook_success" } }),
+        ]);
+        expect(entries).toEqual([]);
+    });
+});

@@ -11,16 +11,20 @@
 
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { workingLine } from "./chatmodel";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
+import { pendingStill } from "./chatpending";
+import { usePending } from "./chatpendingstore";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
+import { splitAttachedImages } from "./launcherimages";
+import { PromptImages, PromptText } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
@@ -28,6 +32,21 @@ import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const NO_ENTRIES: AgentEntry[] = [];
+
+// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
+// takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill).
+function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
+    const said = splitAttachedImages(text);
+    return (
+        <div data-chat-pending className="flex flex-col items-end gap-1">
+            <div className="max-w-[70%] rounded-lg bg-surface-raised px-[14px] py-[9px] text-[13px] leading-[1.55] text-primary opacity-60">
+                {said.text ? <PromptText text={said.text} /> : null}
+                {said.paths.length > 0 ? <PromptImages paths={said.paths} /> : null}
+            </div>
+            <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
+        </div>
+    );
+}
 
 // The cell's chat layer while the agent's cell shows Chat. Its own component so a cell in Terminal never reads the
 // transcript or opens the stream: the layer, and everything it holds, exists only while it is shown.
@@ -73,6 +92,21 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const empty = !loading && entries.length === 0;
     const hasEarlier = view != null && view.win.start > 0;
 
+    // the messages sent from the box that the transcript does not hold yet; re-read each second while any shows, for the
+    // two-minute limit
+    const sent = usePending(agent.id);
+    const [now, setNow] = useState(() => Date.now());
+    const pending = pendingStill(sent, entries, now);
+    const showsPending = pending.length > 0;
+    useEffect(() => {
+        if (!showsPending) {
+            return;
+        }
+        setNow(Date.now());
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, [showsPending]);
+
     return (
         <div
             data-agent-chat={agent.id}
@@ -111,6 +145,9 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     {/* always drawn, so it is one of the scroller's children from the first render: the scroll stays at
                         the end when a card arrives or the working line changes its height */}
                     <div data-chat-tail className="mx-auto flex w-full max-w-[760px] flex-none flex-col gap-3 pb-2">
+                        {pending.map((p) => (
+                            <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
+                        ))}
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}
@@ -135,7 +172,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             {/* the conversation's own column (760px), so the box lines up under the last message; keyed, so its text and
                 its attachments belong to one agent */}
             <div className="flex-none px-[22px] pb-4 pt-3">
-                <ChatComposer key={agent.id} agent={agent} placeholder={`Reply to ${agent.name}, / for commands`} />
+                <ChatComposer
+                    key={agent.id}
+                    agent={agent}
+                    entries={entries}
+                    placeholder={`Reply to ${agent.name}, / for commands`}
+                />
             </div>
         </div>
     );

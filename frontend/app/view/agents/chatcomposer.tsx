@@ -15,14 +15,17 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Square } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type DragEvent, type KeyboardEvent } from "react";
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
-import type { AgentVM } from "./agentsviewmodel";
+import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
 import { insertAt, registerChatInsert } from "./chatinsert";
+import { recall, sendHold } from "./chatpending";
+import { addPending, noteSent, sentHistory } from "./chatpendingstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot } from "./launchermention";
+import { usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
 
 // two lines, as the board's box; grows as the text wraps, then scrolls
@@ -57,16 +60,20 @@ export function ChatComposer({
     agent,
     placeholder,
     dataAttrs,
+    entries,
 }: {
     agent: AgentVM;
     placeholder: string;
+    /** the conversation as drawn: a send of an awake agent is shown as a pending bubble until the transcript holds it.
+     *  The sleeping overlay passes none (a wake delivers the message, no bubble stands in for it). */
+    entries?: AgentEntry[];
     /** extra data attributes on the box: the sleeping overlay keeps `data-sleeping-composer` there */
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
     const asleep = agent.sleeping != null;
     const att = useComposerAttachments({ keep: true });
     // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
-    const { text, setText, canSend, waking, send } = useAgentSend(
+    const { text, setText, message, canSend, waking, send } = useAgentSend(
         agent.blockId,
         agent,
         asleep ? undefined : att.attachments
@@ -113,13 +120,59 @@ export function ChatComposer({
     }, [text]);
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
     const blocker = asleep ? null : attachmentBlocker(att.attachments);
-    const sendable = canSend && blocker == null;
+    // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits
+    const permission = usePermission(agent.blockId != null ? `block:${agent.blockId}` : undefined);
+    const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
+    const sendable = canSend && blocker == null && hold == null;
+    // ↑ / ↓ walk what was sent from this box. `at` is the place in the history; `shown` the text recall put in the box,
+    // so an edit (the text no longer equal to it) ends the recall.
+    const recalled = useRef<{ at: number | null; shown: string }>({ at: null, shown: "" });
     const submit = () => {
-        if (sendable && send() && !asleep) {
-            for (const a of att.attachments) {
-                att.remove(a.id);
+        if (!sendable) {
+            return;
+        }
+        const sent = message;
+        if (send()) {
+            recalled.current = { at: null, shown: "" };
+            noteSent(agent.id, sent);
+            if (!asleep) {
+                if (entries != null) {
+                    addPending(agent.id, sent, entries);
+                }
+                for (const a of att.attachments) {
+                    att.remove(a.id);
+                }
             }
         }
+    };
+    // ↑ in an empty box (or one still showing a recalled text, unedited, with the caret on its first line) puts back the
+    // last message sent; ↓ walks forward and back to empty. True when the key was taken.
+    const recallKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+        const dir = e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : null;
+        const ta = e.currentTarget;
+        if (dir == null || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || ta.readOnly || e.nativeEvent.isComposing) {
+            return false;
+        }
+        const r = recalled.current;
+        const empty = text === "";
+        const editing = r.at != null && text === r.shown;
+        if (!empty && !editing) {
+            return false;
+        }
+        if (!empty) {
+            const caretLine = dir === "up" ? !text.slice(0, ta.selectionStart).includes("\n") : !text.slice(ta.selectionEnd).includes("\n");
+            if (!caretLine) {
+                return false;
+            }
+        }
+        const history = sentHistory(agent.id);
+        if (history.length === 0) {
+            return false;
+        }
+        const next = recall(history, r.at, dir);
+        recalled.current = { at: next.at, shown: next.text };
+        setText(next.text);
+        return true;
     };
     const stop = () => {
         const blockid = agent.blockId;
@@ -173,6 +226,7 @@ export function ChatComposer({
                 readOnly={waking}
                 aria-label="Message"
                 onChange={(e) => {
+                    recalled.current = { at: null, shown: "" };
                     setText(e.target.value);
                     mention.onCaret(e.target);
                 }}
@@ -182,6 +236,10 @@ export function ChatComposer({
                     // the `@` picker's keys (↑↓, Enter and Tab to pick, Escape to close) come first
                     mention.onKeyDown(e);
                     if (e.defaultPrevented) {
+                        return;
+                    }
+                    if (recallKey(e)) {
+                        e.preventDefault();
                         return;
                     }
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -221,8 +279,8 @@ export function ChatComposer({
                 <button
                     type="button"
                     data-chat-send
-                    title={blocker ?? "Send"}
-                    aria-label={asleep || waking ? undefined : "Send"}
+                    title={hold ?? blocker ?? "Send"}
+                    aria-label={hold ?? (asleep || waking ? undefined : "Send")}
                     onClick={submit}
                     disabled={!sendable}
                     className={cn(
