@@ -17,6 +17,7 @@ declare global {
         | "notify"
         | "openfile"
         | "agent:ask"
+        | "agent:permission"
         | "jarvis:volunteer"
         | "system:slept"
         | "jobqueue"
@@ -55,6 +56,7 @@ declare global {
         { event: "notify"; data?: NotifyCommandData; } | 
         { event: "openfile"; data?: OpenFileData; } | 
         { event: "agent:ask"; data?: AgentAskData; } | 
+        { event: "agent:permission"; data?: AgentPermissionData; } | 
         { event: "jarvis:volunteer"; data?: VolunteerData; } | 
         { event: "system:slept"; data?: SleptData; } | 
         { event: "jobqueue"; data?: JobQueueData; } | 

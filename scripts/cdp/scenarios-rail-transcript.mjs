@@ -14,7 +14,7 @@ const AGENT = "fx-rail-transcript";
 const AGENT_MISSING = "fx-rail-transcript-missing";
 const AGENT_NONE = "fx-rail-transcript-none";
 const PROJECT = "verify-rail-transcript";
-const KEYS = ["agent.rail.visible", "cockpit.rail.sections", "agent.rail.tab", "agent.rail.wideWidth", "code.project.last", "agent.launch.recentprojects"];
+const KEYS = ["agent.rail.visible", "cockpit.rail.sections", "agent.rail.tab", "agent.rail.wideWidth", "code.project.last", "agent.launch.recentprojects", "agent.chatmode"];
 // the remembered wide width the scenario starts from (the window's max at the pinned 1600px viewport is 634)
 const WIDE_PX = 600;
 
@@ -220,6 +220,9 @@ export default function (kit) {
                     localStorage.setItem("agent.rail.visible", "true");
                     for (const k of ["cockpit.rail.sections", "agent.rail.tab"]) localStorage.removeItem(k);
                     localStorage.setItem("agent.rail.wideWidth", ${JSON.stringify(String(WIDE_PX))});
+                    // an agent showing Chat has no Transcript tab on its rail: the three fixture agents are pinned to
+                    // Terminal, which the tab belongs to (the chat mode is read at boot; teardown restores the key)
+                    localStorage.setItem("agent.chatmode", JSON.stringify({ [${JSON.stringify(AGENT)}]: "terminal", [${JSON.stringify(AGENT_MISSING)}]: "terminal", [${JSON.stringify(AGENT_NONE)}]: "terminal" }));
                 })()`);
                 if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
                 await h.goto("agent");

@@ -25,6 +25,7 @@ const (
 	Event_Notify           = "notify"           // type: wshrpc.NotifyCommandData
 	Event_OpenFile         = "openfile"         // type: wshrpc.OpenFileData
 	Event_AgentAsk         = "agent:ask"        // type: baseds.AgentAskData
+	Event_AgentPermission  = "agent:permission" // type: baseds.AgentPermissionData
 	Event_JarvisVolunteer  = "jarvis:volunteer" // type: baseds.VolunteerData
 	Event_Slept            = "system:slept"     // type: baseds.SleptData
 	Event_StorageScan      = "storage:scan"     // type: storage.StorageReport
@@ -64,6 +65,7 @@ var AllEvents []string = []string{
 	Event_Notify,
 	Event_OpenFile,
 	Event_AgentAsk,
+	Event_AgentPermission,
 	Event_JarvisVolunteer,
 	Event_Slept,
 	Event_JobQueue,

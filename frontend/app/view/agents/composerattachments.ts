@@ -89,6 +89,7 @@ export function attachmentBlocker(atts: Attachment[]): string | null {
 
 export interface UseComposerAttachments {
     attachments: Attachment[];
+    addFiles: (files: FileList | File[]) => void; // dropped files, saved as temp copies like a paste
     addPaths: (paths: string[]) => void;
     remove: (id: string) => void;
     retry: (id: string) => void;
@@ -198,7 +199,7 @@ export function useComposerAttachments(): UseComposerAttachments {
         [add]
     );
 
-    return { attachments, addPaths, remove, retry, onPaste };
+    return { attachments, addFiles: add, addPaths, remove, retry, onPaste };
 }
 
 function filesFromClipboard(e: ClipboardEvent): File[] {

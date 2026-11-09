@@ -7,6 +7,7 @@
 // Edit | Preview switch (float-bar.tsx) writes scratchPreviewAtom.
 
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { cellInputOf } from "@/app/view/agents/cellinput";
 import {
     closeFloatNote,
     editScratch,
@@ -52,12 +53,7 @@ export function FloatNote({ model }: { model: AgentsViewModel }) {
                 if (active != null && active !== document.body) {
                     return;
                 }
-                const term = document.querySelector<HTMLElement>(
-                    `[data-agent-terminal="${focusIdRef.current}"] .xterm-helper-textarea`
-                );
-                if (term?.checkVisibility()) {
-                    term.focus({ preventScroll: true });
-                }
+                cellInputOf(document, focusIdRef.current)?.focus({ preventScroll: true });
             });
         },
         []

@@ -59,6 +59,7 @@ type WshRpcInterface interface {
 	SecretCommands
 	ClaudeAccountCommands
 	AskCommands
+	AgentPermCommands
 	NotifyCommands
 	TelegramCommands
 	VaultCommands

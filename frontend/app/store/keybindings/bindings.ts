@@ -14,7 +14,9 @@ import { openRailTranscript } from "@/app/view/agents/agentrailstore";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { nextAgentView, setAgentView } from "@/app/view/agents/agentview";
+import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
+import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
+import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
 import {
     checkMain,
     checkReview,
@@ -1342,6 +1344,20 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return clickThrough("[data-doc-review-send]");
     };
     const focusId = () => globalStore.get(model.focusIdAtom);
+    // the focused agent when it can show Chat: a Claude agent that is awake (chatmode.ts), else undefined
+    const chatAgent = (): AgentVM | undefined => {
+        const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
+        return agent != null && chatCapable(agent) && agent.sleeping == null ? agent : undefined;
+    };
+    // what stands in the terminal's place (agentview.ts), as the header reads it
+    const slotView = (): AgentView =>
+        docReview()?.mode === "review"
+            ? "review"
+            : brainstorm()?.mode === "brainstorm"
+              ? "brainstorm"
+              : canvas()?.mode === "canvas"
+                ? "canvas"
+                : "terminal";
     const redrawFocused = () => {
         const id = focusId();
         const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
@@ -1812,10 +1828,29 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: fullscreenChordActive,
             run: () => {
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
-                if (!agent?.transcriptPath || agent.sleeping) {
+                // showing Chat, the conversation is on screen already and the rail has no Transcript tab
+                if (!agent?.transcriptPath || agent.sleeping || getChatMode(agent) === "chat") {
                     return false;
                 }
                 openRailTranscript(agent.id);
+            },
+        },
+        {
+            // Chat or the agent's terminal (chatmode.ts), from inside the terminal like the other Mod chords, and from
+            // a canvas, review or brainstorm in the terminal's place, which it puts back to show Chat. The key passes
+            // for an agent that cannot chat (not Claude, a plain terminal) or that sleeps.
+            id: "agent:chat-toggle",
+            keys: "Mod:Shift:k",
+            group: "Agent",
+            label: "Switch the agent between Chat and Terminal",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: () => {
+                const agent = chatAgent();
+                if (agent == null) {
+                    return false;
+                }
+                const showingChat = slotView() === "terminal" && getChatMode(agent) === "chat";
+                selectCellView(agent.id, showingChat ? "terminal" : "chat", Date.now());
             },
         },
         {
@@ -1981,29 +2016,32 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // The bare b, c and r are typed into the TUI while it holds focus, so the header's Terminal | Canvas |
             // Review control (Brainstorm in the canvas's slot, for an agent with a brainstorm) also has a chord that
             // works from inside the terminal, as Alt+1..9 does for the agents
+            // A Claude agent's control starts with Chat (chatmode.ts), so the key walks Chat too. The agent is in the
+            // model's atoms, which a when() cannot read, so run() lets the key pass when there is one option only.
             id: "agent:view-cycle",
             keys: "Alt:c",
             group: "Agent",
-            label: "Switch terminal, canvas, brainstorm and review (works inside the terminal)",
-            when: (ctx) =>
-                ctx.surface === "agent" &&
-                !ctx.modalOpen &&
-                centerAtRest() &&
-                (canvas() != null || brainstorm() != null || docReview() != null),
+            label: "Switch chat, terminal, canvas, brainstorm and review (works inside the terminal)",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
             run: () => {
-                const view =
-                    docReview()?.mode === "review"
-                        ? "review"
-                        : brainstorm()?.mode === "brainstorm"
-                          ? "brainstorm"
-                          : canvas()?.mode === "canvas"
-                            ? "canvas"
-                            : "terminal";
-                const next = nextAgentView(view, canvas() != null, docReview() != null, brainstorm() != null);
+                const agent = chatAgent();
+                const view = slotView();
+                const options = cellViewOptions(
+                    agent != null,
+                    canvas() != null,
+                    docReview() != null,
+                    brainstorm() != null
+                );
+                const next = nextCellView(agent != null ? cellView(view, getChatMode(agent)) : view, options);
                 if (next == null) {
                     return false;
                 }
-                setAgentView(focusId(), next, Date.now());
+                // an agent with no Chat option keeps its stored chat mode: a sleeping one wakes as it was
+                if (agent != null || next === "chat") {
+                    selectCellView(focusId(), next, Date.now());
+                } else {
+                    setAgentView(focusId(), next, Date.now());
+                }
             },
         },
         {

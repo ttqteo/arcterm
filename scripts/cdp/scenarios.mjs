@@ -52,6 +52,7 @@ import {
     settleBoss as officeSettleBoss,
     waitForOffice,
 } from "./cockpitofficescenarios.mjs";
+import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
@@ -17742,6 +17743,10 @@ const docReviewCanvas = {
             ctx.boardPath = join(project, "Main.dc.html");
             writeFileSync(ctx.boardPath, `<!doctype html><h1>${DOC_REVIEW_HEADING}</h1>\n`);
             writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(docReviewRoster(ctx.runId, ctx.boardPath), null, 2));
+            // the lead's terminal is what this scenario looks at, not its chat: a Claude agent opens in Chat, so the lead
+            // is pinned to Terminal before the reload (the chat mode is read at boot)
+            ctx.prevModes = await h.ev(`localStorage.getItem("agent.chatmode")`);
+            await h.ev(`localStorage.setItem("agent.chatmode", ${JSON.stringify(JSON.stringify({ [DOC_REVIEW_LEAD_ID]: "terminal", [DOC_REVIEW_WORKER_ID]: "terminal" }))})`);
             // the fixture roster is read once at boot
             await h.ev("location.reload()");
             await h.ev(`(async () => {
@@ -17820,7 +17825,15 @@ const docReviewCanvas = {
         return steps;
     },
     async teardown(h, ctx) {
-        await teardownFixtureRun(h, ctx, "doc-review-canvas");
+        await teardownFixtureRun(h, ctx, "doc-review-canvas", {
+            what: "put the chat modes back",
+            fn: () =>
+                h.ev(
+                    ctx.prevModes == null
+                        ? `localStorage.removeItem("agent.chatmode")`
+                        : `localStorage.setItem("agent.chatmode", ${JSON.stringify(ctx.prevModes)})`
+                ),
+        });
     },
 };
 
@@ -18821,7 +18834,10 @@ const docReviewMode = {
             !term13.pane &&
                 term13.host &&
                 options13.find((o) => o.text === "Review")?.dot === true &&
-                options13.find((o) => o.text === "Terminal")?.pressed === true &&
+                // the cell's slot shows what the agent's chat mode says: a Claude fixture agent opens in Chat
+                options13.map((o) => o.text).join("|") === "Chat|Terminal|Review" &&
+                options13.find((o) => o.text === "Chat")?.pressed === true &&
+                options13.find((o) => o.text === "Terminal")?.pressed === false &&
                 review13 &&
                 chipped13 &&
                 landed13.name === DRM_PAPER.name &&
@@ -18845,7 +18861,8 @@ const docReviewMode = {
         } catch (e) {
             reveal13 = String(e?.message ?? e);
         }
-        await docReviewWait(h, `${DRM_HEADER_GROUP}?.querySelectorAll("button").length === 3`, 3000);
+        // a Claude agent's control leads with Chat: Chat | Terminal | Canvas | Review
+        await docReviewWait(h, `${DRM_HEADER_GROUP}?.querySelectorAll("button").length === 4`, 3000);
         const group13 = await h.ev(`({ label: ${DRM_HEADER_GROUP}?.getAttribute("aria-label"), groups: document.querySelectorAll('[data-agent-header] [role="group"]').length })`);
         const three13 = await drmHeaderOptions(h);
         await drmClickOption(h, "Canvas");
@@ -18857,11 +18874,11 @@ const docReviewMode = {
         const back13 = await h.ev(`({ canvas: !!document.querySelector("[data-canvas-pane]"), review: !!${DRM_PANE} })`);
         const amber13 = await h.ev(`[...document.querySelectorAll("[data-agent-header] button")].some((b) => b.textContent.trim() === "Doc review")`);
         rec(
-            "13b. with a canvas the header has one Terminal | Canvas | Review group; Canvas puts the review back and Review the canvas; no amber review button",
+            "13b. with a canvas the header has one Chat | Terminal | Canvas | Review group; Canvas puts the review back and Review the canvas; no amber review button",
             reveal13 == null &&
                 group13.groups === 1 &&
-                group13.label === "Show terminal, canvas or review" &&
-                JSON.stringify(three13.map((o) => o.text)) === JSON.stringify(["Terminal", "Canvas", "Review"]) &&
+                group13.label === "Show chat, terminal, canvas or review" &&
+                JSON.stringify(three13.map((o) => o.text)) === JSON.stringify(["Chat", "Terminal", "Canvas", "Review"]) &&
                 canvas13.canvas &&
                 !canvas13.review &&
                 back13.review &&
@@ -25828,6 +25845,15 @@ const launcherResumeState = `(() => {
         cmdReadOnly: d.querySelector('#launcher-cmd')?.readOnly ?? null,
         taskHint: d.querySelector('#launcher-task')?.placeholder ?? null,
         worktreeSwitch: !!d.querySelector('[data-launcher-task-row] button[role="switch"]'),
+        // a picked Claude session replaces the three columns with the resume step: the sessions at 272px and the
+        // session's Quick look beside them, Back in the footer (the Transcript button is the columns' own)
+        step: !!d.querySelector('[data-launcher-step="resume"]'),
+        peek: d.querySelector('[data-launcher-peek]')?.getAttribute('data-peek-session') ?? null,
+        peekState: d.querySelector('[data-launcher-peek]')?.getAttribute('data-peek-state') ?? null,
+        peekText: flat(d.querySelector('[data-launcher-peek]')),
+        crumbs: [...d.querySelectorAll('[data-launcher-crumb]')].map((c) => flat(c)),
+        back: !!d.querySelector('[data-launcher-back]'),
+        transcriptButton: !!d.querySelector('[data-launcher-transcript]'),
     };
 })()`;
 
@@ -26021,14 +26047,39 @@ const launcherResume = {
         );
 
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
-        await polishNap(300);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-step="resume"]')`, 3000);
+        // the peek reads the session's last messages: its text holds the task the transcript's one prompt carries
+        await polishWaitFor(h, `(${LAUNCHER}?.querySelector('[data-launcher-peek]')?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)})`, 8000);
         s = await state();
         const band = await h.ev(launcherBandExpr);
+        const stepBand = await h.ev(`(() => {
+            const d = ${LAUNCHER};
+            const box = (el) => {
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), top: Math.round(r.top) };
+            };
+            return { third: box(d?.querySelector('[data-launcher-step="resume"] [data-launcher-column="third"]')), peek: box(d?.querySelector('[data-launcher-step="resume"] [data-launcher-peek]')) };
+        })()`);
         await h.shot("cdp-shots/launcher-resume-2-picked.png");
+        // the step is the sessions at 272px and the read beside them, as tall as one another; the Start and Project columns
+        // are not drawn, and the title's two chips name them
         rec(
-            "1c. a session picked: the three columns keep their shape",
-            s.picked === ctx.sessionId && threeColumns(band),
-            JSON.stringify({ picked: s.picked, ...band })
+            "1c. a session picked: the columns give way to the resume step: the sessions at 272px and the session's Quick look beside them, the title's chips naming the agent and project",
+            s.picked === ctx.sessionId &&
+                s.step &&
+                band.start == null &&
+                band.project == null &&
+                stepBand.third?.w === 272 &&
+                stepBand.peek != null &&
+                stepBand.peek.left >= stepBand.third.left + stepBand.third.w - 1 &&
+                Math.abs(stepBand.peek.h - stepBand.third.h) <= 1 &&
+                s.peek === ctx.sessionId &&
+                s.peekText.includes(LAUNCHER_RESUME_TASK) &&
+                s.crumbs.length === 2 &&
+                s.crumbs[1] === LAUNCHER_RESUME_PROJECT &&
+                s.back,
+            JSON.stringify({ picked: s.picked, step: s.step, peek: s.peek, crumbs: s.crumbs, back: s.back, band, stepBand })
         );
         const reads = await transcriptCount(h);
         await removeTranscriptCounter(h);
@@ -26057,13 +26108,27 @@ const launcherResume = {
             JSON.stringify(s)
         );
 
+        // Back (the footer's, for the pointer) shows the three columns again to change your mind, the session still picked
+        // and its Transcript button back in the footer, where the step read it beside the list
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-back]')?.click()`);
+        await polishWaitFor(h, `!${LAUNCHER}?.querySelector('[data-launcher-step="resume"]') && !!${LAUNCHER}?.querySelector('[data-launcher-column="project"]')`, 3000);
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-resume-3-back.png");
+        rec(
+            "3a. Back shows the columns again: Claude and the first project checked, the session still picked, Transcript offered and no Back",
+            !s.step && s.start === "claude" && s.project === LAUNCHER_RESUME_PROJECT && s.picked === ctx.sessionId &&
+                s.transcriptButton && !s.back && s.primary?.text.startsWith("Resume agent"),
+            JSON.stringify(s)
+        );
+
         await h.ev(focusColumn("project"));
         await launcherPress(h, "ArrowDown");
         await polishNap(300);
         s = await state();
         rec(
             "3. picking the second project drops the Resume section and the button reads Launch agent",
-            s.project === LAUNCHER_RESUME_PROJECT_B && !s.list && s.primary?.text.startsWith("Launch agent"),
+            s.project === LAUNCHER_RESUME_PROJECT_B && !s.list && !s.step && s.primary?.text.startsWith("Launch agent"),
             JSON.stringify(s)
         );
 
@@ -26156,36 +26221,57 @@ const launcherResume = {
         }
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')`, 8000);
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-step="resume"] [data-launcher-peek]')`, 5000);
         await polishNap(300);
         const footer = await h.ev(`(() => {
             const d = ${LAUNCHER};
             const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
-            const toggle = d?.querySelector('[data-launcher-peek-toggle]');
             return {
-                peek: flat(toggle) || null,
-                pressed: toggle?.getAttribute('aria-pressed') ?? null,
-                asleep: flat(d?.querySelector('[data-launcher-asleep]')) || null,
+                peek: d?.querySelector('[data-launcher-peek]')?.getAttribute('aria-label') ?? null,
+                peekSession: d?.querySelector('[data-launcher-peek]')?.getAttribute('data-peek-session') ?? null,
+                back: !!d?.querySelector('[data-launcher-back]'),
+                asleep: !!d?.querySelector('[data-launcher-asleep], [data-peek-asleep]'),
                 transcript: !!d?.querySelector('[data-launcher-transcript]'),
+                primary: [...(d?.querySelectorAll('button') ?? [])].map((b) => flat(b)).find((t) => /^Resume agent/.test(t)) ?? null,
                 picked: d?.querySelector('[data-resume-id][aria-checked="true"]')?.getAttribute('data-resume-id') ?? null,
             };
         })()`);
         await h.shot("cdp-shots/launcher-resume-6-asleep-button.png");
         rec(
-            "6a. a picked Claude session offers Quick look (Shift+Enter) beside Resume, in place of Open asleep and Transcript",
+            "6a. a picked Claude session reads in the resume step with its Quick look beside Resume and Back; the dialog has no Open asleep or Transcript button (the session is opened asleep from the Agent tree's Conversations menu)",
             footer?.picked === ctx.sessionId &&
-                /^Quick look/.test(footer.peek ?? "") &&
-                footer.pressed !== "true" &&
-                footer.asleep == null &&
+                footer.peek === "Quick look" &&
+                footer.peekSession === ctx.sessionId &&
+                footer.back &&
+                footer.primary != null &&
+                !footer.asleep &&
                 !footer.transcript,
             JSON.stringify(footer)
         );
+        await launcherPress(h, "Escape");
+        await polishWaitFor(h, `!${LAUNCHER}`, 3000);
 
-        // Shift+Enter opens Quick look; Open asleep is in its header (spec 2026-11-06-launcher-session-peek D2)
-        await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.focus()`);
-        await launcherPress(h, "Enter", { shift: true });
-        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-asleep]')`, 5000);
-        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-peek] [data-peek-asleep]')?.click()`);
-        const appeared = await polishWaitFor(h, `!${LAUNCHER} && !!(${asleepCover})`, 10000);
+        // Open asleep is the Conversations menu's (the Agent tree and a project's History); the session is the first row
+        // of this project's folder. The dialog no longer has it.
+        await h.goto("agent");
+        const sessionRow = `document.querySelector('[data-agent-session-row="claude:${ctx.sessionId}"]')`;
+        let rowUp = await polishWaitFor(h, `!!${sessionRow}`, 15000);
+        if (!rowUp) {
+            // the Conversations section may be folded: open it and look again
+            await h.ev(`[...document.querySelectorAll('[data-agent-tree] button, [data-agent-tree] [role="button"]')].find((b) => (b.textContent ?? '').trim().startsWith('Conversations'))?.click()`);
+            rowUp = await polishWaitFor(h, `!!${sessionRow}`, 8000);
+        }
+        if (rowUp) {
+            await h.ev(`(() => {
+                const el = ${sessionRow};
+                el.scrollIntoView({ block: "center" });
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+            await polishWaitFor(h, caMenuHas("Open asleep"), 3000);
+            await h.ev(caMenuClick("Open asleep"));
+        }
+        const appeared = await polishWaitFor(h, `!!(${asleepCover})`, 10000);
         const tabId = appeared ? await h.ev(`(${asleepCover})?.getAttribute('data-sleeping-transcript') ?? null`) : null;
         ctx.asleepTab = tabId;
         let cell = null;
@@ -26197,16 +26283,18 @@ const launcherResume = {
                     moon: !!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]'),
                     card: (document.querySelector('[data-sleeping-card="${tabId}"]')?.textContent ?? '').trim(),
                     conversation: (cover?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
+                    // the conversation is chat's: your message as a bubble, from the transcript's one prompt
+                    bubble: (cover?.querySelector('[data-chat-you]')?.textContent ?? '').trim(),
                     composer: document.querySelector('[data-sleeping-composer="${tabId}"] textarea')?.placeholder ?? null,
                 };
             })()`);
         }
         await h.shot("cdp-shots/launcher-resume-6-asleep-agent.png");
         rec(
-            "6b. Open asleep from Quick look closes the dialog and the session is a new agent row with the moon; its cell shows the conversation, the Sleeping card and the box to wake it",
-            appeared && tabId != null && cell?.moon && cell.conversation && cell.card.includes("Sleeping since") &&
-                /to wake it/.test(cell.composer ?? ""),
-            JSON.stringify({ appeared, tabId, cell })
+            "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble, the Sleeping card and the box to wake it",
+            appeared && tabId != null && cell?.moon && cell.conversation && cell.bubble === LAUNCHER_RESUME_TASK &&
+                cell.card.includes("Sleeping since") && /to wake it/.test(cell.composer ?? ""),
+            JSON.stringify({ rowUp, appeared, tabId, cell })
         );
 
         let meta = null;
@@ -30902,7 +30990,8 @@ const radarScanStates = {
 const CANVAS_TOPIC = "verify-canvas";
 const CANVAS_BOARD = "Main.dc.html";
 const CANVAS_PANE = `document.querySelector("[data-canvas-pane]")`;
-const CANVAS_SWAP = `document.querySelector('[role="group"][aria-label="Show terminal or canvas"]')`;
+// the terminal this scenario opens reports as a Claude agent, whose control leads with Chat
+const CANVAS_SWAP = `document.querySelector('[role="group"][aria-label="Show chat, terminal or canvas"]')`;
 // the poller ticks every 3s (CANVAS_POLL_MS), so one tick always lands inside this
 const CANVAS_REMOVED_WAIT_MS = 5000;
 const CANVAS_ROSTER_WAIT_MS = 10000;
@@ -31051,8 +31140,8 @@ const canvasSwap = {
         rec("1b. the header's Canvas button shows the canvas pane in the terminal's place", paneUp, `pane=${paneUp}`);
         rec("2. canvas mode keeps the agent tree", treeKept === true, `treeKept=${treeKept}`);
         rec(
-            "3. the header swaps between Terminal and Canvas",
-            JSON.stringify(swap) === JSON.stringify(["Terminal", "Canvas"]),
+            "3. the header swaps between Chat, Terminal and Canvas",
+            JSON.stringify(swap) === JSON.stringify(["Chat", "Terminal", "Canvas"]),
             `buttons=${JSON.stringify(swap)}`
         );
         await h.shot("cdp-shots/canvas-swap-canvas.png");
@@ -31177,7 +31266,8 @@ const BS_SPEC = "docs/superpowers/specs/2026-10-18-consumer-lag-alerts-design.md
 const BS_BOARDS = ["Page.dc.html", "PageB.dc.html"];
 const BS_RUN = "7f3a21c0-4d1e-4b6a-9c2f-1e8d7a6b5c40";
 const BS_PANE = `document.querySelector("[data-brainstorm-pane]")`;
-const BS_SWITCH = `document.querySelector('[role="group"][aria-label="Show terminal or brainstorm"]')`;
+// the terminal this scenario opens reports as a Claude agent, whose control leads with Chat
+const BS_SWITCH = `document.querySelector('[role="group"][aria-label="Show chat, terminal or brainstorm"]')`;
 const BS_TREE_LINE = `document.querySelector("[data-brainstorm-tree-line]")`;
 const BS_EDIT = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-edit]")`;
 const BS_ANSWER = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-answer]")`;
@@ -31866,16 +31956,23 @@ async function bsWide(h, ctx) {
     return width;
 }
 
-// The details rail open and the agent tree shown in a window narrow enough that the pane is under 640px whatever width the
-// details rail has (it is ~300px at the harness's 1600px window, which leaves the pane 974px, so the window is narrowed)
-const BS_NARROW_WINDOW_W = 1100;
+// The details rail open and the agent tree shown in a window narrow enough that the pane is under 640px (it is ~300px at the
+// harness's 1600px window, which leaves the pane 974px, so the window is narrowed). Measured with the pane's left edge at
+// 326px: at 1100px it ends at the window's edge and is 774px, at 900px it is 574px. A width is taken from this list, widest
+// first, until the pane is under BS_STACK_BELOW
+const BS_NARROW_WINDOW_WIDTHS = [1100, 900, 800, 700];
 async function bsNarrow(h, ctx) {
     const was = await bsSetLayout(h, { rail: true, fullscreen: false });
     ctx.layout ??= was;
     ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
-    await h.cdp("Emulation.setDeviceMetricsOverride", { width: BS_NARROW_WINDOW_W, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
-    await polishNap(900);
-    return bsPaneWidth(h);
+    let width = 0;
+    for (const w of BS_NARROW_WINDOW_WIDTHS) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: w, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
+        await polishNap(900);
+        width = await bsPaneWidth(h);
+        if (width > 0 && width < BS_STACK_BELOW) break;
+    }
+    return width;
 }
 
 async function bsRestoreLayout(h, ctx) {
@@ -32119,6 +32216,9 @@ const brainstormMode = {
             bsWrite(ctx, BS_FILES.justStarted);
             await openCanvasTerminal(h, ctx, BS_TOPIC);
             await bsPublishStatus(h, ctx);
+            // the scenario reads this agent's xterm (its prompt, its scrollback) and types into it: a Claude agent opens in
+            // Chat, so it is pinned to Terminal; the header's control still leads with Chat, which BS_SWITCH reads
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(ctx.tabId)}, "terminal")`);
         } catch (e) {
             ctx.launchError = String(e?.message ?? e);
             return ctx;
@@ -33308,6 +33408,7 @@ const brainstormMode = {
         await step("stop recording sent lines", () => h.ev(BS_TYPED_REMOVE));
         if (ctx.blockId) await step("clear the exit", () => bsPublishProc(h, ctx, "running", 0));
         if (ctx.tabId) {
+            await step("put the chat mode back", () => h.ev(`window.__arcChatMode.set(${JSON.stringify(ctx.tabId)}, "chat")`));
             await step("close the terminal tab", () =>
                 waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false])
             );
@@ -35660,11 +35761,17 @@ function railShape(railExpr) {
         };
     })()`;
 }
+// The strip draws only what a click acts on (planRailStats): a list holding something or not counted yet, and an empty
+// Uploads, which attaches. So a list at 0 is absent from it, in the fixed order of the rest, and none at 0 is in the body.
 function railShapeOk(shape) {
     if (!shape) return false;
+    const at = shape.stats.map((s) => RAIL_STATS_ORDER.indexOf(s.id));
+    const inOrder = at.every((n, i) => n >= 0 && (i === 0 || n > at[i - 1]));
+    const emptyDrawn = shape.stats.filter((s) => s.count === "0" && s.id !== "uploads");
     const emptyListed = shape.stats.filter((s) => s.count === "0" && shape.sections.includes(s.id));
     return (
-        JSON.stringify(shape.stats.map((s) => s.id)) === JSON.stringify(RAIL_STATS_ORDER) &&
+        inOrder &&
+        emptyDrawn.length === 0 &&
         emptyListed.length === 0 &&
         !shape.sections.includes("terminals") &&
         !shape.sections.includes("tools") &&
@@ -35754,6 +35861,9 @@ async function arrangeRailSections(h, ctx) {
     // cleared so each starts at its default open state
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
     await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+    // the rail of an agent showing Chat has no Transcript tab and a different count strip: the fixture agent is pinned to
+    // Terminal, which is what the rail read before Chat (the chat mode is read at boot)
+    await h.ev(`localStorage.setItem("agent.chatmode", ${JSON.stringify(JSON.stringify({ [RAIL_SECTIONS_AGENT_ID]: "terminal" }))})`);
     if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
     await h.goto("agent");
     ctx.inRoster = await polishWaitFor(
@@ -35804,6 +35914,7 @@ const agentRailSections = {
             terminals: [],
             prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
             prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
         };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
@@ -35817,7 +35928,8 @@ const agentRailSections = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.terminalsListed === true;
-        const railUp = arranged && (await polishWaitFor(h, `!!${railStat("subagents")}`, 8000));
+        // the strip draws no Subagents count for an agent with none, so the wait is for its Uploads, which is always there
+        const railUp = arranged && (await polishWaitFor(h, `!!${railStat("uploads")}`, 8000));
         rec(
             "0. the fixture agent is focused, both terminals are in the roster and its rail is showing",
             railUp,
@@ -35829,8 +35941,10 @@ const agentRailSections = {
 
         const shape = await h.ev(railShape(RAIL_ASIDE));
         rec(
-            "1. the strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; the body lists none at 0, and no Terminals, Tools, Token usage or Details section",
-            railShapeOk(shape),
+            "1. the strip counts, in the order Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks, only the lists a click acts on (none at 0 but Uploads); the body lists none at 0, and no Terminals, Tools, Token usage or Details section",
+            railShapeOk(shape) &&
+                shape.stats.some((s) => s.id === "artifacts" && s.count === "2") &&
+                shape.stats.some((s) => s.id === "uploads" && s.count === "0"),
             JSON.stringify(shape)
         );
         await h.shot("cdp-shots/agent-rail-sections.png");
@@ -35992,6 +36106,7 @@ const agentRailSections = {
                 }
                 await step("restore the rail visibility", () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)));
                 await step("restore the rail sections", () => h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections)));
+                await step("restore the chat modes", () => h.ev(restoreStorageKey("agent.chatmode", ctx.prevModes)));
             },
         });
     },
@@ -36695,6 +36810,7 @@ const RAIL_TABS_KEYS = [
     "agent.rail.wideWidth",
     "code.project.last",
     "agent.launch.recentprojects",
+    "agent.chatmode",
 ];
 const RAIL_TABS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const RAIL_TABS_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${RAIL_TABS_AGENT}"]')`;
@@ -36830,6 +36946,9 @@ const agentRailTabs = {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth"])}) localStorage.removeItem(k);
                 localStorage.setItem("agent.launch.recentprojects", ${JSON.stringify(JSON.stringify([RAIL_TABS_PROJECT]))});
+                // the Transcript tab belongs to an agent showing its terminal: a Claude agent opens in Chat, which has no
+                // such tab, so the fixture agent is pinned to Terminal (read at boot; the restore loop puts the key back)
+                localStorage.setItem("agent.chatmode", ${JSON.stringify(JSON.stringify({ [RAIL_TABS_AGENT]: "terminal" }))});
             })()`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
@@ -41899,6 +42018,969 @@ const agentSleep = {
         }
         if (!(await ahReload(h))) console.error("agent-sleep teardown: the page did not come back after the reload");
         await h.goto("cockpit");
+    },
+};
+
+// --- agent-chat: a Claude agent's cell opens in Chat (docs/superpowers/specs/2026-11-09-agent-gui-view-design.md): its
+// conversation as bubbles over the live xterm, a message box with Stop and attachments, an Allow / Deny card for a
+// permission prompt, an AskUserQuestion's choices, and the real terminal one flip away. The roster is a page fixture
+// (setRoster) over real tabs, so every cell has a block and an xterm of its own; the transcripts are JSONL in a temp dir.
+// A mock RPC layer records what the page types into those blocks (controllerinput), the permission answers and the ask
+// answer, answers them, and refuses one on purpose; it keeps the queue wavesrv would keep, so a card follows its own
+// answers. Every other command goes down to the layer under it. Step 15 reads a run's ended worker: the run is real (a
+// stand-in child run the engine marks done, as lead-card-merge-gate makes it), so it is made before the page reloads onto
+// the roster. Steps 17-19 follow the keyboard out of the chat: an Alt-drop's @mention lands in the chat box of a cell
+// showing Chat (and in the PTY of one showing Terminal), and the float note closing hands focus back to the box.
+// Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
+const AC_MOCK_KEY = "__arcAgentChatMock";
+const AC = agentPageFixtures;
+const { makeTab: acMakeTab, closeTabs: acCloseTabs } = AC.tabFixtures({ waveService });
+const AC_SESSION = "chat-main";
+const AC_SUB_ID = "chatsub";
+const AC_REFUSED = "that request is no longer waiting";
+const AC_NAMES = {
+    main: "chat main",
+    second: "chat second",
+    codex: "chat codex",
+    ask: "chat asking",
+    bare: "chat bare",
+    asleep: "chat asleep",
+};
+const AC_USER_TEXT = "add a retry to the sync client";
+const AC_PROSE_1 = "I will read the sync client first.";
+const AC_PROSE_2 = "The client now retries three times with backoff.";
+const AC_ACTIVITY = "Reading chatpane.tsx";
+const AC_QUESTION = "Which retry policy should the sync client use?";
+const AC_CHOICES = ["Exponential backoff", "Fixed delay"];
+const AC_LEAD_ID = "fx-ac-lead";
+const AC_ENDED_LABEL = "chat ended lane";
+const AC_LIVE_LABEL = "chat live lane";
+const AC_TASKS = [
+    ["t-1", AC_ENDED_LABEL],
+    ["t-2", AC_LIVE_LABEL],
+].map(([id, label]) => ({ id, label, description: "do nothing, stop immediately", deps: [], gate: false, state: "" }));
+// the engine ticks a dag at most every 30 seconds
+const AC_ENDED_WAIT_MS = 90_000;
+const AC_WAIT_MS = 8000;
+
+const acCell = (id) => `document.querySelector('[data-agent-terminal="${id}"]')`;
+const acLayer = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
+const acBox = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-agent-chat-composer] textarea')`;
+const acCard = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-permission-card="${id}"]')`;
+const acHeaderGroup = `document.querySelector('[data-agent-header] [role="group"]')`;
+const AC_INTERIOR = `document.querySelector('button[title="Back to parent (Esc)"]')?.parentElement?.parentElement`;
+
+// the transcripts of the fixture agents: a person's message, prose, a stretch of tools with an Edit, prose, a run's launch
+// prompt (the testdata the arc view mod's own parser is tested on), and the pointer line a launch prompt too long for a
+// command line leaves
+function acWriteFixtures(dir) {
+    const base = Date.now() - 3_600_000;
+    const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
+    const edited = join(dir, "src", "sync", "client.ts");
+    const workerPrompt = readFileSync(new URL("../../claude/arc-view-mod/testdata/worker.txt", import.meta.url), "utf8").trim();
+    const pointer = `Your instructions are in the file ${join(dir, "run-prompt.md").replace(/\\/g, "/")} (too long for a command line). Read the whole file now and follow it exactly, as if it were this message.`;
+    const main = AC.writeTranscript(dir, AC_SESSION, [
+        AC.userText(AC_USER_TEXT, o(0)),
+        AC.assistantText(AC_PROSE_1, o(2)),
+        AC.toolUse("toolu_ac_read", "Read", { file_path: edited }, o(4)),
+        AC.toolResult("toolu_ac_read", "export const retries = 0;", o(6)),
+        AC.toolUse(
+            "toolu_ac_edit",
+            "Edit",
+            { file_path: edited, old_string: "export const retries = 0;", new_string: "export const retries = 3;\nexport const backoff = true;" },
+            o(10)
+        ),
+        AC.toolResult("toolu_ac_edit", "The file has been updated successfully.", o(14)),
+        AC.assistantText(AC_PROSE_2, o(20)),
+        AC.userText(workerPrompt, o(60)),
+        AC.assistantText("Starting on task 3.", o(62)),
+        AC.userText(pointer, o(90)),
+        AC.assistantText("Reading the instructions file.", o(92)),
+    ]);
+    const simple = (name, ask, answer) =>
+        AC.writeTranscript(dir, name, [AC.userText(ask, o(0)), AC.assistantText(answer, o(2))]);
+    return {
+        main,
+        edited,
+        workerPrompt,
+        second: simple("chat-second", "second agent question", "second agent answer"),
+        asleep: simple("chat-asleep", "an earlier question", "an earlier answer before it slept"),
+        ended: simple("chat-ended", "the worker's task prompt", "the worker's finished report"),
+        sub: AC.writeSubagent(dir, AC_SESSION, AC_SUB_ID, [
+            AC.userText("survey the sync client for stale retries", o(0)),
+            AC.assistantText("The subagent found two stale retries.", o(2)),
+        ]),
+    };
+}
+
+// the roster: a row per fixture agent over its real tab. `main` takes a patch (step 4 makes it work); a lead row carries the
+// run whose ended worker step 15 reads
+function acRoster(ctx, mainPatch = {}) {
+    const now = Date.now();
+    const base = { project: "arcterm", task: "", agent: "claude", model: "opus", state: "idle", idleSince: now - 60_000 };
+    const row = (key, extra) => ({ ...base, id: ctx.tabs[key].tabId, name: AC_NAMES[key], blockId: ctx.tabs[key].blockId, ...extra });
+    const rows = [
+        row("main", { transcriptPath: ctx.files.main, ...mainPatch }),
+        row("second", { transcriptPath: ctx.files.second }),
+        row("codex", { agent: "codex", model: "gpt-5" }),
+        row("ask", {
+            state: "asking",
+            blockedMs: 30_000,
+            transcriptPath: ctx.files.second,
+            ask: {
+                askId: "ask-chat-1",
+                oref: `block:${ctx.tabs.ask.blockId}`,
+                questions: [{ header: "Retry", question: AC_QUESTION, options: AC_CHOICES.map((label) => ({ label })) }],
+            },
+        }),
+        row("bare", {}),
+        row("asleep", {
+            transcriptPath: ctx.files.asleep,
+            idleSince: now - 2 * 3_600_000,
+            sleeping: { since: now - 2 * 3_600_000, freedBytes: 330 * 2 ** 20 },
+        }),
+    ];
+    if (ctx.runId) {
+        rows.push({
+            ...base,
+            id: AC_LEAD_ID,
+            name: "chat lead",
+            state: "working",
+            activeMs: 120_000,
+            runId: ctx.runId,
+            blockId: "fx-blk-ac-lead",
+        });
+    }
+    return rows;
+}
+
+// A real orchestrator run (held by deferstart) with two lanes. t-1's stand-in child run is marked done and the engine moves
+// the task to done by itself; the staged file keeps the engine from merging the lane, so the task stays an ended worker.
+async function acArrangeRun(h, ctx) {
+    ctx.cwd = mkdtempSync(join(tmpdir(), "verify-agent-chat-run-"));
+    fstGitInit(ctx.cwd);
+    writeFileSync(join(ctx.cwd, "held.txt"), "staged by the agent-chat fixture\n");
+    execFileSync("git", ["add", "held.txt"], { cwd: ctx.cwd, stdio: "pipe" });
+    const wslist = await h.rpc("workspacelist", null);
+    const ch = await h.rpc("createchannel", { name: "verify-agent-chat", projectpath: ctx.cwd });
+    ctx.channelId = ch.oid;
+    const created = await h.rpc(
+        "createrun",
+        {
+            channelid: ctx.channelId,
+            workspaceid: wslist[0].workspacedata.oid,
+            goal: "verify agent-chat: do nothing",
+            runtime: "claude",
+            mode: "orchestrator",
+            deferstart: true,
+            landing: "checkout",
+        },
+        { timeout: 30000 }
+    );
+    ctx.runId = created.run.id;
+    ctx.landPath = created.run.landpath;
+    ctx.endedRun = await mergeGateStandIn(h, ctx, "t-1");
+    ctx.liveRun = await mergeGateStandIn(h, ctx, "t-2");
+    await h.rpc("dagsubmit", {
+        channelid: ctx.channelId,
+        runid: ctx.runId,
+        title: "verify agent-chat",
+        parallelism: 1,
+        tasks: AC_TASKS,
+    });
+    ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+    const runOf = { "t-1": ctx.endedRun, "t-2": ctx.liveRun };
+    await seedDag(
+        h,
+        ctx,
+        (dag) => ({
+            ...dag,
+            mergerequired: true,
+            tasks: dag.tasks.map((t) => ({ ...t, state: "running", runid: runOf[t.id] })),
+        }),
+        (dag) => JSON.stringify([dag?.mergerequired, (dag?.tasks ?? []).map((t) => [t.id, t.state, t.runid])])
+    );
+    await fstWriteRun(h, ctx.endedRun, (r) => ({ ...r, status: "done", completedts: Date.now() }));
+    const start = Date.now();
+    while (Date.now() - start < AC_ENDED_WAIT_MS) {
+        const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group;
+        ctx.endedState = group?.tasks?.find((t) => t.id === "t-1")?.state;
+        if (ctx.endedState === "done") break;
+        await new Promise((r) => setTimeout(r, 1000));
+    }
+}
+
+// What the page types into our blocks (controllerinput), the permission answers and the ask answer are recorded and
+// answered here, never sent. `queues` is the permission queue wavesrv would hold per agent: a read answers it, and an
+// answer changes it as the server does (Allow drops the head, Deny drops all, a refused answer finds the request gone).
+// `answer` is "ok", "hold" (the answer stays pending until the step releases it) or "refuse". The run's transcript lookup
+// answers the ended worker's file.
+async function installAgentChatMock(h, ctx) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    const blocks = Object.values(ctx.tabs).map((t) => t.blockId);
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${AC_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const blocks = new Set(${JSON.stringify(blocks)});
+        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [] };
+        const drop = (data) => {
+            const q = m.queues[data.oref] ?? [];
+            m.queues[data.oref] = data.allow ? q.filter((r) => r.id !== data.id) : [];
+        };
+        const answer = (data) => {
+            if (m.answer === "refuse") {
+                m.queues[data.oref] = [];
+                return Promise.reject(new Error(${JSON.stringify(AC_REFUSED)}));
+            }
+            if (m.answer === "hold") {
+                return new Promise((resolve) => m.held.push(() => { drop(data); resolve(null); }));
+            }
+            drop(data);
+            return Promise.resolve(null);
+        };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "controllerinput" && blocks.has(data?.blockid)) {
+                    m.calls.push({ command, data: { blockid: data.blockid, input: atob(data.inputdata64 ?? ""), resized: data.termsize != null } });
+                    return Promise.resolve(null);
+                }
+                if (command === "agentpermissionanswer") {
+                    m.calls.push({ command, data });
+                    return answer(data);
+                }
+                if (command === "agentpermissionpending") {
+                    return Promise.resolve({ oref: data, requests: m.queues[data] ?? [] });
+                }
+                if (command === "answeragent") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(null);
+                }
+                if (command === "runtranscriptpath" && data?.runid === ${JSON.stringify(ctx.endedRun ?? "")}) {
+                    return Promise.resolve(${JSON.stringify(ctx.files.ended)});
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${AC_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const removeAgentChatMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${AC_MOCK_KEY};
+        if (!m) return "absent";
+        for (const release of m.held.splice(0)) release();
+        m.api.setMockRpcClient(m.prev);
+        delete window.${AC_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const acCalls = (h, command) => h.ev(`(window.${AC_MOCK_KEY}?.calls ?? []).filter((c) => c.command === ${JSON.stringify(command)})`);
+// what was typed into one block, in order. A resize carries no input, and the xterm reports its own focus (ESC [ I and
+// ESC [ O) to a TUI that asked for it, which is the terminal's, not something the chat typed
+const acInputs = async (h, blockId) =>
+    (await acCalls(h, "controllerinput"))
+        .filter((c) => c.data.blockid === blockId && c.data.input !== "" && !/^\x1b\[[IO]$/.test(c.data.input))
+        .map((c) => c.data.input);
+const acSetAnswer = (h, mode) => h.ev(`(() => { window.${AC_MOCK_KEY}.answer = ${JSON.stringify(mode)}; return true; })()`);
+const acRelease = (h) =>
+    h.ev(`(() => {
+        const held = window.${AC_MOCK_KEY}.held.splice(0);
+        for (const release of held) release();
+        return held.length;
+    })()`);
+// a fixture queue on an agent's card: the mock holds what wavesrv would, and the store takes it as the event would bring it
+const acQueue = (h, oref, requests) =>
+    h.ev(`(() => {
+        window.${AC_MOCK_KEY}.queues[${JSON.stringify(oref)}] = ${JSON.stringify(requests)};
+        window.__arcAgentPermission.set(${JSON.stringify(oref)}, ${JSON.stringify(requests)});
+        return true;
+    })()`);
+
+const acKeys = {
+    modShiftK: { key: "K", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 10 },
+    altC: { key: "c", code: "KeyC", windowsVirtualKeyCode: 67, modifiers: 1 },
+};
+async function acKey(h, k) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, ...k });
+    }
+}
+// text into a box through the page's own input path, then Enter unless told not to
+async function acType(h, boxExpr, text, enter = true) {
+    await h.ev(`(${boxExpr})?.focus()`);
+    await h.cdp("Input.insertText", { text });
+    if (enter) {
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+        }
+    }
+}
+const acHeader = (h) =>
+    h.ev(`(() => {
+        const g = ${acHeaderGroup};
+        return g
+            ? { label: g.getAttribute("aria-label"), buttons: [...g.querySelectorAll("button")].map((b) => ({ text: b.textContent.trim(), pressed: b.getAttribute("aria-pressed") === "true" })) }
+            : null;
+    })()`);
+const acHeaderClick = (h, label) =>
+    h.ev(`(() => {
+        const b = [...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].find((x) => x.textContent.trim() === ${JSON.stringify(label)});
+        b?.click();
+        return !!b;
+    })()`);
+const acMode = (h, id) => h.ev(`window.__arcChatMode.get(${JSON.stringify(id)})`);
+// DOM focus is in the xterm of this agent's cell, or in the chat box of its layer
+const acFocusIn = (h, id) =>
+    h.ev(`(() => {
+        const a = document.activeElement;
+        return {
+            xterm: !!a?.closest?.(".xterm") && a.closest("[data-agent-terminal]")?.getAttribute("data-agent-terminal") === ${JSON.stringify(id)},
+            box: a?.tagName === "TEXTAREA" && !!a.closest('[data-agent-chat="${id}"] [data-agent-chat-composer]'),
+        };
+    })()`);
+
+// An Alt-drop of one agent's tree row onto another agent's cell (the gridDrag pattern, with Alt held on the drag events):
+// dragstart on the row, then dragenter, dragover and drop on the overlay the cell mounts. `hint` is the overlay's text once
+// it reads as a mention ("Mention @<id>"), which only an Alt-held dragover over a cell that takes one produces.
+async function acAltDrop(h, { source, target }) {
+    return h.ev(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const until = async (read, tries) => {
+            let v = read();
+            for (let i = 0; i < tries && !v; i++) {
+                await wait(50);
+                v = read();
+            }
+            return v;
+        };
+        const src = document.querySelector(${JSON.stringify(`[data-agent-row="${source}"]`)});
+        if (!src) return { ok: false, why: "no drag source" };
+        const dt = new DataTransfer();
+        const fire = (el, type, x, y, alt) =>
+            el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x ?? 0, clientY: y ?? 0, altKey: alt === true }));
+        fire(src, "dragstart");
+        const ov = await until(() => document.querySelector(${JSON.stringify(`[data-agent-drop-overlay="${target}"]`)}), 60);
+        if (!ov) {
+            fire(src, "dragend");
+            return { ok: false, why: "no drop overlay over the target cell" };
+        }
+        const r = ov.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        fire(ov, "dragenter", x, y, true);
+        fire(ov, "dragover", x, y, true);
+        const hint = await until(() => (/^Mention /.test(ov.textContent ?? "") ? ov.textContent.trim() : null), 20);
+        fire(ov, "drop", x, y, true);
+        fire(src, "dragend");
+        await wait(100);
+        return { ok: true, hint, left: document.querySelectorAll("[data-agent-drop-overlay]").length };
+    })()`);
+}
+
+const agentChat = {
+    name: "agent-chat",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-agent-chat-")),
+            tabs: {},
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        // a throw past this point still returns ctx, so teardown undoes whatever was already made
+        try {
+            ctx.files = acWriteFixtures(ctx.dir);
+            await acArrangeRun(h, ctx);
+            // the run is read at boot; the grid starts empty and no agent starts pinned
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            for (const key of Object.keys(AC_NAMES)) {
+                ctx.tabs[key] = await acMakeTab(h, ctx, { label: AC_NAMES[key] });
+            }
+            ctx.prevRail = await AC.agentPage(
+                h,
+                `const R = await mod("app/view/agents/railstore.ts");
+                const prev = globalStore.get(R.railVisibleAtom);
+                globalStore.set(R.railVisibleAtom, true);
+                return prev;`
+            );
+            await AC.setRoster(h, acRoster(ctx));
+            const mock = await installAgentChatMock(h, ctx);
+            if (mock !== "installed") throw new Error(`chat mock: ${mock}`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster, the run and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const B = ctx.tabs.second.tabId;
+        const C = ctx.tabs.codex.tabId;
+        const D = ctx.tabs.ask.tabId;
+        const E = ctx.tabs.bare.tabId;
+        const F = ctx.tabs.asleep.tabId;
+        const blockA = ctx.tabs.main.blockId;
+        const orefA = `block:${blockA}`;
+        const showAgent = async (id) => {
+            await AC.focusAgent(h, id);
+            return polishWaitFor(h, `!!${acCell(id)}`, AC_WAIT_MS);
+        };
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // the keys need the page in focus, which Chromium holds back while the dev window is behind another
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+
+            // 1. a Claude cell opens in Chat
+            await showAgent(A);
+            const loaded = await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 6`, 15000);
+            // tagged now, so step 6 can tell the same xterm from a remounted one
+            await h.ev(`${acCell(A)}?.querySelector(".xterm")?.setAttribute("data-verify-mark", "agent-chat")`);
+            const header1 = await acHeader(h);
+            const bubbles = await h.ev(`(() => {
+                const layer = ${acLayer(A)};
+                const cr = layer?.querySelector("[data-chat-conversation]")?.getBoundingClientRect();
+                const you = layer?.querySelector("[data-chat-you]");
+                const yr = you?.getBoundingClientRect();
+                const who = layer?.querySelector("[data-chat-agent]");
+                const av = who?.firstElementChild?.getBoundingClientRect();
+                const prose = who?.querySelector("[data-chat-prose]")?.getBoundingClientRect();
+                const sent = [...(layer?.querySelectorAll("[data-chat-sent]") ?? [])];
+                return {
+                    items: layer?.querySelectorAll("[data-chat-item]").length ?? 0,
+                    you: you?.textContent.trim() ?? null,
+                    youGap: yr && cr ? Math.round(cr.right - yr.right) : null,
+                    avatarGap: av && cr ? Math.round(av.left - cr.left) : null,
+                    proseBesideAvatar: av && prose ? prose.left >= av.right - 1 && prose.left - av.right < 24 : null,
+                    prose: who?.querySelector("[data-chat-prose]")?.textContent.trim() ?? null,
+                    pill: layer?.querySelector("[data-chat-work] [data-fold]")?.textContent.trim() ?? null,
+                    chip: layer?.querySelector("[data-chat-files] [data-chat-file]")?.getAttribute("data-chat-file") ?? null,
+                    sentFrom: sent.map((s) => s.getAttribute("data-chat-from")),
+                    sent: sent.map((s) => s.textContent.trim().slice(0, 100)),
+                    launchAsBubble: [...(layer?.querySelectorAll("[data-chat-you]") ?? [])].some((e) => /You are the worker|Your instructions are in the file/.test(e.textContent)),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-1-bubbles.png");
+            rec(
+                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose sits by its avatar, a work pill and a file chip show, the run's launch prompt and a pointer line are sent cards",
+                loaded &&
+                    header1?.buttons?.map((b) => b.text).join("|") === "Chat|Terminal" &&
+                    header1.buttons[0].pressed &&
+                    bubbles.items === 6 &&
+                    bubbles.you === AC_USER_TEXT &&
+                    bubbles.youGap != null && bubbles.youGap >= -1 && bubbles.youGap <= 3 &&
+                    bubbles.proseBesideAvatar === true &&
+                    bubbles.avatarGap != null && bubbles.avatarGap <= 3 &&
+                    bubbles.prose === AC_PROSE_1 &&
+                    /^Worked for .+ · 2 tools$/.test(bubbles.pill ?? "") &&
+                    (bubbles.chip ?? "").endsWith("client.ts") &&
+                    JSON.stringify(bubbles.sentFrom) === JSON.stringify(["run", "run"]) &&
+                    bubbles.launchAsBubble === false,
+                { header1, bubbles }
+            );
+            // a codex agent has no Chat: its terminal shows, and the control (if any) has no Chat option
+            await showAgent(C);
+            await polishWaitFor(h, `!!${acCell(C)}?.querySelector(".xterm")`, AC_WAIT_MS);
+            const codex = await h.ev(`(() => ({
+                layer: !!${acLayer(C)},
+                xterm: !!${acCell(C)}?.querySelector(".xterm"),
+                chatButton: [...document.querySelectorAll("[data-agent-header] button")].some((b) => b.textContent.trim() === "Chat"),
+                mode: window.__arcChatMode.get(${JSON.stringify(C)}),
+            }))()`);
+            await h.shot("cdp-shots/agent-chat-1-codex.png");
+            rec(
+                "1b. a codex agent has no Chat option and shows its terminal",
+                codex.layer === false && codex.xterm && codex.chatButton === false,
+                codex
+            );
+
+            // 2. typing and Enter sends the line plus Enter to the block
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            await acType(h, acBox(A), "hello");
+            const sent2 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "hello\\r")`, 3000);
+            const left2 = await h.ev(`${acBox(A)}?.value ?? null`);
+            await h.shot("cdp-shots/agent-chat-2-send.png");
+            rec(
+                "2. typing hello and Enter sends hello\\r to the block, and the box empties",
+                sent2 && JSON.stringify(await acInputs(h, blockA)) === JSON.stringify(["hello\r"]) && left2 === "",
+                { inputs: await acInputs(h, blockA), left2 }
+            );
+
+            // 3. an attachment through the box's paste path: the tray shows it, and the send carries its path
+            const pasted = await h.ev(`(() => {
+                const ta = ${acBox(A)};
+                if (!ta) return { ok: false, why: "no box" };
+                ta.focus();
+                const dt = new DataTransfer();
+                dt.items.add(new File(["chat attachment body"], "chat-note.txt", { type: "text/plain" }));
+                const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+                ta.dispatchEvent(ev);
+                return { ok: true, taken: ev.defaultPrevented };
+            })()`);
+            const chipReady = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('[data-attachment-chip="ready"][data-attachment-path]')`, 10000);
+            const chipPath = await h.ev(`${acLayer(A)}?.querySelector("[data-attachment-chip]")?.getAttribute("data-attachment-path") ?? null`);
+            await h.shot("cdp-shots/agent-chat-3-attachment.png");
+            await acType(h, acBox(A), "see the note");
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input.startsWith("see the note"))`, 3000);
+            const inputs3 = await acInputs(h, blockA);
+            const withFile = inputs3.find((i) => i.startsWith("see the note")) ?? "";
+            const trayAfter = await h.ev(`${acLayer(A)}?.querySelectorAll("[data-attachment-chip]").length ?? 0`);
+            rec(
+                "3. a file pasted in the box shows in the tray, and the send carries its path",
+                pasted.taken === true && chipReady && chipPath != null && withFile.includes(`Attachments (read these files):\n- ${chipPath}`) && withFile.endsWith("\r") && trayAfter === 0,
+                { pasted, chipPath, withFile, trayAfter }
+            );
+
+            // 4. the agent working: the working line shows its activity, and Stop sends Esc
+            await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
+            const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
+            await h.shot("cdp-shots/agent-chat-4-working.png");
+            const stopsBefore = (await acInputs(h, blockA)).length;
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
+            const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
+            const afterStop = (await acInputs(h, blockA)).slice(stopsBefore);
+            rec(
+                "4. with the agent working, the working line shows its activity and Stop sends Esc",
+                working && stopped && JSON.stringify(afterStop) === JSON.stringify(["\x1b"]),
+                { working, afterStop }
+            );
+
+            // 5. the work pill opens its tool lines, and the file chip opens the diff
+            const before5 = await h.ev(`({ tools: ${acLayer(A)}?.querySelectorAll("[data-chat-tools]").length ?? 0, diff: ${acLayer(A)}?.querySelectorAll("[data-chat-diff]").length ?? 0 })`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-work] [data-fold]")?.click()`);
+            const toolsOpen = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-tools]")?.textContent ?? "").length > 0`, 3000);
+            const tools = await h.ev(`${acLayer(A)}?.querySelector("[data-chat-tools]")?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file]")?.click()`);
+            const diffOpen = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-diff]")`, 3000);
+            const diff = await h.ev(`${acLayer(A)}?.querySelector("[data-chat-diff]")?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-diff]")?.scrollIntoView({ block: "center" })`);
+            await h.shot("cdp-shots/agent-chat-5-work-and-diff.png");
+            rec(
+                "5. the work pill opens its tool lines, the file chip opens the diff",
+                before5.tools === 0 && before5.diff === 0 && toolsOpen && /read/i.test(tools ?? "") && /edit/i.test(tools ?? "") && diffOpen &&
+                    (diff ?? "").includes("retries = 3"),
+                { before5, tools, diff }
+            );
+
+            // 6. picking Terminal: the layer is gone, the xterm is the same element with focus, the rail has its Transcript
+            // tab; picking Chat brings the layer back and focus to the box
+            await acHeaderClick(h, "Terminal");
+            const gone = await polishWaitFor(h, `!${acLayer(A)}`, 3000);
+            await polishWaitFor(h, `!!document.activeElement?.closest?.(".xterm")`, 3000);
+            const term6 = await h.ev(`(() => {
+                const x = ${acCell(A)}?.querySelector(".xterm");
+                return {
+                    sameXterm: x?.getAttribute("data-verify-mark") === "agent-chat",
+                    railTranscript: !!document.querySelector('aside[aria-label="Agent details"] [data-rail-key="transcript"]'),
+                };
+            })()`);
+            const focusTerm = await acFocusIn(h, A);
+            const header6 = await acHeader(h);
+            await h.shot("cdp-shots/agent-chat-6-terminal.png");
+            await acHeaderClick(h, "Chat");
+            const back = await polishWaitFor(h, `!!${acLayer(A)}`, 3000);
+            await polishWaitFor(h, `document.activeElement === ${acBox(A)}`, 3000);
+            const focusChat = await acFocusIn(h, A);
+            const same6 = await h.ev(`${acCell(A)}?.querySelector(".xterm")?.getAttribute("data-verify-mark") === "agent-chat"`);
+            const railBack = await h.ev(`!!document.querySelector('aside[aria-label="Agent details"] [data-rail-key="transcript"]')`);
+            await h.shot("cdp-shots/agent-chat-6-chat-again.png");
+            rec(
+                "6. picking Terminal removes the chat layer, keeps the same xterm with focus in it and shows the rail's Transcript tab; picking Chat brings the layer back with focus in the box",
+                gone && term6.sameXterm && term6.railTranscript && focusTerm.xterm &&
+                    header6?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
+                    back && same6 && focusChat.box && railBack === false,
+                { gone, term6, focusTerm, header6, back, same6, focusChat, railBack }
+            );
+
+            // 7. Mod+Shift+K flips Chat → Terminal → Chat; Alt+C walks Chat → Terminal
+            await acKey(h, acKeys.modShiftK);
+            const flip1 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal"`, 3000);
+            await acKey(h, acKeys.modShiftK);
+            const flip2 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "chat"`, 3000);
+            await polishWaitFor(h, `!!${acLayer(A)}`, 3000);
+            await acKey(h, acKeys.altC);
+            const walk = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal"`, 3000);
+            await h.shot("cdp-shots/agent-chat-7-keys.png");
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acLayer(A)}`, 3000);
+            rec(
+                "7. Ctrl+Shift+K flips Chat → Terminal → Chat, and Alt+C walks Chat → Terminal",
+                flip1 && flip2 && walk,
+                { flip1, flip2, walk }
+            );
+
+            // 8. in a split of two Claude cells each grid bar has its own switch, and flipping one leaves the other in Chat
+            const opened = await AC.agentPage(
+                h,
+                `const G = await mod("app/view/agents/gridstore.ts");
+                return G.openInSplit(agentsModel(), ${JSON.stringify(B)});`
+            );
+            await polishWaitFor(h, `!!${acLayer(B)} && !!${acLayer(A)}`, AC_WAIT_MS);
+            const split = await h.ev(`(() => ({
+                switches: [...document.querySelectorAll("[data-agent-chat-switch]")].map((s) => [s.getAttribute("data-agent-chat-switch"), s.getAttribute("data-chat-mode")]),
+                bars: document.querySelectorAll("[data-agent-cell-bar] [data-agent-chat-switch]").length,
+            }))()`);
+            await h.ev(`[...document.querySelectorAll('[data-agent-chat-switch="${B}"] button')].find((b) => b.textContent.trim() === "Terminal")?.click()`);
+            await polishWaitFor(h, `!${acLayer(B)}`, 3000);
+            const flipped = await h.ev(`(() => ({
+                a: document.querySelector('[data-agent-chat-switch="${A}"]')?.getAttribute("data-chat-mode"),
+                b: document.querySelector('[data-agent-chat-switch="${B}"]')?.getAttribute("data-chat-mode"),
+                layerA: !!${acLayer(A)},
+                layerB: !!${acLayer(B)},
+            }))()`);
+            await h.shot("cdp-shots/agent-chat-8-split.png");
+            await h.ev(`[...document.querySelectorAll('[data-agent-chat-switch="${B}"] button')].find((b) => b.textContent.trim() === "Chat")?.click()`);
+            await polishWaitFor(h, `!!${acLayer(B)}`, 3000);
+            await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
+            await showAgent(A);
+            rec(
+                "8. in a split of two Claude cells each grid bar has its own switch, and flipping B leaves A in Chat",
+                opened === true && split.bars === 2 && JSON.stringify(split.switches.map((s) => s[0]).sort()) === JSON.stringify([A, B].sort()) &&
+                    split.switches.every((s) => s[1] === "chat") &&
+                    flipped.a === "chat" && flipped.b === "terminal" && flipped.layerA && !flipped.layerB,
+                { opened, split, flipped }
+            );
+
+            // 9. two queued Bash requests: the card shows the command, Allow, Deny, "More options in Terminal" and "1 more waiting";
+            // Allow sends the answer with the head's id, and the buttons are locked while it is in flight
+            const now = Date.now();
+            const perm = (id, toolname, summary, answerable = true) => ({ id, toolname, summary, answerable, ts: now });
+            await acQueue(h, orefA, [perm("perm-1", "Bash", "npm test -- --run"), perm("perm-2", "Bash", "git status --short")]);
+            const cardUp = await polishWaitFor(h, `!!${acCard(A)}`, 3000);
+            const card9 = await h.ev(`(() => {
+                const c = ${acCard(A)};
+                const t = (sel) => c?.querySelector(sel)?.textContent.trim() ?? null;
+                return {
+                    summary: t("[data-permission-summary]"),
+                    allow: t("[data-permission-allow]"),
+                    deny: t("[data-permission-deny]"),
+                    terminal: t("[data-permission-terminal]"),
+                    more: t("[data-permission-more]"),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-9-permission.png");
+            await acSetAnswer(h, "hold");
+            await h.ev(`${acCard(A)}?.querySelector("[data-permission-allow]")?.click()`);
+            const asked = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "agentpermissionanswer")`, 3000);
+            const locked = await polishWaitFor(h, `${acCard(A)}?.querySelector("[data-permission-allow]")?.disabled === true && ${acCard(A)}?.querySelector("[data-permission-deny]")?.disabled === true`, 3000);
+            await h.shot("cdp-shots/agent-chat-9-allow-in-flight.png");
+            const answers9 = await acCalls(h, "agentpermissionanswer");
+            await acRelease(h);
+            await polishWaitFor(h, `(${acCard(A)}?.querySelector("[data-permission-summary]")?.textContent ?? "").includes("git status")`, 3000);
+            const second = await h.ev(`(() => {
+                const c = ${acCard(A)};
+                return {
+                    summary: c?.querySelector("[data-permission-summary]")?.textContent.trim() ?? null,
+                    more: c?.querySelector("[data-permission-more]")?.textContent.trim() ?? null,
+                    enabled: c?.querySelector("[data-permission-allow]")?.disabled === false,
+                };
+            })()`);
+            rec(
+                "9. two queued Bash requests show the command, Allow, Deny, More options in Terminal and 1 more waiting; Allow sends the answer with the head's id and allow: true, the buttons locked while it is in flight, then the next request is the card",
+                cardUp && card9.summary === "$ npm test -- --run" && card9.allow === "Allow" && card9.deny === "Deny" &&
+                    card9.terminal === "More options in Terminal" && card9.more === "1 more waiting" &&
+                    asked && locked && answers9.length === 1 && JSON.stringify(answers9[0].data) === JSON.stringify({ oref: orefA, id: "perm-1", allow: true }) &&
+                    second.summary === "$ git status --short" && second.more === null && second.enabled,
+                { card9, answers9, locked, second }
+            );
+
+            // 10. Deny sends allow: false; an answer the server refuses shows its message on the card
+            await acSetAnswer(h, "ok");
+            await h.ev(`${acCard(A)}?.querySelector("[data-permission-deny]")?.click()`);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "agentpermissionanswer").length === 2`, 3000);
+            const denied = (await acCalls(h, "agentpermissionanswer"))[1];
+            await polishWaitFor(h, `!${acCard(A)}`, 3000);
+            await acQueue(h, orefA, [perm("perm-3", "Bash", "npm run build")]);
+            await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-allow]")`, 3000);
+            await acSetAnswer(h, "refuse");
+            await h.ev(`${acCard(A)}?.querySelector("[data-permission-allow]")?.click()`);
+            const refused = await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-error]")`, 3000);
+            const error10 = await h.ev(`${acCard(A)}?.querySelector("[data-permission-error]")?.textContent.trim() ?? null`);
+            await h.shot("cdp-shots/agent-chat-10-refused.png");
+            rec(
+                "10. Deny sends allow: false; an answer the server refuses shows its message on the card",
+                denied?.data?.id === "perm-2" && denied.data.allow === false && refused && error10 === AC_REFUSED,
+                { denied, error10 }
+            );
+            await acSetAnswer(h, "ok");
+
+            // 11. an ExitPlanMode request offers only "Answer in Terminal", which flips the cell to Terminal
+            await acQueue(h, orefA, [perm("perm-4", "ExitPlanMode", "Plan: retry the sync client three times", false)]);
+            await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-summary]")`, 3000);
+            const card11 = await h.ev(`(() => {
+                const c = ${acCard(A)};
+                return {
+                    buttons: [...(c?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()),
+                    allow: !!c?.querySelector("[data-permission-allow]"),
+                    deny: !!c?.querySelector("[data-permission-deny]"),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-11-plan.png");
+            await h.ev(`${acCard(A)}?.querySelector("[data-permission-terminal]")?.click()`);
+            const flipped11 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
+            rec(
+                "11. an ExitPlanMode request shows only Answer in Terminal, which flips the cell to Terminal",
+                JSON.stringify(card11.buttons) === JSON.stringify(["Answer in Terminal"]) && !card11.allow && !card11.deny && flipped11,
+                { card11, flipped11 }
+            );
+            await acQueue(h, orefA, []);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+
+            // 12. an agent asking an AskUserQuestion shows its choices in the chat; clicking one sends the answer
+            await showAgent(D);
+            const askUp = await polishWaitFor(h, `!!${acLayer(D)}?.querySelector("[data-chat-ask] button")`, AC_WAIT_MS);
+            const ask12 = await h.ev(`(() => {
+                const w = ${acLayer(D)}?.querySelector("[data-chat-ask]");
+                return { text: w?.textContent.replace(/\\s+/g, " ").trim() ?? null, buttons: [...(w?.querySelectorAll("button") ?? [])].map((b) => b.textContent.replace(/\\s+/g, " ").trim()) };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-12-ask.png");
+            await h.ev(`[...(${acLayer(D)}?.querySelectorAll("[data-chat-ask] button") ?? [])].find((b) => b.textContent.includes(${JSON.stringify(AC_CHOICES[1])}))?.click()`);
+            const answered = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "answeragent")`, 3000);
+            const answer12 = (await acCalls(h, "answeragent"))[0];
+            rec(
+                "12. an agent asking an AskUserQuestion shows its question and choices in the chat; clicking one sends the answer",
+                askUp && (ask12.text ?? "").includes(AC_QUESTION) && AC_CHOICES.every((c) => ask12.buttons.some((b) => b.includes(c))) &&
+                    answered && answer12?.data?.oref === `block:${ctx.tabs.ask.blockId}` &&
+                    JSON.stringify(answer12.data.answers) === JSON.stringify([{ selectedindexes: [1] }]),
+                { ask12, answer12 }
+            );
+
+            // 13. a Claude agent with no transcript yet: an empty conversation and the box, no endless skeleton
+            await showAgent(E);
+            const bare = await polishWaitFor(h, `!!${acLayer(E)}?.querySelector("[data-chat-empty]")`, AC_WAIT_MS);
+            const bare13 = await h.ev(`(() => {
+                const l = ${acLayer(E)};
+                return {
+                    empty: l?.querySelector("[data-chat-empty]")?.textContent.trim() ?? null,
+                    conversation: !!l?.querySelector("[data-chat-conversation]"),
+                    box: !!l?.querySelector("[data-agent-chat-composer] textarea"),
+                    skeleton: !!l?.querySelector(".animate-pulse"),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-13-empty.png");
+            rec(
+                "13. a Claude agent with no transcript yet shows an empty conversation and the box, no skeleton",
+                bare && bare13.empty?.startsWith("No messages yet") && !bare13.conversation && bare13.box && !bare13.skeleton,
+                bare13
+            );
+
+            // 14. an asleep Claude agent draws bubbles with the wake box
+            await showAgent(F);
+            const asleep = await polishWaitFor(h, `!!${acCell(F)}?.querySelector('[data-sleeping-transcript="${F}"] [data-chat-you]')`, AC_WAIT_MS);
+            const sleep14 = await h.ev(`(() => {
+                const cover = ${acCell(F)}?.querySelector('[data-sleeping-transcript="${F}"]');
+                const box = cover?.querySelector('[data-sleeping-composer="${F}"]');
+                return {
+                    you: cover?.querySelector("[data-chat-you]")?.textContent.trim() ?? null,
+                    agent: !!cover?.querySelector("[data-chat-agent]"),
+                    placeholder: box?.querySelector("textarea")?.placeholder ?? null,
+                    send: box?.querySelector("button")?.textContent.trim() ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-14-asleep.png");
+            rec(
+                "14. an asleep Claude agent draws bubbles with the wake box",
+                asleep && sleep14.you === "an earlier question" && sleep14.agent && (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Send",
+                sleep14
+            );
+
+            // 15. a run's ended Claude worker, read in the centre, draws bubbles
+            const endedId = `ended:${ctx.runId}:t-1`;
+            if (ctx.endedState !== "done") {
+                rec("15. a run's ended Claude worker, read in the centre, draws bubbles", false, `the engine left t-1 ${ctx.endedState} after ${AC_ENDED_WAIT_MS}ms`);
+            } else {
+                await AC.focusAgent(h, endedId);
+                const endedUp = await polishWaitFor(h, `!!document.querySelector("[data-chat-conversation] [data-chat-you]") && document.body.innerText.includes("the worker's finished report")`, 15000);
+                const ended15 = await h.ev(`(() => {
+                    const conv = document.querySelector("[data-chat-conversation]");
+                    return {
+                        you: conv?.querySelector("[data-chat-you]")?.textContent.trim() ?? null,
+                        prose: conv?.querySelector("[data-chat-prose]")?.textContent.trim() ?? null,
+                        banner: document.body.innerText.includes("Session ended") || document.body.innerText.includes(${JSON.stringify(AC_ENDED_LABEL)}),
+                        composer: !!document.querySelector("[data-agent-chat-composer]"),
+                    };
+                })()`);
+                await h.shot("cdp-shots/agent-chat-15-ended-worker.png");
+                rec(
+                    "15. a run's ended Claude worker, read in the centre, draws bubbles",
+                    endedUp && ended15.you === "the worker's task prompt" && ended15.prose === "the worker's finished report",
+                    ended15
+                );
+            }
+
+            // 16. a subagent opened in the cell draws bubbles
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acLayer(A)}`, AC_WAIT_MS);
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/subagentsstore.ts");
+                globalStore.set(S.focusSubagentAtom, {
+                    parentId: ${JSON.stringify(A)},
+                    agentId: ${JSON.stringify(AC_SUB_ID)},
+                    transcriptPath: ${JSON.stringify(ctx.files.sub)},
+                    label: "Explore",
+                });
+                return true;`
+            );
+            const subUp = await polishWaitFor(h, `!!(${AC_INTERIOR})?.querySelector("[data-chat-conversation] [data-chat-you]")`, 15000);
+            const sub16 = await h.ev(`(() => {
+                const pane = ${AC_INTERIOR};
+                return {
+                    you: pane?.querySelector("[data-chat-you]")?.textContent.trim() ?? null,
+                    prose: pane?.querySelector("[data-chat-prose]")?.textContent.trim() ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-16-subagent.png");
+            rec(
+                "16. a subagent opened in the cell draws bubbles",
+                subUp && sub16.you === "survey the sync client for stale retries" && sub16.prose === "The subagent found two stale retries.",
+                sub16
+            );
+
+            // 17. in a split of two Claude cells, an Alt-drop of E's row onto A's cell, which shows Chat, leaves E's mention in
+            // A's message box with focus in it, and types nothing into A's block. E is dragged, not B: a split's cells share one
+            // row in the tree (the split row), so B has no row of its own to drag while it is in the split.
+            await AC.agentPage(h, `const S = await mod("app/view/agents/subagentsstore.ts"); globalStore.set(S.focusSubagentAtom, null); return true;`);
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat"); window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
+            const split17 = await AC.agentPage(
+                h,
+                `const G = await mod("app/view/agents/gridstore.ts");
+                return G.openInSplit(agentsModel(), ${JSON.stringify(B)});`
+            );
+            await polishWaitFor(h, `!!${acBox(A)} && !!${acBox(B)}`, AC_WAIT_MS);
+            await showAgent(A);
+            const mention = `@${E.slice(0, 8)} `;
+            const before17 = await acInputs(h, blockA);
+            const drop17 = await acAltDrop(h, { source: E, target: A });
+            const landed17 = await polishWaitFor(h, `${acBox(A)}?.value === ${JSON.stringify(mention)}`, 3000);
+            const focus17 = await acFocusIn(h, A);
+            const after17 = await acInputs(h, blockA);
+            const boxes17 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
+            await h.shot("cdp-shots/agent-chat-17-alt-drop-chat.png");
+            rec(
+                "17. in a split, an Alt-drop of E's row onto A's cell in Chat leaves E's mention in A's message box with focus in it, and types nothing into A's block",
+                split17 === true && drop17?.ok === true && /^Mention @/.test(drop17.hint ?? "") && drop17.left === 0 &&
+                    landed17 && boxes17.a === mention && boxes17.b === "" && focus17.box && !focus17.xterm &&
+                    JSON.stringify(after17) === JSON.stringify(before17),
+                { split17, drop17, boxes17, focus17, before17, after17 }
+            );
+
+            // 18. with A flipped to Terminal the same Alt-drop goes to the PTY as before: no chat box to take it, the paste
+            // reaches A's block, and focus is in the xterm
+            await acKey(h, acKeys.modShiftK);
+            const termUp18 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
+            await polishWaitFor(h, `!!${acCell(A)}?.querySelector(".xterm-helper-textarea")?.checkVisibility()`, 3000);
+            const before18 = await acInputs(h, blockA);
+            const drop18 = await acAltDrop(h, { source: E, target: A });
+            let after18 = before18;
+            for (let i = 0; i < 30 && !after18.slice(before18.length).some((s) => s.includes(mention.trim())); i++) {
+                await polishNap(100);
+                after18 = await acInputs(h, blockA);
+            }
+            const focus18 = await acFocusIn(h, A);
+            await h.shot("cdp-shots/agent-chat-18-alt-drop-terminal.png");
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)}`, 3000);
+            const boxes18 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
+            const typed18 = after18.slice(before18.length);
+            rec(
+                "18. with A flipped to Terminal the same Alt-drop pastes the mention into A's PTY as before (no chat layer, focus in the xterm), and no chat box takes it",
+                termUp18 && drop18?.ok === true && /^Mention @/.test(drop18.hint ?? "") &&
+                    typed18.length > 0 && typed18.join("").includes(mention.trim()) && focus18.xterm && !focus18.box &&
+                    boxes18.a === "" && boxes18.b === "",
+                { termUp18, drop18, typed18, focus18, boxes18 }
+            );
+            await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
+            await showAgent(A);
+
+            // 19. with the cell showing Chat, the float note opening and closing (Mod+Shift+N) hands focus back to the chat
+            // box, not to the xterm under it. Float resizes the window: the step leaves it again.
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            await h.ev(`${acBox(A)}?.focus()`);
+            const modBit = (await h.ev(`/Mac/i.test(navigator.platform)`)) ? 4 : 2;
+            await floatNoteChord(h, { modBit });
+            const noteUp19 = await floatMiniWait(h, `!!document.querySelector("[data-float-note]")`, 8000);
+            await floatNoteChord(h, { modBit });
+            const noteGone19 = await floatMiniWait(h, `!document.querySelector("[data-float-note]")`, 3000);
+            await h.ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+            const focus19 = await acFocusIn(h, A);
+            await h.shot("cdp-shots/agent-chat-19-float-note-closed.png");
+            await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+            const unfloated19 = await floatMiniWait(h, `!document.querySelector("[data-float-bar]") && sessionStorage.getItem("arc.float.restore") == null`, 8000);
+            rec(
+                "19. with the cell showing Chat, opening and closing the float note hands focus back to the chat box, not the xterm",
+                noteUp19 && noteGone19 && focus19.box && !focus19.xterm && unfloated19,
+                { noteUp19, noteGone19, focus19, unfloated19 }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agent-chat teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the subagent interior", () =>
+            AC.agentPage(h, `const S = await mod("app/view/agents/subagentsstore.ts"); globalStore.set(S.focusSubagentAtom, null); return true;`)
+        );
+        // step 19 floats the window: a throw before it left Float again must not strand the next scenario in it
+        await step("leave Float", () =>
+            floatMiniWait(h, `(document.querySelector("[data-float-exit]")?.click(), !document.querySelector("[data-float-bar]"))`, 8000)
+        );
+        await step("end the split", () =>
+            AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`)
+        );
+        await step("remove the mock", () => removeAgentChatMock(h));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("clear the permission queue", () =>
+            h.ev(`(() => { for (const id of ${JSON.stringify(Object.values(ctx.tabs).map((t) => `block:${t.blockId}`))}) window.__arcAgentPermission?.set(id, []); return true; })()`)
+        );
+        await step("restore the rail", () =>
+            ctx.prevRail === undefined
+                ? null
+                : AC.agentPage(h, `const R = await mod("app/view/agents/railstore.ts"); globalStore.set(R.railVisibleAtom, ${JSON.stringify(ctx.prevRail)}); return true;`)
+        );
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcripts", () => rmSync(ctx.dir, { recursive: true, force: true }));
+        // the run, its channel and trees, the temp repo and the reload onto the live roster
+        if (ctx.cwd) {
+            await teardownFixtureRun(h, ctx, "agent-chat");
+        } else {
+            await step("reload onto the live roster", () => ahReload(h));
+        }
+        await step("go home", () => h.goto("cockpit"));
     },
 };
 
@@ -54587,7 +55669,7 @@ async function insertTextInto(h, selector, text, replace = false) {
 const NOIDEAS_AGENT = "fx-rail-check";
 const NOIDEAS_PROJECT = "verify-rail-check";
 const NOIDEAS_SESSION = "rail-check-fixture";
-const NOIDEAS_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", GRID_KEY, TREE_COLLAPSED_KEY, ...AH_FOLDS_KEYS];
+const NOIDEAS_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", GRID_KEY, TREE_COLLAPSED_KEY, ...AH_FOLDS_KEYS, "agent.chatmode"];
 const NOIDEAS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 
 // what of Ideas the page shows: the rail's count and section (and any word of it in the rail), the chip, the Add box, a toast
@@ -54690,6 +55772,9 @@ const agentRailNoIdeas = {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify(NOIDEAS_KEYS.filter((k) => k !== RAIL_VISIBLE_KEY && k !== GRID_KEY))}) localStorage.removeItem(k);
                 localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))});
+                // the scenario drags over this agent's xterm, which a Claude agent in Chat covers: pinned to Terminal (read
+                // at boot; the key is one of NOIDEAS_KEYS, so teardown puts it back)
+                localStorage.setItem("agent.chatmode", ${JSON.stringify(JSON.stringify({ [NOIDEAS_AGENT]: "terminal" }))});
             })()`);
             // the roster is read once at boot, and so are the dev hooks (window.__arcTermPathLinks)
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
@@ -62912,6 +63997,7 @@ export const SCENARIOS = [
     consumersPopover,
     consumersClosePicked,
     agentSleep,
+    agentChat,
     machineServers,
     sidebarAgentGlyph,
     capacityWarn,

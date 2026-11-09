@@ -248,7 +248,8 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Ctrl`+`Shift`+`R` (Windows) | Redraw the terminal, from inside it too |
 | `Ctrl`+`R`, `Ctrl`+`Shift`+`R` or `F5` in a pinned app's page (Windows) | Reload the page where it is, as a browser does. These keys never reload arcterm itself; **Reload the window** in the palette does |
 | `d` | Toggle the agent rail |
-| `Mod`+`Shift`+`F` | Open the focused agent's transcript in the rail's Transcript tab (opening the rail), from inside the terminal too. An agent with no transcript yet leaves the key to the terminal |
+| `Mod`+`Shift`+`F` | Open the focused agent's transcript in the rail's Transcript tab (opening the rail), from inside the terminal too. An agent with no transcript yet, one asleep, or one showing Chat (its conversation is on screen already, and the rail has no Transcript tab then) leaves the key to the terminal |
+| `Mod`+`Shift`+`K` | Switch a Claude agent between Chat and its terminal (the header's Chat and Terminal control, or a split cell's own switch), from inside the terminal too. From a canvas, review or brainstorm in the terminal's place it shows Chat. Acts on the agent in focus; an agent that is not Claude, or is asleep, leaves the key to the terminal. Chat or Terminal is remembered per agent |
 | `i` | The focused agent's initiative: opens a popover on the header (its progress, the chunk this agent is on, what is next, a note). An agent with no initiative opens Link to initiative instead. Inside the popover: `m` Mark done (the next chunk starts), `n` Add note, `↑` / `↓` move over the chunks, `Enter` opens a chunk's status menu, `Esc` or `i` closes it |
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
@@ -258,7 +259,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid, Councils or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
-| `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, Changes, Transcript, File) while its tab strip has focus; the agent keys stand down there |
+| `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, Changes, Transcript, File; Transcript is missing while the agent shows Chat) while its tab strip has focus; the agent keys stand down there |
 | `↑` / `↓`, `←` / `→`, `Enter` | In the panel's Files tab: move the cursor, collapse / expand a folder, open a folder or open a file in the File tab |
 | `Esc` | In the panel's File tab: cancel the comment being written, else close the find bar, else close the file's tab |
 | `Mod`+`F` | In the File tab: find in the file. In a markdown Preview a find bar opens with the selected words; `Enter` / `Shift`+`Enter` step to the next / previous match and `Esc` closes it. In Source and Diff, the editor's own find |
@@ -364,7 +365,7 @@ worker's transcript each show one thing in place of the grid; the grid comes bac
 | Keys | Action |
 |---|---|
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
-| `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have (an agent with a brainstorm has Brainstorm in the canvas's place). Works from inside the terminal, where a bare `c` is typed into it |
+| `Alt`+`C` | Switch Chat → Terminal → Canvas → Review, skipping the ones the agent doesn't have (Chat is a Claude agent's only; an agent with a brainstorm has Brainstorm in the canvas's place). Works from inside the terminal, where a bare `c` is typed into it; with only one of them, the key goes to the terminal |
 | `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
 | `Alt`+`S` | Ship the agent whose header shows **Ship**: it commits its own changes, pulls and resolves conflicts, then pushes. Works from inside the terminal; when the header offers no Ship, the key goes to the terminal |
 | `[` / `]` or `←` / `→` | Previous / next board |
@@ -378,7 +379,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `r` | Back to the terminal |
-| `Alt`+`C` | Next of Terminal, Canvas (or Brainstorm), Review (as in canvas mode) |
+| `Alt`+`C` | Next of Chat, Terminal, Canvas (or Brainstorm), Review (as in canvas mode) |
 | `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
 | `c` | Comment on the selected text |
 | `e` | Suggest an edit: open the selected text's paragraph as source; `Mod`+`Enter` saves the suggestion, `Esc` cancels. The file is not changed; the agent is sent `Edit: replace "…" with "…"` |
@@ -393,7 +394,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 |---|---|
 | `b` | Show the agent's brainstorm; from the brainstorm, back to the terminal (while the question offers a B, `b` picks it instead) |
 | `Ctrl`+`Shift`+`B` | The same switch, and it also works while typing in the terminal or while `b` picks an answer |
-| `Alt`+`C` | Next of Terminal, Brainstorm, Review |
+| `Alt`+`C` | Next of Chat, Terminal, Brainstorm, Review (Chat for a Claude agent) |
 | `a` / `b` / `c` / `d` | While the brainstorm asks a question with answers to pick from: focus that answer; `Enter` sends it. Over a board open in its dialog they close the dialog first; they stand down while that board is being marked |
 | `[` / `]`, `←` / `→` | Previous / next board, while a board is open in its dialog |
 | `Enter` / `Shift`+`Enter` | In the answer box or an edit box: send / a new line |

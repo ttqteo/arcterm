@@ -15,6 +15,8 @@ import { useState } from "react";
 import { agentDragAtom, endAgentDrag } from "./agentdragstore";
 import type { DropZone, GridState } from "./agentgrid";
 import { mentionToken } from "./agentrowmodel";
+import { cellInputOf, chatInputOf } from "./cellinput";
+import { insertIntoChatBox } from "./chatinsert";
 import {
     AGENT_DRAG_MIME,
     allowedZones,
@@ -41,12 +43,7 @@ const FOCUS_DELAY_MS = 120; // let the xterm become visible
 
 // The drop leaves DOM focus on the row that was dragged; hand it to the cell that took the agent so typing goes there.
 function focusCellSoon(id: string): void {
-    window.setTimeout(() => {
-        const term = document.querySelector<HTMLElement>(`[data-agent-terminal="${id}"] .xterm-helper-textarea`);
-        if (term?.checkVisibility()) {
-            term.focus({ preventScroll: true });
-        }
-    }, FOCUS_DELAY_MS);
+    window.setTimeout(() => cellInputOf(document, id)?.focus({ preventScroll: true }), FOCUS_DELAY_MS);
 }
 
 export function GridDropOverlay(props: OverlayProps) {
@@ -94,7 +91,14 @@ function ActiveOverlay({ model, id, grid, mentionTo, dragId }: OverlayProps & { 
         setMention(false);
         endAgentDrag();
         if (mentionTo != null && e.altKey) {
-            // typed, not sent: the person writes the message after it and presses Enter
+            // typed, not sent: the person writes the message after it and presses Enter. A cell that shows Chat takes it
+            // in its message box (and focuses it): the xterm under the chat layer is not typed into.
+            if (chatInputOf(document, id) != null) {
+                if (!insertIntoChatBox(id, mentionDropText(dropped))) {
+                    pushToast({ title: "The message box is not ready for input", message: "", level: "warn" });
+                }
+                return;
+            }
             if (!pasteIntoTerm(mentionTo, mentionDropText(dropped))) {
                 pushToast({ title: "The terminal is not ready for input", message: "", level: "warn" });
                 return;

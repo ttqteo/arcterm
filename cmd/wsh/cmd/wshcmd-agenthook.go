@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -85,6 +86,10 @@ func planEmission(ev ccHookEvent) agentEmission {
 		}
 	case "PostToolUse":
 		return agentEmission{State: baseds.AgentState_Working, AttachModelTitle: true}
+	case "PermissionRequest":
+		// the prompt itself: waiting, with the tool it wants to run (as Codex's PermissionRequest reports it). The
+		// request's choices go to the chat card through permissionRaiseFor
+		return agentEmission{State: baseds.AgentState_Waiting, Detail: detailForTool(ev.ToolName, ev.ToolInput)}
 	case "PreToolUse":
 		switch ev.ToolName {
 		case "Task":
@@ -134,6 +139,30 @@ func detailForTool(name string, input json.RawMessage) string {
 		}
 	}
 	return name
+}
+
+// claudeHookReport is a report from Claude Code's own lifecycle hooks: not the opencode plugin's (agent), not a
+// shadow transcript's (shadow).
+func claudeHookReport(agent, shadow string) bool {
+	return agent == "claude" && shadow == ""
+}
+
+// permissionRaiseFor is the request a Claude PermissionRequest hook queues for the chat's permission card, with
+// the tool's input as Claude sent it. oref is the block the status is reported on.
+func permissionRaiseFor(ev ccHookEvent, agent, shadow, oref string) (wshrpc.CommandAgentPermissionRaiseData, bool) {
+	if ev.HookEventName != "PermissionRequest" || ev.ToolName == "" || !claudeHookReport(agent, shadow) {
+		return wshrpc.CommandAgentPermissionRaiseData{}, false
+	}
+	return wshrpc.CommandAgentPermissionRaiseData{ORef: oref, ToolName: ev.ToolName, ToolInput: ev.ToolInput}, true
+}
+
+// toolKeyFor is the tool key a Claude PostToolUse report carries, which retires the permission request that
+// granted the tool. agentperm.ToolKey is the one function that keys a call, here and in wavesrv.
+func toolKeyFor(ev ccHookEvent, agent, shadow string) string {
+	if ev.HookEventName != "PostToolUse" || ev.ToolName == "" || !claudeHookReport(agent, shadow) {
+		return ""
+	}
+	return agentperm.ToolKey(ev.ToolName, ev.ToolInput)
 }
 
 // isSubagentDispatch reports whether ev is about to start a subagent: Claude Code's Agent tool, named Task
@@ -792,6 +821,7 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		TranscriptPath: transcriptPath,
 		Ts:             startedTs,
 		Hook:           ev.HookEventName,
+		ToolKey:        toolKeyFor(ev, agentHookAgent, agentHookShadow),
 	}
 	if em.AttachModelTitle && transcriptPath != "" {
 		if agentHookShadow != "" {
@@ -822,6 +852,14 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		data.Step = askStep(ev.ToolInput, transcriptPath)
 	}
 	_ = publishAgentStatusData(oref, data, 1)
+	// after the status, so the waiting it reports is already out when the card's request arrives. Best-effort like
+	// the rest: a request that does not reach wavesrv leaves the prompt to be answered in the terminal
+	if raise, ok := permissionRaiseFor(ev, agentHookAgent, agentHookShadow, oref.String()); ok {
+		err := wshclient.AgentPermissionRaiseCommand(RpcClient, raise, &wshrpc.RpcOpts{Timeout: agentStatusPublishTimeoutMs})
+		if err != nil {
+			hookDebugLine("permission raise failed tool=" + raise.ToolName + " err=" + err.Error())
+		}
+	}
 	if address, cwd, ok := canvasRevealFor(ev); ok {
 		// best-effort like the rest: a closed cockpit or a topic it refuses must not fail the turn
 		_, err := wshclient.UiRevealCommand(RpcClient, wshrpc.CommandUiRevealData{

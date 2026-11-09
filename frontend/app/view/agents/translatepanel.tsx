@@ -16,6 +16,7 @@ import { ArrowLeftRight, Check, CircleAlert, ClipboardPaste, Copy, Star, Volume2
 import { motion, type Variants } from "motion/react";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
+import { cellInputOf } from "./cellinput";
 import {
     DETECT,
     entryKey,
@@ -498,12 +499,7 @@ export function TranslateFloatPanel({ model }: { model: AgentsViewModel }) {
                 if (active != null && active !== document.body) {
                     return;
                 }
-                const term = document.querySelector<HTMLElement>(
-                    `[data-agent-terminal="${focusIdRef.current}"] .xterm-helper-textarea`
-                );
-                if (term?.checkVisibility()) {
-                    term.focus({ preventScroll: true });
-                }
+                cellInputOf(document, focusIdRef.current)?.focus({ preventScroll: true });
             });
         },
         []
