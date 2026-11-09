@@ -105,15 +105,29 @@ const INHERITED_AGENT_VARS: &[&str] = &[
     "AI_AGENT",
 ];
 
+// What an agent's tool shell sets for output it captures, not for a terminal: Claude Code's PowerShell tool
+// runs with NO_COLOR=1. Dropped only when one of the vars above shows the launch came from such a shell, so a
+// NO_COLOR the person set themselves stays. On 2026-11-09 an arcterm reinstalled from an agent's PowerShell
+// (`/R` reopens it as the installer's child) drew every claude TUI in it without color.
+const AGENT_SHELL_DISPLAY_VARS: &[&str] = &["NO_COLOR"];
+
+// The names to remove, given which ones are set.
+fn names_to_scrub(is_set: impl Fn(&str) -> bool) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = INHERITED_AGENT_VARS.iter().copied().filter(|n| is_set(n)).collect();
+    if !names.is_empty() {
+        names.extend(AGENT_SHELL_DISPLAY_VARS.iter().copied().filter(|n| is_set(n)));
+    }
+    names
+}
+
 // Removes those from our own environment so wavesrv and everything it spawns start clean, and returns the
 // names it removed. Call it at the top of main, before any thread starts.
 pub fn scrub_inherited_agent_env() -> Vec<&'static str> {
-    INHERITED_AGENT_VARS
-        .iter()
-        .copied()
-        .filter(|name| std::env::var_os(name).is_some())
-        .inspect(|name| std::env::remove_var(name))
-        .collect()
+    let names = names_to_scrub(|name| std::env::var_os(name).is_some());
+    for name in &names {
+        std::env::remove_var(name);
+    }
+    names
 }
 
 #[cfg(test)]
@@ -181,5 +195,13 @@ mod tests {
             Ok("/x")
         );
         assert!(scrub_inherited_agent_env().is_empty());
+    }
+
+    #[test]
+    fn drops_no_color_only_when_an_agent_shell_set_the_launch() {
+        let from_agent = names_to_scrub(|n| n == "CLAUDECODE" || n == "NO_COLOR");
+        assert_eq!(from_agent, vec!["CLAUDECODE", "NO_COLOR"]);
+        // the person's own NO_COLOR, arcterm opened from the Start menu
+        assert!(names_to_scrub(|n| n == "NO_COLOR").is_empty());
     }
 }
