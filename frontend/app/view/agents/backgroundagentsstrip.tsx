@@ -4,8 +4,8 @@
 // The Background section: detached `claude --bg` / `claude agents` sessions the hook roster can't see
 // (they have no Wave block). Deduped against live agents by session id and scoped by the same project
 // switcher as the roster. Background agents are view + attach only — no transcript/answer/open (there's
-// no block to drive); Attach resumes one into a fresh Wave terminal, after which it becomes a normal
-// hook-tracked agent. Lives collapsed at the bottom of the roster (like Idle) — low-signal, so it
+// no block to drive); Attach opens one in a fresh Wave terminal with `claude attach`, so the daemon
+// keeps hosting it and its row finishes; while attached it is a normal hook-tracked agent. Lives collapsed at the bottom of the roster (like Idle) — low-signal, so it
 // stays out of the way until expanded.
 
 import { attachBackgroundAgent } from "@/app/cockpit/cockpit-actions";
