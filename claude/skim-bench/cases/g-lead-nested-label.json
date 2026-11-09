@@ -1,0 +1,17 @@
+{
+    "reply": "The release build is ready; two parts changed.\n\n- **Backend:**\n  - wavesrv stops a stuck worktree cleanup after 10 seconds.\n  - wsh prints the jobslot wait once instead of every second.\n- **Frontend:**\n  - The roster keeps its scroll position across a reload.\n  - The nav badges no longer count a closed agent.\n\nThe installer is in `releases/`.\n\nRun `! task install` when you are ready; it closes arcterm.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "What changed in wavesrv?",
+            "a": "It stops a stuck worktree cleanup after 10 seconds."
+        },
+        {
+            "q": "What does task install do to the running app?",
+            "a": "It closes arcterm."
+        }
+    ],
+    "labels": {}
+}

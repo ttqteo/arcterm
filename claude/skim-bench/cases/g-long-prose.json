@@ -1,0 +1,17 @@
+{
+    "reply": "The slow start is the WebView2 profile, not wavesrv.\n\nwavesrv is up in 300 ms on every launch I measured. The window then waits on WebView2, which reads a profile that has grown to 1.4 GB, mostly its code cache from every dev build since August.\n\nDeleting `EBWebView` brought the first paint from 6.2 s to 1.1 s. The packaged app keeps its own profile, so this only affects the dev app.\n\nThere is nothing to change in the code. If you want the dev app to stay fast, clear that folder once a month, or let me add it to `task dev:cleardata`.\n\nI have not touched the folder; it is yours to delete.\n\nThat is all I found.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "What causes the slow start?",
+            "a": "The WebView2 profile, grown to 1.4 GB."
+        },
+        {
+            "q": "How much faster was first paint after deleting it?",
+            "a": "From 6.2 s to 1.1 s."
+        }
+    ],
+    "labels": {}
+}

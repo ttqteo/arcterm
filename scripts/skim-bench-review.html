@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skim bench review</title>
+    <!-- served by `node scripts/skim-bench.mjs --review`; a dev tool, not part of the app, so DESIGN.md tokens do not apply -->
+    <style>
+      :root {
+        --bg: #fbfbfa;
+        --panel: #ffffff;
+        --text: #1d1d1b;
+        --muted: #6b6b66;
+        --line: #e2e1dc;
+        --accent: #3a5bd9;
+        --pass: #2f7d4a;
+        --fail: #b3402e;
+        --mark: #fff1a8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161615;
+          --panel: #1f1f1d;
+          --text: #e8e7e2;
+          --muted: #9a9993;
+          --line: #33332f;
+          --accent: #8ea4ff;
+          --pass: #6cc28a;
+          --fail: #f08a76;
+          --mark: #5a4d12;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+      }
+      header {
+        display: flex;
+        gap: 16px;
+        align-items: baseline;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      main {
+        display: flex;
+        height: calc(100vh - 45px);
+      }
+      nav {
+        width: 300px;
+        flex: none;
+        overflow: auto;
+        border-right: 1px solid var(--line);
+      }
+      nav .filters {
+        display: flex;
+        gap: 6px;
+        padding: 8px;
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+      }
+      nav button.row {
+        display: flex;
+        width: 100%;
+        gap: 6px;
+        align-items: center;
+        padding: 6px 10px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: none;
+        color: inherit;
+        text-align: left;
+        font: inherit;
+        cursor: pointer;
+      }
+      nav button.row.on {
+        background: var(--panel);
+        box-shadow: inset 3px 0 var(--accent);
+      }
+      .tag {
+        font-size: 11px;
+        padding: 0 6px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+      }
+      .pass {
+        color: var(--pass);
+      }
+      .fail {
+        color: var(--fail);
+      }
+      section#detail {
+        flex: 1;
+        overflow: auto;
+        padding: 16px;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .box {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 12px;
+      }
+      .box h3 {
+        margin: 0 0 6px;
+        font-size: 13px;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        font:
+          13px/1.45 ui-monospace,
+          monospace;
+      }
+      mark {
+        background: var(--mark);
+        color: inherit;
+      }
+      textarea,
+      input[type="text"],
+      select {
+        width: 100%;
+        font:
+          13px/1.4 ui-monospace,
+          monospace;
+        color: inherit;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 6px;
+      }
+      textarea.reply {
+        min-height: 260px;
+      }
+      .unit {
+        display: grid;
+        grid-template-columns: 1fr 170px 28px;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .qa {
+        display: grid;
+        grid-template-columns: 1fr 1fr 28px;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: inherit;
+        border-radius: 4px;
+        padding: 4px 10px;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.on {
+        outline: 2px solid var(--accent);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        position: sticky;
+        bottom: 0;
+        background: var(--bg);
+        padding: 8px 0;
+      }
+      ul.why {
+        margin: 4px 0 0;
+        padding-left: 18px;
+        color: var(--fail);
+      }
+      #status {
+        margin-left: auto;
+      }
+      @media (max-width: 800px) {
+        main {
+          flex-direction: column;
+          height: auto;
+        }
+        nav {
+          width: auto;
+          max-height: 40vh;
+        }
+        .cols {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Skim bench review</h1>
+      <span id="counts" class="muted"></span>
+      <span id="winrate"></span>
+      <span id="status" class="muted"></span>
+    </header>
+    <main>
+      <nav>
+        <div class="filters">
+          <button data-filter="all" class="on">All</button>
+          <button data-filter="draft">Drafts</button>
+          <button data-filter="case">Cases</button>
+          <button data-filter="todo">A/B to grade</button>
+        </div>
+        <div id="list"></div>
+      </nav>
+      <section id="detail"><p class="muted">Pick a case.</p></section>
+    </main>
+    <script>
+      const CRITERIA = {
+        1: "every reason has content",
+        2: "warnings and what waits stay",
+        3: "a mark keeps its context",
+        4: "every section has a line",
+      };
+      let data = { baseline: null, items: [] };
+      let filter = "all";
+      let current = null; // {id, where}
+      let edit = null; // the case being edited
+
+      const $ = (sel) => document.querySelector(sel);
+      const esc = (s) =>
+        String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const status = (text) => ($("#status").textContent = text);
+
+      // the reply with its marks highlighted
+      function marked(text, marks) {
+        let html = esc(text);
+        for (const m of marks.filter((m) => m.trim() !== "")) {
+          html = html.split(esc(m)).join(`<mark>${esc(m)}</mark>`);
+        }
+        return html;
+      }
+
+      // which side shows A, the same on every load: a hash of the id
+      function aIsLeft(id) {
+        let h = 0;
+        for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0;
+        return (h & 1) === 0;
+      }
+
+      const passes = (item) => item.score && Object.values(item.score.criteria).every(Boolean);
+      const hasAB = (item) => item.case.labels?.ab && item.case.labels.ab.baseline === data.baseline?.commit;
+
+      async function load() {
+        const res = await fetch("/api/cases");
+        data = await res.json();
+        renderHeader();
+        renderList();
+        if (current) select(current.id, current.where);
+      }
+
+      function renderHeader() {
+        const drafts = data.items.filter((i) => i.where === "draft").length;
+        const cases = data.items.length - drafts;
+        const base = data.baseline ? `baseline ${data.baseline.commit} (${data.baseline.saved})` : "no baseline yet";
+        $("#counts").textContent = `${drafts} drafts · ${cases} cases · ${base}`;
+        const graded = data.items.filter(hasAB);
+        if (graded.length === 0) {
+          $("#winrate").textContent = "";
+          return;
+        }
+        const wins = graded.filter((i) => i.case.labels.ab.winner === "B").length;
+        const ties = graded.filter((i) => i.case.labels.ab.winner === "tie").length;
+        $("#winrate").innerHTML =
+          `B wins <b>${Math.round((wins / graded.length) * 100)}%</b> of ${graded.length} graded (${ties} ties)`;
+      }
+
+      function renderList() {
+        const shown = data.items.filter((i) =>
+          filter === "all"
+            ? true
+            : filter === "todo"
+              ? i.a !== null && i.where === "case" && !hasAB(i)
+              : i.where === filter
+        );
+        $("#list").innerHTML = shown
+          .map((i) => {
+            const on = current && current.id === i.id && current.where === i.where ? " on" : "";
+            const state = i.problems.length
+              ? '<span class="fail">!</span>'
+              : passes(i)
+                ? '<span class="pass">✓</span>'
+                : '<span class="fail">✗</span>';
+            const ab = hasAB(i) ? `<span class="tag">${i.case.labels.ab.winner}</span>` : "";
+            return `<button class="row${on}" data-id="${esc(i.id)}" data-where="${i.where}">${state} <span style="flex:1">${esc(i.id)}</span>${ab}<span class="tag">${i.where}</span></button>`;
+          })
+          .join("");
+      }
+
+      function select(id, where) {
+        const item = data.items.find((i) => i.id === id && i.where === where);
+        if (!item) {
+          current = null;
+          $("#detail").innerHTML = '<p class="muted">Pick a case.</p>';
+          return;
+        }
+        current = { id, where };
+        edit = structuredClone(item.case);
+        renderList();
+        renderDetail(item);
+      }
+
+      function renderDetail(item) {
+        const c = edit;
+        const problems = item.problems.length
+          ? `<div class="box"><h3 class="fail">Cannot be scored</h3><ul class="why">${item.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>`
+          : "";
+        const score = item.score
+          ? `<div class="box"><h3>Layer 1 on B, the working tree's fold (${Math.round(item.score.ratio * 100)}% of the reply's lines)</h3>${Object.entries(
+              CRITERIA
+            )
+              .map(([n, label]) => `<span class="tag ${item.score.criteria[n] ? "pass" : "fail"}">${n} ${label}</span>`)
+              .join(" ")}<ul class="why">${item.score.why.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`
+          : "";
+        $("#detail").innerHTML = `
+                    <h2 style="margin:0 0 8px">${esc(item.id)} <span class="tag">${item.where}</span> <span class="tag">${esc(c.source)}</span></h2>
+                    ${problems}${score}
+                    ${abPanel(item)}
+                    <div class="cols">
+                        <div class="box"><h3>Reply, marks highlighted</h3><pre>${marked(c.reply, c.marks)}</pre></div>
+                        <div class="box"><h3>B, the fold in the working tree</h3><pre>${item.b === null ? '<span class="muted">does not fold</span>' : esc(item.b)}</pre></div>
+                    </div>
+                    <div class="box"><h3>Reply (edit to scrub paths, names, tokens and private figures)</h3><textarea class="reply" id="reply">${esc(c.reply)}</textarea></div>
+                    <div class="box"><h3>Marks, one per line</h3><textarea id="marks" rows="4">${esc(c.marks.join("\n"))}</textarea></div>
+                    <div class="box"><h3>Must keep: each unit its first sentence as the reply has it</h3><div id="units"></div><button id="addUnit">Add unit</button></div>
+                    <div class="box"><h3>Questions, answered from the fold alone</h3><div id="questions"></div><button id="addQ">Add question</button></div>
+                    <div class="box"><h3>Note</h3><input type="text" id="note" value="${esc(c.labels?.note ?? "")}" /></div>
+                    <div class="actions">
+                        <button class="primary" id="save">Save</button>
+                        ${item.where === "draft" ? '<button id="approve">Save and approve into cases</button><button id="drop">Drop draft</button>' : ""}
+                        ${c.labels?.reviewed ? `<span class="muted">reviewed ${esc(c.labels.reviewed)}</span>` : ""}
+                    </div>`;
+        renderUnits();
+        renderQuestions();
+        $("#addUnit").onclick = () => {
+          readForm();
+          edit.mustKeep.push({ text: "", criterion: 2 });
+          renderUnits();
+        };
+        $("#addQ").onclick = () => {
+          readForm();
+          edit.questions.push({ q: "", a: "" });
+          renderQuestions();
+        };
+        $("#save").onclick = () => save(item);
+        if (item.where === "draft") {
+          $("#approve").onclick = () => approve(item);
+          $("#drop").onclick = () => drop(item);
+        }
+        wireAB(item);
+      }
+
+      function abPanel(item) {
+        if (item.a === null || item.b === null || item.where !== "case") {
+          return data.baseline
+            ? ""
+            : '<div class="box muted">A/B opens once a baseline is saved: node scripts/skim-bench.mjs --baseline</div>';
+        }
+        const left = aIsLeft(item.id) ? item.a : item.b;
+        const right = aIsLeft(item.id) ? item.b : item.a;
+        const same = item.a === item.b ? '<p class="muted">A and B are the same fold.</p>' : "";
+        const ab = hasAB(item) ? item.case.labels.ab : null;
+        const pickedSide =
+          ab && ab.winner !== "tie" ? ((ab.winner === "A") === aIsLeft(item.id) ? "left" : "right") : ab ? "tie" : null;
+        const broke = ab ? ab.loserBroke : [];
+        return `<div class="box"><h3>Which TL;DR keeps the point better?</h3>${same}
+                    <div class="cols"><div><h3>Left</h3><pre>${esc(left)}</pre></div><div><h3>Right</h3><pre>${esc(right)}</pre></div></div>
+                    <p><button data-pick="left" class="${pickedSide === "left" ? "on" : ""}">Left</button>
+                       <button data-pick="tie" class="${pickedSide === "tie" ? "on" : ""}">Tie</button>
+                       <button data-pick="right" class="${pickedSide === "right" ? "on" : ""}">Right</button></p>
+                    <p class="muted">The loser broke: ${Object.entries(CRITERIA)
+                      .map(
+                        ([n, label]) =>
+                          `<label><input type="checkbox" data-broke="${n}" ${broke.includes(Number(n)) ? "checked" : ""}/> ${n} ${label}</label>`
+                      )
+                      .join(" ")}</p></div>`;
+      }
+
+      function wireAB(item) {
+        document.querySelectorAll("[data-pick]").forEach((b) => {
+          b.onclick = () => {
+            readForm();
+            const side = b.dataset.pick;
+            const winner = side === "tie" ? "tie" : (side === "left") === aIsLeft(item.id) ? "A" : "B";
+            const loserBroke = [...document.querySelectorAll("[data-broke]:checked")].map((x) =>
+              Number(x.dataset.broke)
+            );
+            edit.labels = {
+              ...edit.labels,
+              ab: { winner, loserBroke, baseline: data.baseline.commit, at: new Date().toISOString().slice(0, 10) },
+            };
+            save(item);
+          };
+        });
+        document.querySelectorAll("[data-broke]").forEach((x) => {
+          x.onchange = () => {
+            if (!edit.labels?.ab) return;
+            readForm();
+            edit.labels.ab.loserBroke = [...document.querySelectorAll("[data-broke]:checked")].map((y) =>
+              Number(y.dataset.broke)
+            );
+            save(item);
+          };
+        });
+      }
+
+      function renderUnits() {
+        $("#units").innerHTML = edit.mustKeep
+          .map(
+            (u, i) => `<div class="unit"><input type="text" data-unit="${i}" value="${esc(u.text)}" />
+                            <select data-crit="${i}"><option value="2" ${u.criterion === 2 ? "selected" : ""}>2 warning / waits</option><option value="3" ${u.criterion === 3 ? "selected" : ""}>3 ":" points at</option></select>
+                            <button data-delunit="${i}" title="Remove">×</button></div>`
+          )
+          .join("");
+        document.querySelectorAll("[data-delunit]").forEach((b) => {
+          b.onclick = () => {
+            readForm();
+            edit.mustKeep.splice(Number(b.dataset.delunit), 1);
+            renderUnits();
+          };
+        });
+      }
+
+      function renderQuestions() {
+        $("#questions").innerHTML = edit.questions
+          .map(
+            (q, i) => `<div class="qa"><input type="text" data-q="${i}" value="${esc(q.q)}" placeholder="question" />
+                            <input type="text" data-a="${i}" value="${esc(q.a)}" placeholder="answer" />
+                            <button data-delq="${i}" title="Remove">×</button></div>`
+          )
+          .join("");
+        document.querySelectorAll("[data-delq]").forEach((b) => {
+          b.onclick = () => {
+            readForm();
+            edit.questions.splice(Number(b.dataset.delq), 1);
+            renderQuestions();
+          };
+        });
+      }
+
+      // the form's fields into the case being edited
+      function readForm() {
+        edit.reply = $("#reply").value;
+        edit.marks = $("#marks")
+          .value.split("\n")
+          .filter((m) => m.trim() !== "");
+        edit.mustKeep = edit.mustKeep.map((u, i) => ({
+          text: document.querySelector(`[data-unit="${i}"]`).value,
+          criterion: Number(document.querySelector(`[data-crit="${i}"]`).value),
+        }));
+        edit.questions = edit.questions.map((q, i) => ({
+          q: document.querySelector(`[data-q="${i}"]`).value,
+          a: document.querySelector(`[data-a="${i}"]`).value,
+        }));
+        const note = $("#note").value.trim();
+        edit.labels = { ...edit.labels };
+        if (note) edit.labels.note = note;
+        else delete edit.labels.note;
+      }
+
+      async function call(method, url, body) {
+        const res = await fetch(url, {
+          method,
+          headers: { "content-type": "application/json" },
+          body: body && JSON.stringify(body),
+        });
+        const value = await res.json();
+        if (!res.ok) throw new Error(value.error ?? res.statusText);
+        return value;
+      }
+
+      async function save(item) {
+        readForm();
+        try {
+          await call("PUT", `/api/case?id=${encodeURIComponent(item.id)}&where=${item.where}`, edit);
+          status(`saved ${item.id}`);
+          await load();
+        } catch (err) {
+          status(`not saved: ${err.message}`);
+        }
+      }
+
+      async function approve(item) {
+        readForm();
+        try {
+          await call("PUT", `/api/case?id=${encodeURIComponent(item.id)}&where=draft`, edit);
+          await call("POST", `/api/approve?id=${encodeURIComponent(item.id)}`);
+          status(`approved ${item.id} into claude/skim-bench/cases`);
+          current = { id: item.id, where: "case" };
+          await load();
+        } catch (err) {
+          status(`not approved: ${err.message}`);
+        }
+      }
+
+      async function drop(item) {
+        if (!confirm(`Drop the draft ${item.id}? Its file is deleted.`)) return;
+        try {
+          await call("DELETE", `/api/draft?id=${encodeURIComponent(item.id)}`);
+          status(`dropped ${item.id}`);
+          current = null;
+          await load();
+        } catch (err) {
+          status(`not dropped: ${err.message}`);
+        }
+      }
+
+      $("#list").onclick = (e) => {
+        const row = e.target.closest("button.row");
+        if (row) select(row.dataset.id, row.dataset.where);
+      };
+      document.querySelectorAll("[data-filter]").forEach((b) => {
+        b.onclick = () => {
+          filter = b.dataset.filter;
+          document.querySelectorAll("[data-filter]").forEach((x) => x.classList.toggle("on", x === b));
+          renderList();
+        };
+      });
+      load().catch((err) => status(`could not load: ${err.message}`));
+    </script>
+  </body>
+</html>

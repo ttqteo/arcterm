@@ -1,7 +1,8 @@
 // a long reply folds to its verdict and the lead of each top reason, behind a button that opens it in full; a marked
 // reply folds to its verdict and the sentences claude marked. register.ts draws it; this is the cut.
 
-import { commandFenceEnd, commandSpans } from "./highlight-core";
+import { commandSpans } from "./highlight-core";
+import { FENCED, TITLE as HEADING, isCommandFence, ITEM, TABLE_ROW } from "./sections-core";
 
 // a reply longer than this many lines folds
 export const FOLD_LINES = 10;
@@ -17,11 +18,7 @@ export const MAX_SENTENCE_CHARS = 320;
 // the opened replies kept, newest last
 export const MAX_OPENED = 200;
 
-const ITEM = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
 const NUMBERED = /^\s*(\d+[.)])\s/;
-const HEADING = /^\s*(#{1,6}\s|\*\*[^*]+\*\*:?\s*$)/;
-const TABLE_ROW = /^\s*\|/;
-const FENCED = /^\s*(```|~~~)[^\n]*\n[\s\S]*?^\s*\1[^\n]*$/gm;
 
 export function lineCount(text: string): number {
     return text.trim().split("\n").length;
@@ -36,12 +33,6 @@ export function canFold(text: string): boolean {
 export function endsOnQuestion(text: string): boolean {
     const last = text.trim().split("\n").at(-1) ?? "";
     return !/^\s*(```|~~~)/.test(last) && /[?？]$/.test(last.replace(/[\s*_)"'”’]+$/, ""));
-}
-
-// a fence holding only commands for the person to type, `! task install`
-function isCommandFence(block: string): boolean {
-    const lines = block.trim().split("\n");
-    return commandFenceEnd(lines, 0) === lines.length - 1;
 }
 
 // the lead in bold and the sentence after it, the lead alone when that sentence would not fit, or the first sentence;

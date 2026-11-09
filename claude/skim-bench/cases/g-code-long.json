@@ -1,0 +1,17 @@
+{
+    "reply": "The hang comes from the worktree cleanup holding the store lock.\n\n## Where\n```go\nfunc (e *Engine) cleanup(ctx context.Context, run *Run) error {\n    e.mu.Lock()\n    defer e.mu.Unlock()\n    for _, t := range run.Tasks {\n        if err := removeWorktree(ctx, t.Tree); err != nil {\n            return err\n        }\n    }\n    return nil\n}\n```\n\n## Fix\nCollect the trees under the lock, release it, then remove them. A slow `git worktree remove` then blocks only the cleanup, not every RPC.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "What causes the hang?",
+            "a": "The worktree cleanup holds the store lock while it removes worktrees."
+        },
+        {
+            "q": "What is the fix?",
+            "a": "Collect the trees under the lock, release it, then remove them."
+        }
+    ],
+    "labels": {}
+}

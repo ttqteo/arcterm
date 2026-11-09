@@ -1,0 +1,19 @@
+{
+    "reply": "The build is done and the installer is in `releases/`.\n\nIt is commit `5900060a2`, version 0.15.11.\n\n- The Tools page lists services first.\n- A crashed service restarts after 2 s.\n- The footer names a service's server.\n\nTo install it, type this; it closes arcterm and every agent in it:\n\n```\n! task install\n```",
+    "marks": [
+        "To install it, type this; it closes arcterm and every agent in it:"
+    ],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "What command installs the build?",
+            "a": "task install"
+        },
+        {
+            "q": "What does installing close?",
+            "a": "arcterm and every agent in it."
+        }
+    ],
+    "labels": {}
+}
