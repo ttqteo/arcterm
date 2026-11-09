@@ -1840,6 +1840,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Chat over a live Claude agent.** Start a Claude agent → its cell opens in Chat. Send "hello" → your
   bubble shows and the reply streams in under it, with the "Working · …" line while it works and Stop sending Esc.
   Ctrl+Shift+K flips to the real TUI and back (the box takes focus in Chat, the terminal in Terminal), and a long
-  conversation scrolls to the end and keeps your place after a flip. Only the empty conversation, the split cells and
-  the flips were tried in the dev app (fixture agents with no transcript); a real session's bubbles, its stream and a
-  scenario for them come with the agent-chat scenario (`chatpane.tsx`, `agentsurface.tsx`).
+  conversation scrolls to the end and keeps your place after a flip. The `agent-chat` scenario drives the bubbles, the
+  box, the flips and the split on fixture agents over a transcript file; a real session's stream is what is left to
+  try here (`chatpane.tsx`, `agentsurface.tsx`).
+- [ ] (arcterm) **Permission prompt in Chat.** In a real Claude session that is not on bypass permissions, ask for
+  something that needs a prompt (a Bash command such as `echo hi > x.txt`): the chat shows the card with the command,
+  Allow and Deny. Allow runs the command; Deny stops the turn. Answering the same prompt in the terminal instead (flip
+  to Terminal, or "More options in Terminal") clears the card. Two parallel identical prompts show "1 more waiting",
+  and Allow on the first leaves the second's card up until it is answered. The `agent-chat` scenario drives the card
+  on fixtures with a mocked answer command; the `PermissionRequest` hook (`wsh install-agent-hooks`), the `1` / Esc
+  it types and the queue in wavesrv (`pkg/agentperm`) were not tried against a live Claude Code.
