@@ -325,6 +325,13 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
   worker on 2026-10-10 (`docs/superpowers/specs/2026-10-10-codex-run-worker-design.md`). Recovery path for
   opencode: `docs/deferred.md` 2026-09-14 entry.
 - Final stage: persisting a verifier's verdict held during Checking — declined 2026-09-30.
+- (arcterm) Task Manager grouping arcterm's agents under one "arcterm (N)" entry (Windows) — not fixable by how arcterm
+  spawns. Checked 2026-11-09 on Windows 11 build 26300: the tree is right (wave-tauri → wavesrv.x64 → shell →
+  claude.exe), yet the arcterm entry held only wave-tauri, not even its direct child msedgewebview2; it stayed so with
+  the window's app id cleared and Task Manager reopened, and a plain `conhost → powershell → ping` left ping out of its
+  PowerShell group too, as Chrome's renderers stand apart. On that build Task Manager does not group an unpackaged
+  app's children by process tree. Only a package identity (sparse MSIX) might, untried. 9522ccd26, which moved the app
+  id from the process to the window on the opposite premise, did not change the grouping.
 - The memory subsystem and the Jarvis recall arm (Ask, proactive cards, embeddings) — removed
   2026-09-22/23 on measured usage. Revive only on evidence that note bodies, not index lines, change an
   agent's behaviour (`docs/deferred.md`).
