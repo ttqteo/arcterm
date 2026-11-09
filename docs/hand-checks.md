@@ -1867,7 +1867,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   chip and the second button from Claude Code 2.1.319's captured screens written to the fixture terminal, a tool with no
   result drawn as running, and Copy on hover. What it cannot show is a live Claude Code: the real ordering of the queued
   line against a turn, the real dialog behind the screens, and Shift+Tab's actual cycle (`chatpending.ts`, `slashmenu.tsx`,
-  `chatfooter.tsx`, `permissioncard.tsx`).
+  `chatfooter.tsx`, `permissioncard.tsx`). The captured screens are the real 2.1.319 binary drawing against a mock API,
+  and only the redirect form of the Bash prompt was captured: also try a plain command (such as `touch y.txt`) and check
+  that the second button reads that prompt's own option 2. Open a subagent in the cell while it works, then after it
+  stops: a tool it left with no result spins only while it works (`subagentinterior.tsx`). Hover a bubble: Copy sits in
+  the gap under it, which is now wider under Claude's bubbles (about 20px, was 8px); judge whether that reads right.
 - [ ] (arcterm) **Permission prompt in Chat.** In a real Claude session that is not on bypass permissions, ask for
   something that needs a prompt (a Bash command such as `echo hi > x.txt`): the chat shows the card with the command,
   Allow and Deny. Allow runs the command; Deny stops the turn. Answering the same prompt in the terminal instead (flip
