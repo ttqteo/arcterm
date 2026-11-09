@@ -362,6 +362,13 @@ declare global {
         notoken?: boolean;
     };
 
+    // wshrpc.ClaudeCommandInfo
+    type ClaudeCommandInfo = {
+        name: string;
+        description?: string;
+        source: string;
+    };
+
     // wshrpc.ClaudeContextFile
     type ClaudeContextFile = {
         group: string;
@@ -435,6 +442,7 @@ declare global {
         oref: string;
         id: string;
         allow: boolean;
+        choice?: number;
     };
 
     // wshrpc.CommandAgentPermissionRaiseData
@@ -1958,6 +1966,11 @@ declare global {
     type CommandListBranchesRtnData = {
         branches: BranchInfo[];
         default?: string;
+    };
+
+    // wshrpc.CommandListClaudeCommandsData
+    type CommandListClaudeCommandsData = {
+        cwd: string;
     };
 
     // wshrpc.CommandListDetachedEdgesData

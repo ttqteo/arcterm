@@ -353,3 +353,72 @@ func TestPublishEventStatusClearsPermission(t *testing.T) {
 		t.Fatalf("Stop published %d snapshots, want exactly one", len(rows)-published)
 	}
 }
+
+// answerChoice is an Allow carrying Choice (the prompt's second option when 2).
+func (f *permFixture) answerChoice(id string, allow bool, choice int) error {
+	return (&WshServer{}).AgentPermissionAnswerCommand(context.Background(), wshrpc.CommandAgentPermissionAnswerData{
+		ORef: f.oref, Id: id, Allow: allow, Choice: choice,
+	})
+}
+
+func TestAnswerSecondChoiceTypesTwo(t *testing.T) {
+	f := newPermFixture(t)
+	f.raise("Bash", `{"command":"one"}`)
+	f.raise("Bash", `{"command":"two"}`)
+	head := f.pending().Requests[0]
+	if err := f.answerChoice(head.Id, true, 2); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.typedKeys(); len(got) != 1 || got[0] != "2" {
+		t.Fatalf("typed %q, want exactly 2", got)
+	}
+	if got := f.pending().Requests; len(got) != 1 || got[0].Summary != "two" {
+		t.Fatalf("after the second choice the queue is %+v, want only the second request", got)
+	}
+	// choice 0 and 1 are the first option
+	for _, choice := range []int{0, 1} {
+		f := newPermFixture(t)
+		f.raise("Bash", `{"command":"one"}`)
+		if err := f.answerChoice(f.pending().Requests[0].Id, true, choice); err != nil {
+			t.Fatal(err)
+		}
+		if got := f.typedKeys(); len(got) != 1 || got[0] != "1" {
+			t.Fatalf("choice %d typed %q, want exactly 1", choice, got)
+		}
+	}
+}
+
+func TestAnswerSecondChoiceRefusedWhenNotAnswerable(t *testing.T) {
+	f := newPermFixture(t)
+	f.raise("ExitPlanMode", `{"plan":"do it"}`)
+	head := f.pending().Requests[0]
+	before := len(f.published())
+	err := f.answerChoice(head.Id, true, 2)
+	if err == nil || errors.Is(err, agentperm.ErrNotPending) {
+		t.Fatalf("choice 2 on ExitPlanMode = %v, want its own refusal", err)
+	}
+	if got := f.typedKeys(); len(got) != 0 {
+		t.Fatalf("typed %q", got)
+	}
+	if len(f.pending().Requests) != 1 || len(f.published()) != before {
+		t.Fatal("a refused second choice changed or published the queue")
+	}
+}
+
+func TestAnswerChoiceOutOfRange(t *testing.T) {
+	f := newPermFixture(t)
+	f.raise("Bash", `{"command":"one"}`)
+	head := f.pending().Requests[0]
+	before := len(f.published())
+	for _, choice := range []int{-1, 3, 9} {
+		if err := f.answerChoice(head.Id, true, choice); err == nil {
+			t.Errorf("choice %d was accepted", choice)
+		}
+	}
+	if got := f.typedKeys(); len(got) != 0 {
+		t.Fatalf("typed %q", got)
+	}
+	if len(f.pending().Requests) != 1 || len(f.published()) != before {
+		t.Fatal("an out-of-range choice changed or published the queue")
+	}
+}

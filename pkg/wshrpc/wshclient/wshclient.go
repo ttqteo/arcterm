@@ -1201,6 +1201,12 @@ func ListCanvasSessionsCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcO
 	return resp, err
 }
 
+// command "listclaudecommands", wshserver.ListClaudeCommandsCommand
+func ListClaudeCommandsCommand(w *wshutil.WshRpc, data wshrpc.CommandListClaudeCommandsData, opts *wshrpc.RpcOpts) ([]wshrpc.ClaudeCommandInfo, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.ClaudeCommandInfo](w, "listclaudecommands", data, opts)
+	return resp, err
+}
+
 // command "listdetachededges", wshserver.ListDetachedEdgesCommand
 func ListDetachedEdgesCommand(w *wshutil.WshRpc, data wshrpc.CommandListDetachedEdgesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDetachedEdgesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDetachedEdgesRtnData](w, "listdetachededges", data, opts)

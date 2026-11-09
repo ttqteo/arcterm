@@ -1206,6 +1206,12 @@ export class RpcApiType {
         return client.wshRpcCall("listcanvassessions", data, opts);
     }
 
+    // command "listclaudecommands" [call]
+    ListClaudeCommandsCommand(client: WshClient, data: CommandListClaudeCommandsData, opts?: RpcOpts): Promise<ClaudeCommandInfo[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listclaudecommands", data, opts);
+        return client.wshRpcCall("listclaudecommands", data, opts);
+    }
+
     // command "listdetachededges" [call]
     ListDetachedEdgesCommand(client: WshClient, data: CommandListDetachedEdgesData, opts?: RpcOpts): Promise<CommandListDetachedEdgesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listdetachededges", data, opts);
