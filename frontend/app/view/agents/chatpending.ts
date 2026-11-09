@@ -40,6 +40,12 @@ export function pendingStill(pending: PendingMessage[], entries: AgentEntry[], n
     return pending.filter((p) => now - p.sentAt < PENDING_MAX_MS && userTextCount(entries, p.text) <= p.seen);
 }
 
+/** Whether a send gets a pending bubble. A `/command` does not: the transcript records it as a command entry, which
+ *  userTextCount never matches, so its bubble would stay up for PENDING_MAX_MS beside the real command row. */
+export function pendsAsBubble(text: string): boolean {
+    return !text.trimStart().startsWith("/");
+}
+
 /** The sent history with `text` last: newest last, at most 20, no repeat of the newest. */
 export function pushSent(history: string[], text: string): string[] {
     if (history[history.length - 1] === text) {

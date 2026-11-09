@@ -9,6 +9,7 @@
 // text and its attachments are local to the box.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { focusTerm } from "@/app/view/term/termpaste";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -20,13 +21,16 @@ import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
 import { insertAt, registerChatInsert } from "./chatinsert";
-import { recall, sendHold } from "./chatpending";
+import { setChatMode } from "./chatmodestore";
+import { pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, noteSent, sentHistory } from "./chatpendingstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot } from "./launchermention";
 import { usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
+import { opensTui } from "./slashcommands";
+import { useSlashMenu } from "./slashmenu";
 
 // two lines, as the board's box; grows as the text wraps, then scrolls
 const ChatMinH = 38;
@@ -84,6 +88,18 @@ export function ChatComposer({
         agent.blockId ? WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", agent.blockId)) : NO_BLOCK
     );
     const projects = useAtomValue(projectsAtom);
+    // ↑ / ↓ walk what was sent from this box. `at` is the place in the history; `shown` the text recall put in the box,
+    // so an edit (the text no longer equal to it) ends the recall.
+    const recalled = useRef<{ at: number | null; shown: string }>({ at: null, shown: "" });
+    // a `/` as the box's first character lists Claude Code's commands; a recalled "/compact" is a message to resend, not
+    // a command being typed, so the menu stays closed over it until it is edited
+    const slash = useSlashMenu({
+        text,
+        setText,
+        cwd: block?.meta?.["cmd:cwd"] ?? "",
+        inputRef: taRef,
+        off: recalled.current.at != null && text === recalled.current.shown,
+    });
     const mention = useFileMention({
         text,
         setText,
@@ -124,9 +140,6 @@ export function ChatComposer({
     const permission = usePermission(agent.blockId != null ? `block:${agent.blockId}` : undefined);
     const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
     const sendable = canSend && blocker == null && hold == null;
-    // ↑ / ↓ walk what was sent from this box. `at` is the place in the history; `shown` the text recall put in the box,
-    // so an edit (the text no longer equal to it) ends the recall.
-    const recalled = useRef<{ at: number | null; shown: string }>({ at: null, shown: "" });
     const submit = () => {
         if (!sendable) {
             return;
@@ -136,8 +149,18 @@ export function ChatComposer({
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
             if (!asleep) {
-                if (entries != null) {
+                // a /command is no bubble of yours: the transcript draws it as a command row, which would leave the
+                // pending bubble up beside it for minutes
+                if (entries != null && pendsAsBubble(sent)) {
                     addPending(agent.id, sent, entries);
+                }
+                // a bare /model, /config… draws a menu on Claude Code's own screen: show that screen to answer it
+                if (opensTui(sent, slash.commands)) {
+                    setChatMode(agent.id, "terminal");
+                    const blockId = agent.blockId;
+                    if (blockId != null) {
+                        requestAnimationFrame(() => focusTerm(blockId));
+                    }
                 }
                 for (const a of att.attachments) {
                     att.remove(a.id);
@@ -228,13 +251,21 @@ export function ChatComposer({
                 onChange={(e) => {
                     recalled.current = { at: null, shown: "" };
                     setText(e.target.value);
+                    slash.onCaret(e.target);
                     mention.onCaret(e.target);
                 }}
-                onSelect={(e) => mention.onCaret(e.currentTarget)}
+                onSelect={(e) => {
+                    slash.onCaret(e.currentTarget);
+                    mention.onCaret(e.currentTarget);
+                }}
                 onPaste={asleep ? undefined : att.onPaste}
                 onKeyDown={(e) => {
-                    // the `@` picker's keys (↑↓, Enter and Tab to pick, Escape to close) come first
-                    mention.onKeyDown(e);
+                    // the `/` menu's and the `@` picker's keys (↑↓, Enter and Tab to pick, Escape to close) come first; at
+                    // most one of them has a list open
+                    slash.onKeyDown(e);
+                    if (!e.defaultPrevented) {
+                        mention.onKeyDown(e);
+                    }
                     if (e.defaultPrevented) {
                         return;
                     }
@@ -258,6 +289,7 @@ export function ChatComposer({
                 placeholder={placeholder}
                 className="block min-w-0 resize-none overflow-y-auto bg-transparent text-[13px] leading-[19px] text-primary outline-none placeholder:text-muted"
             />
+            {slash.list}
             {mention.list}
             <div className="flex items-center gap-1.5">
                 {asleep ? null : <AttachButton onClick={attach} />}

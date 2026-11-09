@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
-import { PENDING_MAX_MS, pendingStill, pushSent, recall, sendHold, userTextCount, type PendingMessage } from "./chatpending";
+import { PENDING_MAX_MS, pendingStill, pendsAsBubble, pushSent, recall, sendHold, userTextCount, type PendingMessage } from "./chatpending";
 
 const user = (text: string): AgentEntry => ({ kind: "user", text });
 const msg = (text: string): AgentEntry => ({ kind: "message", text });
@@ -77,5 +77,14 @@ describe("sendHold", () => {
         expect(sendHold(false, true)).toBe("Answer Claude's question first");
         expect(sendHold(true, true)).toBe("Answer the permission prompt first");
         expect(sendHold(false, false)).toBeNull();
+    });
+});
+
+describe("pendsAsBubble", () => {
+    it("is true for a message, false for a /command (the projection draws it as a command entry, never your bubble)", () => {
+        expect(pendsAsBubble("hello")).toBe(true);
+        expect(pendsAsBubble("use src/app and/or lib")).toBe(true);
+        expect(pendsAsBubble("/compact")).toBe(false);
+        expect(pendsAsBubble("  /model opus\n")).toBe(false);
     });
 });
