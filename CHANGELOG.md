@@ -32,6 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Float window is a button in the agent header, beside Fullscreen, instead of a row in the … menu.
 - New agent, Claude Code: pick a past session and the dialog turns into a resume step, with the Task box on top,
   your sessions on the left and the picked session's last 5 messages on the right, shown at once and formatted as in
   the transcript. New session keeps the usual columns. The agent and project sit in the title: click one, Back in the

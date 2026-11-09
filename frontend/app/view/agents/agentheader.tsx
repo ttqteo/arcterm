@@ -510,8 +510,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         }
     };
 
-    // The "…" button and a right-click on the header open the one menu: what the button row leaves out (a tool, Float,
-    // Redraw, Interrupt, the details toggle), then Fullscreen and Close again.
+    // The "…" button and a right-click on the header open the one menu: what the button row leaves out (a tool, Redraw,
+    // Interrupt, the details toggle), then Fullscreen and Close again.
     const openHeaderMenu = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -545,12 +545,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             });
         }
         if (blockId != null) {
-            items.push({
-                label: floating ? "Leave float" : "Float window",
-                icon: <PictureInPicture2 size={15} />,
-                accel: "Shift:f",
-                click: () => fireAndForget(() => toggleFloat(model)),
-            });
             items.push({
                 label: "Redraw terminal",
                 icon: <RotateCw size={15} />,
@@ -820,7 +814,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         aria-label="More"
                         onClick={openHeaderMenu}
                         disabled={waking}
-                        title={waking ? "Waking…" : "More: open a tool, float, redraw, interrupt, details"}
+                        title={waking ? "Waking…" : "More: open a tool, redraw, interrupt, details"}
                         className={cn(ICON_BTN, ICON_BTN_OFF)}
                     >
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
@@ -877,6 +871,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 ) : null}
                             </button>
                         ) : null}
+                        <button
+                            type="button"
+                            data-agent-header-float
+                            onClick={() => fireAndForget(() => toggleFloat(model))}
+                            aria-pressed={floating}
+                            title={`${floating ? "Leave float" : "Float window"} (${formatChordString("Shift:f")})`}
+                            className={cn(ICON_BTN, floating && ICON_BTN_ON)}
+                        >
+                            <PictureInPicture2 size={15} strokeWidth={1.8} aria-hidden />
+                        </button>
                         <motion.button
                             type="button"
                             onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}

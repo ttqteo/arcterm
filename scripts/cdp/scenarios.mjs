@@ -127,6 +127,17 @@ async function pickHeaderMenu(h, label) {
     })()`);
 }
 
+// Clicks the agent header's Float button (data-agent-header-float). False when the header has none (a plain terminal's pane
+// head), where Shift+F from the nav floats it instead.
+async function clickHeaderFloat(h) {
+    return h.ev(`(() => {
+        const b = document.querySelector("[data-agent-header-float]");
+        if (!(b instanceof HTMLElement) || b.getBoundingClientRect().width === 0) return false;
+        b.click();
+        return true;
+    })()`);
+}
+
 const workerOf = (phase) => phase && phase.workerorefs && phase.workerorefs[0];
 
 // a channel's runs are their own rows: the getchannels reply is channel metadata, with no run list
@@ -47554,10 +47565,10 @@ const floatMini = {
         // a plain terminal's tree row is [data-tree-terminal-row]; [data-agent-row] is an agent's
         const chosen = await floatMiniWait(h, `!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
         await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
-        await floatMiniWait(h, `!!document.querySelector("[data-agent-header-more]")`, 1500);
-        // a plain terminal's pane head holds only its tabs, with no "…" menu: the Float binding (Shift+F, nav mode, so out of
-        // the xterm) does what the menu's row does
-        if (!(await pickHeaderMenu(h, "Float window"))) {
+        await floatMiniWait(h, `!!document.querySelector("[data-agent-header-float]")`, 1500);
+        // a plain terminal's pane head holds only its tabs, with no Float button: the Float binding (Shift+F, nav mode, so
+        // out of the xterm) does what the button does
+        if (!(await clickHeaderFloat(h))) {
             await h.ev(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
             for (const type of ["keyDown", "keyUp"]) {
                 await h.cdp("Input.dispatchKeyEvent", {
@@ -47791,10 +47802,10 @@ const floatNote = {
         const editorFocused = `document.activeElement === document.querySelector(${JSON.stringify(editorSel)})`;
         const editorValue = () => h.ev(`document.querySelector(${JSON.stringify(editorSel)})?.value ?? null`);
 
-        // the header's "…" menu floats an agent; a plain terminal with no agent in focus has none (its bar is the dock's),
-        // so there Shift+F, from the nav, as the menu's own row says
+        // the header's Float button floats an agent; a plain terminal with no agent in focus has none (its bar is the dock's),
+        // so there Shift+F, from the nav, as the button's title says
         const floatTerminal = async () => {
-            if (await pickHeaderMenu(h, "Float window")) return;
+            if (await clickHeaderFloat(h)) return;
             await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
             await floatNoteKey(h, "F");
         };
@@ -48220,7 +48231,7 @@ const floatLedgeTabs = {
         await wait(`!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
         await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
         await wait(floatNoteShowing(term.tabId), 3000);
-        if (!(await pickHeaderMenu(h, "Float window"))) {
+        if (!(await clickHeaderFloat(h))) {
             await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
             await floatNoteKey(h, "F");
         }
@@ -48384,9 +48395,9 @@ const jarvisModes = {
             detail: JSON.stringify({ backFull, fullBefore, fullAfter }),
         });
 
-        // 5. Float: Sprout walks the ledge and opens the chat. A plain terminal's pane head has no "…" menu, so Shift+F
-        // (nav mode, out of the xterm) floats it, as the menu's row would an agent
-        if (!(await pickHeaderMenu(h, "Float window"))) {
+        // 5. Float: Sprout walks the ledge and opens the chat. A plain terminal's pane head has no Float button, so
+        // Shift+F (nav mode, out of the xterm) floats it, as the button would an agent
+        if (!(await clickHeaderFloat(h))) {
             await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
             await floatNoteKey(h, "F");
         }

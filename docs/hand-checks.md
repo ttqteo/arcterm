@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Agent header Float button: an agent's header shows a picture-in-picture button left of Fullscreen; click
+  it → the agent floats and the button reads pressed (accent); click again → it leaves float. The … menu no longer lists
+  Float window.
 - [ ] (arcterm) Claude fullscreen: with `"tui": "fullscreen"` in `~/.claude/settings.json`, start a Claude agent and
   close it within 5 s, three times in a row, then start one more → every agent opens fullscreen, and none prints
   "Claude Code's fullscreen renderer didn't finish starting last time" or "has repeatedly failed to start". Unit-tested

@@ -109,9 +109,9 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 Header phía trên terminal là một hàng gọn:
 
 - chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết `◇ <initiative>` (bấm hoặc `i` để mở [popover của initiative](#popover-của-initiative); `Ctrl`+bấm để peek nó); chip **N to review** khi agent đã đề xuất chunk chờ bạn quyết ([Plan to review](#plan-to-review-trên-rail)); agent chưa gắn initiative có nút **+ Link to initiative** ([Link to initiative](#link-to-initiative)). Lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
-- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút `…`; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút toàn màn hình; nút `×` đóng.
+- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút `…`; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút **Float** (`Shift+F`, bấm lần nữa để rời float); nút toàn màn hình; nút `×` đóng.
 
-Nút `…` (hoặc chuột phải vào header) mở menu còn lại: **Open a tool…**, **Float window**, **Redraw terminal**, **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Show details** / **Hide details**, **Close agent**.
+Nút `…` (hoặc chuột phải vào header) mở menu còn lại: **Open a tool…**, **Redraw terminal**, **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Show details** / **Hide details**, **Close agent**.
 
 Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus về sidebar (khi đó `j`/`k`, `d`, `f`… lại là phím điều khiển). Ngoài ra:
 
