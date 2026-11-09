@@ -60,6 +60,8 @@ import { waitsOnUser } from "./brainstormmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
+import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
+import { selectCellView, useChatMode } from "./chatmodestore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
@@ -120,6 +122,12 @@ export const ICON_BTN_ON = "border-accent/50 bg-accentbg text-accent hover:bg-ac
 // an icon-button that is off for now (Close and More while the agent wakes)
 const ICON_BTN_OFF =
     "disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted";
+
+// the view control's options as words: "chat, terminal or canvas" (or "Chat, Terminal and Canvas")
+function listViews(views: CellView[], join: "and" | "or", capital: boolean): string {
+    const words = views.map((v) => (capital ? v[0].toUpperCase() + v.slice(1) : v));
+    return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} ${join} ${words.at(-1)}`;
+}
 
 // useRunLineage reads what the header says about an agent a run spawned: a lead's run, a worker's task and
 // lead, or a stage session's run and lead.
@@ -405,6 +413,13 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 : "terminal";
     // the bare key that goes back to the terminal from the first view the agent has to swap to
     const swapKey = docReview != null ? "r" : brainstorm != null ? "b" : "c";
+    // An awake Claude agent's control always shows, Chat first: Chat and Terminal are the one "terminal" slot, and the
+    // agent's chat mode picks which of the two shows (chatmode.ts). Every other agent's control is as before.
+    const chatMode = useChatMode(agent);
+    const chatShown = chatCapable(agent) && agent.sleeping == null;
+    const shownView: CellView = chatShown ? cellView(view, chatMode) : view;
+    const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
+    const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
     // can be cells (gridstore.eligibleIds).
@@ -709,7 +724,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
                     </button>
                 ) : null}
-                {hasCanvas || docReview != null || brainstorm != null ? (
+                {viewControl ? (
                     // the bare b, c and r are typed into the TUI while it holds focus, so the chord that switches from
                     // inside it sits on screen beside the control
                     <KeyCap
@@ -717,34 +732,37 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         variant="inline"
                         className="cursor-default"
                         title={
-                            brainstorm != null
-                                ? "Switch Terminal, Brainstorm and Review, also from inside the terminal"
-                                : "Switch Terminal, Canvas and Review, also from inside the terminal"
+                            chatShown
+                                ? `Switch ${listViews(viewOptions, "and", true)}, also from inside the terminal`
+                                : brainstorm != null
+                                  ? "Switch Terminal, Brainstorm and Review, also from inside the terminal"
+                                  : "Switch Terminal, Canvas and Review, also from inside the terminal"
                         }
                     />
                 ) : null}
-                {hasCanvas || docReview != null || brainstorm != null ? (
+                {viewControl ? (
                     // one control for whatever can stand in the terminal's place: a canvas or a brainstorm (never both), a
-                    // Doc review, or both
-                    <Segmented<AgentView>
+                    // Doc review, or both; and for a Claude agent, Chat or its terminal in the terminal's own slot
+                    <Segmented<CellView>
                         role="group"
-                        ariaLabel={
-                            docReview == null
-                                ? brainstorm != null
-                                    ? "Show terminal or brainstorm"
-                                    : "Show terminal or canvas"
-                                : brainstorm != null
-                                  ? "Show terminal, brainstorm or review"
-                                  : !hasCanvas
-                                    ? "Show terminal or review"
-                                    : "Show terminal, canvas or review"
-                        }
-                        value={view}
+                        ariaLabel={`Show ${listViews(viewOptions, "or", false)}`}
+                        value={shownView}
                         options={[
+                            ...(chatShown
+                                ? [
+                                      {
+                                          key: "chat" as const,
+                                          label: "Chat",
+                                          title: `Chat (${formatChordString("Mod:Shift:k")})`,
+                                      },
+                                  ]
+                                : []),
                             {
                                 key: "terminal",
                                 label: "Terminal",
-                                title: `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
+                                title: chatShown
+                                    ? `Terminal (${formatChordString("Mod:Shift:k")})`
+                                    : `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
                             },
                             ...(brainstorm != null
                                 ? [
@@ -804,7 +822,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                   ]
                                 : []),
                         ]}
-                        onChange={(v) => setAgentView(agent.id, v, Date.now())}
+                        // an agent with no Chat option keeps its stored chat mode: a sleeping one wakes as it was
+                        onChange={(v) =>
+                            chatShown || v === "chat"
+                                ? selectCellView(agent.id, v, Date.now())
+                                : setAgentView(agent.id, v, Date.now())
+                        }
                     />
                 ) : null}
                 {blockId != null ? (

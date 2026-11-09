@@ -42,6 +42,7 @@ import {
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
 import { setAgentView } from "@/app/view/agents/agentview";
+import { getChatMode, setChatMode } from "@/app/view/agents/chatmodestore";
 import { compareRefsAtom, setCompareRefs } from "@/app/view/agents/comparestore";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewAtom } from "@/app/view/agents/docreview";
@@ -1706,6 +1707,114 @@ describe("agent:transcript", () => {
         expect(globalStore.get(railPanelsAtom)).toEqual({});
         expect(globalStore.get(railVisibleAtom)).toBe(false);
         expect(globalStore.get(railTranscriptFocusAtom)).toBe(0);
+    });
+});
+
+describe("chat mode keys", () => {
+    const inTerm: KeyContext = { surface: "agent", editable: true, modalOpen: false, leader: null };
+    const claude = { id: "a1", blockId: "b1", agent: "claude", transcriptPath: "C:/s/a1.jsonl" };
+    const modelWith = (focus: string | undefined, agents: any[]) => ({ ...stubModel(focus), agentsAtom: atom(agents) });
+    const find = (model: any, id: string) => buildAgentBindings(model).find((x) => x.id === id)!;
+    const mode = () => getChatMode(claude);
+    const canvasMode = () => getCanvas("a1")?.mode;
+
+    beforeEach(() => {
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(railVisibleAtom, false);
+        globalStore.set(railPanelsAtom, {});
+        setChatMode("a1", "chat");
+    });
+    afterEach(() => {
+        detachCanvas("a1");
+        syncDocReview("a1", undefined);
+        setChatMode("a1", "chat");
+        globalStore.set(railVisibleAtom, false);
+        globalStore.set(railPanelsAtom, {});
+    });
+
+    it("agent:chat-toggle is Mod+Shift+K in the Agent group, live inside the terminal", () => {
+        const b = find(modelWith("a1", [claude]), "agent:chat-toggle");
+        expect(b.keys).toBe("Mod:Shift:k");
+        expect(b.group).toBe("Agent");
+        expect(b.label).toBe("Switch the agent between Chat and Terminal");
+        expect(b.when!(inTerm)).toBe(true);
+        expect(b.when!({ ...inTerm, editable: false })).toBe(true);
+        expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
+        expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+        globalStore.set(centerModeAtom, "history");
+        expect(b.when!(inTerm)).toBe(false);
+    });
+
+    it("agent:chat-toggle flips Chat and Terminal, and shows Chat from a canvas in the terminal's place", () => {
+        const b = find(modelWith("a1", [claude]), "agent:chat-toggle");
+        expect(mode()).toBe("chat");
+        expect(b.run(inTerm)).not.toBe(false);
+        expect(mode()).toBe("terminal");
+        b.run(inTerm);
+        expect(mode()).toBe("chat");
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        setAgentView("a1", "canvas", 1);
+        expect(canvasMode()).toBe("canvas");
+        b.run(inTerm);
+        expect(canvasMode()).toBe("terminal");
+        expect(mode()).toBe("chat");
+    });
+
+    it("agent:chat-toggle passes the key for an agent that cannot chat, or sleeps", () => {
+        const pass = (agents: any[], focus = "a1") =>
+            find(modelWith(focus, agents), "agent:chat-toggle").run(inTerm) === false;
+        expect(pass([{ ...claude, agent: "codex" }])).toBe(true);
+        expect(pass([{ ...claude, kind: "terminal" }])).toBe(true);
+        expect(pass([{ ...claude, blockId: undefined }])).toBe(true);
+        expect(pass([{ ...claude, sleeping: { since: 1, freedBytes: 0 } }])).toBe(true);
+        expect(pass([claude], "t1")).toBe(true); // a plain terminal in focus
+        expect(mode()).toBe("chat");
+    });
+
+    it("Alt+C walks Chat, Terminal and Canvas for a Claude agent, live with nothing but Chat and Terminal", () => {
+        const cycle = find(modelWith("a1", [claude]), "agent:view-cycle");
+        expect(cycle.keys).toBe("Alt:c");
+        expect(cycle.when!(inTerm)).toBe(true);
+        expect(cycle.when!({ ...inTerm, modalOpen: true })).toBe(false);
+        cycle.run(inTerm);
+        expect(mode()).toBe("terminal");
+        cycle.run(inTerm);
+        expect(mode()).toBe("chat");
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        cycle.run(inTerm);
+        expect([mode(), canvasMode()]).toEqual(["terminal", "terminal"]);
+        cycle.run(inTerm);
+        expect([mode(), canvasMode()]).toEqual(["terminal", "canvas"]);
+        // the canvas leaves the chat mode alone; the walk wraps to Chat
+        cycle.run(inTerm);
+        expect([mode(), canvasMode()]).toEqual(["chat", "terminal"]);
+    });
+
+    it("Alt+C passes the key when the focused agent has one option only", () => {
+        const run = (focus: string, agent: any) => find(modelWith(focus, [agent]), "agent:view-cycle").run(inTerm);
+        expect(run("a1", { ...claude, agent: "codex" })).toBe(false);
+        expect(run("a1", { ...claude, sleeping: { since: 1, freedBytes: 0 } })).toBe(false);
+        expect(run("t1", claude)).toBe(false);
+    });
+
+    it("Alt+C on a sleeping Claude agent walks its canvas and leaves its chat mode, so it wakes in Chat", () => {
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        const asleep = { ...claude, sleeping: { since: 1, freedBytes: 0 } };
+        const cycle = find(modelWith("a1", [asleep]), "agent:view-cycle");
+        cycle.run(inTerm);
+        expect(canvasMode()).toBe("canvas");
+        cycle.run(inTerm);
+        expect(canvasMode()).toBe("terminal");
+        expect(mode()).toBe("chat");
+    });
+
+    it("Mod+Shift+F passes the key while the agent shows Chat, and opens the transcript from Terminal", () => {
+        const b = find(modelWith("a1", [claude]), "agent:transcript");
+        expect(b.run(inTerm)).toBe(false);
+        expect(globalStore.get(railPanelsAtom).a1).toBeUndefined();
+        setChatMode("a1", "terminal");
+        expect(b.run(inTerm)).not.toBe(false);
+        expect(globalStore.get(railPanelsAtom).a1?.tab).toBe("transcript");
     });
 });
 
