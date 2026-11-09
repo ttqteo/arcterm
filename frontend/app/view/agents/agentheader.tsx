@@ -413,7 +413,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const rosterAgents = useAtomValue(model.agentsAtom);
     const rosterTerminals = useAtomValue(model.terminalsAtom);
     const cellIds = eligibleIds([...rosterAgents, ...rosterTerminals]);
-    const cellCount = gridState.ids.filter((id) => cellIds.has(id)).length;
+    // a split this agent is no cell of is kept aside while it shows alone (agentgrid.reconcileGrid)
+    const cellCount = gridState.ids.includes(agent.id) ? gridState.ids.filter((id) => cellIds.has(id)).length : 1;
     const splitShown = cellCount > 1;
     const canSplit = blockId != null && !ended;
 

@@ -287,8 +287,8 @@ export function replaceFocused(state: GridState, id: string): GridState {
     return withPlaces(ids, id, placesOf(s));
 }
 
-// The one rule for "this agent was selected" (a sidebar click, Ctrl+Tab, an arrow, the palette): if it already
-// has a cell, focus that cell; otherwise it replaces the focused cell and the other cells stay put.
+// An agent selected into a grid (reconcileGrid applies it to a grid of one cell, a split keeping its cells): if it
+// already has a cell, focus that cell; otherwise it replaces the focused cell and the other cells stay put.
 export function focusAgent(state: GridState, id: string): GridState {
     const s = normalizeGrid(state);
     if (id === "") {
@@ -453,6 +453,9 @@ export interface ReconcileInput {
 
 // The saved grid brought up to date with the roster and the focus. Until the roster has been read nothing is
 // pruned and the focus rule is not applied: a half-loaded roster would otherwise throw away a saved layout.
+// A split (two cells or more) is not changed by the focus: choosing a tab that is no cell of it shows that tab alone
+// (visibleCells) and keeps the split as it was, for when one of its cells is chosen again; only a drop, Open in split
+// or a cell's x reshapes it. A grid of one cell follows the focus (focusAgent).
 // Pure and idempotent, so the surface can compute it every render and write it back only when it differs.
 export function reconcileGrid(state: GridState, input: ReconcileInput): GridState {
     const s = normalizeGrid(state);
@@ -460,7 +463,23 @@ export function reconcileGrid(state: GridState, input: ReconcileInput): GridStat
         return s;
     }
     const pruned = pruneMissing(s, input.eligible);
-    return input.focusId != null && input.eligible.has(input.focusId) ? focusAgent(pruned, input.focusId) : pruned;
+    if (input.focusId == null || !input.eligible.has(input.focusId)) {
+        return pruned;
+    }
+    if (pruned.ids.length > 1 && !pruned.ids.includes(input.focusId)) {
+        return pruned;
+    }
+    return focusAgent(pruned, input.focusId);
+}
+
+// The grid as it is on screen, which the split operations act on: the saved grid while the focused tab is one of its
+// cells (or the focus is no cell at all), else the focused tab alone, a saved split it is no cell of left aside.
+export function onScreenGrid(state: GridState, focusId: string | undefined, eligible: ReadonlySet<string>): GridState {
+    const s = normalizeGrid(state);
+    if (focusId == null || focusId === "" || !eligible.has(focusId) || s.ids.includes(focusId)) {
+        return s;
+    }
+    return { ids: [focusId], focused: focusId };
 }
 
 // Where focus resumes when nothing is explicitly in focus (a launch, a focused agent that just exited): the

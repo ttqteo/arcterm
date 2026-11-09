@@ -66,6 +66,12 @@ describe("reconcileProjectGrids", () => {
         const backOnX = reconcileProjectGrids(onY, input(roster, "b"));
         expect(backOnX).toEqual(pg("x", { x: g(["a", "b"], "b"), y: g(["c", "d"], "c") }));
     });
+    it("keeps the split of the focused tab's project when that tab is no cell of it", () => {
+        const start = pg("x", { x: g(["a", "b"], "b") });
+        const roster3 = { ...roster, e: "x" };
+        expect(reconcileProjectGrids(start, input(roster3, "e"))).toEqual(start);
+        expect(reconcileProjectGrids(start, input(roster3, "a"))).toEqual(pg("x", { x: g(["a", "b"], "a") }));
+    });
     it("never puts another project's tab in the shown grid", () => {
         // a split saved before grids followed projects, or a tab whose project changed under it
         const start = pg("x", { x: g(["a", "c"]) });

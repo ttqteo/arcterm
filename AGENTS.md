@@ -195,8 +195,11 @@ Load-bearing rules:
   `min-w-0 min-h-0`, and nothing animating a cell's size.
 - **`focusIdAtom` stays the one "selected agent", and it holds a terminal's id too.** `AgentSurface` reconciles the
   saved grid against it, so every route that selects an agent or a terminal (the tree, `j`/`k`, Ctrl+Tab, the palette,
-  the picker) obeys one rule: it takes the focused cell, and picking a terminal no longer docks it; the grid never
-  overrides a focused agent or terminal, it is only the fallback when nothing is in focus.
+  the picker) obeys one rule: a cell of the split takes focus, any other shows alone and leaves the split as it was
+  (a grid of one cell follows it), and picking a terminal no longer docks it; the grid never overrides a focused agent
+  or terminal, it is only the fallback when nothing is in focus. Only a drop, Open in split or a cell's x reshapes a
+  split, and those act on the grid on screen (`gridstore.currentGrid`), so one opened from a tab shown alone replaces
+  the split kept aside.
 - **The Agent sidebar is one tree per project**, not an Active section plus a Terminals section: `projectTree` in
   `agentsidebarmodel.ts` builds a folder per project holding its agents, a divider, then its terminals and tools
   (Home holds the terminals with no project), and Conversations is the one other section. A plain terminal is a peer of

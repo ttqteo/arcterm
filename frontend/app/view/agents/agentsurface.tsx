@@ -37,7 +37,14 @@ import { activeNavOrder } from "./activenav";
 import { centerModeAtom, showTerminal, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
-import { placementStyle, projectGridsEquals, reconcileProjectGrids, shownGrid, visibleCells } from "./agentgrid";
+import {
+    onScreenGrid,
+    placementStyle,
+    projectGridsEquals,
+    reconcileProjectGrids,
+    shownGrid,
+    visibleCells,
+} from "./agentgrid";
 import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
@@ -217,6 +224,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         [projectGrids, agent?.id, eligible, tabProjects, seeded]
     );
     const reconciled = shownGrid(reconciledGrids);
+    // what the cells on screen are a grid of: the split, or the focused tab alone while it is no cell of the split (the
+    // split is kept aside); a drop is an index into it
+    const onScreen = onScreenGrid(reconciled, agent?.id, eligible);
     useEffect(() => {
         if (!projectGridsEquals(globalStore.get(projectGridsAtom), projectGrids)) {
             return;
@@ -824,13 +834,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 />
                                             ) : null}
                                             {/* Drop zones, only while an agent is dragged. Not before the roster is seeded
-                                                (a drop prunes against the roster as it is), and not on a cell the saved
-                                                grid does not hold (a terminal shown alone): a drop is an index into the grid. */}
-                                            {cell != null && seeded && reconciled.ids.includes(a.id) ? (
+                                                (a drop prunes against the roster as it is), and not on a cell the grid on
+                                                screen does not hold (a tab that can be no cell): a drop is an index into it. */}
+                                            {cell != null && seeded && onScreen.ids.includes(a.id) ? (
                                                 <GridDropOverlay
                                                     model={model}
                                                     id={a.id}
-                                                    grid={reconciled}
+                                                    grid={onScreen}
                                                     mentionTo={mentionTarget(a)}
                                                 />
                                             ) : null}

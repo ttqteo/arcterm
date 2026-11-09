@@ -27,41 +27,33 @@ describe("Ctrl+Tab", () => {
     it("onto an agent that has a cell focuses that cell and leaves the layout alone", () => {
         expect(ctrlTab(g(["a", "b"], "a"))).toEqual(g(["a", "b"], "b"));
     });
-    it("onto an agent with no cell replaces the focused cell", () => {
-        expect(ctrlTab(g(["a", "b"], "b"))).toEqual(g(["a", "c"], "c"));
+    it("onto an agent with no cell shows it alone and keeps the split", () => {
+        expect(settle(g(["a", "b"], "b"), "c")).toEqual(g(["a", "b"], "b"));
+    });
+    it("onto an agent with no cell, from a grid of one, moves the grid with it", () => {
+        expect(ctrlTab(g(["b"], "b"))).toEqual(g(["c"], "c"));
     });
     it("wraps from the last agent to the first", () => {
         expect(ctrlTab(g(["a", "e"], "e"))).toEqual(g(["a", "e"], "a"));
     });
-    it("round the whole roster the grid never grows, and each step lands on the agent stepped to", () => {
-        let s = g(["a", "b"], "a");
-        const trail: GridState[] = [];
-        for (let i = 0; i < 12; i++) {
-            s = ctrlTab(s);
-            trail.push(s);
-        }
-        expect(trail.every((t) => t.ids.length === 2)).toBe(true);
+    it("round the whole roster the split never changes, and coming back to one of its cells shows it again", () => {
+        const s = g(["a", "c"], "a");
+        const trail = ["b", "c", "d", "e", "a"].map((id) => settle(s, id));
         expect(trail).toEqual([
-            g(["a", "b"], "b"), // b has a cell: focus moves
-            g(["a", "c"], "c"), // c has none: it takes b's cell
-            g(["a", "d"], "d"),
-            g(["a", "e"], "e"),
-            g(["a", "e"], "a"), // wrapped to a, which has a cell
-            g(["b", "e"], "b"), // b takes a's cell
-            g(["c", "e"], "c"),
-            g(["d", "e"], "d"),
-            g(["d", "e"], "e"), // e has a cell
-            g(["d", "a"], "a"), // wrapped to a, which takes e's cell
-            g(["d", "b"], "b"),
-            g(["d", "c"], "c"),
+            g(["a", "c"], "a"), // b is no cell: shown alone, the split kept as it was
+            g(["a", "c"], "c"), // c is a cell: the split shows, focused on c
+            g(["a", "c"], "a"),
+            g(["a", "c"], "a"),
+            g(["a", "c"], "a"),
         ]);
     });
 });
 
 describe("the arrows and j/k", () => {
     it("step the roster and follow the same rule", () => {
-        expect(arrow(g(["a", "c"], "c"), -1)).toEqual(g(["a", "b"], "b"));
+        expect(arrow(g(["a", "c"], "c"), -1)).toEqual(g(["a", "c"], "c"));
         expect(arrow(g(["a", "b"], "a"), 1)).toEqual(g(["a", "b"], "b"));
+        expect(arrow(g(["b"], "b"), 1)).toEqual(g(["c"], "c"));
     });
     it("clamp at the ends, so the grid does not change there", () => {
         expect(arrow(g(["a", "e"], "e"), 1)).toEqual(g(["a", "e"], "e"));
@@ -70,9 +62,9 @@ describe("the arrows and j/k", () => {
 });
 
 describe("a click on a tree row or a cell", () => {
-    it("is the same rule: an agent in the grid takes focus, any other replaces the focused cell", () => {
+    it("is the same rule: an agent in the split takes focus, any other shows alone and leaves the split", () => {
         const s = g(["a", "b", "c", "d"], "b");
-        expect(settle(s, "e")).toEqual(g(["a", "e", "c", "d"], "e"));
+        expect(settle(s, "e")).toEqual(s);
         expect(settle(s, "c")).toEqual(g(["a", "b", "c", "d"], "c"));
     });
 });
@@ -82,9 +74,9 @@ describe("what is in focus", () => {
     const withTerm = new Set([...roster, "term"]);
     it("a terminal with a block takes a cell by the agents' rule, and a done worker leaves the grid untouched", () => {
         const s = g(["a", "b"], "a");
-        expect(settle(s, "term", withTerm)).toEqual(g(["term", "b"], "term"));
+        expect(settle(s, "term", withTerm)).toEqual(s);
+        expect(settle(g(["a"], "a"), "term", withTerm)).toEqual(g(["term"], "term"));
         expect(settle(g(["a", "term"], "a"), "term", withTerm)).toEqual(g(["a", "term"], "term"));
-        expect(settle(settle(s, "term", withTerm), "a", withTerm)).toEqual(g(["a", "b"], "a"));
         expect(settle(s, "ended-worker")).toEqual(s);
         expect(settle(settle(s, "ended-worker"), "b")).toEqual(g(["a", "b"], "b"));
     });

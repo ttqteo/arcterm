@@ -336,9 +336,8 @@ the grid and leaves it running. The header and the details rail follow the focus
 one, with **Move to the panel** and **Close**); click a cell to focus it.
 
 Moving between agents and terminals with the keyboard follows one rule: if it already has a cell, that cell takes focus;
-otherwise it replaces the focused cell and the others stay put. So stepping through more of them than there are cells
-keeps changing which of them show, and picking terminal T on agent A of a split [A, B] gives [T, B]; a quick `Ctrl`+`Tab`
-puts A back in T's cell.
+otherwise it shows on its own and the split stays as it was. So picking terminal T on agent A of a split [A, B] shows T
+alone; a quick `Ctrl`+`Tab` back to A brings [A, B] back. With one pane (no split), the pane simply follows what you pick.
 
 An agent asking a question in its terminal (Claude Code's picker) takes the keyboard: choose it by any route, or have
 the chosen agent start asking, and typing moves into its terminal, so `↑` / `↓`, `Enter` and the digits answer the

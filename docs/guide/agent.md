@@ -221,7 +221,7 @@ Có thể xem tới **bốn** ô cùng lúc, mỗi ô là một agent **hoặc m
 
 Cách các ô xếp: 1 ô chiếm cả vùng, 2 ô cạnh nhau, 3 ô là hai ô trên và một ô trải ngang bên dưới, 4 ô là lưới 2x2. Lưới được lưu lại và còn nguyên sau khi mở lại app. Canvas, review, phần bên trong subagent, Conversation History, và transcript của phiên đã kết thúc hoặc của worker đã xong mỗi thứ hiện thay cho lưới; lưới trở lại như cũ khi bạn rời đi. Terminal chọn từ cây thì không thay cả lưới mà vào một ô, theo quy tắc dưới đây.
 
-Khi chuyển giữa các agent và terminal bằng phím (thanh `Ctrl+Tab`, `j`/`k`…) hay chọn trong cây: nếu cái đó đã có ô thì ô đó được focus; nếu chưa thì nó thế chỗ ô đang focus còn các ô khác giữ nguyên. Vậy từ một split [A, B] đang ở A, chọn terminal T cho [T, B]; bấm nhanh `Ctrl+Tab` đặt A vào chỗ của T.
+Khi chuyển giữa các agent và terminal bằng phím (thanh `Ctrl+Tab`, `j`/`k`…) hay chọn trong cây: nếu cái đó đã có ô thì ô đó được focus; nếu chưa thì nó hiện một mình còn split giữ nguyên. Vậy từ một split [A, B] đang ở A, chọn terminal T thì T hiện một mình; bấm nhanh `Ctrl+Tab` về A thì [A, B] trở lại (hoặc bấm hàng split trong sidebar). Mở split mới (kéo thả, **Open in split**) từ một tab đang hiện một mình thì split mới thay split cũ của project.
 
 ![Lưới terminal 2x2 với bốn agent, ô đang focus có viền accent, mỗi ô có thanh tiêu đề kèm nút ×](images/agent-grid.png)
 
