@@ -42030,7 +42030,10 @@ const agentSleep = {
 // answers. Every other command goes down to the layer under it. Step 15 reads a run's ended worker: the run is real (a
 // stand-in child run the engine marks done, as lead-card-merge-gate makes it), so it is made before the page reloads onto
 // the roster. Steps 17-19 follow the keyboard out of the chat: an Alt-drop's @mention lands in the chat box of a cell
-// showing Chat (and in the PTY of one showing Terminal), and the float note closing hands focus back to the box.
+// showing Chat (and in the PTY of one showing Terminal), and the float note closing hands focus back to the box. Steps 20-26
+// are the chat's second round: a message sent while Claude works (the Queued bubble, the hold behind a permission card, ↑
+// recall), the `/` menu, the footer's mode chip and the card's second choice (Claude Code's captured screens, from
+// tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy.
 // Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
 const AC_MOCK_KEY = "__arcAgentChatMock";
 const AC = agentPageFixtures;
@@ -42062,6 +42065,10 @@ const AC_TASKS = [
 // the engine ticks a dag at most every 30 seconds
 const AC_ENDED_WAIT_MS = 90_000;
 const AC_WAIT_MS = 8000;
+// what the mocked ListClaudeCommandsCommand answers: a skill the `/` menu lists beside its built-ins
+const AC_COMMANDS = [{ name: "arc:council", description: "Ask a council of viewpoints", source: "skill" }];
+// the screens Claude Code 2.1.319 drew (captured by the unit tests' fixtures): the step writes them to the fixture terminal
+const AC_SCREENS = JSON.parse(readFileSync(new URL("../../frontend/app/view/agents/tuiscreen.fixtures.json", import.meta.url), "utf8"));
 
 const acCell = (id) => `document.querySelector('[data-agent-terminal="${id}"]')`;
 const acLayer = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
@@ -42225,7 +42232,7 @@ async function installAgentChatMock(h, ctx) {
         if (window.${AC_MOCK_KEY}) return "already-installed";
         const prev = api.mockClient ?? null;
         const blocks = new Set(${JSON.stringify(blocks)});
-        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [] };
+        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)} };
         const drop = (data) => {
             const q = m.queues[data.oref] ?? [];
             m.queues[data.oref] = data.allow ? q.filter((r) => r.id !== data.id) : [];
@@ -42257,6 +42264,10 @@ async function installAgentChatMock(h, ctx) {
                 if (command === "answeragent") {
                     m.calls.push({ command, data });
                     return Promise.resolve(null);
+                }
+                if (command === "listclaudecommands") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(m.commands);
                 }
                 if (command === "runtranscriptpath" && data?.runid === ${JSON.stringify(ctx.endedRun ?? "")}) {
                     return Promise.resolve(${JSON.stringify(ctx.files.ended)});
@@ -42305,12 +42316,16 @@ const acQueue = (h, oref, requests) =>
     })()`);
 
 const acKeys = {
-    modShiftK: { key: "K", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 10 },
+    // the app's Mod: Ctrl on Windows, Cmd on a Mac (acKey adds it)
+    modShiftK: { key: "K", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 8, mod: true },
     altC: { key: "c", code: "KeyC", windowsVirtualKeyCode: 67, modifiers: 1 },
+    up: { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38 },
+    enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
 };
-async function acKey(h, k) {
+async function acKey(h, { mod, ...k }) {
+    const modifiers = (k.modifiers ?? 0) | (mod ? ((await h.ev(`/Mac/i.test(navigator.platform)`)) ? 4 : 2) : 0);
     for (const type of ["keyDown", "keyUp"]) {
-        await h.cdp("Input.dispatchKeyEvent", { type, ...k });
+        await h.cdp("Input.dispatchKeyEvent", { type, ...k, modifiers });
     }
 }
 // text into a box through the page's own input path, then Enter unless told not to
@@ -42345,6 +42360,43 @@ const acFocusIn = (h, id) =>
             xterm: !!a?.closest?.(".xterm") && a.closest("[data-agent-terminal]")?.getAttribute("data-agent-terminal") === ${JSON.stringify(id)},
             box: a?.tagName === "TEXTAREA" && !!a.closest('[data-agent-chat="${id}"] [data-agent-chat-composer]'),
         };
+    })()`);
+
+// the box emptied through the page's own input path (select all, delete), so the text state follows
+const acClear = (h, boxExpr) =>
+    h.ev(`(() => {
+        const ta = ${boxExpr};
+        if (!ta) return false;
+        ta.focus();
+        document.execCommand("selectAll");
+        document.execCommand("delete");
+        return true;
+    })()`);
+
+// One line of the transcript Claude Code writes for a message queued while it works and taken in mid-turn
+const acQueuedLine = (dir, prompt) =>
+    JSON.stringify({
+        type: "attachment",
+        timestamp: new Date().toISOString(),
+        cwd: dir,
+        sessionId: AC_SESSION,
+        attachment: { type: "queued_command", commandMode: "prompt", prompt },
+    });
+const acAppend = (file, ...lines) => appendFileSync(file, lines.join("\n") + "\n");
+
+// A captured screen (rows of text) on the fixture terminal of one block: cleared, then each row written at its place so the
+// last row lands on the terminal's last row, which is where readTermLines looks (the bottom rows of the buffer). Rows are cut
+// to the terminal's width, so none wraps and moves the rest.
+const acWriteScreen = (h, blockId, rows) =>
+    h.ev(`(() => {
+        const t = window.__arcTerms?.[${JSON.stringify(blockId)}]?.terminal;
+        if (!t) return { ok: false, why: "no xterm in window.__arcTerms" };
+        const lines = ${JSON.stringify(rows)}.slice(-t.rows);
+        const first = t.rows - lines.length;
+        let out = "\x1b[2J\x1b[H";
+        lines.forEach((l, i) => { out += "\x1b[" + (first + i + 1) + ";1H\x1b[2K" + l.slice(0, t.cols); });
+        t.write(out);
+        return { ok: true, rows: t.rows, cols: t.cols, written: lines.length };
     })()`);
 
 // An Alt-drop of one agent's tree row onto another agent's cell (the gridDrag pattern, with Alt held on the drag events):
@@ -42928,6 +42980,214 @@ const agentChat = {
                 "19. with the cell showing Chat, opening and closing the float note hands focus back to the chat box, not the xterm",
                 noteUp19 && noteGone19 && focus19.box && !focus19.xterm && unfloated19,
                 { noteUp19, noteGone19, focus19, unfloated19 }
+            );
+
+            // 20. a message sent while Claude works. A `queued_command` attachment line (a message queued in the terminal and
+            // taken mid-turn) draws as your bubble; one sent from the box shows at once as a dimmed bubble captioned "Queued",
+            // and goes when a line holding the same text lands in the transcript
+            const Q1 = "queued from the terminal";
+            const S1 = "and also handle timeouts";
+            const workingA = { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined };
+            await showAgent(A);
+            await AC.setRoster(h, acRoster(ctx, workingA));
+            await polishWaitFor(h, `!!${acBox(A)} && !!${acLayer(A)}?.querySelector("[data-chat-working]")`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            const youHas = (text) => `[...(${acLayer(A)}?.querySelectorAll("[data-chat-you]") ?? [])].filter((e) => e.textContent.includes(${JSON.stringify(text)})).length`;
+            acAppend(ctx.files.main, acQueuedLine(ctx.dir, Q1));
+            const queuedUp = await polishWaitFor(h, `${youHas(Q1)} === 1`, 15000);
+            const before20 = await acInputs(h, blockA);
+            await acType(h, acBox(A), S1);
+            const pendingUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-pending]")`, 5000);
+            // the earlier steps' sends ("hello"...) stay pending for two minutes, as the transcript never holds them
+            const pendingOf = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S1)})`;
+            const pend20 = await h.ev(`(() => {
+                const mine = ${pendingOf};
+                return {
+                    text: mine[0]?.firstElementChild?.textContent.trim() ?? null,
+                    caption: mine[0]?.lastElementChild?.textContent.trim() ?? null,
+                    pending: mine.length,
+                    asYou: ${youHas(S1)},
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-20-queued.png");
+            const sent20 = (await acInputs(h, blockA)).slice(before20.length);
+            acAppend(ctx.files.main, acQueuedLine(ctx.dir, S1));
+            const landed20 = await polishWaitFor(h, `${youHas(S1)} === 1 && ${pendingOf}.length === 0`, 15000);
+            rec(
+                "20. a queued_command line draws as your bubble; a message sent while Claude works shows at once as a pending bubble captioned Queued (and is typed into the block), and is gone once a matching line is in the transcript",
+                queuedUp && pendingUp && pend20.text === S1 && pend20.caption === "Queued" && pend20.pending === 1 && pend20.asYou === 0 &&
+                    JSON.stringify(sent20) === JSON.stringify([`${S1}\r`]) && landed20,
+                { queuedUp, pend20, sent20, landed20 }
+            );
+
+            // 21. with a permission request pending the send is held: the button is disabled with the reason, and Enter sends
+            // nothing (a message's first digit would pick an option in Claude Code's dialog)
+            const HOLD = "Answer the permission prompt first";
+            await acQueue(h, orefA, [perm("perm-5", "Bash", "npm run lint")]);
+            const card21 = await polishWaitFor(h, `!!${acCard(A)}`, 3000);
+            const before21 = await acInputs(h, blockA);
+            await acType(h, acBox(A), "2 more things");
+            await polishNap(300);
+            const hold21 = await h.ev(`(() => {
+                const b = ${acLayer(A)}?.querySelector("[data-chat-send]");
+                return { disabled: b?.disabled ?? null, title: b?.title ?? null, label: b?.getAttribute("aria-label") ?? null, box: ${acBox(A)}?.value ?? null };
+            })()`);
+            const after21 = await acInputs(h, blockA);
+            await h.shot("cdp-shots/agent-chat-21-held.png");
+            await acQueue(h, orefA, []);
+            const freed21 = await polishWaitFor(h, `${acLayer(A)}?.querySelector("[data-chat-send]")?.disabled === false`, 3000);
+            await acClear(h, acBox(A));
+            rec(
+                "21. with a permission request pending the Send button is disabled with the hold's reason, Enter sends nothing, and the text stays in the box; the send is free again once the card is gone",
+                card21 && hold21.disabled === true && hold21.title === HOLD && hold21.label === HOLD && hold21.box === "2 more things" &&
+                    JSON.stringify(after21) === JSON.stringify(before21) && freed21,
+                { card21, hold21, before21, after21, freed21 }
+            );
+
+            // 22. ↑ in the empty box puts back the last message sent from it
+            await polishWaitFor(h, `${acBox(A)}?.value === ""`, 3000);
+            await h.ev(`${acBox(A)}?.focus()`);
+            await acKey(h, acKeys.up);
+            const recalled22 = await polishWaitFor(h, `${acBox(A)}?.value === ${JSON.stringify(S1)}`, 3000);
+            const box22 = await h.ev(`${acBox(A)}?.value ?? null`);
+            await h.shot("cdp-shots/agent-chat-22-recall.png");
+            await acClear(h, acBox(A));
+            rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S1, { box22 });
+
+            // 23. `/` as the box's first character lists the built-ins and the skills from ListClaudeCommandsCommand (mocked);
+            // Enter on a partial name puts `/compact ` in the box; sending `/model` flips the cell to Terminal
+            await polishWaitFor(h, `${acBox(A)}?.value === ""`, 3000);
+            await h.ev(`${acBox(A)}?.focus()`);
+            await h.cdp("Input.insertText", { text: "/co" });
+            const slashUp = await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
+            await polishWaitFor(h, `[...document.querySelectorAll("[data-chat-slash-item]")].some((e) => e.textContent.includes("arc:council"))`, 5000);
+            const items23 = await h.ev(`[...document.querySelectorAll("[data-chat-slash-item]")].map((e) => e.textContent.replace(/\\s+/g, " ").trim())`);
+            await h.shot("cdp-shots/agent-chat-23-slash.png");
+            await h.cdp("Input.insertText", { text: "mp" });
+            await acKey(h, acKeys.enter);
+            const picked23 = await polishWaitFor(h, `${acBox(A)}?.value === "/compact "`, 3000);
+            const fetched23 = await acCalls(h, "listclaudecommands");
+            await acClear(h, acBox(A));
+            const beforeModel = (await acInputs(h, blockA)).length;
+            await h.cdp("Input.insertText", { text: "/model" });
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
+            await acKey(h, acKeys.enter);
+            const flipped23 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
+            const header23 = await acHeader(h);
+            const sentModel = (await acInputs(h, blockA)).slice(beforeModel);
+            await h.shot("cdp-shots/agent-chat-23-model-terminal.png");
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)}`, 3000);
+            rec(
+                "23. / opens the commands menu (compact, and a skill from the mocked list), Enter on /comp puts /compact in the box, and sending /model flips the cell to Terminal",
+                slashUp && items23.some((t) => t.startsWith("/compact")) && items23.some((t) => t.startsWith("/arc:council")) &&
+                    picked23 && fetched23.length === 1 && flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
+                    JSON.stringify(sentModel) === JSON.stringify(["/model\r"]),
+                { slashUp, items23, picked23, fetched23: fetched23.length, flipped23, header23, sentModel }
+            );
+
+            // 24. the footer shows the model and the context use; once the fixture terminal shows the captured plan-mode screen
+            // a chip names the mode, and a click on it types Shift+Tab into the block
+            await AC.setRoster(h, acRoster(ctx, { ...workingA, usage: { contextpct: 42 } }));
+            const footerUp = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-footer]")?.textContent ?? "").includes("ctx 42%")`, 5000);
+            const footerText = await h.ev(`${acLayer(A)}?.querySelector("[data-chat-footer]")?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
+            const chipBefore = await h.ev(`!!${acLayer(A)}?.querySelector("[data-chat-mode]")`);
+            const screen24 = await acWriteScreen(h, blockA, AC_SCREENS.mode3);
+            const chipUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('[data-chat-mode="plan"]')`, 6000);
+            await h.shot("cdp-shots/agent-chat-24-footer.png");
+            const beforeTab = (await acInputs(h, blockA)).length;
+            await h.ev(`${acLayer(A)}?.querySelector('[data-chat-mode="plan"]')?.click()`);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "controllerinput" && c.data.input === "\\x1b[Z").length >= 1`, 3000);
+            const tabbed = (await acInputs(h, blockA)).slice(beforeTab);
+            rec(
+                "24. the footer shows the model and ctx 42%; with the captured plan-mode screen on the terminal a chip with data-chat-mode=plan appears, and clicking it sends Shift+Tab to the block",
+                footerUp && /opus/.test(footerText ?? "") && chipBefore === false && screen24?.ok === true && chipUp &&
+                    JSON.stringify(tabbed) === JSON.stringify(["\x1b[Z"]),
+                { footerText, chipBefore, screen24, chipUp, tabbed }
+            );
+
+            // 25. with the captured Bash dialog on the terminal and its request pending, the card offers the dialog's option 2
+            // under its own words; clicking it answers with choice 2
+            const screen25 = await acWriteScreen(h, blockA, AC_SCREENS.bashDialog);
+            await acQueue(h, orefA, [perm("perm-6", "Bash", "echo hi > x.txt")]);
+            const secondUp = await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-perm-second]")`, 6000);
+            const second25 = await h.ev(`${acCard(A)}?.querySelector("[data-perm-second]")?.textContent.trim() ?? null`);
+            await h.shot("cdp-shots/agent-chat-25-second-choice.png");
+            const answersBefore = (await acCalls(h, "agentpermissionanswer")).length;
+            await h.ev(`${acCard(A)}?.querySelector("[data-perm-second]")?.click()`);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "agentpermissionanswer").length > ${answersBefore}`, 3000);
+            const answer25 = (await acCalls(h, "agentpermissionanswer")).slice(answersBefore)[0];
+            await acQueue(h, orefA, []);
+            rec(
+                "25. with the captured Bash dialog on the terminal and its request pending, the card shows option 2's label, and clicking it answers with choice 2",
+                screen25?.ok === true && secondUp && (second25 ?? "").startsWith("Yes, and always allow access to") &&
+                    answer25?.data?.oref === orefA && answer25.data.id === "perm-6" && answer25.data.allow === true && answer25.data.choice === 2,
+                { screen25, second25, answer25 }
+            );
+
+            // 26. a tool with no result while the agent works draws a spinner, not a check, and its stretch reads "Working for";
+            // once the agent is idle the same row is neutral. Hovering an agent bubble shows Copy; a fenced code block has its own
+            const stamp26 = () => ({ cwd: ctx.dir, ts: new Date().toISOString() });
+            acAppend(
+                ctx.files.main,
+                AC.assistantText("Here is the retry:\n\n```ts\nexport const retries = 3;\n```", stamp26()),
+                AC.toolUse("toolu_ac_inflight", "Read", { file_path: ctx.files.edited }, stamp26())
+            );
+            await AC.setRoster(h, acRoster(ctx, workingA));
+            const lastFold = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])].pop()?.querySelector("[data-fold]")`;
+            const stretchUp = await polishWaitFor(h, `(${lastFold}?.textContent ?? "").startsWith("Working for")`, 15000);
+            if (!(await h.ev(`!!${acLayer(A)}?.querySelector("[data-tool-running]")`))) {
+                await h.ev(`${lastFold}?.click()`);
+            }
+            const runningUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-tool-running]")`, 5000);
+            const running26 = await h.ev(`(() => {
+                const row = ${acLayer(A)}?.querySelector("[data-tool-running]");
+                return { text: row?.textContent.replace(/\\s+/g, " ").trim() ?? null, settled: !!${acLayer(A)}?.querySelector("[data-tool-settled]"), fold: ${lastFold}?.textContent.trim() ?? null };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-26-tool-running.png");
+            await AC.setRoster(h, acRoster(ctx));
+            // the stretch is no longer the live one, so it may have folded; its pill opens it again
+            await polishNap(500);
+            if (!(await h.ev(`!!${acLayer(A)}?.querySelector("[data-tool-settled]")`))) {
+                await h.ev(`${lastFold}?.click()`);
+            }
+            const settledUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-tool-settled]") && !${acLayer(A)}?.querySelector("[data-tool-running]")`, 5000);
+            const spot = await h.ev(`(() => {
+                const el = [...(${acLayer(A)}?.querySelectorAll("[data-chat-prose]") ?? [])].find((e) => e.textContent.includes("Here is the retry"));
+                if (!el) return null;
+                el.scrollIntoView({ block: "center" });
+                const r = el.getBoundingClientRect();
+                return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 16) };
+            })()`);
+            const copyOpacity = () =>
+                h.ev(`(() => {
+                    const el = [...(${acLayer(A)}?.querySelectorAll("[data-chat-prose]") ?? [])].find((e) => e.textContent.includes("Here is the retry"));
+                    const w = el?.querySelector("[data-chat-copy]");
+                    return w ? getComputedStyle(w).opacity : null;
+                })()`);
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
+            await polishNap(250);
+            const idleOpacity = await copyOpacity();
+            if (spot != null) {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x, y: spot.y });
+            }
+            const hovered = await polishWaitFor(h, `(() => {
+                const el = [...(${acLayer(A)}?.querySelectorAll("[data-chat-prose]") ?? [])].find((e) => e.textContent.includes("Here is the retry"));
+                const w = el?.querySelector("[data-chat-copy]");
+                return !!w && getComputedStyle(w).opacity === "1" && !!w.querySelector("button");
+            })()`, 3000);
+            const code26 = await h.ev(`(() => {
+                const c = ${acLayer(A)}?.querySelector("[data-code-copy]");
+                const r = c?.getBoundingClientRect();
+                return { found: !!c, shown: !!r && r.width > 0 && r.height > 0 && getComputedStyle(c).opacity !== "0", button: !!c?.querySelector("button") };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-26-copy.png");
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
+            rec(
+                "26. a tool with no result while the agent works draws as running (no check) in a stretch reading Working for, and neutral once the agent is idle; hovering an agent bubble shows Copy; a fenced code block shows its Copy",
+                stretchUp && runningUp && /read/i.test(running26.text ?? "") && running26.settled === false && /^Working for/.test(running26.fold ?? "") &&
+                    settledUp && spot != null && idleOpacity === "0" && hovered && code26.found && code26.shown && code26.button,
+                { stretchUp, runningUp, running26, settledUp, idleOpacity, hovered, code26 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));

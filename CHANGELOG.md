@@ -27,6 +27,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - A Claude agent's cell opens in Chat: its conversation as bubbles with a message box under it (Stop, attachments, pasted images that show in your message, and `@` for a project file included), an Allow / Deny card when Claude Code asks for permission, and the choices of a question it asks as buttons. The real terminal is one flip away, in the header's Chat / Terminal switch or with Ctrl+Shift+K (Cmd+Shift+K on a Mac); a split's cells each have their own switch. <!-- big -->
+- In Chat, a message you send while Claude is working shows as yours at once, marked Queued, and stays where Claude
+  takes it; one you queued in the terminal shows as your bubble too.
+- In Chat, `/` in the message box lists Claude Code's commands and your skills, ↑ puts back the last message you sent,
+  and under the box a line shows the model, the context used and the permission mode, which a click cycles like
+  Shift+Tab. A permission card also offers the prompt's own "Yes, and don't ask again" choice, and Copy shows on
+  hover under a message and on every code block.
 - In an agent's Files tab, drag files or folders onto a folder of the tree to move them there; pins and open file tabs
   follow. Dragging onto a terminal still types the paths.
 - A session's menu in History has Copy session id, beside Copy title and Copy transcript path.
@@ -47,6 +53,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A tool that is still running shows as running in Chat, with a spinner and how long it has run, instead of as done.
 - A run's attention rows with a long task name cut the name short instead of hiding why the task stopped and pushing
   its retry/skip/escalate tag past the edge; hover the name to read it whole.
 - The Route DAG, a project's Branches graph and an opening design canvas load on a blank area instead of placeholder
