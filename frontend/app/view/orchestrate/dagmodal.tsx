@@ -4,7 +4,6 @@
 import { modalBackdrop, modalPanel } from "@/app/element/motiontokens";
 import { focusTrapTarget, takeModalFocus } from "@/app/modals/modalfocus";
 import { useWaveObjectValue } from "@/app/store/wos";
-import { GraphSkeleton } from "@/app/view/jarvis/graphskeleton";
 import { useAtomValue } from "jotai";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useEffect, useRef, useState, type JSX } from "react";
@@ -26,7 +25,7 @@ export function DagModal() {
     const panelRef = useRef<HTMLDivElement>(null);
     const open = state != null;
     const layout = useTimelineLayout();
-    // the panel arrives on a skeleton and the graph mounts once it has: mounting ReactFlow in the click's frame
+    // the panel arrives blank and the graph mounts once it has: mounting ReactFlow in the click's frame
     // held the modal off screen, and mounting it mid-entrance dropped the animation's frames
     const [entered, setEntered] = useState(false);
     useEffect(() => {
@@ -166,8 +165,9 @@ function LiveDagModal({
         const t = window.setTimeout(() => setLate(true), ENTER_FALLBACK_MS);
         return () => window.clearTimeout(t);
     }, []);
+    // blank, not a skeleton: the DAG's shape is only known once it lays out, so node-shaped blocks would lie
     if (!(entered || late) || loading || owner == null) {
-        return <GraphSkeleton />;
+        return <div className="h-full w-full bg-background" />;
     }
     return <DagGraphView oref={state.dagOref} owner={owner} harnesses={harnesses} />;
 }

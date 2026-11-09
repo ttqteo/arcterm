@@ -6,14 +6,18 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) Task Manager grouping (Windows, packaged build): open Task Manager → Processes → one "arcterm (N)"
-  entry holds wavesrv.x64.exe, every Claude Code / shell an agent runs and the WebView2 processes, none as its own row;
-  arcterm still has one taskbar button, merged with its pin, and an agent toast still reads "arcterm". The main window
-  now carries the app id instead of the process (`set_window_app_user_model_id`, `src-tauri/src/main.rs`); release-only
-  code (`cfg(not(debug_assertions))`), which `task dev` never reaches, so only a packaged build tries it. Build
-  cdfa1afd4 died at launch in it (heap corruption, empty log); e584b1faa launches clean, the grouping is still unseen:
-  the process tree is right (wave-tauri → wavesrv.x64 → shell → claude.exe), yet agents' children did not show under
-  arcterm.
+- [ ] (arcterm) Graphs load blank: open a run's Route DAG, a project's Branches card, and a design canvas from the
+  gallery after a reload → while each loads the area is plain background (the Branches card keeps its height), no grey
+  placeholder blocks, then the content appears. Typecheck only (`dagmodal.tsx`, `daggraph.tsx`,
+  `projectgraphcard.tsx`, `canvasgalleryview.tsx`; `GraphSkeleton` deleted).
+- [ ] (arcterm) Run sheet attention rows with a long task name: a failed task named in a full sentence → its orange
+  row truncates the name with an ellipsis, still shows the reason ("failed"), and the `retry/skip/escalate` pill
+  sits inside the border; hovering the name shows it whole (`AttentionRow`, `runsheet.tsx`).
+- [ ] (arcterm) Window app id (Windows, packaged build): arcterm has one taskbar button, merged with its pin, and an
+  agent toast reads "arcterm". The main window carries the app id instead of the process
+  (`set_window_app_user_model_id`, `src-tauri/src/main.rs`); release-only code (`cfg(not(debug_assertions))`), which
+  `task dev` never reaches, so only a packaged build tries it. Build cdfa1afd4 died at launch in it (heap corruption,
+  empty log); e584b1faa launches clean.
 - [ ] (arcterm) Agents keep colors after an installer run from an agent's shell: from an agent's PowerShell run
   `"<installer>.exe" /P /UPDATE /R` → the reopened arcterm's Claude agents draw in color, and `waveapp.log` has a
   `[tauri] opened from an agent's shell; dropped … NO_COLOR …` line. A `NO_COLOR` set in your own environment still

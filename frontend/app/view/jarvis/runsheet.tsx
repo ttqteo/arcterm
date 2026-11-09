@@ -872,8 +872,17 @@ function AttentionRow({ ctx, entry }: { ctx: SheetCtx; entry: QueueEntry }) {
             className="flex w-full cursor-pointer items-center gap-[9px] rounded-[8px] border border-warning/30 bg-warning/12 px-[11px] py-2 text-left hover:border-warning focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
             <span className="h-1.5 w-1.5 flex-none rounded-full bg-warning" />
-            <span className="flex-none text-[11px] font-medium text-ink-hi">{entry.label}</span>
-            <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{entry.detail}</span>
+            {/* a task label is a whole sentence: capped and truncated, or it squeezes the reason to nothing and
+                pushes the actions pill past the border */}
+            <span
+                title={entry.label}
+                className="min-w-0 max-w-[60%] flex-none truncate text-[11px] font-medium text-ink-hi"
+            >
+                {entry.label}
+            </span>
+            <span title={entry.detail} className="min-w-0 flex-1 truncate text-[12px] text-secondary">
+                {entry.detail}
+            </span>
             {entry.actions.length > 0 ? (
                 <span className="flex-none rounded-[5px] border border-warning/45 px-[7px] py-px text-[10.5px] text-warning-soft">
                     {entry.actions.join("/")}

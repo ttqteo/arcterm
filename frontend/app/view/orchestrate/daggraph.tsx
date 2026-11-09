@@ -1,7 +1,6 @@
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { isEditableTarget } from "@/app/store/keybindings/dispatcher";
-import { GraphSkeleton } from "@/app/view/jarvis/graphskeleton";
 import { fireAndForget } from "@/util/util";
 import {
     applyNodeChanges,
@@ -393,8 +392,9 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
         return () => window.removeEventListener("keydown", onKey);
     }, [fitAll, getZoom, group, layout, layoutTasks, owner, positions, selectedId, tasks, zoomTo]);
 
+    // blank, not a skeleton: the DAG's shape is only known once it lays out
     if (loading || !group) {
-        return <GraphSkeleton />;
+        return <div className="h-full w-full bg-background" />;
     }
 
     const selectedTask = selectedId ? group.tasks.find((t) => t.id === selectedId) : undefined;

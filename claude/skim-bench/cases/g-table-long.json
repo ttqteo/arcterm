@@ -1,0 +1,22 @@
+{
+    "reply": "Measured the RAM of the new long-lived features on a cold start.\n\n## Numbers\n| Feature | RAM | Notes |\n|---|---|---|\n| Office view | 18 MB | canvas buffers |\n| Radar | 42 MB | findings index |\n| Services | 9 MB | one block per service |\n| Notes | 3 MB | |\n| Jobs queue | 1 MB | |\n| Council | 27 MB | transcripts kept |\n\n## Verdict\nRadar is the one to watch: it grows with the findings and never drops them. I logged it in open-issues under RAM watch.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "Radar is the one to watch: it grows with the findings and never drops them.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Which feature uses the most RAM?",
+            "a": "Radar, 42 MB."
+        },
+        {
+            "q": "Where was the concern logged?",
+            "a": "In open-issues under RAM watch."
+        }
+    ],
+    "labels": {}
+}

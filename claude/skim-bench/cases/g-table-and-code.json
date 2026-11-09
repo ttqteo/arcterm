@@ -1,0 +1,22 @@
+{
+    "reply": "Two ways to bound the transcript cache; the benchmark picks the second.\n\n## Benchmark\n| Strategy | p50 load | RAM |\n|---|---|---|\n| Cap by count | 120 ms | 64 MB |\n| Cap by bytes | 95 ms | 32 MB |\n\n## The change\n```ts\nexport const MAX_CACHE_BYTES = 32 * 1024 * 1024;\n```\n\n## Caveat\nA single transcript larger than the cap is never cached, so opening it is as slow as before.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "A single transcript larger than the cap is never cached, so opening it is as slow as before.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Which strategy wins?",
+            "a": "Cap by bytes."
+        },
+        {
+            "q": "What is the caveat?",
+            "a": "A transcript larger than the cap is never cached."
+        }
+    ],
+    "labels": {}
+}

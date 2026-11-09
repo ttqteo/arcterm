@@ -118,7 +118,8 @@ export function CanvasGallery({ model }: { model: AgentsViewModel }) {
         }
     }, [g.view, list, open]);
     if (g.view === "viewer") {
-        return open != null ? <CanvasViewer key={open.dir} model={model} canvas={open} /> : <GridSkeleton />;
+        // blank while the list loads: the viewer shows one canvas, so a grid of cards would be the wrong shape
+        return open != null ? <CanvasViewer key={open.dir} model={model} canvas={open} /> : null;
     }
     if (g.view === "cleanup") {
         return <CanvasCleanup />;

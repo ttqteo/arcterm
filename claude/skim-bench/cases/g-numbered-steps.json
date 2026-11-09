@@ -1,0 +1,22 @@
+{
+    "reply": "To move your vault to the new layout, run these steps in order.\n\n1. Quit arcterm.\n2. Copy `~/.arc/vault` to a backup folder.\n3. Run `wsh vault migrate`.\n4. Start arcterm and open Setup → Memory.\n5. Check that each project's notes are there.\n6. Delete the backup once you are sure.\n\n## Waiting on you\nStep 3 rewrites every note's front matter, so the backup in step 2 is the only way back. Tell me when it is done and I will remove the old reader.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "Step 3 rewrites every note's front matter, so the backup in step 2 is the only way back.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Which command migrates the vault?",
+            "a": "wsh vault migrate"
+        },
+        {
+            "q": "Why is the backup important?",
+            "a": "Step 3 rewrites every note's front matter; the backup is the only way back."
+        }
+    ],
+    "labels": {}
+}

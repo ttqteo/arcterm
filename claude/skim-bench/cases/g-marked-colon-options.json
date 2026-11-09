@@ -1,0 +1,29 @@
+{
+    "reply": "The migration is written and tested on a copy of your store.\n\nIt adds the `services` table and backfills it from the block meta of every service tab. On the copy it took 0.4 s for 212 blocks.\n\nThe decision is yours:\n\n(a) Run it at the next launch, so the first start after the update takes about half a second longer.\n(b) Run it lazily the first time Setup → Tools opens, so the launch stays as fast but the first open of Tools stalls.\n\nI would pick (a): half a second once is cheaper than a stall the person sees.\n\nNothing is committed yet.",
+    "marks": [
+        "The decision is yours:",
+        "I would pick (a): half a second once is cheaper than a stall the person sees."
+    ],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "(a) Run it at the next launch, so the first start after the update takes about half a second longer.",
+            "criterion": 3
+        },
+        {
+            "text": "(b) Run it lazily the first time Setup → Tools opens, so the launch stays as fast but the first open of Tools stalls.",
+            "criterion": 3
+        }
+    ],
+    "questions": [
+        {
+            "q": "What are the two options?",
+            "a": "Run the migration at the next launch, or lazily on first opening Setup → Tools."
+        },
+        {
+            "q": "Which option does the agent recommend?",
+            "a": "(a), run it at the next launch."
+        }
+    ],
+    "labels": {}
+}

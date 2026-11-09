@@ -1,0 +1,24 @@
+{
+    "reply": "One check failed; the rest is green.\n\n## The failure\n`surface-smoke` timed out waiting for the Radar surface. Radar now loads its findings before it renders, and the scenario's 5 s wait is too short on a cold store.\n\n## Everything else passed\n- Typecheck\n- vitest, 3,412 tests\n- Go tests for `pkg/radar` and `pkg/orchestrate`\n\nI can raise the scenario's wait to 15 s, or make Radar render before its findings load.\n\nBoth are small.",
+    "marks": [
+        "`surface-smoke` timed out waiting for the Radar surface.",
+        "Everything else passed"
+    ],
+    "source": "generated",
+    "mustKeep": [],
+    "questions": [
+        {
+            "q": "Which check failed?",
+            "a": "surface-smoke, waiting for the Radar surface."
+        },
+        {
+            "q": "What passed?",
+            "a": "Typecheck, vitest (3,412 tests), and the Go tests for pkg/radar and pkg/orchestrate."
+        },
+        {
+            "q": "What two fixes are offered?",
+            "a": "Raise the scenario wait to 15 s, or render Radar before its findings load."
+        }
+    ],
+    "labels": {}
+}

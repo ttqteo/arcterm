@@ -1,0 +1,28 @@
+{
+    "reply": "The Office floor plan ships behind the same toggle as before.\n\n## What landed\n- Rooms draw from the project list, one per project.\n- An agent waiting on you glows in its room.\n- The notice board shows the last three landed runs.\n\n## How to try it\nOpen Cockpit and press `o` to switch to the Office view.\n\n## Left out\nDrag to move an agent between rooms; it needs a backend command that does not exist yet.",
+    "marks": [
+        "The Office floor plan ships behind the same toggle as before."
+    ],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "Drag to move an agent between rooms; it needs a backend command that does not exist yet.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "How do you open the Office view?",
+            "a": "Open Cockpit and press o."
+        },
+        {
+            "q": "What was left out?",
+            "a": "Dragging an agent between rooms."
+        },
+        {
+            "q": "What does the notice board show?",
+            "a": "The last three landed runs."
+        }
+    ],
+    "labels": {}
+}

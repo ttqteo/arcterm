@@ -1,0 +1,30 @@
+{
+    "reply": "Merged the parser fix; one problem is still open.\n\n## What landed\n- Tabs in a plan's task headings parse now.\n- A Depends line with a trailing comma no longer fails submit.\n- The plan reviewer sees the spec path again.\n\n## Found not fixed\n- The store test `TestRosterReload` still fails about one run in ten on Windows. It looks like a timer race, not the parser.\n- A plan with CRLF line endings still reads its Verify line with a trailing carriage return.\n\nVerify passed on the merged result.",
+    "marks": [],
+    "source": "generated",
+    "mustKeep": [
+        {
+            "text": "The store test `TestRosterReload` still fails about one run in ten on Windows.",
+            "criterion": 2
+        },
+        {
+            "text": "A plan with CRLF line endings still reads its Verify line with a trailing carriage return.",
+            "criterion": 2
+        }
+    ],
+    "questions": [
+        {
+            "q": "Which test is still flaky?",
+            "a": "TestRosterReload, about one run in ten on Windows."
+        },
+        {
+            "q": "What is wrong with CRLF plans?",
+            "a": "The Verify line keeps a trailing carriage return."
+        },
+        {
+            "q": "Did Verify pass?",
+            "a": "Yes, on the merged result."
+        }
+    ],
+    "labels": {}
+}

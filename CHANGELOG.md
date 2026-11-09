@@ -47,6 +47,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's attention rows with a long task name cut the name short instead of hiding why the task stopped and pushing
+  its retry/skip/escalate tag past the edge; hover the name to read it whole.
+- The Route DAG, a project's Branches graph and an opening design canvas load on a blank area instead of placeholder
+  blocks shaped like something they are not.
 - Attach on a Cockpit Background session opens that session in its tab with `claude attach`, so it keeps running in
   the background and its row moves on to done when it finishes, instead of staying on "needs input" forever.
 - Claude agents always start in the fullscreen renderer when your Claude settings ask for it (`/tui fullscreen`):
@@ -54,8 +58,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   or turns fullscreen off altogether.
 - On a Mac, new terminals and agents no longer fail to start with "too many open files" after a while with several
   agents open: following an agent's transcript no longer holds open every other session file of its project.
-- On Windows, Task Manager shows your agents, their shells, the backend and the WebView under the one arcterm entry
-  instead of as separate rows, so you can see at a glance how much memory arcterm and its agents take.
 - Agents keep their colors in an arcterm reopened by an installer run from an agent's shell: Claude Code's PowerShell
   sets `NO_COLOR`, which arcterm passed on to every agent it started. A `NO_COLOR` you set yourself still applies.
 

@@ -38,3 +38,6 @@ claude/arc-view-mod/.claude-plugin/types/
 
 # installers copied out by `task tauri:build`, local only
 /releases/
+
+# skim bench model-call cache (scripts/skim-bench.mjs)
+claude/skim-bench/cache/
