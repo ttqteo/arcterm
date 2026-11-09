@@ -161,11 +161,16 @@ export function usePermissionRequestState(
     return { busy: id != null && inFlight.has(id), error: oref != null ? refusals.get(oref)?.message : undefined };
 }
 
-/** Allow (types `1` into the terminal) or Deny (Esc) for request `id`, which wavesrv answers only while it is the head of
+/** Allow (types `1` into the terminal), Allow with the prompt's second choice (`{ allow: true, choice: 2 }` types `2`)
+ *  or Deny (Esc) for request `id`, which wavesrv answers only while it is the head of
  *  the queue. The request's buttons stay locked until the call and the queue read after it have settled. A refusal ("that
  *  request is no longer waiting") becomes the agent's refusal line, raised once the queue has been read again, so it
  *  records the head the person now sees; the line clears by the rule in `refusalClears`, and on the next answer here. */
-export async function answerPermission(oref: string, id: string, allow: boolean): Promise<void> {
+export async function answerPermission(
+    oref: string,
+    id: string,
+    answer: { allow: boolean; choice?: 2 }
+): Promise<void> {
     if (globalStore.get(permissionInFlightAtom).has(id)) {
         return;
     }
@@ -173,7 +178,12 @@ export async function answerPermission(oref: string, id: string, allow: boolean)
     dropRefusal(oref);
     let failure: string | null = null;
     try {
-        await RpcApi.AgentPermissionAnswerCommand(TabRpcClient, { oref, id, allow });
+        await RpcApi.AgentPermissionAnswerCommand(TabRpcClient, {
+            oref,
+            id,
+            allow: answer.allow,
+            choice: answer.choice,
+        });
     } catch (err) {
         failure = answerFailureMessage(err);
     }

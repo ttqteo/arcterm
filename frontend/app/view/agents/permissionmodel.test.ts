@@ -12,8 +12,11 @@ import {
     REFUSAL_MS,
     refusalClears,
     requestsGone,
+    secondChoice,
     waitingFor,
 } from "./permissionmodel";
+import { tuiPermissionOptions } from "./tuiscreen";
+import fixtures from "./tuiscreen.fixtures.json";
 
 describe("permissionTitle", () => {
     it("names what each answerable tool wants", () => {
@@ -154,5 +157,48 @@ describe("answerFailureMessage", () => {
     it("never returns an empty line", () => {
         expect(answerFailureMessage(new Error("  "))).toBe("Could not send the answer");
         expect(answerFailureMessage(undefined)).toBe("Could not send the answer");
+    });
+});
+
+describe("secondChoice", () => {
+    it("is option 2's label for the captured Bash dialog", () => {
+        const options = tuiPermissionOptions(fixtures.bashDialog);
+        expect(options.length).toBeGreaterThanOrEqual(3);
+        expect(secondChoice(options)).toBe(options[1].label);
+        expect(secondChoice(options)).toMatch(/^Yes, and always allow access to /);
+    });
+    it("is option 2's label for the captured edit dialog", () => {
+        const options = tuiPermissionOptions(fixtures.editDialog);
+        expect(secondChoice(options)).toBe(options[1].label);
+        expect(secondChoice(options)).toMatch(/^Yes, and switch to accept edits/);
+    });
+    it("matches Yes in any case", () => {
+        expect(
+            secondChoice([
+                { n: 1, label: "Yes" },
+                { n: 2, label: "yes, always" },
+                { n: 3, label: "No" },
+            ])
+        ).toBe("yes, always");
+    });
+    it("is null for a two-option dialog", () => {
+        expect(
+            secondChoice([
+                { n: 1, label: "Yes" },
+                { n: 2, label: "Yes, and don't ask again" },
+            ])
+        ).toBeNull();
+    });
+    it("is null when option 2 starts with No", () => {
+        expect(
+            secondChoice([
+                { n: 1, label: "Yes" },
+                { n: 2, label: "No, keep planning" },
+                { n: 3, label: "Tell Claude what to change" },
+            ])
+        ).toBeNull();
+    });
+    it("is null for no options", () => {
+        expect(secondChoice([])).toBeNull();
     });
 });

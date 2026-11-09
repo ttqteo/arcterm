@@ -5,6 +5,7 @@
 // render. The queue itself lives in wavesrv (pkg/agentperm) and reaches the card through permissionstore.ts.
 
 import type { AgentVM } from "./agentsviewmodel";
+import type { TuiOption } from "./tuiscreen";
 
 const TITLES: Record<string, string> = {
     Bash: "Wants to run a command",
@@ -81,4 +82,15 @@ export function refusalClears(refusal: Pick<Refusal, "ts" | "headId">, headId: s
 export function answerFailureMessage(err: unknown): string {
     const text = (err instanceof Error ? err.message : typeof err === "string" ? err : "").trim();
     return text !== "" ? text : "Could not send the answer";
+}
+
+/** Pure: the label of the dialog's second option when it is a "Yes, and …" one (Allow, and don't ask again), which the
+ *  card offers as a button typing `2`. null for a dialog of two options, or an option 2 that does not start with "Yes"
+ *  (a plan dialog's "No, keep planning"), since the server types `2` whatever the label says. */
+export function secondChoice(options: readonly TuiOption[]): string | null {
+    if (options.length < 3) {
+        return null;
+    }
+    const second = options[1];
+    return second.n === 2 && /^yes\b/i.test(second.label) ? second.label : null;
 }
