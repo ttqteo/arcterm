@@ -243,10 +243,15 @@ function hasFlagValue(args: string[], i: number): boolean {
 // Recompose a Claude launch as a resume: `claude --resume <id> <baseArgs>`. baseArgs are the original
 // launch flags only (never the task prompt — resume reattaches, it must not replay the prompt). Any
 // prior --resume/--continue in baseArgs is stripped so resuming repeatedly can't stack conflicting
-// resume directives.
+// resume directives. A leading `attach <short id>` (how the Background section's Attach opens a session) names the
+// same session and is dropped too (blockcontroller's StripSessionArgs).
 export function resumeArgsForClaude(sessionId: string, baseArgs: string[]): string[] {
     const kept: string[] = [];
-    for (let i = 0; i < baseArgs.length; i++) {
+    let start = 0;
+    if (baseArgs[0] === "attach") {
+        start = hasFlagValue(baseArgs, 0) ? 2 : 1;
+    }
+    for (let i = start; i < baseArgs.length; i++) {
         const a = baseArgs[i];
         if (a === "--resume") {
             if (hasFlagValue(baseArgs, i)) {

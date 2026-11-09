@@ -213,6 +213,7 @@ declare global {
 
     // wshrpc.BackgroundAgentData
     type BackgroundAgentData = {
+        id?: string;
         sessionid: string;
         cwd: string;
         kind: string;
