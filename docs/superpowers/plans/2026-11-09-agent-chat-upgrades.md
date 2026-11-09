@@ -15,7 +15,7 @@ permission dialog's options; and one new wshrpc command listing Claude Code's sk
 fixes every rule below. The rest of the spec is the chat view this builds on.
 
 **Verify:** `node scripts/verify.mjs ./pkg/claudecmds ./pkg/agentperm ./pkg/wshrpc/...`
-**Check:** `NODE_OPTIONS=--max-old-space-size=4096 task check:ts && go vet ./pkg/claudecmds ./pkg/agentperm ./pkg/wshrpc/...`
+**Check:** `NODE_OPTIONS=--max-old-space-size=4096 task check:ts && go vet ./pkg/agentperm ./pkg/wshrpc/...`
 **Final:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep agent-grid agent-uploads launcher-resume`
 
 ## Global Constraints
@@ -96,12 +96,16 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
 ### Task 2: Read the TUI under the chat: the mode line and the permission dialog's options
 
 **Depends on:** none
-**Files:** `frontend/app/view/term/termpaste.ts`, `frontend/app/view/term/termwrap.ts`, `frontend/app/view/agents/tuiscreen.ts`, `frontend/app/view/agents/tuiscreen.test.ts`
+**Files:** `frontend/app/view/term/termpaste.ts`, `frontend/app/view/term/termwrap.ts`, `frontend/app/view/agents/tuiscreen.ts`, `frontend/app/view/agents/tuiscreen.test.ts`, `frontend/app/view/agents/tuiscreen.fixtures.json`
 
 **Interfaces:**
 - Produces: `readTermLines(blockId: string, count: number): string[] | null` in `termpaste.ts` (`null` when the block
   has no mounted, loaded terminal); `TermHandle` gains `lines: (count: number) => string[]`, wired in `termwrap.ts` to
   `this.recentLines(count)`.
+- Produces: `frontend/app/view/agents/tuiscreen.fixtures.json`, the captured screens as
+  `{ "idle": string[], "mode1": string[], "mode2": string[], "mode3": string[], "bashDialog": string[], "editDialog": string[] }`
+  (`modeN` after N Shift+Tabs), each the bottom 30 rows, trailing spaces trimmed. Tests import it (`resolveJsonModule`
+  is on); `scenarios.mjs` reads it with `fs.readFileSync`.
 - Produces: in `tuiscreen.ts`: `type ClaudeMode = "default" | "acceptEdits" | "plan" | "bypassPermissions"`;
   `tuiMode(lines: string[]): ClaudeMode | null`; `interface TuiOption { n: number; label: string }`;
   `tuiPermissionOptions(lines: string[]): TuiOption[]`.
@@ -110,9 +114,10 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
   haiku` through a PTY (Python `pty.fork` + `os.read`, 120×40), render the bytes to screen rows with `pyte` (a venv in
   the scratch dir; `pip install pyte`), and save the bottom 30 rows of: the idle prompt; after one, two and three
   Shift+Tab (`\x1b[Z`); the permission dialog for "run exactly: echo hi > x.txt"; the dialog for "replace the text of
-  x.txt with bye" (an edit). Quit with `/exit`. These rows are the test fixtures, pasted into `tuiscreen.test.ts` as
-  string arrays, trailing spaces trimmed. Report the exact mode and option strings in the task's report.
-- [ ] **Step 2: Write the failing tests** in `tuiscreen.test.ts`:
+  x.txt with bye" (an edit). Quit with `/exit`. Save the rows as `tuiscreen.fixtures.json` (the shape above). Report
+  the exact mode and option strings in the task's report. If the capture cannot run (no login, no network, `pyte`
+  will not install), stop and report the task failed with the reason: never write the strings from memory.
+- [ ] **Step 2: Write the failing tests** in `tuiscreen.test.ts`, over the screens in `tuiscreen.fixtures.json`:
   - `tuiMode` returns `"default"` for the idle capture, and the mode each Shift+Tab capture shows (`acceptEdits`,
     `plan`, and the third as captured).
   - `tuiMode` returns `null` for both dialog captures (the footer is covered) and for `[]`.
@@ -163,14 +168,17 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
 - [ ] **Step 5: Wire it.** `useAgentSend` returns `message`. `chatcomposer.tsx`: after a send of an awake agent returns
   true, `addPending(agent.id, message, entries)` — take `entries` as an optional prop `entries?: AgentEntry[]` the pane
   passes (the sleeping overlay passes none, so no pending there) — and `noteSent` for every send; the send is held while
-  `sendHold(usePermission(oref).length > 0, agent.ask != null && !agent.ask.hold)` is non-null, the reason in the Send
-  button's `title` and `aria-label` (oref is `block:<agent.blockId>`); ↑ with an empty box (or one still showing a
+  `sendHold(usePermission(oref).length > 0, agent.ask != null && !agent.ask.hold)` is non-null (oref is
+  `block:<agent.blockId>`): the Send button is disabled with the reason as its `title` and `aria-label`, and Enter in
+  the box sends nothing; ↑ with an empty box (or one still showing a
   recalled text, unedited) recalls, ↓ walks back, any edit ends recall. `chatpane.tsx`: pass `entries`; draw
   `pendingStill(usePending(agent.id), entries, now)` at the top of `data-chat-tail`, each a right-hand bubble with
   YouBubble's classes plus `opacity-60`, `data-chat-pending`, and a caption under it in `text-[11px] text-muted`:
   "Queued" while `agent.state !== "idle"`, else "Sending…"; re-evaluate each second while any is shown.
 - [ ] **Step 6: Run** the two test files — PASS; `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` — exit 0.
 - [ ] **Step 7: Commit**: `feat(chat): a message sent while Claude works shows as your bubble, queued until it lands; ↑ recalls`.
+
+**Acceptance:** the views and keys this task adds are shown by `agent-chat` steps 1–3 of Task 8.
 
 ### Task 4: Tools in flight, Copy on bubbles and code blocks
 
@@ -192,8 +200,8 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
 - [ ] **Step 2: Run** the three test files — expected FAIL.
 - [ ] **Step 3: Implement.** `ToolLine({ action, inline, running, settled })`: `running` draws a spinner
   (`Loader2`, `animate-spin motion-reduce:animate-none`, `text-muted`) in the status square's place, no colour, and
-  the elapsed time ticking from `startedAt`; an action with no `outcome` and not `running` draws a neutral square (no
-  ✓, no ✗). In `chatconversation.tsx` the `WorkPill` passes `running={inFlight(action, live)}` where `live` is the
+  the elapsed time ticking from `startedAt`, its row marked `data-tool-running`; an action with no `outcome` and not
+  `running` draws a neutral square (no ✓, no ✗), its row marked `data-tool-settled`. In `chatconversation.tsx` the `WorkPill` passes `running={inFlight(action, live)}` where `live` is the
   `active` prop, and reads "Working for {workedFor(stretchMs(…))} · N tools" while one is in flight (ticking each
   second), "Worked for …" otherwise. `chatpane.tsx` shows `workingText(...)` in `data-chat-working`.
 - [ ] **Step 4: Copy.** In `chatconversation.tsx`, the agent's prose bubble and `YouBubble` are `group relative`;
@@ -203,6 +211,9 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
   `data-code-copy`) in the block's top-right corner, outside the horizontal scroller.
 - [ ] **Step 5: Run** the three test files — PASS; `task check:ts` (with the `NODE_OPTIONS` prefix) — exit 0.
 - [ ] **Step 6: Commit**: `feat(chat): a running tool shows as running, not RAN; Copy on bubbles and code blocks`.
+
+**Acceptance:** the running row, the "Working for" stretch and both Copy buttons are shown by `agent-chat` step 7 of
+Task 8.
 
 ### Task 5: The `/` menu
 
@@ -245,6 +256,8 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
   — PASS; `task check:ts` (with the prefix) — exit 0.
 - [ ] **Step 7: Commit**: `feat(chat): the / menu: Claude Code's commands, skills and plugin commands`.
 
+**Acceptance:** the menu, its pick and the flip on `/model` are shown by `agent-chat` step 4 of Task 8.
+
 ### Task 6: The footer: model, context, permission mode
 
 **Depends on:** Task 2 (reads the mode through its readTermLines and tuiMode), Task 5
@@ -270,6 +283,8 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
 - [ ] **Step 5: Run** the test file — PASS; `task check:ts` — exit 0.
 - [ ] **Step 6: Commit**: `feat(chat): the box's footer: model, context use and the permission mode, which a click cycles`.
 
+**Acceptance:** the footer and the mode chip's click are shown by `agent-chat` step 5 of Task 8.
+
 ### Task 7: The permission card's "Yes, and don't ask again"
 
 **Depends on:** Task 1 (answers with the choice it adds), Task 2 (reads the options through its readTermLines and tuiPermissionOptions)
@@ -280,7 +295,7 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
 - Produces: `secondChoice(options: TuiOption[]): string | null` in `permissionmodel.ts`.
 
 - [ ] **Step 1: Failing tests**: `secondChoice` returns option 2's label when there are at least 3 options and option 2
-  starts with "Yes" (case-insensitive), using Task 2's two captured dialogs' parsed options; `null` for two options,
+  starts with "Yes" (case-insensitive), using `tuiPermissionOptions` over the `bashDialog` and `editDialog` screens of `tuiscreen.fixtures.json` (Task 2); `null` for two options,
   for an option 2 that starts with "No", and for `[]`.
 - [ ] **Step 2: Run** — FAIL. **Step 3: Implement** it, and the store's answer taking `{ allow: boolean; choice?: 2 }`.
 - [ ] **Step 4: The card.** While a card for an answerable request is shown, read
@@ -289,6 +304,8 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
   full text in `title`); click answers with `{ allow: true, choice: 2 }`, errors shown as Allow's are.
 - [ ] **Step 5: Run** the test file — PASS; `task check:ts` — exit 0.
 - [ ] **Step 6: Commit**: `feat(chat): the permission card offers the prompt's own "Yes, and don't ask again"`.
+
+**Acceptance:** the third button and its answer are shown by `agent-chat` step 6 of Task 8.
 
 ### Task 8: The scenario steps, the changelog and the hand check
 
@@ -304,11 +321,13 @@ fixes every rule below. The rest of the spec is the chat view this builds on.
   3. ↑ in the empty box puts back the last sent text;
   4. `/` opens `data-chat-slash` listing `compact` and a skill from a mocked `ListClaudeCommandsCommand`; Enter puts
      `/compact ` in the box; sending `/model` flips the cell to Terminal (header shows Terminal pressed);
-  5. the footer shows the model, `ctx N%`, and, after the fixture terminal shows the captured plan-mode screen, a chip
+  5. the footer shows the model, `ctx N%`, and, after the fixture terminal shows the plan-mode screen of
+     `tuiscreen.fixtures.json` (whichever `modeN` `tuiMode` reads as `plan`), a chip
      with `data-chat-mode="plan"`; clicking it sends `\x1b[Z` to the block;
-  6. with the captured Bash dialog on the fixture terminal and its request pending, `data-perm-second` shows option 2's
+  6. with the `bashDialog` screen of `tuiscreen.fixtures.json` on the fixture terminal and its request pending, `data-perm-second` shows option 2's
      label; clicking it calls the answer command with `choice: 2`;
-  7. a `tool_use` with no result while the agent works draws a spinner, not ✓, and the stretch reads "Working for";
+  7. a `tool_use` with no result while the agent works draws a `data-tool-running` row (a spinner, not ✓) and the
+     stretch reads "Working for"; once the agent is idle the same row is `data-tool-settled`;
      hovering an agent bubble shows `data-chat-copy`; a fenced code block shows `data-code-copy`.
   To put a captured screen on a fixture terminal, use whatever the scenario already has for writing into a cell's xterm;
   if there is none, add a DEV-only `window.__arcTermWrite(blockId, text)` in `termwrap.ts`, behind
