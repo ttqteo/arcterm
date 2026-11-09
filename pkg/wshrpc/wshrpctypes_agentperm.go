@@ -16,7 +16,9 @@ type AgentPermCommands interface {
 	// from the PermissionRequest hook.
 	AgentPermissionRaiseCommand(ctx context.Context, data CommandAgentPermissionRaiseData) error
 	// AgentPermissionAnswerCommand answers the head of the queue, Allow (types `1`) or Deny (types Esc). It
-	// refuses a request that is not the head, or not answerable, with agentperm.ErrNotPending.
+	// refuses a request that is not the head with agentperm.ErrNotPending, and an Allow on a head the chat cannot
+	// answer (its choices are not known: ExitPlanMode's plan menu, an MCP tool's) with its own error, "this prompt
+	// is answered in the terminal"; Deny on that head still types Esc.
 	AgentPermissionAnswerCommand(ctx context.Context, data CommandAgentPermissionAnswerData) error
 	// AgentPermissionPendingCommand is the current queue of a block, for a pane that mounts after a reload.
 	AgentPermissionPendingCommand(ctx context.Context, oref string) (baseds.AgentPermissionData, error)

@@ -42029,7 +42029,9 @@ const agentSleep = {
 // answer, answers them, and refuses one on purpose; it keeps the queue wavesrv would keep, so a card follows its own
 // answers. Every other command goes down to the layer under it. Step 15 reads a run's ended worker: the run is real (a
 // stand-in child run the engine marks done, as lead-card-merge-gate makes it), so it is made before the page reloads onto
-// the roster. Teardown puts the roster, the mock, the chat modes, the rail, the grid and the page back.
+// the roster. Steps 17-19 follow the keyboard out of the chat: an Alt-drop's @mention lands in the chat box of a cell
+// showing Chat (and in the PTY of one showing Terminal), and the float note closing hands focus back to the box.
+// Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
 const AC_MOCK_KEY = "__arcAgentChatMock";
 const AC = agentPageFixtures;
 const { makeTab: acMakeTab, closeTabs: acCloseTabs } = AC.tabFixtures({ waveService });
@@ -42344,6 +42346,44 @@ const acFocusIn = (h, id) =>
             box: a?.tagName === "TEXTAREA" && !!a.closest('[data-agent-chat="${id}"] [data-agent-chat-composer]'),
         };
     })()`);
+
+// An Alt-drop of one agent's tree row onto another agent's cell (the gridDrag pattern, with Alt held on the drag events):
+// dragstart on the row, then dragenter, dragover and drop on the overlay the cell mounts. `hint` is the overlay's text once
+// it reads as a mention ("Mention @<id>"), which only an Alt-held dragover over a cell that takes one produces.
+async function acAltDrop(h, { source, target }) {
+    return h.ev(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const until = async (read, tries) => {
+            let v = read();
+            for (let i = 0; i < tries && !v; i++) {
+                await wait(50);
+                v = read();
+            }
+            return v;
+        };
+        const src = document.querySelector(${JSON.stringify(`[data-agent-row="${source}"]`)});
+        if (!src) return { ok: false, why: "no drag source" };
+        const dt = new DataTransfer();
+        const fire = (el, type, x, y, alt) =>
+            el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x ?? 0, clientY: y ?? 0, altKey: alt === true }));
+        fire(src, "dragstart");
+        const ov = await until(() => document.querySelector(${JSON.stringify(`[data-agent-drop-overlay="${target}"]`)}), 60);
+        if (!ov) {
+            fire(src, "dragend");
+            return { ok: false, why: "no drop overlay over the target cell" };
+        }
+        const r = ov.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        fire(ov, "dragenter", x, y, true);
+        fire(ov, "dragover", x, y, true);
+        const hint = await until(() => (/^Mention /.test(ov.textContent ?? "") ? ov.textContent.trim() : null), 20);
+        fire(ov, "drop", x, y, true);
+        fire(src, "dragend");
+        await wait(100);
+        return { ok: true, hint, left: document.querySelectorAll("[data-agent-drop-overlay]").length };
+    })()`);
+}
 
 const agentChat = {
     name: "agent-chat",
@@ -42812,6 +42852,83 @@ const agentChat = {
                 subUp && sub16.you === "survey the sync client for stale retries" && sub16.prose === "The subagent found two stale retries.",
                 sub16
             );
+
+            // 17. in a split of two Claude cells, an Alt-drop of E's row onto A's cell, which shows Chat, leaves E's mention in
+            // A's message box with focus in it, and types nothing into A's block. E is dragged, not B: a split's cells share one
+            // row in the tree (the split row), so B has no row of its own to drag while it is in the split.
+            await AC.agentPage(h, `const S = await mod("app/view/agents/subagentsstore.ts"); globalStore.set(S.focusSubagentAtom, null); return true;`);
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat"); window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
+            const split17 = await AC.agentPage(
+                h,
+                `const G = await mod("app/view/agents/gridstore.ts");
+                return G.openInSplit(agentsModel(), ${JSON.stringify(B)});`
+            );
+            await polishWaitFor(h, `!!${acBox(A)} && !!${acBox(B)}`, AC_WAIT_MS);
+            await showAgent(A);
+            const mention = `@${E.slice(0, 8)} `;
+            const before17 = await acInputs(h, blockA);
+            const drop17 = await acAltDrop(h, { source: E, target: A });
+            const landed17 = await polishWaitFor(h, `${acBox(A)}?.value === ${JSON.stringify(mention)}`, 3000);
+            const focus17 = await acFocusIn(h, A);
+            const after17 = await acInputs(h, blockA);
+            const boxes17 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
+            await h.shot("cdp-shots/agent-chat-17-alt-drop-chat.png");
+            rec(
+                "17. in a split, an Alt-drop of E's row onto A's cell in Chat leaves E's mention in A's message box with focus in it, and types nothing into A's block",
+                split17 === true && drop17?.ok === true && /^Mention @/.test(drop17.hint ?? "") && drop17.left === 0 &&
+                    landed17 && boxes17.a === mention && boxes17.b === "" && focus17.box && !focus17.xterm &&
+                    JSON.stringify(after17) === JSON.stringify(before17),
+                { split17, drop17, boxes17, focus17, before17, after17 }
+            );
+
+            // 18. with A flipped to Terminal the same Alt-drop goes to the PTY as before: no chat box to take it, the paste
+            // reaches A's block, and focus is in the xterm
+            await acKey(h, acKeys.modShiftK);
+            const termUp18 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
+            await polishWaitFor(h, `!!${acCell(A)}?.querySelector(".xterm-helper-textarea")?.checkVisibility()`, 3000);
+            const before18 = await acInputs(h, blockA);
+            const drop18 = await acAltDrop(h, { source: E, target: A });
+            let after18 = before18;
+            for (let i = 0; i < 30 && !after18.slice(before18.length).some((s) => s.includes(mention.trim())); i++) {
+                await polishNap(100);
+                after18 = await acInputs(h, blockA);
+            }
+            const focus18 = await acFocusIn(h, A);
+            await h.shot("cdp-shots/agent-chat-18-alt-drop-terminal.png");
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)}`, 3000);
+            const boxes18 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
+            const typed18 = after18.slice(before18.length);
+            rec(
+                "18. with A flipped to Terminal the same Alt-drop pastes the mention into A's PTY as before (no chat layer, focus in the xterm), and no chat box takes it",
+                termUp18 && drop18?.ok === true && /^Mention @/.test(drop18.hint ?? "") &&
+                    typed18.length > 0 && typed18.join("").includes(mention.trim()) && focus18.xterm && !focus18.box &&
+                    boxes18.a === "" && boxes18.b === "",
+                { termUp18, drop18, typed18, focus18, boxes18 }
+            );
+            await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
+            await showAgent(A);
+
+            // 19. with the cell showing Chat, the float note opening and closing (Mod+Shift+N) hands focus back to the chat
+            // box, not to the xterm under it. Float resizes the window: the step leaves it again.
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            await h.ev(`${acBox(A)}?.focus()`);
+            const modBit = (await h.ev(`/Mac/i.test(navigator.platform)`)) ? 4 : 2;
+            await floatNoteChord(h, { modBit });
+            const noteUp19 = await floatMiniWait(h, `!!document.querySelector("[data-float-note]")`, 8000);
+            await floatNoteChord(h, { modBit });
+            const noteGone19 = await floatMiniWait(h, `!document.querySelector("[data-float-note]")`, 3000);
+            await h.ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+            const focus19 = await acFocusIn(h, A);
+            await h.shot("cdp-shots/agent-chat-19-float-note-closed.png");
+            await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+            const unfloated19 = await floatMiniWait(h, `!document.querySelector("[data-float-bar]") && sessionStorage.getItem("arc.float.restore") == null`, 8000);
+            rec(
+                "19. with the cell showing Chat, opening and closing the float note hands focus back to the chat box, not the xterm",
+                noteUp19 && noteGone19 && focus19.box && !focus19.xterm && unfloated19,
+                { noteUp19, noteGone19, focus19, unfloated19 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -42828,6 +42945,13 @@ const agentChat = {
         };
         await step("close the subagent interior", () =>
             AC.agentPage(h, `const S = await mod("app/view/agents/subagentsstore.ts"); globalStore.set(S.focusSubagentAtom, null); return true;`)
+        );
+        // step 19 floats the window: a throw before it left Float again must not strand the next scenario in it
+        await step("leave Float", () =>
+            floatMiniWait(h, `(document.querySelector("[data-float-exit]")?.click(), !document.querySelector("[data-float-bar]"))`, 8000)
+        );
+        await step("end the split", () =>
+            AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`)
         );
         await step("remove the mock", () => removeAgentChatMock(h));
         await step("restore the roster", () => AC.restoreRoster(h));

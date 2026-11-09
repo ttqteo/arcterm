@@ -60,6 +60,7 @@ import { CanvasGallery } from "./canvasgalleryview";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
+import { cellInputOf } from "./cellinput";
 import { shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
@@ -122,18 +123,6 @@ import { TerminalPaneHead } from "./terminalpaneheadview";
 import { useSessionsScan } from "./usesessionsscan";
 import { WorktreeGoneCard } from "./worktreegonecard";
 import { goneTerminalIdsAtom, useWorktreeGoneChecks } from "./worktreegonestore";
-
-// What takes the keyboard in an agent's cell: its chat box while the cell shows Chat (the xterm is still mounted
-// underneath it, so it would also pass checkVisibility, and typing would go to a terminal nobody can see), else its
-// xterm. Null when neither is showing. Reads the DOM, so it is what is on screen, whichever mode the store says.
-function cellInputOf(wrap: HTMLElement | null | undefined, id: string): HTMLElement | null {
-    const box = wrap?.querySelector<HTMLElement>(`[data-agent-chat="${id}"] [data-agent-chat-composer] textarea`);
-    if (box != null) {
-        return box.checkVisibility() ? box : null;
-    }
-    const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${id}"] .xterm-helper-textarea`);
-    return term?.checkVisibility() ? term : null;
-}
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     const focusId = useAtomValue(model.focusIdAtom);

@@ -12,10 +12,11 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { ArrowUp, Square } from "lucide-react";
-import { useRef, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type DragEvent } from "react";
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
+import { insertAt, registerChatInsert } from "./chatinsert";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 
 // two lines, as the board's box; grows as the text wraps, then scrolls
@@ -64,6 +65,33 @@ export function ChatComposer({
     );
     const taRef = useRef<HTMLTextAreaElement>(null);
     useGrowingTextarea(taRef, text, ChatMinH, ChatMaxH);
+    // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which a write to the
+    // textarea's value would lose to the next render; the caret is put after it once the new text is drawn.
+    const latest = useRef({ text, setText });
+    latest.current = { text, setText };
+    const caretAfter = useRef<number | null>(null);
+    useEffect(
+        () =>
+            registerChatInsert(agent.id, (insert) => {
+                const ta = taRef.current;
+                if (ta == null || ta.readOnly) {
+                    return false;
+                }
+                const next = insertAt(latest.current.text, ta.selectionStart, ta.selectionEnd, insert);
+                caretAfter.current = next.caret;
+                latest.current.setText(next.text);
+                ta.focus({ preventScroll: true });
+                return true;
+            }),
+        [agent.id]
+    );
+    useLayoutEffect(() => {
+        const caret = caretAfter.current;
+        if (caret != null && taRef.current != null) {
+            caretAfter.current = null;
+            taRef.current.setSelectionRange(caret, caret);
+        }
+    }, [text]);
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
     const blocker = asleep ? null : attachmentBlocker(att.attachments);
     const sendable = canSend && blocker == null;
