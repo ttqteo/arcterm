@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Long Chat sends: in a live Claude agent's Chat, send a one-line message of ~500 characters, then one
+  of ~5,000 characters, then a multi-line one → each is submitted (the Terminal view shows it as Claude's prompt, not
+  as text left in the box), idle and while Claude works (Queued, then sent at the turn's end). Unit tests only
+  (`chatpending.ts` `pastesBody`, `submitDelayMs`; `agentcomposer.tsx` `typeIntoAgent`).
+- [ ] (arcterm) Esc clears a Queued bubble: while Claude works, send a message from Chat (Queued), switch to Terminal
+  and press Esc → back in Chat the Queued bubble goes within ~5 s of Claude stopping; a message queued and left alone
+  is still sent when the turn ends. Unit tests only (`chatpending.ts` `PENDING_IDLE_MS`).
 - [ ] (arcterm) Button motion: hover icon buttons, chips and tabs on several surfaces → the colour fades in over
   ~140 ms instead of snapping; press and hold a small button → it sinks slightly (3%) and springs back on release; a
   full-width row (History's session cards) and a drag handle (a tree row) do not shrink; drag a Cockpit card and the

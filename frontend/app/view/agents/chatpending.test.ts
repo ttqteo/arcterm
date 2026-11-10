@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import {
+    PASTE_OVER,
+    PENDING_IDLE_MS,
     PENDING_MAX_MS,
+    pastesBody,
     pendingStill,
     pendsAsBubble,
     pushSent,
     recall,
     sendHold,
+    submitDelayMs,
     userTextCount,
     type PendingMessage,
 } from "./chatpending";
@@ -39,6 +43,19 @@ describe("pendingStill", () => {
     it("drops one older than PENDING_MAX_MS", () => {
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS - 1)).toHaveLength(1);
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS)).toEqual([]);
+    });
+    it("drops one the agent has sat idle on for PENDING_IDLE_MS since it was sent", () => {
+        // idle from 3000; sent at 1000 (queued before the turn ended, then cleared with Esc)
+        expect(pendingStill([p()], [user("hello")], 3000 + PENDING_IDLE_MS - 1, 3000)).toHaveLength(1);
+        expect(pendingStill([p()], [user("hello")], 3000 + PENDING_IDLE_MS, 3000)).toEqual([]);
+    });
+    it("counts the idle wait from the send when it was sent to an idle agent", () => {
+        // idle since 500, sent at 1000 (typed in but never submitted)
+        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_IDLE_MS - 1, 500)).toHaveLength(1);
+        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_IDLE_MS, 500)).toEqual([]);
+    });
+    it("keeps it while the agent works, however long", () => {
+        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS - 1, null)).toHaveLength(1);
     });
     it("matches each pending against its own text", () => {
         const out = pendingStill(
@@ -99,5 +116,22 @@ describe("pendsAsBubble", () => {
         expect(pendsAsBubble("use src/app and/or lib")).toBe(true);
         expect(pendsAsBubble("/compact")).toBe(false);
         expect(pendsAsBubble("  /model opus\n")).toBe(false);
+    });
+});
+
+describe("pastesBody", () => {
+    it("pastes a message with a line break, or one longer than a typed line", () => {
+        expect(pastesBody(["one", "two"].join("\n"))).toBe(true);
+        expect(pastesBody("x".repeat(PASTE_OVER + 1))).toBe(true);
+        expect(pastesBody("x".repeat(PASTE_OVER))).toBe(false);
+        expect(pastesBody("hello")).toBe(false);
+    });
+});
+
+describe("submitDelayMs", () => {
+    it("waits at least the keystroke gap, more for a long paste, never past the cap", () => {
+        expect(submitDelayMs(5)).toBe(80);
+        expect(submitDelayMs(20_000)).toBeGreaterThan(submitDelayMs(2_000));
+        expect(submitDelayMs(10_000_000)).toBe(600);
     });
 });

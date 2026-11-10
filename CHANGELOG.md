@@ -28,6 +28,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
 
+### Fixed
+
+- A long message sent from Chat is submitted instead of sitting in Claude Code's box as a new line while Chat showed
+  it Queued.
+- A message you cleared with Esc in the terminal no longer stays Queued in Chat: its bubble goes a few seconds after
+  Claude stops.
+
 ## 1.0.6 — 2026-11-10
 
 ### Added
