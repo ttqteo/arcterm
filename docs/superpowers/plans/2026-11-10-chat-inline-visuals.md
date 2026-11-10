@@ -4,8 +4,8 @@
 **Check:** `task check:ts`
 **Final:** `node scripts/cdp/final-verify.mjs agent-chat`
 
-Runs after run dc14b0a6 (skim highlights in Chat, scroll after a send) has landed: it edits `chatcomposer.tsx` and
-`chatpane.tsx` too.
+Builds on run dc14b0a6 (skim highlights in Chat, scroll after a send), which has landed: its skim toggle and `onSent`
+are in `chatcomposer.tsx` and `chatpane.tsx`, and its `agent-chat` steps 34-36 exist.
 
 Claude Desktop draws a "visual" inside the conversation: a small HTML page (a chart, a diagram, an illustration, a
 widget with sliders, a quiz, a UI sketch) whose buttons send a prompt back into the chat as if the person typed it.
@@ -17,7 +17,7 @@ in its reply; Chat draws the page inline, as tall as it is, themed with the app'
 What is already there, and stays:
 
 - **Mermaid already renders in Chat.** Since run 009fc1e8, Chat draws agent prose through `CouncilText`
-  (`chatconversation.tsx:477`), which passes `marks` and `diagrams` to `MarkdownMessage` (`councilchat.tsx:344-356`),
+  (`ProseText`, `chatconversation.tsx:74-77`), which passes `marks` and `diagrams` to `MarkdownMessage` (`councilchat.tsx:344-356`),
   so a ```` ```mermaid ```` block is drawn as its diagram (`markdownmessage.tsx` `DIAGRAM_COMPONENT`). Flowcharts,
   sequences, pie and xy charts need nothing new; the skill below sends the agent to mermaid first.
 - **Serving an HTML file to an iframe is solved.** `pkg/htmlserve` registers a file's folder under an unguessable token
@@ -28,7 +28,8 @@ What is already there, and stays:
   (`src-tauri/tauri.conf.json:30`), which this origin is; a `srcdoc` frame would inherit the app's policy and run no
   inline script, so it is not an option.
 - **Putting text into the chat box from outside is solved** (`chatinsert.ts`, `registerChatInsert` /
-  `insertIntoChatBox`), and `ChatComposer.submit` (`chatcomposer.tsx:147`) is the one send path (wake, holds, pending
+  `insertIntoChatBox`, which inserts at the caret), and `ChatComposer.submit` (`chatcomposer.tsx:157`) is the one send
+  path (wake, holds, pending
   bubble, and after run dc14b0a6 the scroll to the end).
 
 Decisions (the lead's calls, each with why):
@@ -46,16 +47,20 @@ Decisions (the lead's calls, each with why):
   (`arc-visual-theme` sets `--arc-*` custom properties on the page's root) and says `arc-html-ready` once. Every
   HTML page `htmlserve` serves gets it; only Chat's visual frame listens for `arc-visual-prompt`, and only from its own
   frame, so a page in the File tab that calls it does nothing.
-- **A prompt is sent only after a click in the visual.** The chat takes `arc-visual-prompt` from its own frame's
-  window only, with non-empty text of at most 4,000 characters, and only while that iframe is the document's
-  active element (the person clicked in it); otherwise it is dropped. While the box holds a draft, or within 1.5 s of
-  the last prompt that frame sent, the text goes into the box after the draft instead of being sent. A sent prompt goes
+- **A prompt is taken only once the person has clicked in the visual.** The chat takes `arc-visual-prompt` from its
+  own frame's window only, with non-empty text of at most 4,000 characters, and only while that iframe is the
+  document's active element; otherwise it is dropped. This is a focus check, not a per-click one: after a click the
+  iframe stays the active element, so a page's timer can still send until focus leaves it; the 1.5 s gap below bounds
+  that to one send, and a burst goes into the box. While the box holds a draft, or within 1.5 s of the last prompt that
+  frame sent, the text is appended at the end of the box (after the draft, on a new line; never at the caret) instead
+  of being sent. A sent prompt goes
   through `ChatComposer.submit`, so it wakes a sleeping agent, waits behind a permission card and shows the pending
   bubble like a typed one.
 - **The frame mounts when it nears the view and then stays.** An iframe is a document: a long conversation of visuals
   mounts only those within 600 px of the scroller's view (IntersectionObserver), and the last height each path
-  reported is kept in a module map, so a remount keeps its place. Task 5 measures the RAM of a few live visuals and logs
-  it in `docs/open-issues.md` "RAM watch".
+  reported is kept in a module map, so a remount keeps its place. The RAM of a few live visuals is not measured in this
+  run (the dev app shares its WebView2 image names with the installed app, so no step can tell its processes apart):
+  Task 5 logs it as unmeasured in `docs/open-issues.md` "RAM watch" with a hand check to measure it.
 - **The agent learns it from a skill**, `skills/visual/SKILL.md` (Claude sees it as `arc:visual`), not a system
   prompt section: it costs nothing until a visual helps, as `arc:design` does.
 - **Only a Claude agent's Chat draws it.** Councils draw agent text through the same `MarkdownMessage` but provide no
@@ -71,7 +76,9 @@ Decisions (the lead's calls, each with why):
 (read it first and follow its setup): `TestHandlerAddsTheBridgeToPagesOnly` serves a registered `page.html` and a
 `style.css` from the same folder; the page's body ends with `scrollScript + bridgeScript`, and contains
 `arc-visual-prompt`, `arc-html-height`, `arc-visual-theme` and `arc-html-ready`; the CSS is served byte for byte.
-Extend the scroll-script test only if it asserted the body ends with `scrollScript` alone.
+Three existing assertions compare the whole body with the page plus `scrollScript` alone and break once the bridge is
+appended: `htmlserve_test.go:103` (`TestHandlerServesThePageAndWhatSitsBesideIt`, `pageBody+scrollScript`), `:210`
+(`"<p>index</p>"+scrollScript`) and the range read's `full` at `:227`. Change each to `scrollScript+bridgeScript`.
 
 **Step 2:** `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/htmlserve -run 'Bridge'` → FAIL.
 
@@ -156,19 +163,27 @@ frame's height" -- frontend/app/view/agents/chatvisual.ts frontend/app/view/agen
 
 **Depends on:** Task 2 (imports `chatvisual.ts`)
 
-**Files:** `frontend/app/view/agents/chatvisualview.tsx`, `frontend/app/view/agents/markdownmessage.tsx`, `frontend/app/view/agents/chatinsert.ts`, `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/chatpane.tsx`
+**Files:** `frontend/app/view/agents/chatvisualview.tsx`, `frontend/app/view/agents/markdownmessage.tsx`, `frontend/app/view/agents/chatinsert.ts`, `frontend/app/view/agents/chatinsert.test.ts`, `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/htmlframe.tsx`
 
 Read `DESIGN.md` (tokens, the card and button rules, motion) and `htmlframe.tsx` (the frame's src and sandbox) first.
 
-**Step 1: The registries** (`chatinsert.ts`): beside `registerChatInsert`, `registerChatSubmit(agentId, submit:
-(text: string) => boolean)` with `submitIntoChatBox(agentId, text)`, and `registerChatText(agentId, read: () =>
-string)` with `chatBoxText(agentId): string` (`""` when no box is mounted); same map pattern and unregister rule, no
-imports.
+**Acceptance:** the unit tests of Step 6, and `agent-chat` steps 40-44 (Task 5) once they run in the final stage.
 
-**Step 2: The composer registers them** (`chatcomposer.tsx`, next to the `registerChatInsert` effect): the text
-reader returns `latest.current.text`; the submit returns `false` when the box is read-only, else `setText(text)`, sets
-a `submitNext` ref and returns `true`; a `useEffect` on `[text]` that sees `submitNext` clears it and calls
-`submit()`. A submit that is held (permission card, upload) leaves the text in the box, which is right.
+**Step 1: The registry, test first** (`chatinsert.ts`, `chatinsert.test.ts`): beside `registerChatInsert`, one
+`registerChatBox(agentId, box: { text(): string; submit(text: string): boolean; append(text: string): boolean })`
+returning its unregister, with `chatBoxText(agentId): string` (`""` when no box is mounted), `submitIntoChatBox(agentId,
+text): boolean` and `appendToChatBox(agentId, text): boolean` (`false` when no box is mounted); same map pattern and
+unregister rule as `registerChatInsert` (an unregister of a box that was since replaced leaves the new one), no imports.
+Tests in `chatinsert.test.ts`, beside the `insertIntoChatBox` ones: each of the three calls with no box mounted, each
+reaching the registered box with its text, and a stale unregister leaving the newer box. Run `npx vitest run
+frontend/app/view/agents/chatinsert.test.ts` → FAIL before the code, PASS after.
+
+**Step 2: The composer registers it** (`chatcomposer.tsx`, next to the `registerChatInsert` effect): `text` returns
+`latest.current.text`; `submit` returns `false` when the box is read-only, else `setText(text)`, sets a `submitNext`
+ref and returns `true`, and a `useEffect` on `[text]` that sees `submitNext` clears it and calls `submit()`; `append`
+returns `false` when read-only, else sets the text to `cur.trim() ? cur.replace(/\s+$/, "") + "\n" + text : text` (the
+end of the box, never the caret) and returns `true`. A submit that is held (permission card, upload) leaves the text in
+the box, which is right.
 
 **Step 3: The view** (`chatvisualview.tsx`, header comment saying what it draws and pointing at the plan's rules):
 
@@ -186,11 +201,12 @@ a `submitNext` ref and returns `true`; a `useEffect` on `[text]` that sees `subm
   truncate` inside a `PathLink` to the file (it opens in the File tab), a `flex-1` spacer, and, only when the reported
   height is over `FRAME_MAX`, an icon button (lucide `Maximize2` / `Minimize2` 12px, 24×24, `rounded-[6px]
   hover:bg-surface-hover`, `aria-label` and `title` "Show all of the visual" / "Show less", `data-chat-visual-expand`).
-  Body: until the serve answers, a `bg-surface-raised` box `frameHeight(undefined)` tall with "Loading visual…" centred
+  Body: until the serve answers, a `bg-surface-raised` box `frameHeight(undefined, false)` tall with "Loading visual…" centred
   in `text-[12px] text-muted`; when `HtmlPreviewServeCommand` fails, `<div data-chat-visual-missing
   className="px-3 py-2.5 text-[12.5px] text-muted">Visual not found: <code>{path}</code></div>`; else the iframe:
   `className="block w-full border-0"`, `style={{ height }}` (`frameHeight(reported, expanded)`), `sandbox="allow-scripts
-  allow-same-origin"`, `title={"Visual " + fileName}`, `src = getWebServerEndpoint() + servedPath`, mounted only once
+  allow-same-origin"`, `title={"Visual " + fileName}`, `src = getWebServerEndpoint() + servedPath` (export `servedPath` from `htmlframe.tsx`, where it is module-private
+  today, and call it; no second copy of the serve call), mounted only once
   an IntersectionObserver (root the chat scroller, found with `closest` on the figure's scroll parent or `null`,
   `rootMargin: "600px 0px"`) has seen it, then kept; the last height per path in a module `Map` seeds `reported`.
 - Messages (one `window` listener per mounted frame, removed on unmount; ignore any whose `e.source` is not
@@ -198,8 +214,7 @@ a `submitNext` ref and returns `true`; a `useEffect` on `[text]` that sees `subm
   "arc-visual-theme", vars: themeVars((v) => getComputedStyle(document.documentElement).getPropertyValue(v)) }` to the
   frame (target origin `"*"`; the frame's origin is wavesrv's); `arc-visual-prompt` → `promptAction({ fromFrame: true,
   frameFocused: document.activeElement === frameRef.current, text, draft: chatBoxText(agentId), sinceLastMs })`;
-  `send` → `submitIntoChatBox(agentId, text)`; `fill` → `insertIntoChatBox(agentId, (draft.trim() ? "\n" : "") +
-  text)`; `drop` → nothing. Record the time of each `send` or `fill`.
+  `send` → `submitIntoChatBox(agentId, text)`; `fill` → `appendToChatBox(agentId, text)`; `drop` → nothing. Record the time of each `send` or `fill`.
 
 **Step 4: Route the block** (`markdownmessage.tsx`): widen `fencedOf`'s language match to `/language-([\w+-]+)/` so
 `arc-visual` (and `objective-c`) survive whole; in `DIAGRAM_COMPONENT.pre`, `lang === VISUAL_LANG` → `<VisualBlock
@@ -210,11 +225,11 @@ provides one (Chat), and as code elsewhere.
 agentId={agent.id}>`, leaving run dc14b0a6's skim toggle, refresh and `onSent` as they are.
 
 **Step 6:** `npx vitest run frontend/app/view/agents/chatvisual.test.ts frontend/app/view/agents/chatinsert.test.ts`
-→ PASS; `npx eslint` and `npx prettier --check` on the five files → clean apart from what HEAD already fails
+→ PASS; `npx eslint` and `npx prettier --check` on the seven files → clean apart from what HEAD already fails
 (compare with `git show HEAD:<file> | npx prettier --stdin-filepath <file>`).
 
 **Step 7:** Commit: `git commit -m "feat(chat): an agent's visual draws inline in Chat, and its buttons send a prompt"
--- <the five paths>`
+-- <the seven paths>`
 
 ### Task 4: The skill that teaches it
 
@@ -246,8 +261,9 @@ short and in the house style of `skills/doc-review/SKILL.md`:
   (`var(--arc-ink, #e6e6e6)`) and a transparent page background so it sits in the chat. Size to content; the frame
   grows to the page's height up to 640 px, then offers Show all.
 - **Buttons that ask.** `arc.sendPrompt("…")` from a click handler sends that text from the chat box as if the
-  person typed it (to you). Only from a click: a call that is not right after a click in the page is dropped, and one
-  made while the person has a draft goes into the box instead. Keep each prompt short and specific.
+  person typed it (to you). Call it from a click handler only: a call made before the person has clicked in the page
+  is dropped, and one made while the person has a draft, or within 1.5 s of the last, goes into the box instead. Keep
+  each prompt short and specific.
 - **Where it shows.** Only a Claude agent's Chat view in arcterm draws it; the terminal view, councils and other
   harnesses show the block as three lines of code, which is why the line before it says what it shows. For a full
   screen to design and review, use `arc:design` instead.
@@ -260,40 +276,63 @@ short and in the house style of `skills/doc-review/SKILL.md`:
 **Step 6:** Commit: `git commit -m "feat(skills): arc:visual teaches an agent to draw an inline visual in Chat" --
 skills/visual/SKILL.md skills/skills.go skills/skills_test.go AGENTS.md`
 
-### Task 5: Scenario steps, RAM, changelog, hand checks
+### Task 5: Scenario steps, changelog, hand checks
 
-**Depends on:** Task 1 (the bridge the frame's height and prompts come from), Task 3 (the view the steps assert), Task 4 (the changelog line names the skill)
+**Depends on:** Task 1 (the bridge the frame's height, theme and prompts come from), Task 3 (the view the steps assert)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`, `docs/open-issues.md`
 
 **Step 1: Scenario steps** in `agent-chat` (`scripts/cdp/scenarios.mjs`; read the scenario's header comment at
-`// --- agent-chat:` and its fixture transcript writer first; never run prettier on this file). Step numbers 40-43,
-leaving room for run dc14b0a6's. Arrange: in the scenario's temp dir, a `visuals/` folder with
-`chart.html` (body margin 0, a `300px`-tall `div`, a `button#ask` at `position:absolute; left:16px; top:16px;
-width:120px; height:36px` whose click calls `arc.sendPrompt("Explain the retry policy")`) and `auto.html` (calls
-`arc.sendPrompt("unasked")` from a `setTimeout` of 300 ms, 120 px tall); set `window.__chatVisualsDir` to that folder
-(forward slashes) before the page draws the chat; append one assistant entry to the main agent's fixture transcript
-whose text holds an `arc-visual` block naming `chart.html`, one naming `auto.html`, one naming a missing
-`gone.html` in the folder, and one naming a path outside it. Each step takes its shot:
+`// --- agent-chat:`, its mock (`installAgentChatMock`), `acAppend` and the fixture transcript writer first; never run
+prettier on this file). Steps 40-44, after step 36.
 
-- `agent-chat-40-visual`: `[data-chat-visual$="chart.html"] iframe` has a `src` containing `/html-preview/`, and
-  within 8 s its height is 290-320 px; the header names `chart.html`.
-- `agent-chat-41-visual-send`: CDP mouse press and release at the iframe's rect + (76, 34) → the mock records
-  `Explain the retry policy` typed into the main agent's block and then `\r` (the chat's own send path), and the
-  pending bubble shows it; a second click at once → the text lands in the chat box and nothing more is typed.
-- `agent-chat-42-visual-unasked`: 1.5 s after `auto.html` loads, nothing new was typed and the box holds no
-  "unasked".
-- `agent-chat-43-visual-refused`: `[data-chat-visual-missing]` names `gone.html`; `[data-chat-visual-refused]`
-  reads "Shown as code: a visual must sit in ~/.arc/visuals" under a code block holding the outside path.
+Arrange (the scenario's `arrange`): in the scenario's temp dir, a `visuals/` folder with
 
-Teardown deletes `window.__chatVisualsDir`, clears the box, and leaves the temp dir to the scenario's own removal.
+- `chart.html`: body margin 0, a `300px`-tall `div`; a `button#ask` at `position:absolute; left:16px; top:16px;
+  width:120px; height:36px` whose click calls `arc.sendPrompt("Explain the retry policy")`; a `button#theme` at
+  `left:16px; top:64px` of the same size whose click calls `arc.sendPrompt("theme:" +
+  getComputedStyle(document.documentElement).getPropertyValue("--arc-background").trim())`;
+- `auto.html`: 120 px tall, calls `arc.sendPrompt("unasked")` from a `setTimeout` of 300 ms after load;
+- `tall.html`: a `900px`-tall `div`, nothing else.
+
+After `ahReload` and before step 1, set `window.__chatVisualsDir` to that folder (forward slashes). Add no `arc-visual`
+entry to any transcript in arrange, so steps 1-36 and their shots are unchanged.
+
+In the mock, record `agentswake` calls (`m.calls.push({ command, data })`) and resolve `null` without passing them on,
+as `answeragent` is handled.
+
+Steps (each takes its shot; scroll each figure into view with `scrollIntoView({ block: "center" })` before reading its
+rect or clicking):
+
+- `agent-chat-40-visual`: `acAppend` to `ctx.files.main` one assistant entry whose text holds an `arc-visual` block
+  naming `chart.html`, one naming `auto.html`, one naming `tall.html`, one naming a missing `gone.html` in the folder,
+  and one naming a path outside it. Then `[data-chat-visual$="chart.html"] iframe` has a `src` containing
+  `/html-preview/`, within 8 s its height is 290-320 px, and the header names `chart.html`.
+- `agent-chat-41-visual-theme`: clear the box; CDP mouse press and release at chart.html's iframe rect + (76, 82)
+  (`#theme`) → the mock records `theme:<value>` typed into the main agent's block then `\r`, and `<value>` equals the
+  app's `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`.
+- `agent-chat-42-visual-send`: wait 1.6 s after step 41's click, clear the box; click at the iframe rect + (76, 34)
+  (`#ask`) → the mock records `Explain the retry policy` typed into the main agent's block and then `\r` (the chat's
+  own send path), and the pending bubble shows it; a second click at once → the box's text ends with `Explain the
+  retry policy` and nothing more is typed.
+- `agent-chat-43-visual-unasked-and-tall`: clear the box; scroll `auto.html`'s figure into view and wait until its
+  iframe is mounted with a `src` and has reported a height (its style height is 110-130 px), then wait 1.5 s: nothing
+  new was typed and the box holds no `unasked`. Scroll `tall.html`'s figure into view: its frame is 640 px tall and
+  `[data-chat-visual-expand]` shows; click it → within 3 s the frame is taller than 640 px (~900); click again → 640.
+  `[data-chat-visual-missing]` names `gone.html`; `[data-chat-visual-refused]` reads "Shown as code: a visual must sit
+  in ~/.arc/visuals" under a code block holding the outside path.
+- `agent-chat-44-visual-wakes`: `acAppend` to `ctx.files.asleep` an assistant entry with an `arc-visual` block naming
+  `chart.html`; show the asleep agent (as step 32 does, before it is woken: the roster's `asleep` row still sleeping);
+  scroll its visual into view, wait for its frame's height, click `#ask` → the mock records one `agentswake` whose
+  message is `Explain the retry policy`.
+
+Teardown deletes `window.__chatVisualsDir`, clears the boxes, and leaves the temp dir to the scenario's own removal.
 
 **Step 2:** `node scripts/cdp/final-verify.mjs agent-chat` → every step PASS.
 
-**Step 3: RAM.** In the dev app, open a chat with three visuals mounted and read the WebView2 processes' working set
-before and after (Task Manager, or `Get-Process msedgewebview2 | Measure-Object WorkingSet64 -Sum`); add one line
-with the figures to `docs/open-issues.md` under "(arcterm) RAM watch" (section 5), saying whether the lazy mount
-holds it down.
+**Step 3: RAM watch** (`docs/open-issues.md`, under "(arcterm) RAM watch", section 5): one line saying a live visual
+is an iframe document in its own WebView2 renderer, mounted only within 600 px of the view and kept once mounted, and
+its RAM is not yet measured (see the hand check).
 
 **Step 4: Changelog** (`CHANGELOG.md`, top `Unreleased` section; read its header first), under `Added`: `- Claude
 agents can draw a visual right in Chat: a chart, an illustration, a widget or a quiz, in the app's colours, whose
@@ -302,8 +341,9 @@ buttons ask Claude the next question for you. <!-- big -->`
 **Step 5: Hand checks** (`docs/hand-checks.md`, at the top, `(arcterm)` titles): (a) in a live Claude agent's Chat,
 ask "draw me a visual of …" → Claude writes a file in `~/.arc/visuals`, the visual shows inline in the app's colours
 (switch the theme: it follows on the next load), its height fits, and a button in it sends its prompt; (b) the same
-reply in the Terminal view reads as one line plus a three-line block; (c) a visual in a sleeping agent's Chat: a
-button wakes it with that prompt.
+reply in the Terminal view reads as one line plus a three-line block; (c) RAM: with three visuals mounted in one chat,
+the WebView2 processes' working set before and after (`Get-Process msedgewebview2 | Measure-Object WorkingSet64 -Sum`,
+with the installed app closed), written into the RAM watch line.
 
 **Step 6:** Commit: `git commit -m "test(chat): scenario steps for inline visuals; changelog and hand checks" --
 scripts/cdp/scenarios.mjs CHANGELOG.md docs/hand-checks.md docs/open-issues.md`
