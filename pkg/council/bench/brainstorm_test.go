@@ -190,7 +190,8 @@ func (f *bsFake) start(ctx context.Context, l leadLaunch) ([]byte, error) {
 		return nil, errors.New("the script is over")
 	}
 	f.script[n](f, l.Prompt)
-	return leadJSON(f.session, "ok", false, 1000), nil
+	// A resumed claude -p reports the whole session's modelUsage so far, not the turn's: each turn adds 1000.
+	return leadJSON(f.session, "ok", false, int64(n+1)*1000), nil
 }
 
 // helper plays the skill's judge or the builder reviewer: it writes its report where its prompt says.
@@ -213,7 +214,7 @@ func (f *bsFake) helper(rec *bsLaunch, l leadLaunch) ([]byte, error) {
 			f.t.Errorf("writing the %s's report: %v", rec.kind, err)
 		}
 	}
-	return leadJSON("helper-"+rec.kind, "done", false, usage), nil
+	return leadJSON(fmt.Sprintf("helper-%s-%d", rec.kind, len(f.launches)), "done", false, usage), nil
 }
 
 // judge is the bench's own judge (runClaude): the design's first mark has 3 items, its last 4.

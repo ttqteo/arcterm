@@ -6,7 +6,7 @@
 //	go run ./cmd/council-bench-brainstorm --case run-pause
 //
 // It drives Arc's brainstorm skill through `claude -p` on each Brainstorm-mode case, judges the design against the
-// case's key and appends a row to <data dir>/council-bench/council-bench.jsonl, the file `wsh council bench results`
+// case's key and appends a row to <data dir>/council-bench.jsonl, the file `wsh council bench results`
 // reads. It needs a Claude Code install with the superpowers plugin. Progress and failures log to stderr; Ctrl+C
 // stops it, the item in flight writes no row, and the rows already written stay.
 package main
