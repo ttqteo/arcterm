@@ -42062,7 +42062,10 @@ const agentSleep = {
 // showing Chat (and in the PTY of one showing Terminal), and the float note closing hands focus back to the box. Steps 20-26
 // are the chat's second round: a message sent while Claude works (the Queued bubble, the hold behind a permission card, ↑
 // recall), the `/` menu, the footer's mode chip and the card's second choice (Claude Code's captured screens, from
-// tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy.
+// tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy. Steps 50-53 are the `/` menu's
+// second round: the session's own command list (a mocked GetClaudeLiveCommandsCommand for the main agent's block) grouped
+// and scrolling, filtered by what is typed, the + menu that replaces the attach button, and the disk fallback of an agent
+// with no live list.
 // Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
 const AC_MOCK_KEY = "__arcAgentChatMock";
 const AC = agentPageFixtures;
@@ -42099,6 +42102,33 @@ const AC_ENDED_WAIT_MS = 240_000;
 const AC_WAIT_MS = 8000;
 // what the mocked ListClaudeCommandsCommand answers: a skill the `/` menu lists beside its built-ins
 const AC_COMMANDS = [{ name: "arc:council", description: "Ask a council of viewpoints", source: "skill" }];
+// what the mocked GetClaudeLiveCommandsCommand answers for the main agent's block: the list Claude Code's own typeahead shows in
+// that session (the arc mod publishes it, pkg/claudecmds/live.go). 12 built-ins (the bundled skills `code-review`,
+// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. No other
+// agent has one, so their menu falls back to the built-ins plus AC_COMMANDS. The `/re` filter of step 51 and the `/co` of step
+// 23 are worked out from these names: change one and read both. `mcp` and `model` are in it because a bare /mcp and /model
+// flip the cell to Terminal only while the menu's own list names them (opensTui).
+const AC_LIVE_COMMANDS = [
+    { name: "clear", description: "Start a new session with empty context", source: "builtin" },
+    { name: "code-review", description: "Review the current diff for bugs", source: "builtin" },
+    { name: "compact", description: "Free up context by summarizing the conversation so far", source: "builtin" },
+    { name: "help", description: "Show help and available commands", source: "builtin" },
+    { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation", source: "builtin" },
+    { name: "mcp", description: "Manage MCP servers", source: "builtin" },
+    { name: "model", description: "Set the AI model for Claude Code", source: "builtin" },
+    { name: "release-notes", description: "View the release notes", source: "builtin" },
+    { name: "resume", description: "Resume a previous conversation", source: "builtin" },
+    { name: "review", description: "Review a pull request", source: "builtin" },
+    { name: "security-review", description: "Complete a security review of the pending changes", source: "builtin" },
+    { name: "simplify", description: "Review the changed code for reuse and simplification", source: "builtin" },
+    { name: "standup", description: "Write the daily stand-up from yesterday's commits", source: "user" },
+    { name: "deploy-notes", description: "Draft the notes for a deploy", source: "user" },
+    { name: "arc:council", description: "Ask a council of viewpoints", source: "plugin", plugin: "arc" },
+    { name: "skim", description: "Highlight the sentences worth reading", source: "plugin", plugin: "skim" },
+    { name: "superpowers:brainstorming", description: "Explore intent and design before building", source: "plugin", plugin: "superpowers" },
+    { name: "superpowers:requesting-code-review", description: "Check the work against its requirements", source: "plugin", plugin: "superpowers" },
+    { name: "mcp__docs__summarize", description: "Summarize a page from the docs server", source: "mcp" },
+];
 // the screens Claude Code 2.1.319 drew (captured by the unit tests' fixtures): the step writes them to the fixture terminal
 const AC_SCREENS = JSON.parse(readFileSync(new URL("../../frontend/app/view/agents/tuiscreen.fixtures.json", import.meta.url), "utf8"));
 
@@ -42286,7 +42316,8 @@ async function installAgentChatMock(h, ctx) {
         if (window.${AC_MOCK_KEY}) return "already-installed";
         const prev = api.mockClient ?? null;
         const blocks = new Set(${JSON.stringify(blocks)});
-        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)} };
+        const mainBlock = ${JSON.stringify(ctx.tabs.main.blockId)};
+        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)}, live: ${JSON.stringify(AC_LIVE_COMMANDS)} };
         const drop = (data) => {
             const q = m.queues[data.oref] ?? [];
             m.queues[data.oref] = data.allow ? q.filter((r) => r.id !== data.id) : [];
@@ -42322,6 +42353,11 @@ async function installAgentChatMock(h, ctx) {
                 if (command === "listclaudecommands") {
                     m.calls.push({ command, data });
                     return Promise.resolve(m.commands);
+                }
+                // the live list of the main agent's block only; any other block goes down to wavesrv, which has none (null)
+                if (command === "getclaudelivecommands" && data?.blockid === mainBlock) {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(m.live);
                 }
                 if (command === "runtranscriptpath" && data?.runid === ${JSON.stringify(ctx.endedRun ?? "")}) {
                     return Promise.resolve(${JSON.stringify(ctx.files.ended)});
@@ -42374,6 +42410,8 @@ const acKeys = {
     modShiftK: { key: "K", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 8, mod: true },
     altC: { key: "c", code: "KeyC", windowsVirtualKeyCode: 67, modifiers: 1 },
     up: { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38 },
+    down: { key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 },
+    tab: { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 },
     enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
     escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
 };
@@ -42428,8 +42466,44 @@ const acClear = (h, boxExpr) =>
         return true;
     })()`);
 
+// What the `/` list shows, read from the page: whether it is the session's own list, its groups in order (title, the count
+// the header prints, the rows under it), every row (its text, the plugin chip, "opens in Terminal", the highlight), the box's
+// height, the scroller's sizes and the footer's last line. Null while no list shows.
+const acSlashState = (h) =>
+    h.ev(`(() => {
+        const box = document.querySelector("[data-chat-slash]");
+        if (!box) return null;
+        const sc = box.querySelector("[data-picker-scroll]");
+        const groups = [];
+        const rows = [];
+        for (const li of sc?.children ?? []) {
+            if (li.hasAttribute("data-chat-slash-group")) {
+                groups.push({ title: li.getAttribute("data-chat-slash-group"), count: li.lastElementChild?.textContent.trim() ?? null, rows: [] });
+            } else if (li.hasAttribute("data-chat-slash-item")) {
+                const name = li.getAttribute("data-chat-slash-item");
+                const spans = [...li.querySelectorAll("span")].map((s) => s.textContent.trim());
+                groups.at(-1)?.rows.push(name);
+                rows.push({
+                    name,
+                    text: li.textContent.replace(/\\s+/g, " ").trim(),
+                    chip: spans.slice(2).find((t) => t !== "opens in Terminal") ?? null,
+                    tui: spans.includes("opens in Terminal"),
+                    selected: li.getAttribute("aria-selected") === "true",
+                });
+            }
+        }
+        return {
+            live: box.getAttribute("data-chat-slash-live"),
+            groups,
+            rows,
+            height: Math.round(box.getBoundingClientRect().height * 10) / 10,
+            scroller: sc ? { client: sc.clientHeight, scroll: sc.scrollHeight, overflowY: getComputedStyle(sc).overflowY } : null,
+            footer: box.lastElementChild?.lastElementChild?.textContent.trim() ?? null,
+        };
+    })()`);
+
 // One line of the transcript Claude Code writes for a message queued while it works and taken in mid-turn
-const acQueuedLine = (dir, prompt) =>
+const acQueuedLine =(dir, prompt) =>
     JSON.stringify({
         type: "attachment",
         timestamp: new Date().toISOString(),
@@ -43142,10 +43216,10 @@ const agentChat = {
             const boxes18 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
             const typed18 = after18.slice(before18.length);
             rec(
-                "18. with A flipped to Terminal the same Alt-drop pastes the mention into A's PTY as before (no chat layer, focus in the xterm), and no chat box takes it",
+                "18. with A flipped to Terminal the same Alt-drop pastes the mention into A's PTY as before (no chat layer, focus in the xterm), and no chat box takes it: A's box holds only the draft step 17 left (a flip keeps the draft), not a second mention",
                 termUp18 && drop18?.ok === true && /^Mention @/.test(drop18.hint ?? "") &&
                     typed18.length > 0 && typed18.join("").includes(mention.trim()) && focus18.xterm && !focus18.box &&
-                    boxes18.a === "" && boxes18.b === "",
+                    boxes18.a === mention && boxes18.b === "",
                 { termUp18, drop18, typed18, focus18, boxes18 }
             );
             await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
@@ -43243,12 +43317,15 @@ const agentChat = {
             await acClear(h, acBox(A));
             rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S1, { box22 });
 
-            // 23. `/` as the box's first character lists the built-ins and the skills from ListClaudeCommandsCommand (mocked);
-            // Enter on a partial name puts `/compact ` in the box; sending `/model` flips the cell to Terminal
+            // 23. `/` as the box's first character lists the session's own commands (GetClaudeLiveCommandsCommand, mocked for this
+            // agent's block: the bundled skill `code-review` is in it, which the disk list never holds, and `arc:council`);
+            // the disk list is not asked for. Enter on a partial name puts `/compact ` in the box; sending `/model` flips the
+            // cell to Terminal
             await polishWaitFor(h, `${acBox(A)}?.value === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await h.cdp("Input.insertText", { text: "/co" });
             const slashUp = await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
+            await polishWaitFor(h, `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "true"`, 5000);
             await polishWaitFor(h, `[...document.querySelectorAll("[data-chat-slash-item]")].some((e) => e.textContent.includes("arc:council"))`, 5000);
             const items23 = await h.ev(`[...document.querySelectorAll("[data-chat-slash-item]")].map((e) => e.textContent.replace(/\\s+/g, " ").trim())`);
             await h.shot("cdp-shots/agent-chat-23-slash.png");
@@ -43256,6 +43333,7 @@ const agentChat = {
             await acKey(h, acKeys.enter);
             const picked23 = await polishWaitFor(h, `${acBox(A)}?.value === "/compact "`, 3000);
             const fetched23 = await acCalls(h, "listclaudecommands");
+            const live23 = await acCalls(h, "getclaudelivecommands");
             await acClear(h, acBox(A));
             const beforeModel = (await acInputs(h, blockA)).length;
             await h.cdp("Input.insertText", { text: "/model" });
@@ -43268,11 +43346,13 @@ const agentChat = {
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
             rec(
-                "23. / opens the commands menu (compact, and a skill from the mocked list), Enter on /comp puts /compact in the box, and sending /model flips the cell to Terminal",
-                slashUp && items23.some((t) => t.startsWith("/compact")) && items23.some((t) => t.startsWith("/arc:council")) &&
-                    picked23 && fetched23.length === 1 && flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
+                "23. / opens the commands menu from the session's live list (compact, the bundled skill code-review and a plugin's arc:council; the disk list is not asked for), Enter on /comp puts /compact in the box, and sending /model flips the cell to Terminal",
+                slashUp && items23.some((t) => t.startsWith("/compact")) && items23.some((t) => t.startsWith("/code-review")) &&
+                    items23.some((t) => t.startsWith("/arc:council")) && picked23 && fetched23.length === 0 &&
+                    live23.length >= 1 && live23.every((c) => c.data.blockid === blockA) &&
+                    flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
                     JSON.stringify(sentModel) === JSON.stringify(["/model\r"]),
-                { slashUp, items23, picked23, fetched23: fetched23.length, flipped23, header23, sentModel }
+                { slashUp, items23, picked23, fetched23: fetched23.length, live23: live23.length, flipped23, header23, sentModel }
             );
 
             // 24. the footer shows the model chip and the context as a ring with its percent; once the fixture terminal shows the
@@ -43822,6 +43902,156 @@ const agentChat = {
                 "36. with the chat scrolled up to its top, sending a message from the box scrolls the chat to its end (within 40 px of it) and the message's pending bubble lies inside the scroller",
                 tall36 && away36 && scrolledUp36 > 200 && pendingUp36 && atEnd36 && geo36.inside,
                 { tall36, away36, scrolledUp36, pendingUp36, atEnd36, geo36 }
+            );
+
+            // 50. "Typing /": a `/` in the main agent's box lists the session's whole command list (the mocked live list: 12
+            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped in that order with each group's count, no cap, in a
+            // box at most 420 px tall whose rows scroll; the footer counts them and says "in this session"; a plugin's row has
+            // its chip (arc:council "arc", skim "skim"), and a bare built-in that draws a menu on Claude Code's own screen
+            // (model) says "opens in Terminal"
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "/", false);
+            const total50 = AC_LIVE_COMMANDS.length;
+            const up50 = await polishWaitFor(
+                h,
+                `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "true" && document.querySelectorAll("[data-chat-slash-item]").length === ${total50}`,
+                5000
+            );
+            const s50 = await acSlashState(h);
+            await h.shot("cdp-shots/agent-chat-50-slash-all.png");
+            // the rows scroll: the scroller moves when set, and goes back for the next step
+            const moved50 = await h.ev(`(() => {
+                const sc = document.querySelector("[data-chat-slash] [data-picker-scroll]");
+                if (!sc) return null;
+                sc.scrollTop = 120;
+                const moved = sc.scrollTop;
+                sc.scrollTop = 0;
+                return moved;
+            })()`);
+            const row50 = (name) => s50?.rows.find((r) => r.name === name);
+            const want50 = [
+                ["Built-in", "builtin"],
+                ["Skills", "user"],
+                ["Plugins", "plugin"],
+                ["MCP", "mcp"],
+            ].map(([title, source]) => {
+                const rows = AC_LIVE_COMMANDS.filter((c) => c.source === source).map((c) => c.name);
+                return { title, count: String(rows.length), rows };
+            });
+            rec(
+                "50. / in the main agent's box lists the live list grouped Built-in 12, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal, and code-review sits in Built-in",
+                up50 && s50 != null && s50.live === "true" && s50.rows.length === total50 &&
+                    JSON.stringify(s50.groups) === JSON.stringify(want50) &&
+                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["12", "2", "4", "1"]) &&
+                    s50.height >= 200 && s50.height <= 420.5 &&
+                    s50.scroller?.overflowY === "auto" && s50.scroller.scroll > s50.scroller.client && moved50 > 0 &&
+                    s50.footer === `${total50} commands in this session` &&
+                    row50("arc:council")?.chip === "arc" && row50("skim")?.chip === "skim" && row50("clear")?.chip === null &&
+                    row50("model")?.tui === true && row50("release-notes")?.tui === false &&
+                    s50.groups[0].rows.includes("code-review"),
+                { up50, s50, moved50 }
+            );
+
+            // 51. "Typing /re": `re` after the `/` keeps the rows whose name holds it, the names that start with it (release-notes,
+            // resume, review) before the ones that only contain it, in their groups, and a group with no match is gone (Skills
+            // and MCP here); ↓ then Tab puts the second row, `/resume `, in the box
+            await acType(h, acBox(A), "re", false);
+            const want51 = ["release-notes", "resume", "review", "code-review", "security-review", "superpowers:requesting-code-review"];
+            const filtered51 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-slash-item]").length === ${want51.length}`, 3000);
+            const s51 = await acSlashState(h);
+            await h.shot("cdp-shots/agent-chat-51-slash-filter.png");
+            await acKey(h, acKeys.down);
+            const second51 = await polishWaitFor(h, `document.querySelector('[data-chat-slash-item][aria-selected="true"]')?.getAttribute("data-chat-slash-item") === "resume"`, 3000);
+            await acKey(h, acKeys.tab);
+            const picked51 = await polishWaitFor(h, `${acBox(A)}?.value === "/resume "`, 3000);
+            const closed51 = await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
+            await acClear(h, acBox(A));
+            rec(
+                "51. /re keeps the rows holding re (release-notes, resume, review before code-review, security-review and the plugin's requesting-code-review), drops the Skills and MCP groups, and ↓ then Tab puts /resume in the box",
+                filtered51 && s51 != null && JSON.stringify(s51.rows.map((r) => r.name)) === JSON.stringify(want51) &&
+                    s51.rows.every((r) => r.name.includes("re")) &&
+                    JSON.stringify(s51.groups.map((g) => [g.title, g.count])) === JSON.stringify([["Built-in", "5"], ["Plugins", "1"]]) &&
+                    s51.live === "true" && second51 && picked51 && closed51,
+                { filtered51, s51, second51, picked51, closed51 }
+            );
+
+            // 52. "The + menu": the + button (still data-chat-attach) opens a menu of five rows in order, the first focused;
+            // Escape closes it, hands the focus back to the box and leaves the chat on screen; picking Slash commands puts `/`
+            // in the box and opens the `/` list; picking MCP servers types /mcp into the block and flips the cell to Terminal
+            await showAgent(A);
+            const plus52 = `${acLayer(A)}?.querySelector("[data-chat-plus]")`;
+            await polishWaitFor(h, `!!${plus52}`, 3000);
+            const attach52 = await h.ev(`${plus52}?.hasAttribute("data-chat-attach") === true`);
+            await h.ev(`${plus52}?.click()`);
+            const menuUp52 = await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            // the popover scales in
+            await polishNap(300);
+            const menu52 = await h.ev(`(() => {
+                const items = [...document.querySelectorAll("[data-chat-plus-menu] [data-chat-plus-item]")];
+                return {
+                    ids: items.map((e) => e.getAttribute("data-chat-plus-item")),
+                    texts: items.map((e) => e.textContent.trim()),
+                    expanded: ${plus52}?.getAttribute("aria-expanded"),
+                    focused: document.activeElement?.getAttribute("data-chat-plus-item") ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-52-plus.png");
+            await acKey(h, acKeys.escape);
+            const closed52 = await polishWaitFor(h, `!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            const focus52 = await polishWaitFor(h, `document.activeElement === ${acBox(A)}`, 3000);
+            const stayed52 = await h.ev(acOnScreen(A));
+            await h.ev(`${plus52}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            await h.ev(`document.querySelector('[data-chat-plus-item="slash"]')?.click()`);
+            const boxSlash52 = await polishWaitFor(h, `${acBox(A)}?.value === "/"`, 3000);
+            const listSlash52 = await polishWaitFor(h, `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "true"`, 5000);
+            const focusSlash52 = await polishWaitFor(h, `document.activeElement === ${acBox(A)}`, 3000);
+            await h.shot("cdp-shots/agent-chat-52-plus-slash.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
+            await h.ev(`${plus52}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            const beforeMcp52 = (await acInputs(h, blockA)).length;
+            await h.ev(`document.querySelector('[data-chat-plus-item="mcp"]')?.click()`);
+            const flipped52 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
+            const sentMcp52 = (await acInputs(h, blockA)).slice(beforeMcp52);
+            await h.shot("cdp-shots/agent-chat-52-plus-mcp-terminal.png");
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)}`, 3000);
+            rec(
+                "52. the + button (data-chat-attach) opens a menu of Add files or photos, Add folder, Slash commands, MCP servers and Plugins with the first focused; Escape closes it with focus back in the box and the chat still on screen; Slash commands puts / in the box and opens the list; MCP servers types /mcp into the block and flips the cell to Terminal",
+                attach52 && menuUp52 && JSON.stringify(menu52.ids) === JSON.stringify(["files", "folder", "slash", "mcp", "plugins"]) &&
+                    ["Add files or photos", "Add folder", "Slash commands", "MCP servers", "Plugins"].every((t, i) => menu52.texts[i]?.startsWith(t)) &&
+                    menu52.expanded === "true" && menu52.focused === "files" &&
+                    closed52 && focus52 && stayed52 && boxSlash52 && listSlash52 && focusSlash52 &&
+                    flipped52 && JSON.stringify(sentMcp52) === JSON.stringify(["/mcp\r"]),
+                { attach52, menuUp52, menu52, closed52, focus52, stayed52, boxSlash52, listSlash52, focusSlash52, flipped52, sentMcp52 }
+            );
+
+            // 53. an agent with no live list (the second one: wavesrv holds none for its block) falls back to the copied built-ins
+            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk"
+            await showAgent(B);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(B)}`, AC_WAIT_MS);
+            await acClear(h, acBox(B));
+            await acType(h, acBox(B), "/", false);
+            const fallbackUp53 = await polishWaitFor(h, `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "false"`, 5000);
+            // the disk list lands after the live lookup came back empty
+            const disk53 = await polishWaitFor(h, `[...document.querySelectorAll("[data-chat-slash-item]")].some((e) => e.textContent.includes("arc:council"))`, 5000);
+            const s53 = await acSlashState(h);
+            await h.shot("cdp-shots/agent-chat-53-slash-fallback.png");
+            await acClear(h, acBox(B));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
+            const found53 = /^(\d+) commands found on disk$/.exec(s53?.footer ?? "");
+            rec(
+                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list with data-chat-slash-live false and a footer reading N commands found on disk",
+                fallbackUp53 && disk53 && s53 != null && s53.live === "false" && found53 != null &&
+                    Number(found53[1]) === s53.rows.length && s53.rows.length >= 23 &&
+                    s53.rows.some((r) => r.name === "compact") && s53.rows.some((r) => r.name === "arc:council") &&
+                    s53.groups.map((g) => g.title).join("|") === "Built-in|Plugins",
+                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]) }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));

@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's `/` menu is the session's own list: start a new Claude agent after this build → in its Chat, `/`
+  lists `/code-review`, `/simplify` and `/skim` (Built-in and Plugins groups) and the footer says "N commands in this
+  session", matching Claude Code's own `/` typeahead in the terminal; connect an MCP server mid-session, send any
+  message, then `/` again → its prompts show in the MCP group; an agent started before the build (or a sleeping one)
+  shows the "found on disk" fallback instead; Ctrl+U in the box opens the file picker. The scenario mocks the live
+  list (`agent-chat` 23, 50-53); only a live session proves the arc mod publishes it and `$.command.list()` answers
+  what the typeahead shows (`claude/arc-mod/hooks/register.ts`, `pkg/claudecmds/live.go`, `slashmenu.tsx`).
 - [ ] (arcterm) Chat draft survives a switch: in an awake Claude agent's Chat, type a line and paste an image (and drop
   a file), switch to another agent, then to Jarvis, then back → the text and both chips are still in the box, the
   image's thumbnail still shows; send → the box empties and the chips go; sleep the agent with text in the box → the
