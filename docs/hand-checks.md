@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The dev app no longer piles up React's render measures: leave `task dev` up an hour while using the
+  cockpit, then in its DevTools console `performance.getEntriesByType("measure").length` → a few thousand at most, not
+  millions, and the renderer's working set stays flat instead of climbing toward GBs (`frontend/tauri/main.tsx`,
+  933a2b8ce).
 - [ ] (arcterm) Chat's box takes Vietnamese typing (Telex) with pills and menus around it: in a live Claude agent's Chat
   type a Vietnamese sentence in Telex (e.g. "chào bạn, xem giúp mình file này") with no menu open, again before and
   after an `@` pill, and with the `/` list and the `@` list open → no letter is lost or doubled, a syllable being
