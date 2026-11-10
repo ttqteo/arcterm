@@ -99,6 +99,71 @@ func TestResultMatchesRoundTrip(t *testing.T) {
 	}
 }
 
+func TestResultRoundTripBrainstormFields(t *testing.T) {
+	dir := t.TempDir()
+	run := CouncilBenchResult{
+		Date: "2026-11-10T10:00:00Z", Harness: "2026-11-06.1", Case: "run-pause", Variant: VariantBrainstorm, Run: 1,
+		Council: "9f0c1d2e-session", State: "done", Recall: 3, Keys: 5, Wrong: 1, Tokens: 4_200_000, Minutes: 38.5, Messages: 21,
+		JudgeTokens: 16_000, Matches: map[string]int{"K1": 1, "K2": 4, "K5": 2},
+		Mode: "brainstorm", Skill: "3f9a01bc superpowers@4.0.3", Decisions: 7, RecallDone: 2, MatchesDone: map[string]int{"K1": 1, "K2": 4}, Questions: 9,
+	}
+	if err := AppendResult(dir, run); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs = %+v, err = %v, want 1", runs, err)
+	}
+	run.Kind = KindRun
+	if !reflect.DeepEqual(runs[0], run) {
+		t.Errorf("run round trip:\n got %+v\nwant %+v", runs[0], run)
+	}
+
+	raw, err := os.ReadFile(resultsPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"mode":"brainstorm"`, `"skill":"3f9a01bc superpowers@4.0.3"`, `"decisions":7`, `"recall_done":2`, `"matches_done":{"K1":1,"K2":4}`, `"questions":9`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("line = %s, want it to carry %s (the spec's wire names)", raw, want)
+		}
+	}
+}
+
+func TestResultRoundTripOldLineAndEmptyNewFields(t *testing.T) {
+	dir := t.TempDir()
+	// a line written before the brainstorm fields existed: it still reads, every new field at its zero value
+	old := `{"kind":"run","date":"2026-10-22T10:00:00Z","harness":"2026-10-22.1","case":"old","variant":"team","run":1,"council":"t0","state":"done","recall":2,"keys":3,"wrong":0,"tokens":10,"minutes":1,"messages":2,"matches":{"K1":1,"K2":2}}` + "\n"
+	if err := os.WriteFile(resultsPath(dir), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// a row that sets none of them writes none of them: council and team lines keep the shape they always had
+	if err := AppendResult(dir, CouncilBenchResult{Date: "2026-11-10T10:00:00Z", Harness: "2026-11-06.1", Case: "plain", Variant: VariantCouncil, Run: 1, State: "done", Recall: 1, Keys: 2}); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("runs = %+v, err = %v, want 2", runs, err)
+	}
+	r := runs[0]
+	if r.Case != "old" || r.Recall != 2 || r.Matches["K2"] != 2 {
+		t.Errorf("old line = %+v, want it read as before", r)
+	}
+	if r.Mode != "" || r.Skill != "" || r.Decisions != 0 || r.RecallDone != 0 || r.MatchesDone != nil || r.Questions != 0 {
+		t.Errorf("old line = %+v, want every new field at its zero value", r)
+	}
+	raw, err := os.ReadFile(resultsPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, second, _ := strings.Cut(string(raw), "\n")
+	for _, absent := range []string{`"mode"`, `"skill"`, `"decisions"`, `"recall_done"`, `"matches_done"`, `"questions"`} {
+		if strings.Contains(second, absent) {
+			t.Errorf("a row with none of the new fields wrote %s: %s", absent, second)
+		}
+	}
+}
+
 func TestLoadResultsNoFile(t *testing.T) {
 	runs, ratings, err := LoadResults(t.TempDir())
 	if err != nil || len(runs) != 0 || len(ratings) != 0 {

@@ -62,6 +62,18 @@ type CouncilBenchResult struct {
 	// row written before they existed, and on a row with no match.
 	Matches     map[string]int `json:"matches,omitempty"`
 	KeptMatches map[string]int `json:"keptmatches,omitempty"`
+
+	// Mode is the case's mode (council.ModeReview or council.ModeBrainstorm), so a table can split rows by it; a line
+	// written before the field existed has none. The rest are a brainstorm row's, and empty on any other variant's:
+	// Skill is which skill text ran (the first 8 hex of its SKILL.md's sha256 and the superpowers version), Decisions
+	// the decision parts of the final design (Recall, Matches and Wrong are its final mark), RecallDone and MatchesDone
+	// the same score at the done mark, before the builder check, and Questions the questions the person answered.
+	Mode        string         `json:"mode,omitempty"`
+	Skill       string         `json:"skill,omitempty"`
+	Decisions   int            `json:"decisions,omitempty"`
+	RecallDone  int            `json:"recall_done,omitempty"`
+	MatchesDone map[string]int `json:"matches_done,omitempty"`
+	Questions   int            `json:"questions,omitempty"`
 }
 
 // CouncilBenchRating is a "rating" line: the person's verdict on one real council's report.
@@ -320,7 +332,7 @@ func splitHarness(h string) (date string, n int) {
 	return date, n
 }
 
-// compareVariant orders the known variants solo, council, team (variantOrder), then any other by name.
+// compareVariant orders the known variants solo, council, team, brainstorm (variantOrder), then any other by name.
 func compareVariant(a, b string) int {
 	rank := func(v string) int {
 		if i := slices.Index(variantOrder, v); i >= 0 {

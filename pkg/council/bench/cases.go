@@ -28,12 +28,14 @@ const BenchDir = "council-bench"
 const CasesFile = "cases.json"
 
 // The variants. A variant is a way of running a case: solo is one agent (Phase 0's V0, the case's solo_group), council
-// is today's harness (V2, the case's group), team is a Claude Code agent team with the council's roles (V3). A new
-// variant is one more name in variantTokens and variantOrder and one more branch in the run, nothing else.
+// is today's harness (V2, the case's group), team is a Claude Code agent team with the council's roles (V3), brainstorm
+// is Arc's brainstorm skill driven by a simulated person (Brainstorm-mode cases only). A new variant is one more name in
+// variantTokens and variantOrder and one more branch in the run, nothing else.
 const (
-	VariantSolo    = "solo"
-	VariantCouncil = "council"
-	VariantTeam    = "team"
+	VariantSolo       = "solo"
+	VariantCouncil    = "council"
+	VariantTeam       = "team"
+	VariantBrainstorm = "brainstorm"
 )
 
 // TeamPassTag marks the cases built for the pass that weighs the council against an agent team; the verdict reads only
@@ -46,19 +48,23 @@ const TokenCap int64 = 50_000_000
 
 // The cost of one run of a case, in pkg/consult's token count, from Phase 0b's measured means (docs/council-phase0.md):
 // solo 2.3M (V0), council 8.8M (V2) and team 4.5M (V3). The council's mean is pulled up by one 17.5M run; its median is
-// 4.4M. `wsh council estimate` reads low (a flat 0.3M for solo), so the plan prices from these.
+// 4.4M. `wsh council estimate` reads low (a flat 0.3M for solo), so the plan prices from these. Brainstorm has no
+// Phase 0b mean: its 5M is a guess (the agent's turns plus the skill's judge and the builder reviewer), to re-measure
+// after the first bench.
 var variantTokens = map[string]int64{
-	VariantSolo:    2_300_000,
-	VariantCouncil: 8_800_000,
-	VariantTeam:    4_500_000,
+	VariantSolo:       2_300_000,
+	VariantCouncil:    8_800_000,
+	VariantTeam:       4_500_000,
+	VariantBrainstorm: 5_000_000,
 }
 
 // variantOrder is every variant a plan accepts, in the order a results table lists them.
-var variantOrder = []string{VariantSolo, VariantCouncil, VariantTeam}
+var variantOrder = []string{VariantSolo, VariantCouncil, VariantTeam, VariantBrainstorm}
 
 // AllVariants are the variants a bench runs when none is named, in the order they run: the council, then the team it is
-// weighed against. Solo stays runnable when named in Options.Variants.
-func AllVariants() []string { return []string{VariantCouncil, VariantTeam} }
+// weighed against, then Arc's brainstorm skill (which Plan keeps for Brainstorm-mode cases only). Solo stays runnable
+// when named in Options.Variants.
+func AllVariants() []string { return []string{VariantCouncil, VariantTeam, VariantBrainstorm} }
 
 // KeyLine is one line of a case's answer key: the id the judge answers with (K1) and what the line says.
 type KeyLine struct {
@@ -200,7 +206,9 @@ type CouncilBenchPlanItem struct {
 // Plan lists the runs in order, run by run: run 1 of every case and variant before any run 2, each run's cases in turn and
 // each case's variants in turn, so a case's council and team are back to back and a bench cut short leaves whole pairs.
 // It also returns the sum of the items' token estimates. A retired case is left out unless opts.Cases names it. A case or
-// variant name that is not known is an error; a name given twice counts once.
+// variant name that is not known is an error; a name given twice counts once. The brainstorm variant runs only on a
+// Brainstorm-mode case: for any other (a Review case, or one with no mode) its item is left out, named or not, and its
+// price with it.
 func Plan(cases []Case, opts Options) ([]CouncilBenchPlanItem, int64, error) {
 	if opts.Runs < 0 {
 		return nil, 0, fmt.Errorf("runs must be 1 or more, got %d", opts.Runs)
@@ -211,9 +219,11 @@ func Plan(cases []Case, opts Options) ([]CouncilBenchPlanItem, int64, error) {
 	runs := max(opts.Runs, 1)
 
 	ids := make([]string, len(cases))
-	var current []string // the cases a bare plan runs
+	modes := make(map[string]string, len(cases)) // case id -> mode, for the variants that run on one mode only
+	var current []string                         // the cases a bare plan runs
 	for i, c := range cases {
 		ids[i] = c.Id
+		modes[c.Id] = c.Mode
 		if !c.Retired {
 			current = append(current, c.Id)
 		}
@@ -244,6 +254,9 @@ func Plan(cases []Case, opts Options) ([]CouncilBenchPlanItem, int64, error) {
 	for r := 1; r <= runs; r++ {
 		for _, id := range selected {
 			for _, v := range variants {
+				if v == VariantBrainstorm && modes[id] != council.ModeBrainstorm {
+					continue
+				}
 				items = append(items, CouncilBenchPlanItem{Case: id, Variant: v, Run: r})
 				estimate += variantTokens[v]
 			}
