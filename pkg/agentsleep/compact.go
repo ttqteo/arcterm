@@ -12,9 +12,10 @@ import (
 // Compacting before the cache goes cold. Claude Code's prompt cache lives an hour: the first turn after that writes
 // the whole context again at twice the input rate, and an agent woken from sleep after an hour always pays it. A
 // compaction while the cache is still warm reads the context at the cached rate and leaves a summary, so the turn
-// that comes back pays for the summary alone. It happens at two moments: just before an agent sleeps, and, for an
-// idle agent that does not sleep, when its cache has CompactLead left. Only a session whose mod takes a compaction
-// over its control stream is compacted, so nothing is ever typed over a draft in its composer.
+// that comes back pays for the summary alone. arcterm does it just before an agent sleeps. An idle agent that stays
+// awake is Claude Code's own idle compaction (v2.1.299 on), which wavesrv starts at the person's threshold through
+// IdleCompactVar (config.go). Only a session whose mod takes a compaction over its control stream is compacted, so
+// nothing is ever typed over a draft in its composer.
 
 const (
 	// CompactAtDefault is the least context, in tokens, worth losing detail over
@@ -22,8 +23,6 @@ const (
 	// CacheTTL is the life of the hour-long cache Claude Code writes; cacheTTLShort the default one's
 	CacheTTL      = time.Hour
 	cacheTTLShort = 5 * time.Minute
-	// CompactLead is how much cache life an idle agent that does not sleep has left when it is compacted
-	CompactLead = 5 * time.Minute
 	// CompactGiveUp is how long a compaction that was asked for may take to land before nothing waits on it
 	CompactGiveUp = 10 * time.Minute
 )
@@ -121,15 +120,6 @@ func CompactBeforeSleep(c Candidate, now time.Time, s Settings) bool {
 	return compactWorth(c, now, s)
 }
 
-// cacheRunningOut is whether an idle agent that does not sleep is compacted this check: its hour-long cache has
-// CompactLead or less left.
-func cacheRunningOut(c Candidate, now time.Time, s Settings) bool {
-	if !c.Idle || c.RunOwned || !c.Cache.OneHour || !compactWorth(c, now, s) {
-		return false
-	}
-	return cacheLeft(c.Cache, now) <= CompactLead
-}
-
 // Compaction is one compaction a check asks for; ThenSleep is set when the agent sleeps once it lands.
 type Compaction struct {
 	TabId     string
@@ -144,8 +134,8 @@ type Plan struct {
 
 // Decide is the whole check. A sleep waiting on a compaction that has landed goes first, whatever the settings say: an
 // earlier check or the person chose it (the check's own still needs the agent off screen). Then every agent Pick
-// names sleeps, or is compacted first when that pays off, or waits while a compaction asked for earlier lands. Last,
-// an idle agent no sleep takes is compacted when its cache is about to go.
+// names sleeps, or is compacted first when that pays off, or waits while a compaction asked for earlier lands. An
+// idle agent no sleep takes is left to Claude Code's own idle compaction.
 func Decide(cands []Candidate, now time.Time, s Settings, freeBytes uint64) Plan {
 	var p Plan
 	byTab := map[string]Candidate{}
@@ -171,11 +161,6 @@ func Decide(cands []Candidate, now time.Time, s Settings, freeBytes uint64) Plan
 			p.Compact = append(p.Compact, Compaction{TabId: id, ThenSleep: true})
 		default:
 			p.Sleep = append(p.Sleep, id)
-		}
-	}
-	for _, c := range cands {
-		if !taken[c.TabId] && c.CompactSent.IsZero() && cacheRunningOut(c, now, s) {
-			p.Compact = append(p.Compact, Compaction{TabId: c.TabId})
 		}
 	}
 	return p

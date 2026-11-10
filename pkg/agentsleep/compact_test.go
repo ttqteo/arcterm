@@ -133,38 +133,16 @@ func TestDecideSleepsOnceTheCompactionLands(t *testing.T) {
 	}
 }
 
-func TestDecideCompactsAnAwakeAgentAsItsCacheRunsOut(t *testing.T) {
-	at := func(idleFor time.Duration, change func(*Candidate), s Settings) Plan {
-		c := big("a", idleFor)
-		c.Viewing = true // on screen, so no sleep takes it
-		if change != nil {
-			change(&c)
+func TestDecideLeavesAnAwakeAgentsCacheToClaudeCode(t *testing.T) {
+	// on screen, so no sleep takes it: Claude Code's own idle compaction handles its cache, not arcterm
+	for _, idle := range []time.Duration{54 * time.Minute, 55 * time.Minute, 56 * time.Minute} {
+		c := big("a", idle)
+		c.Viewing = true
+		if got := Decide([]Candidate{c}, t0, compactOn, plentyOfRAM); !reflect.DeepEqual(got, Plan{}) {
+			t.Errorf("idle %v: got %+v, want nothing", idle, got)
 		}
-		return Decide([]Candidate{c}, t0, s, plentyOfRAM)
-	}
-	compact := Plan{Compact: []Compaction{{TabId: "a"}}}
-	if got := at(55*time.Minute, nil, compactOn); !reflect.DeepEqual(got, compact) {
-		t.Fatalf("5 min left got %+v, want %+v", got, compact)
-	}
-	// sleep switched off: the cache rule still holds
-	if got := at(56*time.Minute, nil, Settings{Compact: true, CompactAt: CompactAtDefault}); !reflect.DeepEqual(got, compact) {
-		t.Fatalf("sleep off got %+v, want %+v", got, compact)
-	}
-	for name, tc := range map[string]struct {
-		idle   time.Duration
-		change func(*Candidate)
-		s      Settings
-	}{
-		"6 min left":        {54 * time.Minute, nil, compactOn},
-		"gone":              {60 * time.Minute, nil, compactOn},
-		"five-minute cache": {4 * time.Minute, func(c *Candidate) { c.Cache.OneHour = false }, compactOn},
-		"working":           {55 * time.Minute, func(c *Candidate) { c.Idle = false }, compactOn},
-		"a run's":           {55 * time.Minute, func(c *Candidate) { c.RunOwned = true }, compactOn},
-		"already asked":     {55 * time.Minute, func(c *Candidate) { c.CompactSent = t0.Add(-time.Minute) }, compactOn},
-		"compaction off":    {55 * time.Minute, nil, Settings{Enabled: true, After: 30 * time.Minute, CompactAt: CompactAtDefault}},
-	} {
-		if got := at(tc.idle, tc.change, tc.s); !reflect.DeepEqual(got, Plan{}) {
-			t.Errorf("%s: got %+v, want nothing", name, got)
+		if got := Decide([]Candidate{c}, t0, Settings{Compact: true, CompactAt: CompactAtDefault}, plentyOfRAM); !reflect.DeepEqual(got, Plan{}) {
+			t.Errorf("idle %v, sleep off: got %+v, want nothing", idle, got)
 		}
 	}
 }

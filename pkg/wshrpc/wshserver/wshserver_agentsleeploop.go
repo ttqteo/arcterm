@@ -30,13 +30,6 @@ import (
 
 const (
 	sleepLoopEvery = time.Minute
-	// sleepAfterFloorMin is the least "After idle for" the loop honours: under it a pause between two turns would
-	// put an agent to sleep
-	sleepAfterFloorMin = 5
-	sleepAfterDefault  = 30
-	// compactAtFloorK is the least context, in thousands of tokens, the loop compacts: under it a compaction loses
-	// detail for little
-	compactAtFloorK = 25
 	// cacheTailBytes is how much of a transcript's end the cache read takes: the last request and any compaction after
 	// it sit there, while a whole transcript runs to tens of MB
 	cacheTailBytes = 4 << 20
@@ -175,31 +168,9 @@ func newSleepLoop(notify func(wshrpc.NotifyCommandData)) *sleepLoop {
 	}
 }
 
-// currentSleepSettings is sleepSettings over the settings in force. A var so tests set them.
+// currentSleepSettings is the person's settings in force (agentsleep.FromConfig). A var so tests set them.
 var currentSleepSettings = func() agentsleep.Settings {
-	return sleepSettings(wconfig.GetWatcher().GetFullConfig().Settings)
-}
-
-// sleepSettings reads the person's settings: Sleep idle agents (default on), After idle for (default 30 minutes, never
-// under sleepAfterFloorMin), Compact before the cache goes cold (default on) and its least context (default 100k,
-// never under compactAtFloorK).
-func sleepSettings(st wconfig.SettingsType) agentsleep.Settings {
-	after := int64(sleepAfterDefault)
-	if st.AgentsSleepAfterMin != nil {
-		after = *st.AgentsSleepAfterMin
-	}
-	after = max(after, sleepAfterFloorMin)
-	atK := int64(agentsleep.CompactAtDefault / 1000)
-	if st.AgentsCompactAtK != nil {
-		atK = *st.AgentsCompactAtK
-	}
-	atK = max(atK, compactAtFloorK)
-	return agentsleep.Settings{
-		Enabled:   st.AgentsSleepIdle == nil || *st.AgentsSleepIdle,
-		After:     time.Duration(after) * time.Minute,
-		Compact:   st.AgentsCompactIdle == nil || *st.AgentsCompactIdle,
-		CompactAt: int(atK) * 1000,
-	}
+	return agentsleep.FromConfig(wconfig.GetWatcher().GetFullConfig().Settings)
 }
 
 // tick is one check: it watches every live agent's idleness and CPU, and puts to sleep the ones agentsleep.Pick
@@ -212,8 +183,9 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		// for that stretch, whatever the trackers last saw
 		l.idle.Forget(nil)
 		l.cpu.Forget(nil)
-		// compaction still runs without sleep, and a person's Sleep waiting on one still ends in a sleep
-		if !s.Compact && !compactsWaiting() {
+		// a person's Sleep waiting on a compaction still ends in a sleep (an awake agent's compaction is Claude
+		// Code's own: agentsleep.IdleCompactVar)
+		if !compactsWaiting() {
 			return
 		}
 	}
