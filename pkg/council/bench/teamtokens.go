@@ -34,17 +34,26 @@ type transcriptStats struct {
 	Teammates int   // teammate transcripts read
 }
 
-// claudeProjectsDir is where Claude Code keeps its transcripts: <config dir>/projects, the config dir being
-// CLAUDE_CONFIG_DIR or ~/.claude.
-func claudeProjectsDir() (string, error) {
+// claudeConfigDir is Claude Code's config dir: CLAUDE_CONFIG_DIR or ~/.claude. Its transcripts (claudeProjectsDir) and
+// its installed plugins (installed_plugins.json, which the brainstorm runner reads) live under it.
+func claudeConfigDir() (string, error) {
 	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
-		return filepath.Join(dir, "projects"), nil
+		return dir, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("no home folder to find Claude's transcripts in: %w", err)
+		return "", fmt.Errorf("no home folder to find Claude's config in: %w", err)
 	}
-	return filepath.Join(home, ".claude", "projects"), nil
+	return filepath.Join(home, ".claude"), nil
+}
+
+// claudeProjectsDir is where Claude Code keeps its transcripts: <config dir>/projects.
+func claudeProjectsDir() (string, error) {
+	dir, err := claudeConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "projects"), nil
 }
 
 // leadTranscript finds the lead's transcript, <projects>/<project folder>/<session>.jsonl, whichever project folder
