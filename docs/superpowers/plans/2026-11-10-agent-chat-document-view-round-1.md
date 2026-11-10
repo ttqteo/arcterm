@@ -7,9 +7,10 @@ main plan, `docs/superpowers/plans/2026-11-10-agent-chat-document-view.md`.
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/chatfooter.tsx`, `frontend/app/store/keybindings/bindings.ts`, the model that
-builds `cellViewOptions` / `nextCellView` (find it from `bindings.ts`) and its test, `scripts/cdp/scenarios.mjs`
-(the `agent-chat` scenario only), `docs/keyboard-shortcuts.md` if a line there names what Alt+C walks.
+**Files:** `frontend/app/view/agents/chatfooter.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/view/agents/chatmode.ts`, `frontend/app/view/agents/chatmode.test.ts`, `scripts/cdp/scenarios.mjs`, `docs/keyboard-shortcuts.md`
+
+In `scripts/cdp/scenarios.mjs` touch the `agent-chat` scenario only; edit `docs/keyboard-shortcuts.md` only if a line
+there names what Alt+C walks.
 
 **1. The foot line.** The mode chip's menu ends with `Shift+Tab in the box cycles them too`
 (`chatfooter.tsx:315`). That is false: the chat box does not forward Shift+Tab to the terminal, and it must keep
@@ -23,7 +24,7 @@ The `agent:view-cycle` binding (`bindings.ts`, `chatAgent()` returns only an awa
 walks Terminal, so Alt+C can land on the option the header shows disabled. Make the key walk the same options the
 header enables: for a sleeping chat-capable agent, neither Chat nor Terminal; with one option or none left the key
 passes, as it does today. Every other agent (awake, not Claude, a plain terminal) keeps today's walk exactly. Put the
-rule in the pure model with a unit test beside it (asleep chat-capable with a canvas and a review: walks canvas and
+rule in the pure model (`cellViewOptions` in `chatmode.ts`) with a unit test beside it (asleep chat-capable with a canvas and a review: walks canvas and
 review only; asleep with nothing else open: no options), not in the binding's body. `agent:chat-toggle`
 (Mod+Shift+K) already passes for a sleeping agent: leave it.
 
