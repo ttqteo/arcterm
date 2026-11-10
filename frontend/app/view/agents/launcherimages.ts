@@ -38,7 +38,7 @@ export interface TaskWithImages {
 
 const ATTACHED_IMAGES_HEADER = "Attached images:";
 // POSIX /…, Windows X:\… or X:/…, or a UNC \\server\…: what WriteTempFileCommand returns
-const ABSOLUTE_PATH = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
+export const ABSOLUTE_PATH = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 
 export function composeTaskWithImages(
     runtime: Runtime,

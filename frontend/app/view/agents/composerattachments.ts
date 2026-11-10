@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "r
 import { composeTaskWithImages } from "./launcherimages";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB; base64 inflates ~33%, bounding the RPC payload
+export const FILES_HEADER = "Attachments (read these files):"; // chatfiles.ts reads the block back under it
 
 export type AttachmentKind = "image" | "file";
 export type AttachmentStatus = "uploading" | "ready" | "error";
@@ -55,7 +56,7 @@ export function appendAttachments(text: string, atts: Attachment[]): string {
     if (ready.length === 0) {
         return text;
     }
-    const block = "Attachments (read these files):\n" + ready.map((a) => `- ${a.path}`).join("\n");
+    const block = `${FILES_HEADER}\n` + ready.map((a) => `- ${a.path}`).join("\n");
     return text.trim() ? `${text}\n\n${block}` : block;
 }
 
