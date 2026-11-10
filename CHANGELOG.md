@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A goal meter for Claude Code's `/goal`: above Chat's box and above the prompt in the terminal, the goal, a mark for
+  each check Claude's evaluator made, how long it has run, and Goal met or stopped with its counts; the evaluator's
+  reason is a click away, ✕ clears the goal, and a goal Claude proposes shows while it waits on your answer. <!-- big -->
 - Fork a Claude conversation: a new session that starts from where it is, in a tab of its own, while the original
   stays as it was. It is in a conversation's right-click menu and beside Resume when you read one.
 - A message queued in Chat while Claude works has a Send now beside Queued: Claude moves what it is running to the

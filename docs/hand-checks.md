@@ -16,6 +16,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   threshold); take one past 100k of context and leave it on screen and idle ~55 minutes → one compaction lands
   (Transcript → Compactions), not two; Sleep on such an agent still compacts it first (`agentsleep/config.go`
   `IdleCompactEnv`, b0b7b1f8a).
+- [ ] (arcterm) Goal meter: in a Claude agent send `/goal every test in <a folder> passes` (a goal it cannot meet at
+  once) → in Chat a strip above the box reads `Goal · <condition>` with a mark per check and the time running, "not yet"
+  opens the evaluator's reason, ✕ sends `/goal clear` and the strip goes; in Terminal the band above the prompt reads
+  `◎ goal <condition> ▮▮▯ check 2 · 1m 4s`, its clock ticking; once met both read Goal met with the checks, time and
+  tokens, and go after your next prompt. Ask Claude for work it may propose a goal for → "Claude proposes a goal" and
+  Answer in Terminal. Unit tests (`goal-core.ts`, real `/goal` records) and an engine test of the band on a copy of the
+  mod; neither surface was drawn in a live session (`chatgoal.tsx`, `goal-band.tsx`).
 - [ ] (arcterm) Fork a conversation: Agent → Conversations → right-click an ended Claude conversation → Fork → a new
   tab named "<title> (fork)" opens on the same conversation, and a message there leaves the original's transcript as
   it was (Conversation History lists both); open a conversation in the centre → Fork sits beside Resume and does the

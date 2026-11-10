@@ -20,13 +20,16 @@ import { useAtom, useAtomValue } from "jotai";
 import { Highlighter } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import type { AgentsViewModel } from "./agents";
+import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
+import { ChatGoalStrip } from "./chatgoal";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
@@ -207,6 +210,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const lines = view?.win.lines;
     const isWorking = working != null;
     const turn = useMemo(() => (isWorking && lines != null ? turnStats(lines) : null), [isWorking, lines]);
+    // the session's /goal, read from the same lines (goal-core.ts, shared with the arc mod's band in the TUI)
+    const goal = useMemo(() => (lines != null ? goalFromLines(lines) : null), [lines]);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
     const asking = agent.ask != null && !agent.ask.hold;
     // a read that has not landed yet shows a skeleton; one that failed (a transcript file that is not written yet, most
@@ -339,6 +344,17 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 sleeps or wakes (its parts fold in place). Asleep its Enter wakes the agent, and it carries
                 data-sleeping-composer on its frame for the scenarios' `[data-sleeping-composer] [data-chat-input]`. */}
             <div className="flex-none px-[22px] pb-4 pt-3">
+                <div className="mx-auto w-full max-w-[760px]">
+                    <ChatGoalStrip
+                        goal={goal}
+                        onClear={() => {
+                            if (agent.blockId != null) {
+                                fireAndForget(() => submitToAgent(agent.blockId!, "/goal clear"));
+                            }
+                        }}
+                        onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                    />
+                </div>
                 <ChatComposer
                     key={agent.id}
                     agent={agent}
