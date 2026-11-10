@@ -34,6 +34,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it Queued.
 - A message you cleared with Esc in the terminal no longer stays Queued in Chat: its bubble goes a few seconds after
   Claude stops.
+- A run holds far less RAM: a task's worker stops once it hands its commit to review, and its reviewer once its
+  verdict is in, instead of both idling at their prompt (~1.5 GB each) until the lane landed. Pausing a run now stops
+  those idle sessions too.
 
 ## 1.0.6 — 2026-11-10
 

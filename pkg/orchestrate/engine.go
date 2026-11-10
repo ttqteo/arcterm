@@ -507,6 +507,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		}
 	}
 	DeriveTaskStates(g, runs)
+	queueFinishedWorkers(g, runs, prevStates, &afterCommit)
 	// liveness + stall detection: refresh each running task's last-activity from its child's own
 	// transcript writes; a running task silent past StallThreshold is flagged stalled (nothing else ever
 	// notices a headless child that stopped progressing). A stalled task whose worker works again goes back to
