@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
     BUILTIN_COMMANDS,
+    fromLive,
+    groupOf,
     insertSlash,
     mergeCommands,
     opensTui,
+    slashGroups,
     slashMatches,
     slashQueryAt,
     type SlashCommand,
@@ -43,9 +46,24 @@ describe("slashMatches", () => {
         expect(names).toContain("recount");
         expect(names.indexOf("recount")).toBeGreaterThan(names.indexOf("cost"));
     });
-    it("caps at the limit", () => {
+    it("caps at a limit when one is passed", () => {
         expect(slashMatches("", all, 3)).toHaveLength(3);
-        expect(slashMatches("", all)).toHaveLength(8);
+        expect(slashMatches("", all, 3).map((c) => c.name)).toEqual(["recount", "add-dir", "clear"]);
+    });
+    it("lists every match when no limit is passed", () => {
+        expect(slashMatches("", all)).toHaveLength(all.length);
+    });
+    it("puts prefix matches first among an unlimited list", () => {
+        const many: SlashCommand[] = [
+            { name: "zz-re", source: "user" },
+            ...Array.from({ length: 20 }, (_, i): SlashCommand => ({ name: `a${i}-re`, source: "user" })),
+            { name: "release-notes", source: "builtin" },
+            { name: "review", source: "builtin" },
+        ];
+        const names = slashMatches("re", many).map((c) => c.name);
+        expect(names).toHaveLength(23);
+        expect(names.slice(0, 2)).toEqual(["release-notes", "review"]);
+        expect(names[2]).toBe("zz-re");
     });
     it("ignores case and drops what does not match", () => {
         expect(slashMatches("COMPACT", all).map((c) => c.name)).toEqual(["compact"]);
@@ -76,6 +94,85 @@ describe("opensTui", () => {
         expect(opensTui("/compact", all)).toBe(false);
         expect(opensTui("/nosuch", all)).toBe(false);
         expect(opensTui("model", all)).toBe(false);
+    });
+});
+
+describe("fromLive", () => {
+    it("maps each source and keeps the plugin", () => {
+        const out = fromLive([
+            { name: "compact", description: "Free up context", source: "builtin" },
+            { name: "my-skill", description: "Mine", source: "user" },
+            { name: "superpowers:brainstorming", description: "Explore", source: "plugin", plugin: "superpowers" },
+            { name: "mcp__github__pr", source: "mcp" },
+        ]);
+        expect(out).toEqual([
+            { name: "compact", description: "Free up context", source: "builtin" },
+            { name: "my-skill", description: "Mine", source: "user" },
+            { name: "superpowers:brainstorming", description: "Explore", source: "plugin", plugin: "superpowers" },
+            { name: "mcp__github__pr", source: "mcp" },
+        ]);
+    });
+    it("reads an unknown source as user", () => {
+        expect(fromLive([{ name: "x", source: "weird" }])).toEqual([{ name: "x", source: "user" }]);
+    });
+    it("marks tui only for a builtin that opens a menu", () => {
+        const out = fromLive([
+            { name: "model", source: "builtin" },
+            { name: "effort", source: "builtin" },
+            { name: "compact", source: "builtin" },
+            { name: "model", source: "user" },
+            { name: "model", source: "plugin", plugin: "p" },
+        ]);
+        expect(out.map((c) => c.tui === true)).toEqual([true, true, false, false, false]);
+    });
+    it("marks every built-in the copied list marks tui, and no other", () => {
+        const copied = BUILTIN_COMMANDS.filter((c) => c.tui).map((c) => c.name);
+        const live = fromLive(BUILTIN_COMMANDS.map((c) => ({ name: c.name, source: "builtin" })));
+        expect(copied.length).toBeGreaterThan(0);
+        expect(live.filter((c) => c.tui).map((c) => c.name)).toEqual(copied);
+    });
+});
+
+describe("groupOf", () => {
+    it("groups each live source", () => {
+        expect(groupOf({ name: "compact", source: "builtin" })).toBe("Built-in");
+        expect(groupOf({ name: "my-skill", source: "user" })).toBe("Skills");
+        expect(groupOf({ name: "p:cmd", source: "plugin" })).toBe("Plugins");
+        expect(groupOf({ name: "mcp__s__p", source: "mcp" })).toBe("MCP");
+    });
+    it("groups the fallback's disk entries by their colon", () => {
+        expect(groupOf({ name: "my-skill", source: "skill" })).toBe("Skills");
+        expect(groupOf({ name: "my-cmd", source: "command" })).toBe("Skills");
+        expect(groupOf({ name: "superpowers:brainstorming", source: "skill" })).toBe("Plugins");
+        expect(groupOf({ name: "git:sync", source: "command" })).toBe("Plugins");
+    });
+});
+
+describe("slashGroups", () => {
+    const items: SlashCommand[] = [
+        { name: "mcp__s__a", source: "mcp" },
+        { name: "p:one", source: "plugin" },
+        { name: "skill-b", source: "user" },
+        { name: "clear", source: "builtin" },
+        { name: "skill-a", source: "user" },
+        { name: "compact", source: "builtin" },
+        { name: "p:two", source: "plugin" },
+    ];
+    it("orders the groups Built-in, Skills, Plugins, MCP and counts each", () => {
+        const groups = slashGroups(items);
+        expect(groups.map((g) => g.title)).toEqual(["Built-in", "Skills", "Plugins", "MCP"]);
+        expect(groups.map((g) => g.items.length)).toEqual([2, 2, 2, 1]);
+    });
+    it("keeps the input order inside a group", () => {
+        const groups = slashGroups(items);
+        expect(groups[0].items.map((c) => c.name)).toEqual(["clear", "compact"]);
+        expect(groups[1].items.map((c) => c.name)).toEqual(["skill-b", "skill-a"]);
+        expect(groups[2].items.map((c) => c.name)).toEqual(["p:one", "p:two"]);
+    });
+    it("drops the groups that are empty", () => {
+        const groups = slashGroups([{ name: "x", source: "user" }]);
+        expect(groups.map((g) => g.title)).toEqual(["Skills"]);
+        expect(slashGroups([])).toEqual([]);
     });
 });
 
