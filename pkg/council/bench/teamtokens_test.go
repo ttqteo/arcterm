@@ -120,6 +120,30 @@ func TestTeamTokensNoTeammates(t *testing.T) {
 	}
 }
 
+// TestTeamClaudeConfigDir proves the config-dir helper the brainstorm runner shares with the transcript lookup: the
+// projects folder is still <config dir>/projects, and the config dir still falls back to ~/.claude.
+func TestTeamClaudeConfigDir(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	if got, err := claudeConfigDir(); err != nil || got != cfg {
+		t.Errorf("claudeConfigDir = %q, %v; want %q", got, err, cfg)
+	}
+	if got, err := claudeProjectsDir(); err != nil || got != filepath.Join(cfg, "projects") {
+		t.Errorf("claudeProjectsDir = %q, %v; want %q", got, err, filepath.Join(cfg, "projects"))
+	}
+
+	home := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if got, err := claudeConfigDir(); err != nil || got != filepath.Join(home, ".claude") {
+		t.Errorf("claudeConfigDir with no CLAUDE_CONFIG_DIR = %q, %v; want %q", got, err, filepath.Join(home, ".claude"))
+	}
+	if got, err := claudeProjectsDir(); err != nil || got != filepath.Join(home, ".claude", "projects") {
+		t.Errorf("claudeProjectsDir with no CLAUDE_CONFIG_DIR = %q, %v; want %q", got, err, filepath.Join(home, ".claude", "projects"))
+	}
+}
+
 func TestTeamTokensMissingTranscript(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	if p, err := leadTranscript("nobody"); err == nil {

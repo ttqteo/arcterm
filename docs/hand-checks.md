@@ -2003,3 +2003,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   and Allow on the first leaves the second's card up until it is answered. The `agent-chat` scenario drives the card
   on fixtures with a mocked answer command; the `PermissionRequest` hook (`wsh install-agent-hooks`), the `1` / Esc
   it types and the queue in wavesrv (`pkg/agentperm`) were not tried against a live Claude Code.
+- [ ] (arcterm) **The brainstorm bench against a real Claude.** With the superpowers plugin installed in Claude Code, run
+  `go run ./cmd/council-bench-brainstorm --case run-pause` → a `brainstorm` row appended to `council-bench.jsonl` in the
+  data dir, with `skill` (`<8 hex> superpowers@<version>`), `recall_done` and the final recall. In the agent's transcript
+  (its session id is the row's `council` field) the `arc:brainstorm` skill that loaded is the checkout's, from the
+  temp plugin dir the bench writes, not `~/.arc/claude-mod`, and `superpowers:brainstorming` loaded too. Every test fakes
+  `claude` (`startLead`, `runClaude`) and the fake `wsh` is only run through `sh`; a real launch is what shows the loop
+  (questions, the skill's judge, done, the builder check) holds together (`pkg/council/bench/brainstorm.go`,
+  `cmd/council-bench-brainstorm`).

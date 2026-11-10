@@ -115,9 +115,10 @@ type fakeClaude struct {
 	reply string
 	err   error
 
-	calls int
-	cwd   string
-	opts  consult.CallOpts
+	calls  int
+	cwd    string
+	prompt string
+	opts   consult.CallOpts
 }
 
 func useFakeClaude(t *testing.T, f *fakeClaude) {
@@ -125,7 +126,7 @@ func useFakeClaude(t *testing.T, f *fakeClaude) {
 	orig := runClaude
 	runClaude = func(ctx context.Context, cwd, prompt string, o consult.CallOpts, onTool func(string)) (string, consult.Usage, error) {
 		f.calls++
-		f.cwd, f.opts = cwd, o
+		f.cwd, f.prompt, f.opts = cwd, prompt, o
 		return f.reply, consult.Usage{TotalTokens: 1234}, f.err
 	}
 	t.Cleanup(func() { runClaude = orig })
@@ -221,6 +222,98 @@ func TestJudgeDropsWhatTheReportCannotHold(t *testing.T) {
 	}
 	if len(v.Items) != 2 || v.Wrong() != 1 {
 		t.Errorf("Items = %+v, Wrong = %d, want the two real ranks and one wrong", v.Items, v.Wrong())
+	}
+}
+
+// designItems is n decisions of a design, titled "Decision title <i>".
+func designItems(n int) []council.CouncilDirection {
+	var items []council.CouncilDirection
+	for i := 1; i <= n; i++ {
+		items = append(items, council.CouncilDirection{
+			Rank: i, Title: fmt.Sprintf("Decision title %d", i), Reasoning: fmt.Sprintf("Body of decision %d.", i),
+		})
+	}
+	return items
+}
+
+func TestJudgeDesign(t *testing.T) {
+	// a design is judged whole whatever the case's mode: no cut at 3 or 5, and no kept list to ask for
+	for _, mode := range []string{council.ModeBrainstorm, council.ModeReview} {
+		t.Run(mode, func(t *testing.T) {
+			// K1 at rank 6 is the last item and stays; K2 at rank 7 is past the 6 items shown and goes; K3 sits in a kept
+			// list the design does not have and goes; rank 7's verdict goes with it
+			f := &fakeClaude{reply: `{"matches":{"K1":6,"K2":7,"K9":1},"kept":{"K3":1},"items":[{"rank":6,"verdict":"key:K1"},{"rank":1,"verdict":"wrong"},{"rank":7,"verdict":"valid"}]}`}
+			useFakeClaude(t, f)
+
+			v, err := JudgeDesign(context.Background(), judgeCase(mode), designItems(6))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.calls != 1 {
+				t.Fatalf("consult calls = %d, want 1", f.calls)
+			}
+			if f.opts.Model != "opus" || len(f.opts.Tools) != 0 {
+				t.Errorf("judge call opts = %+v, want opus and no tools", f.opts)
+			}
+
+			p := f.prompt
+			for _, want := range []string{
+				"K1: Open a finished council on its report first.", "K3: The vote as top-3 picks.",
+				phase0Rubric,
+				"1. Decision title 1", "Body of decision 1.", "3. Decision title 3", "6. Decision title 6", "Body of decision 6.",
+				"judge all 6 items",
+			} {
+				if !strings.Contains(p, want) {
+					t.Errorf("prompt lacks %q:\n%s", want, p)
+				}
+			}
+			if strings.Contains(p, "first 3 items") || strings.Contains(p, "first 5 items") || strings.Contains(p, "7. ") {
+				t.Errorf("a design is not cut, but the prompt says it is:\n%s", p)
+			}
+			if strings.Contains(strings.ToLower(p), "kept") {
+				t.Errorf("a design has no kept list, but the prompt mentions one:\n%s", p)
+			}
+
+			if len(v.Matches) != 1 || v.Matches["K1"] != 6 {
+				t.Errorf("Matches = %v, want only K1 at rank 6 (rank 7 is past the 6 items)", v.Matches)
+			}
+			if len(v.Kept) != 0 {
+				t.Errorf("Kept = %v, want none: a design has no kept list", v.Kept)
+			}
+			if len(v.Items) != 2 || v.Wrong() != 1 || v.Recall() != 1 {
+				t.Errorf("Items = %+v, Wrong = %d, Recall = %d, want the two real ranks, one wrong, one match", v.Items, v.Wrong(), v.Recall())
+			}
+			if v.Tokens != 1234 {
+				t.Errorf("Verdict.Tokens = %d, want the call's 1234", v.Tokens)
+			}
+		})
+	}
+}
+
+func TestJudgeDesignCarriesTheCallsTokensOnFailure(t *testing.T) {
+	// useFakeClaude's stub reports 1234 tokens for the one call, whether or not it succeeds
+	for name, f := range map[string]*fakeClaude{
+		"a reply with no verdict": {reply: "no verdict here"},
+		"a failed call":           {err: errors.New("claude exited 1")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			useFakeClaude(t, f)
+			v, err := JudgeDesign(context.Background(), judgeCase(council.ModeBrainstorm), designItems(4))
+			if err == nil || v.Tokens != 1234 {
+				t.Errorf("Tokens = %d, err = %v, want an error and the call's 1234", v.Tokens, err)
+			}
+		})
+	}
+}
+
+func TestJudgeDesignNeedsItems(t *testing.T) {
+	f := &fakeClaude{reply: `{"matches":{}}`}
+	useFakeClaude(t, f)
+	if v, err := JudgeDesign(context.Background(), judgeCase(council.ModeBrainstorm), nil); err == nil {
+		t.Errorf("JudgeDesign = %+v, want an error for a design with no items", v)
+	}
+	if f.calls != 0 {
+		t.Errorf("consult calls = %d, want none when there is nothing to judge", f.calls)
 	}
 }
 

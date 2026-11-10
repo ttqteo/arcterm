@@ -28,20 +28,43 @@ type JudgeFunc func(ctx context.Context, c Case, report *council.Council) (Verdi
 // RemindFunc adds the re-measure reminder a full bench ends with.
 type RemindFunc func(ctx context.Context) error
 
+// BrainstormOutcome is how one brainstorm cell ended. State is TeamDone, TeamFailed or TeamTimedOut; Final and AtDone are
+// set only when it is done. The runner has judged its own marks, so a done outcome becomes a row without the Judge.
+type BrainstormOutcome struct {
+	Session     string
+	State       string
+	Skill       string
+	Tokens      int64 // the agent's turns, the skill's judge and the builder reviewer
+	JudgeTokens int64 // both bench judge calls
+	Minutes     float64
+	Turns       int
+	Questions   int
+	Decisions   int     // decision parts at the final mark
+	Final       Verdict // the final mark
+	AtDone      Verdict // the done mark
+}
+
+// BrainstormFunc runs one Brainstorm case through Arc's brainstorm skill and says how it ended. Its error is ctx's only,
+// as runItem's is: any other failure is an outcome whose state is TeamFailed.
+type BrainstormFunc func(ctx context.Context, c Case) (BrainstormOutcome, error)
+
 // Funcs are the calls a bench makes: the real ones in wavesrv, fakes in a test. Start, Wait and Judge run a council
-// variant; Team runs the team variant (a nil Team makes every team item a failed row); Remind may be nil.
+// variant; Team runs the team variant (a nil Team makes every team item a failed row); Brainstorm runs the brainstorm
+// variant (a nil Brainstorm makes every brainstorm item a failed row); Remind may be nil.
 type Funcs struct {
-	Start  StartFunc
-	Wait   WaitFunc
-	Judge  JudgeFunc
-	Remind RemindFunc
-	Team   TeamFunc
+	Start      StartFunc
+	Wait       WaitFunc
+	Judge      JudgeFunc
+	Remind     RemindFunc
+	Team       TeamFunc
+	Brainstorm BrainstormFunc
 }
 
 // Run runs the plan opts picks over the cases in dataDir, one item at a time: a council variant builds its council,
-// starts it, waits for its end; the team variant runs its team; a done one is judged, its row appended to the results
-// file, and the next item follows. Items never overlap, so a council the start queued behind the person's own is waited
-// on, and nothing else starts meanwhile.
+// starts it, waits for its end; the team variant runs its team; the brainstorm variant drives the skill; a done one is
+// judged (the brainstorm runner judges its own marks), its row appended to the results file, and the next item follows.
+// Items never overlap, so a council the start queued behind the person's own is waited on, and nothing else starts
+// meanwhile.
 //
 // A case whose project folder or key is gone is skipped with a log line (LoadCases). An item that fails or is stopped
 // still gets its row, with its state and spend and no scores. Before each item Run sums the tokens of the rows it has
@@ -117,11 +140,55 @@ func describeRow(r CouncilBenchResult) string {
 // the bench for the rest.
 func runItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs) (CouncilBenchResult, error) {
 	// an item that never began has no harness version of its own: it is the one this binary runs
-	row := CouncilBenchResult{Harness: council.HarnessVersion, Case: item.Case, Variant: item.Variant, Run: item.Run, State: string(council.StateFailed)}
-	if item.Variant == VariantTeam {
+	row := CouncilBenchResult{Harness: council.HarnessVersion, Case: item.Case, Variant: item.Variant, Run: item.Run, State: string(council.StateFailed), Mode: c.Mode}
+	switch item.Variant {
+	case VariantTeam:
 		return runTeamItem(ctx, c, item, f, row)
+	case VariantBrainstorm:
+		return runBrainstormItem(ctx, c, item, f, row)
 	}
 	return runCouncilItem(ctx, c, item, f, row)
+}
+
+// runBrainstormItem is a brainstorm item as a row. A nil f.Brainstorm and an outcome that is not done are rows with no
+// scores (the outcome's state, failed when it names none, and what it spent); a done one takes its marks as the runner
+// judged them: Recall, Matches and Wrong from the final mark, RecallDone and MatchesDone from the done mark. Like a
+// team's, BrainstormFunc's error ends the bench only when it is ctx's.
+func runBrainstormItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs, row CouncilBenchResult) (CouncilBenchResult, error) {
+	name := itemName(item)
+	if f.Brainstorm == nil {
+		log.Printf("[council-bench] %s not run: the bench has no brainstorm runner", name)
+		return row, nil
+	}
+	out, err := f.Brainstorm(ctx, c)
+	if err != nil {
+		if ctx.Err() != nil {
+			return row, ctx.Err()
+		}
+		log.Printf("[council-bench] %s not run: %v", name, err)
+		return row, nil
+	}
+	row.Council = out.Session
+	row.Skill = out.Skill
+	row.Tokens = out.Tokens
+	row.JudgeTokens = out.JudgeTokens
+	row.Minutes = out.Minutes
+	row.Messages = out.Turns
+	row.Questions = out.Questions
+	if out.State != "" {
+		row.State = out.State
+	}
+	if out.State != TeamDone {
+		return row, nil
+	}
+	row.Keys = len(c.KeyLines)
+	row.Decisions = out.Decisions
+	row.Recall = out.Final.Recall()
+	row.Matches = out.Final.Matches
+	row.Wrong = out.Final.Wrong()
+	row.RecallDone = out.AtDone.Recall()
+	row.MatchesDone = out.AtDone.Matches
+	return row, nil
 }
 
 // runTeamItem is a team item as a row. A nil f.Team and an outcome that is not done are rows with no scores (the

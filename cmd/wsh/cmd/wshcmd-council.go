@@ -1115,9 +1115,9 @@ func councilBenchSpawn(plan *wshrpc.CouncilBenchRtnData) tokengate.Spawn {
 }
 
 // councilBenchPlanLine is what a bench prints before it asks the gate and once it has started: how many runs over how
-// many cases, and the estimate. An item is a solo agent, a council or an agent team, so the runs are counted, and when
-// more than one variant is planned the split follows in brackets, in solo, council, team order:
-// "8 runs (4 council, 4 team) over 2 cases · ~53.2M tokens".
+// many cases, and the estimate. An item is a solo agent, a council, an agent team or the brainstorm skill, so the runs
+// are counted, and when more than one variant is planned the split follows in brackets, in solo, council, team,
+// brainstorm order: "8 runs (4 council, 4 team) over 2 cases · ~53.2M tokens".
 func councilBenchPlanLine(plan *wshrpc.CouncilBenchRtnData) string {
 	cases := map[string]bool{}
 	perVariant := map[string]int{}
@@ -1126,7 +1126,7 @@ func councilBenchPlanLine(plan *wshrpc.CouncilBenchRtnData) string {
 		perVariant[it.Variant]++
 	}
 	var split []string
-	for _, v := range []string{bench.VariantSolo, bench.VariantCouncil, bench.VariantTeam} {
+	for _, v := range []string{bench.VariantSolo, bench.VariantCouncil, bench.VariantTeam, bench.VariantBrainstorm} {
 		if n := perVariant[v]; n > 0 {
 			split = append(split, fmt.Sprintf("%d %s", n, v))
 		}
@@ -1193,27 +1193,100 @@ func councilBenchHarness(h string) string {
 	return h
 }
 
-// councilBenchTable is the results as two tables, as wavesrv grouped them (the newest harness version first, so an old
-// score is never read as the new one's): the bench runs per harness and variant, then the go / no-go verdict on the
-// council against the agent team when wavesrv gave one (it says what is still missing before there are runs), then the
-// ratings of the real councils per harness and mode.
+// councilBenchSection is the runs table of one mode of cases: a heading and the rows wavesrv grouped under it.
+type councilBenchSection struct {
+	heading    string
+	brainstorm bool // the Brainstorm section, which has the brainstorm skill's columns
+	rows       []bench.CouncilBenchRow
+}
+
+// councilBenchSections splits the runs' rows by their mode, in the order they are printed: Review, Brainstorm, then
+// "Unknown mode" for a row of no mode (its case is gone, or cases.json could not be read) or one this build does not
+// know. A section with no rows is left out. Each keeps wavesrv's order of rows.
+func councilBenchSections(rows []bench.CouncilBenchRow) []councilBenchSection {
+	review := councilBenchSection{heading: "Review"}
+	brainstorm := councilBenchSection{heading: "Brainstorm", brainstorm: true}
+	unknown := councilBenchSection{heading: "Unknown mode"}
+	for _, r := range rows {
+		switch r.Mode {
+		case council.ModeReview:
+			review.rows = append(review.rows, r)
+		case council.ModeBrainstorm:
+			brainstorm.rows = append(brainstorm.rows, r)
+		default:
+			unknown.rows = append(unknown.rows, r)
+		}
+	}
+	var sections []councilBenchSection
+	for _, s := range []councilBenchSection{review, brainstorm, unknown} {
+		if len(s.rows) > 0 {
+			sections = append(sections, s)
+		}
+	}
+	return sections
+}
+
+// councilBenchBrainstormNote is the line under the Brainstorm section: a council is read through its top items, a
+// brainstorm design through every decision, so their columns are not the same measure.
+func councilBenchBrainstormNote() string {
+	return fmt.Sprintf("note: council items are cut at %d, while brainstorm scores every decision", bench.TopBrainstorm)
+}
+
+// writeCouncilBenchSection prints one section: its heading, then its table. The Brainstorm section adds the skill, the
+// recall at the done mark (before the builder check; the recall column is the final mark's), and the decisions and
+// questions of the designs, summed over the scored runs as the recall and wrong columns are, so wrong is read against
+// the decisions it is counted in. Only the brainstorm variant has them: every other row there has a dash. A note about
+// the two ways of scoring follows the table.
+func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
+	fmt.Fprintln(b, s.heading)
+	w := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	if s.brainstorm {
+		fmt.Fprintln(w, "harness\tvariant\tskill\tscored/runs\trecall\trecall@done\tkept\twrong\tdecisions\tquestions\ttokens\trecall/M tokens")
+	} else {
+		fmt.Fprintln(w, "harness\tvariant\tscored/runs\trecall\tkept\twrong\ttokens\trecall/M tokens")
+	}
+	for _, r := range s.rows {
+		perM := "-"
+		if r.Scored > 0 && r.Tokens > 0 {
+			perM = fmt.Sprintf("%.1f", r.RecallPerM)
+		}
+		if !s.brainstorm {
+			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%d/%d\t%d\t%d\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, r.Scored, r.Runs,
+				r.Recall, r.Keys, r.Kept, r.Wrong, council.FormatTokens(r.Tokens), perM)
+			continue
+		}
+		skill, atDone, decisions, questions := "-", "-", "-", "-"
+		if r.Variant == bench.VariantBrainstorm {
+			if r.Skill != "" {
+				skill = r.Skill
+			}
+			atDone = fmt.Sprintf("%d/%d", r.RecallDone, r.Keys)
+			decisions, questions = fmt.Sprint(r.Decisions), fmt.Sprint(r.Questions)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d/%d\t%d/%d\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, skill, r.Scored, r.Runs,
+			r.Recall, r.Keys, atDone, r.Kept, r.Wrong, decisions, questions, council.FormatTokens(r.Tokens), perM)
+	}
+	w.Flush()
+	if s.brainstorm {
+		fmt.Fprintln(b, councilBenchBrainstormNote())
+	}
+}
+
+// councilBenchTable is the results as tables, as wavesrv grouped them (the newest harness version first, so an old
+// score is never read as the new one's): the bench runs per mode of the cases, a Review section and a Brainstorm
+// section (and an Unknown mode one when a row has no mode), each per harness, variant and skill, then the go / no-go
+// verdict on the council against the agent team when wavesrv gave one (it says what is still missing before there are
+// runs), then the ratings of the real councils per harness and mode.
 func councilBenchTable(res *wshrpc.CouncilBenchResultsRtnData) string {
 	if len(res.Runs) == 0 && len(res.Ratings) == 0 && res.Verdict == nil {
 		return "no bench results yet; `wsh council bench` runs the benchmark\n"
 	}
 	var b strings.Builder
-	if len(res.Runs) > 0 {
-		w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "harness\tvariant\tscored/runs\trecall\tkept\twrong\ttokens\trecall/M tokens")
-		for _, r := range res.Runs {
-			perM := "-"
-			if r.Scored > 0 && r.Tokens > 0 {
-				perM = fmt.Sprintf("%.1f", r.RecallPerM)
-			}
-			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%d/%d\t%d\t%d\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, r.Scored, r.Runs,
-				r.Recall, r.Keys, r.Kept, r.Wrong, council.FormatTokens(r.Tokens), perM)
+	for _, s := range councilBenchSections(res.Runs) {
+		if b.Len() > 0 {
+			b.WriteString("\n")
 		}
-		w.Flush()
+		writeCouncilBenchSection(&b, s)
 	}
 	if v := res.Verdict; v != nil {
 		if b.Len() > 0 {
@@ -1240,17 +1313,21 @@ var councilBenchCmd = &cobra.Command{
 	Short: "run the council benchmark (asks the Token burn gate first), or read its results",
 	Args:  cobra.NoArgs,
 	Long: `Run the council's benchmark: the cases under the data dir (council-bench/cases.json) that are not retired, each as a
-council and as a Claude Code agent team with the council's roles, --runs times each, one run at a time. A bare bench is
-council and team twice on each case. A retired case runs only when --case names it, and --variant solo adds one agent
-working alone. A judge scores every report against its case's key, and each run is appended to council-bench.jsonl.
+council and as a Claude Code agent team with the council's roles, --runs times each, one run at a time. A Brainstorm case
+also runs Arc's brainstorm skill (variant brainstorm): a Claude Code agent brainstorms with a simulated person who always
+takes the recommended answer, and the finished design is scored against the case's key. A bare bench is council and
+team twice on each case, and brainstorm twice on each of the Brainstorm cases (a Review case has no brainstorm run).
+A retired case runs only when --case names it, --variant solo adds one agent working alone, and --variant brainstorm
+alone measures the skill. A judge scores every report against its case's key, and each run is appended to council-bench.jsonl.
 Nothing it runs is listed in the app or writes a document into the case's project. The command prices the plan first at
-Phase 0b's measured means (about 8.8M tokens a council run, 4.5M a team run and 2.3M a solo run), asks the Token burn gate
-once with the total, and starts the bench in wavesrv only when the person allows it; a refusal prints "Not run: <reason>"
-and starts nothing. The bench starts no new run once the tokens spent so far, judge calls included, reach the 50M token
-cap: a run already going finishes, and --case reruns what was cut. It returns at once; "wsh council bench results" prints
-the table when runs have ended, grouped by harness version so an old score is never read as the new one's, with the
-go / no-go verdict on the team under it, and "wsh council bench stop" ends a bench early. A full bench (no --case) that
-runs to its end adds a re-measure chunk, due in a month, to the Council benchmark initiative.`,
+Phase 0b's measured means (about 8.8M tokens a council run, 4.5M a team run and 2.3M a solo run) and a first guess of 5M
+a brainstorm run, asks the Token burn gate once with the total, and starts the bench in wavesrv only when the person
+allows it; a refusal prints "Not run: <reason>" and starts nothing. The bench starts no new run once the tokens spent
+so far, judge calls included, reach the 50M token cap: a run already going finishes, and --case reruns what was cut. It
+returns at once; "wsh council bench results" prints the table when runs have ended, split into a Review and a Brainstorm
+section by the mode of the cases and grouped by harness version so an old score is never read as the new one's, with
+the go / no-go verdict on the team under it, and "wsh council bench stop" ends a bench early. A full bench (no --case)
+that runs to its end adds a re-measure chunk, due in a month, to the Council benchmark initiative.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cases, _ := cmd.Flags().GetStringArray("case")
@@ -1336,7 +1413,7 @@ func init() {
 	councilShowCmd.Flags().Bool("json", false, "JSON output (the whole council)")
 	councilWaitCmd.Flags().Duration("timeout", councilDefaultTimeout, "give up waiting after this long (0 waits without limit)")
 	councilBenchCmd.Flags().StringArray("case", nil, "run only this case, a retired one included (repeatable; default every case not retired)")
-	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: council, team or solo (repeatable; default council and team)")
+	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: council, team, solo or brainstorm (repeatable; default council, team and brainstorm; brainstorm runs only on Brainstorm cases)")
 	councilBenchCmd.Flags().Int("runs", 2, "runs of each case × variant (the team verdict needs 2 scored runs of each)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
 	councilPinCmd.Flags().Bool("off", false, "unpin the council")

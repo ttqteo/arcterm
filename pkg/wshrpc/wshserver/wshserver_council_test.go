@@ -2164,12 +2164,17 @@ func TestCouncilBenchStop(t *testing.T) {
 	}
 }
 
-// TestCouncilBenchWireHasEveryCall: the real wiring gives the bench its team runner beside the council calls, so a bare
-// bench's team cells run instead of failing for want of one.
+// TestCouncilBenchWireHasEveryCall: the real wiring gives the bench its team and brainstorm runners beside the council
+// calls, so a bare bench's team and brainstorm cells run instead of failing for want of one, and the tracking wrapper
+// keeps them.
 func TestCouncilBenchWireHasEveryCall(t *testing.T) {
 	f := councilBenchWire()
-	if f.Start == nil || f.Wait == nil || f.Judge == nil || f.Remind == nil || f.Team == nil {
-		t.Errorf("wiring = %+v, want every call set, the team runner included", f)
+	if f.Start == nil || f.Wait == nil || f.Judge == nil || f.Remind == nil || f.Team == nil || f.Brainstorm == nil {
+		t.Errorf("wiring = %+v, want every call set, the team and brainstorm runners included", f)
+	}
+	tracked := (&councilBenchRun{}).tracking(f)
+	if tracked.Team == nil || tracked.Brainstorm == nil || tracked.Judge == nil || tracked.Remind == nil {
+		t.Errorf("tracked wiring = %+v, want the calls tracking does not wrap passed through", tracked)
 	}
 }
 
@@ -2424,6 +2429,74 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	}
 	if got.Verdict != nil {
 		t.Errorf("verdict = %+v, want none: no case in this results file is built for the team pass", got.Verdict)
+	}
+}
+
+// A line written before a run line carried its case's mode takes it from cases.json, retired cases included; a line whose
+// case is gone, or any line when cases.json cannot be read, groups under no mode. Every line still comes back as written.
+func TestCouncilBenchResultsFillsAnOldLinesModeFromCases(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	writeBenchCases(t, dataDir, false, "alpha", "beta")
+	markBenchCases(t, dataDir, map[string]any{"mode": council.ModeBrainstorm, "retired": true}, "beta")
+	lines := []bench.CouncilBenchResult{
+		{Date: "2026-11-09T10:00:00Z", Harness: "2026-11-09.1", Case: "alpha", Variant: bench.VariantCouncil, Run: 1, State: "done", Recall: 1, Keys: 2, Tokens: 1_000_000},
+		{Date: "2026-11-09T10:10:00Z", Harness: "2026-11-09.1", Case: "beta", Variant: bench.VariantCouncil, Run: 1, State: "done", Recall: 2, Keys: 2, Tokens: 1_200_000},
+		{Date: "2026-11-09T10:20:00Z", Harness: "2026-11-09.1", Case: "gone", Variant: bench.VariantCouncil, Run: 1, State: "done", Recall: 1, Keys: 3, Tokens: 900_000},
+		// a new line carries its own mode, and keeps it whatever the case says
+		{Date: "2026-11-10T10:00:00Z", Harness: "2026-11-09.1", Case: "alpha", Mode: council.ModeBrainstorm, Variant: bench.VariantBrainstorm, Skill: "3f9a01bc superpowers@4.0.3",
+			Run: 1, State: "done", Recall: 2, Keys: 2, RecallDone: 1, Decisions: 6, Questions: 8, Tokens: 4_000_000},
+	}
+	for _, r := range lines {
+		if err := bench.AppendResult(dataDir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws := &WshServer{}
+
+	rowKeys := func(rows []bench.CouncilBenchRow) []string {
+		var got []string
+		for _, r := range rows {
+			got = append(got, r.Mode+"/"+r.Variant)
+		}
+		return got
+	}
+	got, err := ws.CouncilBenchResultsCommand(context.Background())
+	if err != nil {
+		t.Fatalf("CouncilBenchResultsCommand: %v", err)
+	}
+	if want := []string{"review/council", "brainstorm/council", "brainstorm/brainstorm", "/council"}; !reflect.DeepEqual(rowKeys(got.Runs), want) {
+		t.Fatalf("rows = %v, want the review case's council, the retired brainstorm case's council, the brainstorm run and the gone case's council (no mode)", rowKeys(got.Runs))
+	}
+	if r := got.Runs[2]; r.Skill != "3f9a01bc superpowers@4.0.3" || r.RecallDone != 1 || r.Decisions != 6 || r.Questions != 8 || r.Recall != 2 {
+		t.Errorf("brainstorm row = %+v, want its skill, done recall, decisions and questions", r)
+	}
+	// the run lines are as written: only the rows are grouped by the filled-in mode
+	for i := range lines {
+		lines[i].Kind = bench.KindRun
+	}
+	if !reflect.DeepEqual(got.Results, lines) {
+		t.Errorf("results\n got %+v\nwant %+v", got.Results, lines)
+	}
+
+	// cases.json that cannot be read: the table still comes back, every old line under no mode
+	if err := os.WriteFile(bench.CasesPath(dataDir), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logged strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	got, err = ws.CouncilBenchResultsCommand(context.Background())
+	log.SetOutput(prev)
+	if err != nil {
+		t.Fatalf("CouncilBenchResultsCommand with unreadable cases: %v", err)
+	}
+	if want := []string{"brainstorm/brainstorm", "/council"}; !reflect.DeepEqual(rowKeys(got.Runs), want) {
+		t.Errorf("rows = %v, want the brainstorm run (it has its own mode) and one council row of no mode", rowKeys(got.Runs))
+	}
+	if !strings.Contains(logged.String(), "[council-bench]") || !strings.Contains(logged.String(), "not a JSON list of cases") {
+		t.Errorf("log = %q, want the cases error logged", logged.String())
 	}
 }
 

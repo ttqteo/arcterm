@@ -8,16 +8,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
 const (
 	// MinApproaches is the fewest named approaches a question lists before the judge weighs it.
 	MinApproaches = 5
-
-	// JudgeEmptyReason is why a judge fails when it ended its session with no result.
-	JudgeEmptyReason = "The judge ended without its result."
 
 	minJudgeOptions = 2
 	maxJudgeOptions = 4
@@ -25,7 +20,6 @@ const (
 	judgeFileName   = "judge.json"
 	judgedLineHead  = "brainstorm: judged "
 	judgeFailedHead = "brainstorm: judge failed: "
-	unusableHead    = "The judge's result is not usable: "
 	rerunHead       = "This decision was put to the user before."
 	pickMark        = " (the pick)"
 
@@ -267,23 +261,9 @@ func rerunText(earlier []JudgeOption, line string) string {
 	return b.String()
 }
 
-// DecideJudge judges the judge's run as Decide judges the reviewer's, then checks its result. Deliver carries
-// judge.json's bytes; a result that fails the check fails the judge with the check's error as the reason.
-func DecideJudge(run *waveobj.Run, lostReason string) (Action, []byte) {
-	action := decide(run, lostReason, JudgeEmptyReason)
-	if action.Kind != Deliver {
-		return action, nil
-	}
-	out, err := judgeFileBytes(run.Report)
-	if err != nil {
-		return Action{Kind: Fail, Reason: unusableHead + err.Error()}, nil
-	}
-	return action, out
-}
-
-// judgeFileBytes checks the judge's report and turns it into judge.json. The report is the JSON object alone:
+// JudgeFileBytes checks the judge's report and turns it into judge.json. The report is the JSON object alone:
 // prose or a code fence around it fails rather than delivers half a question.
-func judgeFileBytes(report string) ([]byte, error) {
+func JudgeFileBytes(report string) ([]byte, error) {
 	var r judgeResult
 	if err := json.Unmarshal([]byte(strings.TrimSpace(report)), &r); err != nil {
 		return nil, fmt.Errorf("it is not the one JSON object the prompt asks for (%v)", err)

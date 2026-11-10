@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- `wsh council bench` also measures Arc's brainstorm skill, and its results table is split into Review and Brainstorm.
+
 ### Changed
 
 - The / menu in Chat lists every command Claude Code offers in that session (built-ins, its own skills, plugins, MCP),

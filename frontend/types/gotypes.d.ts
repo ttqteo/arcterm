@@ -2694,6 +2694,12 @@ declare global {
         judgetokens?: number;
         matches?: {[key: string]: number};
         keptmatches?: {[key: string]: number};
+        mode?: string;
+        skill?: string;
+        decisions?: number;
+        recall_done?: number;
+        matches_done?: {[key: string]: number};
+        questions?: number;
     };
 
     // wshrpc.CouncilBenchResultsRtnData
@@ -2707,7 +2713,9 @@ declare global {
     // bench.CouncilBenchRow
     type CouncilBenchRow = {
         harness: string;
+        mode: string;
         variant: string;
+        skill?: string;
         runs: number;
         scored: number;
         recall: number;
@@ -2716,6 +2724,9 @@ declare global {
         wrong: number;
         tokens: number;
         recallperm: number;
+        recall_done?: number;
+        decisions?: number;
+        questions?: number;
     };
 
     // wshrpc.CouncilBenchRtnData

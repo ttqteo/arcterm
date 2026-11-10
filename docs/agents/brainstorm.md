@@ -216,7 +216,7 @@ agents behave the same.
 - **The tab record.** The server alone writes `brainstorm:checkstate` (`reading`, `answered`, `failed`)
   with `checkts`, `checkrun`, `checkchannel` and `checkreason` on the agent's tab. The pane reads them
   through `builderCheckView` and never infers the state from the file.
-- **The watcher.** Every 5 s it asks `brainstormcheck.Decide` about the run: a done run with a report is
+- **The watcher.** Every 5 s it asks `decideBuilderCheck` (`pkg/wshrpc/wshserver/wshserver_brainstormdecide.go`) about the run: a done run with a report is
   delivered, a done run with none fails, and the engine's liveness rules (`JudgingSessionLost`: the route
   refused it, the 20-minute `ReviewTimeout`, the worker exited, idle past its grace) fail it with their
   reason. Arc does not respawn a lost reviewer.
@@ -290,7 +290,7 @@ to the judge**). The judge rides the builder check's machinery.
   after one. The agent never stops the judge; the skill's **While the judge weighs** says how it takes
   the lines (an answer, pushback rerunning the judge with `--line`, Skip) and to ignore a late
   `brainstorm: judge failed` for a question no longer open.
-- **The watcher and the result check.** Every 5 s it asks `brainstormcheck.DecideJudge` about the run.
+- **The watcher and the result check.** Every 5 s it asks `decideJudge` (`wshserver_brainstormdecide.go`; the check itself is `brainstormcheck.JudgeFileBytes`) about the run.
   A done run with a usable result is delivered. A done run with no report fails ("The judge ended
   without its result."), and so does a result that fails Arc's check: not one JSON object (prose or a
   code fence around it), not 2-4 options each with a label and a detail, not exactly one pick, an empty
@@ -377,8 +377,9 @@ to the judge**). The judge rides the builder check's machinery.
 | The launcher handoff (`onStarted`, the run id back) | `frontend/app/view/agents/launcherstore.ts`, `launcherrun.ts`, `launchermodal.tsx` |
 | Reveal on write, skill context, run-agent exclusion | `cmd/wsh/cmd/wshcmd-agenthook.go` |
 | `ARC_RUN_AGENT` on run agents | `pkg/jarvis/runexec.go` |
-| Builder check's and judge's pure parts: prompts, `Decide` / `DecideJudge`, result paths, lines | `pkg/brainstormcheck` |
+| Builder check's and judge's pure parts: prompts, the judge's result check (`JudgeFileBytes`), result paths, lines (a leaf package: it imports neither `jarvis` nor `waveobj`, so the council bench can use it) | `pkg/brainstormcheck` |
 | Builder check's and judge's handlers, watcher, routes, startup sweep | `pkg/wshrpc/wshserver/wshserver_brainstorm.go` |
+| What a watcher tick decides about a run (`decideBuilderCheck`, `decideJudge`) | `pkg/wshrpc/wshserver/wshserver_brainstormdecide.go` |
 | `wsh brainstorm check`, `wsh brainstorm judge` | `cmd/wsh/cmd/wshcmd-brainstorm.go` |
 | The reviewer's launcher and liveness | `pkg/orchestrate/stagesession.go` (`LaunchJudgingSession`, `JudgingSessionLost`) |
 | The agent's protocol | `skills/brainstorm/SKILL.md` (edit here; the mod copy is generated) |
@@ -389,15 +390,16 @@ to the judge**). The judge rides the builder check's machinery.
   views, every line, the sent-line rules and the sender. The hook's context and exclusion are in
   `go test ./cmd/wsh/cmd -run BrainstormContext`.
 - **Builder check, unit:** `go test ./pkg/brainstormcheck`; `go test ./pkg/wshrpc/wshserver -run
-  'BrainstormCheck|BuilderCheck'` (the handler, route chain, watcher, delivery, sweep, with the launch
-  stubbed); `go test ./pkg/orchestrate -run 'StageSession|JudgingSession'`; `go test ./cmd/wsh/cmd -run
+  'BrainstormCheck|BuilderCheck|Decide'` (the handler, route chain, watcher, what a tick decides, delivery,
+  sweep, with the launch stubbed); `go test ./pkg/orchestrate -run 'StageSession|JudgingSession'`; `go test ./cmd/wsh/cmd -run
   'BrainstormCheckCmd'`; `npx vitest run frontend/app/view/agents/brainstormmodel.test.ts`.
 - **Builder check, pane:** `node scripts/cdp/final-verify.mjs brainstorm-builder-check` (with `ARC_FINAL_OUT`
   set; it starts its own dev app) plays the server's side by setting the tab meta: the pending card with
   Check unavailable, the result, the failed card and Try again.
-- **Judge, unit:** `go test ./pkg/brainstormcheck -run Judge` (the prompt, the result check, the paths
-  and lines); `go test ./pkg/wshrpc/wshserver -run 'BrainstormJudge|ResumeBrainstormSessions'` (the
-  handler's refusals, the launch, delivery of both lines, the sweep, with the launch stubbed);
+- **Judge, unit:** `go test ./pkg/brainstormcheck -run Judge` (the input it may see, the prompt, the paths
+  and lines); `go test ./pkg/wshrpc/wshserver -run 'BrainstormJudge|ResumeBrainstormSessions|DecideJudge'` (the
+  result check as a tick sees it, the handler's refusals, the launch, delivery of both lines, the sweep, with the
+  launch stubbed);
   `go test ./cmd/wsh/cmd -run BrainstormJudgeCmd`; `npx vitest run
   frontend/app/view/agents/brainstormmodel.test.ts` (the judge record and the work line).
 - **Judge, pane and tree:** `node scripts/cdp/final-verify.mjs brainstorm-judged-question

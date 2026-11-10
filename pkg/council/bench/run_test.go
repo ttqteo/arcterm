@@ -34,7 +34,11 @@ type runBench struct {
 	teamed   []string // the case ids team was given, one per call
 	noTeam   bool     // leave Funcs.Team nil
 
+	brainstormed []string // the case ids brainstorm was given, one per call
+	noBrainstorm bool     // leave Funcs.Brainstorm nil
+
 	team       func(n int, c Case) (TeamOutcome, error)                  // what the nth team call returns; default a done outcome
+	brainstorm func(n int, c Case) (BrainstormOutcome, error)            // what the nth brainstorm call returns; default a done outcome
 	startState func(n int) council.CouncilState                          // what start returns the nth council as; default running
 	startErr   func(n int) error                                         // fail the nth start; default none
 	end        func(n int, c *council.Council) (*council.Council, error) // what the nth wait returns; default a done council
@@ -141,10 +145,34 @@ func (b *runBench) teamRun(ctx context.Context, c Case) (TeamOutcome, error) {
 	}, nil
 }
 
+// brainstormRun is the brainstorm runner, faked: it checks nothing else is in flight and answers a done outcome as the nth
+// session (b1, b2, …), scored 2 of the case's keys at the end and 1 at the done mark.
+func (b *runBench) brainstormRun(ctx context.Context, c Case) (BrainstormOutcome, error) {
+	b.mu.Lock()
+	if b.inFlight != 0 {
+		b.t.Errorf("brainstorm called with a council still in flight (%d)", b.inFlight)
+	}
+	b.brainstormed = append(b.brainstormed, c.Id)
+	n := len(b.brainstormed)
+	b.mu.Unlock()
+	if b.brainstorm != nil {
+		return b.brainstorm(n, c)
+	}
+	return BrainstormOutcome{
+		Session: fmt.Sprintf("b%d", n), State: TeamDone, Skill: "3f9a01bc superpowers@4.0.3", Tokens: 3_900_000, JudgeTokens: 16_000,
+		Minutes: 22.4, Turns: 14, Questions: 6, Decisions: 5,
+		Final:  Verdict{Matches: map[string]int{"K1": 1, "K2": 3}, Items: []ItemVerdict{{Rank: 1, Verdict: "key:K1"}, {Rank: 2, Verdict: "valid"}, {Rank: 3, Verdict: "key:K2"}, {Rank: 4, Verdict: "wrong"}, {Rank: 5, Verdict: "valid"}}},
+		AtDone: Verdict{Matches: map[string]int{"K1": 1}},
+	}, nil
+}
+
 func (b *runBench) funcs() Funcs {
 	f := Funcs{Start: b.start, Wait: b.wait, Judge: b.judge, Remind: b.remind}
 	if !b.noTeam {
 		f.Team = b.teamRun
+	}
+	if !b.noBrainstorm {
+		f.Brainstorm = b.brainstormRun
 	}
 	return f
 }
@@ -221,8 +249,9 @@ func TestRunOneAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// plan order: run 1 of every cell before any run 2, a case's council and team back to back
-	want := "a/council/1 a/team/1 b/council/1 b/team/1 a/council/2 a/team/2 b/council/2 b/team/2"
+	// plan order: run 1 of every cell before any run 2, a case's council, team and brainstorm back to back; brainstorm
+	// runs on the Brainstorm case b only
+	want := "a/council/1 a/team/1 b/council/1 b/team/1 b/brainstorm/1 a/council/2 a/team/2 b/council/2 b/team/2 b/brainstorm/2"
 	if got := rowNames(t, dir); got != want {
 		t.Errorf("rows in order\n got %s\nwant %s", got, want)
 	}
@@ -232,22 +261,49 @@ func TestRunOneAtATime(t *testing.T) {
 	if got := strings.Join(b.teamed, " "); got != "a b a b" {
 		t.Errorf("teams run for cases %s, want a b a b", got)
 	}
+	if got := strings.Join(b.brainstormed, " "); got != "b b" {
+		t.Errorf("brainstorms run for cases %s, want b b: a Review case never runs the variant", got)
+	}
 	if b.inFlight != 0 {
 		t.Errorf("in flight at the end = %d, want 0", b.inFlight)
 	}
 
 	runs, _, _ := LoadResults(dir)
-	var councilRow, teamRow int
+	var councilRow, teamRow, brainstormRow int
 	for i, r := range runs {
-		want := fmt.Sprintf("c%d", councilRow+1)
-		if r.Variant == VariantTeam {
-			want = fmt.Sprintf("t%d", teamRow+1)
+		var want string
+		switch r.Variant {
+		case VariantTeam:
 			teamRow++
-		} else {
+			want = fmt.Sprintf("t%d", teamRow)
+		case VariantBrainstorm:
+			brainstormRow++
+			want = fmt.Sprintf("b%d", brainstormRow)
+		default:
 			councilRow++
+			want = fmt.Sprintf("c%d", councilRow)
 		}
 		if r.Council != want {
 			t.Errorf("row %d council = %q, want %s", i, r.Council, want)
+		}
+	}
+}
+
+func TestRunRowsCarryTheirCasesMode(t *testing.T) {
+	dir := benchData(t, [2]string{"a", "review"}, [2]string{"b", "brainstorm"})
+	b := newRunBench(t)
+	b.noBrainstorm = true // a failed brainstorm row carries the mode too
+	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantSolo, VariantCouncil, VariantTeam, VariantBrainstorm}}); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil || len(runs) != 7 {
+		t.Fatalf("rows = %+v, err = %v, want a's solo, council and team and b's solo, council, team and brainstorm", runs, err)
+	}
+	for _, r := range runs {
+		want := map[string]string{"a": "review", "b": "brainstorm"}[r.Case]
+		if r.Mode != want {
+			t.Errorf("%s/%s row mode = %q, want %q", r.Case, r.Variant, r.Mode, want)
 		}
 	}
 }
@@ -288,7 +344,7 @@ func TestRunRowFields(t *testing.T) {
 	want := CouncilBenchResult{
 		Kind: KindRun, Date: got.Date, Harness: "2026-10-22.1", Case: "a", Variant: VariantCouncil, Run: 1, Council: "c1",
 		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 1_400_000, Minutes: 1.5, Messages: 5, JudgeTokens: 123_456,
-		Matches: map[string]int{"K1": 1, "K3": 2}, KeptMatches: map[string]int{"K2": 1},
+		Matches: map[string]int{"K1": 1, "K3": 2}, KeptMatches: map[string]int{"K2": 1}, Mode: "brainstorm",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
@@ -428,7 +484,7 @@ func TestRunFailedAndStoppedRows(t *testing.T) {
 	if runs[2].State != "done" || runs[2].Recall != 1 || runs[2].Keys != 3 {
 		t.Errorf("third row = %+v, want a scored done run", runs[2])
 	}
-	rows := Summarize(runs)
+	rows := Summarize(runs, nil)
 	if len(rows) != 1 || rows[0].Runs != 3 || rows[0].Scored != 1 || rows[0].Tokens != 300_000+150_000+1_400_000 {
 		t.Errorf("summary = %+v, want 3 runs, 1 scored, every run's tokens", rows)
 	}
@@ -680,7 +736,7 @@ func TestRunTeamDoneOutcomeIsJudgedAndScored(t *testing.T) {
 	want := CouncilBenchResult{
 		Kind: KindRun, Date: got.Date, Harness: council.HarnessVersion, Case: "a", Variant: VariantTeam, Run: 1, Council: "lead-1",
 		State: "done", Recall: 2, Keys: 3, Kept: 1, Wrong: 1, Tokens: 4_100_000, Minutes: 31.4, Messages: 9, JudgeTokens: 90_000,
-		Matches: map[string]int{"K1": 1, "K2": 2}, KeptMatches: map[string]int{"K3": 1},
+		Matches: map[string]int{"K1": 1, "K2": 2}, KeptMatches: map[string]int{"K3": 1}, Mode: "brainstorm",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("row\n got %+v\nwant %+v", got, want)
@@ -920,4 +976,163 @@ func TestRunTokenCap(t *testing.T) {
 			t.Errorf("cap log line = %q, want 60000000 spent of 50000000 and 2 of 5 items not run", line)
 		}
 	})
+
+	t.Run("brainstorm items count the agent's tokens and both bench judge calls", func(t *testing.T) {
+		dir := benchData(t, [2]string{"a", "brainstorm"})
+		b := newRunBench(t)
+		// the default brainstorm outcome is 3.9M plus 16k of judging: 3.916M an item, 7.832M after two
+		if err := b.run(context.Background(), dir, Options{Variants: []string{VariantBrainstorm}, Runs: 4, Cap: 7_832_000}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rowNames(t, dir); got != "a/brainstorm/1 a/brainstorm/2" {
+			t.Errorf("rows = %s, want 2: the second item's 7.832M reached the cap", got)
+		}
+	})
+}
+
+// brainstormCase is a Brainstorm case with three key lines, as a loaded case holds them.
+func brainstormCase() Case {
+	return Case{Id: "a", Mode: council.ModeBrainstorm, KeyLines: []KeyLine{{Id: "K1"}, {Id: "K2"}, {Id: "K3"}}}
+}
+
+func brainstormItem() CouncilBenchPlanItem {
+	return CouncilBenchPlanItem{Case: "a", Variant: VariantBrainstorm, Run: 1}
+}
+
+func TestRunBrainstormItemDoneOutcomeIsScoredFromItsMarks(t *testing.T) {
+	out := BrainstormOutcome{
+		Session: "9f0c-session", State: TeamDone, Skill: "3f9a01bc superpowers@4.0.3", Tokens: 4_200_000, JudgeTokens: 17_500,
+		Minutes: 38.5, Turns: 21, Questions: 9, Decisions: 7,
+		Final:  Verdict{Matches: map[string]int{"K1": 2, "K3": 5}, Kept: map[string]int{"K2": 1}, Items: []ItemVerdict{{Rank: 1, Verdict: "valid"}, {Rank: 2, Verdict: "key:K1"}, {Rank: 3, Verdict: "wrong"}, {Rank: 4, Verdict: "wrong"}, {Rank: 5, Verdict: "key:K3"}}},
+		AtDone: Verdict{Matches: map[string]int{"K1": 2}, Items: []ItemVerdict{{Rank: 1, Verdict: "valid"}, {Rank: 2, Verdict: "key:K1"}, {Rank: 3, Verdict: "wrong"}}},
+	}
+	var asked []Case
+	f := Funcs{Brainstorm: func(ctx context.Context, c Case) (BrainstormOutcome, error) {
+		asked = append(asked, c)
+		return out, nil
+	}}
+	row, err := runItem(context.Background(), brainstormCase(), brainstormItem(), f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || asked[0].Id != "a" {
+		t.Errorf("brainstorm was asked for %+v, want the item's case once", asked)
+	}
+	want := CouncilBenchResult{
+		Harness: council.HarnessVersion, Case: "a", Variant: VariantBrainstorm, Run: 1, Council: "9f0c-session", State: "done",
+		Recall: 2, Keys: 3, Wrong: 2, Tokens: 4_200_000, Minutes: 38.5, Messages: 21, JudgeTokens: 17_500,
+		Matches: map[string]int{"K1": 2, "K3": 5},
+		Mode:    "brainstorm", Skill: "3f9a01bc superpowers@4.0.3", Decisions: 7, RecallDone: 1, MatchesDone: map[string]int{"K1": 2}, Questions: 9,
+	}
+	if !reflect.DeepEqual(row, want) {
+		t.Errorf("row\n got %+v\nwant %+v", row, want)
+	}
+	if row.Kept != 0 || row.KeptMatches != nil {
+		t.Errorf("row = %+v, want no kept ideas: a design is one answer, with no wild ideas kept aside", row)
+	}
+}
+
+func TestRunBrainstormItemOutcomesThatAreNotDoneAreUnscoredRows(t *testing.T) {
+	// each outcome also carries scores, as an outcome that failed after its done mark might: the row must not take them
+	spent := func(state string) BrainstormOutcome {
+		return BrainstormOutcome{
+			Session: "s-" + state, State: state, Skill: "3f9a01bc superpowers@4.0.3", Tokens: 3_100_000, JudgeTokens: 8_000, Minutes: 60, Turns: 40, Questions: 12, Decisions: 4,
+			Final:  Verdict{Matches: map[string]int{"K1": 1}, Items: []ItemVerdict{{Rank: 1, Verdict: "wrong"}}},
+			AtDone: Verdict{Matches: map[string]int{"K2": 1}},
+		}
+	}
+	noState := spent("")
+	for _, tc := range []struct {
+		name      string
+		outcome   BrainstormOutcome
+		wantState string
+	}{
+		{"failed", spent(TeamFailed), "failed"},
+		{"timed out", spent(TeamTimedOut), "timed-out"},
+		{"no state", noState, "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := Funcs{Brainstorm: func(context.Context, Case) (BrainstormOutcome, error) { return tc.outcome, nil }}
+			row, err := runItem(context.Background(), brainstormCase(), brainstormItem(), f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := CouncilBenchResult{
+				Harness: council.HarnessVersion, Case: "a", Variant: VariantBrainstorm, Run: 1, Council: tc.outcome.Session, State: tc.wantState,
+				Tokens: 3_100_000, Minutes: 60, Messages: 40, JudgeTokens: 8_000,
+				Mode: "brainstorm", Skill: "3f9a01bc superpowers@4.0.3", Questions: 12,
+			}
+			if !reflect.DeepEqual(row, want) {
+				t.Errorf("row\n got %+v\nwant %+v", row, want)
+			}
+		})
+	}
+}
+
+func TestRunBrainstormItemWithoutARunnerIsAFailedRow(t *testing.T) {
+	logs := captureLog(t)
+	row, err := runItem(context.Background(), brainstormCase(), brainstormItem(), Funcs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := CouncilBenchResult{Harness: council.HarnessVersion, Case: "a", Variant: VariantBrainstorm, Run: 1, State: "failed", Mode: "brainstorm"}
+	if !reflect.DeepEqual(row, want) {
+		t.Errorf("row\n got %+v\nwant %+v", row, want)
+	}
+	if !strings.Contains(logs.String(), "[council-bench]") || !strings.Contains(logs.String(), "a brainstorm run 1 not run") {
+		t.Errorf("log = %q, want a [council-bench] line saying the brainstorm item was not run", logs.String())
+	}
+}
+
+func TestRunBrainstormItemErrorEndsTheBenchOnlyWithTheContext(t *testing.T) {
+	t.Run("the context ended", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		f := Funcs{Brainstorm: func(context.Context, Case) (BrainstormOutcome, error) {
+			cancel()
+			return BrainstormOutcome{}, ctx.Err()
+		}}
+		if _, err := runItem(ctx, brainstormCase(), brainstormItem(), f); !errors.Is(err, context.Canceled) {
+			t.Errorf("runItem = %v, want context.Canceled", err)
+		}
+	})
+	t.Run("any other error is a failed row, logged with the case", func(t *testing.T) {
+		logs := captureLog(t)
+		f := Funcs{Brainstorm: func(context.Context, Case) (BrainstormOutcome, error) {
+			return BrainstormOutcome{Tokens: 1}, errors.New("claude is not installed")
+		}}
+		row, err := runItem(context.Background(), brainstormCase(), brainstormItem(), f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := CouncilBenchResult{Harness: council.HarnessVersion, Case: "a", Variant: VariantBrainstorm, Run: 1, State: "failed", Mode: "brainstorm"}
+		if !reflect.DeepEqual(row, want) {
+			t.Errorf("row\n got %+v\nwant %+v: an errored call leaves no outcome to read", row, want)
+		}
+		if !strings.Contains(logs.String(), "claude is not installed") || !strings.Contains(logs.String(), "a brainstorm run 1") {
+			t.Errorf("log = %q, want the error, with the item named", logs.String())
+		}
+	})
+}
+
+func TestRunBrainstormThroughRunWritesTheRow(t *testing.T) {
+	dir := benchData(t, [2]string{"a", "review"}, [2]string{"b", "brainstorm"})
+	b := newRunBench(t)
+	if err := b.run(context.Background(), dir, Options{Variants: []string{VariantBrainstorm}}); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("rows = %+v, err = %v, want the one Brainstorm case's row: the Review case has no brainstorm item", runs, err)
+	}
+	r := runs[0]
+	if r.Case != "b" || r.Variant != VariantBrainstorm || r.Council != "b1" || r.State != "done" || r.Mode != "brainstorm" || r.Harness != council.HarnessVersion {
+		t.Errorf("row = %+v, want b's done brainstorm row with its session, mode and this binary's harness", r)
+	}
+	if r.Recall != 2 || r.Keys != 3 || r.Wrong != 1 || r.RecallDone != 1 || r.Decisions != 5 || r.Questions != 6 || r.Messages != 14 || r.Skill == "" {
+		t.Errorf("row = %+v, want the final mark's recall and wrong, the done mark's recall and the turns, questions and decisions", r)
+	}
+	if len(b.judged) != 0 || len(b.started) != 0 || len(b.teamed) != 0 {
+		t.Errorf("judged %v, started %d, teamed %v, want only the brainstorm runner: it judges its own marks", b.judged, len(b.started), b.teamed)
+	}
 }

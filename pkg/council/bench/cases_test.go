@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/wavetermdev/waveterm/pkg/council"
 )
 
 // writeBench fills a data dir the way Phase 0 left it: council-bench/cases.json, a key file per entry in keys (by case
@@ -282,11 +284,76 @@ func TestPlanPricesEachVariantFromPhase0bMeans(t *testing.T) {
 	}
 }
 
+func TestAllVariants(t *testing.T) {
+	if got := AllVariants(); strings.Join(got, " ") != "council team brainstorm" {
+		t.Errorf("AllVariants = %v, want council, team, then brainstorm (solo stays runnable when named)", got)
+	}
+	if got := strings.Join(variantOrder, " "); got != "solo council team brainstorm" {
+		t.Errorf("variantOrder = %s, want brainstorm last, so a table lists it after the team", got)
+	}
+}
+
+func TestPlanBrainstormRunsOnBrainstormCasesOnly(t *testing.T) {
+	cases := []Case{{Id: "review", Mode: council.ModeReview}, {Id: "brain", Mode: council.ModeBrainstorm}, {Id: "nomode"}}
+
+	// a bare plan: brainstorm joins the council and the team on the Brainstorm case, and nowhere else
+	items, estimate, err := Plan(cases, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "review/council/1 review/team/1 brain/council/1 brain/team/1 brain/brainstorm/1 nomode/council/1 nomode/team/1"
+	if got := planNames(items); got != want {
+		t.Errorf("bare plan = %s\nwant       %s", got, want)
+	}
+	if wantEst := int64(3*(8_800_000+4_500_000) + 5_000_000); estimate != wantEst {
+		t.Errorf("bare estimate = %d, want %d: the brainstorm item's price counts once, for the one Brainstorm case", estimate, wantEst)
+	}
+
+	// naming it changes nothing: a Review case (or one with no mode) still skips it, and the estimate follows the items kept
+	items, estimate, err = Plan(cases, Options{Variants: []string{VariantBrainstorm}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := planNames(items); got != "brain/brainstorm/1" {
+		t.Errorf("named plan = %s, want only the Brainstorm case's item", got)
+	}
+	if estimate != 5_000_000 {
+		t.Errorf("named estimate = %d, want 5000000", estimate)
+	}
+
+	// naming the Review case too: its brainstorm item is left out, and so is its price
+	items, estimate, err = Plan(cases, Options{Cases: []string{"review"}, Variants: []string{VariantBrainstorm, VariantTeam}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := planNames(items); got != "review/team/1" {
+		t.Errorf("review case plan = %s, want its team item only", got)
+	}
+	if estimate != 4_500_000 {
+		t.Errorf("review case estimate = %d, want the team's price alone", estimate)
+	}
+
+	// every run of the Brainstorm case keeps its item, run 1 of every case before any run 2
+	items, estimate, err = Plan(cases[:2], Options{Variants: []string{VariantCouncil, VariantBrainstorm}, Runs: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := planNames(items); got != "review/council/1 brain/council/1 brain/brainstorm/1 review/council/2 brain/council/2 brain/brainstorm/2" {
+		t.Errorf("two-run plan = %s", got)
+	}
+	if wantEst := int64(4*8_800_000 + 2*5_000_000); estimate != wantEst {
+		t.Errorf("two-run estimate = %d, want %d", estimate, wantEst)
+	}
+
+	// a plan whose every item is skipped is empty, with no estimate (the callers turn it into their own error)
+	items, estimate, err = Plan(cases[:1], Options{Variants: []string{VariantBrainstorm}})
+	if err != nil || len(items) != 0 || estimate != 0 {
+		t.Errorf("brainstorm on a Review case = %+v, %d, %v, want no items", items, estimate, err)
+	}
+}
+
 func TestPlanSoloStaysRunnableWhenNamed(t *testing.T) {
 	cases := []Case{{Id: "alpha"}}
-	if got := AllVariants(); strings.Join(got, " ") != "council team" {
-		t.Errorf("AllVariants = %v, want council then team", got)
-	}
 	items, estimate, err := Plan(cases, Options{Variants: []string{"team", "solo"}})
 	if err != nil {
 		t.Fatal(err)

@@ -529,7 +529,10 @@ func (ws *WshServer) CouncilMemoryCommand(ctx context.Context, data wshrpc.Comma
 // councilBenchWire is what bench.Run is given beside the data dir and the options: the real calls. A test replaces it
 // with fakes, so no council runs and no claude is called.
 var councilBenchWire = func() bench.Funcs {
-	return bench.Funcs{Start: benchStartCouncil, Wait: benchWaitCouncil, Judge: bench.Judge, Remind: benchRemind, Team: bench.RunTeam}
+	return bench.Funcs{
+		Start: benchStartCouncil, Wait: benchWaitCouncil, Judge: bench.Judge, Remind: benchRemind,
+		Team: bench.RunTeam, Brainstorm: bench.RunBrainstorm,
+	}
 }
 
 // benchStartCouncil starts the council a plan item built. The bench leaves the panel empty, so it is filled from the
@@ -592,8 +595,9 @@ func (b *councilBenchRun) inflightId() string {
 	return b.inflight
 }
 
-// tracking wraps the Start and Wait of a bench so Stop knows which council is in flight. A team cell has no council to
-// track: Stop ends it by cancelling the run's context, which RunTeam ends its lead on.
+// tracking wraps the Start and Wait of a bench so Stop knows which council is in flight. A team or brainstorm cell has
+// no council to track: Stop ends it by cancelling the run's context, which RunTeam and RunBrainstorm end their agent
+// on. The other calls pass through unchanged.
 func (b *councilBenchRun) tracking(f bench.Funcs) bench.Funcs {
 	start, wait := f.Start, f.Wait
 	f.Start = func(ctx context.Context, c *council.Council) (*council.Council, error) {
@@ -698,9 +702,11 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 	return &wshrpc.CouncilBenchStopRtnData{Stopped: true}, nil
 }
 
-// CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
-// bench runs, and per harness version and mode for the ratings, beside every run line as written (its matches included),
-// in file order. With cases tagged bench.TeamPassTag (retired or not) it
+// CouncilBenchResultsCommand reads the results file back as the table: a row per harness version, mode, variant and
+// skill text for the bench runs, and per harness version and mode for the ratings, beside every run line as written
+// (its matches included), in file order. A run line written before lines carried their case's mode takes it from
+// cases.json (retired cases included); a line whose case is gone, or every old line when cases.json cannot be read,
+// groups under no mode. With cases tagged bench.TeamPassTag (retired or not) it
 // adds the go / no-go verdict on the council against the agent team; with none, no cases.json, or cases that cannot be
 // read, there is no verdict (only the last is logged: the table is still the results).
 func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
@@ -709,7 +715,15 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
-	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
+	cases, _, casesErr := bench.LoadCases(dataDir)
+	var modes map[string]string
+	if casesErr == nil {
+		modes = make(map[string]string, len(cases))
+		for _, c := range cases {
+			modes[c.Id] = c.Mode
+		}
+	}
+	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs, modes), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
 	if rtn.Runs == nil {
 		rtn.Runs = []bench.CouncilBenchRow{}
 	}
@@ -719,11 +733,10 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	if rtn.Ratings == nil {
 		rtn.Ratings = []bench.CouncilBenchRatingRow{}
 	}
-	cases, _, err := bench.LoadCases(dataDir)
-	if err != nil {
+	if casesErr != nil {
 		// a data dir with no cases.json (someone who only rates councils) has no verdict and nothing to say about it
-		if !errors.Is(err, fs.ErrNotExist) {
-			log.Printf("[council-bench] no verdict: %v", err)
+		if !errors.Is(casesErr, fs.ErrNotExist) {
+			log.Printf("[council-bench] no verdict, and old run lines have no mode: %v", casesErr)
 		}
 		return rtn, nil
 	}

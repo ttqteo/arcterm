@@ -5,36 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/wavetermdev/waveterm/pkg/jarvis"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
-
-func TestDecide(t *testing.T) {
-	tests := []struct {
-		name string
-		run  *waveobj.Run
-		lost string
-		want Action
-	}{
-		{"done with a report delivers", &waveobj.Run{Status: jarvis.RunStatus_Done, Report: "1. what?"}, "", Action{Kind: Deliver}},
-		{"done with an empty report fails", &waveobj.Run{Status: jarvis.RunStatus_Done}, "", Action{Kind: Fail, Reason: EmptyReportReason}},
-		{"done with a blank report fails", &waveobj.Run{Status: jarvis.RunStatus_Done, Report: " \n\t"}, "", Action{Kind: Fail, Reason: EmptyReportReason}},
-		{"done with a report beats a lost reason", &waveobj.Run{Status: jarvis.RunStatus_Done, Report: "q"}, "worker exited", Action{Kind: Deliver}},
-		{"a lost reason fails with it", &waveobj.Run{Status: jarvis.RunStatus_Executing}, "the route refused it", Action{Kind: Fail, Reason: "the route refused it"}},
-		{"a lost reason with no run fails with it", nil, "gone", Action{Kind: Fail, Reason: "gone"}},
-		{"a working run waits", &waveobj.Run{Status: jarvis.RunStatus_Executing}, "", Action{Kind: Wait}},
-		{"no run yet waits", nil, "", Action{Kind: Wait}},
-		{"a report on an unfinished run waits", &waveobj.Run{Status: jarvis.RunStatus_Executing, Report: "q"}, "", Action{Kind: Wait}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := Decide(tt.run, tt.lost); got != tt.want {
-				t.Fatalf("Decide = %+v, want %+v", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestPromptFillsBothPaths(t *testing.T) {
 	spec := filepath.Join("proj", "docs", "spec.md")
