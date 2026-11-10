@@ -19,6 +19,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { Check, ChevronUp, Lock } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     contextWarn,
@@ -215,12 +216,7 @@ function ModelChip({ agent }: { agent: AgentVM }) {
         if (blockid == null) {
             return;
         }
-        fireAndForget(() =>
-            RpcApi.ControllerInputCommand(TabRpcClient, {
-                blockid,
-                inputdata64: stringToBase64(modelCommand(alias) + "\r"),
-            })
-        );
+        fireAndForget(() => submitToAgent(blockid, modelCommand(alias)));
     };
     return (
         <ChipMenu

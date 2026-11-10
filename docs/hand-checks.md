@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Every send is submitted: from a Claude agent's Chat send ten short one-line messages in a row, idle and
+  while it works, and one of ~165 characters with Vietnamese in it → each reaches Claude as a prompt (Terminal shows
+  none left in the box with a line break after it); `/compact` and a model pick from the footer run; Resume's
+  "continue" nudge and Clear from the rail run (`agentsubmit.ts` `submitToAgent`, `chatpending.ts` `submitSteps`).
 - [ ] (arcterm) Chat's Working line counts the turn: send a Claude agent in Chat a prompt that takes a minute → the line
   reads `Working · … (34s · ↓ 860 tokens)`, the seconds ticking and the tokens rising as each reply lands (in steps, not
   token by token as the TUI streams); compare with the TUI's own counter in Terminal (`chatpane.tsx` `TurnStatsText`,

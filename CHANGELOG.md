@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A message sent from Chat (or the cockpit, a slash command, Compact, Clear, a model pick, a nudge) is submitted every
+  time, instead of now and then landing in Claude Code's box with a line break after it and waiting there unsent.
 - A service you stop stays stopped, through a restart of arcterm and when it shows on screen: its card says it is
   stopped and offers Start, instead of it starting again by itself (a reinstall used to bring a stopped app back up).
 - A service whose page runs Claude (a dashboard asking Claude for an analysis) is no longer taken for an agent: it no

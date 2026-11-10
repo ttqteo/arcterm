@@ -17,6 +17,7 @@ import {
     wakeErrorToast,
     type AsleepLaunch,
 } from "@/app/view/agents/agentsleep";
+import { submitToAgent } from "@/app/view/agents/agentsubmit";
 import { backgroundAttachCommand, type AgentVM, type PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { backgroundAgentsAtom } from "@/app/view/agents/backgroundagentsstore";
 import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
@@ -30,7 +31,6 @@ import {
     type StoredAgentBlock,
 } from "@/app/view/agents/sessionsarchivestore";
 import { reopenLaunchOpts } from "@/app/view/agents/sessionsruns";
-import { stringToBase64 } from "@/util/util";
 
 export interface LaunchAgentOpts {
     runtime: Runtime;
@@ -252,10 +252,7 @@ async function goToHolder(model: AgentsViewModel, holder: Holder, message: strin
             wakeErrorToast(holder.name, e);
         }
     } else if (holder.blockId) {
-        await RpcApi.ControllerInputCommand(TabRpcClient, {
-            blockid: holder.blockId,
-            inputdata64: stringToBase64(message + "\r"),
-        });
+        await submitToAgent(holder.blockId, message);
     }
 }
 

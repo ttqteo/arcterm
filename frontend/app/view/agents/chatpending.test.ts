@@ -11,6 +11,7 @@ import {
     recall,
     sendHold,
     submitDelayMs,
+    submitSteps,
     userTextCount,
     type PendingMessage,
 } from "./chatpending";
@@ -131,6 +132,42 @@ describe("pastesBody", () => {
         expect(pastesBody("x".repeat(PASTE_OVER + 1))).toBe(true);
         expect(pastesBody("x".repeat(PASTE_OVER))).toBe(false);
         expect(pastesBody("hello")).toBe(false);
+    });
+});
+
+// Claude Code reads "\r" as Enter only when it arrives as its own chunk: "text\r" in one write is one text token, its "\r"
+// a line break in the box, and the message sat unsent (seen with a 165-character line from Chat)
+describe("submitSteps", () => {
+    it("types a short line, then presses Enter on its own after a wait", () => {
+        expect(submitSteps("máy windows đang chạy PREREG")).toEqual([
+            { kind: "type", text: "máy windows đang chạy PREREG" },
+            { kind: "wait", ms: 80 },
+            { kind: "enter" },
+        ]);
+    });
+
+    it("pastes a message with a line break or a long one, then Enter on its own", () => {
+        const long = "x".repeat(PASTE_OVER + 1);
+        expect(submitSteps("one\ntwo")[0]).toEqual({ kind: "paste", text: "one\ntwo" });
+        expect(submitSteps(long)).toEqual([
+            { kind: "paste", text: long },
+            { kind: "wait", ms: submitDelayMs(long.length) },
+            { kind: "enter" },
+        ]);
+    });
+
+    it("never sends Enter in the same write as text", () => {
+        for (const text of ["/clear", "continue", "! ls", "a\nb", "x".repeat(5000)]) {
+            for (const step of submitSteps(text)) {
+                if (step.kind === "type" || step.kind === "paste") {
+                    expect(step.text.includes("\r")).toBe(false);
+                }
+            }
+        }
+    });
+
+    it("presses Enter alone for an empty line", () => {
+        expect(submitSteps("")).toEqual([{ kind: "enter" }]);
     });
 });
 

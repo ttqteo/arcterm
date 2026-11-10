@@ -29,6 +29,7 @@ import { ArrowUp, Moon, Square } from "lucide-react";
 import { AnimatePresence, MotionConfig } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
+import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachmentTray } from "./attachmenttray";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
@@ -278,9 +279,7 @@ export function ChatComposer({
             pushToast({ title: "Not sent", message: hold, level: "info" });
             return;
         }
-        fireAndForget(() =>
-            RpcApi.ControllerInputCommand(TabRpcClient, { blockid, inputdata64: stringToBase64(command + "\r") })
-        );
+        fireAndForget(() => submitToAgent(blockid, command));
         onSent?.();
         noteSent(agent.id, command);
         flipIfTui(command);

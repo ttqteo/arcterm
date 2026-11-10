@@ -284,7 +284,11 @@ describe("launchAgent", () => {
         it("types the message given into an awake holder", async () => {
             const model = fakeModel([holder()]);
             await resume(model, "next step");
-            expect(controllerInput.mock.calls[0][1]).toEqual({ blockid: "blk-held", inputdata64: btoa("next step\r") });
+            // the text, then Enter as a write of its own: "text\r" in one write leaves the "\r" a line break in the box
+            expect(controllerInput.mock.calls.map((c) => c[1])).toEqual([
+                { blockid: "blk-held", inputdata64: btoa("next step") },
+                { blockid: "blk-held", inputdata64: btoa("\r") },
+            ]);
             expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-held");
         });
 

@@ -108,6 +108,28 @@ export function pastesBody(message: string): boolean {
     return message.includes("\n") || message.length > PASTE_OVER;
 }
 
+/** One step of typing a line into an agent's TUI and submitting it (agentsubmit.ts runs them). */
+export type SubmitStep =
+    | { kind: "type"; text: string }
+    | { kind: "paste"; text: string }
+    | { kind: "wait"; ms: number }
+    | { kind: "enter" };
+
+/** Pure: how a line goes into an agent's TUI and is submitted. Enter is always a write of its own, after a wait: Claude
+ *  Code's input reader reads "\r" as Enter only when it arrives as its own chunk, and a "text\r" read in one chunk is one
+ *  text token whose "\r" is a line break in the box, so the message sat there unsent (whether the PTY splits a single
+ *  write is luck). A line with a break or past PASTE_OVER goes as a paste, any other is typed. */
+export function submitSteps(text: string): SubmitStep[] {
+    if (text === "") {
+        return [{ kind: "enter" }];
+    }
+    return [
+        pastesBody(text) ? { kind: "paste", text } : { kind: "type", text },
+        { kind: "wait", ms: submitDelayMs(text.length) },
+        { kind: "enter" },
+    ];
+}
+
 /** How long a send waits between putting the message in and pressing Enter: Claude Code must have taken the whole
  *  paste first, or the Enter lands inside it as a line break. 80 ms (the backend's keystroke gap is 60) and 20 ms
  *  more per 1,000 characters, at most 600. */
