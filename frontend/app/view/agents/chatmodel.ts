@@ -163,6 +163,13 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
     return out;
 }
 
+/** Pure: whether the box's text runs as a bash command: it starts with `!`, which Claude Code's own box reads as bash
+ *  mode when the text is typed into it, so the command runs in the agent's shell and its output joins the
+ *  conversation. A `!` after a leading space is plain text there too. */
+export function bashMode(text: string): boolean {
+    return text.startsWith("!");
+}
+
 /** Pure: the agent side's "working" line while the agent works, null otherwise. */
 export function workingLine(state: AgentState, activity: string | undefined): string | null {
     if (state !== "working") {

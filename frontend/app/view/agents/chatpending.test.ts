@@ -117,6 +117,12 @@ describe("pendsAsBubble", () => {
         expect(pendsAsBubble("/compact")).toBe(false);
         expect(pendsAsBubble("  /model opus\n")).toBe(false);
     });
+
+    it("is false for a `! cmd`, which the projection draws as its shell card", () => {
+        expect(pendsAsBubble("! ls")).toBe(false);
+        expect(pendsAsBubble("!git status")).toBe(false);
+        expect(pendsAsBubble("great!")).toBe(true);
+    });
 });
 
 describe("pastesBody", () => {

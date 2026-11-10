@@ -34,6 +34,7 @@ import { AttachmentTray } from "./attachmenttray";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
+import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, noteSent, sentHistory } from "./chatpendingstore";
@@ -109,6 +110,8 @@ export function ChatComposer({
         asleep ? undefined : att.attachments,
         { keepDraft: true }
     );
+    // `!` first: Claude Code runs the text as a bash command, so the box says so as its own box does (chatmodel.ts)
+    const bash = bashMode(text);
     const editorRef = useRef<EditorLike>(null);
     // The text the box was last given or said (every edit goes out through `onChange`, which skips a call that changes
     // nothing: a click that only moves the caret says the same text again), and the caret an outside change asks for
@@ -397,9 +400,13 @@ export function ChatComposer({
         <div
             {...dataAttrs}
             data-agent-chat-composer={agent.id}
+            data-chat-bash-mode={bash ? "" : undefined}
             onDragOver={onDragOver}
             onDrop={onDrop}
-            className="mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border border-edge-mid bg-surface-raised px-3 py-[10px] focus-within:border-edge-strong"
+            className={cn(
+                "mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border bg-surface-raised px-3 py-[10px] transition-colors duration-[140ms] motion-reduce:transition-none",
+                bash ? "border-accent/60" : "border-edge-mid focus-within:border-edge-strong"
+            )}
         >
             {asleep ? null : <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />}
             <ChatEditor
@@ -497,6 +504,22 @@ export function ChatComposer({
                         )}
                     </AnimatePresence>
                     <AnimatePresence initial={false}>
+                        {bash ? (
+                            <Fold key="bash">
+                                <div
+                                    data-chat-bash
+                                    title="Bash mode: runs in the agent's shell, and what it prints joins the conversation"
+                                    className="flex h-[28px] items-center gap-1.5 whitespace-nowrap pl-1 pr-1 text-[12px] text-accent"
+                                >
+                                    <span aria-hidden className="font-mono font-semibold">
+                                        !
+                                    </span>
+                                    Bash mode
+                                </div>
+                            </Fold>
+                        ) : null}
+                    </AnimatePresence>
+                    <AnimatePresence initial={false}>
                         {asleep ? (
                             <Fold key="asleep">
                                 <div
@@ -529,7 +552,7 @@ export function ChatComposer({
                     <button
                         type="button"
                         data-chat-send
-                        title={hold ?? blocker ?? "Send"}
+                        title={hold ?? blocker ?? (bash ? "Run in the agent's shell" : "Send")}
                         aria-label={hold ?? (showWord ? undefined : "Send")}
                         onClick={submit}
                         disabled={!sendable}

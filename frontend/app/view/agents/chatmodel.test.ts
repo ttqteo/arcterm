@@ -5,7 +5,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
-import { CHAT_RENDER_STEP, chatItems, shownItems, workingLine, workingText, type ChatItem } from "./chatmodel";
+import {
+    bashMode,
+    CHAT_RENDER_STEP,
+    chatItems,
+    shownItems,
+    workingLine,
+    workingText,
+    type ChatItem,
+} from "./chatmodel";
 
 // the engine's own texts, written by pkg/orchestrate's TestViewModFixtures (the arc view mod reads them the same way)
 const TESTDATA = fileURLToPath(new URL("../../../../claude/arc-view-mod/testdata/", import.meta.url));
@@ -290,6 +298,21 @@ describe("keys", () => {
         const first = chatItems([you("go"), action("read")]);
         const later = chatItems([you("go"), action("read"), says("found it")]);
         expect(first.map((i) => i.key)).toEqual(later.map((i) => i.key));
+    });
+});
+
+describe("bashMode", () => {
+    it("is on when the box starts with !, as Claude Code's own box reads it", () => {
+        expect(bashMode("!")).toBe(true);
+        expect(bashMode("! ls -la")).toBe(true);
+        expect(bashMode("!git status")).toBe(true);
+    });
+
+    it("is off for text that only holds a ! later on, or starts with a space", () => {
+        expect(bashMode("")).toBe(false);
+        expect(bashMode("fix it!")).toBe(false);
+        expect(bashMode(" !ls")).toBe(false);
+        expect(bashMode("/clear")).toBe(false);
     });
 });
 

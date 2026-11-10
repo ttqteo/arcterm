@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Bash mode in Chat's box: type `!` at the start of a Claude agent's Chat box → the border turns accent and
+  "! Bash mode" shows beside +; delete the `!` → both go; send `! ls` → no Queued bubble, and the `! ls` card with its
+  output lands; a `!` later in a message changes nothing (`chatcomposer.tsx` `bash`, `chatmodel.ts` `bashMode`).
 - [ ] (arcterm) A `! command` reads as one card in Chat: in a Claude agent's Chat send `! ls` (or type it in the
   Terminal) → on your side one card, `! ls` in mono with the `!` in the accent, then its output under a rule on the
   code ground; `! ls nope` → the error in red; a command that prints nothing → "No output"; a long output scrolls inside

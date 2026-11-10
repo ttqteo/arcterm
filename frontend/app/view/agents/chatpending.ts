@@ -56,10 +56,11 @@ export function pendingStill(
     );
 }
 
-/** Whether a send gets a pending bubble. A `/command` does not: the transcript records it as a command entry, which
- *  userTextCount never matches, so its bubble would stay up for PENDING_MAX_MS beside the real command row. */
+/** Whether a send gets a pending bubble. A `/command` does not, nor a bash-mode `! cmd`: the transcript records each as
+ *  a command entry, which userTextCount never matches, so its bubble would stay up for PENDING_MAX_MS beside the real
+ *  command row. */
 export function pendsAsBubble(text: string): boolean {
-    return !text.trimStart().startsWith("/");
+    return !text.trimStart().startsWith("/") && !text.startsWith("!");
 }
 
 /** The sent history with `text` last: newest last, at most 20, no repeat of the newest. */
