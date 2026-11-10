@@ -89,12 +89,15 @@ export function ChatComposer({
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
     const asleep = agent.sleeping != null;
-    const att = useComposerAttachments({ keep: true });
+    // the text and the chips are kept per agent outside the box, so switching to another agent or surface (which
+    // unmounts it) and back finds what you were writing
+    const att = useComposerAttachments({ keep: true, draftKey: agent.id });
     // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
     const { text, setText, message, canSend, waking, send } = useAgentSend(
         agent.blockId,
         agent,
-        asleep ? undefined : att.attachments
+        asleep ? undefined : att.attachments,
+        { keepDraft: true }
     );
     const taRef = useRef<HTMLTextAreaElement>(null);
     useGrowingTextarea(taRef, text, ChatMinH, ChatMaxH);

@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat draft survives a switch: in an awake Claude agent's Chat, type a line and paste an image (and drop
+  a file), switch to another agent, then to Jarvis, then back → the text and both chips are still in the box, the
+  image's thumbnail still shows; send → the box empties and the chips go; sleep the agent with text in the box → the
+  wake box shows the same text. Unit tests and the typecheck only (`agentcomposer.tsx` `keepDraft`,
+  `composerattachments.ts` `draftKey`).
 - [ ] (arcterm) Chat skim highlights: in a live Claude agent's Chat, ask for a long explanation → its marked sentences
   show highlighted once the reply lands, the same ones the Terminal view highlights, and the highlighter button at the
   top right of Chat turns them off and on (it stays as you left it after a restart). The scenario injects its own store

@@ -6,11 +6,13 @@
 // agent as a path in its text. Pure helpers below are unit-tested (composerattachments.test.ts); the
 // useComposerAttachments hook (impure: RPC + object URLs) is verified over CDP by the new-run-attachments scenario.
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { extractClipboardData, MIME_TO_EXT } from "@/app/view/term/termutil";
 import { fireAndForget } from "@/util/util";
 import base64 from "base64-js";
+import { atom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { composeTaskWithImages } from "./launcherimages";
 
@@ -111,17 +113,60 @@ export interface UseComposerAttachments {
     onPaste: (e: ClipboardEvent) => void;
 }
 
+// A box given a `draftKey` (the chat box, keyed by its agent) keeps its chips here instead of in its own state, so
+// switching to another agent or surface (which unmounts the box) and back finds them as they were; an upload that
+// finishes meanwhile still lands on its chip. The Files kept for retry live beside them, by attachment id.
+export const attachmentDraftsAtom = atom<ReadonlyMap<string, Attachment[]>>(new Map());
+const draftFiles = new Map<string, File>();
+
+type ListUpdate = Attachment[] | ((cur: Attachment[]) => Attachment[]);
+
+function useAttachmentList(draftKey: string | undefined): [Attachment[], (u: ListUpdate) => void] {
+    const [local, setLocal] = useState<Attachment[]>([]);
+    const drafts = useAtomValue(attachmentDraftsAtom);
+    const setDraft = useCallback(
+        (u: ListUpdate) => {
+            if (draftKey == null) {
+                setLocal(u);
+                return;
+            }
+            const all = globalStore.get(attachmentDraftsAtom);
+            const next = typeof u === "function" ? u(all.get(draftKey) ?? []) : u;
+            const m = new Map(all);
+            if (next.length > 0) {
+                m.set(draftKey, next);
+            } else {
+                m.delete(draftKey);
+            }
+            globalStore.set(attachmentDraftsAtom, m);
+        },
+        [draftKey]
+    );
+    return [draftKey == null ? local : (drafts.get(draftKey) ?? NO_ATTACHMENTS), setDraft];
+}
+
+const NO_ATTACHMENTS: Attachment[] = [];
+
 // Owns attachment state and its two sources: paste (a temp copy) and picked paths (referenced in place). `keep` writes
 // the copies under ~/.arc/attachments, which no temp sweep removes: a chat message names the file, and its bubble shows
-// the picture from there long after a sweep would have taken it.
-export function useComposerAttachments({ keep }: { keep?: boolean } = {}): UseComposerAttachments {
-    const [attachments, setAttachments] = useState<Attachment[]>([]);
-    const filesRef = useRef<Map<string, File>>(new Map()); // retained for retry(); not part of the serializable chip
+// the picture from there long after a sweep would have taken it. `draftKey` keeps the chips across an unmount
+// (attachmentDraftsAtom); their image previews are then revoked only on remove, not on unmount.
+export function useComposerAttachments({
+    keep,
+    draftKey,
+}: { keep?: boolean; draftKey?: string } = {}): UseComposerAttachments {
+    const [attachments, setAttachments] = useAttachmentList(draftKey);
+    const localFiles = useRef<Map<string, File>>(new Map()); // retained for retry(); not part of the serializable chip
+    const filesRef = draftKey == null ? localFiles : { current: draftFiles };
     const previewsRef = useRef<Set<string>>(new Set()); // outstanding object URLs to revoke
+    const keepPreviews = draftKey != null;
 
-    const update = useCallback((id: string, patch: Partial<Attachment>) => {
-        setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, ...patch } : a)));
-    }, []);
+    const update = useCallback(
+        (id: string, patch: Partial<Attachment>) => {
+            setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+        },
+        [setAttachments]
+    );
 
     const persist = useCallback(
         async (id: string, file: File) => {
@@ -166,24 +211,30 @@ export function useComposerAttachments({ keep }: { keep?: boolean } = {}): UseCo
                 fireAndForget(() => persist(id, file));
             }
         },
-        [persist]
+        [persist, setAttachments, filesRef]
     );
 
-    const addPaths = useCallback((paths: string[]) => {
-        setAttachments((cur) => [...cur, ...attachmentsFromPaths(paths, cur)]);
-    }, []);
+    const addPaths = useCallback(
+        (paths: string[]) => {
+            setAttachments((cur) => [...cur, ...attachmentsFromPaths(paths, cur)]);
+        },
+        [setAttachments]
+    );
 
-    const remove = useCallback((id: string) => {
-        setAttachments((cur) => {
-            const target = cur.find((a) => a.id === id);
-            if (target?.previewUrl) {
-                URL.revokeObjectURL(target.previewUrl);
-                previewsRef.current.delete(target.previewUrl);
-            }
-            return cur.filter((a) => a.id !== id);
-        });
-        filesRef.current.delete(id);
-    }, []);
+    const remove = useCallback(
+        (id: string) => {
+            setAttachments((cur) => {
+                const target = cur.find((a) => a.id === id);
+                if (target?.previewUrl) {
+                    URL.revokeObjectURL(target.previewUrl);
+                    previewsRef.current.delete(target.previewUrl);
+                }
+                return cur.filter((a) => a.id !== id);
+            });
+            filesRef.current.delete(id);
+        },
+        [setAttachments, filesRef]
+    );
 
     const retry = useCallback(
         (id: string) => {
@@ -194,18 +245,21 @@ export function useComposerAttachments({ keep }: { keep?: boolean } = {}): UseCo
             update(id, { status: "uploading", error: undefined });
             fireAndForget(() => persist(id, file));
         },
-        [persist, update]
+        [persist, update, filesRef]
     );
 
-    // revoke any outstanding object URLs on unmount
+    // revoke any outstanding object URLs on unmount, unless the chips outlive the box (a draftKey)
     useEffect(
         () => () => {
+            if (keepPreviews) {
+                return;
+            }
             for (const url of previewsRef.current) {
                 URL.revokeObjectURL(url);
             }
             previewsRef.current.clear();
         },
-        []
+        [keepPreviews]
     );
 
     // only intercept when the clipboard carries files; plain text paste is left untouched. WebView2 can hand over a

@@ -96,9 +96,12 @@ export interface AgentSend {
 export function useAgentSend(
     blockId: string | undefined,
     agent: AgentSendTarget | undefined,
-    attachments?: Attachment[]
+    attachments?: Attachment[],
+    // keepDraft: the text lives in the drafts store under the agent's id awake too (the chat box), so switching to
+    // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft)
+    { keepDraft = false }: { keepDraft?: boolean } = {}
 ): AgentSend {
-    const draftId = agent?.sleeping ? agent.id : undefined;
+    const draftId = agent != null && (agent.sleeping || keepDraft) ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
     const [localText, setLocalText] = useState("");
     const text = draftId != null ? draft : localText;

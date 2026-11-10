@@ -62,6 +62,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching to another agent or surface and back no longer empties Chat's message box: what you were writing and the
+  files you had attached are still there.
 - A file dragged onto Chat's message box from arcterm's file tree, VS Code or Obsidian is attached, as one dragged
   from Explorer is, instead of landing as its path in plain text.
 - A subagent an agent starts while a Token burn card is already up waits for your answer on that card, instead of
