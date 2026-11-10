@@ -26,7 +26,8 @@ function since(ts: number): string {
 }
 
 // A sleeping agent's card over its terminal: its conversation shows below in the terminal's place
-// (sleepingtranscript.tsx), and the terminal itself takes no input (its process is gone), so Wake is how to get it back. When the wake fails (here, or from another place: the server keeps
+// (chatpane.tsx for a Claude agent, sleepingtranscript.tsx for another harness), and the terminal itself takes no input
+// (its process is gone), so Wake is how to get it back. When the wake fails (here, or from another place: the server keeps
 // the agent asleep and sets the reason) the card says why and offers a fresh start or Close instead: --resume has
 // nothing to reopen.
 export function SleepingCard({ agent }: { agent: AgentVM }) {

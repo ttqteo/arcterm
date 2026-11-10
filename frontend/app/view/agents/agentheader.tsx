@@ -62,6 +62,7 @@ import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
 import { selectCellView, useChatMode } from "./chatmodestore";
+import { ASLEEP_VIEW_TITLE } from "./chatswitch";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
@@ -413,11 +414,15 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 : "terminal";
     // the bare key that goes back to the terminal from the first view the agent has to swap to
     const swapKey = docReview != null ? "r" : brainstorm != null ? "b" : "c";
-    // An awake Claude agent's control always shows, Chat first: Chat and Terminal are the one "terminal" slot, and the
-    // agent's chat mode picks which of the two shows (chatmode.ts). Every other agent's control is as before.
+    // A Claude agent's control always shows, Chat first, awake or asleep: Chat and Terminal are the one "terminal" slot,
+    // and the agent's chat mode picks which of the two shows (chatmode.ts). Asleep, its cell draws the conversation
+    // whatever the stored mode (its terminal holds only the kill), so Chat is the selected option of the slot and Chat
+    // and Terminal are disabled until it wakes; a canvas, review or brainstorm option stays usable. Every other agent's
+    // control is as before.
     const chatMode = useChatMode(agent);
-    const chatShown = chatCapable(agent) && agent.sleeping == null;
-    const shownView: CellView = chatShown ? cellView(view, chatMode) : view;
+    const chatShown = chatCapable(agent);
+    const chatAsleep = chatShown && agent.sleeping != null;
+    const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
 
@@ -747,22 +752,32 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         role="group"
                         ariaLabel={`Show ${listViews(viewOptions, "or", false)}`}
                         value={shownView}
+                        // the selected option's fill slides to the one picked, as the grid bar's switch does
+                        slide
                         options={[
                             ...(chatShown
                                 ? [
                                       {
                                           key: "chat" as const,
                                           label: "Chat",
-                                          title: `Chat (${formatChordString("Mod:Shift:k")})`,
+                                          title: chatAsleep
+                                              ? ASLEEP_VIEW_TITLE
+                                              : `Chat (${formatChordString("Mod:Shift:k")})`,
+                                          disabled: chatAsleep,
+                                          dataAttrs: chatAsleep ? { "data-chat-view-asleep": "" } : undefined,
                                       },
                                   ]
                                 : []),
                             {
                                 key: "terminal",
                                 label: "Terminal",
-                                title: chatShown
-                                    ? `Terminal (${formatChordString("Mod:Shift:k")})`
-                                    : `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
+                                title: chatAsleep
+                                    ? ASLEEP_VIEW_TITLE
+                                    : chatShown
+                                      ? `Terminal (${formatChordString("Mod:Shift:k")})`
+                                      : `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
+                                disabled: chatAsleep,
+                                dataAttrs: chatAsleep ? { "data-chat-view-asleep": "" } : undefined,
                             },
                             ...(brainstorm != null
                                 ? [
@@ -822,7 +837,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                   ]
                                 : []),
                         ]}
-                        // an agent with no Chat option keeps its stored chat mode: a sleeping one wakes as it was
+                        // an agent with no Chat option (not a Claude agent) keeps its stored chat mode
                         onChange={(v) =>
                             chatShown || v === "chat"
                                 ? selectCellView(agent.id, v, Date.now())

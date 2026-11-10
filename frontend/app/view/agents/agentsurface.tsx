@@ -61,7 +61,7 @@ import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
 import { cellInputOf } from "./cellinput";
-import { shownChatMode } from "./chatmode";
+import { chatCapable, shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
 import { closedNeighbour, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
@@ -826,11 +826,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
                                                 ) : null}
                                             </div>
-                                            {/* asleep, its terminal holds only the kill: the conversation covers it,
-                                                the pane staying mounted under it at its size. Awake in Chat (a Claude
-                                                agent's default), the live conversation covers it the same way; in
-                                                Terminal nothing does. Never on the docked terminal (no cell). */}
-                                            {a.sleeping != null && cell != null ? (
+                                            {/* the conversation covers the terminal, the pane staying mounted under it at
+                                                its size. A Claude agent's is ChatLayer's one chat, awake in Chat (its
+                                                default) and asleep alike (its terminal holds only the kill): the box
+                                                is never remounted, so its parts fold as the agent sleeps and wakes; in
+                                                Terminal, awake, nothing covers it. Another harness asleep gets its
+                                                compact transcript. Never on the docked terminal (no cell). */}
+                                            {cell != null && a.sleeping != null && !chatCapable(a) ? (
                                                 <SleepingTranscript agent={a} barred={multi} />
                                             ) : cell != null ? (
                                                 <ChatLayer model={model} agent={a} barred={multi} />

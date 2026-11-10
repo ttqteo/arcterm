@@ -694,8 +694,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const treeCwd = sub == null ? agentCwd : null;
     const hasTree = treeCwd != null;
     // the Transcript tab reads the agent's own transcript, so it stays while a subagent's interior is open. A sleeping
-    // agent has none: its conversation already shows in the terminal's place (sleepingtranscript.tsx), and the tab comes
-    // back on wake. Nor does an agent showing Chat: the conversation is the cell's, and the tab comes back with Terminal
+    // agent has none: its conversation already shows in the terminal's place (chatpane.tsx for a Claude agent,
+    // sleepingtranscript.tsx for another harness), and the tab comes back on wake. Nor does an agent showing Chat: the conversation is the cell's, and the tab comes back with Terminal
     const chatShown = useChatMode(agent) === "chat";
     const hasTranscript = !!agent.transcriptPath && !agent.sleeping && !chatShown;
     const shown = shownTab(panel, hasTree, hasTranscript);
