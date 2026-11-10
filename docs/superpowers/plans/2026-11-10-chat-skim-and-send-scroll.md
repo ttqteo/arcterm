@@ -43,13 +43,16 @@ Decisions (the lead's calls, each with why):
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/chatskim.ts`, `frontend/app/view/agents/chatskim.test.ts`, `frontend/app/view/agents/chatskimstore.ts`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/chatpane.tsx`
+**Files:** `frontend/app/view/agents/chatskim.ts`, `frontend/app/view/agents/chatskim.test.ts`, `frontend/app/view/agents/chatskimstore.ts`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/chatpane.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
+
+**Acceptance:** the vitest cases below pass, and `agent-chat` steps 34 (skim) and 35 (skim off) pass with their shots
+`agent-chat-34-skim.png` and `agent-chat-35-skim-off.png`.
 
 **Step 1: Write the failing tests** (`chatskim.test.ts`):
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { hashText, marksByHash, withMarks } from "./chatskim";
+import { hashText, marksByHash, parseSkimOn, skimStoreFiles, withMarks } from "./chatskim";
 
 describe("hashText", () => {
     it("matches the skim mod's hash", () => {
@@ -90,6 +93,31 @@ describe("withMarks", () => {
         expect(withMarks("- Do this now.\n- Later.", ["Do this now."])).toBe("- ==Do this now.==\n- Later.");
     });
 });
+
+describe("skimStoreFiles", () => {
+    it("keeps the skim_*.json files of 2 MB or less, by name", () => {
+        const MB = 1024 * 1024;
+        expect(
+            skimStoreFiles([
+                { name: "skim_inline-2e2b7f082d52.json", size: 160_000 },
+                { name: "skim_other.json", size: 2 * MB },
+                { name: "skim_huge.json", size: 2 * MB + 1 },
+                { name: "skim_notes.txt", size: 10 },
+                { name: "arc_x.json", size: 10 },
+                { name: "skim_dir.json", size: 10, isdir: true },
+            ])
+        ).toEqual(["skim_inline-2e2b7f082d52.json", "skim_other.json"]);
+    });
+});
+
+describe("parseSkimOn", () => {
+    it("is on unless the stored value is false", () => {
+        expect(parseSkimOn(null)).toBe(true);
+        expect(parseSkimOn("true")).toBe(true);
+        expect(parseSkimOn("false")).toBe(false);
+        expect(parseSkimOn("garbage")).toBe(true);
+    });
+});
 ```
 
 **Step 2:** `npx vitest run frontend/app/view/agents/chatskim.test.ts` → FAIL (module missing).
@@ -100,23 +128,32 @@ parsing each, keeping only `[string, string[]]` pairs (the mod's `isKept` check,
 overriding; `withMarks(text, marks)`: for each mark, wrap its first occurrence that lies outside fenced blocks (lines
 between ```` ``` ```` / `~~~`) and outside inline code spans, and not already inside `==`. If the mark text itself
 contains markdown the stored text also contains (bold, a link), the substring match still works; a mark not found is
-skipped. Return the text unchanged when `marks` is empty.
+skipped. Return the text unchanged when `marks` is empty. `skimStoreFiles(entries: { name: string; size: number;
+isdir?: boolean }[]): string[]`: the names that start `skim_` and end `.json`, are not a directory and are at most
+2 MB (`2 * 1024 * 1024` bytes), in input order. `parseSkimOn(raw: string | null): boolean`: `false` only for the
+stored string `"false"`, else `true`.
 
 **Step 4:** `npx vitest run frontend/app/view/agents/chatskim.test.ts` → PASS.
 
 **Step 5: The store** (`chatskimstore.ts`): a jotai atom holding the `Map` (empty at first) and the toggle:
-- `chatSkimOnAtom`: boolean from localStorage `chat.skim` (default `true`), written on change; every access in
-  try/catch.
-- `refreshSkimMarks()`: throttled to once per second; in DEV, when `window.__chatSkimStore` is an array of JSON
-  strings, use it instead of the disk; else list `<home>/.claude/plugins/store` (`homeDir()` from
-  `pathlinkroute.ts`; path joined with `/`, which the server accepts on Windows too, as other `~/.claude` paths in
-  this folder do), take the names starting `skim_` and ending `.json`, skip a file over 2 MB, read the rest and set
-  the atom to `marksByHash(texts)`. Any failure leaves the atom as it was.
+- `chatSkimOnAtom`: boolean whose initial value is `parseSkimOn(localStorage.getItem("chat.skim"))`, written back as
+  `"true"`/`"false"` on change; every access in try/catch (a throw reads as on).
+- `refreshSkimMarks()`: throttled to once per second, **leading and trailing**: a call inside the window is never
+  dropped, it runs once at the window's end (several calls in one window collapse into that one trailing run). In
+  DEV, when `window.__chatSkimStore` is an array of JSON strings, use it instead of the disk; else list
+  `<home>/.claude/plugins/store` (`homeDir()` from `pathlinkroute.ts`; path joined with `/`, which the server accepts
+  on Windows too, as other `~/.claude` paths in this folder do) with `RemoteListEntriesCommand` (a stream of
+  `FileInfo` chunks, whose `name`/`size` are optional: map them as `name ?? ""`, `size ?? 0`), pick the names with
+  `skimStoreFiles`, read each with `FileReadCommand` and decode its `data64` with `base64ToString` from `@/util/util`
+  (as `appsuggeststore.ts:49-50` does; UTF-8 safe, so Vietnamese marks survive), and set the atom to
+  `marksByHash(texts)`. Any failure leaves the atom as it was and logs one `console.warn` (not per refresh: once per
+  distinct error message).
 - `useSkimMarks(text: string): string[]`: the marks for `hashText(text)` while the toggle is on, else `[]`.
 - Declare `window.__chatSkimStore?: string[]` in a `declare global` block, as `linereviewsend.ts:52-57` does.
 
-**Step 6: Draw them.** In `chatconversation.tsx`, the prose part renders `withMarks(part.text, marks)` into
-`CouncilText` (which already draws `==…==` as the skim highlight, `markdownmessage.tsx` `marks`). Do it in a small
+**Step 6: Draw them.** In `chatconversation.tsx`, the prose part (`case "prose"` in `drawPart`, ~line 469) renders
+`withMarks(part.text, marks)` into `CouncilText` (which already draws `==…==` as the skim highlight,
+`markdownmessage.tsx` `marks`); the copy button and context menu keep copying `part.text` unmarked. Do it in a small
 component (`ProseText`) so the hook runs per part. In `chatpane.tsx`, call `refreshSkimMarks()` on mount and whenever
 `entries` changes (the transcript grew), so the newest reply's marks arrive with it.
 
@@ -125,19 +162,49 @@ z-20`, 26×26, `rounded-[8px] border border-edge-mid bg-surface-raised`, lucide 
 `text-warning` icon (the highlight's own hue, `bg-warning/25` is its fill in `markdownmessage.tsx`) and
 `aria-pressed="true"`; off: `text-muted`, `aria-pressed="false"`. `data-chat-skim-toggle`,
 `title="Skim highlights in Chat: on (click to turn off)"` / `"…: off (click to turn on)"`, `aria-label="Skim
-highlights"`. It shows only when the conversation has prose. The pinned prompt bar in Chat gets right padding
-(`pr-10` on its wrapper, or a prop on `PinnedPromptBar` used only by Chat) so it never runs under the toggle.
+highlights"`. It shows whenever the chat pane shows a conversation (not on the loading or empty state). The pinned
+prompt bar in Chat gets right padding so it never runs under the toggle: in `chatconversation.tsx` (line ~531), change
+the `className` Chat passes to `PinnedPromptBar` from `"-mb-4"` to `"-mb-4 pr-10"` (the component already takes
+`className` on its sticky row); `pinnedpromptbar.tsx` is not edited.
 
-**Step 8:** vitest for `chatskim.test.ts` → PASS; eslint and prettier on the five files → clean.
+**Step 8: Scenario steps** in the `agent-chat` scenario (`scripts/cdp/scenarios.mjs`), after step 33 (whose shots
+are `agent-chat-33-transitions-*`, ~line 43625), in its style (`rec(...)`, `h.shot(...)`, `polishWaitFor`):
+- **34. skim**: pick a prose part's text from the fixture (the raw string the fixture feeds, not the DOM's
+  `textContent`), and one sentence of it. In the page, import `mod("app/view/agents/chatskim.ts")` to compute
+  `hashText(<that raw text>)`, set `window.__chatSkimStore = [JSON.stringify({ highlightMarks: [[hash, [sentence]]] })]`,
+  then import `mod("app/view/agents/chatskimstore.ts")` and call `refreshSkimMarks()`. **Poll** with `polishWaitFor`
+  (up to 4000 ms, since the throttle may defer the refresh up to a second) for a `mark[data-council-mark]` inside
+  `[data-chat-prose]` whose text is that sentence; assert it, and that `[data-chat-skim-toggle]` exists with
+  `aria-pressed="true"`. Shot `cdp-shots/agent-chat-34-skim.png`.
+- **35. skim off**: click `[data-chat-skim-toggle]` → poll for `aria-pressed="false"` and no `mark[data-council-mark]`
+  inside `[data-chat-prose]`; assert `localStorage.getItem("chat.skim") === "false"`. Shot
+  `cdp-shots/agent-chat-35-skim-off.png`. Click again → poll for `aria-pressed="true"`, the mark back and
+  `localStorage.getItem("chat.skim") === "true"`.
+- Teardown (where the scenario's teardown is): remove `chat.skim` from localStorage and
+  `delete window.__chatSkimStore`.
 
-**Step 9:** Commit: `git commit -m "feat(chat): skim highlights show in Chat, with a toggle to turn them off" --
-<the five paths>`
+**Step 9: Changelog** (`CHANGELOG.md`, top `Unreleased` section; read its header first), under `Added`: `- Chat shows
+Claude's skim highlights, the sentences worth reading, as the terminal does; the highlighter button at the top of Chat
+turns them off and on.`
+
+**Step 10: Hand check** (`docs/hand-checks.md`, a new first `- [ ]` line of the list, `(arcterm)` title): in a live
+Claude agent's Chat, ask for a long explanation → its marked sentences show highlighted once the reply lands, the same
+ones the Terminal view highlights (the scenario injects its own store; only a live agent proves the real skim store
+file is found and its hashes match). Name `chatskimstore.ts` and `agent-chat` 34.
+
+**Step 11:** vitest for `chatskim.test.ts` → PASS; eslint and prettier on the `.ts`/`.tsx` files → clean (never
+prettier on `scripts/*.mjs`).
+
+**Step 12:** Commit: `git commit -m "feat(chat): skim highlights show in Chat, with a toggle to turn them off" --
+<the eight paths>`
 
 ### Task 2: Sending scrolls to the end
 
-**Depends on:** Task 1 (edits `chatpane.tsx` after it, beside the toggle it adds)
+**Depends on:** Task 1 (edits `chatpane.tsx`, `scripts/cdp/scenarios.mjs` and `CHANGELOG.md` after it)
 
-**Files:** `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/chatpane.tsx`
+**Files:** `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/chatpane.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
+
+**Acceptance:** `agent-chat` step 36 (send scrolls) passes with its shot `agent-chat-36-send-scrolls.png`.
 
 `ChatPane` has `jumpToBottom` from `useStickToBottom` (`chatpane.tsx`, beside `scrollRef`). `ChatComposer`'s
 `submit` (`chatcomposer.tsx`, `if (send()) { … }`) never scrolls.
@@ -147,38 +214,17 @@ pending bubble is added (so the stick re-arms and the bubble lands in view). A w
 
 **Step 2:** `ChatPane` passes `onSent={jumpToBottom}`, keeping Task 1's toggle and refresh as they are.
 
-**Step 3:** eslint and prettier on both files → clean.
+**Step 3: Scenario step** in `agent-chat` (`scripts/cdp/scenarios.mjs`), after Task 1's step 35, in the same style:
+- **36. send scrolls**: with a conversation taller than the scroller, set the chat scroller's `scrollTop = 0` and poll
+  until it is away from the end; send a message from the box (type into it and press Enter, or click send, as the
+  scenario's earlier send steps do, against the same mock). Then **poll** with `polishWaitFor` (up to 3000 ms:
+  `jumpToBottom` scrolls smoothly) for the scroller at its end (`scrollHeight - scrollTop - clientHeight < 40`), and
+  assert the pending bubble's rect lies inside the scroller's rect. Shot `cdp-shots/agent-chat-36-send-scrolls.png`.
 
-**Step 4:** Commit: `git commit -m "fix(chat): sending a message scrolls the chat to the end" --
-frontend/app/view/agents/chatcomposer.tsx frontend/app/view/agents/chatpane.tsx`
+**Step 4: Changelog** (`CHANGELOG.md`, top `Unreleased` section), under `Fixed`: `- Sending a message from Chat
+scrolls to the end, even when you had scrolled up to read.`
 
-### Task 3: Scenario steps, changelog, hand checks
+**Step 5:** eslint and prettier on the two `.tsx` files → clean (never prettier on `scripts/*.mjs`).
 
-**Depends on:** Task 1 (asserts the marks and the `data-chat-skim-toggle` it adds), Task 2 (asserts the scroll after a send it adds)
-
-**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
-
-**Step 1: Scenario steps** in the `agent-chat` scenario (`scripts/cdp/scenarios.mjs`), each with its shot:
-- `agent-chat-33-skim`: set `window.__chatSkimStore` to one JSON string holding `[hashText(<a prose text in the
-  fixture>), [<one sentence of it>]]` (compute the hash in the page with the module:
-  `mod("app/view/agents/chatskim.ts")`), trigger a refresh (call `refreshSkimMarks` through the module), then assert
-  a `mark[data-council-mark]` inside `[data-chat-prose]` holds that sentence.
-- `agent-chat-34-skim-off`: click `[data-chat-skim-toggle]` → `aria-pressed="false"` and no `mark` in the prose;
-  click again → back. Restore `chat.skim` and delete `window.__chatSkimStore` in teardown.
-- `agent-chat-35-send-scrolls`: scroll the chat to the top, send a message from the box → the scroller is at its
-  end (`scrollHeight - scrollTop - clientHeight < 40`) and the pending bubble is in view.
-
-**Step 2:** `node scripts/cdp/final-verify.mjs agent-chat` → every step PASS.
-
-**Step 3: Changelog** (`CHANGELOG.md`, top `Unreleased` section; read its header first):
-- under `Added`: `- Chat shows Claude's skim highlights, the sentences worth reading, as the terminal does; the
-  highlighter button at the top of Chat turns them off and on.`
-- under `Fixed`: `- Sending a message from Chat scrolls to the end, even when you had scrolled up to read.`
-
-**Step 4: Hand check** (`docs/hand-checks.md`, at the top, `(arcterm)` title): in a live Claude agent's Chat, ask
-for a long explanation → its marked sentences show highlighted once the reply lands, the same ones the Terminal view
-highlights; the toggle turns them off and on and stays as set after a reload; scrolled up, send → the chat runs to
-the end.
-
-**Step 5:** Commit: `git commit -m "test(chat): scenario steps for skim in Chat and the scroll after a send" --
-scripts/cdp/scenarios.mjs CHANGELOG.md docs/hand-checks.md`
+**Step 6:** Commit: `git commit -m "fix(chat): sending a message scrolls the chat to the end" --
+frontend/app/view/agents/chatcomposer.tsx frontend/app/view/agents/chatpane.tsx scripts/cdp/scenarios.mjs CHANGELOG.md`
