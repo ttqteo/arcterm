@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { insertAt, insertIntoChatBox, registerChatInsert } from "./chatinsert";
+import {
+    appendToChatBox,
+    chatBoxText,
+    insertAt,
+    insertIntoChatBox,
+    registerChatBox,
+    registerChatInsert,
+    submitIntoChatBox,
+} from "./chatinsert";
 
 describe("insertAt", () => {
     it("puts the text at the caret and leaves the caret after it", () => {
@@ -66,6 +74,80 @@ describe("insertIntoChatBox", () => {
         expect(insertIntoChatBox("ci-4", "x")).toBe(true);
         expect(newFn).toHaveBeenCalledOnce();
         expect(oldFn).not.toHaveBeenCalled();
+        offNew();
+    });
+});
+
+describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox)", () => {
+    const box = (over: Partial<Parameters<typeof registerChatBox>[1]> = {}) => ({
+        text: vi.fn(() => "a draft"),
+        submit: vi.fn(() => true),
+        append: vi.fn(() => true),
+        ...over,
+    });
+    it("reads an empty text and takes nothing when no box is mounted", () => {
+        expect(chatBoxText("cb-none")).toBe("");
+        expect(submitIntoChatBox("cb-none", "x")).toBe(false);
+        expect(appendToChatBox("cb-none", "x")).toBe(false);
+    });
+    it("reads the text of the registered box", () => {
+        const b = box();
+        const off = registerChatBox("cb-1", b);
+        expect(chatBoxText("cb-1")).toBe("a draft");
+        off();
+    });
+    it("submits through the registered box with the text and says what it answered", () => {
+        const b = box();
+        const off = registerChatBox("cb-2", b);
+        expect(submitIntoChatBox("cb-2", "go")).toBe(true);
+        expect(b.submit).toHaveBeenCalledWith("go");
+        expect(b.append).not.toHaveBeenCalled();
+        off();
+        const refusing = box({ submit: vi.fn(() => false) });
+        const offRefusing = registerChatBox("cb-2r", refusing);
+        expect(submitIntoChatBox("cb-2r", "go")).toBe(false);
+        offRefusing();
+    });
+    it("appends through the registered box with the text and says what it answered", () => {
+        const b = box();
+        const off = registerChatBox("cb-3", b);
+        expect(appendToChatBox("cb-3", "more")).toBe(true);
+        expect(b.append).toHaveBeenCalledWith("more");
+        expect(b.submit).not.toHaveBeenCalled();
+        off();
+        const refusing = box({ append: vi.fn(() => false) });
+        const offRefusing = registerChatBox("cb-3r", refusing);
+        expect(appendToChatBox("cb-3r", "more")).toBe(false);
+        offRefusing();
+    });
+    it("keeps agents apart, and leaves the insert registry alone", () => {
+        const a = box();
+        const b = box();
+        const offA = registerChatBox("cb-a", a);
+        const offB = registerChatBox("cb-b", b);
+        submitIntoChatBox("cb-b", "x");
+        expect(a.submit).not.toHaveBeenCalled();
+        expect(b.submit).toHaveBeenCalledOnce();
+        expect(insertIntoChatBox("cb-a", "x")).toBe(false);
+        offA();
+        offB();
+    });
+    it("stops reaching the box once unregistered", () => {
+        registerChatBox("cb-4", box())();
+        expect(chatBoxText("cb-4")).toBe("");
+        expect(submitIntoChatBox("cb-4", "x")).toBe(false);
+        expect(appendToChatBox("cb-4", "x")).toBe(false);
+    });
+    it("does not let a stale unregister remove the newer box of the same agent", () => {
+        const oldBox = box();
+        const newBox = box({ text: vi.fn(() => "newer") });
+        const offOld = registerChatBox("cb-5", oldBox);
+        const offNew = registerChatBox("cb-5", newBox);
+        offOld();
+        expect(chatBoxText("cb-5")).toBe("newer");
+        expect(submitIntoChatBox("cb-5", "x")).toBe(true);
+        expect(newBox.submit).toHaveBeenCalledOnce();
+        expect(oldBox.submit).not.toHaveBeenCalled();
         offNew();
     });
 });

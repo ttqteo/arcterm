@@ -24,7 +24,7 @@ import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
 import { ChatFooter, Fold } from "./chatfooter";
-import { insertAt, registerChatInsert } from "./chatinsert";
+import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, noteSent, sentHistory } from "./chatpendingstore";
@@ -155,6 +155,41 @@ export function ChatComposer({
             taRef.current.setSelectionRange(caret, caret);
         }
     }, [text]);
+    // A visual in the conversation (chatvisualview.tsx) reads the box, sends a text through it and appends to it. A send
+    // puts the text in the box and submits once the box shows it, so it takes the one send path below (wake, holds,
+    // pending bubble, scroll); `submitNext` is set only when the text will change, so it never outlives that render.
+    const submitNext = useRef(false);
+    const submitRef = useRef<() => void>(() => {});
+    useEffect(
+        () =>
+            registerChatBox(agent.id, {
+                text: () => latest.current.text,
+                submit: (sent) => {
+                    const ta = taRef.current;
+                    if (ta == null || ta.readOnly) {
+                        return false;
+                    }
+                    if (sent === latest.current.text) {
+                        submitRef.current();
+                        return true;
+                    }
+                    submitNext.current = true;
+                    latest.current.setText(sent);
+                    return true;
+                },
+                append: (added) => {
+                    const ta = taRef.current;
+                    if (ta == null || ta.readOnly) {
+                        return false;
+                    }
+                    // the end of the box, never the caret: the person may be typing elsewhere in it
+                    const cur = latest.current.text;
+                    latest.current.setText(cur.trim() ? cur.replace(/\s+$/, "") + "\n" + added : added);
+                    return true;
+                },
+            }),
+        [agent.id]
+    );
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
     const blocker = asleep ? null : attachmentBlocker(att.attachments);
     // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits
@@ -190,6 +225,13 @@ export function ChatComposer({
             }
         }
     };
+    submitRef.current = submit;
+    useEffect(() => {
+        if (submitNext.current) {
+            submitNext.current = false;
+            submit();
+        }
+    }, [text]);
     // ↑ in an empty box (or one still showing a recalled text, unedited, with the caret on its first line) puts back the
     // last message sent; ↓ walks forward and back to empty. True when the key was taken.
     const recallKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {

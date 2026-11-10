@@ -11,6 +11,8 @@ import { Lightbulb } from "lucide-react";
 import { Fragment, memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { VISUAL_LANG } from "./chatvisual";
+import { VisualBlock } from "./chatvisualview";
 import { CodeBlock } from "./codeblock";
 import { splitInsightBlocks } from "./insightblocks";
 import { PathLink } from "./pathlinkcontext";
@@ -27,7 +29,8 @@ import { inlinePathOf } from "./pathlinks";
 function fencedOf(children: unknown): { lang?: string; raw: string } {
     const child: any = Array.isArray(children) ? children[0] : children;
     const props = child?.props ?? {};
-    const lang = /language-(\w+)/.exec(props.className ?? "")?.[1];
+    // `[\w+-]`: a language with a dash or a plus (arc-visual, objective-c, c++) survives whole
+    const lang = /language-([\w+-]+)/.exec(props.className ?? "")?.[1];
     const raw = Array.isArray(props.children) ? props.children.join("") : String(props.children ?? "");
     return { lang, raw };
 }
@@ -80,8 +83,9 @@ const MD_COMPONENTS: Components = {
 const REMARK_PLUGINS = [remarkGfm];
 
 // The extras a caller opts into: `marks` draws ==…== (remark-mark.ts) as a <mark> in the accent's tint the terminal draws a
-// skim highlight in, and `diagrams` draws a ```mermaid block as its diagram instead of its code. A council's messages
-// take both; an agent's transcript takes neither, so it never loads mermaid.
+// skim highlight in, and `diagrams` draws a ```mermaid block as its diagram instead of its code, and an ```arc-visual
+// block as the page it names where a visual host provides one (Chat's, chatvisualview.tsx), as code elsewhere. A
+// council's messages take both; an agent's transcript takes neither, so it never loads mermaid.
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
@@ -100,6 +104,9 @@ const MARK_COMPONENT: Components = {
 const DIAGRAM_COMPONENT: Components = {
     pre: ({ children }) => {
         const { lang, raw } = fencedOf(children);
+        if (lang === VISUAL_LANG) {
+            return <VisualBlock raw={raw} />;
+        }
         return lang === "mermaid" ? <Mermaid chart={raw} /> : <CodeBlock code={raw} lang={lang} />;
     },
 };

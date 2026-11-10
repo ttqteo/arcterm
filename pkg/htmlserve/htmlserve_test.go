@@ -100,7 +100,7 @@ func TestHandlerServesThePageAndWhatSitsBesideIt(t *testing.T) {
 	}
 	res := get(t, http.MethodGet, page)
 	body, _ := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusOK || string(body) != pageBody+scrollScript {
+	if res.StatusCode != http.StatusOK || string(body) != pageBody+scrollScript+bridgeScript {
 		t.Fatalf("GET page: status %d body %q", res.StatusCode, body)
 	}
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
@@ -207,7 +207,7 @@ func TestHandlerAddsTheScrollScriptToPagesOnly(t *testing.T) {
 	b := base(t, filepath.Join(dir, "index.html"))
 	res := get(t, http.MethodGet, b+"/index.html")
 	body, _ := io.ReadAll(res.Body)
-	if string(body) != "<p>index</p>"+scrollScript {
+	if string(body) != "<p>index</p>"+scrollScript+bridgeScript {
 		t.Errorf("GET index.html: body %q", body)
 	}
 	if res.ContentLength != int64(len(body)) {
@@ -224,9 +224,50 @@ func TestHandlerAddsTheScrollScriptToPagesOnly(t *testing.T) {
 	req.Header.Set("Range", "bytes=8-20")
 	rec := httptest.NewRecorder()
 	Handler().ServeHTTP(rec, req)
-	full := "<p>index</p>" + scrollScript
+	full := "<p>index</p>" + scrollScript + bridgeScript
 	if rec.Code != http.StatusPartialContent || rec.Body.String() != full[8:21] {
 		t.Errorf("range: status %d body %q, want %q", rec.Code, rec.Body.String(), full[8:21])
+	}
+}
+
+func TestHandlerAddsTheBridgeToPagesOnly(t *testing.T) {
+	dir := t.TempDir()
+	const page = "<!doctype html><button>go</button>"
+	const css = "body { color: var(--arc-fg); }"
+	for name, body := range map[string]string{"page.html": page, "style.css": css} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := Register(filepath.Join(dir, "page.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := p[:strings.LastIndex(p, "/")]
+	body, _ := io.ReadAll(get(t, http.MethodGet, p).Body)
+	if string(body) != page+scrollScript+bridgeScript {
+		t.Errorf("GET page.html: the body does not end with the scroll script and the bridge: %q", body)
+	}
+	// the messages the bridge speaks, which Chat's visual frame (frontend chatvisual.tsx) listens for and answers
+	for _, msg := range []string{"arc-visual-prompt", "arc-html-height", "arc-visual-theme", "arc-html-ready"} {
+		if !strings.Contains(bridgeScript, msg) {
+			t.Errorf("the bridge never mentions %s", msg)
+		}
+	}
+	if got, _ := io.ReadAll(get(t, http.MethodGet, b+"/style.css").Body); string(got) != css {
+		t.Errorf("GET style.css: body %q, want it byte for byte %q", got, css)
+	}
+}
+
+// documentElement.scrollHeight is never below the viewport, which in a frame is the frame's own height: a 120 px page in
+// Chat's 160 px loading frame would report 160, and a frame that grew would never shrink. The bridge measures the root
+// element's laid-out height instead.
+func TestBridgeMeasuresTheContentNotTheViewport(t *testing.T) {
+	if strings.Contains(bridgeScript, "documentElement.scrollHeight") {
+		t.Errorf("the bridge measures documentElement.scrollHeight, which never reads below the frame's own height")
+	}
+	if !strings.Contains(bridgeScript, "document.documentElement.getBoundingClientRect().height") {
+		t.Errorf("the bridge never measures the root element's laid-out height")
 	}
 }
 
