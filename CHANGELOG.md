@@ -22,6 +22,16 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched
+  with a task shows that task at once as your first message, captioned "Starting Claude Code…"; one launched without
+  a task shows the agent's logo, "Starting Claude Code…" and the project it starts in. Once it is ready, it shows
+  "New conversation" with the model, the project and how to begin (`@` for a file, `/` for a command). An agent that
+  failed to start says so, with why.
+
 ## 1.0.6 — 2026-11-10
 
 ### Added
