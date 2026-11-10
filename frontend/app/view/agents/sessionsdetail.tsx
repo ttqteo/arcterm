@@ -12,7 +12,7 @@ import { openOrPeek } from "@/app/view/jarvis/openref";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowLeft, Check, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, GitFork, Trash2 } from "lucide-react";
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
@@ -25,6 +25,7 @@ import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./
 import type { LiveSession } from "./sessionsarchivestore";
 import {
     canOpenAsleep,
+    forkLaunchOpts,
     LEAD_MEMBER,
     reopenLaunchOpts,
     sessionPrimary,
@@ -105,6 +106,34 @@ export function runSessionPrimary(model: AgentsViewModel, session: LiveSession) 
     if (session.resumecommand) {
         fireAndForget(() => resumeSession(model, session));
     }
+}
+
+/** Fork: a new Claude session that starts from this one's conversation, in a tab of its own (forkLaunchOpts); the
+ *  session it came from stays as it was, live or ended. A no-op for a session that cannot fork. */
+export function forkSession(model: AgentsViewModel, session: LiveSession) {
+    const opts = forkLaunchOpts(session);
+    if (opts != null) {
+        fireAndForget(() => launchAgent(model, opts));
+    }
+}
+
+// the header's Fork, beside Resume or Jump: a session that cannot fork draws none
+function ForkButton({ model, session }: { model: AgentsViewModel; session: LiveSession }) {
+    if (forkLaunchOpts(session) == null) {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-session-fork
+            onClick={() => forkSession(model, session)}
+            title="Fork: a new session that starts from this conversation; this one stays as it is"
+            className="flex h-7 flex-none cursor-pointer items-center gap-1.5 rounded-[7px] border border-edge-strong bg-surface-raised px-[11px] text-[12px] font-semibold text-secondary hover:border-accent hover:text-accent-soft"
+        >
+            <GitFork size={13} strokeWidth={2} aria-hidden />
+            Fork
+        </button>
+    );
 }
 
 // Resume an ended session into a new tab on the same transcript, named after the session; message, when given, goes
@@ -494,6 +523,7 @@ export function SoloDetail({
                     session={session}
                     onDeleted={() => (onBack ? onBack() : globalStore.set(model.sessionsSelAtom, "all"))}
                 />
+                <ForkButton model={model} session={session} />
                 {/* a resumable session resumes from its composer, below */}
                 {resumable ? null : <PrimaryButton model={model} session={session} strong />}
             </div>

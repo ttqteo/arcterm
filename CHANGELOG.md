@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Fork a Claude conversation: a new session that starts from where it is, in a tab of its own, while the original
+  stays as it was. It is in a conversation's right-click menu and beside Resume when you read one.
+
 ### Changed
 
 - The / menu in Chat lists every command Claude Code offers in that session (built-ins, its own skills, plugins, MCP),

@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Fork a conversation: Agent → Conversations → right-click an ended Claude conversation → Fork → a new
+  tab named "<title> (fork)" opens on the same conversation, and a message there leaves the original's transcript as
+  it was (Conversation History lists both); open a conversation in the centre → Fork sits beside Resume and does the
+  same; a Codex or pi conversation offers no Fork (`sessionsruns.ts` `forkLaunchOpts`, `claude --resume --fork-session`).
 - [ ] (arcterm) Every send is submitted: from a Claude agent's Chat send ten short one-line messages in a row, idle and
   while it works, and one of ~165 characters with Vietnamese in it → each reaches Claude as a prompt (Terminal shows
   none left in the box with a line break after it); `/compact` and a model pick from the footer run; Resume's

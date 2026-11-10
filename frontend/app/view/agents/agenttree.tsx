@@ -49,6 +49,7 @@ import {
     Folder,
     FolderOpen,
     GitBranch,
+    GitFork,
     Hash,
     History as HistoryIcon,
     Hourglass,
@@ -200,8 +201,15 @@ import { runtimeMeta } from "./runtimemeta";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
-import { offersOpenAsleep, openSessionAsleep, runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
-import { defaultMember, runView, type RunView } from "./sessionsruns";
+import {
+    forkSession,
+    offersOpenAsleep,
+    openSessionAsleep,
+    runSessionPrimary,
+    SEG_COLOR,
+    StatusMark,
+} from "./sessionsdetail";
+import { defaultMember, forkLaunchOpts, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
 import { SLEEPABLE_AGENTS, sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
@@ -2160,6 +2168,14 @@ const ConversationRow = memo(function ConversationRow({
                 label: "Open asleep",
                 icon: <Moon size={15} />,
                 click: () => openSessionAsleep(model, session),
+            });
+        }
+        if (forkLaunchOpts(session) != null) {
+            items.push({
+                label: "Fork",
+                sublabel: "a new session from this conversation",
+                icon: <GitFork size={15} />,
+                click: () => forkSession(model, session),
             });
         }
         items.push(copyTitleItem(row.title), laterMenuItem(session.transcriptpath, later != null));
