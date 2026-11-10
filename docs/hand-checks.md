@@ -44,6 +44,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   goes working and, ~10 s after the turn ends, idle, with `taking its OSC 7501 report` lines in waveapp.log; put wsh
   back → with the hooks working no such line appears, and an agent whose turn ends with background work still
   running stays working (`blockcontroller/progwatch.go`, `pkg/progstatus`).
+- [ ] (arcterm) A run pauses at the usage limit: after this build (the next launch writes the StopFailure hook into
+  `~/.claude/settings.json`), run an engine run when the 5-hour window is nearly used up → the worker that hits the
+  limit reads idle, the run reads "Paused · usage limit, resumes HH:MM" (the window's reset plus 2 minutes) and its
+  agents close; after that time, with RAM to spare, it resumes and the workers carry on; `run limit: paused run`
+  in waveapp.log (`pkg/runpause/limit.go`, `pkg/wshrpc/wshserver/wshserver_runlimit.go`).
 - [ ] (arcterm) Fork a conversation: Agent → Conversations → right-click an ended Claude conversation → Fork → a new
   tab named "<title> (fork)" opens on the same conversation, and a message there leaves the original's transcript as
   it was (Conversation History lists both); open a conversation in the centre → Fork sits beside Resume and does the

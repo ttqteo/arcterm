@@ -62,6 +62,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run whose agent hits your Claude usage limit pauses until the limit resets, reading "Paused · usage limit,
+  resumes 05:02", and carries on by itself after it, instead of retrying the worker into the same limit every 15
+  minutes until the retries ran out. An agent stopped by any API error now reads idle instead of working.
 - What a slash command prints shows in Chat under the command, as a `! command`'s output does (`/goal`'s "Goal set",
   a failed `/compact`'s error, `/login`'s "Login successful"), where it used to be dropped, along with a command such as
   `/login` itself; a command whose panel only Claude Code's own screen draws (`/config`, `/usage`…) says it opens in the

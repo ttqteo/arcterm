@@ -139,7 +139,7 @@ function pausedStatus(read: SheetRead): SheetStatus {
     const pausedTs = run.pause?.pausedts ?? 0;
     const by = run.pause?.by === "manual" ? "you paused it" : "Arc paused it to free memory";
     return {
-        verb: pausedLabel(run.pause?.by),
+        verb: pausedLabel(run.pause?.by, run.pause?.noautoresumeuntil),
         sub: `${by}: its agents are suspended and keep their sessions`,
         tone: "muted",
         pulse: false,

@@ -17,7 +17,8 @@ import (
 // pausedNudgeText is the first turn of an agent reopened after its run was paused. It always ends by telling the
 // agent to ask again, because an ask waits in memory only: a restart drops it, and an answer the person gave while the
 // run was paused rides after this text when there is one.
-const pausedNudgeText = "Arc paused this run to free memory and has now resumed it; carry on from where you stopped. " +
+// It names no cause: Arc pauses a run to free memory and at the usage limit, and the resume reads the same for both.
+const pausedNudgeText = "Arc paused this run and has now resumed it; carry on from where you stopped. " +
 	"If you were waiting on an answer that is not below, ask again."
 
 // heldAnswerPrefix starts the line that carries one answer the person gave while the run was paused.

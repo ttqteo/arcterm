@@ -13,7 +13,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-const wantPausedNudgeBase = "Arc paused this run to free memory and has now resumed it; carry on from where you stopped. " +
+const wantPausedNudgeBase = "Arc paused this run and has now resumed it; carry on from where you stopped. " +
 	"If you were waiting on an answer that is not below, ask again."
 
 func TestPausedNudgeSaysThePauseAndAsksAgainForAnUnansweredQuestion(t *testing.T) {

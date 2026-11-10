@@ -82,6 +82,19 @@ func TestPlanEmission(t *testing.T) {
 	}
 }
 
+func TestPlanEmissionStopFailure(t *testing.T) {
+	// a usage limit ends the turn idle and says so, which pauses the run the worker belongs to (pkg/runpause)
+	em := planEmission(ccHookEvent{HookEventName: baseds.AgentHook_StopFailure, Error: "rate_limit"})
+	if em.State != baseds.AgentState_Idle || em.Detail != baseds.StopFailureDetail_UsageLimit {
+		t.Fatalf("rate_limit: got %+v, want idle with the usage-limit detail", em)
+	}
+	// any other API error still ends the turn: idle, with no pause
+	em = planEmission(ccHookEvent{HookEventName: baseds.AgentHook_StopFailure, Error: "server_error"})
+	if em.State != baseds.AgentState_Idle || em.Detail != "" {
+		t.Fatalf("server_error: got %+v, want a plain idle", em)
+	}
+}
+
 func TestPlanEmissionPermissionRequest(t *testing.T) {
 	tests := []struct {
 		name       string

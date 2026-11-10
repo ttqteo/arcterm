@@ -204,6 +204,7 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		noteAgentTurnEnded(ctx, &data)
 		noteAgentInTurn(ctx, &data)
 		noteRunSleepStatus(ctx, &data)
+		noteUsageLimit(ctx, &data)
 	}
 }
 

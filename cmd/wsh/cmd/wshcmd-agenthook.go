@@ -58,7 +58,12 @@ type ccHookEvent struct {
 	NotificationType string          `json:"notification_type"`
 	PermissionMode   string          `json:"permission_mode"`
 	Trigger          string          `json:"trigger"`
+	// Error is the kind of API error a StopFailure turn ended on: rate_limit, authentication_failed, server_error …
+	Error string `json:"error"`
 }
+
+// stopFailureRateLimit is the StopFailure error of a turn that hit the usage limit
+const stopFailureRateLimit = "rate_limit"
 
 // agentEmission describes what to publish for one hook event. State=="" means no
 // parent-state event (a clean no-op).
@@ -74,6 +79,12 @@ func planEmission(ev ccHookEvent) agentEmission {
 		return agentEmission{State: baseds.AgentState_Working, AttachModelTitle: true}
 	case "Stop":
 		return agentEmission{State: baseds.AgentState_Idle, AttachModelTitle: true}
+	case baseds.AgentHook_StopFailure:
+		// an API error ended the turn, where no Stop fires: without this the agent read working until the stall check
+		if ev.Error == stopFailureRateLimit {
+			return agentEmission{State: baseds.AgentState_Idle, Detail: baseds.StopFailureDetail_UsageLimit}
+		}
+		return agentEmission{State: baseds.AgentState_Idle}
 	case "Notification":
 		switch ev.NotificationType {
 		case "idle_prompt":

@@ -44,9 +44,29 @@ export const PAUSED_LABEL = "Paused · resumes when memory frees";
 /** A run the person paused: Arc never resumes it on its own, not when memory frees and not at a restart. */
 export const PAUSED_BY_YOU_LABEL = "Paused · until you resume";
 
-/** Pure: a paused run's words, by who paused it (its Pause.by: "manual" is the person). */
-export function pausedLabel(by: string | undefined): string {
-    return by === "manual" ? PAUSED_BY_YOU_LABEL : PAUSED_LABEL;
+/** A run one of its agents paused at the account's usage limit, when the reset time is not known. */
+export const PAUSED_AT_LIMIT_LABEL = "Paused · usage limit, resumes after the reset";
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Pure: the local time a run paused at the usage limit resumes after, "05:02", or "Thu 05:02" on another day than
+ *  now's. */
+export function resumeClock(at: number, now: number): string {
+    const d = new Date(at);
+    const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return d.toDateString() === new Date(now).toDateString() ? hhmm : `${WEEKDAYS[d.getDay()]} ${hhmm}`;
+}
+
+/** Pure: a paused run's words, by who paused it (its Pause.by: "manual" is the person, "limit" an agent at the usage
+ *  limit, which resumes after resumeAt, its Pause.noautoresumeuntil). */
+export function pausedLabel(by: string | undefined, resumeAt?: number, now: number = Date.now()): string {
+    if (by === "manual") {
+        return PAUSED_BY_YOU_LABEL;
+    }
+    if (by === "limit") {
+        return resumeAt ? `Paused · usage limit, resumes ${resumeClock(resumeAt, now)}` : PAUSED_AT_LIMIT_LABEL;
+    }
+    return PAUSED_LABEL;
 }
 
 const LABEL: Record<RunStageKey, string> = {
@@ -106,7 +126,10 @@ function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
     return "planning";
 }
 
-export function runStage(run: Pick<RunInfo, "status" | "land" | "dag" | "pausedBy">, asking = false): RunStageView {
+export function runStage(
+    run: Pick<RunInfo, "status" | "land" | "dag" | "pausedBy" | "pausedUntil">,
+    asking = false
+): RunStageView {
     const key = stageKey(run);
     const status = run.status ?? "";
     const dagStatus = run.dag?.status ?? "";
@@ -182,7 +205,7 @@ export function runStage(run: Pick<RunInfo, "status" | "land" | "dag" | "pausedB
     }
     return {
         key,
-        label: paused ? pausedLabel(run.pausedBy) : stageLabel(key, run.land?.state),
+        label: paused ? pausedLabel(run.pausedBy, run.pausedUntil) : stageLabel(key, run.land?.state),
         tone,
         needsYou,
         outcome,

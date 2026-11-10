@@ -670,7 +670,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const runItems = useMemo<PaletteItem[]>(() => {
         const labels = new Map((channels ?? []).map((c) => [c.oid, channelProjectLabel(c, projects)]));
         return runs.map(({ channelId, run: r }) => {
-            const view = runStatusView(r.status, undefined, r.pause?.by);
+            const view = runStatusView(r.status, undefined, r.pause?.by, r.pause?.noautoresumeuntil);
             const title = r.goal || "(untitled run)";
             const label = labels.get(channelId);
             return {

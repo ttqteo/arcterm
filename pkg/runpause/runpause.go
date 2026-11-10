@@ -39,6 +39,9 @@ const (
 	By_Auto   = "auto"   // the RAM regulator
 	By_Manual = "manual" // the person, from the UI or `wsh runs pause`
 	By_Boot   = "boot"   // the resume at boot
+	// By_Limit is a worker that hit the account's usage limit (limit.go): the regulator resumes the run once the
+	// limit has reset (its NoAutoResumeUntil)
+	By_Limit = "limit"
 )
 
 // noFlapHold is how long the regulator leaves alone a run it paused again after a resume: every resume costs a full
@@ -73,7 +76,7 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 // checkBy refuses an initiator that is not one of the By_* constants: it is stored and shown.
 func checkBy(by string) error {
 	switch by {
-	case By_Auto, By_Manual, By_Boot:
+	case By_Auto, By_Manual, By_Boot, By_Limit:
 		return nil
 	}
 	return fmt.Errorf("unknown initiator %q", by)
@@ -101,6 +104,12 @@ func pauseRefusal(r *waveobj.Run) string {
 // and the sessions outside them, then keeps the sessions it suspended for the resume. A failure after the marks puts
 // everything back and returns the error.
 func Pause(ctx context.Context, channelId, runId, by string) error {
+	return pause(ctx, channelId, runId, by, 0)
+}
+
+// pause is Pause with holdUntil (Unix ms), when set, as the pause's NoAutoResumeUntil: the regulator leaves the run
+// paused until then.
+func pause(ctx context.Context, channelId, runId, by string, holdUntil int64) error {
 	if err := checkBy(by); err != nil {
 		return fmt.Errorf("pausing run %s: %w", runId, err)
 	}
@@ -122,6 +131,9 @@ func Pause(ctx context.Context, channelId, runId, by string) error {
 	pause := &waveobj.RunPause{PausedTs: now, By: by, HeldBytes: t.heldBytes(ctx)}
 	if by == By_Auto && t.top.LastResumedTs != 0 {
 		pause.NoAutoResumeUntil = now + noFlapHold.Milliseconds()
+	}
+	if holdUntil > pause.NoAutoResumeUntil {
+		pause.NoAutoResumeUntil = holdUntil
 	}
 	if err := markTree(ctx, t, pause); err != nil {
 		return fmt.Errorf("marking run %s paused: %w", runId, err)
@@ -220,6 +232,10 @@ func ResumeAtBoot(ctx context.Context) {
 	}
 	for _, r := range runs {
 		if !runqueue.TopLevel(r) || (r.Pause != nil && r.Pause.By == By_Manual) {
+			continue
+		}
+		// a run paused at the usage limit waits for the reset whatever a restart says: the regulator resumes it then
+		if r.Pause != nil && r.Pause.By == By_Limit && r.Pause.NoAutoResumeUntil > nowMs() {
 			continue
 		}
 		if err := Resume(ctx, r.ChannelOID, r.ID, By_Boot); err != nil {
