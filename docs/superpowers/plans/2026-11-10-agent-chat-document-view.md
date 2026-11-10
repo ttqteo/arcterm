@@ -348,7 +348,7 @@ over the terminal, the view control's fill slides" -- <paths>`
 
 ### Task 4: Scenario steps, changelog, hand checks
 
-**Depends on:** Task 1, Task 2, Task 3
+**Depends on:** Task 1 (asserts the prose and the pinned prompt bar it builds), Task 2 (asserts the chips' `data-chat-model`, `data-chat-context`, `data-chat-asleep` attributes it adds), Task 3 (asserts the one pane's `data-sleeping-transcript` on the chat root it moves)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
