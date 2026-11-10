@@ -6,7 +6,7 @@
 // the page calls `arc.sendPrompt(text)` (the script htmlserve appends) and the text goes through the chat box as if the
 // person typed it. The rules (what may be drawn, when a prompt sends, when the frame mounts) are decided by the pure
 // model, chatvisual.ts; this file is the frame, its message listener and the host that tells a block which chat it is in
-// (docs/superpowers/plans/2026-11-10-chat-inline-visuals.md). Outside a host (a council's messages) a block stays code.
+// (docs/superpowers/specs/2026-11-10-chat-inline-visuals-design.md). Outside a host (a council's messages) a block stays code.
 
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { Maximize2, Minimize2, Shapes } from "lucide-react";

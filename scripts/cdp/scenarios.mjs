@@ -42063,7 +42063,7 @@ const agentSleep = {
 // are the chat's second round: a message sent while Claude works (the Queued bubble, the hold behind a permission card, ↑
 // recall), the `/` menu, the footer's mode chip and the card's second choice (Claude Code's captured screens, from
 // tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy. Steps 40-44 are the inline visual
-// (docs/superpowers/plans/2026-11-10-chat-inline-visuals.md): a reply's ```arc-visual block names an HTML page in a folder of
+// (docs/superpowers/specs/2026-11-10-chat-inline-visuals-design.md): a reply's ```arc-visual block names an HTML page in a folder of
 // the scenario's own (window.__chatVisualsDir, set in arrange; the pages are written by acWriteVisuals), drawn as a frame in the
 // conversation. The clicks on its buttons are CDP input at known offsets in the frame (a page of another origin cannot be
 // reached from the page); the mock records agentswake for the sleeping agent's prompt and never wakes anything.
@@ -43916,7 +43916,7 @@ const agentChat = {
                 { tall36, away36, scrolledUp36, pendingUp36, atEnd36, geo36 }
             );
 
-            // 40-44. inline visuals (docs/superpowers/plans/2026-11-10-chat-inline-visuals.md): an ```arc-visual block in a reply names
+            // 40-44. inline visuals (docs/superpowers/specs/2026-11-10-chat-inline-visuals-design.md): an ```arc-visual block in a reply names
             // an HTML page under the visuals folder (window.__chatVisualsDir stands in for ~/.arc/visuals), and Chat draws it as a frame.
             // The pages are in ctx.visuals.folder; the clicks go through CDP input, since the page is in a frame of another origin
             const vd = ctx.visuals.folder;
