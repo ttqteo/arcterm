@@ -8,13 +8,16 @@ import remarkMark from "@/app/element/remark-mark";
 import { openLink } from "@/app/store/global";
 import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
-import { Fragment, memo } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { PluggableList } from "unified";
+import { FilePill } from "./chatfilepill";
 import { CodeBlock } from "./codeblock";
 import { splitInsightBlocks } from "./insightblocks";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
+import remarkFileMention from "./remarkfilemention";
 
 // Lightweight inline markdown for narration lines. Deliberately NOT the full element/markdown.tsx
 // (which wraps every render in OverlayScrollbars + a TOC + rehypeRaw); raw HTML is not enabled here,
@@ -77,17 +80,16 @@ const MD_COMPONENTS: Components = {
     },
 };
 
-const REMARK_PLUGINS = [remarkGfm];
-
 // The extras a caller opts into: `marks` draws ==…== (remark-mark.ts) as a <mark> in the accent's tint the terminal draws a
-// skim highlight in, and `diagrams` draws a ```mermaid block as its diagram instead of its code. A council's messages
-// take both; an agent's transcript takes neither, so it never loads mermaid.
+// skim highlight in, `diagrams` draws a ```mermaid block as its diagram instead of its code, and `mentions` draws an
+// `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx). They combine: each adds its plugin and its component
+// to the same map. A council's messages take marks and diagrams, your bubble in Chat takes mentions; an agent's
+// transcript takes none, so it never loads mermaid.
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
+    mentions?: boolean;
 }
-
-const MARK_PLUGINS = [remarkGfm, remarkMark];
 
 const MARK_COMPONENT: Components = {
     mark: ({ children }) => (
@@ -104,17 +106,45 @@ const DIAGRAM_COMPONENT: Components = {
     },
 };
 
-// one components map per set of extras, built once, so react-markdown never sees a new map on a re-render
+// `filemention` is not an HTML tag, so it is not a key of react-markdown's Components type
+const MENTION_COMPONENT = {
+    filemention: ({ path, children }: { path?: string; children?: ReactNode }) =>
+        path != null && path !== "" ? <FilePill path={path} /> : <>{children}</>,
+} as unknown as Components;
+
+// one plugin list and one components map per set of extras, built once, so react-markdown never sees a new one on a
+// re-render
+const PLUGINS_BY_EXTRAS = new Map<string, PluggableList>();
 const COMPONENTS_BY_EXTRAS = new Map<string, Components>();
 
+function extrasKey(extras: MarkdownExtras): string {
+    return `${extras.marks ? "m" : ""}${extras.diagrams ? "d" : ""}${extras.mentions ? "f" : ""}`;
+}
+
+function pluginsFor(extras: MarkdownExtras): PluggableList {
+    const key = extrasKey(extras);
+    let out = PLUGINS_BY_EXTRAS.get(key);
+    if (out == null) {
+        out = [
+            remarkGfm,
+            ...(extras.marks ? [remarkMark] : []),
+            // after the marks, so a mention inside a ==mark== is found too
+            ...(extras.mentions ? [remarkFileMention] : []),
+        ];
+        PLUGINS_BY_EXTRAS.set(key, out);
+    }
+    return out;
+}
+
 function componentsFor(extras: MarkdownExtras): Components {
-    const key = `${extras.marks ? "m" : ""}${extras.diagrams ? "d" : ""}`;
+    const key = extrasKey(extras);
     let out = COMPONENTS_BY_EXTRAS.get(key);
     if (out == null) {
         out = {
             ...MD_COMPONENTS,
             ...(extras.marks ? MARK_COMPONENT : {}),
             ...(extras.diagrams ? DIAGRAM_COMPONENT : {}),
+            ...(extras.mentions ? MENTION_COMPONENT : {}),
         };
         COMPONENTS_BY_EXTRAS.set(key, out);
     }
@@ -123,7 +153,7 @@ function componentsFor(extras: MarkdownExtras): Components {
 
 function renderMd(text: string, extras: MarkdownExtras = {}) {
     return (
-        <ReactMarkdown remarkPlugins={extras.marks ? MARK_PLUGINS : REMARK_PLUGINS} components={componentsFor(extras)}>
+        <ReactMarkdown remarkPlugins={pluginsFor(extras)} components={componentsFor(extras)}>
             {text}
         </ReactMarkdown>
     );
@@ -146,15 +176,16 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     className,
     marks,
     diagrams,
+    mentions,
 }: { text: string; className?: string } & MarkdownExtras) {
     const segments = splitInsightBlocks(text);
     return (
         <div className={cn("agent-md", className)}>
             {segments.map((seg, i) =>
                 seg.kind === "insight" ? (
-                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams }} />
+                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions }} />
                 ) : (
-                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams })}</Fragment>
+                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams, mentions })}</Fragment>
                 )
             )}
         </div>
