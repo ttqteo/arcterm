@@ -23,6 +23,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   tokens, and go after your next prompt. Ask Claude for work it may propose a goal for → "Claude proposes a goal" and
   Answer in Terminal. Unit tests (`goal-core.ts`, real `/goal` records) and an engine test of the band on a copy of the
   mod; neither surface was drawn in a live session (`chatgoal.tsx`, `goal-band.tsx`).
+- [ ] (arcterm) An agent's dot follows Claude Code's OSC 7501 reports when its hooks are silent: after this build start
+  a Claude agent, then make `~/.arc/bin/wsh` fail (rename it away for a minute) and send the agent a prompt → its dot
+  goes working and, ~10 s after the turn ends, idle, with `taking its OSC 7501 report` lines in waveapp.log; put wsh
+  back → with the hooks working no such line appears, and an agent whose turn ends with background work still
+  running stays working (`blockcontroller/progwatch.go`, `pkg/progstatus`).
 - [ ] (arcterm) Fork a conversation: Agent → Conversations → right-click an ended Claude conversation → Fork → a new
   tab named "<title> (fork)" opens on the same conversation, and a message there leaves the original's transcript as
   it was (Conversation History lists both); open a conversation in the centre → Fork sits beside Resume and does the

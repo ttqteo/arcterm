@@ -39,6 +39,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A Claude agent that stays awake and idle is compacted by Claude Code's own idle compaction, which arcterm now
   starts at your Compact threshold (100k unless you changed it) instead of Claude's 200k; arcterm compacts only the
   agents it puts to sleep, so the two never compact the same agent. It applies to agents started after the update.
+- An agent's status keeps up when its hooks fall silent (a killed `wsh`, a hook another plugin skips): arcterm's
+  terminals now answer the program-status protocol (OSC 7501) that Claude Code reports through, and when no hook
+  has said anything for 10 seconds around a change, the agent's dot takes what Claude Code reported.
 - The / menu in Chat lists every command Claude Code offers in that session (built-ins, its own skills, plugins, MCP),
   grouped and scrolling, and the + button opens a menu: add files or a folder, slash commands, MCP servers, plugins.
 - In Chat, the files you send show as cards under your message (type, name, folder and size; click to open), the files
