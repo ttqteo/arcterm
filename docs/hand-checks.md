@@ -22,6 +22,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   reduce-motion on, all of it snaps with no fade or slide. The scenario reads the fill's position and the layer's
   pointer events, not the look (`agent-chat` 33).
 
+- [ ] (arcterm) Token burn joiner: after a build with 40f58fdd6 and `task install`, in a fresh Claude session ask for
+  three Agent calls in one message, the third with a long prompt, so it arrives after the card for the first two is
+  up; leave the card unanswered past 10 s → the third call waits (no "tool.call hook skipped" line, it does not start),
+  a `wsh tokengate hold` process runs while it waits, and after Allow or Don't spawn it follows that answer and the
+  hold process is gone. Unit tests only (`tokengate-core.ts` `SpawnWait`, `register.ts` `waitInFlight`). Effort
+  1dce9cf9 has the matching proposed live-check chunk.
 - [ ] (arcterm) Chat multi-line send: in a Claude agent's Chat, send a message with a pasted picture, then one written
   over two lines (Shift+Enter) → each is submitted at once (Claude starts on it, the terminal's prompt box is empty),
   no "Sending…" left hanging. A one-line message and a `/model` still work as before. Typecheck only

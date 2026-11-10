@@ -271,6 +271,72 @@ describe("createSpawnGate", () => {
         ]);
     });
 
+    // seen 2026-10-20 and 10-22: a spawn that joined a group whose card was up waited on it as a plain promise, which
+    // Claude Code bills to the hook's 10 s budget, so the hook was skipped and the spawn ran ungated. a joiner waits
+    // through wait, which register.ts gives a $ call of the hook's own, and the opener, whose ask is that call, does not
+    describe("waits a joining spawn through wait", () => {
+        // a wait that records what it was handed and passes the promise through
+        const waiter = () => {
+            const waited: Promise<unknown>[] = [];
+            const wait = async (until: Promise<unknown>) => {
+                waited.push(until);
+                await until;
+            };
+            return { waited, wait };
+        };
+
+        it("while the card is up", async () => {
+            let answer: (v: SpawnVerdict) => void = () => {};
+            const ask = (_g: Group, _earlier: number, held: () => void) => {
+                held();
+                return new Promise<SpawnVerdict>((resolve) => (answer = resolve));
+            };
+            const gate = createSpawnGate(now);
+            const opener = waiter();
+            const joiner = waiter();
+            const a = gate.check("Agent", { tool_use_id: "toolu_a" }, ask, opener.wait);
+            await new Promise((resolve) => setTimeout(resolve, 0)); // the card is up
+            const b = gate.check("Agent", { tool_use_id: "toolu_b" }, ask, joiner.wait);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(joiner.waited).toHaveLength(1);
+            answer(DENY);
+            expect(await Promise.all([a, b])).toEqual(["Not run: no", "Not run: no"]);
+            expect(opener.waited).toHaveLength(0);
+        });
+
+        it("while the group gathers", async () => {
+            let wake = () => {};
+            const gate = createSpawnGate(() => new Promise<void>((resolve) => (wake = resolve)));
+            const { ask } = asker(allow(null));
+            const opener = waiter();
+            const joiner = waiter();
+            const a = gate.check("Agent", {}, ask, opener.wait);
+            const b = gate.check("Agent", {}, ask, joiner.wait);
+            wake();
+            expect(await Promise.all([a, b])).toEqual([null, null]);
+            expect(opener.waited).toHaveLength(0);
+            expect(joiner.waited).toHaveLength(1);
+        });
+
+        it("while wsh decides, then asks on its own without waiting", async () => {
+            let answer: (v: SpawnVerdict) => void = () => {};
+            let asks = 0;
+            const ask = () =>
+                ++asks === 1 ? new Promise<SpawnVerdict>((resolve) => (answer = resolve)) : Promise.resolve(allow(null));
+            const gate = createSpawnGate(now);
+            const joiner = waiter();
+            const a = gate.check("Agent", {}, ask);
+            await new Promise((resolve) => setTimeout(resolve, 0)); // wsh is deciding, no card
+            const b = gate.check("Agent", {}, ask, joiner.wait);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(joiner.waited).toHaveLength(1);
+            answer(allow(null));
+            expect(await Promise.all([a, b])).toEqual([null, null]);
+            expect(asks).toBe(2);
+            expect(joiner.waited).toHaveLength(1);
+        });
+    });
+
     it("asks again after a plain Allow", async () => {
         const gate = createSpawnGate(now);
         const { asked, ask } = asker(allow(null));
