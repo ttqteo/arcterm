@@ -115,7 +115,10 @@ func runUnderPause(ctx context.Context, run *waveobj.Run) bool {
 // PauseDag pauses dagID for the top-level run topRunID. It marks every run of the dag except topRunID itself with
 // PausedUnder = topRunID, sets the dag's PausedTs in the same write, and only then stops Verify, Final and every
 // live session. It returns the sessions it suspended, for the caller to keep in Pause.Sessions: a session whose
-// suspend failed is not among them, since it still runs, and its error is returned beside the rest.
+// suspend failed is not among them, since it still runs, and its error is returned beside the rest. A run that is
+// already done or cancelled has nothing to resume, but its session can still sit at its prompt holding its memory (a
+// worker under review, a reviewer whose verdict is in): that session is stopped for good, and a failure to stop it is
+// logged, not returned, since the pause itself holds.
 //
 // It refuses a cancelled or done dag, and does nothing for one already paused. It waits for the dag lock, so a
 // merge under way lands first; a running Setup, which holds that lock for minutes, is cancelled first.
@@ -132,10 +135,11 @@ func PauseDag(ctx context.Context, dagID, topRunID string) ([]waveobj.PausedSess
 	endPausing := stopDagSetup(dagID)
 	defer endPausing()
 	var sessions []waveobj.PausedSession
+	var finished []*waveobj.Run
 	var marked bool
 	if err := withDagMutation(dagID, func() error {
 		var perr error
-		sessions, marked, perr = markDagPaused(ctx, dagID, topRunID)
+		sessions, finished, marked, perr = markDagPaused(ctx, dagID, topRunID)
 		return perr
 	}); err != nil || !marked {
 		return nil, err
@@ -153,6 +157,11 @@ func PauseDag(ctx context.Context, dagID, topRunID string) ([]waveobj.PausedSess
 		}
 		suspended = append(suspended, s)
 	}
+	for _, r := range finished {
+		if err := stopRunWorkers(ctx, r); err != nil {
+			log.Printf("pause dag %s: stopping the idle session of finished run %s: %v", dagID, r.ID, err)
+		}
+	}
 	return suspended, errors.Join(errs...)
 }
 
@@ -168,10 +177,11 @@ func pauseRefusal(g *waveobj.TaskGroup) (already bool, err error) {
 }
 
 // markDagPaused is the locked half of PauseDag: PausedTs on the dag and PausedUnder on each of its runs, in one
-// transaction. It returns each live session as it stood, and false when the dag turned out to be paused already. The
-// caller holds the dag lock.
-func markDagPaused(ctx context.Context, dagID, topRunID string) ([]waveobj.PausedSession, bool, error) {
+// transaction. It returns each live session as it stood, each run already done or cancelled, and false when the dag
+// turned out to be paused already. The caller holds the dag lock.
+func markDagPaused(ctx context.Context, dagID, topRunID string) ([]waveobj.PausedSession, []*waveobj.Run, bool, error) {
 	var sessions []waveobj.PausedSession
+	var finished []*waveobj.Run
 	var runIDs []string
 	var channelID string
 	marked := false
@@ -219,6 +229,8 @@ func markDagPaused(ctx context.Context, dagID, topRunID string) ([]waveobj.Pause
 			}
 			if s, ok := runningSession(run); ok {
 				sessions = append(sessions, s)
+			} else if run.Status == jarvis.RunStatus_Done || run.Status == jarvis.RunStatus_Cancelled {
+				finished = append(finished, run)
 			}
 			runIDs = append(runIDs, runID)
 		}
@@ -226,14 +238,14 @@ func markDagPaused(ctx context.Context, dagID, topRunID string) ([]waveobj.Pause
 		return nil
 	})
 	if err != nil || !marked {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, dagID))
 	for _, runID := range runIDs {
 		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, channelID))
-	return sessions, true, nil
+	return sessions, finished, true, nil
 }
 
 // runningSession is the session run has working: the last worker of its running phase, in its own session. A run with no
