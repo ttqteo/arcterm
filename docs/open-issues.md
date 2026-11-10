@@ -32,7 +32,6 @@ Moved to its own file, [`hand-checks.md`](hand-checks.md): every shipped change 
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
-| (arcterm) Waking a sleeping Claude agent may meet Claude Code's cold-resume quota dialog (2.1.304+): on `--resume` of a conversation whose cache is cold, `maybePromptStaleResume` asks "Resume this conversation?" (inactive for X, N tokens, "Resuming it will use about P% of your 5-hour usage limit") with Resume / Start a new conversation / Resume from summary, when P is at least `minPercent` (5 unless the `tengu_amber_tally` flag sets it; Pro/Max only). arcterm's wake (`runWake`) sends its message the moment the agent reports in, over the mod's stream or typed: not known whether that submit waits behind the dialog, goes under it, or (typed, with Start a new conversation focused) confirms the new conversation and drops the context. Compact-before-sleep keeps most wakes under 5%; the open cases are Compact off, a context under the threshold but over 5%, a cache already cold at sleep. Next: reproduce (sleep an agent of ~90k with Compact off, wait past an hour, wake from Chat), then either answer the dialog from the wake (it is a host `requestDialog`, not a mod hook) or show it in Chat | gap | M | `pkg/wshrpc/wshserver/wshserver_agentsleep.go` `runWake`; Claude Code 2.1.322 bundle: `_promptStaleResume`, `TQs` ("Resume this conversation?"), `Z$o` trigger `resume` / `idle` |
 | (arcterm) An engine worker that hits the 5-hour limit ends its turn with the limit error; `CLAUDE_CODE_RETRY_WATCHDOG` (Claude Code's unattended retry, which waits out 429/529 and usage limits, `..._MAX_USAGE_LIMIT_WAIT_MS` to cap the wait) would let it wait instead, but a worker silent past `StallThreshold` (15 min) reads as stalled and is retried or handed to the lead, so the env alone trades one failure for another. Needs the engine to know a worker waits out a limit (the status line's `rate_limits`, or the turn's error) and pause the run until the reset instead of retrying. `permissions.denyInsteadOfPrompting` does not apply: workers run with `--dangerously-skip-permissions` | gap | M | `pkg/orchestrate/liveness.go:30`, `engine.go` `autoRetryStalled`, `pkg/jarvis/runexec.go:55` |
 | (arcterm) The Agent tree reads "No past conversations" until something refreshes it when the one sessions-archive load at boot fails (a scan past its 30 s backend deadline, likely on a big `~/.claude/projects` or a loaded machine): `loadSessionsArchive` marks the error and leaves the list empty, and nothing asks again. Retry with a backoff after a failed load. Found by run 009fc1e8's t-5, whose `launcher-resume` scenario now asks again itself | bug | S | `frontend/app/view/agents/sessionsarchivestore.ts` `loadSessionsArchive`; run 009fc1e8 t-5 report |
 | (arcterm) A fresh wavesrv store's first usage scan reads every transcript on disk (7.6 GB here, 1 to 2 minutes), starting 2 minutes after boot, so it loads the machine while a Final's first scenarios run and on a new install's first minutes. Spread it out (a rate cap, or newest projects first) or skip it in a Final's dev app | perf | S | `pkg/projectactivity/tally.go`; run 009fc1e8 t-5 report |
@@ -196,6 +195,18 @@ Harnesses:
 
 Cockpit and surfaces:
 
+- **(arcterm) A wake that meets Claude Code's cold-resume quota dialog** (2026-11-11) — on `--resume` of a conversation
+  whose cache is cold, Claude Code 2.1.304+ may ask "Resume this conversation? … Resuming it will use about P% of
+  your 5-hour usage limit" (Resume / Start a new conversation / Resume from summary) when P reaches `minPercent` of
+  the `tengu_amber_tally` flag (5); arcterm's wake (`runWake`) would send its message into it. Held: it cannot show
+  on this account. The flag prices only `default_claude_max_5x` and `default_claude_max_20x`, Claude Code learns the
+  served tier from a `quota_check` request at start, and a Team seat (`default_raven`) is suppressed; even on Max 5x,
+  Opus 5.5 at its 1M cap is 3.7%, so only Fable 5.1 or 5 over ~300k tokens reaches 5%. Checked 2026-11-11: a 3-hour-old
+  416k-token Fable 5.1 session resumed with no dialog, and a typed wake (paste, pause, Enter) ran. The stale-resume
+  dialog (`tengu_gleaming_fair_reuse`, 70 min / 100k) shows only with a precomputed summary. Revive when an agent runs
+  on a Max account (`ARC_CLAUDE_ACCOUNT`) or the flag prices Team: reproduce by aging a throwaway session's transcript
+  (timestamps back past an hour, the last usage inflated) and resuming it in a PTY with the `WAVETERM_*` env removed;
+  source: Claude Code 2.1.322 bundle `_promptStaleResume`, `Q$o`, `Z$o`, `TQs`.
 - **(arcterm) Council: session resume across rounds** (2026-11-03) — each expert turn is still a fresh `claude -p`
   with no session resume (`pkg/consult/consult.go`), so every round re-reads the context. Deferred because the verify
   step now sits between round 1 and round 2 and changes the time between an expert's turns, while the prompt cache
