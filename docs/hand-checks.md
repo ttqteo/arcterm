@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's Working line counts the turn: send a Claude agent in Chat a prompt that takes a minute → the line
+  reads `Working · … (34s · ↓ 860 tokens)`, the seconds ticking and the tokens rising as each reply lands (in steps, not
+  token by token as the TUI streams); compare with the TUI's own counter in Terminal (`chatpane.tsx` `TurnStatsText`,
+  `transcriptprojection.ts` `turnStats`).
 - [ ] (arcterm) A stopped service stays stopped: Setup → Tools → portfolio → Stop, then quit and reopen arcterm (or
   `task install`) → it does not run (no `node live/server.mjs` in Activity Monitor, :8386 refuses); open it from the rail
   → the card "portfolio is stopped" with Start, and Start brings the page up; after that a restart starts it as before.

@@ -10,6 +10,7 @@ import {
     CHAT_RENDER_STEP,
     chatItems,
     shownItems,
+    turnStatsLabel,
     workingLine,
     workingText,
     type ChatItem,
@@ -298,6 +299,23 @@ describe("keys", () => {
         const first = chatItems([you("go"), action("read")]);
         const later = chatItems([you("go"), action("read"), says("found it")]);
         expect(first.map((i) => i.key)).toEqual(later.map((i) => i.key));
+    });
+});
+
+describe("turnStatsLabel", () => {
+    const at = Date.parse("2026-11-10T14:30:00.000Z");
+
+    it("reads as the TUI's: how long the turn has run, then its output tokens", () => {
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 860 }, at + 34_000)).toBe("34s · ↓ 860 tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 3_140 }, at + 71_000)).toBe("1m 11s · ↓ 3.1k tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 12_600 }, at + 3_725_000)).toBe("1h 2m · ↓ 13k tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 1_250_000 }, at + 5_000)).toBe("5s · ↓ 1.3M tokens");
+    });
+
+    it("leaves out tokens before the first reply lands, and a time it cannot know", () => {
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 0 }, at + 3_000)).toBe("3s");
+        expect(turnStatsLabel({ startedAt: NaN, outputTokens: 42 }, at)).toBe("↓ 42 tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 1 }, at + 2_000)).toBe("2s · ↓ 1 token");
     });
 });
 

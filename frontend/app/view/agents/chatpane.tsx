@@ -17,7 +17,7 @@ import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Highlighter } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion, useIsPresent } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
@@ -26,7 +26,7 @@ import { ChatConversation } from "./chatconversation";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { chatCapable } from "./chatmode";
-import { workingText } from "./chatmodel";
+import { turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
@@ -35,11 +35,12 @@ import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
-import { PromptImages } from "./narrationtimeline";
+import { PromptImages, useNow } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
+import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const NO_ENTRIES: AgentEntry[] = [];
@@ -57,6 +58,17 @@ function useIdleSince(idle: boolean): number | null {
 // takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill). It splits
 // the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
 // under it), so nothing changes when the transcript's copy replaces it.
+// the turn's time and output tokens after the working line, as the TUI's "(1m 11s · ↓ 3.1k tokens)": its own component so
+// the second's tick redraws this alone
+function TurnStatsText({ stats }: { stats: TurnStats }) {
+    const label = turnStatsLabel(stats, useNow(true));
+    return label === "" ? null : (
+        <span data-chat-turn-stats className="flex-none tabular-nums text-ink-faint">
+            ({label})
+        </span>
+    );
+}
+
 function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
     const said = splitAttachments(text);
     const body = said.text.trim();
@@ -176,6 +188,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     }, [entries]);
 
     const working = workingText(agent.state, agent.activity, entries);
+    // the turn's time and output tokens, read back from the loaded lines to its prompt; only while it works
+    const lines = view?.win.lines;
+    const isWorking = working != null;
+    const turn = useMemo(() => (isWorking && lines != null ? turnStats(lines) : null), [isWorking, lines]);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
     const asking = agent.ask != null && !agent.ask.hold;
     // a read that has not landed yet shows a skeleton; one that failed (a transcript file that is not written yet, most
@@ -270,6 +286,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     aria-hidden
                                 />
                                 <span className="min-w-0 truncate">{working}</span>
+                                {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}
                         <PermissionCard agent={agent} onOpenTerminal={() => setChatMode(agent.id, "terminal")} />

@@ -158,6 +158,55 @@ function mergeCompaction(entries: AgentEntry[], patch: Partial<Extract<AgentEntr
     entries.push({ kind: "compaction", ...patch });
 }
 
+/** The turn under way: when its prompt was sent (NaN when the record has no time) and the output tokens of the model's
+ *  replies since, as the TUI's "(1m 11s · ↓ 3.1k tokens)" counts them. */
+export interface TurnStats {
+    startedAt: number;
+    outputTokens: number;
+}
+
+// a prompt you sent: a user record of your text, not a tool's result, a meta record or a compaction's summary (a
+// message queued mid-turn is an attachment record, which joins the turn under way as the TUI's counter does)
+function isPrompt(rec: any): boolean {
+    if (rec?.type !== "user" || rec.isMeta === true || rec.isCompactSummary === true) {
+        return false;
+    }
+    const content = rec.message?.content;
+    if (typeof content === "string") {
+        return content.trim() !== "";
+    }
+    return Array.isArray(content) && content.some((b: any) => b?.type === "text" && typeof b.text === "string");
+}
+
+/** Pure: the turn at the end of a Claude transcript, read back from its last line to its prompt: each reply's output
+ *  tokens once (Claude Code writes every block of a reply as its own record, repeating the reply's usage; a request's
+ *  copy is skipped). Null when the lines hold no prompt. */
+export function turnStats(lines: string[]): TurnStats | null {
+    const byReply = new Map<string, number>();
+    for (let i = lines.length - 1; i >= 0; i--) {
+        let rec: any;
+        try {
+            rec = JSON.parse(lines[i]);
+        } catch {
+            continue;
+        }
+        if (isPrompt(rec)) {
+            const startedAt = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
+            let outputTokens = 0;
+            for (const n of byReply.values()) {
+                outputTokens += n;
+            }
+            return { startedAt, outputTokens };
+        }
+        const out = rec?.message?.usage?.output_tokens;
+        if (rec?.type === "assistant" && !isRequestCopy(rec) && typeof out === "number") {
+            const id = typeof rec.message.id === "string" ? rec.message.id : `line:${i}`;
+            byReply.set(id, Math.max(byReply.get(id) ?? 0, out));
+        }
+    }
+    return null;
+}
+
 /** Pure: project transcript JSONL lines into ordered previous-info entries.
  *  assistant text -> message; tool_use -> action; tool_result -> outcome on the matching
  *  action (ok, fail on error, or blocked for a Bash refused before it ran; see bashNeverRan).

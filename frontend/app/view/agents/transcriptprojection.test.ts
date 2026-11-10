@@ -7,7 +7,47 @@ import {
     extractSubagentSpawns,
     extractTasks,
     projectTranscript,
+    turnStats,
 } from "./transcriptprojection";
+
+// the turn under way: Claude Code writes each block of a reply as its own record, repeating the reply's usage
+describe("turnStats", () => {
+    const L = (o: unknown) => JSON.stringify(o);
+    const reply = (id: string, out: number, ts: string, block = "text") =>
+        L({ type: "assistant", timestamp: ts, message: { id, usage: { output_tokens: out }, content: [{ type: block }] } });
+    const prompt = (text: string, ts: string) => L({ type: "user", timestamp: ts, message: { content: text } });
+    const result = (ts: string) => L({ type: "user", timestamp: ts, message: { content: [{ type: "tool_result", tool_use_id: "t" }] } });
+
+    it("counts each reply's output tokens once, from the last prompt you sent", () => {
+        const lines = [
+            prompt("first", "2026-11-10T14:00:00.000Z"),
+            reply("m0", 999, "2026-11-10T14:00:05.000Z"),
+            prompt("làm tiếp đi", "2026-11-10T14:30:00.000Z"),
+            reply("m1", 195, "2026-11-10T14:30:07.000Z", "thinking"),
+            reply("m1", 195, "2026-11-10T14:30:08.000Z", "tool_use"),
+            result("2026-11-10T14:30:08.500Z"),
+            reply("m2", 795, "2026-11-10T14:30:16.000Z", "thinking"),
+            reply("m2", 795, "2026-11-10T14:30:16.500Z", "text"),
+            L({ type: "api-request-blob", message: { id: "m2", usage: { output_tokens: 795 } } }),
+        ];
+        expect(turnStats(lines)).toEqual({ startedAt: Date.parse("2026-11-10T14:30:00.000Z"), outputTokens: 990 });
+    });
+
+    it("keeps counting through a message queued mid-turn and a meta record", () => {
+        const lines = [
+            prompt("go", "2026-11-10T14:30:00.000Z"),
+            reply("m1", 100, "2026-11-10T14:30:05.000Z"),
+            L({ type: "attachment", attachment: { type: "queued_command", prompt: "and this", commandMode: "prompt" } }),
+            L({ type: "user", isMeta: true, message: { content: "<system-reminder>x</system-reminder>" } }),
+            reply("m2", 50, "2026-11-10T14:30:09.000Z"),
+        ];
+        expect(turnStats(lines)).toEqual({ startedAt: Date.parse("2026-11-10T14:30:00.000Z"), outputTokens: 150 });
+    });
+
+    it("is null with no prompt in the lines read", () => {
+        expect(turnStats([reply("m1", 10, "2026-11-10T14:30:05.000Z"), result("2026-11-10T14:30:06.000Z")])).toBeNull();
+    });
+});
 
 const LINES: string[] = [
     JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "fix the race" }] } }), // human prompt -> user entry

@@ -20,6 +20,7 @@ import {
 import { parseWake, recapLine, wakeSummary, type Wake } from "../../../../claude/arc-view-mod/hooks/wake-core";
 import type { AgentEntry, AgentState, EditFile, ShellResult } from "./agentsviewmodel";
 import { groupCompact, type CompactItem, type WorkItem } from "./compacttimeline";
+import type { TurnStats } from "./transcriptprojection";
 
 /** One piece of what the agent did between two of your messages. */
 export type AgentPart =
@@ -161,6 +162,47 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
         }
     }
     return out;
+}
+
+// "860", "3.1k", "13k", "1.3M": one decimal while the number is short, as the TUI's counter reads
+function shortCount(n: number): string {
+    if (n >= 1_000_000) {
+        return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+    }
+    if (n >= 10_000) {
+        return `${Math.round(n / 1_000)}k`;
+    }
+    if (n >= 1_000) {
+        return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+    }
+    return String(n);
+}
+
+// "34s", "1m 11s", "1h 2m"
+function shortDuration(ms: number): string {
+    const secs = Math.max(0, Math.floor(ms / 1000));
+    if (secs < 60) {
+        return `${secs}s`;
+    }
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) {
+        return `${mins}m ${secs % 60}s`;
+    }
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+/** Pure: what the working line adds of the turn under way, as the TUI's "(1m 11s · ↓ 3.1k tokens)": how long it has
+ *  run and the output tokens of its replies so far (transcriptprojection.ts turnStats). The tokens are left out before
+ *  the first reply lands, and the time when the prompt carried none. */
+export function turnStatsLabel(stats: TurnStats, now: number): string {
+    const parts: string[] = [];
+    if (Number.isFinite(stats.startedAt)) {
+        parts.push(shortDuration(now - stats.startedAt));
+    }
+    if (stats.outputTokens > 0) {
+        parts.push(`↓ ${shortCount(stats.outputTokens)} ${stats.outputTokens === 1 ? "token" : "tokens"}`);
+    }
+    return parts.join(" · ");
 }
 
 /** Pure: whether the box's text runs as a bash command: it starts with `!`, which Claude Code's own box reads as bash

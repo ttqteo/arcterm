@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's `@` file list opens above the box, puts the files the agent just read or wrote first, and marks the
   letters you typed in each name.
 - Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
+- Chat's Working line counts the turn as the terminal does: how long it has run and the tokens Claude has written,
+  as in "(1m 11s · ↓ 3.1k tokens)".
 - In Chat, the agent's header keeps only its name and project: the model and the context are in the message box, and
   what it is doing in the chat. Link to initiative moved into the … menu (`i` still opens it); the Terminal view keeps
   the full header.
