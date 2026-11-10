@@ -31,6 +31,7 @@ import { addPending, noteSent, sentHistory } from "./chatpendingstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot } from "./launchermention";
+import { isPathsDrag, pathsFromDrop } from "./pathdrop";
 import { usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
 import { opensTui } from "./slashcommands";
@@ -41,6 +42,11 @@ const ChatMinH = 38;
 const ChatMaxH = 200;
 
 const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
+// a drag that may name files by path (pathsFromDrop decides at the drop, when the data is readable)
+const dragNamesPaths = (dt: DataTransfer | null) => {
+    const types = Array.from(dt?.types ?? []);
+    return isPathsDrag(types) || types.includes("text/uri-list");
+};
 
 const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
 
@@ -238,18 +244,31 @@ export function ChatComposer({
     // the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file: any drag that holds
     // files is taken here, and kept only by an awake agent
     const onDragOver = (e: DragEvent<HTMLElement>) => {
-        if (dragHasFiles(e.dataTransfer)) {
+        if (dragHasFiles(e.dataTransfer) || dragNamesPaths(e.dataTransfer)) {
             e.preventDefault();
             e.dataTransfer.dropEffect = asleep ? "none" : "copy";
         }
     };
+    // Explorer hands over real files (copied, as a paste is); arcterm's tree, VS Code, Obsidian and "Copy as path"
+    // hand over paths as text, which the textarea would otherwise take as typed text: those attach in place
     const onDrop = (e: DragEvent<HTMLElement>) => {
-        if (!dragHasFiles(e.dataTransfer)) {
+        const dt = e.dataTransfer;
+        if (dragHasFiles(dt)) {
+            e.preventDefault();
+            if (!asleep) {
+                att.addFiles(Array.from(dt.files));
+            }
+            return;
+        }
+        const paths = pathsFromDrop(Array.from(dt.types), (type) => dt.getData(type));
+        if (paths == null || paths.length === 0) {
             return;
         }
         e.preventDefault();
+        e.stopPropagation();
         if (!asleep) {
-            att.addFiles(Array.from(e.dataTransfer.files));
+            att.addPaths(paths);
+            taRef.current?.focus();
         }
     };
     const showStop = !asleep && agent.blockId != null && canStop(agent.state, agent.sleeping);

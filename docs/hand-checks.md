@@ -14,6 +14,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Chat pinned prompt beside the skim button: in a long Chat, scroll until your first prompt pins at the
   top → the pinned bar's text stops short of the highlighter button at the top right instead of running under it
   (`pr-10` on the bar, `chatconversation.tsx`). No scenario step shows the bar with the button in view.
+- [ ] (arcterm) Drag a file into Chat's message box from each source → an attachment chip, no path text in the box:
+  a file row of arcterm's Worktree files tree, a file from VS Code's explorer, one from Obsidian, and (as before) one
+  from Explorer; dragging ordinary text (a sentence from a page) still drops it as text. Unit tests only
+  (`pathdrop.ts` `pathsFromDrop`, `chatcomposer.tsx` `onDrop`); no dev app was running to try the drop.
+- [ ] (arcterm) Alt+C tooltip on a sleeping Claude agent: hover the Alt+C key cap in the header of a sleeping Claude
+  agent → with a canvas and a review open it reads "Switch Canvas and Review, …" (no Chat or Terminal, which the key
+  skips while asleep); with neither open it reads "Switches the view once the agent wakes". Awake, it still lists
+  Chat and Terminal (`agentheader.tsx` key cap title).
 - [ ] (arcterm) Chat model chip: in a real Claude agent's Chat, click the model chip and pick another model → Claude
   Code switches to it (its own footer shows the new model; the chip follows once the agent's row updates). The CDP
   scenario only checks the menu and the `/model <alias>` it types, against a mock (`chatfooter.tsx`, `agent-chat` 28).

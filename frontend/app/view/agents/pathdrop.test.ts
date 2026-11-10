@@ -8,6 +8,7 @@ import {
     encodePathsDrag,
     formatDroppedPaths,
     isPathsDrag,
+    pathsFromDrop,
     RAIL_PATHS_MIME,
     setDraggedPathsCount,
     splitDroppable,
@@ -160,5 +161,41 @@ describe("dragged paths count", () => {
         expect(draggedPathsCount()).toBe(3);
         setDraggedPathsCount(0);
         expect(draggedPathsCount()).toBe(0);
+    });
+});
+
+describe("pathsFromDrop", () => {
+    const drop = (data: Record<string, string>) => (type: string) => data[type] ?? "";
+    it("takes the tree's own paths first", () => {
+        const get = drop({ [RAIL_PATHS_MIME]: JSON.stringify(["D:/a/b.ts", "D:/a/c.ts"]), "text/plain": "ignored" });
+        expect(pathsFromDrop([RAIL_PATHS_MIME, "text/plain"], get)).toEqual(["D:/a/b.ts", "D:/a/c.ts"]);
+    });
+    it("reads file URIs from a uri-list, skipping comments and other schemes", () => {
+        const list = [
+            "# a comment",
+            "file:///D:/work/notes/a%20b.pdf",
+            "https://example.com/x",
+            "file:///home/me/n.md",
+        ];
+        const get = drop({ "text/uri-list": list.join("\r\n") });
+        expect(pathsFromDrop(["text/uri-list"], get)).toEqual(["D:/work/notes/a b.pdf", "/home/me/n.md"]);
+    });
+    it("takes plain text when every line is an absolute path, quotes stripped", () => {
+        const lines = [String.raw`"D:\work\notes\paper.pdf"`, String.raw`\\server\share\x.txt`, "/home/me/n.md", ""];
+        expect(pathsFromDrop(["text/plain"], drop({ "text/plain": lines.join("\n") }))).toEqual([
+            String.raw`D:\work\notes\paper.pdf`,
+            String.raw`\\server\share\x.txt`,
+            "/home/me/n.md",
+        ]);
+    });
+    it("leaves text that is not only paths to the text box", () => {
+        const plain = (text: string) => pathsFromDrop(["text/plain"], drop({ "text/plain": text }));
+        expect(plain(String.raw`see D:\a.pdf`)).toBeNull();
+        expect(plain(String.raw`D:\a.pdf` + "\nand more")).toBeNull();
+        expect(plain("relative/path.ts")).toBeNull();
+        expect(plain("  ")).toBeNull();
+    });
+    it("is null for a drag of real files, which the box copies instead", () => {
+        expect(pathsFromDrop(["Files", "text/plain"], drop({ "text/plain": String.raw`D:\a.pdf` }))).toBeNull();
     });
 });
