@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A session's menu in History has Copy session id, beside Copy title and Copy transcript path.
 - Chat shows Claude's skim highlights, the sentences worth reading, as the terminal does; the highlighter button at the
   top of Chat turns them off and on.
+- Claude agents can draw a visual right in Chat: a chart, an illustration, a widget or a quiz, in the app's colours, whose
+  buttons ask Claude the next question for you. <!-- big -->
 
 ### Changed
 

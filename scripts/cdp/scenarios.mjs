@@ -42062,7 +42062,11 @@ const agentSleep = {
 // showing Chat (and in the PTY of one showing Terminal), and the float note closing hands focus back to the box. Steps 20-26
 // are the chat's second round: a message sent while Claude works (the Queued bubble, the hold behind a permission card, ↑
 // recall), the `/` menu, the footer's mode chip and the card's second choice (Claude Code's captured screens, from
-// tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy.
+// tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy. Steps 40-44 are the inline visual
+// (docs/superpowers/plans/2026-11-10-chat-inline-visuals.md): a reply's ```arc-visual block names an HTML page in a folder of
+// the scenario's own (window.__chatVisualsDir, set in arrange; the pages are written by acWriteVisuals), drawn as a frame in the
+// conversation. The clicks on its buttons are CDP input at known offsets in the frame (a page of another origin cannot be
+// reached from the page); the mock records agentswake for the sleeping agent's prompt and never wakes anything.
 // Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
 const AC_MOCK_KEY = "__arcAgentChatMock";
 const AC = agentPageFixtures;
@@ -42160,6 +42164,34 @@ function acWriteFixtures(dir) {
             AC.toolUse("toolu_ac_subtool", "Read", { file_path: edited }, o(4)),
         ]),
     };
+}
+
+// The pages steps 40-44 draw as inline visuals, in a folder of the scenario's own that window.__chatVisualsDir points the chat
+// at (the person's real ~/.arc/visuals is not touched). Every page has no margin, so its height is its div's. chart.html has two
+// buttons at known places (#ask at 16,16 and #theme at 16,64, each 120x36); auto.html asks by itself 300 ms after it loads;
+// tall.html is taller than the frame's cap. The pages call arc.sendPrompt from handlers and a timer, never at top level: the
+// bridge script that defines `arc` is appended after the page, so it does not exist yet while the page's own script first runs.
+function acWriteVisuals(dir) {
+    const folder = join(dir, "visuals");
+    mkdirSync(folder, { recursive: true });
+    const page = (body, script = "") =>
+        `<!doctype html>\n<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent}button{font:inherit}</style></head><body>${body}${script === "" ? "" : `<script>${script}</script>`}</body></html>\n`;
+    const button = (id, top, label) =>
+        `<button id="${id}" style="position:absolute;left:16px;top:${top}px;width:120px;height:36px">${label}</button>`;
+    writeFileSync(
+        join(folder, "chart.html"),
+        page(
+            `<div style="height:300px"></div>${button("ask", 16, "Ask")}${button("theme", 64, "Theme")}`,
+            `document.getElementById("ask").addEventListener("click", function () { arc.sendPrompt("Explain the retry policy"); });
+document.getElementById("theme").addEventListener("click", function () { arc.sendPrompt("theme:" + getComputedStyle(document.documentElement).getPropertyValue("--arc-background").trim()); });`
+        )
+    );
+    writeFileSync(
+        join(folder, "auto.html"),
+        page(`<div style="height:120px"></div>`, `addEventListener("load", function () { setTimeout(function () { arc.sendPrompt("unasked"); }, 300); });`)
+    );
+    writeFileSync(join(folder, "tall.html"), page(`<div style="height:900px"></div>`));
+    return { folder: folder.replace(/\\/g, "/"), outside: join(dir, "outside.html").replace(/\\/g, "/") };
 }
 
 // the roster: a row per fixture agent over its real tab. `main` takes a patch (step 4 makes it work), and `rowPatches` any
@@ -42319,6 +42351,11 @@ async function installAgentChatMock(h, ctx) {
                     m.calls.push({ command, data });
                     return Promise.resolve(null);
                 }
+                // step 44: a prompt a visual sends to a sleeping agent is a wake with a message; recorded, never run
+                if (command === "agentswake") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(null);
+                }
                 if (command === "listclaudecommands") {
                     m.calls.push({ command, data });
                     return Promise.resolve(m.commands);
@@ -42428,6 +42465,56 @@ const acClear = (h, boxExpr) =>
         return true;
     })()`);
 
+// Inline visuals (steps 40-44). A visual is a figure `[data-chat-visual="<path>"]` holding an iframe once it has been near the
+// view; found by its file name inside one agent's chat layer.
+const acVisual = (id, file) => `${acLayer(id)}?.querySelector('[data-chat-visual$="/${file}"]')`;
+const acVisualFrame = (id, file) => `${acVisual(id, file)}?.querySelector("iframe")`;
+// the frame's height in px (0 while it is not mounted), and whether it lies in [lo, hi]
+const acFrameHeight = (id, file) => `Math.round(${acVisualFrame(id, file)}?.getBoundingClientRect().height ?? 0)`;
+const acFrameBetween = (id, file, lo, hi) => `(() => { const n = ${acFrameHeight(id, file)}; return n >= ${lo} && n <= ${hi}; })()`;
+const acShowVisual = (h, id, file) =>
+    h.ev(`(() => { const f = ${acVisual(id, file)}; if (!f) return false; f.scrollIntoView({ block: "center" }); return true; })()`);
+// polls a Node-side read until it answers something truthy (that answer is returned) or the time is up (null)
+async function acUntil(read, ms) {
+    const end = Date.now() + ms;
+    for (;;) {
+        const v = await read();
+        if (v) return v;
+        if (Date.now() >= end) return null;
+        await polishNap(60);
+    }
+}
+// the frame's rect once two reads 80 ms apart agree: a scroll (the send's jump to the end is smooth) has to be over
+async function acFrameRect(h, id, file) {
+    let last = null;
+    for (let i = 0; i < 12; i++) {
+        const r = await h.ev(`(() => {
+            const f = ${acVisualFrame(id, file)};
+            if (!f) return null;
+            const b = f.getBoundingClientRect();
+            return { x: b.left, y: b.top, w: b.width, h: b.height };
+        })()`);
+        if (r != null && last != null && r.x === last.x && r.y === last.y && r.h === last.h) return r;
+        last = r;
+        await polishNap(80);
+    }
+    return last;
+}
+// A left click through the real input path at (dx, dy) in a visual's frame, scrolled to the middle first. The press focuses the
+// frame, and the chat takes a prompt only while its frame is the active element. Answers where and when it clicked.
+async function acClickFrame(h, id, file, dx, dy) {
+    if (!(await acShowVisual(h, id, file))) return null;
+    const r = await acFrameRect(h, id, file);
+    if (r == null) return null;
+    const x = Math.round(r.x + dx);
+    const y = Math.round(r.y + dy);
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+    }
+    return { x, y, at: Date.now() };
+}
+
 // One line of the transcript Claude Code writes for a message queued while it works and taken in mid-turn
 const acQueuedLine = (dir, prompt) =>
     JSON.stringify({
@@ -42514,6 +42601,11 @@ const agentChat = {
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            // the chat reads this once, when its layer mounts: set before the first chat layer opens. No transcript names a
+            // visual yet, so steps 1-36 draw as they did
+            at = "pointing the chat at the visuals folder";
+            ctx.visuals = acWriteVisuals(ctx.dir);
+            await h.ev(`window.__chatVisualsDir = ${JSON.stringify(ctx.visuals.folder)}`);
             await h.goto("agent");
             for (const key of Object.keys(AC_NAMES)) {
                 at = `making the ${key} tab`;
@@ -43823,6 +43915,178 @@ const agentChat = {
                 tall36 && away36 && scrolledUp36 > 200 && pendingUp36 && atEnd36 && geo36.inside,
                 { tall36, away36, scrolledUp36, pendingUp36, atEnd36, geo36 }
             );
+
+            // 40-44. inline visuals (docs/superpowers/plans/2026-11-10-chat-inline-visuals.md): an ```arc-visual block in a reply names
+            // an HTML page under the visuals folder (window.__chatVisualsDir stands in for ~/.arc/visuals), and Chat draws it as a frame.
+            // The pages are in ctx.visuals.folder; the clicks go through CDP input, since the page is in a frame of another origin
+            const vd = ctx.visuals.folder;
+            const outside = ctx.visuals.outside;
+            const ASK = "Explain the retry policy";
+            const fence = (p) => "```arc-visual\n" + p + "\n```";
+            const stamp40 = () => ({ cwd: ctx.dir, ts: new Date().toISOString() });
+            const typedSince = async (blockId, n) => (await acInputs(h, blockId)).slice(n);
+            const boxValue = (id) => h.ev(`${acBox(id)}?.value ?? null`);
+            const pendingOfA = (text) =>
+                `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(text)})`;
+
+            // 40. a reply holding five arc-visual blocks: chart.html is a figure with a header naming it and a frame served from
+            // the file server that grows to the page's own height. The other four are read by steps 41-43
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            const inputsBefore40 = (await acInputs(h, blockA)).length;
+            acAppend(
+                ctx.files.main,
+                AC.assistantText(
+                    [
+                        "Here are five visuals.",
+                        fence(`${vd}/chart.html`),
+                        "A page that asks by itself.",
+                        fence(`${vd}/auto.html`),
+                        "A page taller than its frame.",
+                        fence(`${vd}/tall.html`),
+                        "A page that is gone.",
+                        fence(`${vd}/gone.html`),
+                        "A page outside the folder.",
+                        fence(outside),
+                    ].join("\n\n"),
+                    stamp40()
+                )
+            );
+            const figure40 = await polishWaitFor(h, `!!${acVisual(A, "chart.html")}`, 15000);
+            await acShowVisual(h, A, "chart.html");
+            const src40 = await polishWaitFor(h, `(${acVisualFrame(A, "chart.html")}?.getAttribute("src") ?? "").includes("/html-preview/")`, 8000);
+            const sized40 = await polishWaitFor(h, acFrameBetween(A, "chart.html", 290, 320), 8000);
+            const read40 = await h.ev(`(() => {
+                const fig = ${acVisual(A, "chart.html")};
+                const frame = ${acVisualFrame(A, "chart.html")};
+                return {
+                    header: fig?.firstElementChild?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    src: frame?.getAttribute("src") ?? null,
+                    height: ${acFrameHeight(A, "chart.html")},
+                    sandbox: frame?.getAttribute("sandbox") ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-40-visual.png");
+            rec(
+                "40. a reply holding five arc-visual blocks draws chart.html as a figure whose header names it, with a frame served from the file server (/html-preview/) that is 290-320 px tall once the page has reported its height",
+                figure40 && src40 && sized40 && (read40.header ?? "").includes("chart.html") && (read40.src ?? "").includes("/html-preview/"),
+                { figure40, src40, sized40, read40 }
+            );
+
+            // 41. the page reads the app's colours: a click on #theme sends "theme:" and the page's --arc-background, which is the
+            // app's --color-background, through the box (the bridge hands the colours over when the page says it is ready)
+            await acClear(h, acBox(A));
+            const before41 = (await acInputs(h, blockA)).length;
+            const click41 = await acClickFrame(h, A, "chart.html", 76, 82);
+            const theme41 = await acUntil(async () => {
+                const typed = (await typedSince(blockA, before41)).join("");
+                return typed.endsWith("\r") ? typed : null;
+            }, 6000);
+            const appBg = await h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
+            await h.shot("cdp-shots/agent-chat-41-visual-theme.png");
+            rec(
+                "41. a click on the visual's #theme button sends theme:<value> into the main agent's block with Enter, and <value> is the app's --color-background: the page took the app's colours",
+                click41 != null && appBg !== "" && theme41 === `theme:${appBg}\r`,
+                { click41, appBg, theme41, inputsBefore40, chat: await typedSince(blockA, inputsBefore40) }
+            );
+
+            // 42. a click on #ask sends its prompt through the chat's own send path: typed into the block with Enter, a pending bubble
+            // for it; a second click at once (inside the 1.5 s gap) goes into the box instead of being sent. The 1.6 s wait makes
+            // the first click a clean one: step 41's prompt was this frame's last, and the gap has passed
+            const gone41 = 1650 - (Date.now() - (click41?.at ?? 0));
+            if (gone41 > 0) await polishNap(gone41);
+            await acClear(h, acBox(A));
+            const before42 = (await acInputs(h, blockA)).length;
+            const click42 = await acClickFrame(h, A, "chart.html", 76, 34);
+            const sent42 = await acUntil(async () => {
+                const typed = (await typedSince(blockA, before42)).join("");
+                return typed.endsWith("\r") ? typed : null;
+            }, 6000);
+            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
+            await polishNap(500);
+            const typed42 = (await typedSince(blockA, before42)).join("");
+            const box42 = await boxValue(A);
+            const pending42 = await polishWaitFor(h, `${pendingOfA(ASK)}.length >= 1`, 5000);
+            await h.shot("cdp-shots/agent-chat-42-visual-send.png");
+            rec(
+                "42. a click on #ask types Explain the retry policy into the main agent's block with Enter and shows its pending bubble; a second click at once puts it into the box (which ends with it) and types nothing more",
+                click42 != null && sent42 === `${ASK}\r` && pending42 && click42b != null && typed42 === `${ASK}\r` && (box42 ?? "").endsWith(ASK),
+                { click42, sent42, pending42, click42b, typed42, box42, gapMs: click42 && click42b ? click42b.at - click42.at : null }
+            );
+
+            // 43. a page's own prompt without a click is dropped; a page taller than the cap shows at 640 px with an expand button that
+            // grows the frame to the page and back; a missing page says so; a path outside the folder stays code, with the reason
+            await acClear(h, acBox(A));
+            const before43 = (await acInputs(h, blockA)).length;
+            await acShowVisual(h, A, "auto.html");
+            const autoSrc43 = await polishWaitFor(h, `(${acVisualFrame(A, "auto.html")}?.getAttribute("src") ?? "") !== ""`, 8000);
+            const autoSized43 = await polishWaitFor(h, acFrameBetween(A, "auto.html", 110, 130), 8000);
+            await polishNap(1500);
+            const autoHeight43 = await h.ev(acFrameHeight(A, "auto.html"));
+            const typed43 = await typedSince(blockA, before43);
+            const box43 = await boxValue(A);
+            const everTyped43 = (await acInputs(h, blockA)).some((i) => i.includes("unasked"));
+            await acShowVisual(h, A, "tall.html");
+            const tallSized43 = await polishWaitFor(h, acFrameBetween(A, "tall.html", 639, 641), 8000);
+            const expand = `${acVisual(A, "tall.html")}?.querySelector("[data-chat-visual-expand]")`;
+            const expandUp43 = await polishWaitFor(h, `!!${expand}`, 5000);
+            await h.ev(`${expand}?.click()`);
+            const grown43 = await polishWaitFor(h, `${acFrameHeight(A, "tall.html")} > 640`, 3000);
+            const grownHeight43 = await h.ev(acFrameHeight(A, "tall.html"));
+            await h.shot("cdp-shots/agent-chat-43-visual-unasked-and-tall.png");
+            await h.ev(`${expand}?.click()`);
+            const folded43 = await polishWaitFor(h, acFrameBetween(A, "tall.html", 639, 641), 3000);
+            const missingUp43 = await polishWaitFor(h, `!!${acVisual(A, "gone.html")}?.querySelector("[data-chat-visual-missing]")`, 8000);
+            const missing43 = await h.ev(`${acVisual(A, "gone.html")}?.querySelector("[data-chat-visual-missing]")?.textContent.trim() ?? null`);
+            const refusedUp43 = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-visual-refused]")`, 5000);
+            const refused43 = await h.ev(`(() => {
+                const note = ${acLayer(A)}?.querySelector("[data-chat-visual-refused]");
+                const code = note?.previousElementSibling;
+                return {
+                    note: note?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    code: code?.textContent ?? null,
+                    isCode: !!code && (code.matches("pre, code") || !!code.querySelector("pre, code")),
+                    framed: !!${acLayer(A)}?.querySelector('[data-chat-visual$="/outside.html"]'),
+                };
+            })()`);
+            rec(
+                "43. auto.html's own prompt (300 ms after it loads, no click) is dropped: nothing is typed and the box holds no unasked, and its frame is 110-130 px; tall.html shows at 640 px with an expand button that grows it past 640 (~900) and back to 640; gone.html shows 'Visual not found'; the path outside the folder stays a code block under 'Shown as code: a visual must sit in ~/.arc/visuals'",
+                autoSrc43 && autoSized43 && typed43.length === 0 && !(box43 ?? "").includes("unasked") && !everTyped43 &&
+                    tallSized43 && expandUp43 && grown43 && grownHeight43 <= 960 && folded43 &&
+                    missingUp43 && (missing43 ?? "").includes("gone.html") &&
+                    refusedUp43 && refused43.note === "Shown as code: a visual must sit in ~/.arc/visuals" && refused43.isCode &&
+                    (refused43.code ?? "").includes(outside) && refused43.framed === false,
+                { autoSrc43, autoSized43, autoHeight43, typed43, box43, everTyped43, tallSized43, expandUp43, grown43, grownHeight43, folded43, missingUp43, missing43, refusedUp43, refused43 }
+            );
+
+            // 44. a visual in a sleeping agent's chat: its prompt goes down the wake path, so the agent wakes with it as the message
+            // (the mock records agentswake and never wakes anything). The page may not have loaded when the click lands (the height
+            // map already holds chart.html's), so a click that sent nothing is made again after the 1.5 s gap
+            acAppend(ctx.files.asleep, AC.assistantText(fence(`${vd}/chart.html`), stamp40()));
+            await showAgent(F);
+            const sleeping44 = await polishWaitFor(h, `!!${acCell(F)}?.querySelector('[data-sleeping-composer="${F}"] [data-chat-asleep]')`, AC_WAIT_MS);
+            await acClear(h, acBox(F));
+            const wakes44 = (await acCalls(h, "agentswake")).length;
+            const figure44 = await polishWaitFor(h, `!!${acVisual(F, "chart.html")}`, 15000);
+            await acShowVisual(h, F, "chart.html");
+            const sized44 = await polishWaitFor(h, acFrameBetween(F, "chart.html", 290, 320), 8000);
+            let click44 = null;
+            const woke44 = await acUntil(async () => {
+                const calls = (await acCalls(h, "agentswake")).slice(wakes44);
+                if (calls.length > 0) return calls;
+                if (click44 == null || Date.now() - click44.at > 1600) click44 = await acClickFrame(h, F, "chart.html", 76, 34);
+                return null;
+            }, 15000);
+            await polishNap(600);
+            const wakeCalls44 = (await acCalls(h, "agentswake")).slice(wakes44);
+            const stillAsleep44 = await h.ev(`!!${acCell(F)}?.querySelector('[data-sleeping-composer="${F}"]')`);
+            await h.shot("cdp-shots/agent-chat-44-visual-wakes.png");
+            rec(
+                "44. in the asleep agent's chat a click on the visual's #ask sends exactly one agentswake for that agent whose message is Explain the retry policy",
+                sleeping44 && figure44 && sized44 && woke44 != null && wakeCalls44.length === 1 && wakeCalls44[0].data.tab === F && wakeCalls44[0].data.message === ASK,
+                { sleeping44, figure44, sized44, click44, wakeCalls44, stillAsleep44 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -43868,6 +44132,14 @@ const agentChat = {
                       return true;`
                   )
         );
+        // steps 40-44 leave text in the main agent's box (a second click's fill) and point the chat at the scenario's visuals folder
+        await step("clear the boxes", async () => {
+            for (const key of ["main", "asleep"]) {
+                const id = ctx.tabs[key]?.tabId;
+                if (id) await acClear(h, acBox(id));
+            }
+        });
+        await step("forget the visuals folder", () => h.ev(`delete window.__chatVisualsDir`));
         await step("remove the mock", () => removeAgentChatMock(h));
         await step("restore the roster", () => AC.restoreRoster(h));
         await step("clear the permission queue", () =>

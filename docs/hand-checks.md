@@ -6,6 +6,20 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat inline visual: in a live Claude agent's Chat, ask "draw me a visual of …" → Claude writes a file in
+  `~/.arc/visuals` and names it in a one-line `arc-visual` block; the visual shows inline in the app's colours (switch
+  the theme: it follows on the next load, a frame already drawn keeps the old colours), its height fits the page, and a
+  button in it sends its prompt as your message. The scenario draws pages from a folder of its own and clicks them
+  through CDP; only a live Claude proves it writes the file where Chat looks, and writes a page that calls
+  `arc.sendPrompt` from a handler (`skills/visual/SKILL.md`, `chatvisualview.tsx`, `agent-chat` 40-44).
+- [ ] (arcterm) Chat inline visual in the Terminal view: the same reply seen in the Terminal view reads as one line saying
+  what the visual shows plus a three-line `arc-visual` block, not the page's HTML (the skill keeps the page in the
+  file).
+- [ ] (arcterm) RAM of Chat inline visuals: with three visuals mounted in one chat, read the WebView2 processes' working
+  set before and after (`Get-Process msedgewebview2 | Measure-Object WorkingSet64 -Sum`, with the installed app
+  closed), and write the difference per visual into the "Chat inline visuals" row of `docs/open-issues.md` §5 RAM watch
+  (a frame is its own renderer, kept once mounted). No step could measure it: the dev app shares the installed app's
+  WebView2 image names.
 - [ ] (arcterm) Chat skim highlights: in a live Claude agent's Chat, ask for a long explanation → its marked sentences
   show highlighted once the reply lands, the same ones the Terminal view highlights, and the highlighter button at the
   top right of Chat turns them off and on (it stays as you left it after a restart). The scenario injects its own store
