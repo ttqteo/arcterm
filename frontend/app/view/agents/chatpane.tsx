@@ -31,9 +31,10 @@ import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
+import { TaggedPromptText } from "./chattagblock";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
-import { PromptImages, PromptText } from "./narrationtimeline";
+import { PromptImages } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
@@ -53,7 +54,7 @@ function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
         <div data-chat-pending className="flex flex-col items-end gap-1">
             {body !== "" || said.images.length > 0 ? (
                 <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
-                    {body !== "" ? <PromptText text={body} mentions /> : null}
+                    {body !== "" ? <TaggedPromptText text={body} /> : null}
                     {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
                 </div>
             ) : null}

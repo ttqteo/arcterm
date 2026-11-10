@@ -25,13 +25,14 @@ import { splitAttachments } from "./chatfiles";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
 import { useSkimMarks } from "./chatskimstore";
+import { TaggedPromptText } from "./chattagblock";
+import { foldCommandParts, splitTagged, tagHeading, type TagPart } from "./chattagblocks";
 import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
 import { CouncilText } from "./councilchat";
 import {
     CompactionDivider,
     InterruptedDivider,
     PromptImages,
-    PromptText,
     TaskNotificationRow,
     ToolDetailBody,
     ToolLine,
@@ -116,7 +117,7 @@ function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "y
                         hasFiles ? "mb-3" : "mb-1"
                     )}
                 >
-                    {text !== "" ? <PromptText text={text} mentions /> : null}
+                    {text !== "" ? <TaggedPromptText text={text} /> : null}
                     {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
                     {/* the whole message, files and all, as the context menu copies it */}
                     {text !== "" ? <BubbleCopy text={item.text} align="right" /> : null}
@@ -127,11 +128,22 @@ function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "y
     );
 }
 
-// what the pinned bar says of your message: its text, else what it carried (`pasted` is the images pasted into the box)
+// what the pinned bar says of your message: its text, else the first tagged block it carried named as its card is ("Pasted ·
+// 12 lines"), else what it carried (`pasted` is the images pasted into the box). The blocks themselves are not read out:
+// a pasted log would fill the bar
 function pinnedLabel(text: string, pasted: number): string {
     const said = splitAttachments(text);
     if (said.text.trim() !== "") {
-        return said.text;
+        const parts = foldCommandParts(splitTagged(said.text.trim()));
+        const block = parts.find((p): p is TagPart => p.kind === "tag");
+        if (block == null) {
+            return said.text;
+        }
+        const prose = parts
+            .flatMap((p) => (p.kind === "text" ? [p.text] : []))
+            .join("\n")
+            .trim();
+        return prose !== "" ? prose : tagHeading(block);
     }
     return said.files.length > 0 && said.images.length === 0 && pasted === 0 ? "(file)" : "(picture)";
 }
