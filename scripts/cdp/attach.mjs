@@ -44,8 +44,11 @@ export async function waitFor(ev, expr, ms, pollMs = NAV_POLL_MS) {
 
 // A single CDP command must never hang the whole run: if the socket drops mid-command (dev app HMR
 // teardown / exit), the reply never arrives and a bare `await` would block forever. Bound every
-// command so a drop surfaces as an error. 30s is far above any real CDP round-trip.
-const CMD_TIMEOUT_MS = 30_000;
+// command so a drop surfaces as an error (a closed socket already fails every pending command at once, so this bounds
+// only a hang on an open one). A Runtime.evaluate that awaits a wavesrv RPC is no CDP round-trip: on a machine under load
+// (a Final beside other builds, the app's first scan of every transcript on disk) createrun, cancelrun and the sessions
+// scan took over 30 s, which failed agent-chat's arrange and teardown and launcher-resume's Conversations row.
+const CMD_TIMEOUT_MS = Number(process.env.CDP_CMD_TIMEOUT_MS) || 120_000;
 
 function connect(wsUrl) {
     return new Promise((resolve, reject) => {

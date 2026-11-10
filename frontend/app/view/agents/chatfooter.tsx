@@ -187,7 +187,16 @@ function ChipMenu({
 }) {
     const m = useChipMenu();
     return (
-        <div ref={m.root} onKeyDown={m.onKeyDown} onBlur={m.onBlur} className="relative flex-none">
+        // data-owns-keys while open: Escape closes the menu (useChipMenu) and nothing else. The key dispatcher runs on window
+        // capture, ahead of this handler, so without it the Agent surface's own Escape (agent:back) also fires and leaves
+        // for the Cockpit (dispatcher.ts ownsKeys). Closed, focus on the chip keeps that Escape.
+        <div
+            ref={m.root}
+            data-owns-keys={m.open ? "" : undefined}
+            onKeyDown={m.onKeyDown}
+            onBlur={m.onBlur}
+            className="relative flex-none"
+        >
             {chip(m)}
             <PopoverReveal open={m.open} origin="bottom left" className={cn(MENU, width)}>
                 <div role="menu" aria-label={menuLabel}>

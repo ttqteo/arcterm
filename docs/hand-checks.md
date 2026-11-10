@@ -6,6 +6,22 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat model chip: in a real Claude agent's Chat, click the model chip and pick another model → Claude
+  Code switches to it (its own footer shows the new model; the chip follows once the agent's row updates). The CDP
+  scenario only checks the menu and the `/model <alias>` it types, against a mock (`chatfooter.tsx`, `agent-chat` 28).
+- [ ] (arcterm) Chat mode chip: in a real Claude agent's Chat, pick each of the four modes from the mode chip's menu →
+  Claude Code lands on each (its footer shows it, the chip follows), pressing Shift+Tab as many times as the cycle
+  needs. The scenario's fixture screen never redraws, so it only checks one Shift+Tab and the "did not offer" toast
+  (`chatfooter.tsx`, `agent-chat` 29).
+- [ ] (arcterm) Chat sleep and wake: Sleep a Claude agent that is showing Chat, then Wake it from the message box →
+  the conversation never blinks, the model chip and attach fold out into "Asleep" and the model label and back in
+  on wake, Send shows "Waking…" while it wakes, and the Chat | Terminal control stays, dimmed, while it sleeps. The
+  scenario checks the same box element survives (`chatpane.tsx`, `agent-chat` 14 and 32).
+- [ ] (arcterm) Chat motion: Chat fades over the terminal and back when you switch views, and the Chat | Terminal
+  control's selected fill slides between its two sides, in the header and in a split's cell bar; with the OS's
+  reduce-motion on, all of it snaps with no fade or slide. The scenario reads the fill's position and the layer's
+  pointer events, not the look (`agent-chat` 33).
+
 - [ ] (arcterm) Chat multi-line send: in a Claude agent's Chat, send a message with a pasted picture, then one written
   over two lines (Shift+Enter) → each is submitted at once (Claude starts on it, the terminal's prompt box is empty),
   no "Sending…" left hanging. A one-line message and a `/model` still work as before. Typecheck only
