@@ -70,7 +70,7 @@ import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
-import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
+import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
 import { initiativeSheetAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
@@ -2932,12 +2932,22 @@ describe("agent:initiative", () => {
 
     it("opens the Link to initiative picker for an agent with none, else lets the key pass", () => {
         const model = modelWith("a1", [agent("a1")]);
-        expect(find(model, "agent:initiative").run(nav)).toBe(false); // no button on screen
-        const click = vi.fn();
-        vi.stubGlobal("document", { activeElement: null, querySelector: () => ({ click }) });
+        expect(find(model, "agent:initiative").run(nav)).toBe(false); // no chip and no "…" row on screen
+        expect(globalStore.get(initiativeLinkPickerAtom)).toBeNull();
+        // the header's chip, or in Chat its "…" button that holds the row: either opens the one picker
+        const seen: string[] = [];
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => {
+                seen.push(sel);
+                return {};
+            },
+        });
         expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
-        expect(click).toHaveBeenCalledTimes(1);
+        expect(seen[0]).toContain("[data-initiative-link-menu]");
+        expect(globalStore.get(initiativeLinkPickerAtom)).toBe("a1");
         expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+        globalStore.set(initiativeLinkPickerAtom, null);
     });
 
     it("lets the key pass when the focus is on no agent (a plain terminal)", () => {

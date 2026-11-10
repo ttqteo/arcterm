@@ -59192,6 +59192,8 @@ const LINK_C2 = "Second link chunk";
 const tabEffort = async (h, tabId) =>
     (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta?.["session:effort"] ?? null;
 const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
+// these agents report as Claude, so their cell opens in Chat, whose header has no chip: the "…" button holds the row
+const LINK_MENU = `document.querySelector("[data-agent-header] [data-agent-header-more][data-initiative-link-menu]")`;
 const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
 
 const initiativeLink = {
@@ -59221,12 +59223,17 @@ const initiativeLink = {
         const { steps, rec } = initRecorder();
         try {
             // --- 1. an agent with no initiative offers to link one --------------------------------------------------------------
-            const offered = await polishWaitFor(h, `${LINK_BTN}?.innerText.trim() === "+ Link to initiative"`, INIT_WAIT_MS);
+            const offered = await polishWaitFor(h, `!!${LINK_MENU}`, INIT_WAIT_MS);
+            const noChip = await h.ev(`!${LINK_BTN}`);
             const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]")`);
-            rec('1. the header of an agent with no initiative shows "+ Link to initiative"', offered === true && noLink === true, { offered, noLink });
+            rec(
+                '1. in Chat the header of an agent with no initiative offers "Link to initiative…" in its "…" menu, with no chip',
+                offered === true && noChip === true && noLink === true,
+                { offered, noChip, noLink }
+            );
 
-            // --- 2. a click opens the picker, listing the initiative ------------------------------------------------------------------
-            await initClick(h, LINK_BTN);
+            // --- 2. the menu's row opens the picker, listing the initiative ----------------------------------------------------------
+            await pickHeaderMenu(h, "Link to initiative…");
             const pickerUp = await polishWaitFor(h, `!!${LINK_PICKER}`, 4000);
             const row = `document.querySelector('[data-initiative-picker] [data-picker-row="effort:${ctx.oid}"]')`;
             // an initiative of another project sits behind "others"; this one is the agent's own project's
@@ -59239,7 +59246,7 @@ const initiativeLink = {
             await polishNap(400);
             await h.shot("cdp-shots/initiative-link-2-picker.png");
             rec(
-                "2. clicking it opens the picker, which lists the initiative and offers a new one",
+                "2. the menu's row opens the picker, which lists the initiative and offers a new one",
                 pickerUp === true && listed === true && picker?.filter === true && picker.newRow === true,
                 { pickerUp, listed, picker }
             );
@@ -59252,7 +59259,7 @@ const initiativeLink = {
                 `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(LINK_TITLE)}) === true`,
                 INIT_WAIT_MS
             );
-            const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN}`, 3000);
+            const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN} && !${LINK_MENU}`, 3000);
             // it also puts the agent on the initiative's first pending chunk, so that chunk reads as its work
             const attached = await initUntil(
                 async () => ((await initChunk(h, ctx.oid, LINK_C1))?.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agentA.tabId}`),
@@ -59266,7 +59273,7 @@ const initiativeLink = {
 
             // --- 4. the second agent: `i` opens the picker, and a new initiative is made from the session -------------------------------
             await initFocusAgent(h, ctx.agentB);
-            const offeredB = await polishWaitFor(h, `${LINK_BTN}?.innerText.trim() === "+ Link to initiative"`, INIT_WAIT_MS);
+            const offeredB = await polishWaitFor(h, `!!${LINK_MENU}`, INIT_WAIT_MS);
             const nameB = await h.ev(`document.querySelector("[data-agent-header] .font-semibold")?.textContent.trim() ?? ""`);
             await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
             await initPress(h, "i");
