@@ -104,9 +104,10 @@ type brainstormRun struct {
 	limited context.Context // parent with the cell's time limit: its end is a timed-out run
 
 	turns       int
-	tokens      int64 // every launch's modelUsage
-	judgeTokens int64 // both bench judge calls
-	helpers     int   // reports written so far, to name the next one
+	tokens      int64            // every session's spend
+	spent       map[string]int64 // each session's modelUsage as its last result reported it, a running total
+	judgeTokens int64            // both bench judge calls
+	helpers     int              // reports written so far, to name the next one
 
 	consumed   int  // requests handled
 	bad        int  // turns that went wrong in a row
@@ -394,7 +395,17 @@ func (r *brainstormRun) launch(model string, extra []string, prompt string) stri
 	} else if err := json.Unmarshal(stdout, &res); err != nil {
 		resErr = fmt.Errorf("its result is not JSON: %w (%s)", err, abbreviate(string(stdout)))
 	}
-	r.tokens += res.modelUsageTotal()
+	// A resumed claude -p reports the session's whole modelUsage so far, so a turn spent what its total grew by.
+	total := res.modelUsageTotal()
+	if res.SessionID == "" {
+		r.tokens += total
+	} else {
+		if r.spent == nil {
+			r.spent = map[string]int64{}
+		}
+		r.tokens += total - r.spent[res.SessionID]
+		r.spent[res.SessionID] = total
+	}
 	switch {
 	case runErr != nil:
 		return fmt.Sprintf("it did not end cleanly: %v", runErr)
