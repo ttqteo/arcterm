@@ -25,7 +25,9 @@ import { useEffect, useRef, useState } from "react";
 // the served path never changes for a file while wavesrv runs, so each is asked for once
 const served = new Map<string, Promise<string>>();
 
-function servedPath(path: string): Promise<string> {
+// the URL path wavesrv serves a file at (its token and the escaped file name), to put after getWebServerEndpoint();
+// Chat's inline visual (chatvisualview.tsx) frames a page the same way
+export function servedPath(path: string): Promise<string> {
     let p = served.get(path);
     if (p == null) {
         p = RpcApi.HtmlPreviewServeCommand(TabRpcClient, path);

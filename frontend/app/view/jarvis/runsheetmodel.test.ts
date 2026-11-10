@@ -28,7 +28,7 @@ import {
     type SheetRowInput,
 } from "./runsheetmodel";
 
-import { PAUSED_LABEL } from "../agents/runstage";
+import { PAUSED_BY_YOU_LABEL, PAUSED_LABEL } from "../agents/runstage";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -193,7 +193,8 @@ describe("sheetStatus", () => {
 
         it("reads a paused quick run with no graph, and one whose record is gone, the same way", () => {
             const quick = sheetStatus(read({ run: paused("manual", { mode: "quick", dagoref: "" }), dag: null }));
-            expect(quick).toMatchObject({ verb: PAUSED_LABEL, meter: null, meta: [{ text: "paused 5m ago" }] });
+            // the person paused it, so it waits for them rather than for memory
+            expect(quick).toMatchObject({ verb: PAUSED_BY_YOU_LABEL, meter: null, meta: [{ text: "paused 5m ago" }] });
             expect(sheetStatus(read({ run: run({ status: "paused" }) })).meta).toEqual([]);
         });
 

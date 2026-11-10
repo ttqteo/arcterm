@@ -27,20 +27,20 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Moon, Square } from "lucide-react";
 import { AnimatePresence, MotionConfig } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachmentTray } from "./attachmenttray";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
-import { insertAt, registerChatInsert } from "./chatinsert";
+import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, noteSent, sentHistory } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
-import { chatFilesRoot } from "./launchermention";
+import { chatFilesRoot, recentMentionPaths } from "./launchermention";
 import { isPathsDrag, pathsFromDrop } from "./pathdrop";
 import { usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
@@ -139,13 +139,17 @@ export function ChatComposer({
         off: recalled.current.at != null && text === recalled.current.shown,
     });
     const cwd = block?.meta?.["cmd:cwd"];
+    const filesRoot = chatFilesRoot(cwd, agent.project, projects);
+    // the files this agent read or wrote lead the `@` list, newest first
+    const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
     const mention = useFileMention({
         text,
         setText: setTextAt,
-        filesRoot: chatFilesRoot(cwd, agent.project, projects),
+        filesRoot,
         cwd,
         inputRef: editorRef,
         name: "chat",
+        recent: recentFiles,
     });
     // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which the editor draws
     // from; the caret is put after it once the new text is drawn.
@@ -179,6 +183,41 @@ export function ChatComposer({
             mention.onCaret(box);
         }
     }, [text]);
+    // A visual in the conversation (chatvisualview.tsx) reads the box, sends a text through it and appends to it. A send
+    // puts the text in the box and submits once the box shows it, so it takes the one send path below (wake, holds,
+    // pending bubble, scroll); `submitNext` is set only when the text will change, so it never outlives that render.
+    const submitNext = useRef(false);
+    const submitRef = useRef<() => void>(() => {});
+    useEffect(
+        () =>
+            registerChatBox(agent.id, {
+                text: () => latest.current.text,
+                submit: (sent) => {
+                    const box = editorRef.current;
+                    if (box == null || box.readOnly) {
+                        return false;
+                    }
+                    if (sent === latest.current.text) {
+                        submitRef.current();
+                        return true;
+                    }
+                    submitNext.current = true;
+                    latest.current.setText(sent);
+                    return true;
+                },
+                append: (added) => {
+                    const box = editorRef.current;
+                    if (box == null || box.readOnly) {
+                        return false;
+                    }
+                    // the end of the box, never the caret: the person may be typing elsewhere in it
+                    const cur = latest.current.text;
+                    latest.current.setText(cur.trim() ? cur.replace(/\s+$/, "") + "\n" + added : added);
+                    return true;
+                },
+            }),
+        [agent.id]
+    );
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
     const blocker = asleep ? null : attachmentBlocker(att.attachments);
     // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits
@@ -217,6 +256,13 @@ export function ChatComposer({
             }
         }
     };
+    submitRef.current = submit;
+    useEffect(() => {
+        if (submitNext.current) {
+            submitNext.current = false;
+            submit();
+        }
+    }, [text]);
     // The + menu's MCP servers and Plugins rows: a one-line command typed into the terminal, as the send path types it
     // (useAgentSend), without touching the box's own text or its attachments. It waits behind a permission prompt or a
     // question as Send does.

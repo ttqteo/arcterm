@@ -61,6 +61,23 @@ func TestDesignSkillVersions(t *testing.T) {
 	}
 }
 
+// TestVisualSkill pins what the visual skill teaches: the arc-visual block and the folder it names, the button call,
+// mermaid as the first choice, and the --arc- colour properties the page receives from Chat.
+func TestVisualSkill(t *testing.T) {
+	doc, err := fs.ReadFile(FS, "visual/SKILL.md")
+	if err != nil {
+		t.Fatalf("visual/SKILL.md is not embedded: %v", err)
+	}
+	if got := frontmatterName(t, string(doc)); got != "visual" {
+		t.Errorf("visual frontmatter name = %q, want visual", got)
+	}
+	for _, want := range []string{"arc-visual", "~/.arc/visuals", "arc.sendPrompt", "mermaid", "--arc-"} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("visual/SKILL.md does not mention %q", want)
+		}
+	}
+}
+
 func TestShippedSkills(t *testing.T) {
 	doc, err := fs.ReadFile(FS, "doc-review/SKILL.md")
 	if err != nil {

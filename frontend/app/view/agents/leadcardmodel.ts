@@ -25,7 +25,7 @@ import {
     type RunInfo,
 } from "./runlineage";
 import { finishedRunLabel, runComplete } from "./runmodel";
-import { PAUSED_LABEL, runStage } from "./runstage";
+import { runStage } from "./runstage";
 import { taskStrip, taskStripLabel, type TaskStrip } from "./runstrip";
 import { detailOf } from "./runtimeline";
 import { modelLabel } from "./session-models/sessionviewmodel";
@@ -376,8 +376,9 @@ export function leadActivity(run: RunInfo, lead: AgentVM | undefined, leadDown: 
         return finishedRunLabel(run);
     }
     // its agents are suspended, so neither the engine's lanes nor a lead that is down are what to say
-    if (runStage(run).paused) {
-        return PAUSED_LABEL;
+    const stage = runStage(run);
+    if (stage.paused) {
+        return stage.label;
     }
     if (leadDown) {
         return "lead down · its events come to you";

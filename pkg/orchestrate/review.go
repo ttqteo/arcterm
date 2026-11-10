@@ -245,8 +245,10 @@ func spendReviewRespawn(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.Ta
 }
 
 // applyReviewVerdict acts on a recorded verdict. The reviewer completes its own run after the verdict, so it
-// is not stopped here.
+// is not stopped here: it is queued, and the watchdog stops it once that run is done and its turn is over.
 func applyReviewVerdict(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode, worker *waveobj.Run, afterCommit *[]func()) {
+	channelID, reviewerRunID := g.ChannelId, t.ReviewRunID
+	*afterCommit = append(*afterCommit, func() { queueFinishedSession(channelID, reviewerRunID) })
 	t.ReviewRunID = ""
 	t.ReviewCommit = worker.EndCommit
 	// a reviewer's commit would land with the lane; its uncommitted edits cannot, since a lane lands by squashing

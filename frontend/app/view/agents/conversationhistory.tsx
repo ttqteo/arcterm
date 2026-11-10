@@ -564,7 +564,8 @@ function SoloCard({
             type="button"
             onClick={onSelect}
             className={cn(
-                "flex w-full cursor-pointer flex-col gap-2 rounded-[10px] border px-3 py-2.5 text-left",
+                // cardVariants animates opacity per frame: the base button transition must not ease it too
+                "flex w-full cursor-pointer flex-col gap-2 rounded-[10px] border px-3 py-2.5 text-left transition-[border-color,background-color]",
                 active ? "border-accent bg-surface-selected" : "border-border bg-surface hover:border-edge-strong"
             )}
         >

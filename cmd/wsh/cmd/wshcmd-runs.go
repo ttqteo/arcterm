@@ -143,9 +143,10 @@ var runsPauseCmd = &cobra.Command{
 	Short: "pause a top-level run and everything under it, freeing the RAM it holds",
 	Long: `Pause a top-level run: every agent and command under it stops and its RAM comes back, while every
 worktree, commit and session is kept. 'wsh runs resume' reopens each agent in its own session. A run that
-is not top-level, is done or cancelled, or is already paused is refused, and the reason is printed. The
-RAM regulator pauses runs the same way when memory is tight, and resumes any paused run, one paused here
-included, once memory has been free for a while.`,
+is not top-level, is done or cancelled, or is already paused is refused, and the reason is printed. A run
+paused here stays paused, across a restart too, until 'wsh runs resume' (or the app's Resume). The RAM
+regulator pauses runs the same way when memory is tight, and resumes only the runs it paused itself once
+memory has been free for a while.`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    runsPauseRun,

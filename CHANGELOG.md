@@ -33,6 +33,21 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   instead of raw paths and tags.
 - Chat's message box shows a file you @mention as a pill, and @ walks folders: type @../ or @D:/ to browse, Tab to step
   into a folder.
+- Chat's `@` file list opens above the box, puts the files the agent just read or wrote first, and marks the
+  letters you typed in each name.
+- Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
+
+### Fixed
+
+- A run you pause stays paused until you resume it: Arc's memory regulator no longer resumes it a moment later, and
+  a restart no longer resumes it either. It reads "Paused · until you resume".
+- A long message sent from Chat is submitted instead of sitting in Claude Code's box as a new line while Chat showed
+  it Queued.
+- A message you cleared with Esc in the terminal no longer stays Queued in Chat: its bubble goes a few seconds after
+  Claude stops.
+- A run holds far less RAM: a task's worker stops once it hands its commit to review, and its reviewer once its
+  verdict is in, instead of both idling at their prompt (~1.5 GB each) until the lane landed. Pausing a run now stops
+  those idle sessions too.
 
 ## 1.0.6 — 2026-11-10
 
@@ -50,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A session's menu in History has Copy session id, beside Copy title and Copy transcript path.
 - Chat shows Claude's skim highlights, the sentences worth reading, as the terminal does; the highlighter button at the
   top of Chat turns them off and on.
+- Claude agents can draw a visual right in Chat: a chart, an illustration, a widget or a quiz, in the app's colours, whose
+  buttons ask Claude the next question for you. <!-- big -->
 
 ### Changed
 

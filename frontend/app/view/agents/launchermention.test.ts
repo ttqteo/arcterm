@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AgentEntry } from "./agentsviewmodel";
 import {
     browseMatches,
     browseQuery,
@@ -7,6 +8,9 @@ import {
     fileMentionMatches,
     insertBrowsePick,
     insertFileMention,
+    mentionMatchMask,
+    mentionRuns,
+    recentMentionPaths,
     resolveBrowseDir,
 } from "./launchermention";
 
@@ -265,5 +269,89 @@ describe("chatFilesRoot", () => {
     it("has no picker outside a registered project", () => {
         expect(chatFilesRoot("/Users/me", undefined, registry)).toBe("");
         expect(chatFilesRoot("/tmp/x", "scratch", registry)).toBe("");
+    });
+});
+
+describe("fileMentionMatches with recent files", () => {
+    const paths = ["README.md", "src/app.ts", "src/app.test.ts", "docs/apple.md", "pkg/main.go"];
+
+    it("lists the recent files first for an empty query, newest first", () => {
+        expect(fileMentionMatches("", paths, 3, ["pkg/main.go", "docs/apple.md"])).toEqual([
+            "pkg/main.go",
+            "docs/apple.md",
+            "README.md",
+        ]);
+    });
+
+    it("puts a recent file the query reaches ahead of a better match that is not recent", () => {
+        const got = fileMentionMatches("app", paths, 8, ["docs/apple.md"]);
+        expect(got[0]).toBe("docs/apple.md");
+        expect(got.slice(1)).toEqual(fileMentionMatches("app", paths).filter((p) => p !== "docs/apple.md"));
+    });
+
+    it("never lists a recent file the query does not reach, or one the index no longer has", () => {
+        expect(fileMentionMatches("main", paths, 8, ["docs/apple.md", "gone.ts"])).toEqual(["pkg/main.go"]);
+        expect(fileMentionMatches("", paths, 8, ["gone.ts"])[0]).toBe("README.md");
+    });
+});
+
+describe("recentMentionPaths", () => {
+    const action = (path?: string): AgentEntry => ({ kind: "action", verb: "Edit", target: "x", path });
+    const msg: AgentEntry = { kind: "message", text: "hi" };
+
+    it("lists the files the agent touched under the root, newest first, each once, relative with /", () => {
+        const entries = [
+            action("D:\\repo\\src\\a.ts"),
+            msg,
+            action("D:\\repo\\docs\\b.md"),
+            action("d:/repo/src/a.ts"),
+            action(),
+        ];
+        expect(recentMentionPaths(entries, "D:\\repo")).toEqual(["src/a.ts", "docs/b.md"]);
+    });
+
+    it("skips a file outside the root, and a root that only shares a prefix", () => {
+        expect(recentMentionPaths([action("/repo2/x.ts"), action("/other/y.ts")], "/repo/")).toEqual([]);
+    });
+
+    it("has none with no entries or no root", () => {
+        expect(recentMentionPaths(undefined, "/repo")).toEqual([]);
+        expect(recentMentionPaths([action("/repo/x.ts")], "")).toEqual([]);
+    });
+});
+
+describe("mentionMatchMask", () => {
+    const marked = (path: string, query: string) =>
+        [...path].map((c, i) => (mentionMatchMask(query, path)[i] ? c : ".")).join("");
+
+    it("marks a run the term matches in the file name before one in the folders", () => {
+        expect(marked("app/src/app.ts", "app")).toBe("........app...");
+    });
+
+    it("marks a term the folders hold when the name does not", () => {
+        expect(marked("docs/readme.md", "docs")).toBe("docs..........");
+    });
+
+    it("marks a fuzzy term letter by letter, ignoring case", () => {
+        expect(marked("src/CodeStore.ts", "cst")).toBe("....C...St......");
+    });
+
+    it("marks every term of a query", () => {
+        expect(marked("pkg/usage/stats.go", "usage stats")).toBe("....usage.stats...");
+    });
+
+    it("marks nothing for an empty query", () => {
+        expect(mentionMatchMask("", "a.ts").some(Boolean)).toBe(false);
+    });
+});
+
+describe("mentionRuns", () => {
+    it("splits a slice of the path into marked and plain runs", () => {
+        const mask = mentionMatchMask("app", "src/app.ts");
+        expect(mentionRuns("src/app.ts", mask, 4, 10)).toEqual([
+            { text: "app", hit: true },
+            { text: ".ts", hit: false },
+        ]);
+        expect(mentionRuns("src/app.ts", mask, 0, 3)).toEqual([{ text: "src", hit: false }]);
     });
 });

@@ -935,7 +935,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             aria-pressed={fullscreen}
                             whileHover={{ scale: 1.06 }}
                             whileTap={{ scale: 0.85 }}
-                            className={cn(ICON_BTN, fullscreen && ICON_BTN_ON)}
+                            className={cn(ICON_BTN, fullscreen && ICON_BTN_ON, "active:scale-none")}
                         >
                             {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
                             <motion.span

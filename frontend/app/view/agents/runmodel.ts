@@ -9,7 +9,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { finalStageActivity } from "./finalstage";
 import { landPlace, type LandSlot } from "./landline";
 import { runProgress, type Lineage, type RunInfo } from "./runlineage";
-import { PAUSED_LABEL, runStage } from "./runstage";
+import { pausedLabel, runStage } from "./runstage";
 
 export type RunStatusTone = "planning" | "review" | "running" | "blocked" | "done" | "failed" | "cancelled" | "paused";
 
@@ -41,7 +41,7 @@ export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">):
 /** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it, and its tooltip. Every task
  *  done is not the run done: the final stage, the lead's wrap-up and the land still follow. */
 export function dagProgressLabel(
-    run: Pick<RunInfo, "runId" | "title" | "projectPath" | "dag" | "status" | "land" | "leadStarted">,
+    run: Pick<RunInfo, "runId" | "title" | "projectPath" | "dag" | "status" | "land" | "leadStarted" | "pausedBy">,
     leadless: boolean,
     // the runs of the run's project, which a land in line is placed among
     projectRuns?: LandSlot[]
@@ -51,7 +51,7 @@ export function dagProgressLabel(
     const s = runStage(run);
     if (s.paused) {
         // nothing is moving: the words say so, and how far it got stays in the tooltip
-        return { text: PAUSED_LABEL, title: `${PAUSED_LABEL} · ${done}/${total} tasks done` };
+        return { text: s.label, title: `${s.label} · ${done}/${total} tasks done` };
     }
     if (s.key === "final-check") {
         return same(`Final check · ${finalStageActivity(run.dag?.final) ?? "verifying the merged result"}`);
@@ -87,7 +87,11 @@ export function runComplete(run: Pick<RunInfo, "dag" | "status" | "land">): bool
     return runStage(run).complete;
 }
 
-export function runStatusView(status: string, land?: RunLand): { label: string; tone: RunStatusTone } {
+export function runStatusView(
+    status: string,
+    land?: RunLand,
+    pausedBy?: string
+): { label: string; tone: RunStatusTone } {
     const landed = status === "done" && land != null ? landView(land) : undefined;
     if (landed) {
         return landed;
@@ -112,7 +116,7 @@ export function runStatusView(status: string, land?: RunLand): { label: string; 
         case "cancelled":
             return { label: "cancelled", tone: "cancelled" };
         case "paused":
-            return { label: PAUSED_LABEL, tone: "paused" };
+            return { label: pausedLabel(pausedBy), tone: "paused" };
         default:
             return { label: status, tone: "planning" };
     }

@@ -21,17 +21,18 @@ import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
-import { workingText } from "./chatmodel";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { chatCapable } from "./chatmode";
+import { workingText } from "./chatmodel";
+import { setChatMode, useChatMode } from "./chatmodestore";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
-import { setChatMode, useChatMode } from "./chatmodestore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { TaggedPromptText } from "./chattagblock";
+import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { PromptImages } from "./narrationtimeline";
@@ -42,6 +43,15 @@ import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const NO_ENTRIES: AgentEntry[] = [];
+
+// when the agent last went idle (ms), null while it works; an agent idle at mount counts from the mount
+function useIdleSince(idle: boolean): number | null {
+    const [since, setSince] = useState<number | null>(() => (idle ? Date.now() : null));
+    useEffect(() => {
+        setSince(idle ? Date.now() : null);
+    }, [idle]);
+    return since;
+}
 
 // A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
 // takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill). It splits
@@ -175,10 +185,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const hasEarlier = view != null && view.win.start > 0;
 
     // the messages sent from the box that the transcript does not hold yet; re-read each second while any shows, for the
-    // two-minute limit
+    // two-minute limit and the idle one (a message cleared with Esc in the terminal never lands: PENDING_IDLE_MS)
     const sent = usePending(agent.id);
     const [now, setNow] = useState(() => Date.now());
-    const pending = pendingStill(sent, entries, now);
+    const idleSince = useIdleSince(agent.state === "idle");
+    const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
     useEffect(() => {
         if (!showsPending) {
@@ -205,7 +216,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             )}
         >
             <div className="relative min-h-0 flex-1">
-                <div ref={scrollRef} onScroll={onScroll} className="flex h-full flex-col overflow-y-auto px-[22px] pb-[12px]">
+                <div
+                    ref={scrollRef}
+                    onScroll={onScroll}
+                    className="flex h-full flex-col overflow-y-auto px-[22px] pb-[12px]"
+                >
                     {loading ? (
                         <TranscriptSkeleton />
                     ) : empty ? (
@@ -221,16 +236,18 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             ) : null}
                         </div>
                     ) : (
-                        <AgentPathLinks agent={agent}>
-                            <ChatConversation
-                                key={`${view!.path}:${view!.epoch}`}
-                                entries={entries}
-                                placeId={placeId}
-                                active={agent.state !== "idle"}
-                                working={agent.state === "working"}
-                                onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
-                            />
-                        </AgentPathLinks>
+                        <ChatVisualHost agentId={agent.id}>
+                            <AgentPathLinks agent={agent}>
+                                <ChatConversation
+                                    key={`${view!.path}:${view!.epoch}`}
+                                    entries={entries}
+                                    placeId={placeId}
+                                    active={agent.state !== "idle"}
+                                    working={agent.state === "working"}
+                                    onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
+                                />
+                            </AgentPathLinks>
+                        </ChatVisualHost>
                     )}
                     {/* always drawn, so it is one of the scroller's children from the first render: the scroll stays at
                         the end when a card arrives or the working line changes its height */}
@@ -248,7 +265,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         ) : null}
                         {working != null ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
-                                <span className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                                <span
+                                    className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot"
+                                    aria-hidden
+                                />
                                 <span className="min-w-0 truncate">{working}</span>
                             </div>
                         ) : null}

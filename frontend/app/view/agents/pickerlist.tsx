@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The dropdown under a text box that the chat box's pickers share: the `@` file picker (filemention.tsx) and the `/`
+// The dropdown at a text box that the chat box's pickers share: the `@` file picker (filemention.tsx) and the `/`
 // command menu (slashmenu.tsx). It is portaled out of the box, as the launcher's route picker is: the launcher's fields
 // area scrolls, and a chat cell clips, so a dropdown inside either would be cut off at its edge.
 //
@@ -21,19 +21,28 @@ const LIST_MAX_HEIGHT = 320;
 // the scroller's padding, kept in view above a header scrolled to and below a row
 const SCROLL_PAD = 5;
 
-/** The floating setup of a picker's list: anchored to the box itself, so the list starts under the text and follows the
+/** Where a picker's list opens: "below" the box, turning above it when there is no room, or "above" it always (the
+ *  `@` picker: its box sits at the foot of the chat, and a list that flips with the room left jumps as you type). */
+export type PickerSide = "below" | "above";
+
+/** The floating setup of a picker's list: anchored to the box itself, so the list starts at the text and follows the
  *  box as it grows. `shown` mounts it. `wide` lets it take the whole width of the box (no 560 px cap) and publishes the
  *  room the side has as `--mention-avail`, which a grouped list's 420 px cap is `min`'d with. The anchor is a text box
  *  (a textarea) or the chat editor's handle, which floating-ui takes as a virtual element: its `contextElement` is the
  *  editable root, so the list still follows the box when it grows or scrolls. */
-export function usePickerFloating(shown: boolean, anchor: RefObject<EditorLike | null>, wide = false) {
+export function usePickerFloating(
+    shown: boolean,
+    anchor: RefObject<EditorLike | null>,
+    side: PickerSide = "below",
+    wide = false
+) {
     const { refs, floatingStyles } = useFloating({
         open: shown,
-        placement: "bottom-start",
+        placement: side === "above" ? "top-start" : "bottom-start",
         strategy: "fixed",
         middleware: [
             offset(4),
-            flip({ padding: 8 }),
+            ...(side === "above" ? [] : [flip({ padding: 8 })]),
             shift({ padding: 8 }),
             floatingSize({
                 padding: 8,
@@ -88,6 +97,7 @@ export function PickerList<T>({
     groups,
     footer,
     listAttrs,
+    side = "below",
 }: {
     anchor: RefObject<EditorLike | null>;
     shown: boolean;
@@ -110,9 +120,10 @@ export function PickerList<T>({
     footer?: ReactNode;
     /** more data attributes on the list (`data-chat-slash-live`) */
     listAttrs?: Record<`data-${string}`, string>;
+    side?: PickerSide;
 }) {
     const boxed = groups != null || footer != null;
-    const { setFloating, floatingStyles } = usePickerFloating(shown, anchor, boxed);
+    const { setFloating, floatingStyles } = usePickerFloating(shown, anchor, side, boxed);
     const scroller = useRef<HTMLUListElement>(null);
     // the row the pointer last moved onto: its highlight is already under the pointer, so it is not scrolled to
     const hovered = useRef(-1);

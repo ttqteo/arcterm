@@ -39,9 +39,14 @@ Decisions (the lead's calls, each with why):
   which it is.
 - **Chat asks again each time the menu opens**, not once per mount: the live lookup is a map read, and a skill or MCP
   server added mid-session then shows on the next `/`.
-- **Groups, in this order**: Built-in (`builtin`, which includes the bundled skills), Skills (`user`; on the fallback,
+- **Groups, in this order**: Built-in (`builtin`), Skills (`user`; on the fallback,
   disk entries with no `:`), Plugins (`plugin`; on the fallback, names with a `:`), MCP (`mcp`). Each header shows its
   count; within a group the order is the list's, prefix matches first. No cap: the list scrolls (max 420 px).
+  **Deviation from the canvas, on purpose:** the canvas lists `/code-review`, `/simplify`, `/loop` and
+  `/security-review` under Skills, but `$.command.list()` gives Claude Code's bundled skills `source: "builtin"`, and
+  nothing in the list tells a bundled skill from a built-in command, so they sit under Built-in. The plugin chip
+  follows the canvas: every row with a `plugin` shows it, a namespaced name (`arc:council`) included. Step 50's
+  fixture puts `code-review` under Built-in to match.
 - **"opens in Terminal" stays a hand list** (`TUI_NAMES`: the bare built-ins that draw a menu on Claude Code's own
   screen); the API does not say which do.
 - **The + menu replaces the attach button**: Add files or photos (Ctrl+U, also bound in the box), Add folder (puts
@@ -163,8 +168,8 @@ Read `AGENTS.md` on `claude/arc-mod/` (the source; `task sync:claudemod` copies 
 it equals `lastCommands`; `$.process.run([WSH, ...claudecmdsArgs()], { stdin: payload, timeoutMs: 10_000 })`; on exit
 0 set `lastCommands`, else log to debug (`$.ui.log(…, { to: "debug" })`, as the other wsh calls do); catch every
 error into the same debug log. Call it: in `session.start` after `next(e)` (reset `lastCommands = ""` first, so a
-`/clear` republishes), then `void $.clock.sleep(10_000).then(() => publishCommands($))` (check `$.clock.sleep`'s
-signature in the types file); in `prompt.submit`, `void publishCommands($)` on the path that calls `next(e)`.
+`/clear` republishes), then `$.clock.after(10_000, () => publishCommands($))` (not a detached `sleep`: a wait
+started inside the hook runs on the hook's own time budget; check `$.clock.after`'s signature in the types file); in `prompt.submit`, `void publishCommands($)` on the path that calls `next(e)`.
 
 **Step 4:** `npx vitest run claude/arc-mod/hooks/commands-core.test.ts` → PASS; `claude plugin validate
 claude/arc-mod` → no errors; `task sync:claudemod`, and check `git status` shows only the two copies above changed
@@ -210,6 +215,8 @@ frontend/app/view/agents/slashcommands.ts frontend/app/view/agents/slashcommands
 
 **Files:** `frontend/app/view/agents/pickerlist.tsx`, `frontend/app/view/agents/slashmenu.tsx`, `frontend/app/view/agents/chatplusmenu.tsx`, `frontend/app/view/agents/chatcomposer.tsx`
 
+Shown by `agent-chat-50-slash-all`, `agent-chat-51-slash-filter`, `agent-chat-52-plus` and `agent-chat-53-slash-fallback` (Task 13).
+
 Read `DESIGN.md`, the Prototype's `Main.dc.html` (its three tabs) and `chatfooter.tsx`'s model chip menu (the upward
 `PopoverReveal`, Escape, outside press, arrow keys, `data-owns-keys` while open) first. The canvas's hex colours are
 placeholders: use the tokens named here.
@@ -227,7 +234,7 @@ a non-empty answer → `fromLive(answer)` and `live = true`; else the fallback a
 ListClaudeCommandsCommand…)`), `live = false`. Keep the last list between opens so it shows at once. Items are
 `slashGroups(slashMatches(query, commands))` flattened, `groups` its headers. Rows (the canvas's): the name
 `w-[210px] shrink-0 truncate text-[13px] text-ink-hi` (`/name`), the description `min-w-0 flex-1 truncate
-text-[12px] text-muted`, a plugin chip when `plugin` is set and the name does not already start with `<plugin>:`
+text-[12px] text-muted`, a plugin chip whenever `plugin` is set (the canvas draws it on `arc:` rows too)
 (`shrink-0 rounded-[6px] border border-edge-mid px-1.5 text-[11px] text-muted`), and "opens in Terminal" for `tui`
 (`text-[11px] text-ink-faint`, `title="Opens a menu on Claude Code's own screen"`). Footer: `flex gap-3.5 border-t
 border-edge-faint px-3.5 py-[7px] text-[11.5px] text-ink-faint`, `↑↓ move`, `Tab complete`, `Enter run` with the key
@@ -266,7 +273,7 @@ files → clean apart from what HEAD already fails (compare with `git show HEAD:
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/chatfiles.ts`, `frontend/app/view/agents/chatfiles.test.ts`
+**Files:** `frontend/app/view/agents/chatfiles.ts`, `frontend/app/view/agents/chatfiles.test.ts`, `frontend/app/view/agents/composerattachments.ts`
 
 **Step 1: Write the failing tests** for each export below: `splitAttachments` on a message with only text, with the
 files block, with the images block, with both (files block, blank line, images block, as `messageWithAttachments`
@@ -279,7 +286,7 @@ neither; `fileTag` for `.pdf`, `.tex`, `.ts`, `.md`, `.csv`, a name with no exte
 **Step 3: Implement** (pure, header comment):
 
 ```ts
-export const FILES_HEADER = "Attachments (read these files):"; // composerattachments.ts writes it; import it from there if exported, else export it there
+// FILES_HEADER: export it from composerattachments.ts (`Attachments (read these files):`, inline in appendAttachments today) and use it in both
 export function splitAttachments(text: string): { text: string; files: string[]; images: string[] };
 // images: splitAttachedImages first (the images block is always last); then a trailing FILES_HEADER block of "- <abs path>" lines
 export type FileTone = "pdf" | "code" | "doc" | "data" | "other";
@@ -299,6 +306,8 @@ frontend/app/view/agents/chatfiles.ts frontend/app/view/agents/chatfiles.test.ts
 **Depends on:** none
 
 **Files:** `frontend/app/view/agents/remarkfilemention.ts`, `frontend/app/view/agents/remarkfilemention.test.ts`, `frontend/app/view/agents/chatfilepill.tsx`, `frontend/app/view/agents/markdownmessage.tsx`
+
+Shown by `agent-chat-60-file-cards` (Task 14): the `@src/app.ts` pill in your bubble.
 
 Read `frontend/app/element/remark-mark.ts` (the pattern: a remark plugin turning text into a custom node) first.
 
@@ -331,17 +340,19 @@ Read `frontend/app/element/remark-mark.ts` (the pattern: a remark plugin turning
 
 **Depends on:** Task 5 (`splitAttachments`, `fileTag`, `foldCards`), Task 6 (`mentions` and `FilePill`)
 
-**Files:** `frontend/app/view/agents/chatfilecards.tsx`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/narrationtimeline.tsx`, `frontend/app/view/agents/chatpane.tsx`
+**Files:** `frontend/app/view/agents/chatfilecards.tsx`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/narrationtimeline.tsx`, `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/pathlinkcontext.tsx`, `frontend/app/view/agents/attachmenttray.tsx`
+
+Shown by `agent-chat-60-file-cards`, `agent-chat-61-file-missing` and `agent-chat-62-file-more` (Task 14).
 
 **Step 1: The cards** (`chatfilecards.tsx`, header comment): `ChatFileCards({ paths })`, a `flex flex-wrap justify-end
-gap-2` row, `data-chat-file-cards`. Each card, the canvas's: a `button` (open the file as `PathLink` does: use the
-same opener it calls) `data-chat-file-card={path}`, `title={path}`, `flex h-[46px] w-[236px] items-center gap-2.5
+gap-2` row, `data-chat-file-cards`. Each card, the canvas's: a `button` (open the file as `PathLink` does: add and
+use a `usePathOpener()` export in `pathlinkcontext.tsx`, which `PathLink` then uses too) `data-chat-file-card={path}`, `title={path}`, `flex h-[46px] w-[236px] items-center gap-2.5
 rounded-[8px] border border-edge-mid bg-surface px-2.5 text-left hover:bg-surface-hover`; a 30×30 tile `flex-none
 rounded-[6px] bg-surface-hover font-mono text-[9.5px] font-semibold` centred, its colour by tone (pdf `text-error`,
 code `text-accent-soft`, data `text-accent-soft`, doc and other `text-muted`), holding `fileTag(name).tag`; then the
 name `max-w-[168px] truncate text-[12.5px] text-ink-hi` over the sub line `max-w-[168px] truncate text-[11px]
-text-ink-faint`: the parent folder's name, then ` · ` and the size once `FileInfoCommand` answers (format it as the
-tray does, `attachmenttray.tsx` `fmtSize`; export it from there if it is not). Missing (`notfound` or an error):
+text-ink-faint`: the parent folder's name, then ` · ` and the size once `FileInfoCommand` answers (export `fmtSize` from
+`attachmenttray.tsx`, private today, and use it). Missing (`notfound` or an error):
 `opacity-60`, the name `line-through`, the sub line `Not found` in `text-error`, `data-chat-file-missing`; still a
 button (the path can be copied from its title). `foldCards(paths, open)`: past `CARD_LIMIT` a `+N more` button
 `h-[22px] rounded-[6px] border border-edge-mid px-2 text-[12px] text-muted hover:text-secondary`,
@@ -371,6 +382,8 @@ four paths>`
 **Depends on:** Task 7 (edits the same bubble code after it)
 
 **Files:** `frontend/app/view/agents/chattagblocks.ts`, `frontend/app/view/agents/chattagblocks.test.ts`, `frontend/app/view/agents/chattagblock.tsx`, `frontend/app/view/agents/chatconversation.tsx`, `frontend/app/view/agents/chatpane.tsx`
+
+Shown by `agent-chat-63-tag-blocks` (Task 14).
 
 A user message often carries XML-tagged blocks the person never typed as such: `<pasted_content …>…</pasted_content>`
 (a paste the harness wraps), `<system-reminder>`, `<task-notification>` (already a marker, leave it),
@@ -449,6 +462,8 @@ frontend/app/view/agents/chateditormodel.ts frontend/app/view/agents/chateditorm
 
 **Files:** `frontend/app/view/agents/launchermention.ts`, `frontend/app/view/agents/launchermention.test.ts`, `frontend/app/view/agents/filemention.tsx`
 
+Shown by `agent-chat-72-at-folders` (Task 15), the `Cannot read` note included.
+
 **Step 1: Write the failing tests** (extend `launchermention.test.ts`): `browseQuery` → `{ dir: "../", leaf: "" }`
 for `../`, `{ dir: "../src/", leaf: "ap" }` for `../src/ap`, the same shapes for `./`, `~/`, `D:/x/`, `D:\x\`, `/etc/`,
 and `null` for `src/ap` and `foo`; `resolveBrowseDir(base, dir, home)` joins and normalises (`..` steps up, `~` is home,
@@ -479,7 +494,9 @@ three paths>`
 
 **Depends on:** Task 9 (its text model)
 
-**Files:** `frontend/app/view/agents/chateditor.tsx`, `frontend/app/view/agents/chateditorpill.tsx`
+**Files:** `frontend/app/view/agents/chateditor.tsx`, `frontend/app/view/agents/chateditorpill.tsx`, `frontend/app/view/agents/chateditorpill.test.ts`
+
+Shown by `agent-chat-70-pill` and `agent-chat-71-pill-backspace` (Task 15).
 
 Read `node_modules/lexical` and `node_modules/@lexical/react` docs or types for `LexicalComposer`,
 `PlainTextPlugin`, `ContentEditable`, `HistoryPlugin`, `DecoratorNode`, `KEY_DOWN_COMMAND`, `PASTE_COMMAND`,
@@ -518,16 +535,22 @@ className?: string; minHeight: number; maxHeight: number; dataAttrs?: Record<str
   content-editable root.
 - Export `EditorLike` and `KeyLike` types from here.
 
-**Step 3:** eslint and prettier on both → clean.
+**Step 3: Test the node** (`chateditorpill.test.ts`, vitest, in a headless `createEditor({ nodes: [FileMentionNode] })`):
+`getTextContent()` is `mentionText(path)` (quoted for a path with a space), `exportJSON`/`importJSON` round-trip the
+path, and the node is inline and keyboard-selectable. `npx vitest run frontend/app/view/agents/chateditorpill.test.ts`
+→ PASS; `task check:ts` → exit 0; eslint and prettier on the three → clean.
 
 **Step 4:** Commit: `git commit -m "feat(chat): a Lexical message editor that draws @mentions as file pills" --
-frontend/app/view/agents/chateditor.tsx frontend/app/view/agents/chateditorpill.tsx`
+frontend/app/view/agents/chateditor.tsx frontend/app/view/agents/chateditorpill.tsx
+frontend/app/view/agents/chateditorpill.test.ts`
 
 ### Task 12: The chat box uses it
 
 **Depends on:** Task 11 (the editor), Task 10 (edits `filemention.tsx` before this task retypes it), Task 4 (rewrites the box, `slashmenu.tsx` and `pickerlist.tsx` after Part A's menus)
 
 **Files:** `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/slashmenu.tsx`, `frontend/app/view/agents/filemention.tsx`, `frontend/app/view/agents/pickerlist.tsx`, `frontend/app/view/agents/chatinsert.ts`
+
+Shown by `agent-chat-70-pill` to `agent-chat-73-recall-pills` (Task 15), and by every retargeted chat-box step.
 
 **Step 1: Retype the pickers.** `pickerlist.tsx` (`usePickerFloating`, `PickerList`) takes `RefObject<EditorLike |
 null>` as its anchor (floating-ui's `setReference` accepts a virtual element with `getBoundingClientRect`);
@@ -540,8 +563,9 @@ with `task check:ts`.
 handler the textarea had (the menus' keys, recall, Enter to send and Shift+Enter for a new line, Ctrl+U, paste of
 files through `att.onPaste`, drop on the container) and its classes for size and type; `useGrowingTextarea` goes (the
 editor grows itself between `ChatMinH` and `ChatMaxH`). Every `taRef` use becomes `editorRef`: the insert registry
-(`chatinsert.ts` stays a string API; `insertAt` works on `editorRef.current.value` and its selection), the visuals
-run's submit and text registries, `caretAfter`, focus calls, `readOnly` checks. Pass `cwd` to `useFileMention`.
+(`chatinsert.ts` stays a string API; `insertAt` works on `editorRef.current.value` and its selection), `caretAfter`,
+focus calls, `readOnly` checks. Run b539a1af (inline visuals) runs beside this one and adds submit and text registries
+that read `taRef`; whichever of the two lands second retypes those uses in its merge. Pass `cwd` to `useFileMention`.
 The box keeps `data-sleeping-composer` and `data-agent-chat-composer` on its wrapper.
 
 **Step 3:** `npx vitest run frontend/app/view/agents` (the agents folder's unit tests) → PASS; `task check:ts` → exit
@@ -551,7 +575,7 @@ The box keeps `data-sleeping-composer` and `data-agent-chat-composer` on its wra
 
 ### Task 13: Scenario steps, changelog, hand checks
 
-**Depends on:** Task 4 (asserts the menus it draws), Task 1 (mocks the RPC it adds), Task 2 (the hand check exercises its publish)
+**Depends on:** Task 4 (asserts the menus it draws)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
@@ -597,7 +621,7 @@ scripts/cdp/scenarios.mjs CHANGELOG.md docs/hand-checks.md`
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
 **Step 1: Scenario steps** in `agent-chat` (read its header and fixture transcript writer; never run prettier on
-this file), numbered 60-62. Arrange, in the scenario's temp dir: `notes.md` (a few bytes) and `paper.pdf` (a few
+this file), numbered 60-63. Arrange, in the scenario's temp dir: `notes.md` (a few bytes) and `paper.pdf` (a few
 bytes); append to the main agent's fixture transcript one user entry: `Compare @src/app.ts with the notes\n\n
 Attachments (read these files):\n- <tmp>/notes.md\n- <tmp>/paper.pdf\n- <tmp>/gone.md`, and one with eight files
 (seven `<tmp>/f<N>.txt` written, one missing). Each step takes its shot:
@@ -644,7 +668,8 @@ or sets `.value`) now targets `[data-chat-input]`: focus it and type with CDP `I
   (`border-accent`); Backspace again → no pill and the box's text has no `@`.
 - `agent-chat-72-at-folders`: in the scenario's temp dir as the agent's `cmd:cwd` (or a folder the fixture already
   uses), type `@../` → rows for the parent's entries, folders first with a trailing `/`; Tab on a folder → the box reads
-  `@../<folder>/` and the list shows that folder's entries.
+  `@../<folder>/` and the list shows that folder's entries; then type `@D:/no-such-folder-arc/` (or `/no-such-folder-arc/`
+  off Windows) → the picker's note reads `Cannot read` and names that folder.
 - `agent-chat-73-recall-pills`: ↑ in the empty box after step 70's send → the recalled text shows the pill again.
 
 **Step 3:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep launcher` → every step PASS.

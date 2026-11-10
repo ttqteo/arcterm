@@ -40,3 +40,39 @@ export function registerChatInsert(agentId: string, insert: ChatInsert): () => v
 export function insertIntoChatBox(agentId: string, text: string): boolean {
     return inserts.get(agentId)?.(text) ?? false;
 }
+
+// What a visual in the conversation (chatvisualview.tsx) does with the box: read its draft, send a text as the person's
+// message, or put a text at the end of it. `submit` and `append` answer false when the box took nothing (it is
+// read-only while a wake is in flight).
+export interface ChatBox {
+    text(): string;
+    submit(text: string): boolean;
+    append(text: string): boolean;
+}
+
+const boxes = new Map<string, ChatBox>();
+
+// returns the unregister; a remount that registered the agent again first is left alone
+export function registerChatBox(agentId: string, box: ChatBox): () => void {
+    boxes.set(agentId, box);
+    return () => {
+        if (boxes.get(agentId) === box) {
+            boxes.delete(agentId);
+        }
+    };
+}
+
+// the box's current text; "" when the agent has no chat box mounted
+export function chatBoxText(agentId: string): string {
+    return boxes.get(agentId)?.text() ?? "";
+}
+
+// false when the agent has no chat box mounted, or the box would not take it
+export function submitIntoChatBox(agentId: string, text: string): boolean {
+    return boxes.get(agentId)?.submit(text) ?? false;
+}
+
+// false when the agent has no chat box mounted, or the box would not take it
+export function appendToChatBox(agentId: string, text: string): boolean {
+    return boxes.get(agentId)?.append(text) ?? false;
+}

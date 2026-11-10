@@ -34,10 +34,26 @@ export function userTextCount(entries: AgentEntry[], text: string): number {
     return n;
 }
 
-/** The pending messages still to draw: the transcript holds the text no more often than when it was sent, and the
- *  message is not older than PENDING_MAX_MS. */
-export function pendingStill(pending: PendingMessage[], entries: AgentEntry[], now: number): PendingMessage[] {
-    return pending.filter((p) => now - p.sentAt < PENDING_MAX_MS && userTextCount(entries, p.text) <= p.seen);
+/** A pending bubble also goes once the agent has sat idle this long since it was sent (or since the agent went idle,
+ *  whichever is later): Claude Code submits a queued message the moment its turn ends, so one still missing after
+ *  that never went in (Esc in the terminal put it back in Claude Code's own box, or it was never submitted). */
+export const PENDING_IDLE_MS = 5_000;
+
+/** The pending messages still to draw: the transcript holds the text no more often than when it was sent, the
+ *  message is not older than PENDING_MAX_MS, and the agent has not sat idle on it for PENDING_IDLE_MS. `idleSince`
+ *  is when the agent last went idle, null while it works. */
+export function pendingStill(
+    pending: PendingMessage[],
+    entries: AgentEntry[],
+    now: number,
+    idleSince: number | null = null
+): PendingMessage[] {
+    return pending.filter(
+        (p) =>
+            now - p.sentAt < PENDING_MAX_MS &&
+            (idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
+            userTextCount(entries, p.text) <= p.seen
+    );
 }
 
 /** Whether a send gets a pending bubble. A `/command` does not: the transcript records it as a command entry, which
@@ -80,4 +96,20 @@ export function sendHold(permissionPending: boolean, asking: boolean): string | 
         return "Answer Claude's question first";
     }
     return null;
+}
+
+/** A message longer than this goes in as a paste even on one line: Claude Code reads a big chunk of typed input as a
+ *  paste, and then takes an Enter that rides in the same chunk as one more line, so the message sat in its box. */
+export const PASTE_OVER = 200;
+
+/** Whether a send puts the message in as a paste (then Enter apart), rather than typing it with its Enter. */
+export function pastesBody(message: string): boolean {
+    return message.includes("\n") || message.length > PASTE_OVER;
+}
+
+/** How long a send waits between putting the message in and pressing Enter: Claude Code must have taken the whole
+ *  paste first, or the Enter lands inside it as a line break. 80 ms (the backend's keystroke gap is 60) and 20 ms
+ *  more per 1,000 characters, at most 600. */
+export function submitDelayMs(length: number): number {
+    return Math.min(600, 80 + Math.floor(length / 1000) * 20);
 }

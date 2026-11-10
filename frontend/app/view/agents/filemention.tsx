@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The `@` file picker of a text box: the New launcher's Task box and the chat box. An `@` typed lists the folder's files
-// under the box, and a pick puts `@<path>` in the text (launchermention.ts holds the pure rules). A path that starts at
-// a root (`@../`, `@./`, `@~/`, `@D:/`, `@/`) is a walk instead: the picker lists that folder's entries, read off the
-// disk, and a folder pick steps into it.
+// above the box, the files the agent touched first and what the query matched marked, and a pick puts `@<path>` in the
+// text (launchermention.ts holds the pure rules). A path that starts at a root (`@../`, `@./`, `@~/`, `@D:/`, `@/`) is a
+// walk instead: the picker lists that folder's entries, read off the disk, and a folder pick steps into it.
 
 import { FileIcon } from "@/app/element/fileicon";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -21,6 +21,8 @@ import {
     fileMentionMatches,
     insertBrowsePick,
     insertFileMention,
+    mentionMatchMask,
+    mentionRuns,
     resolveBrowseDir,
     type BrowseEntry,
 } from "./launchermention";
@@ -61,8 +63,9 @@ async function listDir(base: string, dir: string): Promise<BrowseEntry[]> {
     return entries;
 }
 
-// A text box's `@` picker (the New launcher's Task box, the chat box), a dropdown under the box (pickerlist.tsx, which
-// portals it out of the box). The files are read again on the first `@` after each mount of the box (the launcher
+// A text box's `@` picker (the New launcher's Task box, the chat box), a list above the box (pickerlist.tsx, which
+// portals it out of the box). `recent` (newest first, relative to `filesRoot`) leads the list: the chat box passes the
+// files its agent touched. The files are read again on the first `@` after each mount of the box (the launcher
 // unmounts it on close): there is no watcher, and an agent creates files meanwhile. A query no file matches shows
 // nothing, so an `@` meant as text never blocks Enter. `filesRoot` is the project's folder, whose files a bare query
 // ranks; "" turns that off. A path that starts at a root walks folders instead, from `filesRoot`, else from `cwd` (an
@@ -78,6 +81,7 @@ export function useFileMention({
     cwd,
     inputRef: taskRef,
     name,
+    recent,
 }: {
     text: string;
     setText: (text: string, caret?: number) => void;
@@ -85,6 +89,7 @@ export function useFileMention({
     cwd?: string;
     inputRef: RefObject<EditorLike | null>;
     name: string;
+    recent?: readonly string[];
 }): FileMentionState {
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
@@ -151,7 +156,10 @@ export function useFileMention({
         }
     } else if (projectOpen) {
         if (own?.paths != null) {
-            rows = fileMentionMatches(mention.query, own.paths).map((path) => ({ kind: "path" as const, path }));
+            rows = fileMentionMatches(mention.query, own.paths, undefined, recent).map((path) => ({
+                kind: "path" as const,
+                path,
+            }));
         } else {
             note = own?.error ? "Could not list the project's files" : "Listing files…";
         }
@@ -219,6 +227,7 @@ export function useFileMention({
             label={browse != null ? "Folder entries" : "Project files"}
             listAttr={`data-${name}-mentions`}
             itemAttr={`data-${name}-mention`}
+            side="above"
             itemKey={rowKey}
             itemTitle={rowKey}
             renderItem={(row) => {
@@ -233,13 +242,17 @@ export function useFileMention({
                         </>
                     );
                 }
-                const slash = row.path.lastIndexOf("/");
+                const path = row.path;
+                const slash = path.lastIndexOf("/");
+                const mask = mentionMatchMask(mention?.query ?? "", path);
                 return (
                     <>
-                        <FileIcon path={row.path} size={14} />
-                        <span className="shrink-0 text-[12px] text-primary">{row.path.slice(slash + 1)}</span>
+                        <FileIcon path={path} size={14} />
+                        <span className="shrink-0 text-[12px] text-primary">
+                            <MatchRuns path={path} mask={mask} start={slash + 1} end={path.length} />
+                        </span>
                         <span className="min-w-0 truncate text-[11px] text-muted">
-                            {slash === -1 ? "" : row.path.slice(0, slash)}
+                            {slash === -1 ? "" : <MatchRuns path={path} mask={mask} start={0} end={slash} />}
                         </span>
                     </>
                 );
@@ -247,4 +260,21 @@ export function useFileMention({
         />
     );
     return { list, shown, onKeyDown, onCaret };
+}
+
+// a slice of a listed path with the characters the query matched in the accent colour
+function MatchRuns({ path, mask, start, end }: { path: string; mask: boolean[]; start: number; end: number }) {
+    return (
+        <>
+            {mentionRuns(path, mask, start, end).map((run, i) =>
+                run.hit ? (
+                    <span key={i} data-mention-hit="" className="font-semibold text-accent">
+                        {run.text}
+                    </span>
+                ) : (
+                    run.text
+                )
+            )}
+        </>
+    );
 }

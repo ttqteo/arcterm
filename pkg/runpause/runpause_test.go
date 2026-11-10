@@ -778,7 +778,8 @@ func TestResumeAtBootKeepsRunsPausedUnderTightPressure(t *testing.T) {
 	}
 }
 
-func TestResumeAtBootResumesEveryPausedTopLevelRunOtherwise(t *testing.T) {
+// a run the person paused stays paused across a restart, as it does against the regulator: only they resume it
+func TestResumeAtBootResumesEveryRunArcPausedAndKeepsThePersonsPaused(t *testing.T) {
 	for _, p := range []jobqueue.Pressure{jobqueue.PressureNormal, jobqueue.PressureUnknown} {
 		f := newFixture(t)
 		a := f.run()
@@ -793,7 +794,10 @@ func TestResumeAtBootResumesEveryPausedTopLevelRunOtherwise(t *testing.T) {
 		}
 		f.pressure = p
 		ResumeAtBoot(f.ctx)
-		for _, r := range []*waveobj.Run{a, top} {
+		if got := f.get(a.ID); got.Pause == nil || got.Status != jarvis.RunStatus_Paused {
+			t.Errorf("pressure %v: the run the person paused resumed at boot (status %q)", p, got.Status)
+		}
+		for _, r := range []*waveobj.Run{top} {
 			if got := f.get(r.ID); got.Pause != nil || jarvis.RunPaused(got) {
 				t.Errorf("pressure %v: run %s is still paused", p, r.ID)
 			}
