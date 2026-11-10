@@ -44452,11 +44452,11 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-60-file-cards.png");
             const dirName60 = basename(ctx.dir);
             rec(
-                "60. a sent message with an @mention and a files block draws without the block (no Attachments (read these files) in the bubble); @src/app.ts is a pill reading app.ts, its vertical centre within 2 px of the text line's, and the three files are cards tagged MD, PDF, MD whose lines under the names hold the folder and the size (notes.md 8 B, paper.pdf 9 B)",
+                "60. a sent message with an @mention and a files block draws without the block (no Attachments (read these files) in the bubble); @src/app.ts is a pill reading app.ts, its vertical centre within 1 px of the text line's, and the three files are cards tagged MD, PDF, MD whose lines under the names hold the folder and the size (notes.md 8 B, paper.pdf 9 B)",
                 bubble60 && sized60 && cards60 != null && pill60 != null &&
                     !cards60.text.includes("Attachments (read these files)") && !cards60.text.includes("@src/app.ts") &&
                     pill60.label === "app.ts" && pill60.title === "src/app.ts" &&
-                    pill60.lines.length === 2 && pill60.off.every((d) => d <= 2) &&
+                    pill60.lines.length === 2 && pill60.off.every((d) => d <= 1) &&
                     cards60.cards.length === 3 &&
                     JSON.stringify(cards60.cards.map((c) => c.tag)) === JSON.stringify(["MD", "PDF", "MD"]) &&
                     JSON.stringify(cards60.cards.map((c) => c.name)) === JSON.stringify(["notes.md", "paper.pdf", "gone.md"]) &&
@@ -44628,9 +44628,9 @@ const agentChat = {
             // the pending bubble draws the mention as a pill too (Part B), so nothing jumps when the transcript's copy lands
             const pending70 = await h.ev(`!!${acLayer(A)}?.querySelector('[data-chat-pending] [data-chat-file-pill="../alpha.ts"]')`);
             rec(
-                "70. @../al lists the parent's alpha.ts and Enter turns the pick into a pill reading alpha.ts (the full path on hover) whose vertical centre is within 2 px of the words around it; a send types the plain text with the pill as @../alpha.ts, then Enter, and the box empties",
+                "70. @../al lists the parent's alpha.ts and Enter turns the pick into a pill reading alpha.ts (the full path on hover) whose vertical centre is within 1 px of the words around it; a send types the plain text with the pill as @../alpha.ts, then Enter, and the box empties",
                 listed70 && list70?.label === "Folder entries" && list70.rows.some((r) => r.key === "../alpha.ts") && pilled70 && geo70 != null &&
-                    geo70.label === "alpha.ts" && geo70.title === "../alpha.ts" && geo70.lines.length >= 2 && geo70.off.every((d) => d <= 2) &&
+                    geo70.label === "alpha.ts" && geo70.title === "../alpha.ts" && geo70.lines.length >= 2 && geo70.off.every((d) => d <= 1) &&
                     typed70.join("") === `${SENT70}\r` && left70 === "",
                 { listed70, list70, pilled70, geo70, typed70, left70, pending70 }
             );
@@ -44720,6 +44720,57 @@ const agentChat = {
                 "74. @../nope/ (a folder that does not exist) shows the note Cannot read ../nope/ in the list, with no rows",
                 note74 && state74?.note === "Cannot read ../nope/" && state74.rows.length === 0,
                 { note74, state74 }
+            );
+
+            // 75. a mention that is already a pill is not one being typed. @../a lists alpha.ts and beta.md: the first ↓ moves to
+            // beta.md and stays there (a select event that finds the caret where it was does not send it back to the top), Enter
+            // picks it (a pill and a space). Backspace takes the space, so the caret is right after the pill and the box's text
+            // ends in @../beta.md: the list stays shut, and stays shut with the pill selected (←), where it used to open on the
+            // text of the pill it had just written
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "@../a", false);
+            const two75 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-mention]").length === 2`, 8000);
+            const top75 = await acMentionState(h);
+            await acKey(h, acKeys.down);
+            const moved75 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-mention]")[1]?.getAttribute("aria-selected") === "true"`, 2000);
+            // a stray select event would come within a frame or two of the key
+            await polishNap(500);
+            const down75 = await acMentionState(h);
+            await acKey(h, acKeys.enter);
+            const pilled75 = await polishWaitFor(h, `!!${acBox(A)}?.querySelector('[data-chat-pill="../beta.md"]')`, 3000);
+            // the pick puts the caret back after the pill and its space on the next frame
+            await polishNap(250);
+            const shut75 = async (ms) => {
+                let seen = 0;
+                for (const end = Date.now() + ms; Date.now() < end; await polishNap(80)) {
+                    if (await h.ev(`!!document.querySelector("[data-chat-mentions]")`)) seen++;
+                }
+                return seen === 0;
+            };
+            const closedAfterPick75 = await shut75(500);
+            await acKey(h, acKeys.backspace);
+            // the box reads its pill by the short name, so what is left of "beta.md " is "beta.md" (the space is what the key took:
+            // a list that is shut with the space still there would prove nothing)
+            const boxText75 = `((e) => (e ? e.textContent.replace(/[\\u200b\\ufeff]/g, "") : null))(${acBox(A)})`;
+            const spaceGone75 = await polishWaitFor(h, `${boxText75} === "beta.md"`, 3000);
+            const text75 = await h.ev(`({ text: ${boxText75}, inner: ${acVal(acBox(A))} })`);
+            const shutAtEnd75 = await shut75(1000);
+            const atEnd75 = await acPills(h, acBox(A));
+            await acKey(h, acKeys.left);
+            await polishNap(150);
+            const shutLeft75 = await shut75(1000);
+            const left75 = await acPills(h, acBox(A));
+            await h.shot("cdp-shots/agent-chat-75-at-pill-shut.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
+            rec(
+                "75. @../a lists alpha.ts and beta.md; the first ↓ highlights beta.md and it stays there; Enter picks it as a pill; Backspace takes the space after it and the list stays shut for a second with the caret right after the pill, and with the pill selected (←)",
+                two75 && top75?.rows[0]?.selected === true && moved75 && down75?.rows.length === 2 && down75.rows[1].key === "../beta.md" &&
+                    down75.rows[1].selected === true && down75.rows[0].selected === false &&
+                    pilled75 && closedAfterPick75 &&
+                    spaceGone75 && shutAtEnd75 && atEnd75.length === 1 && atEnd75[0].path === "../beta.md" &&
+                    shutLeft75 && left75.length === 1 && left75[0].selected === true,
+                { two75, top75, moved75, down75, pilled75, closedAfterPick75, spaceGone75, text75, shutAtEnd75, atEnd75, shutLeft75, left75 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));

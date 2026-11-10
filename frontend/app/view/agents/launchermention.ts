@@ -10,6 +10,7 @@
 import { rankPaths } from "@/app/view/code/codefinder";
 import { normalizeRepoPath } from "@/util/paths";
 import type { AgentEntry } from "./agentsviewmodel";
+import { mentionText } from "./chateditormodel";
 import { resolvePath } from "./pathlinks";
 
 export const MENTION_FILE_LIMIT = 8;
@@ -18,21 +19,30 @@ export const MENTION_FILE_LIMIT = 8;
 // typed after it up to the caret: a path ends at whitespace
 const FILE_MENTION = /(^|[\s([{"'`])@([^\s@]{0,200})$/u;
 
+// the quoted form, `@"my dir/a b.ts"`, which a path with whitespace is written in (mentionText): the path runs up to the
+// caret, whitespace included, and a closing quote or a newline ends it. Its `@` follows whitespace or an opening bracket,
+// as filementiontokens.ts reads a mention, so `a@"b` is text
+const QUOTED_MENTION = /(^|[\s([{])@"([^"\r\n]{0,200})$/u;
+
 export interface FileMention {
     // where the `@` sits
     start: number;
-    // what follows it, up to the caret
+    // what follows it, up to the caret (a quoted mention's path, without its opening quote)
     query: string;
 }
 
 /** Pure: the `@` the caret is typing a path after, or null when the caret is not in one. A picked path is followed by
- *  a space, which ends it, so the picker closes after a pick. */
+ *  a space, which ends it, so the picker closes after a pick. A path being typed in quotes (`@"my dir/fo`) is read
+ *  whole, whitespace included, and its query leaves the quote out; a quote that closed before the caret ends the
+ *  mention. When an `@` follows an open quote (`@"a b @c`), the later one is the mention being typed. */
 export function fileMentionAt(text: string, caret: number): FileMention | null {
-    const found = FILE_MENTION.exec(text.slice(0, caret));
-    if (found == null) {
-        return null;
-    }
-    return { start: caret - found[2].length - 1, query: found[2] };
+    const head = text.slice(0, caret);
+    const quoted = QUOTED_MENTION.exec(head);
+    const plain = FILE_MENTION.exec(head);
+    const quotedAt = quoted == null ? null : { start: caret - quoted[2].length - 2, query: quoted[2] };
+    const plainAt = plain == null ? null : { start: caret - plain[2].length - 1, query: plain[2] };
+    // the later `@` is the one being typed; on the same `@` (`@"abc`) the quoted reading drops the quote from the query
+    return quotedAt != null && (plainAt == null || quotedAt.start >= plainAt.start) ? quotedAt : plainAt;
 }
 
 /** Pure: the files the picker lists for `query`, best first, ranked as the Code finder ranks them. `recent` (newest
@@ -146,17 +156,32 @@ export function mentionRuns(
     return runs;
 }
 
-/** Pure: `text` with the `@…` word around the caret (from `start` to the next whitespace) replaced by `@<path>` and a
- *  space (the one that already follows, if there is one), and where the caret goes: after that space. */
+// What follows the caret in the mention a pick replaces, which goes too: picking from "@src/fo|o.ts" must not leave
+// "o.ts" behind. A plain mention runs to the next whitespace; a quoted one (`@"…`) through its closing quote when one
+// follows on the line, else (an open quote nothing closes) to the next whitespace, so a stray `@"` never takes the line.
+function restOfMention(text: string, start: number, caret: number): string {
+    const rest = text.slice(caret);
+    if (text[start + 1] === '"') {
+        const closed = /^[^"\r\n]*"/.exec(rest);
+        if (closed != null) {
+            return rest.slice(closed[0].length);
+        }
+    }
+    return rest.replace(/^\S*/, "");
+}
+
+/** Pure: `text` with the `@…` word around the caret (from `start` to the next whitespace, or through the closing quote
+ *  of an `@"…` one) replaced by the mention of `path` and a space (the one that already follows, if there is one), and
+ *  where the caret goes: after that space. The mention is `@<path>`, or `@"<path>"` when the path holds whitespace
+ *  (`mentionText`, as the chat box writes a pill), so it reads back as one mention. */
 export function insertFileMention(
     text: string,
     start: number,
     caret: number,
     path: string
 ): { text: string; caret: number } {
-    const mention = `@${path}`;
-    // the rest of the word the caret sits in goes too: picking from "@src/fo|o.ts" must not leave "o.ts" behind
-    const rest = text.slice(caret).replace(/^\S*/, "");
+    const mention = mentionText(path);
+    const rest = restOfMention(text, start, caret);
     return {
         text: text.slice(0, start) + (rest.startsWith(" ") ? mention : `${mention} `) + rest,
         caret: start + mention.length + 1,
@@ -220,9 +245,11 @@ export function browseMatches<T extends BrowseEntry>(entries: readonly T[], leaf
     return ranked.slice(0, limit).map((r) => r.entry);
 }
 
-/** Pure: `text` with the `@…` word around the caret replaced by the picked entry of the folder `dir` (as typed). A file
- *  is `@<dir><name>` and a space, as insertFileMention writes it. A folder is `@<dir><name>/` with no space, the caret
- *  right after it, so the picker (still open on that word) lists the folder's own entries next. */
+/** Pure: `text` with the `@…` word around the caret replaced by the picked entry of the folder `dir` (as typed, without
+ *  the opening quote of an `@"…` mention). A file is `@<dir><name>` and a space, as insertFileMention writes it. A
+ *  folder is `@<dir><name>/` with no space, the caret right after it, so the picker (still open on that word) lists the
+ *  folder's own entries next. A path with whitespace is quoted both ways (`@"<dir><name>"`), but a folder leaves its
+ *  quote open, `@"<dir><name>/`: the walk is not over, and the picker reads the quoted path up to the caret. */
 export function insertBrowsePick(
     text: string,
     start: number,
@@ -233,8 +260,9 @@ export function insertBrowsePick(
     if (!entry.isdir) {
         return insertFileMention(text, start, caret, `${dir}${entry.name}`);
     }
-    const mention = `@${dir}${entry.name}/`;
-    const rest = text.slice(caret).replace(/^\S*/, "");
+    const closed = mentionText(`${dir}${entry.name}/`);
+    const mention = closed.endsWith('"') ? closed.slice(0, -1) : closed;
+    const rest = restOfMention(text, start, caret);
     return { text: text.slice(0, start) + mention + rest, caret: start + mention.length };
 }
 

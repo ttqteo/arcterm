@@ -10,7 +10,8 @@
 // (`EditorLike`) answers like the part of a `<textarea>` they use. The arithmetic (text <-> lines, caret <-> offset) is
 // chateditornodes.ts / chateditormodel.ts; this file is the Lexical wiring around it.
 //
-// `onChange` fires when the text or the caret changed, so a click that only moves the caret calls it with the same text.
+// `onChange` fires when the text, the caret or whether the selection is on a pill (`EditorLike.onPill`) changed, so a click
+// that only moves the caret, or selects a pill, calls it with the same text.
 // While an IME composition (Telex, Pinyin…) is on, nothing is reported and nothing is rebuilt: the text arrives when the
 // composition ends. A `value` that comes from outside meanwhile is held and drawn when the composition ends (in place of
 // the text typed), so the editor never says its own text over it.
@@ -69,6 +70,10 @@ export interface EditorLike {
     readonly selectionStart: number;
     readonly selectionEnd: number;
     readonly readOnly: boolean;
+    /** the selection is on a pill: one is selected, or the caret sits right after one. A mention that is a pill is complete,
+     *  never a path being typed, so the `@` picker stays shut on it (the box's text ends in the pill's `@path` there, which
+     *  reads as a mention being typed). A textarea has no pills and leaves it out. */
+    readonly onPill?: boolean;
     /** the element floating-ui follows when the handle anchors a list as a virtual element (a textarea is its own) */
     readonly contextElement?: Element;
     focus(options?: FocusOptions): void;
@@ -99,7 +104,8 @@ export interface ChatEditorProps {
      *  pick, `@../src/`, goes on walking), where without it every complete mention becomes a pill and the caret lands at
      *  the end of the text. */
     outsideCaret?: { text: string; caret: number } | null;
-    /** the text and the caret (an offset in it) after an edit or a caret move, not while a composition is on */
+    /** the text and the caret (an offset in it) after an edit, a caret move or a pill selected or let go, not while a
+     *  composition is on */
     onChange(text: string, caret: number): void;
     /** every key goes here first; a handler that calls `preventDefault` keeps the editor from acting on it */
     onKeyDown?(e: KeyLike): void;
@@ -222,6 +228,19 @@ function $setPoint(point: PointType, doc: Doc, place: EditorPlace): void {
         return;
     }
     point.set(paragraph.getKey(), place.index + (after ? 1 : 0), "element");
+}
+
+/** whether the selection is on a pill: a pill selected (Backspace or ← beside it), or a collapsed caret right after one */
+function $selectionOnPill(doc: Doc): boolean {
+    const selection = $getSelection();
+    if ($isNodeSelection(selection)) {
+        return selection.getNodes().some($isFileMentionNode);
+    }
+    if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+        return false;
+    }
+    const place = $placeOfPoint(selection.focus, doc);
+    return adjacentPill(doc.lines[place.line] ?? [], place.index, place.offset, true) != null;
 }
 
 function $selectOffsets(doc: Doc, anchor: number, focus: number): void {
@@ -379,6 +398,9 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             get readOnly() {
                 return !editor.isEditable();
             },
+            get onPill() {
+                return editor.read(() => $selectionOnPill($readDoc()));
+            },
             get contextElement() {
                 return editor.getRootElement() ?? undefined;
             },
@@ -445,7 +467,9 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         [editor]
     );
 
-    // what the user does in the editor goes out as text and a caret
+    // what the user does in the editor goes out as text and a caret. Selecting a pill leaves both as they were (the caret is
+    // the selection's end, the pill's end), so whether the selection is on a pill is told too: the `@` picker closes on it.
+    const onPill = useRef(false);
     useLayoutEffect(
         () =>
             editor.registerUpdateListener(({ editorState, tags }) => {
@@ -459,12 +483,17 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
                 const next = editorState.read(() => {
                     const doc = $readDoc();
                     const text = linesText(doc.lines);
-                    return { text, caret: $selectionOffsets(doc)?.end ?? text.length };
+                    return { text, caret: $selectionOffsets(doc)?.end ?? text.length, pill: $selectionOnPill(doc) };
                 });
-                if (next.text === said.current.text && next.caret === said.current.caret) {
+                if (
+                    next.text === said.current.text &&
+                    next.caret === said.current.caret &&
+                    next.pill === onPill.current
+                ) {
                     return;
                 }
-                said.current = next;
+                said.current = { text: next.text, caret: next.caret };
+                onPill.current = next.pill;
                 props.current.onChange(next.text, next.caret);
             }),
         [editor, props, said]
@@ -491,6 +520,7 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             tag: "external",
             discrete: true,
         });
+        onPill.current = editor.read(() => $selectionOnPill($readDoc()));
         // like a textarea whose value is set from outside, what came before is not undoable
         editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
     }, [editor, value, composed, props, said]);

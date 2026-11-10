@@ -73,7 +73,8 @@ async function listDir(base: string, dir: string): Promise<BrowseEntry[]> {
 // read once while the list is open. `name` tags the list for scenarios (`data-<name>-mentions`, an option
 // `data-<name>-mention`). `setText` takes the caret a pick puts the text's caret at, for a box that draws the text again
 // (the chat editor): a folder pick (`@../src/`) leaves the mention the caret ends, which stays text to keep walking
-// instead of becoming a pill.
+// instead of becoming a pill. A mention that already is a pill (the editor's `onPill`: the caret right after one, or one
+// selected) is never one being typed, so the list stays shut on it.
 export function useFileMention({
     text: task,
     setText,
@@ -92,6 +93,8 @@ export function useFileMention({
     recent?: readonly string[];
 }): FileMentionState {
     const [caret, setCaret] = useState(0);
+    // the selection is on a pill (the chat editor tells: EditorLike.onPill): that mention is complete, not one being typed
+    const [onPill, setOnPill] = useState(false);
     const [pick, setPick] = useState(0);
     // the `@` whose list Escape closed; it stays closed until the caret leaves it
     const [dismissed, setDismissed] = useState(-1);
@@ -101,7 +104,7 @@ export function useFileMention({
     // counts the closings: a folder still being read when the list closed must not land in the next opening's cache
     const opening = useRef(0);
     const base = filesRoot || cwd || "";
-    const mention = base === "" ? null : fileMentionAt(task, caret);
+    const mention = base === "" || onPill ? null : fileMentionAt(task, caret);
     const open = mention != null && mention.start !== dismissed;
     const browse = open ? browseQuery(mention.query) : null;
     const browseDir = browse?.dir ?? null;
@@ -173,6 +176,7 @@ export function useFileMention({
                 : insertBrowsePick(task, mention.start, caret, browse.dir, row);
         setText(next.text, next.caret);
         setCaret(next.caret);
+        setOnPill(false);
         setPick(0);
         requestAnimationFrame(() => {
             taskRef.current?.focus();
@@ -205,12 +209,18 @@ export function useFileMention({
             choose(rows[at]);
         }
     };
-    // a keystroke or a click moves the caret and starts the list from its best match again; ↑↓ do not (the picker
-    // takes them, so the caret stays)
+    // a keystroke or a click that moves the caret starts the list from its best match again; ↑↓ do not (the picker takes
+    // them, so the caret stays), and neither does a select event that finds the caret where it was (the first key after
+    // the box is focused raises one, which would send a first ↓ back to the top once its key is up). On a pill the list
+    // is shut: the box's text ends in the pill's `@path` at the caret, which reads as a path being typed.
     const onCaret = (el: EditorLike) => {
-        setCaret(el.selectionStart);
-        setPick(0);
-        if (fileMentionAt(el.value, el.selectionStart) == null) {
+        const atPill = el.onPill === true;
+        setOnPill(atPill);
+        if (el.selectionStart !== caret) {
+            setCaret(el.selectionStart);
+            setPick(0);
+        }
+        if (atPill || fileMentionAt(el.value, el.selectionStart) == null) {
             setDismissed(-1);
         }
     };

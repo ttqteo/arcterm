@@ -11,7 +11,12 @@ import { PathLink } from "./pathlinkcontext";
 
 export function FilePill({ path }: { path: string }) {
     return (
-        <PathLink path={path} className="max-w-full align-middle">
+        // The link is inline-flex, not its own inline-block: a block's line box carries the text's strut, taller than the
+        // pill, which pulls the pill ~0.6px below where align-middle puts it. align-middle puts the pill's centre half an
+        // x-height over the baseline, below the centre of the text's line (capitals and ascenders reach higher), so -top
+        // lifts it onto that centre; it moves nothing around it. The lift is on the link, not the pill: the link clips
+        // what overflows it, and a lifted pill would lose its top border.
+        <PathLink path={path} className="relative -top-[1.5px] inline-flex max-w-full align-middle">
             {/* align-middle + leading-none: an inline-flex box whose first child is an icon sits on the icon's bottom
                 edge otherwise, and rides high on the line */}
             <span

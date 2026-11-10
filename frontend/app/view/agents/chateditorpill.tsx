@@ -40,13 +40,15 @@ function FileMentionPill({ nodeKey, path }: { nodeKey: NodeKey; path: string }) 
         editor.getRootElement()?.focus({ preventScroll: true });
     };
     return (
+        // align-middle puts the pill's centre half an x-height over the baseline, below the centre of the text's line
+        // (capitals and ascenders reach higher than the x-height); -top lifts it onto that centre and moves nothing around it
         <span
             data-chat-pill={path}
             data-selected={selected ? "true" : undefined}
             title={path}
             onClick={select}
             className={cn(
-                "mx-px inline-flex h-5 max-w-[240px] items-center gap-1 rounded-[6px] border px-1.5 align-middle text-[12.5px] leading-none text-ink-hi",
+                "relative -top-[1.5px] mx-px inline-flex h-5 max-w-[240px] items-center gap-1 rounded-[6px] border px-1.5 align-middle text-[12.5px] leading-none text-ink-hi",
                 selected ? "border-accent bg-accent/12" : "border-edge-mid bg-surface"
             )}
         >

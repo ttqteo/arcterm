@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
+import { mentionTokens } from "./filementiontokens";
 import {
     browseMatches,
     browseQuery,
@@ -52,6 +53,39 @@ describe("fileMentionAt", () => {
         expect(fileMentionAt("@~/", 3)).toEqual({ start: 0, query: "~/" });
         expect(fileMentionAt("@../src/ap", 10)).toEqual({ start: 0, query: "../src/ap" });
         expect(fileMentionAt("@/etc/", 6)).toEqual({ start: 0, query: "/etc/" });
+    });
+
+    it('reads an @" mention up to the caret, whitespace included, without the quote', () => {
+        const text = 'see @"../my dir/fo';
+        expect(fileMentionAt(text, text.length)).toEqual({ start: 4, query: "../my dir/fo" });
+        expect(fileMentionAt('@"', 2)).toEqual({ start: 0, query: "" });
+        expect(fileMentionAt('@"my fi', 7)).toEqual({ start: 0, query: "my fi" });
+        expect(fileMentionAt('a\n(@"x y', 8)).toEqual({ start: 3, query: "x y" });
+    });
+
+    it('ends an @" mention at a closing quote: one closed before the caret is not a mention at the caret', () => {
+        expect(fileMentionAt('@"a b" x', 8)).toBeNull();
+        expect(fileMentionAt('@"a b"', 6)).toBeNull();
+        expect(fileMentionAt('@"a b" and @"c d', 16)).toEqual({ start: 11, query: "c d" });
+    });
+
+    it('ends an @" mention at a newline', () => {
+        expect(fileMentionAt('@"a b\nc d', 9)).toBeNull();
+    });
+
+    it('keeps an @" mention to 200 characters', () => {
+        expect(fileMentionAt(`@"${"a".repeat(200)}`, 202)).toEqual({ start: 0, query: "a".repeat(200) });
+        expect(fileMentionAt(`@"${"a".repeat(201)}`, 203)).toBeNull();
+    });
+
+    it("leaves the quote form of an email, or of a word with a quote in it, as text", () => {
+        expect(fileMentionAt('me@"example.com', 15)).toBeNull();
+        expect(fileMentionAt('a@"b', 4)).toBeNull();
+        expect(fileMentionAt('say a@"b c', 10)).toBeNull();
+    });
+
+    it("lets an @ typed after an open quote be the mention being typed", () => {
+        expect(fileMentionAt('@"a b @c', 8)).toEqual({ start: 6, query: "c" });
     });
 });
 
@@ -218,6 +252,55 @@ describe("insertBrowsePick", () => {
             caret: 8,
         });
     });
+
+    it("quotes a file whose path holds whitespace, closing the quote and ending with a space", () => {
+        expect(insertBrowsePick("@../", 0, 4, "../", { name: "my file.txt", isdir: false })).toEqual({
+            text: '@"../my file.txt" ',
+            caret: 18,
+        });
+    });
+
+    it("opens a quote for a folder whose path holds whitespace, the caret at its end so the walk goes on", () => {
+        const next = insertBrowsePick("@../", 0, 4, "../", { name: "my dir", isdir: true });
+        expect(next).toEqual({ text: '@"../my dir/', caret: 12 });
+        const mention = fileMentionAt(next.text, next.caret);
+        expect(mention).toEqual({ start: 0, query: "../my dir/" });
+        expect(browseQuery(mention!.query)).toEqual({ dir: "../my dir/", leaf: "" });
+    });
+
+    it("keeps a folder quoted inside an open quote, even when its own name has no whitespace", () => {
+        expect(insertBrowsePick('@"../my dir/', 0, 12, "../my dir/", { name: "sub", isdir: true })).toEqual({
+            text: '@"../my dir/sub/',
+            caret: 16,
+        });
+    });
+
+    it("closes the quote on a file picked inside an open quote", () => {
+        expect(insertBrowsePick('@"../my dir/', 0, 12, "../my dir/", { name: "a.ts", isdir: false })).toEqual({
+            text: '@"../my dir/a.ts" ',
+            caret: 18,
+        });
+        expect(insertBrowsePick('fix @"../my dir/a', 4, 17, "../my dir/", { name: "a.ts", isdir: false })).toEqual({
+            text: 'fix @"../my dir/a.ts" ',
+            caret: 22,
+        });
+    });
+
+    it("walks on in a quoted folder: a pick, then the next pick, builds on the quoted path", () => {
+        const first = insertBrowsePick("@../", 0, 4, "../", { name: "my dir", isdir: true });
+        const mention = fileMentionAt(first.text, first.caret)!;
+        const dir = browseQuery(mention.query)!.dir;
+        const second = insertBrowsePick(first.text, mention.start, first.caret, dir, { name: "a b.ts", isdir: false });
+        expect(second.text).toBe('@"../my dir/a b.ts" ');
+        expect(mentionTokens(second.text)).toEqual([{ start: 0, end: 19, path: "../my dir/a b.ts" }]);
+    });
+
+    it("leaves what follows an open-quote folder pick alone when no quote closes after the caret", () => {
+        expect(insertBrowsePick('@"../my dir/s later', 0, 13, "../my dir/", { name: "sub", isdir: true })).toEqual({
+            text: '@"../my dir/sub/ later',
+            caret: 16,
+        });
+    });
 });
 
 describe("fileMentionMatches", () => {
@@ -252,6 +335,36 @@ describe("insertFileMention", () => {
             text: "@src/foo.ts x",
             caret: 12,
         });
+    });
+
+    it("writes a path with whitespace quoted, as the box writes a pill, so it reads as one mention", () => {
+        const next = insertFileMention("fix @my", 4, 7, "src/my file.txt");
+        expect(next).toEqual({ text: 'fix @"src/my file.txt" ', caret: 23 });
+        expect(mentionTokens(next.text)).toEqual([{ start: 4, end: 22, path: "src/my file.txt" }]);
+    });
+
+    it("writes a path without whitespace unquoted", () => {
+        expect(insertFileMention("@ap", 0, 3, "src/app.ts").text).toBe("@src/app.ts ");
+    });
+
+    it('replaces an @" word the caret is typing in, quote included', () => {
+        expect(insertFileMention('see @"my fi', 4, 11, "src/my file.txt")).toEqual({
+            text: 'see @"src/my file.txt" ',
+            caret: 23,
+        });
+        expect(insertFileMention('see @"my fi', 4, 11, "src/app.ts")).toEqual({ text: "see @src/app.ts ", caret: 16 });
+    });
+
+    it("swallows the rest of a quoted mention up to its closing quote", () => {
+        expect(insertFileMention('@"../my d|ir/a.ts" next'.replace("|", ""), 0, 9, "x/y z.ts")).toEqual({
+            text: '@"x/y z.ts" next',
+            caret: 12,
+        });
+    });
+
+    it('does not swallow a line that follows an @" with no closing quote', () => {
+        expect(insertFileMention('@"my fi later', 0, 7, "a.ts")).toEqual({ text: "@a.ts later", caret: 6 });
+        expect(insertFileMention('@"my fi\nlater "x"', 0, 7, "a.ts")).toEqual({ text: '@a.ts \nlater "x"', caret: 6 });
     });
 });
 
