@@ -22,6 +22,7 @@ import {
 } from "./agenttreemodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { seatableAgents } from "./councilsetupmodel";
+import type { DevServerRow } from "./devserversmodel";
 import { endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
 import type { BackgroundTask } from "./transcriptprojection";
 
@@ -1410,6 +1411,56 @@ describe("backgroundTaskRows", () => {
         expect(m.sub).toBe("no events yet · 2m");
         expect(s.label).toBe("npm run dev");
         expect(s.sub).toBe("running · 5m");
+    });
+
+    describe("a task that left a server listening", () => {
+        const server = (over: Partial<DevServerRow> = {}): DevServerRow => ({
+            pid: 12208,
+            createms: NOW - 19 * MIN,
+            ports: [4310],
+            name: "node.exe",
+            cmdline: "node --env-file-if-exists=.env ./dist/server/entry.mjs",
+            cwd: "D:\\Workspace\\SIEM\\apps\\portal\\web",
+            byagent: true,
+            launchercmdline: "bash -c cd /d/Workspace/SIEM/apps/portal && pnpm -C web start",
+            ...over,
+        });
+        const portal = (over: Partial<BackgroundTask> = {}) =>
+            shell("p", {
+                label: "Start the built portal on 4310",
+                command: "cd /d/Workspace/SIEM/apps/portal && pnpm -C web start",
+                ...over,
+            });
+
+        it("names the row by the server and its port, and keeps the agent's words as its hint", () => {
+            const [r] = backgroundTaskRows([portal()], true, NOW, [server()]);
+            expect(r.label).toBe("portal/web · 4310");
+            expect(r.hint).toBe("Start the built portal on 4310");
+        });
+
+        it("names the lowest port of a server that listens on several", () => {
+            const [r] = backgroundTaskRows([portal()], true, NOW, [server({ ports: [4310, 24678] })]);
+            expect(r.label).toBe("portal/web · 4310");
+        });
+
+        it("keeps the agent's words while no server it launched is listening", () => {
+            const other = server({ launchercmdline: "bash -c npm run dev" });
+            for (const servers of [null, [], [other]]) {
+                const [r] = backgroundTaskRows([portal()], true, NOW, servers);
+                expect(r.label).toBe("Start the built portal on 4310");
+                expect(r.hint).toBeNull();
+            }
+        });
+
+        it("leaves a Monitor's label alone", () => {
+            const [m] = backgroundTaskRows(
+                [monitor("m", { label: "watch the portal", command: "pnpm -C web start" })],
+                true,
+                NOW,
+                [server({ launchercmdline: "pnpm -C web start" })]
+            );
+            expect(m.label).toBe("watch the portal");
+        });
     });
 
     it("says what a Monitor reported in its second line", () => {

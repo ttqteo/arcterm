@@ -1105,6 +1105,7 @@ function BackgroundTaskRows({
                                 <div className="min-w-0 flex-1">
                                     <div
                                         data-testid="background-task-row-label"
+                                        title={r.hint ?? undefined}
                                         className="truncate text-[11.5px] font-medium text-secondary"
                                     >
                                         {r.label}
@@ -1225,7 +1226,7 @@ function ParentRow({
     const servers = launchedServers(bgTasks, machineServers);
     // its running ones as rows under it: only while its process lives, since a sleeping or terminal-less agent's
     // transcript still reads them as running
-    const taskRows = backgroundTaskRows(bgTasks, agent.blockId != null && !agent.sleeping, now);
+    const taskRows = backgroundTaskRows(bgTasks, agent.blockId != null && !agent.sleeping, now, machineServers);
     // from TASK_FOLD_AT of them on, they fold behind a chip on its meta line until the person opens them
     const tasksOpen = useAtomValue(treeFoldsAtom).tasksOpen?.get(agent.id);
     const tasksOpenNow = tasksShown(taskRows.length, tasksOpen);

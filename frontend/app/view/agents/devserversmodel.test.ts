@@ -9,6 +9,7 @@ import {
     pollMs,
     portsLabel,
     serverLabel,
+    serverName,
     serverUrl,
     terminalLog,
     uptimeLabel,
@@ -92,6 +93,26 @@ describe("serverLabel", () => {
     it("does not cut a label of exactly 60 characters", () => {
         const cmdline = "y".repeat(60);
         expect(serverLabel(row({ cmdline }))).toBe(cmdline);
+    });
+});
+
+describe("serverName", () => {
+    it("names the server by the directory it runs in", () => {
+        expect(serverName(row({ cwd: "C:\\w\\shop" }))).toBe("shop");
+        expect(serverName(row({ cwd: "/home/me/apps/portal/" }))).toBe("portal");
+    });
+
+    it("puts the parent before a directory name that says nothing on its own", () => {
+        expect(serverName(row({ cwd: "D:\\Workspace\\SIEM\\apps\\portal\\web" }))).toBe("portal/web");
+        expect(serverName(row({ cwd: "/repo/frontend" }))).toBe("repo/frontend");
+    });
+
+    it("keeps a lone generic directory as it is", () => {
+        expect(serverName(row({ cwd: "C:\\web" }))).toBe("web");
+    });
+
+    it("falls back to the command's label with no directory", () => {
+        expect(serverName(row({ cwd: "" }))).toBe("astro dev");
     });
 });
 

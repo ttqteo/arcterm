@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A background server named by what runs: have a Claude agent start a dev server in the background
+  (`npm run dev` with `run_in_background`) → once the footer's Servers lists it, its row under the agent in the Agent
+  tree reads `<dir> · <port>` (`portal/web · 4310` for a server in `portal\web`) instead of the agent's description,
+  hovering the row shows that description, and the peek's title still reads it. Unit tests only
+  (`agenttreemodel.ts` `backgroundTaskRows`, `devserversmodel.ts` `serverName`); no scenario starts a real server.
 - [ ] (arcterm) Chat draft survives a switch: in an awake Claude agent's Chat, type a line and paste an image (and drop
   a file), switch to another agent, then to Jarvis, then back → the text and both chips are still in the box, the
   image's thumbnail still shows; send → the box empties and the chips go; sleep the agent with text in the box → the

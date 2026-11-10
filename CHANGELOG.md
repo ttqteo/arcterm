@@ -22,6 +22,15 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A background command that left a server running is named in the Agent tree by the server and its port
+  (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
+- The peek of a background command or Monitor widens to fit its output, up to the edge of the window, so a wide build
+  log no longer wraps every line.
+
 ## 1.0.6 — 2026-11-10
 
 ### Added

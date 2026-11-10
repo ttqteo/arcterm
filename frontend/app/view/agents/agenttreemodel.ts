@@ -11,6 +11,7 @@ import { projectOf, type AgentVM } from "./agentsviewmodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { isAgentSeat, type SeatableAgent } from "./councilmodel";
 import { seatableAgents } from "./councilsetupmodel";
+import { matchLauncherTask, serverName, type DevServerRow } from "./devserversmodel";
 import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalstage";
 import {
     backgroundTaskKind,
@@ -704,7 +705,8 @@ export interface BackgroundTaskRow {
     key: string; // the task's tool-use id, which is unique per agent
     task: BackgroundTask;
     kind: BackgroundTaskKind;
-    label: string;
+    label: string; // the server it left listening (`portal/web · 4310`), else the agent's words for the command
+    hint: string | null; // the agent's words, when the label names its server instead: the row's tooltip
     sub: string; // its second line: "running · 5m", or a Monitor's events and how long it has watched
     left: string | null; // a running Monitor with a timeout: "18m left"
     expiresAt: number | null; // the same Monitor's expiry, for the tooltip
@@ -725,23 +727,35 @@ export function tasksShown(n: number, open: boolean | undefined): boolean {
  *  it started them. A task that ended or was stopped leaves the tree, and an agent that is not live (asleep, or with
  *  no terminal block) lists none: its transcript still reads them as running but their process is gone with its own.
  *  A row is a click target when the peek can name it (a task id) and has something to show (a Monitor's Events, or a
- *  shell's output file). */
+ *  shell's output file).
+ *
+ *  A shell task that left a server listening (one of `servers`, the Servers poll's listening processes, was launched
+ *  by it) is named by that server and its port: what runs, not the words the agent started it with, which once it
+ *  runs read wrong ("Start …") or ambiguous ("the built portal"); those words stay its hint. */
 export function backgroundTaskRows(
     tasks: BackgroundTask[] | undefined,
     live: boolean,
-    now: number
+    now: number,
+    servers: DevServerRow[] | null = null
 ): BackgroundTaskRow[] {
     if (!live) {
         return [];
     }
-    return runningBackgroundTasks(tasks).map((task) => ({
-        key: task.toolUseId,
-        task,
-        kind: backgroundTaskKind(task),
-        label: task.label,
-        sub: backgroundTaskSubline(task, now),
-        left: monitorTimeLeft(task, now),
-        expiresAt: monitorExpiresAt(task),
-        peekId: task.taskId != null && (task.monitor === true || task.outputFile != null) ? task.taskId : null,
-    }));
+    return runningBackgroundTasks(tasks).map((task) => {
+        const server =
+            task.monitor === true
+                ? undefined
+                : (servers ?? []).find((s) => matchLauncherTask(s.launchercmdline, [task]) != null);
+        return {
+            key: task.toolUseId,
+            task,
+            kind: backgroundTaskKind(task),
+            label: server != null ? `${serverName(server)} · ${server.ports[0]}` : task.label,
+            hint: server != null ? task.label : null,
+            sub: backgroundTaskSubline(task, now),
+            left: monitorTimeLeft(task, now),
+            expiresAt: monitorExpiresAt(task),
+            peekId: task.taskId != null && (task.monitor === true || task.outputFile != null) ? task.taskId : null,
+        };
+    });
 }
