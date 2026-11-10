@@ -43,18 +43,23 @@ export interface AskQuestionDetail {
     typed?: string;
 }
 
-/** What a bash-mode command (`! cmd`) printed, its ANSI codes dropped: stdout and stderr, either possibly empty. */
+/** What a bash-mode command (`! cmd`) or a slash command printed, its ANSI codes dropped: stdout and stderr, either
+ *  possibly empty. */
 export interface ShellResult {
     output: string;
     error: string;
 }
 
+/** A /btw's side answer, which the arc mod wrote as a notice the model never reads (btw-core.ts), or why there is none. */
+export type BtwAnswer = { answer: string } | { failure: string };
+
 // One item of "previous info": something the agent said, or something it did.
 export type AgentEntry =
     | { kind: "message"; text: string }
     | { kind: "user"; text: string; images?: string[] } // images: what was pasted with it, as data URLs
-    // a slash command or skill you ran, or (name "!", `shell` set once its output lands) a bash-mode command you typed
-    | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult }
+    // a slash command or skill you ran, or (name "!") a bash-mode command you typed; `shell` is what it printed, once that
+    // lands (a slash command that printed nothing has none); `btw` a /btw's side answer
+    | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult; btw?: BtwAnswer }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string }
     // a background Task/subagent finished (Claude's <task-notification>): summary + optional full result
     | { kind: "notification"; summary: string; status?: string; result?: string }
@@ -256,7 +261,15 @@ export function detailExceedsInline(d: ActionDetail): boolean {
 export type TimelineItem =
     | { kind: "message"; text: string; index: number }
     | { kind: "user"; text: string; images?: string[]; index: number }
-    | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult; index: number }
+    | {
+          kind: "command";
+          name: string;
+          args?: string;
+          isSkill?: boolean;
+          shell?: ShellResult;
+          btw?: BtwAnswer;
+          index: number;
+      }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string; index: number }
     | { kind: "notification"; summary: string; status?: string; result?: string; index: number }
     | { kind: "interrupted"; index: number }
@@ -322,7 +335,15 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
                     : { kind: "user", text: e.text, index: i }
             );
         } else if (e.kind === "command") {
-            items.push({ kind: "command", name: e.name, args: e.args, isSkill: e.isSkill, shell: e.shell, index: i });
+            items.push({
+                kind: "command",
+                name: e.name,
+                args: e.args,
+                isSkill: e.isSkill,
+                shell: e.shell,
+                ...(e.btw != null ? { btw: e.btw } : {}),
+                index: i,
+            });
         } else if (e.kind === "compaction") {
             items.push({
                 kind: "compaction",

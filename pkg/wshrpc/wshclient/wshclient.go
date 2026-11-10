@@ -46,6 +46,12 @@ func AgentAskPendingCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts
 	return resp, err
 }
 
+// command "agentbtw", wshserver.AgentBtwCommand
+func AgentBtwCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentBtwData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "agentbtw", data, opts)
+	return err
+}
+
 // command "agentcontrol", wshserver.AgentControlCommand
 func AgentControlCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentControlData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg] {
 	return sendRpcRequestResponseStreamHelper[wshrpc.AgentControlMsg](w, "agentcontrol", data, opts)

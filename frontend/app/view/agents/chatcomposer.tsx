@@ -38,7 +38,7 @@ import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
-import { addPending, noteSent, sentHistory } from "./chatpendingstore";
+import { addPending, dropPending, noteSent, sentHistory } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
@@ -104,12 +104,27 @@ export function ChatComposer({
     // the text and the chips are kept per agent outside the box, so switching to another agent or surface (which
     // unmounts it) and back finds what you were writing
     const att = useComposerAttachments({ keep: true, draftKey: agent.id });
+    // flips the pane to the agent's terminal with the keyboard in it
+    const showTerminal = () => {
+        setChatMode(agent.id, "terminal");
+        const blockId = agent.blockId;
+        if (blockId != null) {
+            requestAnimationFrame(() => focusTerm(blockId));
+        }
+    };
     // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
     const { text, setText, message, canSend, waking, send } = useAgentSend(
         agent.blockId,
         agent,
         asleep ? undefined : att.attachments,
-        { keepDraft: true }
+        {
+            keepDraft: true,
+            // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
+            onBtwTyped: (sent) => {
+                dropPending(agent.id, sent);
+                showTerminal();
+            },
+        }
     );
     // `!` first: Claude Code runs the text as a bash command, so the box says so as its own box does (chatmodel.ts)
     const bash = bashMode(text);
@@ -231,11 +246,7 @@ export function ChatComposer({
     // a bare /model, /config… draws a menu on Claude Code's own screen: show that screen to answer it
     const flipIfTui = (sent: string) => {
         if (opensTui(sent, slash.commands)) {
-            setChatMode(agent.id, "terminal");
-            const blockId = agent.blockId;
-            if (blockId != null) {
-                requestAnimationFrame(() => focusTerm(blockId));
-            }
+            showTerminal();
         }
     };
     const submit = () => {
@@ -249,7 +260,8 @@ export function ChatComposer({
             noteSent(agent.id, sent);
             if (!asleep) {
                 // a /command is no bubble of yours: the transcript draws it as a command row, which would leave the
-                // pending bubble up beside it for minutes
+                // pending bubble up beside it for minutes. A /btw and a bare panel command are: nothing of them lands
+                // until the side answer comes or the panel closes (chatpending.ts pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
                     addPending(agent.id, sent, entries);
                 }

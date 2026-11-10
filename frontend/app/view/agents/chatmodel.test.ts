@@ -140,6 +140,49 @@ describe("chatItems", () => {
         ]);
     });
 
+    it("carries a slash command's output, and says a panel that left nothing to show opened in the terminal", () => {
+        const items = chatItems([
+            {
+                kind: "command",
+                name: "/goal",
+                args: "tests pass",
+                shell: { output: "Goal set: tests pass", error: "" },
+            },
+            { kind: "command", name: "/config", shell: { output: "Config dialog dismissed", error: "" } },
+            { kind: "command", name: "/usage" },
+            { kind: "command", name: "/model", shell: { output: "Set model to Opus", error: "" } },
+            { kind: "command", name: "/clear" },
+        ]);
+        expect(items).toEqual([
+            {
+                kind: "you",
+                key: expect.any(String),
+                command: "/goal tests pass",
+                shell: { output: "Goal set: tests pass", error: "" },
+            },
+            { kind: "you", key: expect.any(String), command: "/config", terminal: true },
+            { kind: "you", key: expect.any(String), command: "/usage", terminal: true },
+            {
+                kind: "you",
+                key: expect.any(String),
+                command: "/model",
+                shell: { output: "Set model to Opus", error: "" },
+            },
+            { kind: "you", key: expect.any(String), command: "/clear" },
+        ]);
+    });
+
+    it("carries a /btw's side answer, or why there is none, on its command", () => {
+        const items = chatItems([
+            { kind: "command", name: "/btw", args: "which file?", btw: { answer: "`a.ts`" } },
+            { kind: "command", name: "/btw", args: "why?", btw: { failure: "the reply was empty" } },
+        ]);
+        expect(items).toEqual([
+            { kind: "you", key: expect.any(String), command: "/btw which file?", btw: { answer: "`a.ts`" } },
+            { kind: "you", key: expect.any(String), command: "/btw why?", btw: { failure: "the reply was empty" } },
+        ]);
+    });
+
     it("draws compactions, interruptions and background notifications as markers between agent groups", () => {
         const items = chatItems([
             you("go"),

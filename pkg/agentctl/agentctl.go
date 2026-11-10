@@ -12,11 +12,13 @@ const queueSize = 16
 
 // Msg is one thing for a session to do: run Text as a prompt, or compact with Compact as the instructions,
 // which wins when both are set. MidTurn asks for Text to join the turn the session is running, as typed
-// text would, instead of waiting for it to end.
+// text would, instead of waiting for it to end. Btw is a side question (Chat's /btw), which wins over both:
+// the mod answers it from the session's own context and writes the answer as a notice the model never reads.
 type Msg struct {
 	Text    string
 	Compact string
 	MidTurn bool
+	Btw     string
 }
 
 var (

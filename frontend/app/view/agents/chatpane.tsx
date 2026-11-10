@@ -33,7 +33,7 @@ import { ChatGoalStrip } from "./chatgoal";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
-import { pendingStill } from "./chatpending";
+import { pendingStill, type PendingKind } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { TaggedPromptText } from "./chattagblock";
@@ -71,6 +71,41 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
         <span data-chat-turn-stats className="flex-none tabular-nums text-ink-faint">
             ({label})
         </span>
+    );
+}
+
+// a /btw or a bare panel command sent and not in the transcript yet: the command, dimmed, as its card will draw it, and
+// under it what it waits on: the side answer the arc mod is asking a fork of the session for, or the panel open on Claude
+// Code's own screen (its row lands only once it closes), with a way there
+function PendingCommand({
+    text,
+    kind,
+    onOpenTerminal,
+}: {
+    text: string;
+    kind: PendingKind;
+    onOpenTerminal?: () => void;
+}) {
+    return (
+        <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col items-end gap-1">
+            <div className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]">
+                {text.trim()}
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted">
+                    {kind === "btw" ? "Asking on the side…" : "Open in Terminal"}
+                </span>
+                {kind === "panel" && onOpenTerminal != null ? (
+                    <button
+                        type="button"
+                        onClick={onOpenTerminal}
+                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                    >
+                        Show Terminal
+                    </button>
+                ) : null}
+            </div>
+        </div>
     );
 }
 
@@ -294,6 +329,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     active={agent.state !== "idle"}
                                     working={agent.state === "working"}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
+                                    onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>
@@ -303,14 +339,23 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     <div data-chat-tail className="mx-auto flex w-full max-w-[760px] flex-none flex-col gap-3 pb-2">
                         {/* its own provider: a pill or card in a pending bubble opens as it will in the transcript's copy */}
                         <AgentPathLinks agent={agent}>
-                            {pending.map((p) => (
-                                <PendingBubble
-                                    key={p.id}
-                                    text={p.text}
-                                    queued={agent.state !== "idle"}
-                                    onSendNow={sendNow}
-                                />
-                            ))}
+                            {pending.map((p) =>
+                                p.kind != null ? (
+                                    <PendingCommand
+                                        key={p.id}
+                                        text={p.text}
+                                        kind={p.kind}
+                                        onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
+                                    />
+                                ) : (
+                                    <PendingBubble
+                                        key={p.id}
+                                        text={p.text}
+                                        queued={agent.state !== "idle"}
+                                        onSendNow={sendNow}
+                                    />
+                                )
+                            )}
                         </AgentPathLinks>
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">

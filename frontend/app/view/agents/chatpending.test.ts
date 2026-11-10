@@ -4,7 +4,9 @@ import {
     PASTE_OVER,
     PENDING_IDLE_MS,
     PENDING_MAX_MS,
+    btwQuestion,
     pastesBody,
+    pendingKind,
     pendingStill,
     pendsAsBubble,
     pushSent,
@@ -24,6 +26,37 @@ describe("userTextCount", () => {
         const entries = [user("hello"), msg("hello"), user(" hello\n"), user("other")];
         expect(userTextCount(entries, "hello")).toBe(2);
         expect(userTextCount(entries, "nope")).toBe(0);
+    });
+
+    it("counts a command entry as the text it was typed as, whitespace runs aside", () => {
+        const entries: AgentEntry[] = [
+            { kind: "command", name: "/config", shell: { output: "Config dialog dismissed", error: "" } },
+            { kind: "command", name: "/btw", args: "which file now?", btw: { answer: "a.ts" } },
+            user("/config"),
+        ];
+        expect(userTextCount(entries, "/config")).toBe(2);
+        expect(userTextCount(entries, "/btw which  file\nnow?")).toBe(1);
+        expect(userTextCount(entries, "/btw other")).toBe(0);
+    });
+});
+
+describe("btwQuestion and pendingKind", () => {
+    it("reads the question of a /btw, and nothing else", () => {
+        expect(btwQuestion("/btw which file?")).toBe("which file?");
+        expect(btwQuestion("  /btw  two\nlines \n")).toBe("two\nlines");
+        expect(btwQuestion("/btw")).toBeNull();
+        expect(btwQuestion("/btw   ")).toBeNull();
+        expect(btwQuestion("/btwx q")).toBeNull();
+        expect(btwQuestion("btw q")).toBeNull();
+    });
+
+    it("is btw for a side question and panel for a bare panel command; nothing for the rest", () => {
+        expect(pendingKind("/btw which file?")).toBe("btw");
+        expect(pendingKind("/config")).toBe("panel");
+        expect(pendingKind("/usage\n")).toBe("panel");
+        expect(pendingKind("/model opus")).toBeUndefined();
+        expect(pendingKind("/compact")).toBeUndefined();
+        expect(pendingKind("hello")).toBeUndefined();
     });
 });
 
@@ -58,6 +91,14 @@ describe("pendingStill", () => {
     it("keeps it while the agent works, however long", () => {
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS - 1, null)).toHaveLength(1);
     });
+    it("keeps a side question or an open panel while the agent sits idle, up to PENDING_MAX_MS", () => {
+        for (const kind of ["btw", "panel"] as const) {
+            const q = p({ kind, text: "/config", seen: 0 });
+            expect(pendingStill([q], [], 3000 + PENDING_IDLE_MS + 1, 3000)).toHaveLength(1);
+            expect(pendingStill([q], [], 1000 + PENDING_MAX_MS, 3000)).toEqual([]);
+        }
+    });
+
     it("matches each pending against its own text", () => {
         const out = pendingStill(
             [p({ id: "a" }), p({ id: "b", text: "two", seen: 0 })],
@@ -117,6 +158,12 @@ describe("pendsAsBubble", () => {
         expect(pendsAsBubble("use src/app and/or lib")).toBe(true);
         expect(pendsAsBubble("/compact")).toBe(false);
         expect(pendsAsBubble("  /model opus\n")).toBe(false);
+    });
+
+    it("is true for a side question and a bare panel command, which the chat shows until their row lands", () => {
+        expect(pendsAsBubble("/btw which file?")).toBe(true);
+        expect(pendsAsBubble("/config")).toBe(true);
+        expect(pendsAsBubble("/btw")).toBe(false);
     });
 
     it("is false for a `! cmd`, which the projection draws as its shell card", () => {

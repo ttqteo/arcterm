@@ -46,3 +46,16 @@ export async function sendToAgent(blockId: string, data: string): Promise<void> 
     }
     return typeRaw(blockId, data);
 }
+
+/** Chat's /btw: the session's arc mod answers the side question with a fork of the session and writes the answer as a
+ *  notice the chat draws (AgentBtwCommand). With no mod to take it (a pi agent, a mod that is not running) the command is
+ *  typed instead, and Claude Code answers on its own screen. Resolves whether the mod took it. */
+export async function askBtw(blockId: string, question: string): Promise<boolean> {
+    try {
+        await RpcApi.AgentBtwCommand(TabRpcClient, { blockid: blockId, question });
+        return true;
+    } catch {
+        await submitToAgent(blockId, `/btw ${question}`);
+        return false;
+    }
+}

@@ -41,6 +41,28 @@ const TUI_NAMES: ReadonlySet<string> = new Set([
     "status",
 ]);
 
+/** The built-ins whose screen is a panel only Claude Code's own TUI draws (a `local-jsx` command that waits to be closed):
+ *  the menus above and the read-only ones (/usage, /stats…). The transcript gets nothing of the panel, only, once it
+ *  closes, a "… dismissed" line or what was picked in it. A hand list, like TUI_NAMES. */
+const PANEL_NAMES: ReadonlySet<string> = new Set([
+    ...TUI_NAMES,
+    "agents",
+    "context",
+    "cost",
+    "diff",
+    "privacy-settings",
+    "skills",
+    "stats",
+    "tasks",
+    "theme",
+    "usage",
+]);
+
+/** Pure: whether the built-in `name` (no slash) shows a panel in Claude Code's own TUI, which Chat cannot draw. */
+export function opensPanel(name: string): boolean {
+    return PANEL_NAMES.has(name);
+}
+
 const b = (name: string, description: string): SlashCommand => ({
     name,
     description,

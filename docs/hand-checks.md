@@ -6,6 +6,22 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) `/btw` from Chat: in a live Claude agent that has finished at least one turn, send `/btw what file did
+  you last edit?` from Chat (while it works, and once idle) → a dimmed `/btw …` card with "Asking on the side…" until a
+  card lands on your side: the question, then "side answer · not in the conversation" and the answer as Markdown; the
+  terminal shows the same as one dim line, and Claude's next turn never mentions it. Right after a wake (a resumed
+  session, no turn yet) → "No side answer: this session has not finished a turn…". In a pi agent → the command is typed
+  and the pane flips to Terminal. The fork and the notice's record were probed headless (`claude -p` stream-json, a
+  scratch mod: `$.model.fork` answered, the notice stored as `system`/`informational`); the cockpit stream end to end
+  and every card were never drawn (`claude/arc-mod/hooks/btw-core.ts`, `register.ts` `answerBtw`, `chatpane.tsx`
+  `PendingCommand`, `chatconversation.tsx` `BtwCard`).
+- [ ] (arcterm) A slash command's output in Chat: in a live Claude agent's Chat send `/goal every test passes` → under
+  the `/goal …` card a rule and "Goal set: …"; `/compact` with the network off → its error in red; `/login` from the
+  terminal → a `/login` card with "Login successful". Send `/usage` (or `/config`) from Chat → a dimmed `/usage` card with
+  "Open in Terminal" and Show Terminal while the panel is open; close it in the terminal → the card turns into `/usage`
+  with "Opens in Terminal" and Show Terminal (no "dialog dismissed" line). Unit tests only; nothing was drawn
+  (`transcriptprojection.ts` `attachLocalOutput`, `chatmodel.ts` `commandItem`, `chatconversation.tsx` `CommandCard`).
+
 - [ ] (arcterm) Send now on a queued Chat message: while a Claude agent works on a long turn (a build, a `sleep 60`),
   send it a message from Chat → its bubble reads Queued with Send now beside it; click Send now → the running command
   moves to the background (Terminal shows it as a background task, not cancelled) and Claude answers the message at

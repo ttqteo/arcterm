@@ -18,8 +18,9 @@ import {
     type Card,
 } from "../../../../claude/arc-view-mod/hooks/prompt-core";
 import { parseWake, recapLine, wakeSummary, type Wake } from "../../../../claude/arc-view-mod/hooks/wake-core";
-import type { AgentEntry, AgentState, EditFile, ShellResult } from "./agentsviewmodel";
+import type { AgentEntry, AgentState, BtwAnswer, EditFile, ShellResult } from "./agentsviewmodel";
 import { groupCompact, type CompactItem, type WorkItem } from "./compacttimeline";
+import { opensPanel } from "./slashcommands";
 import type { TurnStats } from "./transcriptprojection";
 
 /** One piece of what the agent did between two of your messages. */
@@ -38,9 +39,10 @@ export type ChatMarker = Extract<CompactItem, { kind: "compaction" | "interrupte
 export type ChatItem =
     // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none
     | { kind: "you"; key: string; text: string; images?: string[] }
-    // a slash command or skill you typed, as "/name args" (check with `"command" in item`); a bash-mode command reads
-    // "! cmd", with `shell` its output once that lands
-    | { kind: "you"; key: string; command: string; shell?: ShellResult }
+    // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
+    // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
+    // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
+    | { kind: "you"; key: string; command: string; shell?: ShellResult; terminal?: true; btw?: BtwAnswer }
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES)
     | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[] }
     // everything the agent said and did between two of the items around it
@@ -103,6 +105,22 @@ function commandText(c: { name: string; args?: string; isSkill?: boolean }): str
     return c.args ? `${name} ${c.args}` : name;
 }
 
+// a panel's closing line ("Config dialog dismissed", "Theme picker dismissed"): it says nothing a reader needs
+const DISMISSED = /^[^\n]* dismissed$/;
+
+// a command as your side of chat: what it printed under it, or, for a panel that printed nothing but its closing line,
+// a mark that it opened on Claude Code's own screen
+function commandItem(c: Extract<CompactItem, { kind: "command" }>): Extract<ChatItem, { kind: "you" }> {
+    const key = keyOf("you", c.index);
+    const command = commandText(c);
+    const shell = c.shell;
+    const said = shell != null && (shell.error !== "" || !DISMISSED.test(shell.output));
+    if (!c.isSkill && c.name.startsWith("/") && !said && opensPanel(c.name.slice(1))) {
+        return { kind: "you", key, command, terminal: true };
+    }
+    return { kind: "you", key, command, ...(shell != null ? { shell } : {}), ...(c.btw != null ? { btw: c.btw } : {}) };
+}
+
 /**
  * Pure: the transcript as chat items. Every agent-side item (a message, a stretch of tools) between two of your
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
@@ -135,12 +153,7 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
             }
             case "command":
                 group = null;
-                out.push({
-                    kind: "you",
-                    key: keyOf("you", item.index),
-                    command: commandText(item),
-                    ...(item.shell != null ? { shell: item.shell } : {}),
-                });
+                out.push(commandItem(item));
                 break;
             case "message":
                 agentParts(item.index).push({ kind: "prose", text: item.text });

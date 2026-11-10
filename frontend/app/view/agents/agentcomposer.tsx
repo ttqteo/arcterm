@@ -4,8 +4,9 @@
 import { cn, fireAndForget } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
-import { submitToAgent } from "./agentsubmit";
+import { askBtw, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { btwQuestion } from "./chatpending";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
@@ -83,8 +84,10 @@ export function useAgentSend(
     agent: AgentSendTarget | undefined,
     attachments?: Attachment[],
     // keepDraft: the text lives in the drafts store under the agent's id awake too (the chat box), so switching to
-    // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft)
-    { keepDraft = false }: { keepDraft?: boolean } = {}
+    // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft).
+    // onBtwTyped: a /btw goes to the session's mod to answer on the side (askBtw); this runs, with the text sent, when
+    // no mod took it and it was typed into the terminal instead
+    { keepDraft = false, onBtwTyped }: { keepDraft?: boolean; onBtwTyped?: (sent: string) => void } = {}
 ): AgentSend {
     const draftId = agent != null && (agent.sleeping || keepDraft) ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
@@ -115,7 +118,17 @@ export function useAgentSend(
             });
             return true;
         }
-        fireAndForget(() => submitToAgent(blockId!, message));
+        const target = blockId!;
+        const question = btwQuestion(message);
+        if (question != null) {
+            fireAndForget(async () => {
+                if (!(await askBtw(target, question))) {
+                    onBtwTyped?.(message);
+                }
+            });
+        } else {
+            fireAndForget(() => submitToAgent(target, message));
+        }
         setText("");
         return true;
     };

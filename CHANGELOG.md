@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   stays as it was. It is in a conversation's right-click menu and beside Resume when you read one.
 - A message queued in Chat while Claude works has a Send now beside Queued: Claude moves what it is running to the
   background and reads your queued messages at once, as Claude Code's own send-now key does.
+- `/btw <question>` from Chat gets its answer in Chat: a card under your question, the answer from the conversation so
+  far, marked as a side answer that Claude's conversation never sees; the agent's work goes on meanwhile.
 
 ### Changed
 
@@ -60,6 +62,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- What a slash command prints shows in Chat under the command, as a `! command`'s output does (`/goal`'s "Goal set",
+  a failed `/compact`'s error, `/login`'s "Login successful"), where it used to be dropped, along with a command such as
+  `/login` itself; a command whose panel only Claude Code's own screen draws (`/config`, `/usage`…) says it opens in the
+  Terminal, with a button to show it.
 - A `claude -p` (or any claude) an agent starts from its own terminal no longer takes the agent over: its state, its
   conversation in Chat and the agent's control stream stay the agent's, where they used to switch to the nested
   session and, once it ended, leave the agent without its stream until it restarted.

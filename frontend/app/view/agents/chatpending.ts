@@ -6,6 +6,11 @@
 // chatpendingstore.ts; the views in chatpane.tsx and chatcomposer.tsx.
 
 import type { AgentEntry } from "./agentsviewmodel";
+import { opensPanel } from "./slashcommands";
+
+/** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), or a panel
+ *  open on Claude Code's own screen (`panel`), which writes its row only once it closes. */
+export type PendingKind = "btw" | "panel";
 
 /** A message sent and not yet in the transcript. `seen` is how many of the agent's user entries already held its text
  *  when it was sent, so an earlier identical message is not taken for this one. */
@@ -14,6 +19,7 @@ export interface PendingMessage {
     text: string;
     sentAt: number;
     seen: number;
+    kind?: PendingKind;
 }
 
 /** A pending bubble goes after this long even when the transcript never showed the text (Claude Code dropped it, or the
@@ -22,16 +28,39 @@ export const PENDING_MAX_MS = 120_000;
 
 const HISTORY_MAX = 20;
 
-/** How many of the entries are your messages with exactly this text (edge whitespace aside). */
+// a command as it was typed, every run of whitespace one space: the transcript keeps a /btw's question on one line
+const flat = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+/** How many of the entries are your messages with exactly this text (edge whitespace aside), or commands typed as it. */
 export function userTextCount(entries: AgentEntry[], text: string): number {
     const want = text.trim();
+    const wantFlat = flat(text);
     let n = 0;
     for (const e of entries) {
         if (e.kind === "user" && e.text.trim() === want) {
             n++;
+        } else if (e.kind === "command" && !e.isSkill && flat(e.args ? `${e.name} ${e.args}` : e.name) === wantFlat) {
+            n++;
         }
     }
     return n;
+}
+
+const BTW = /^\/btw\s+(\S[\s\S]*)$/;
+
+/** Pure: the question of a `/btw <question>` sent from the box, or null for anything else (a bare /btw included). */
+export function btwQuestion(text: string): string | null {
+    return BTW.exec(text.trim())?.[1].trim() ?? null;
+}
+
+/** Pure: what a send stands for until its row lands, when it is a command with a pending bubble of its own: a side
+ *  question, or a bare built-in whose panel shows on Claude Code's own screen. */
+export function pendingKind(text: string): PendingKind | undefined {
+    if (btwQuestion(text) != null) {
+        return "btw";
+    }
+    const bare = /^\/([^\s/]+)$/u.exec(text.trim());
+    return bare != null && opensPanel(bare[1]) ? "panel" : undefined;
 }
 
 /** A pending bubble also goes once the agent has sat idle this long since it was sent (or since the agent went idle,
@@ -41,7 +70,8 @@ export const PENDING_IDLE_MS = 5_000;
 
 /** The pending messages still to draw: the transcript holds the text no more often than when it was sent, the
  *  message is not older than PENDING_MAX_MS, and the agent has not sat idle on it for PENDING_IDLE_MS. `idleSince`
- *  is when the agent last went idle, null while it works. */
+ *  is when the agent last went idle, null while it works. A side question or a panel waits on the agent while it sits
+ *  idle (the answer comes from a fork, the panel's row once it closes), so only PENDING_MAX_MS ends those. */
 export function pendingStill(
     pending: PendingMessage[],
     entries: AgentEntry[],
@@ -51,15 +81,18 @@ export function pendingStill(
     return pending.filter(
         (p) =>
             now - p.sentAt < PENDING_MAX_MS &&
-            (idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
+            (p.kind != null || idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
             userTextCount(entries, p.text) <= p.seen
     );
 }
 
-/** Whether a send gets a pending bubble. A `/command` does not, nor a bash-mode `! cmd`: the transcript records each as
- *  a command entry, which userTextCount never matches, so its bubble would stay up for PENDING_MAX_MS beside the real
- *  command row. */
+/** Whether a send gets a pending bubble. A message does, and so does a command with a pending kind (a /btw, a bare
+ *  panel command), which the chat would otherwise show nothing of for a while. Any other `/command` does not, nor a
+ *  bash-mode `! cmd`: each lands as its command row at once, and some (a /clear) never land in this transcript. */
 export function pendsAsBubble(text: string): boolean {
+    if (pendingKind(text) != null) {
+        return true;
+    }
     return !text.trimStart().startsWith("/") && !text.startsWith("!");
 }
 

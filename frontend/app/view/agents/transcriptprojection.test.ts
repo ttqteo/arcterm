@@ -336,7 +336,125 @@ describe("projectTranscript task-notification, stdout, and interrupts", () => {
         ]);
     });
 
-    it("skips a user-string <local-command-stdout> record (with ANSI) rather than leaking the raw tag", () => {
+    it("drops a <local-command-stdout> record whose command is not in the lines read, rather than leaking the raw tag", () => {
+        expect(
+            projectTranscript([
+                L({
+                    type: "system",
+                    subtype: "local_command",
+                    content: "<local-command-stderr>boom</local-command-stderr>",
+                }),
+            ])
+        ).toEqual([]);
+    });
+
+    // the shapes this machine's transcripts hold (Claude Code 2.1.322): a command's output follows it as a user string or
+    // a system local_command record, and a panel command (/login) writes both its name and its output as system records
+    const cmdRec = (name: string, args = "") =>
+        `<command-name>${name}</command-name>\n            <command-message>${name.slice(1)}</command-message>\n            <command-args>${args}</command-args>`;
+
+    it("puts a slash command's output, from a system local_command record, on the command before it", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: cmdRec("/goal", "tests pass") } }),
+            L({
+                type: "system",
+                subtype: "local_command",
+                content: "<local-command-stdout>Goal set: tests pass</local-command-stdout>",
+            }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "/goal",
+                args: "tests pass",
+                shell: { output: "Goal set: tests pass", error: "" },
+            },
+        ]);
+    });
+
+    it("reads a command written only as system records as a command entry with its output", () => {
+        const out = projectTranscript([
+            L({ type: "system", subtype: "local_command", content: cmdRec("/login") }),
+            L({
+                type: "system",
+                subtype: "local_command",
+                content: "<local-command-stdout>Login successful</local-command-stdout>",
+            }),
+        ]);
+        expect(out).toEqual([{ kind: "command", name: "/login", shell: { output: "Login successful", error: "" } }]);
+    });
+
+    it("puts a user-string output on its command, the ANSI codes dropped, and an error as the error", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: cmdRec("/compact", "Keep: the task") } }),
+            L({
+                type: "user",
+                message: {
+                    content:
+                        "<local-command-stdout>\x1b[2mCompacted (ctrl+o to see full summary)\x1b[22m\n\x1b[2mPreCompact hook completed successfully\x1b[22m</local-command-stdout>",
+                },
+            }),
+            L({ type: "user", message: { content: cmdRec("/compact") } }),
+            L({
+                type: "system",
+                subtype: "local_command",
+                content: "<local-command-stderr>Error during compaction: API Error (ENOTFOUND)</local-command-stderr>",
+            }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "/compact",
+                args: "Keep: the task",
+                shell: {
+                    output: "Compacted (ctrl+o to see full summary)\nPreCompact hook completed successfully",
+                    error: "",
+                },
+            },
+            {
+                kind: "command",
+                name: "/compact",
+                shell: { output: "", error: "Error during compaction: API Error (ENOTFOUND)" },
+            },
+        ]);
+    });
+
+    it("leaves a command that printed nothing without output, and never puts a slash command's output on a bash one", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: cmdRec("/clear") } }),
+            L({ type: "user", message: { content: "<local-command-stdout></local-command-stdout>" } }),
+            L({ type: "user", message: { content: "<bash-input>ls</bash-input>" } }),
+            L({ type: "user", message: { content: "<local-command-stdout>stray</local-command-stdout>" } }),
+        ]);
+        expect(out).toEqual([
+            { kind: "command", name: "/clear" },
+            { kind: "command", name: "!", args: "ls" },
+        ]);
+    });
+
+    // the shape a mod's $.session.append({ type: "system" }) notice is stored in (Claude Code 2.1.322, probed)
+    it("reads the arc mod's /btw notice as a /btw command carrying its side answer", () => {
+        const notice = (content: string) =>
+            L({ type: "system", subtype: "informational", level: "info", isMeta: false, content });
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "go on" } }),
+            notice("/btw which file holds the band?\n`goal-band.tsx`.\n\nIt draws the strip."),
+            notice("/btw why?\n(no side answer: the reply was empty)"),
+            notice("arc: read mid-turn: something else"),
+        ]);
+        expect(out).toEqual([
+            { kind: "user", text: "go on" },
+            {
+                kind: "command",
+                name: "/btw",
+                args: "which file holds the band?",
+                btw: { answer: "`goal-band.tsx`.\n\nIt draws the strip." },
+            },
+            { kind: "command", name: "/btw", args: "why?", btw: { failure: "the reply was empty" } },
+        ]);
+    });
+
+    it("drops an orphan user-string <local-command-stdout> record (with ANSI) rather than leaking the raw tag", () => {
         const content = "<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>";
         expect(projectTranscript([L({ type: "user", message: { content } })])).toEqual([]);
     });

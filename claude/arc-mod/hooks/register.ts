@@ -5,6 +5,7 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, Timer } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply, settleAsk } from "./ask-core";
+import { btwNotice, btwPrompt, forkFailure, type BtwReply } from "./btw-core";
 import { drawCacheMiss } from "./cache-band";
 import { drawGoal } from "./goal-band";
 import { goalState, type GoalEntry, type GoalState } from "./goal-core";
@@ -192,6 +193,7 @@ async function listenToCockpit($: EngineInterface) {
         steer: (text: string) => steerTurn($, text),
         command: (name: string, args: string) => $.command.run({ command: name, args }),
         compact: (instructions: string) => $.session.compact({ instructions }),
+        btw: (question: string) => answerBtw($, question),
     };
     let buffered = "";
     try {
@@ -216,6 +218,25 @@ async function listenToCockpit($: EngineInterface) {
         $.ui.log(`arc: wsh agentctl failed: ${String(err)}`, { to: "debug" });
     } finally {
         listening = false;
+    }
+}
+
+// answers Chat's /btw as Claude Code's own /btw does: one tool-less fork of the session's own conversation, which reads
+// it from the cache, and the main turn runs on unaware. the answer, or why there is none, is written as a notice the
+// model never reads, which the TUI draws as a dim line and Chat as a card under your /btw (btw-core.ts)
+async function answerBtw($: EngineInterface, question: string) {
+    let reply: BtwReply;
+    try {
+        const r = await $.model.fork({ prompt: btwPrompt(question) });
+        reply = r.isAnswered ? { answer: r.text } : { failure: forkFailure(r) };
+    } catch (err) {
+        reply = { failure: String(err) };
+    }
+    const kept = await $.session.append({
+        message: { type: "system", content: [{ type: "text", text: btwNotice(question, reply) }] },
+    });
+    if (kept.deny !== undefined) {
+        throw new Error(kept.deny);
     }
 }
 

@@ -4,6 +4,7 @@
 // Pure projection of a Claude Code transcript (JSONL lines) into AgentEntry[].
 // No React, no Wave runtime imports. Deterministic; no LLM (spec §5.3).
 
+import { parseBtwNotice } from "../../../../claude/arc-mod/hooks/btw-core";
 import type { AgentEntry, CardTask } from "./agentsviewmodel";
 import { parseAnsiLines } from "./ansitext";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
@@ -102,6 +103,37 @@ function plainOutput(text: string): string {
         .map((runs) => runs.map((r) => r.text).join(""))
         .join("\n")
         .trim();
+}
+
+// What a slash command printed comes after its command as a record of its own: a user string, or a system record of
+// subtype local_command (a panel command such as /login writes its name that way too, and only once it closes)
+const LOCAL_STDOUT = /<local-command-stdout>([^]*?)<\/local-command-stdout>/;
+const LOCAL_STDERR = /<local-command-stderr>([^]*?)<\/local-command-stderr>/;
+
+function isLocalOutput(content: string): boolean {
+    return content.includes("<local-command-stdout>") || content.includes("<local-command-stderr>");
+}
+
+function joinOutput(a: string, b: string): string {
+    return a === "" ? b : b === "" ? a : `${a}\n${b}`;
+}
+
+// puts a slash command's output on the command right before it, as bash mode's goes on its `!` command. One whose
+// command is not in the lines read, follows a bash command, or printed nothing is dropped, never a bubble.
+function attachLocalOutput(entries: AgentEntry[], content: string): void {
+    const last = entries[entries.length - 1];
+    if (last?.kind !== "command" || last.name === "!" || last.isSkill) {
+        return;
+    }
+    const output = plainOutput(LOCAL_STDOUT.exec(content)?.[1] ?? "");
+    const error = plainOutput(LOCAL_STDERR.exec(content)?.[1] ?? "");
+    if (output === "" && error === "") {
+        return;
+    }
+    last.shell =
+        last.shell == null
+            ? { output, error }
+            : { output: joinOutput(last.shell.output, output), error: joinOutput(last.shell.error, error) };
 }
 
 // Claude interruption marker, both "[Request interrupted by user]" and the "...for tool use]" variant.
@@ -312,9 +344,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 const note = parseTaskNotification(content);
                 if (note != null) {
                     entries.push(note);
-                } else if (content.includes("<local-command-stdout>")) {
-                    // slash-command stdout (e.g. "Compacted …", with raw ANSI) — not shown, matching the
-                    // system/local_command record that is already skipped. Never a user bubble.
+                } else if (isLocalOutput(content)) {
+                    // a slash command's output ("Compacted …", with raw ANSI): it goes on its command, never a bubble
+                    attachLocalOutput(entries, content);
                 } else if (BASH_INPUT.test(content)) {
                     entries.push({ kind: "command", name: "!", args: BASH_INPUT.exec(content)![1].trim() });
                 } else if (BASH_STDOUT.test(content) || BASH_STDERR.test(content)) {
@@ -404,6 +436,25 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     prompt.images = images;
                 } else if (!content.some((b: any) => b?.type === "tool_result")) {
                     entries.push({ kind: "user", text: "", images });
+                }
+            }
+            continue;
+        }
+        // a /btw sent from Chat, which the arc mod answered with a fork of the session and wrote as a notice the model
+        // never reads (stored as a system record of subtype informational): a /btw of yours, carrying its side answer
+        const btw = rec.type === "system" && typeof rec.content === "string" ? parseBtwNotice(rec.content) : null;
+        if (btw != null) {
+            const { question, ...answer } = btw;
+            entries.push({ kind: "command", name: "/btw", args: question, btw: answer });
+            continue;
+        }
+        if (rec.type === "system" && rec.subtype === "local_command" && typeof rec.content === "string") {
+            if (isLocalOutput(rec.content)) {
+                attachLocalOutput(entries, rec.content);
+            } else {
+                const cmd = parseCommand(rec.content);
+                if (cmd != null) {
+                    entries.push({ kind: "command", ...cmd });
                 }
             }
             continue;

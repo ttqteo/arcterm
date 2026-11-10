@@ -48,6 +48,12 @@ export class RpcApiType {
         return client.wshRpcCall("agentaskpending", data, opts);
     }
 
+    // command "agentbtw" [call]
+    AgentBtwCommand(client: WshClient, data: CommandAgentBtwData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentbtw", data, opts);
+        return client.wshRpcCall("agentbtw", data, opts);
+    }
+
     // command "agentcontrol" [responsestream]
 	AgentControlCommand(client: WshClient, data: CommandAgentControlData, opts?: RpcOpts): AsyncGenerator<AgentControlMsg, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "agentcontrol", data, opts);

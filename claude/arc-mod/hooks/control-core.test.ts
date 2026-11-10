@@ -24,6 +24,7 @@ function recorder(compactError?: Error, steerError?: Error) {
                     throw compactError;
                 }
             },
+            btw: async (question: string) => void calls.push(["btw", question]),
         },
     };
 }
@@ -63,6 +64,11 @@ describe("controlMsg", () => {
         });
     });
 
+    it("reads a side question, which wins over a text on the same line", () => {
+        expect(controlMsg('{"btw":"which file?"}')).toEqual({ btw: "which file?" });
+        expect(controlMsg('{"btw":"which file?","text":"/btw which file?"}')).toEqual({ btw: "which file?" });
+    });
+
     it("ignores a line that asks for nothing", () => {
         expect(controlMsg("not json")).toBeNull();
         expect(controlMsg('{"text":""}')).toBeNull();
@@ -72,6 +78,14 @@ describe("controlMsg", () => {
 });
 
 describe("deliver", () => {
+    it("answers a side question on the side, mid-turn or not, never as a prompt or a command", async () => {
+        const { calls, session } = recorder();
+        const turn = running();
+        await deliver(session, { btw: "which file?" }, turn);
+        expect(calls).toEqual([["btw", "which file?"]]);
+        expect(turn.unread).toEqual([]);
+    });
+
     it("submits plain text as a prompt", async () => {
         const { calls, session } = recorder();
         await deliver(session, { text: "wake: task 1 done\nmore" }, idle());

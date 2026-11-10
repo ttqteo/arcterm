@@ -9,6 +9,8 @@ export type Session = {
     steer: (text: string) => Promise<unknown>;
     command: (name: string, args: string) => Promise<unknown>;
     compact: (instructions: string) => Promise<unknown>;
+    // answers a side question (Chat's /btw) off the conversation: the answer is a notice the model never reads
+    btw: (question: string) => Promise<unknown>;
 };
 
 // the whole lines a chunk completed, and what is left of the last one
@@ -19,8 +21,8 @@ export function takeLines(buffered: string): { lines: string[]; rest: string } {
 }
 
 // one thing the cockpit asked for: a prompt, which midTurn asks to join the running turn instead of
-// waiting for it to end, or a compaction with these instructions
-export type ControlMsg = { text: string; midTurn?: boolean } | { compact: string };
+// waiting for it to end, a compaction with these instructions, or a side question
+export type ControlMsg = { text: string; midTurn?: boolean } | { compact: string } | { btw: string };
 
 // the session's own turn as the mod has seen it: whether one is running, and the texts joined to it
 // that no model request has carried yet
@@ -32,6 +34,9 @@ const filled = (v: unknown): v is string => typeof v === "string" && v !== "";
 export function controlMsg(line: string): ControlMsg | null {
     try {
         const msg = JSON.parse(line);
+        if (filled(msg?.btw)) {
+            return { btw: msg.btw };
+        }
         if (filled(msg?.compact)) {
             return { compact: msg.compact };
         }
@@ -48,11 +53,15 @@ const SLASH = /^\/(\S+)\s*([\s\S]*)$/;
 
 const COMPACT = "compact";
 
-// runs a prompt as typing it would: a leading slash is a command, anything else a prompt. a compaction is
+// runs a prompt as typing it would: a leading slash is a command, anything else a prompt. a side question is
+// answered beside the turn, whether one runs or not, and never joins it. a compaction is
 // the session's own call, which echoes no command into the transcript; a session that refuses it (a
 // headless one) runs the command. a mid-turn text joins the running turn, and is a prompt when no turn
 // runs or the session refuses the row
 export function deliver(session: Session, msg: ControlMsg, turn: Turn): Promise<unknown> {
+    if ("btw" in msg) {
+        return session.btw(msg.btw);
+    }
     if ("compact" in msg) {
         return session.compact(msg.compact).catch(() => session.command(COMPACT, msg.compact));
     }
