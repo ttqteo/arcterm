@@ -8,7 +8,7 @@
 import { File as FileIcon, Loader2, Plus, RotateCw, X } from "lucide-react";
 import { isOversize, type Attachment } from "./composerattachments";
 
-function fmtSize(bytes: number): string {
+export function fmtSize(bytes: number): string {
     if (bytes < 1024) {
         return `${bytes} B`;
     }

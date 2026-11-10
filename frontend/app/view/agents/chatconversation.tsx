@@ -20,12 +20,13 @@ import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
+import { ChatFileCards } from "./chatfilecards";
+import { splitAttachments } from "./chatfiles";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
 import { useSkimMarks } from "./chatskimstore";
 import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
 import { CouncilText } from "./councilchat";
-import { splitAttachedImages } from "./launcherimages";
 import {
     CompactionDivider,
     InterruptedDivider,
@@ -93,20 +94,46 @@ function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "y
             </div>
         );
     }
-    // a launch's attached images ride the prompt as paths; they show as pictures, not as the block that names them
-    const said = splitAttachedImages(item.text);
+    // the files and images you sent ride the message as trailing blocks of paths (chatfiles.ts); images show as pictures in
+    // the bubble and files as cards under it, not as the blocks that name them. The wrapper is the prompt (the pinned bar
+    // and the scenarios find it), so a message that is only files still has one, with no empty bubble in it
+    const said = splitAttachments(item.text);
+    const text = said.text.trim();
+    const hasPictures = (item.images?.length ?? 0) > 0 || said.images.length > 0;
+    const hasFiles = said.files.length > 0;
     return (
         <div
             data-chat-you
             data-user-prompt
             onContextMenu={onContextMenu(item.text)}
-            className="group relative mb-1 max-w-[75%] self-end rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary"
+            className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
-            {said.text ? <PromptText text={said.text} /> : null}
-            {item.images || said.paths.length > 0 ? <PromptImages images={item.images} paths={said.paths} /> : null}
-            {said.text ? <BubbleCopy text={said.text} align="right" /> : null}
+            {text !== "" || hasPictures ? (
+                <div
+                    className={cn(
+                        "group relative max-w-full rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
+                        // the copy button hangs in the gap under the bubble: leave it room above the cards
+                        hasFiles ? "mb-3" : "mb-1"
+                    )}
+                >
+                    {text !== "" ? <PromptText text={text} mentions /> : null}
+                    {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
+                    {/* the whole message, files and all, as the context menu copies it */}
+                    {text !== "" ? <BubbleCopy text={item.text} align="right" /> : null}
+                </div>
+            ) : null}
+            {hasFiles ? <ChatFileCards paths={said.files} /> : null}
         </div>
     );
+}
+
+// what the pinned bar says of your message: its text, else what it carried (`pasted` is the images pasted into the box)
+function pinnedLabel(text: string, pasted: number): string {
+    const said = splitAttachments(text);
+    if (said.text.trim() !== "") {
+        return said.text;
+    }
+    return said.files.length > 0 && said.images.length === 0 && pasted === 0 ? "(file)" : "(picture)";
 }
 
 // a prompt arcterm typed: an outlined card on the right naming its sender, its lines in mono, folded past three
@@ -337,7 +364,7 @@ export function ChatConversation({
     // pinned index
     const pinned = usePinnedPrompt(rootRef);
     const prompts = visible.flatMap((item) =>
-        item.kind === "you" && !("command" in item) ? [splitAttachedImages(item.text).text || "(picture)"] : []
+        item.kind === "you" && !("command" in item) ? [pinnedLabel(item.text, item.images?.length ?? 0)] : []
     );
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);

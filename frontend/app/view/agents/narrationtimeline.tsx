@@ -446,8 +446,9 @@ export function ToolLine({
 // A folded run of consecutive edits (Wave-transcript-feed.dc.html burst). Summary row: "N files
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
 // a prompt you sent, as markdown (an engine's task prompt is headings and fenced code), its line breaks kept as typed;
-// a long one shows its first six lines fading out, with Show more
-export function PromptText({ text }: { text: string }) {
+// a long one shows its first six lines fading out, with Show more. `mentions` draws an `@path` in it as a file pill (Chat's
+// bubble and its pending copy pass it; the other transcripts draw the text as typed)
+export function PromptText({ text, mentions }: { text: string; mentions?: boolean }) {
     const clamp = userNeedsClamp(text);
     const [open, setOpen] = useState(false);
     return (
@@ -460,7 +461,11 @@ export function PromptText({ text }: { text: string }) {
                         "max-h-[9.3em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
                 )}
             >
-                <MarkdownMessage text={text} className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap" />
+                <MarkdownMessage
+                    text={text}
+                    mentions={mentions}
+                    className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap"
+                />
             </div>
             {clamp ? (
                 <button

@@ -24,6 +24,8 @@ import { AskRow } from "./channelsprimitives";
 import { workingText } from "./chatmodel";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
+import { ChatFileCards } from "./chatfilecards";
+import { splitAttachments } from "./chatfiles";
 import { chatCapable } from "./chatmode";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
@@ -31,7 +33,6 @@ import { setChatMode, useChatMode } from "./chatmodestore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
-import { splitAttachedImages } from "./launcherimages";
 import { PromptImages, PromptText } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
@@ -42,15 +43,25 @@ import { TranscriptSkeleton } from "./transcriptskeleton";
 const NO_ENTRIES: AgentEntry[] = [];
 
 // A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
-// takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill).
+// takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill). It splits
+// the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
+// under it), so nothing changes when the transcript's copy replaces it.
 function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
-    const said = splitAttachedImages(text);
+    const said = splitAttachments(text);
+    const body = said.text.trim();
     return (
         <div data-chat-pending className="flex flex-col items-end gap-1">
-            <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
-                {said.text ? <PromptText text={said.text} /> : null}
-                {said.paths.length > 0 ? <PromptImages paths={said.paths} /> : null}
-            </div>
+            {body !== "" || said.images.length > 0 ? (
+                <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
+                    {body !== "" ? <PromptText text={body} mentions /> : null}
+                    {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                </div>
+            ) : null}
+            {said.files.length > 0 ? (
+                <div className="mt-1 max-w-[75%] opacity-60">
+                    <ChatFileCards paths={said.files} />
+                </div>
+            ) : null}
             <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
         </div>
     );
@@ -223,9 +234,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     {/* always drawn, so it is one of the scroller's children from the first render: the scroll stays at
                         the end when a card arrives or the working line changes its height */}
                     <div data-chat-tail className="mx-auto flex w-full max-w-[760px] flex-none flex-col gap-3 pb-2">
-                        {pending.map((p) => (
-                            <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
-                        ))}
+                        {/* its own provider: a pill or card in a pending bubble opens as it will in the transcript's copy */}
+                        <AgentPathLinks agent={agent}>
+                            {pending.map((p) => (
+                                <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
+                            ))}
+                        </AgentPathLinks>
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}
