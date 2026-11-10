@@ -4,7 +4,8 @@
 // Package htmlserve serves the folder of an HTML file being previewed over wavesrv's web listener, so the
 // page's relative images, styles and scripts load beside it. The preview is an iframe, which cannot send
 // arcterm's auth header, so a folder is reached through an unguessable token in the path instead, as
-// canvasserve does for design boards.
+// canvasserve does for design boards. Every HTML page is served with scrollScript and bridgeScript after
+// it; any other file is served as it is.
 package htmlserve
 
 import (
@@ -91,8 +92,8 @@ const cdns = "https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflar
 // CSP goes with every file a preview serves (and canvasserve's boards). A page is written by an agent, or by a skill
 // someone else wrote, and runs at wavesrv's origin, so it may not send what it holds to a host of its own: fetch,
 // XHR, WebSocket and beacons reach only its own folder and the CDNs, forms post nowhere, frames and workers load
-// only from the folder. Inline scripts and eval stay allowed, since the scroll and height scripts are inline and
-// the design runtime compiles boards with Babel. Images and media still load from any https host, so a page that
+// only from the folder. Inline scripts and eval stay allowed, since the scroll script, the bridge and canvasserve's
+// height script are inline and the design runtime compiles boards with Babel. Images and media still load from any https host, so a page that
 // shows a remote photo keeps working; that leaves a page able to name a URL it requests, as it can by navigating
 // itself, which no policy blocks.
 const CSP = "default-src 'self' data: blob:; " +
@@ -159,7 +160,7 @@ func Handler() http.Handler {
 			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 			return
 		}
-		http.ServeContent(w, r, info.Name(), info.ModTime(), WithSuffix(f, info.Size(), scrollScript))
+		http.ServeContent(w, r, info.Name(), info.ModTime(), WithSuffix(f, info.Size(), scrollScript+bridgeScript))
 	})
 }
 
@@ -202,6 +203,55 @@ const scrollScript = `<script>(function () {
       requestAnimationFrame(step);
     })();
   });
+})();</script>
+`
+
+// bridgeScript goes after scrollScript on every page served, for Chat's inline visuals (frontend chatvisual.tsx): an
+// agent's page is drawn in a frame in the conversation, as tall as it is, in the app's colours, and a button in it
+// sends a prompt into the chat. The page runs at this listener's origin, which arcterm's window cannot reach into, so
+// it talks to the frame's parent by message: it reports its height when it loads and each time it changes size
+// (arc-html-height, as canvasserve's height script does for a board), defines window.arc.sendPrompt(text) (posts
+// arc-visual-prompt), takes the parent's colours (arc-visual-theme sets --arc-<name> custom properties on the page's
+// root) and says arc-html-ready once it is listening. Every page gets it, but only Chat's visual frame listens: a page
+// opened in the File tab that calls sendPrompt is not heard. The theme keys are held to a short name and the values to
+// a short string, so a message cannot set anything but a custom property of this prefix. A page whose own
+// Content-Security-Policy refuses inline scripts has no bridge, and Chat keeps the height it last knew.
+const bridgeScript = `<script>(function () {
+  var p = window.parent;
+  if (p === window) return;
+  var last = 0, raf = 0;
+  function report() {
+    raf = 0;
+    var b = document.body;
+    var h = Math.ceil(Math.max(document.documentElement.scrollHeight, b ? b.scrollHeight : 0));
+    if (h === last) return;
+    last = h;
+    p.postMessage({ type: "arc-html-height", h: h }, "*");
+  }
+  function soon() { if (!raf) raf = requestAnimationFrame(report); }
+  addEventListener("load", soon);
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(soon);
+    ro.observe(document.documentElement);
+    if (document.body) ro.observe(document.body);
+  }
+  soon();
+  window.arc = window.arc || {};
+  window.arc.sendPrompt = function (text) {
+    p.postMessage({ type: "arc-visual-prompt", text: String(text == null ? "" : text) }, "*");
+  };
+  addEventListener("message", function (e) {
+    var d = e.data;
+    if (e.source !== p || !d || d.type !== "arc-visual-theme" || !d.vars || typeof d.vars !== "object") return;
+    for (var k in d.vars) {
+      if (!Object.prototype.hasOwnProperty.call(d.vars, k)) continue;
+      var v = d.vars[k];
+      if (/^[a-z0-9-]{1,40}$/.test(k) && typeof v === "string" && v.length <= 200) {
+        document.documentElement.style.setProperty("--arc-" + k, v);
+      }
+    }
+  });
+  p.postMessage({ type: "arc-html-ready" }, "*");
 })();</script>
 `
 
