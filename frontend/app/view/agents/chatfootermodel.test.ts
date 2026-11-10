@@ -2,7 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { contextLabel, contextWarn, footerParts, modeLabel } from "./chatfootermodel";
+import {
+    contextLabel,
+    contextWarn,
+    currentModelAlias,
+    footerParts,
+    MODE_CHOICES,
+    MODEL_CHOICES,
+    modeLabel,
+    modelCommand,
+    modeStep,
+    ringDash,
+} from "./chatfootermodel";
 
 describe("modeLabel", () => {
     it("names every mode the footer can read", () => {
@@ -46,5 +57,64 @@ describe("footerParts", () => {
     });
     it("marks a full context", () => {
         expect(footerParts("opus 5.5", 85)[1]).toEqual({ text: "ctx 85%", warn: true });
+    });
+});
+
+describe("model choices", () => {
+    it("finds the current alias in the model name", () => {
+        expect(currentModelAlias("Opus 5.5")).toBe("opus");
+        expect(currentModelAlias("claude-sonnet-5-5")).toBe("sonnet");
+        expect(currentModelAlias("Haiku 5.5")).toBe("haiku");
+        expect(currentModelAlias(undefined)).toBeNull();
+        expect(currentModelAlias("gpt-6")).toBeNull();
+    });
+    it("lists the three aliases in order", () => {
+        expect(MODEL_CHOICES.map((c) => c.alias)).toEqual(["opus", "sonnet", "haiku"]);
+    });
+    it("types /model with the alias", () => {
+        expect(modelCommand("sonnet")).toBe("/model sonnet");
+    });
+});
+
+describe("modeStep", () => {
+    it("stops when the screen shows the target", () => {
+        expect(modeStep(["default", "acceptEdits"], "acceptEdits", 1, 2)).toBe("done");
+    });
+    it("presses again while the target is not reached", () => {
+        expect(modeStep(["default"], "plan", 0, 1)).toBe("press");
+        expect(modeStep(["default", "acceptEdits"], "plan", 1, 2)).toBe("press");
+    });
+    it("reads again without pressing while the screen still shows the mode before the press", () => {
+        expect(modeStep(["default", "default"], "plan", 1, 2)).toBe("wait");
+    });
+    it("gives up when an earlier mode comes back before the target", () => {
+        expect(modeStep(["default", "acceptEdits", "plan", "default"], "bypassPermissions", 3, 4)).toBe("give-up");
+    });
+    it("never presses blind: a read that finds no footer stops the loop", () => {
+        expect(modeStep([null], "plan", 0, 1)).toBe("no-footer");
+        expect(modeStep(["default", null], "plan", 1, 2)).toBe("no-footer");
+        // before the caps and the repeat check, too
+        expect(modeStep(["default", null], "plan", 6, 12)).toBe("no-footer");
+        expect(modeStep([], "plan", 0, 0)).toBe("no-footer");
+    });
+    it("caps the presses", () => {
+        expect(modeStep(["default", "acceptEdits"], "plan", 5, 6)).toBe("press");
+        expect(modeStep(["default", "acceptEdits"], "plan", 6, 7)).toBe("give-up");
+    });
+    it("caps the reads when the screen never redraws", () => {
+        expect(modeStep(["default", "default"], "plan", 1, 12)).toBe("give-up");
+    });
+    it("lists the four modes the menu offers, each with a line", () => {
+        expect(MODE_CHOICES.map((m) => m.mode)).toEqual(["default", "acceptEdits", "plan", "auto"]);
+        expect(MODE_CHOICES.every((m) => m.note !== "")).toBe(true);
+    });
+});
+
+describe("ringDash", () => {
+    it("is the share of the circle the percent fills", () => {
+        expect(ringDash(0, 88)).toBe(0);
+        expect(ringDash(50, 88)).toBe(44);
+        expect(ringDash(120, 88)).toBe(88);
+        expect(ringDash(undefined, 88)).toBeNull();
     });
 });

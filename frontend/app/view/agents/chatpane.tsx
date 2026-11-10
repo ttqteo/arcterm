@@ -1,16 +1,21 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The chat view of a Claude agent's cell: its conversation as bubbles with a message box, laid over the cell the way
-// SleepingTranscript is laid over a sleeping one. The pane under it (the live xterm) stays mounted at its size, never
-// re-parented or refitted, so flipping to Terminal is only this layer leaving. The messages are the transcript the rail
-// reads (railtranscript.tsx's useTranscriptWindow, no second reader), kept current by the same live stream's stamps;
-// what the person types goes into the PTY as the compact composer's does (chatcomposer.tsx). Under the last message:
-// the working line, the permission card for a prompt Claude Code is showing (its answer is typed into the TUI), and an
+// The chat view of a Claude agent's cell: its conversation with a message box, laid over the cell. The pane under it
+// (the live xterm) stays mounted at its size, never re-parented or refitted, so flipping to Terminal is only this layer
+// fading out (layerFade). It is the one chat awake and asleep: a sleeping Claude agent's cell draws this same pane
+// whatever its stored chat mode (its terminal holds only the kill), so the box is one instance that is never remounted
+// and its parts fold in place as the agent sleeps and wakes; asleep it reads the transcript once instead of streaming
+// it, and its box wakes the agent (useAgentSend's sleeping path). The messages are the transcript the rail reads
+// (railtranscript.tsx's useTranscriptWindow, no second reader), kept current by the same live stream's stamps; what the
+// person types goes into the PTY as the compact composer's does (chatcomposer.tsx). Under the last message: the working
+// line, the permission card for a prompt Claude Code is showing (its answer is typed into the TUI), and an
 // AskUserQuestion's choices.
 
+import { layerFade } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { AnimatePresence, MotionConfig, motion, useIsPresent } from "motion/react";
 import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
@@ -18,6 +23,7 @@ import { AskRow } from "./channelsprimitives";
 import { workingText } from "./chatmodel";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
+import { chatCapable } from "./chatmode";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { setChatMode, useChatMode } from "./chatmodestore";
@@ -39,7 +45,7 @@ function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
     const said = splitAttachedImages(text);
     return (
         <div data-chat-pending className="flex flex-col items-end gap-1">
-            <div className="max-w-[70%] rounded-lg bg-surface-raised px-[14px] py-[9px] text-[13px] leading-[1.55] text-primary opacity-60">
+            <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
                 {said.text ? <PromptText text={said.text} /> : null}
                 {said.paths.length > 0 ? <PromptImages paths={said.paths} /> : null}
             </div>
@@ -48,10 +54,35 @@ function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
     );
 }
 
-// The cell's chat layer while the agent's cell shows Chat. Its own component so a cell in Terminal never reads the
-// transcript or opens the stream: the layer, and everything it holds, exists only while it is shown.
+// The cell's chat layer while the agent's cell shows Chat, or while a Claude agent sleeps (its terminal holds only the
+// kill, so the conversation is what the cell shows, whatever its stored chat mode). Its own component so a cell in
+// Terminal never reads the transcript or opens the stream: the layer, and everything it holds, exists only while it is
+// shown. It fades in over the terminal and out again (layerFade); the pane stays mounted for the exit, and the exit
+// stops taking pointer events at once, so a key or a click meant for the terminal under it is never swallowed (the
+// pane's root sets no pointer-events of its own, so it inherits the wrapper's none). The wrapper has no position or
+// size (ChatPane is absolute against the cell), only z-20: the cell is a flex column, so the z-index counts on this
+// flex item, and the layer keeps ChatPane's own z-20 place in the cell while it fades (opacity < 1 makes the wrapper a
+// stacking context, which would otherwise drop it to z-auto).
 export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
-    return useChatMode(agent) === "chat" ? <ChatPane model={model} agent={agent} barred={barred} /> : null;
+    const shown = useChatMode(agent) === "chat" || (agent.sleeping != null && chatCapable(agent));
+    return (
+        <MotionConfig reducedMotion="user">
+            <AnimatePresence initial={false}>
+                {shown ? (
+                    <motion.div
+                        key="chat"
+                        className="z-20"
+                        variants={layerFade}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                    >
+                        <ChatPane model={model} agent={agent} barred={barred} />
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
+        </MotionConfig>
+    );
 }
 
 // `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the chat
@@ -65,17 +96,26 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
 
     // The live stream only says the file grew: each stamp asks for an append read (the RailTranscript pattern). It runs
-    // while the Agent surface is the one seen, and what was written while it was not is read when it is seen again.
+    // while the Agent surface is the one seen, and what was written while it was not is read when it is seen again. A
+    // sleeping agent has no process writing to its transcript, so there is no stream: one read as it falls asleep (or as
+    // the pane is first seen asleep) puts its last turn in the log.
+    const asleep = agent.sleeping != null;
+    // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
+    const present = useIsPresent();
     const streaming = surface === "agent";
     const streamId = path ? `chat:${agent.id}:${path}` : "";
     useEffect(() => {
         if (!streaming || !streamId) {
             return;
         }
+        if (asleep) {
+            requestAppend();
+            return;
+        }
         startTranscriptStream(streamId, path, agent.agent);
         requestAppend();
         return () => stopTranscriptStream(streamId);
-    }, [streaming, streamId]);
+    }, [streaming, streamId, asleep]);
     const stamp = useAtomValue(activityAtomFor(streamId));
     useEffect(() => {
         if (stamp != null && streaming) {
@@ -110,6 +150,13 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     return (
         <div
             data-agent-chat={agent.id}
+            // asleep, the scenarios and the launcher's resume check read the cover by this attribute, as they did the
+            // overlay that held the sleeping conversation before this pane did
+            data-sleeping-transcript={asleep ? agent.id : undefined}
+            // A pane on its way out (to Terminal) is inert: its box takes no focus and drops the one it held, and
+            // cellInputOf (cellinput.ts) skips it, so the keyboard goes to the xterm at once, not to the fading box.
+            data-chat-leaving={present ? undefined : ""}
+            inert={!present}
             className={cn(
                 "absolute inset-x-0 bottom-0 z-20 flex flex-col bg-background",
                 barred ? "top-[26px]" : "top-0"
@@ -170,14 +217,21 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 </div>
                 <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
-            {/* the conversation's own column (760px), so the box lines up under the last message; keyed, so its text and
-                its attachments belong to one agent */}
+            {/* the conversation's own column (760px), so the box lines up under the last message; keyed by the agent
+                alone, so its text and its attachments belong to one agent and the box is never remounted when the agent
+                sleeps or wakes (its parts fold in place). Asleep its Enter wakes the agent, and it carries
+                data-sleeping-composer for the scenarios' `[data-sleeping-composer] textarea`. */}
             <div className="flex-none px-[22px] pb-4 pt-3">
                 <ChatComposer
                     key={agent.id}
                     agent={agent}
                     entries={entries}
-                    placeholder={`Reply to ${agent.name}, / for commands`}
+                    placeholder={
+                        asleep
+                            ? `message ${agent.name} to wake it… (Enter)`
+                            : `Reply to ${agent.name}, @ to mention, / for commands`
+                    }
+                    dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
                 />
             </div>
         </div>

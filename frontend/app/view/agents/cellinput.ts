@@ -7,9 +7,13 @@
 
 // What takes the keyboard in an agent's cell: its chat box while the cell shows Chat (the xterm is still mounted
 // underneath it, so it would also pass checkVisibility, and typing would go to a terminal nobody can see), else its
-// xterm. Null when neither is showing. Reads the DOM, so it is what is on screen, whichever mode the store says.
+// xterm. Null when neither is showing. Reads the DOM, so it is what is on screen, whichever mode the store says. A chat
+// layer fading out (ChatPane marks it data-chat-leaving) is no longer showing: it stays in the DOM for its exit, but
+// the keyboard belongs to the xterm under it from the moment of the flip.
 export function cellInputOf(root: ParentNode | null | undefined, id: string): HTMLElement | null {
-    const box = root?.querySelector<HTMLElement>(`[data-agent-chat="${id}"] [data-agent-chat-composer] textarea`);
+    const box = root?.querySelector<HTMLElement>(
+        `[data-agent-chat="${id}"]:not([data-chat-leaving]) [data-agent-chat-composer] textarea`
+    );
     if (box != null) {
         return box.checkVisibility() ? box : null;
     }

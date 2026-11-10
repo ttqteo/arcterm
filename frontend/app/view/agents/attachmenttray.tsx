@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Presentational pieces for the New run goal's attachments: the chip tray (image thumbnails / file icons with
-// per-chip remove + retry) and the paperclip that opens the native file dialog. State + behavior live in
+// per-chip remove + retry) and the `+` that opens the native file dialog. State + behavior live in
 // useComposerAttachments (composerattachments.ts); these are pure props-in views.
 
-import { File as FileIcon, Loader2, Paperclip, RotateCw, X } from "lucide-react";
+import { File as FileIcon, Loader2, Plus, RotateCw, X } from "lucide-react";
 import { isOversize, type Attachment } from "./composerattachments";
 
 function fmtSize(bytes: number): string {
@@ -95,6 +95,7 @@ export function AttachmentTray({
     );
 }
 
+// A `+`, as the chat box's board draws it: the same 28px height as the chips beside it, no border of its own
 export function AttachButton({ onClick }: { onClick: () => void }) {
     return (
         <button
@@ -102,10 +103,11 @@ export function AttachButton({ onClick }: { onClick: () => void }) {
             title="Attach files"
             aria-label="Attach files"
             data-attach-files
+            data-chat-attach
             onClick={onClick}
-            className="flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border border-edge-mid text-muted hover:border-edge-strong hover:text-secondary"
+            className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-            <Paperclip size={13} />
+            <Plus size={16} strokeWidth={1.8} aria-hidden />
         </button>
     );
 }

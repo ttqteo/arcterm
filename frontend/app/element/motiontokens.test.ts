@@ -2,7 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, indicatorSlide, initialEntranceState, microFade, modalBackdrop, modalPanel, paneReveal, popoverReveal, settleClass, sheetPanel, shouldFadeEntry, reflowProps, sentRise, turnTransition, viewFade } from "./motiontokens";
+import {
+    MOTION,
+    cardVariants,
+    composerReveal,
+    computeEntrances,
+    easeFluidCss,
+    foldX,
+    indicatorSlide,
+    initialEntranceState,
+    layerFade,
+    microFade,
+    modalBackdrop,
+    modalPanel,
+    paneReveal,
+    popoverReveal,
+    reflowProps,
+    sentRise,
+    settleClass,
+    sheetPanel,
+    shouldFadeEntry,
+    turnTransition,
+    viewFade,
+} from "./motiontokens";
 
 describe("motiontokens", () => {
     it("uses the Fluid feel: macro ~360ms on the chosen ease curve", () => {
@@ -54,6 +76,48 @@ describe("viewFade", () => {
         expect((viewFade.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
         expect((viewFade.animate as any).transition.ease).toEqual(MOTION.easeFluid);
         expect(viewFade).not.toHaveProperty("exit");
+    });
+});
+
+describe("layerFade", () => {
+    it("fades a whole layer in on the macro duration and out on the exit duration, opacity only", () => {
+        expect(layerFade.initial).toEqual({ opacity: 0 });
+        expect((layerFade.animate as any).opacity).toBe(1);
+        expect((layerFade.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
+        expect((layerFade.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+        expect((layerFade.exit as any).opacity).toBe(0);
+        expect((layerFade.exit as any).transition.duration).toBeCloseTo(MOTION.durExit);
+        expect((layerFade.exit as any).transition.ease).toEqual(MOTION.easeFluid);
+    });
+
+    it("stops taking pointer events the moment it starts to leave, so a fading layer never takes a click", () => {
+        expect((layerFade.exit as any).pointerEvents).toBe("none");
+    });
+
+    it("has an exit, unlike viewFade", () => {
+        expect(layerFade).toHaveProperty("exit");
+    });
+});
+
+describe("foldX", () => {
+    it("folds a part in and out along the row: width + opacity + a 0.96 scale on the micro duration", () => {
+        expect(foldX.initial).toEqual({ opacity: 0, scale: 0.96, width: 0 });
+        expect((foldX.animate as any).opacity).toBe(1);
+        expect((foldX.animate as any).scale).toBe(1);
+        expect((foldX.animate as any).width).toBe("auto");
+        expect((foldX.animate as any).transition.duration).toBeCloseTo(MOTION.durMicro);
+        expect((foldX.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+        expect(foldX.exit).toMatchObject({ opacity: 0, scale: 0.96, width: 0 });
+        expect((foldX.exit as any).transition.duration).toBeCloseTo(MOTION.durMicro);
+        expect((foldX.exit as any).transition.ease).toEqual(MOTION.easeFluid);
+    });
+
+    it("never animates x, y or height", () => {
+        for (const target of [foldX.initial, foldX.animate, foldX.exit]) {
+            expect(target).not.toHaveProperty("x");
+            expect(target).not.toHaveProperty("y");
+            expect(target).not.toHaveProperty("height");
+        }
     });
 });
 

@@ -30,8 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In Chat, a message you send while Claude is working shows as yours at once, marked Queued, and stays where Claude
   takes it; one you queued in the terminal shows as your bubble too.
 - In Chat, `/` in the message box lists Claude Code's commands and your skills, ↑ puts back the last message you sent,
-  and under the box a line shows the model, the context used and the permission mode, which a click cycles like
-  Shift+Tab. A permission card also offers the prompt's own "Yes, and don't ask again" choice, and Copy shows on
+  and under the box the model, the context used and the permission mode are shown (the chips are under Changed). A
+  permission card also offers the prompt's own "Yes, and don't ask again" choice, and Copy shows on
   hover under a message and on every code block.
 - In an agent's Files tab, drag files or folders onto a folder of the tree to move them there; pins and open file tabs
   follow. Dragging onto a terminal still types the paths.
@@ -39,6 +39,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent's replies in Chat read as a page instead of bubbles beside an avatar, and your message pins to the top
+  of the chat once you scroll past it; click it to go back.
+- The Chat message box shows the model and the permission mode as chips: click either to pick another from a menu.
+  The context shows as a small ring.
+- A sleeping agent keeps the same chat as an awake one: putting it to sleep or waking it only folds the message
+  box's chips in or out. Chat fades over the terminal and back, and the Chat | Terminal control slides between its
+  two sides.
 - Float window is a button in the agent header, beside Fullscreen, instead of a row in the … menu.
 - Choosing an agent or terminal that is not in your split now shows it on its own, instead of swapping it into the
   split's focused pane. The split stays as it was: click its row in the sidebar, or one of its agents, to bring it back.

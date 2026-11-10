@@ -1344,10 +1344,15 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return clickThrough("[data-doc-review-send]");
     };
     const focusId = () => globalStore.get(model.focusIdAtom);
-    // the focused agent when it can show Chat: a Claude agent that is awake (chatmode.ts), else undefined
-    const chatAgent = (): AgentVM | undefined => {
+    // the focused agent when it is a Claude agent (chatmode.ts), awake or asleep, else undefined
+    const claudeAgent = (): AgentVM | undefined => {
         const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
-        return agent != null && chatCapable(agent) && agent.sleeping == null ? agent : undefined;
+        return agent != null && chatCapable(agent) ? agent : undefined;
+    };
+    // the focused agent when it can show Chat: a Claude agent that is awake, else undefined
+    const chatAgent = (): AgentVM | undefined => {
+        const agent = claudeAgent();
+        return agent != null && agent.sleeping == null ? agent : undefined;
     };
     // what stands in the terminal's place (agentview.ts), as the header reads it
     const slotView = (): AgentView =>
@@ -2016,8 +2021,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // The bare b, c and r are typed into the TUI while it holds focus, so the header's Terminal | Canvas |
             // Review control (Brainstorm in the canvas's slot, for an agent with a brainstorm) also has a chord that
             // works from inside the terminal, as Alt+1..9 does for the agents
-            // A Claude agent's control starts with Chat (chatmode.ts), so the key walks Chat too. The agent is in the
-            // model's atoms, which a when() cannot read, so run() lets the key pass when there is one option only.
+            // A Claude agent's control starts with Chat (chatmode.ts), so the key walks Chat too. A sleeping Claude
+            // agent's header disables Chat and Terminal, so the key walks only what the header leaves usable (the
+            // asleep argument of cellViewOptions). The agent is in the model's atoms, which a when() cannot read, so
+            // run() lets the key pass when there is one option only.
             id: "agent:view-cycle",
             keys: "Alt:c",
             group: "Agent",
@@ -2025,12 +2032,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
             run: () => {
                 const agent = chatAgent();
+                const claude = claudeAgent();
                 const view = slotView();
                 const options = cellViewOptions(
-                    agent != null,
+                    claude != null,
                     canvas() != null,
                     docReview() != null,
-                    brainstorm() != null
+                    brainstorm() != null,
+                    claude != null && claude.sleeping != null
                 );
                 const next = nextCellView(agent != null ? cellView(view, getChatMode(agent)) : view, options);
                 if (next == null) {

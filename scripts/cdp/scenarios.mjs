@@ -15573,7 +15573,8 @@ async function teardownFixtureRun(h, ctx, name, restore) {
     if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
     if (restore) await step(restore.what, restore.fn);
     if (ctx.runId) {
-        await step("cancel the run", () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId }));
+        // the cancel waits on the dag lock, which the engine's tick holds for seconds on a loaded machine
+        await step("cancel the run", () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId }, { timeout: 90_000 }));
     }
     if (ctx.channelId) {
         // cancelling a run stops its workers but leaves their blocks
@@ -25940,6 +25941,8 @@ const removeTranscriptCounter = (h) =>
         return "restored";
     })()`);
 
+// how long launcher-resume waits for a session scan: the Agent tree's reads every transcript on disk, 30+ s here (7.6 GB)
+const SCAN_WAIT_MS = 90_000;
 const launcherResume = {
     name: "launcher-resume",
     surface: "cockpit",
@@ -25995,6 +25998,18 @@ const launcherResume = {
             return steps;
         }
         const state = () => h.ev(launcherResumeState);
+        // The session scans (the dialog's per project, the Agent tree's across every transcript on disk) are backend reads
+        // that take over 30 s on a loaded machine with a big ~/.claude/projects, so a state that needs one is waited for,
+        // not read after a fixed nap: a 300 ms nap gave 4a/4b and 6b/6c their flakes in a Final that ran beside other work.
+        const stateWhen = async (ok, ms = SCAN_WAIT_MS) => {
+            const end = Date.now() + ms;
+            let st = await state();
+            while (!ok(st) && Date.now() < end) {
+                await polishNap(250);
+                st = await state();
+            }
+            return st;
+        };
         await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
         await h.goto("cockpit");
 
@@ -26015,7 +26030,7 @@ const launcherResume = {
         await launcherPickStart(h, "claude");
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-resume]')`, 8000);
         await polishNap(300);
-        let s = await state();
+        let s = await stateWhen((st) => st?.rows?.some((r) => r.id === ctx.sessionId));
         await h.shot("cdp-shots/launcher-resume-1-list.png");
         rec(
             "1. New agent opens with focus in the Task box (on Start for a terminal); with Claude picked the verify project lists the verify session, New session picked",
@@ -26134,7 +26149,8 @@ const launcherResume = {
 
         await launcherPress(h, "ArrowUp");
         await polishNap(300);
-        s = await state();
+        // the round trip scans the project's sessions again
+        s = await stateWhen((st) => st?.list && st.newPicked && st.rows?.some((r) => r.id === ctx.sessionId));
         rec(
             "4a. back on the first project the list is back with New session picked: the pick did not survive the round trip",
             s.project === LAUNCHER_RESUME_PROJECT &&
@@ -26193,7 +26209,7 @@ const launcherResume = {
         rec("5a. picking Terminal removes the Resume list", s.start === "terminal" && !s.list, JSON.stringify(s));
         await launcherPickStart(h, "claude");
         await polishNap(300);
-        s = await state();
+        s = await stateWhen((st) => st?.start === "claude" && st.list && st.newPicked);
         rec(
             "5b. picking Claude again brings the list back on New session",
             s.start === "claude" && s.list && s.newPicked,
@@ -26219,9 +26235,9 @@ const launcherResume = {
         if ((await state())?.start !== "claude") {
             await launcherPickStart(h, "claude");
         }
-        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')`, 8000);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')`, SCAN_WAIT_MS);
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
-        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-step="resume"] [data-launcher-peek]')`, 5000);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-step="resume"] [data-launcher-peek]')`, 20000);
         await polishNap(300);
         const footer = await h.ev(`(() => {
             const d = ${LAUNCHER};
@@ -26255,11 +26271,22 @@ const launcherResume = {
         // of this project's folder. The dialog no longer has it.
         await h.goto("agent");
         const sessionRow = `document.querySelector('[data-agent-session-row="claude:${ctx.sessionId}"]')`;
+        // the row comes from the Agent tree's one scan of every transcript on disk (the first 100, newest first), which
+        // takes over 30 s on a loaded machine, and a load that fails (its backend deadline passes) leaves the tree on "No
+        // past conversations" until something asks again (sessionsarchivestore.ts): so the row is waited for, and after
+        // each wait that brings nothing the store is asked again (not awaited: the call can outlast one CDP command). The
+        // section is opened only when it is folded: its header toggles, so a click on an open one folded it and hid the row.
         let rowUp = await polishWaitFor(h, `!!${sessionRow}`, 15000);
-        if (!rowUp) {
-            // the Conversations section may be folded: open it and look again
-            await h.ev(`[...document.querySelectorAll('[data-agent-tree] button, [data-agent-tree] [role="button"]')].find((b) => (b.textContent ?? '').trim().startsWith('Conversations'))?.click()`);
-            rowUp = await polishWaitFor(h, `!!${sessionRow}`, 8000);
+        for (let ask = 0; !rowUp && ask < 4; ask++) {
+            await h.ev(`(() => {
+                const head = document.querySelector('[data-agent-section-toggle="conversations"]');
+                if (head?.getAttribute('aria-expanded') === 'false') head.click();
+            })()`);
+            await agentPageFixtures.agentPage(
+                h,
+                `const S = await mod("app/view/agents/sessionsarchivestore.ts"); void S.loadSessionsArchive(); return true;`
+            );
+            rowUp = await polishWaitFor(h, `!!${sessionRow}`, 30000);
         }
         if (rowUp) {
             await h.ev(`(() => {
@@ -26271,12 +26298,12 @@ const launcherResume = {
             await polishWaitFor(h, caMenuHas("Open asleep"), 3000);
             await h.ev(caMenuClick("Open asleep"));
         }
-        const appeared = await polishWaitFor(h, `!!(${asleepCover})`, 10000);
+        const appeared = await polishWaitFor(h, `!!(${asleepCover})`, 30000);
         const tabId = appeared ? await h.ev(`(${asleepCover})?.getAttribute('data-sleeping-transcript') ?? null`) : null;
         ctx.asleepTab = tabId;
         let cell = null;
         if (tabId) {
-            await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]')`, 5000);
+            await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]')`, 15000);
             cell = await h.ev(`(() => {
                 const cover = document.querySelector('[data-sleeping-transcript="${tabId}"]');
                 return {
@@ -41753,7 +41780,8 @@ const agentSleep = {
         );
 
         // 2. focused, the sleeping agent's terminal has the card over it, and its conversation covers the terminal in its
-        // cell (the fixture has no transcript, so it reads that it found none); the awake agent's cell has no cover
+        // cell: the one chat pane (its root is the cover and the chat layer at once), which with the fixture's no transcript
+        // reads "No messages yet"; the awake agent's cell has no cover
         await h.ev(`${asRow(AS_SLEEPING_ID)}?.click()`);
         const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-card="${AS_SLEEPING_ID}"]')`, 5000);
         const coverUp = await polishWaitFor(
@@ -41769,15 +41797,16 @@ const agentSleep = {
                 text: c?.textContent.trim() ?? null,
                 wake: c?.querySelector("[data-sleeping-wake]")?.textContent.trim() ?? null,
                 cover: cover?.textContent.trim() ?? null,
+                coverIsChat: cover?.getAttribute("data-agent-chat") === ${JSON.stringify(AS_SLEEPING_ID)},
                 coverSize: r ? [Math.round(r.width), Math.round(r.height)] : null,
                 awakeCover: !!document.querySelector('[data-agent-terminal="${AS_AWAKE_ID}"] [data-sleeping-transcript]'),
             };
         })()`);
         await h.shot("cdp-shots/agent-sleep-card.png");
         rec(
-            "2. focused, the card says \"Sleeping since\" and offers Wake, and the conversation covers the terminal",
+            "2. focused, the card says \"Sleeping since\" and offers Wake, and the conversation (the chat pane, reading No messages yet) covers the terminal",
             cardUp && (card.text ?? "").includes("Sleeping since") && card.wake === "Wake" &&
-                coverUp && (card.cover ?? "").includes("No transcript found") &&
+                coverUp && (card.cover ?? "").includes("No messages yet") && card.coverIsChat &&
                 card.coverSize != null && card.coverSize[0] > 0 && card.coverSize[1] > 0 && !card.awakeCover,
             JSON.stringify(card)
         );
@@ -41846,7 +41875,7 @@ const agentSleep = {
         }
         const cellWaking = await polishWaitFor(
             h,
-            `(() => { const b = document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"] button'); return !!b && b.textContent.trim() === "Waking…"; })()`,
+            `(() => { const b = document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"] [data-chat-send]'); return !!b && b.textContent.trim() === "Waking…"; })()`,
             3000
         );
         const cellSend = (await asCalls(h, "agentswake")).slice(cellWakesBefore)[0];
@@ -42063,7 +42092,8 @@ const AC_TASKS = [
     ["t-2", AC_LIVE_LABEL],
 ].map(([id, label]) => ({ id, label, description: "do nothing, stop immediately", deps: [], gate: false, state: "" }));
 // the engine ticks a dag at most every 30 seconds
-const AC_ENDED_WAIT_MS = 90_000;
+// the engine's tick holds the dag lock 5 to 15 s on a loaded machine (every git launch is scanned), so t-1 can need minutes
+const AC_ENDED_WAIT_MS = 240_000;
 const AC_WAIT_MS = 8000;
 // what the mocked ListClaudeCommandsCommand answers: a skill the `/` menu lists beside its built-ins
 const AC_COMMANDS = [{ name: "arc:council", description: "Ask a council of viewpoints", source: "skill" }];
@@ -42075,6 +42105,14 @@ const acLayer = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
 const acBox = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-agent-chat-composer] textarea')`;
 const acCard = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-permission-card="${id}"]')`;
 const acHeaderGroup = `document.querySelector('[data-agent-header] [role="group"]')`;
+// the element that scrolls one agent's chat, found from its conversation
+const acScroller = (id) =>
+    `(() => { let p = document.querySelector('[data-agent-chat="${id}"] [data-chat-conversation]')?.parentElement; while (p && !["auto", "scroll"].includes(getComputedStyle(p).overflowY)) p = p.parentElement; return p; })()`;
+// a chip's menu by its aria-label, and its rows
+const acMenu = (label) => `document.querySelector('[role="menu"][aria-label="${label}"]')`;
+const acMenuRows = (label) => `[...(${acMenu(label)}?.querySelectorAll('[role="menuitemradio"]') ?? [])]`;
+// the agent's chat is on screen: the Agent surface stays mounted when another surface shows, but its layers have no size
+const acOnScreen = (id) => `(() => { const r = ${acLayer(id)}?.getBoundingClientRect(); return !!r && r.width > 0 && r.height > 0; })()`;
 const AC_INTERIOR = `document.querySelector('button[title="Back to parent (Esc)"]')?.parentElement?.parentElement`;
 
 // the transcripts of the fixture agents: a person's message, prose, a stretch of tools with an Edit, prose, a run's launch
@@ -42122,12 +42160,20 @@ function acWriteFixtures(dir) {
     };
 }
 
-// the roster: a row per fixture agent over its real tab. `main` takes a patch (step 4 makes it work); a lead row carries the
-// run whose ended worker step 15 reads
-function acRoster(ctx, mainPatch = {}) {
+// the roster: a row per fixture agent over its real tab. `main` takes a patch (step 4 makes it work), and `rowPatches` any
+// row's by its key (step 32 wakes the asleep one with `{ asleep: { sleeping: undefined } }`); a lead row carries the run
+// whose ended worker step 15 reads
+function acRoster(ctx, mainPatch = {}, rowPatches = {}) {
     const now = Date.now();
     const base = { project: "arcterm", task: "", agent: "claude", model: "opus", state: "idle", idleSince: now - 60_000 };
-    const row = (key, extra) => ({ ...base, id: ctx.tabs[key].tabId, name: AC_NAMES[key], blockId: ctx.tabs[key].blockId, ...extra });
+    const row = (key, extra) => ({
+        ...base,
+        id: ctx.tabs[key].tabId,
+        name: AC_NAMES[key],
+        blockId: ctx.tabs[key].blockId,
+        ...extra,
+        ...(rowPatches[key] ?? {}),
+    });
     const rows = [
         row("main", { transcriptPath: ctx.files.main, ...mainPatch }),
         row("second", { transcriptPath: ctx.files.second }),
@@ -42165,7 +42211,11 @@ function acRoster(ctx, mainPatch = {}) {
 
 // A real orchestrator run (held by deferstart) with two lanes. t-1's stand-in child run is marked done and the engine moves
 // the task to done by itself; the staged file keeps the engine from merging the lane, so the task stays an ended worker.
-async function acArrangeRun(h, ctx) {
+async function acArrangeRun(h0, ctx) {
+    // every call here is a wavesrv RPC with a default 5 s budget, which the engine's dag lock (held 5 to 15 s a tick on a
+    // loaded machine) outlasts: "EC-TIME: timeout waiting for response" failed this arrange in a Final beside other work
+    const h = Object.create(h0);
+    h.rpc = (command, data, opts) => h0.rpc(command, data, { ...opts, timeout: Math.max(opts?.timeout ?? 0, 90_000) });
     ctx.cwd = mkdtempSync(join(tmpdir(), "verify-agent-chat-run-"));
     fstGitInit(ctx.cwd);
     writeFileSync(join(ctx.cwd, "held.txt"), "staged by the agent-chat fixture\n");
@@ -42323,6 +42373,7 @@ const acKeys = {
     altC: { key: "c", code: "KeyC", windowsVirtualKeyCode: 67, modifiers: 1 },
     up: { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38 },
     enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
+    escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
 };
 async function acKey(h, { mod, ...k }) {
     const modifiers = (k.modifiers ?? 0) | (mod ? ((await h.ev(`/Mac/i.test(navigator.platform)`)) ? 4 : 2) : 0);
@@ -42449,18 +42500,24 @@ const agentChat = {
             prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
             prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
         };
-        // a throw past this point still returns ctx, so teardown undoes whatever was already made
+        // a throw past this point still returns ctx, so teardown undoes whatever was already made; the step it was in is
+        // named, since a CDP timeout on a loaded machine says nothing of which call was slow
+        let at = "writing the fixtures";
         try {
             ctx.files = acWriteFixtures(ctx.dir);
+            at = "making the run";
             await acArrangeRun(h, ctx);
             // the run is read at boot; the grid starts empty and no agent starts pinned
+            at = "reloading the page";
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             for (const key of Object.keys(AC_NAMES)) {
+                at = `making the ${key} tab`;
                 ctx.tabs[key] = await acMakeTab(h, ctx, { label: AC_NAMES[key] });
             }
+            at = "raising the rail";
             ctx.prevRail = await AC.agentPage(
                 h,
                 `const R = await mod("app/view/agents/railstore.ts");
@@ -42468,11 +42525,13 @@ const agentChat = {
                 globalStore.set(R.railVisibleAtom, true);
                 return prev;`
             );
+            at = "setting the roster";
             await AC.setRoster(h, acRoster(ctx));
+            at = "installing the mock";
             const mock = await installAgentChatMock(h, ctx);
             if (mock !== "installed") throw new Error(`chat mock: ${mock}`);
         } catch (e) {
-            ctx.arrangeError = String(e?.message ?? e);
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
         }
         return ctx;
     },
@@ -42512,15 +42571,11 @@ const agentChat = {
                 const you = layer?.querySelector("[data-chat-you]");
                 const yr = you?.getBoundingClientRect();
                 const who = layer?.querySelector("[data-chat-agent]");
-                const av = who?.firstElementChild?.getBoundingClientRect();
-                const prose = who?.querySelector("[data-chat-prose]")?.getBoundingClientRect();
                 const sent = [...(layer?.querySelectorAll("[data-chat-sent]") ?? [])];
                 return {
                     items: layer?.querySelectorAll("[data-chat-item]").length ?? 0,
                     you: you?.textContent.trim() ?? null,
                     youGap: yr && cr ? Math.round(cr.right - yr.right) : null,
-                    avatarGap: av && cr ? Math.round(av.left - cr.left) : null,
-                    proseBesideAvatar: av && prose ? prose.left >= av.right - 1 && prose.left - av.right < 24 : null,
                     prose: who?.querySelector("[data-chat-prose]")?.textContent.trim() ?? null,
                     pill: layer?.querySelector("[data-chat-work] [data-fold]")?.textContent.trim() ?? null,
                     chip: layer?.querySelector("[data-chat-files] [data-chat-file]")?.getAttribute("data-chat-file") ?? null,
@@ -42531,15 +42586,13 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-1-bubbles.png");
             rec(
-                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose sits by its avatar, a work pill and a file chip show, the run's launch prompt and a pointer line are sent cards",
+                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), a work pill and a file chip show, the run's launch prompt and a pointer line are sent cards",
                 loaded &&
                     header1?.buttons?.map((b) => b.text).join("|") === "Chat|Terminal" &&
                     header1.buttons[0].pressed &&
                     bubbles.items === 6 &&
                     bubbles.you === AC_USER_TEXT &&
                     bubbles.youGap != null && bubbles.youGap >= -1 && bubbles.youGap <= 3 &&
-                    bubbles.proseBesideAvatar === true &&
-                    bubbles.avatarGap != null && bubbles.avatarGap <= 3 &&
                     bubbles.prose === AC_PROSE_1 &&
                     /^Worked for .+ · 2 tools$/.test(bubbles.pill ?? "") &&
                     (bubbles.chip ?? "").endsWith("client.ts") &&
@@ -42595,9 +42648,11 @@ const agentChat = {
             const inputs3 = await acInputs(h, blockA);
             const withFile = inputs3.find((i) => i.startsWith("see the note")) ?? "";
             const trayAfter = await h.ev(`${acLayer(A)}?.querySelectorAll("[data-attachment-chip]").length ?? 0`);
+            // a message over several lines goes in as a paste (typeIntoAgent), which xterm sends with its newlines as "\r"
             rec(
                 "3. a file pasted in the box shows in the tray, and the send carries its path",
-                pasted.taken === true && chipReady && chipPath != null && withFile.includes(`Attachments (read these files):\n- ${chipPath}`) && withFile.endsWith("\r") && trayAfter === 0,
+                pasted.taken === true && chipReady && chipPath != null && withFile.includes(`Attachments (read these files):\r- ${chipPath}`) &&
+                    (await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\r")`, 3000)) && trayAfter === 0,
                 { pasted, chipPath, withFile, trayAfter }
             );
 
@@ -42834,9 +42889,13 @@ const agentChat = {
                 bare13
             );
 
-            // 14. an asleep Claude agent draws bubbles with the wake box
+            // 14. an asleep Claude agent is the same chat pane as an awake one (its root is the chat layer and the sleeping cover at
+            // once), drawing your bubble and the agent's prose with the wake box: the model as a plain label and "Asleep" where
+            // an awake box has the model chip and the attach, no mode chip, and the header's Chat | Terminal control stays,
+            // dimmed, with Chat selected
             await showAgent(F);
             const asleep = await polishWaitFor(h, `!!${acCell(F)}?.querySelector('[data-sleeping-transcript="${F}"] [data-chat-you]')`, AC_WAIT_MS);
+            await polishWaitFor(h, `!!${acCell(F)}?.querySelector('[data-sleeping-composer="${F}"] [data-chat-asleep]')`, 3000);
             const sleep14 = await h.ev(`(() => {
                 const cover = ${acCell(F)}?.querySelector('[data-sleeping-transcript="${F}"]');
                 const box = cover?.querySelector('[data-sleeping-composer="${F}"]');
@@ -42844,14 +42903,108 @@ const agentChat = {
                     you: cover?.querySelector("[data-chat-you]")?.textContent.trim() ?? null,
                     agent: !!cover?.querySelector("[data-chat-agent]"),
                     placeholder: box?.querySelector("textarea")?.placeholder ?? null,
-                    send: box?.querySelector("button")?.textContent.trim() ?? null,
+                    send: box?.querySelector("[data-chat-send]")?.textContent.trim() ?? null,
+                    label: box?.querySelector("[data-chat-model-label]")?.textContent.trim() ?? null,
+                    modelChip: !!box?.querySelector("[data-chat-model]"),
+                    asleepNote: box?.querySelector("[data-chat-asleep]")?.textContent.trim() ?? null,
+                    modeChip: !!box?.querySelector("button[data-chat-mode]"),
+                    attach: !!box?.querySelector("[data-chat-attach]"),
+                    onePane: cover?.getAttribute("data-agent-chat") === ${JSON.stringify(F)},
+                    view: [...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].map((b) => ({
+                        text: b.textContent.trim(),
+                        pressed: b.getAttribute("aria-pressed") === "true",
+                        disabled: b.disabled,
+                        asleepMark: b.hasAttribute("data-chat-view-asleep"),
+                        opacity: Number(getComputedStyle(b).opacity),
+                    })),
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-14-asleep.png");
+            const viewDim = (sleep14.view ?? []).length === 2 && sleep14.view.every((b) => b.disabled && b.asleepMark && b.opacity > 0.35 && b.opacity < 0.45);
             rec(
-                "14. an asleep Claude agent draws bubbles with the wake box",
-                asleep && sleep14.you === "an earlier question" && sleep14.agent && (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Send",
+                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected, both options disabled and dimmed",
+                asleep && sleep14.you === "an earlier question" && sleep14.agent && sleep14.onePane &&
+                    (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Send" &&
+                    sleep14.label === "opus" && !sleep14.modelChip && (sleep14.asleepNote ?? "").includes("Asleep") && !sleep14.modeChip && !sleep14.attach &&
+                    sleep14.view?.map((b) => b.text).join("|") === "Chat|Terminal" && sleep14.view[0].pressed && !sleep14.view[1].pressed && viewDim,
                 sleep14
+            );
+
+            // 14a. Alt+C on the asleep agent walks only what the header leaves usable: Chat and Terminal are disabled, so it
+            // never selects them. With nothing else open there is nothing to walk and the key passes whatever it did before, so
+            // the step gives F a canvas (nothing detaches one but a click; it is taken off at the end): one usable option, so
+            // the key still passes. Before the fix the key walked [terminal, canvas]: from Chat it went to the Canvas, from the
+            // Canvas back to the terminal's slot, which the header shows as Chat
+            const AC_VIEW_NOW = `[...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim() + (b.getAttribute("aria-pressed") === "true" ? "*" : "") + (b.disabled ? "!" : "")).join("|")`;
+            await AC.agentPage(
+                h,
+                `const C = await mod("app/view/agents/canvasstore.ts");
+                C.attachCanvas(${JSON.stringify(F)}, { topic: "ac-asleep", dir: "ac-asleep-canvas", projectDir: "ac-asleep-project" }, Date.now());
+                return true;`
+            );
+            const three14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!|Canvas"`, 4000);
+            const atChat14a = await h.ev(AC_VIEW_NOW);
+            await acKey(h, acKeys.altC);
+            await polishNap(500);
+            const afterChat14a = await h.ev(AC_VIEW_NOW);
+            await AC.agentPage(
+                h,
+                `const V = await mod("app/view/agents/agentview.ts"); V.setAgentView(${JSON.stringify(F)}, "canvas", Date.now()); return true;`
+            );
+            const onCanvas14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat!|Terminal!|Canvas*"`, 4000);
+            const atCanvas14a = await h.ev(AC_VIEW_NOW);
+            await acKey(h, acKeys.altC);
+            await polishNap(500);
+            const afterCanvas14a = await h.ev(AC_VIEW_NOW);
+            const mode14a = await h.ev(`window.__arcChatMode.get(${JSON.stringify(F)})`);
+            await h.shot("cdp-shots/agent-chat-14a-asleep-altc.png");
+            await AC.agentPage(
+                h,
+                `const V = await mod("app/view/agents/agentview.ts");
+                const C = await mod("app/view/agents/canvasstore.ts");
+                V.setAgentView(${JSON.stringify(F)}, "terminal", Date.now());
+                C.detachCanvas(${JSON.stringify(F)});
+                return true;`
+            );
+            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!"`, 4000);
+            rec(
+                "14a. Alt+C on the asleep agent leaves the header's selected option where it was and never selects Terminal: with a canvas attached (Chat and Terminal disabled, Canvas the one usable option) Chat stays selected, and with the Canvas showing it stays selected rather than going back to Chat; the stored chat mode is not Terminal",
+                three14a && atChat14a === "Chat*!|Terminal!|Canvas" && afterChat14a === atChat14a &&
+                    onCanvas14a && atCanvas14a === "Chat!|Terminal!|Canvas*" && afterCanvas14a === atCanvas14a &&
+                    mode14a !== "terminal" && restored14a,
+                { three14a, atChat14a, afterChat14a, onCanvas14a, atCanvas14a, afterCanvas14a, mode14a, restored14a }
+            );
+
+            // 14b. the grid bar's switch of an asleep Claude agent: drawn, Chat selected, both options disabled and dimmed. A single
+            // cell has no grid bar, so it is read in a split of A and F
+            await showAgent(A);
+            const splitF = await AC.agentPage(
+                h,
+                `const G = await mod("app/view/agents/gridstore.ts");
+                return G.openInSplit(agentsModel(), ${JSON.stringify(F)});`
+            );
+            const switchF = await polishWaitFor(h, `!!document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${F}"]') && !!${acLayer(F)}`, AC_WAIT_MS);
+            const switch14 = await h.ev(`(() => {
+                const s = document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${F}"]');
+                const bs = [...(s?.querySelectorAll("button") ?? [])];
+                return {
+                    mode: s?.getAttribute("data-chat-mode") ?? null,
+                    asleepMark: s?.hasAttribute("data-chat-view-asleep") ?? false,
+                    texts: bs.map((b) => b.textContent.trim()),
+                    pressed: bs.map((b) => b.getAttribute("aria-pressed") === "true"),
+                    disabled: bs.map((b) => b.disabled),
+                    opacity: s ? Number(getComputedStyle(s).opacity) : null,
+                    awakeSwitch: document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')?.hasAttribute("data-chat-view-asleep") ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-14-asleep-split.png");
+            await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
+            rec(
+                "14b. in a split the asleep agent's grid-bar Chat | Terminal switch is drawn with Chat selected, both buttons disabled and dimmed, while the awake agent's is not",
+                splitF === true && switchF && switch14.mode === "chat" && switch14.asleepMark && switch14.texts.join("|") === "Chat|Terminal" &&
+                    switch14.pressed[0] && !switch14.pressed[1] && switch14.disabled.every(Boolean) &&
+                    switch14.opacity != null && switch14.opacity > 0.35 && switch14.opacity < 0.45 && switch14.awakeSwitch === false,
+                { splitF, switchF, switch14 }
             );
 
             // 15. a run's ended Claude worker, read in the centre, draws bubbles
@@ -43120,24 +43273,34 @@ const agentChat = {
                 { slashUp, items23, picked23, fetched23: fetched23.length, flipped23, header23, sentModel }
             );
 
-            // 24. the footer shows the model and the context use; once the fixture terminal shows the captured plan-mode screen
-            // a chip names the mode, and a click on it types Shift+Tab into the block
+            // 24. the footer shows the model chip and the context as a ring with its percent; once the fixture terminal shows the
+            // captured plan-mode screen a chip names the mode, and a click on it opens its menu, typing nothing into the block
+            // (picking a mode, which types Shift+Tab, is step 29's)
             await AC.setRoster(h, acRoster(ctx, { ...workingA, usage: { contextpct: 42 } }));
-            const footerUp = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-footer]")?.textContent ?? "").includes("ctx 42%")`, 5000);
+            const footerUp = await polishWaitFor(h, `${acLayer(A)}?.querySelector("[data-chat-footer] [data-chat-context]")?.getAttribute("data-chat-context") === "42"`, 5000);
             const footerText = await h.ev(`${acLayer(A)}?.querySelector("[data-chat-footer]")?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
-            const chipBefore = await h.ev(`!!${acLayer(A)}?.querySelector("[data-chat-mode]")`);
+            const ring24 = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.querySelector("[data-chat-footer] [data-chat-context]");
+                return { text: r?.textContent.trim() ?? null, title: r?.getAttribute("title") ?? null, svg: !!r?.querySelector("svg") };
+            })()`);
+            const chipBefore = await h.ev(`!!${acLayer(A)}?.querySelector("button[data-chat-mode]")`);
             const screen24 = await acWriteScreen(h, blockA, AC_SCREENS.mode3);
-            const chipUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('[data-chat-mode="plan"]')`, 6000);
+            const chipUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')`, 6000);
             await h.shot("cdp-shots/agent-chat-24-footer.png");
             const beforeTab = (await acInputs(h, blockA)).length;
-            await h.ev(`${acLayer(A)}?.querySelector('[data-chat-mode="plan"]')?.click()`);
-            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "controllerinput" && c.data.input === "\\x1b[Z").length >= 1`, 3000);
-            const tabbed = (await acInputs(h, blockA)).slice(beforeTab);
+            await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
+            const menuUp24 = await polishWaitFor(h, `${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.getAttribute("aria-expanded") === "true" && !!${acLayer(A)}?.querySelector('[role="menu"]')`, 3000);
+            const typed24 = (await acInputs(h, blockA)).slice(beforeTab);
+            await acKey(h, acKeys.escape);
+            const menuDown24 = await polishWaitFor(h, `${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.getAttribute("aria-expanded") === "false" && !${acLayer(A)}?.querySelector('[role="menu"]')`, 3000);
+            // Escape closes the menu and nothing else: it must not also send the Agent surface back to the Cockpit
+            const stayed24 = await h.ev(acOnScreen(A));
             rec(
-                "24. the footer shows the model and ctx 42%; with the captured plan-mode screen on the terminal a chip with data-chat-mode=plan appears, and clicking it sends Shift+Tab to the block",
-                footerUp && /opus/.test(footerText ?? "") && chipBefore === false && screen24?.ok === true && chipUp &&
-                    JSON.stringify(tabbed) === JSON.stringify(["\x1b[Z"]),
-                { footerText, chipBefore, screen24, chipUp, tabbed }
+                "24. the footer shows the model chip and the context as a ring reading 42% (title Context 42%); with the captured plan-mode screen on the terminal a chip with data-chat-mode=plan appears, and clicking it opens the mode menu and types nothing into the block; Escape closes the menu and the chat stays on screen",
+                footerUp && /opus/.test(footerText ?? "") && ring24.text === "42%" && ring24.title === "Context 42%" && ring24.svg &&
+                    !/ctx/.test(footerText ?? "") && chipBefore === false && screen24?.ok === true && chipUp &&
+                    menuUp24 && typed24.length === 0 && menuDown24 && stayed24,
+                { footerText, ring24, chipBefore, screen24, chipUp, menuUp24, typed24, menuDown24, stayed24 }
             );
 
             // 25. with the captured Bash dialog on the terminal and its request pending, the card offers the dialog's option 2
@@ -43236,6 +43399,327 @@ const agentChat = {
                     settledUp && spot != null && idleOpacity === "0" && hovered && code26.found && code26.shown && code26.button,
                 { stretchUp, runningUp, running26, settledUp, idleOpacity, hovered, code26 }
             );
+
+            // 27. your message pins to the top of the chat once it scrolls off it: with the first prompt just above the top the bar
+            // shows its text, and the first item stays where it was (the bar is a zero-height sticky row); a click on the bar
+            // scrolls back to the prompt
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-conversation] [data-user-prompt]") && !!${acScroller(A)}`, AC_WAIT_MS);
+            const pin27 = await h.ev(`(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const until = async (read) => {
+                    let v = read();
+                    for (let i = 0; i < 60 && !v; i++) {
+                        await wait(50);
+                        v = read();
+                    }
+                    return v;
+                };
+                const sc = ${acScroller(A)};
+                const conv = ${acLayer(A)}?.querySelector("[data-chat-conversation]");
+                const first = conv?.querySelector("[data-user-prompt]");
+                const item = conv?.querySelector("[data-chat-item]");
+                if (!sc || !conv || !first || !item) return { ok: false, why: "no scroller, conversation, prompt or item" };
+                const content = (el) => Math.round(el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+                const bottom = Math.round(first.getBoundingClientRect().bottom - sc.getBoundingClientRect().top + sc.scrollTop);
+                sc.scrollTop = Math.max(0, bottom - 6);
+                const bareBefore = await until(() => !conv.querySelector("[data-pinned-prompt]"));
+                await wait(100);
+                const before = content(item);
+                const want = bottom + 6;
+                sc.scrollTop = want;
+                const barUp = await until(() => !!conv.querySelector("[data-pinned-prompt]"));
+                await wait(100);
+                const bar = conv.querySelector("[data-pinned-prompt]");
+                return {
+                    ok: true,
+                    want,
+                    reached: sc.scrollTop,
+                    bareBefore,
+                    barUp,
+                    text: bar?.querySelector("button")?.textContent.trim() ?? null,
+                    before,
+                    after: content(item),
+                    barHeight: bar ? Math.round(bar.getBoundingClientRect().height) : null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-27-pinned.png");
+            const back27 = await h.ev(`(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const sc = ${acScroller(A)};
+                const conv = ${acLayer(A)}?.querySelector("[data-chat-conversation]");
+                const bar = conv?.querySelector("[data-pinned-prompt] button");
+                const first = conv?.querySelector("[data-user-prompt]");
+                if (!sc || !first || !bar) return { ok: false, why: "no scroller, prompt or bar to click" };
+                const inView = () => {
+                    const r = first.getBoundingClientRect();
+                    const s = sc.getBoundingClientRect();
+                    return r.top >= s.top - 1 && r.bottom <= s.bottom + 1;
+                };
+                bar.click();
+                for (let i = 0; i < 80 && !inView(); i++) await wait(50);
+                return { ok: true, inView: inView(), barGone: !conv.querySelector("[data-pinned-prompt]") };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-27-pinned-back.png");
+            rec(
+                "27. with the first prompt scrolled just above the top, the pinned bar shows its text and the first item does not move when it appears; a click on the bar scrolls back so the prompt is in view",
+                pin27?.ok === true && pin27.bareBefore && pin27.barUp && Math.abs(pin27.reached - pin27.want) <= 1 &&
+                    pin27.text === AC_USER_TEXT && Math.abs(pin27.after - pin27.before) <= 1 && pin27.barHeight === 0 &&
+                    back27?.ok === true && back27.inView,
+                { pin27, back27 }
+            );
+
+            // 28. the model chip opens a menu of the three aliases with the current one checked; Escape closes it; picking Sonnet
+            // types /model sonnet into the block and closes the menu
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-model]")`, AC_WAIT_MS);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
+            const up28 = await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
+            const menu28 = await h.ev(`(() => ({
+                rows: ${acMenuRows("Model")}.map((r) => [r.getAttribute("data-chat-model-choice"), r.getAttribute("aria-checked"), r.textContent.trim()]),
+                expanded: ${acLayer(A)}?.querySelector("[data-chat-model]")?.getAttribute("aria-expanded") ?? null,
+            }))()`);
+            await h.shot("cdp-shots/agent-chat-28-model-menu.png");
+            await acKey(h, acKeys.escape);
+            const closed28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
+            const stayed28 = await h.ev(acOnScreen(A));
+            const before28 = (await acInputs(h, blockA)).length;
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
+            await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
+            await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
+            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet\\r")`, 3000);
+            const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
+            const typed28 = (await acInputs(h, blockA)).slice(before28);
+            rec(
+                "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
+                up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
+                    menu28.rows.filter((r) => r[1] === "true").map((r) => r[0]).join() === "opus" && menu28.expanded === "true" &&
+                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model sonnet\r"]) && closedAfter28,
+                { menu28, closed28, stayed28, picked28, typed28, closedAfter28 }
+            );
+
+            // 29. the mode chip opens a menu of the four modes with a note each and the current one checked; Escape closes it; picking
+            // another presses Shift+Tab once (the fixture's screen never redraws, so the mode never changes), and Claude Code not
+            // offering it within the reads is a toast
+            const screen29 = await acWriteScreen(h, blockA, AC_SCREENS.mode3);
+            const chip29 = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')`, 6000);
+            await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
+            const up29 = await polishWaitFor(h, `${acMenuRows("Permission mode")}.length === 4`, 3000);
+            const menu29 = await h.ev(`(() => ({
+                // the menu's last line: Shift+Tab is the terminal's key, the box does not forward it
+                foot: ${acMenu("Permission mode")}?.lastElementChild?.textContent.trim() ?? null,
+                rows: ${acMenuRows("Permission mode")}.map((r) => {
+                    // the row's first span holds the label and the note, in that order
+                    const words = r.querySelector(":scope > span:first-child");
+                    return {
+                        mode: r.getAttribute("data-chat-mode-choice"),
+                        checked: r.getAttribute("aria-checked"),
+                        label: words?.children[0]?.textContent.trim() ?? null,
+                        note: words?.children[1]?.textContent.trim() ?? null,
+                    };
+                }),
+            }))()`);
+            await h.shot("cdp-shots/agent-chat-29-mode-menu.png");
+            await acKey(h, acKeys.escape);
+            const closed29 = await polishWaitFor(h, `!${acMenu("Permission mode")}`, 3000);
+            const stayed29 = await h.ev(acOnScreen(A));
+            const before29 = (await acInputs(h, blockA)).length;
+            await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
+            await polishWaitFor(h, `${acMenuRows("Permission mode")}.length === 4`, 3000);
+            await h.ev(`${acMenu("Permission mode")}?.querySelector('[data-chat-mode-choice="acceptEdits"]')?.click()`);
+            const closedAfter29 = await polishWaitFor(h, `!${acMenu("Permission mode")}`, 3000);
+            const toast29 = await polishWaitFor(h, consumersToastExpr("did not offer", "Accept edits"), 6000);
+            const typed29 = (await acInputs(h, blockA)).slice(before29);
+            await h.shot("cdp-shots/agent-chat-29-mode-not-offered.png");
+            rec(
+                "29. the mode chip opens a menu of Default, Accept edits, Plan and Auto with a note each and the shown mode (Plan) checked, ending with the line `Shift+Tab in the terminal cycles them too`, Escape closes it and the chat stays on screen, and picking Accept edits presses Shift+Tab once and then a toast says Claude Code did not offer it",
+                screen29?.ok === true && chip29 && up29 && menu29.foot === "Shift+Tab in the terminal cycles them too" &&
+                    JSON.stringify(menu29.rows.map((r) => r.mode)) === JSON.stringify(["default", "acceptEdits", "plan", "auto"]) &&
+                    JSON.stringify(menu29.rows.map((r) => r.label)) === JSON.stringify(["Default", "Accept edits", "Plan", "Auto"]) &&
+                    menu29.rows.every((r) => (r.note ?? "").length > 0) &&
+                    menu29.rows.filter((r) => r.checked === "true").map((r) => r.mode).join() === "plan" &&
+                    closed29 && stayed29 && closedAfter29 && toast29 && JSON.stringify(typed29) === JSON.stringify(["\x1b[Z"]),
+                { screen29, chip29, menu29, closed29, stayed29, closedAfter29, toast29, typed29 }
+            );
+
+            // 30. the context is a ring with its percent: the fixture's 42 reads 42% (title Context 42%), with no words
+            await AC.setRoster(h, acRoster(ctx, { usage: { contextpct: 42 } }));
+            const ringUp = await polishWaitFor(h, `${acLayer(A)}?.querySelector("[data-chat-context]")?.getAttribute("data-chat-context") === "42"`, 5000);
+            const ring30 = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.querySelector("[data-chat-context]");
+                return { text: r?.textContent.trim() ?? null, title: r?.getAttribute("title") ?? null, svg: r?.querySelectorAll("svg circle").length ?? 0, ctxWord: /ctx/i.test(${acLayer(A)}?.querySelector("[data-chat-footer]")?.textContent ?? "") };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-30-context.png");
+            rec(
+                "30. the context shows as a ring (two circles) with its percent, 42%, titled Context 42%, and no ctx words",
+                ringUp && ring30.text === "42%" && ring30.title === "Context 42%" && ring30.svg === 2 && ring30.ctxWord === false,
+                { ringUp, ring30 }
+            );
+            await AC.setRoster(h, acRoster(ctx));
+
+            // 31. the agent's prose is a document column: no fill behind it, no avatar beside it, flush with the conversation's edge
+            const prose31 = await h.ev(`(() => {
+                const layer = ${acLayer(A)};
+                const conv = layer?.querySelector("[data-chat-conversation]")?.getBoundingClientRect();
+                const proses = [...(layer?.querySelectorAll("[data-chat-prose]") ?? [])];
+                const bgs = proses.map((p) => getComputedStyle(p).backgroundColor);
+                return {
+                    count: proses.length,
+                    bgs: [...new Set(bgs)],
+                    transparent: bgs.every((c) => c === "rgba(0, 0, 0, 0)" || c === "transparent"),
+                    avatars: layer?.querySelectorAll('[data-chat-agent] > [aria-hidden="true"]').length ?? -1,
+                    flush: !!conv && proses.every((p) => Math.abs(p.getBoundingClientRect().left - conv.left) <= 1),
+                };
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-prose]")?.scrollIntoView({ block: "center" })`);
+            await polishNap(250);
+            await h.shot("cdp-shots/agent-chat-31-prose.png");
+            rec(
+                "31. the agent's prose has no fill behind it, no avatar beside it, and starts at the conversation's left edge",
+                prose31.count >= 2 && prose31.transparent && prose31.avatars === 0 && prose31.flush,
+                prose31
+            );
+
+            // 32. an asleep Claude agent woken: the box is the same element (a marker set while it slept is still on it), no longer the
+            // sleeping composer, with the attach and the model chip folded in and the Asleep note gone
+            await showAgent(F);
+            const sleepingUp32 = await polishWaitFor(h, `!!${acCell(F)}?.querySelector('[data-sleeping-composer="${F}"] [data-chat-asleep]')`, AC_WAIT_MS);
+            await h.ev(`${acCell(F)}?.querySelector('[data-sleeping-composer="${F}"]')?.setAttribute("data-verify-mark", "woken")`);
+            await AC.setRoster(h, acRoster(ctx, {}, { asleep: { sleeping: undefined } }));
+            const woke32 = await polishWaitFor(
+                h,
+                `(() => {
+                    const el = document.querySelector('[data-verify-mark="woken"]');
+                    return !!el && !el.hasAttribute("data-sleeping-composer") && !!el.querySelector("[data-chat-attach]") && !!el.querySelector("[data-chat-model]") && !el.querySelector("[data-chat-asleep]");
+                })()`,
+                5000
+            );
+            const screen32 = await acWriteScreen(h, ctx.tabs.asleep.blockId, AC_SCREENS.mode3);
+            const mode32 = screen32?.ok === true ? await polishWaitFor(h, `!!document.querySelector('[data-verify-mark="woken"] button[data-chat-mode="plan"]')`, 6000) : null;
+            const woken32 = await h.ev(`(() => {
+                const el = document.querySelector('[data-verify-mark="woken"]');
+                const pane = el?.closest("[data-agent-chat]");
+                return {
+                    same: !!el,
+                    sleepingAttr: el?.hasAttribute("data-sleeping-composer") ?? null,
+                    paneSleeping: pane?.hasAttribute("data-sleeping-transcript") ?? null,
+                    paneIsF: pane?.getAttribute("data-agent-chat") === ${JSON.stringify(F)},
+                    attach: !!el?.querySelector("[data-chat-attach]"),
+                    model: !!el?.querySelector("[data-chat-model]"),
+                    label: !!el?.querySelector("[data-chat-model-label]"),
+                    asleepNote: !!el?.querySelector("[data-chat-asleep]"),
+                    modeChip: !!el?.querySelector("button[data-chat-mode]"),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-32-woken.png");
+            await AC.setRoster(h, acRoster(ctx));
+            const slept32 = await polishWaitFor(h, `!!document.querySelector('[data-verify-mark="woken"][data-sleeping-composer="${F}"] [data-chat-asleep]')`, 5000);
+            await h.ev(`document.querySelector('[data-verify-mark="woken"]')?.removeAttribute("data-verify-mark")`);
+            rec(
+                "32. waking the asleep agent keeps the same message box element (no longer the sleeping composer) with the attach and the model chip in, no model label and no Asleep note, the pane no longer a sleeping cover and the mode chip back once the terminal shows a mode; sleeping it again puts the wake box back on the same element",
+                sleepingUp32 && woke32 && woken32.same && woken32.sleepingAttr === false && woken32.paneSleeping === false && woken32.paneIsF &&
+                    woken32.attach && woken32.model && !woken32.label && !woken32.asleepNote && (mode32 === null || (mode32 && woken32.modeChip)) && slept32,
+                { sleepingUp32, woke32, screen32, mode32, woken32, slept32 }
+            );
+
+            // 33. the transitions: the header's view control has one sliding fill, which moves from the Chat option to the Terminal one
+            // when Terminal is picked (mid-travel ~80 ms in, settled by ~500 ms); the chat layer leaves with pointer events off and
+            // focus already in the xterm; the grid bar's switch slides the same way in a split
+            const flip33 = (group, label, exit) => `(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const grp = ${group};
+                const button = (l) => [...(grp?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === l);
+                const fills = () => [...(grp?.querySelectorAll("[data-slide-fill]") ?? [])];
+                const where = () => fills().map((f) => f.closest("button")?.textContent.trim());
+                const rectOf = (el) => {
+                    const r = el?.getBoundingClientRect();
+                    return r ? { left: r.left, width: r.width } : null;
+                };
+                const target = button(${JSON.stringify(label)});
+                if (!grp || !target) return { ok: false, why: "no control or option" };
+                const out = { ok: true, start: where(), leaving: false, wrapperNone: false, focusInXterm: false, wrapperPe: [] };
+                const t0 = performance.now();
+                target.click();
+                await wait(0);
+                out.first = where();
+                let r80 = null;
+                while (performance.now() - t0 < 520) {
+                    if (${exit}) {
+                        const layer = ${acLayer(A)};
+                        if (layer?.hasAttribute("data-chat-leaving")) {
+                            out.leaving = true;
+                            const pe = getComputedStyle(layer.parentElement).pointerEvents;
+                            if (!out.wrapperPe.includes(pe)) out.wrapperPe.push(pe);
+                            if (pe === "none") out.wrapperNone = true;
+                            const a = document.activeElement;
+                            if (a?.closest?.(".xterm") && a.closest("[data-agent-terminal]")?.getAttribute("data-agent-terminal") === ${JSON.stringify(A)}) out.focusInXterm = true;
+                        }
+                    }
+                    if (r80 == null && performance.now() - t0 >= 80) {
+                        r80 = rectOf(fills()[0]);
+                        out.at80 = where();
+                    }
+                    await wait(10);
+                }
+                out.r80 = r80;
+                out.settled = rectOf(fills()[0]);
+                out.end = where();
+                out.count = fills().length;
+                out.moved = !!r80 && !!out.settled && (Math.abs(r80.left - out.settled.left) > 1 || Math.abs(r80.width - out.settled.width) > 1);
+                return out;
+            })()`;
+            const slid = (f, from, to) =>
+                f?.ok === true && JSON.stringify(f.start) === JSON.stringify([from]) && JSON.stringify(f.first) === JSON.stringify([to]) &&
+                JSON.stringify(f.at80) === JSON.stringify([to]) && JSON.stringify(f.end) === JSON.stringify([to]) && f.count === 1 && f.moved;
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat"); window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await polishNap(500);
+            const head33 = await h.ev(`(() => { const g = ${acHeaderGroup}; return [...(g?.querySelectorAll("[data-slide-fill]") ?? [])].map((f) => f.closest("button")?.textContent.trim()); })()`);
+            const toTerm = await h.ev(flip33(acHeaderGroup, "Terminal", true)).catch((e) => ({ ok: false, why: String(e?.message ?? e) }));
+            const gone33 = await polishWaitFor(h, `!${acLayer(A)}`, 3000);
+            const focus33 = await acFocusIn(h, A);
+            await h.shot("cdp-shots/agent-chat-33-transitions-terminal.png");
+            await acHeaderClick(h, "Chat");
+            const back33 = await polishWaitFor(h, `!!${acLayer(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false && document.activeElement === ${acBox(A)}`, 3000);
+            // a shot while the layer is leaving
+            await acHeaderClick(h, "Terminal");
+            await h.shot("cdp-shots/agent-chat-33-transitions-exit.png");
+            await polishWaitFor(h, `!${acLayer(A)}`, 3000);
+            await acHeaderClick(h, "Chat");
+            await polishWaitFor(h, `!!${acLayer(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, 3000);
+            rec(
+                "33a. the header's view control has one sliding fill, in the Chat option; picking Terminal puts the one fill in the Terminal option, and ~80 ms in it is mid-travel (its rect differs from the settled one)",
+                JSON.stringify(head33) === JSON.stringify(["Chat"]) && slid(toTerm, "Chat", "Terminal"),
+                { head33, toTerm }
+            );
+            rec(
+                "33b. while the chat layer leaves it takes no pointer events and focus is already in the cell's xterm; the layer is then gone, and picking Chat brings it back with focus in the box",
+                toTerm?.ok === true && toTerm.leaving && toTerm.wrapperNone && toTerm.focusInXterm && gone33 && focus33.xterm && back33,
+                { leaving: toTerm?.leaving, wrapperNone: toTerm?.wrapperNone, wrapperPe: toTerm?.wrapperPe, focusInXterm: toTerm?.focusInXterm, gone33, focus33, back33 }
+            );
+            // the same slide on the grid bar's switch in a split of A and B
+            const splitB = await AC.agentPage(
+                h,
+                `const G = await mod("app/view/agents/gridstore.ts");
+                return G.openInSplit(agentsModel(), ${JSON.stringify(B)});`
+            );
+            const barUp33 = await polishWaitFor(h, `!!${acLayer(A)} && !!${acLayer(B)} && !!document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')`, AC_WAIT_MS);
+            await polishNap(500);
+            const switchA = `document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')`;
+            const bar33 = await h.ev(`[...(${switchA}?.querySelectorAll("[data-slide-fill]") ?? [])].map((f) => f.closest("button")?.textContent.trim())`);
+            const barTerm = await h.ev(flip33(switchA, "Terminal", false)).catch((e) => ({ ok: false, why: String(e?.message ?? e) }));
+            await polishWaitFor(h, `!${acLayer(A)}`, 3000);
+            await h.shot("cdp-shots/agent-chat-33-transitions-split.png");
+            await h.ev(`[...(${switchA}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Chat")?.click()`);
+            await polishWaitFor(h, `!!${acLayer(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, 3000);
+            await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
+            await showAgent(A);
+            rec(
+                "33c. in a split the grid bar's switch has one fill in the Chat option, and picking Terminal slides it to the Terminal option the same way",
+                splitB === true && barUp33 && JSON.stringify(bar33) === JSON.stringify(["Chat"]) && slid(barTerm, "Chat", "Terminal"),
+                { splitB, barUp33, bar33, barTerm }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -43285,7 +43769,10 @@ const agentChat = {
                 return true;
             })()`)
         );
-        await step("remove the fixture transcripts", () => rmSync(ctx.dir, { recursive: true, force: true }));
+        // wavesrv's transcript watch can hold a fixture file for a moment after its agent is gone: EPERM until it lets go
+        await step("remove the fixture transcripts", () =>
+            rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
+        );
         // the run, its channel and trees, the temp repo and the reload onto the live roster
         if (ctx.cwd) {
             await teardownFixtureRun(h, ctx, "agent-chat");

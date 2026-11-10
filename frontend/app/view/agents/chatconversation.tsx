@@ -1,12 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A Claude agent's conversation as chat draws it (the agent-chat board, B-bubbles.dc.html): your messages as bubbles on
-// the right, a prompt arcterm typed (a run's launch prompt, a wake, a message from another agent) as an outlined card
-// naming who sent it, and everything the agent said and did between two of them behind one avatar: its prose as
-// Markdown in a bubble on the left, and outside the bubbles a stretch of tools as one plain "Worked for 38s · 5 tools"
-// line that opens to the tool lines, and the files that work edited as a chip each that opens its diff. The items are chatmodel.ts's; the pieces shared with the other
-// transcript views (a tool line, a diff, the compaction and interruption markers) are narrationtimeline.tsx's.
+// A Claude agent's conversation as chat draws it (the agent-chat document-view board, Main.dc.html): your messages as
+// bubbles on the right, a prompt arcterm typed (a run's launch prompt, a wake, a message from another agent) as an
+// outlined card naming who sent it, and everything the agent said and did between two of them as a document column: its
+// prose as Markdown with no bubble and no avatar, and between the paragraphs a stretch of tools as one plain "Worked for
+// 38s · 5 tools" line that opens to the tool lines, and the files that work edited as a chip each that opens its diff.
+// Your prompt pins to the top once it scrolls away (pinnedpromptbar.tsx), as in the live feed. The items are
+// chatmodel.ts's; the pieces shared with the other transcript views (a tool line, a diff, the compaction and
+// interruption markers) are narrationtimeline.tsx's.
 // Only the last CHAT_RENDER_STEP items are drawn at first; "Show earlier" draws that many more and, once all are drawn,
 // asks the caller for earlier entries. The place the reader left it is kept under `placeId` (transcriptplace.ts).
 
@@ -20,7 +22,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
-import { CouncilAvatar, CouncilText } from "./councilchat";
+import { CouncilText } from "./councilchat";
 import { splitAttachedImages } from "./launcherimages";
 import {
     CompactionDivider,
@@ -32,7 +34,7 @@ import {
     ToolLine,
     useNow,
 } from "./narrationtimeline";
-import { scrollParent } from "./pinnedpromptbar";
+import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
 
 /** A sent card shows this many of its lines until it is opened. */
@@ -74,7 +76,7 @@ function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "y
                 data-chat-you
                 data-chat-command
                 onContextMenu={onContextMenu(item.command)}
-                className="max-w-[70%] self-end rounded-lg bg-surface-raised px-[14px] py-[9px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]"
+                className="max-w-[75%] self-end rounded-[12px] bg-surface-raised px-[14px] py-[9px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]"
             >
                 {item.command}
             </div>
@@ -87,7 +89,7 @@ function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "y
             data-chat-you
             data-user-prompt
             onContextMenu={onContextMenu(item.text)}
-            className="group relative mb-1 max-w-[70%] self-end rounded-lg bg-surface-raised px-[14px] py-[9px] text-[13px] leading-[1.55] text-primary"
+            className="group relative mb-1 max-w-[75%] self-end rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary"
         >
             {said.text ? <PromptText text={said.text} /> : null}
             {item.images || said.paths.length > 0 ? <PromptImages images={item.images} paths={said.paths} /> : null}
@@ -105,7 +107,7 @@ function SentCard({ item }: { item: Extract<ChatItem, { kind: "sent" }> }) {
         <div
             data-chat-sent
             data-chat-from={item.from}
-            className="flex max-w-[70%] flex-col gap-[6px] self-end rounded-lg border border-edge-mid px-[14px] py-[9px]"
+            className="flex max-w-[75%] flex-col gap-[6px] self-end rounded-[12px] border border-edge-mid px-[14px] py-[9px]"
         >
             <div className="flex min-w-0 items-baseline gap-2 text-[12.5px]">
                 <span className="min-w-0 truncate font-medium text-primary">{item.header}</span>
@@ -319,6 +321,13 @@ export function ChatConversation({
     // a fold is kept by its item's key and its part's place in the item, so it stays with its item as entries arrive
     const [opened, setOpened] = useState<Set<string>>(new Set());
     const rootRef = useRef<HTMLDivElement>(null);
+    // your message pins to the top once it scrolls off it; `prompts` is the text of each data-user-prompt bubble, in
+    // document order (only YouBubble's prompt branch carries it, not the command bubble), which the bar shows for the
+    // pinned index
+    const pinned = usePinnedPrompt(rootRef);
+    const prompts = visible.flatMap((item) =>
+        item.kind === "you" && !("command" in item) ? [splitAttachedImages(item.text).text || "(picture)"] : []
+    );
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);
     const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
@@ -455,16 +464,17 @@ export function ChatConversation({
     ): ReactNode => {
         const key = `${item.key}#${p}`;
         switch (part.kind) {
-            // what the agent said: a bubble on the left, as yours is on the right; its tools and files sit outside it
+            // what the agent said: a document column, no bubble and no avatar (only your messages are bubbles); its tools
+            // and files sit between the paragraphs, and the copy button hangs in the gap under the text
             case "prose":
                 return (
                     <div
                         key={key}
                         data-chat-prose
                         onContextMenu={copyMenu(part.text)}
-                        className="group relative mb-3 min-w-0 max-w-full self-start rounded-lg bg-surface-raised px-[14px] py-[9px]"
+                        className="group relative mb-3 min-w-0 max-w-full self-stretch"
                     >
-                        <CouncilText text={part.text} className="text-[13px] leading-[1.6] text-primary" />
+                        <CouncilText text={part.text} className="text-[14px] leading-[1.65] text-ink-hi" />
                         <BubbleCopy text={part.text} align="left" />
                     </div>
                 );
@@ -502,17 +512,8 @@ export function ChatConversation({
                 return <SentCard item={item} />;
             case "agent":
                 return (
-                    <div data-chat-agent className="flex items-start gap-[10px]">
-                        <CouncilAvatar
-                            tone="muted"
-                            name="Claude"
-                            initials="C"
-                            aria-hidden="true"
-                            className="h-[26px] w-[26px] border border-edge-mid bg-surface-raised text-[11px] font-semibold text-ink-hi"
-                        />
-                        <div className="flex min-w-0 flex-1 flex-col gap-2 pt-[3px]">
-                            {item.parts.map((part, p) => drawPart(item, part, p, last))}
-                        </div>
+                    <div data-chat-agent className="flex min-w-0 flex-col gap-2">
+                        {item.parts.map((part, p) => drawPart(item, part, p, last))}
                     </div>
                 );
             case "marker":
@@ -526,6 +527,14 @@ export function ChatConversation({
             data-chat-conversation
             className={cn("mx-auto flex w-full max-w-[760px] flex-col gap-4 pb-2 pt-4 leading-relaxed", className)}
         >
+            {/* the sticky row is a flex child of a gap-4 column: -mb-4 cancels the gap its zero-height row would add */}
+            <PinnedPromptBar
+                rootRef={rootRef}
+                index={pinned}
+                text={prompts[pinned]}
+                bg="bg-background"
+                className="-mb-4"
+            />
             {hidden > 0 || onLoadEarlier != null ? (
                 <button
                     type="button"
