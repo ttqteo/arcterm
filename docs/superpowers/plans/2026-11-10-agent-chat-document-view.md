@@ -145,7 +145,7 @@ frontend/app/view/agents/chatconversation.tsx frontend/app/view/agents/pinnedpro
 
 ### Task 3: The composer's chips: model, mode, context ring, attach, and their folds
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (folds the composer's parts with the `foldX` variant it adds)
 
 **Files:** `frontend/app/view/agents/chatfootermodel.ts`, `frontend/app/view/agents/chatfootermodel.test.ts`, `frontend/app/view/agents/chatfooter.tsx`, `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/attachmenttray.tsx`
 
@@ -340,7 +340,7 @@ frontend/app/view/agents/attachmenttray.tsx`
 
 ### Task 4: One chat for awake and asleep, and the transitions around it
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (fades the chat layer with the `layerFade` variant it adds)
 
 **Files:** `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/agents/sleepingtranscript.tsx`, `frontend/app/element/segmented.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/chatswitch.tsx`, `frontend/app/view/agents/gridcellbar.tsx`
 
