@@ -40,6 +40,56 @@ export function decodePathsDrag(data: string): string[] | null {
     return parsed;
 }
 
+// a Windows drive path (D:\ or D:/), a UNC share (\\server\share) or a POSIX absolute path
+const ABSOLUTE_PATH = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]|\/)/;
+
+// file:///D:/a%20b.pdf → D:/a b.pdf, file:///home/me/n.md → /home/me/n.md; null for another scheme or a bad escape
+function fileUriPath(uri: string): string | null {
+    if (!uri.toLowerCase().startsWith("file://")) {
+        return null;
+    }
+    try {
+        const path = decodeURIComponent(uri.slice("file://".length).replace(/^localhost(?=\/)/i, ""));
+        return /^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path;
+    } catch {
+        return null;
+    }
+}
+
+// The files a drag names by path, for a text box that attaches them in place: arcterm's own tree (RAIL_PATHS_MIME),
+// file URIs (text/uri-list, which VS Code and file managers set), or plain text whose every line is one absolute path,
+// quotes stripped ("Copy as path", Obsidian). Null when the drag holds real files (the box copies those) or names no
+// path, so a drop of ordinary text still lands as text. `get` is DataTransfer.getData, readable only during the drop.
+export function pathsFromDrop(types: readonly string[], get: (type: string) => string): string[] | null {
+    if (types.includes("Files")) {
+        return null;
+    }
+    if (isPathsDrag(types)) {
+        return decodePathsDrag(get(RAIL_PATHS_MIME));
+    }
+    if (types.includes("text/uri-list")) {
+        const paths = get("text/uri-list")
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l !== "" && !l.startsWith("#"))
+            .map(fileUriPath)
+            .filter((p): p is string => p != null && p !== "");
+        if (paths.length > 0) {
+            return paths;
+        }
+    }
+    if (types.includes("text/plain")) {
+        const lines = get("text/plain")
+            .split(/\r?\n/)
+            .map((l) => l.trim().replace(/^"(.*)"$/, "$1"))
+            .filter((l) => l !== "");
+        if (lines.length > 0 && lines.every((l) => ABSOLUTE_PATH.test(l) && !/\s{2,}|\t/.test(l))) {
+            return lines;
+        }
+    }
+    return null;
+}
+
 // A directory arrives with a trailing separator and keeps one, as "/", so the terminal text shows it is one.
 function dropPathText(path: string, cwd: string | null): string {
     const isDir = /[\\/]$/.test(path);

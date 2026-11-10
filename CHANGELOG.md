@@ -60,6 +60,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A file dragged onto Chat's message box from arcterm's file tree, VS Code or Obsidian is attached, as one dragged
+  from Explorer is, instead of landing as its path in plain text.
 - A subagent an agent starts while a Token burn card is already up waits for your answer on that card, instead of
   starting unasked after 10 seconds.
 - A tool that is still running shows as running in Chat, with a spinner and how long it has run, instead of as done.

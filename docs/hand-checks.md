@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Drag a file into Chat's message box from each source → an attachment chip, no path text in the box:
+  a file row of arcterm's Worktree files tree, a file from VS Code's explorer, one from Obsidian, and (as before) one
+  from Explorer; dragging ordinary text (a sentence from a page) still drops it as text. Unit tests only
+  (`pathdrop.ts` `pathsFromDrop`, `chatcomposer.tsx` `onDrop`); no dev app was running to try the drop.
 - [ ] (arcterm) Alt+C tooltip on a sleeping Claude agent: hover the Alt+C key cap in the header of a sleeping Claude
   agent → with a canvas and a review open it reads "Switch Canvas and Review, …" (no Chat or Terminal, which the key
   skips while asleep); with neither open it reads "Switches the view once the agent wakes". Awake, it still lists
