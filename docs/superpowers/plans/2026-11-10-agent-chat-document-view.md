@@ -1,8 +1,8 @@
 # Agent chat: document view, composer chips, transitions
 
-**Verify:** `node scripts/verify.mjs`
+**Verify:** `node scripts/verify.mjs ./pkg/wshrpc/...`
 **Check:** `task check:ts`
-**Final:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep`
+**Final:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep launcher-resume`
 **Prototype:** D:/work/arcterm/.superpowers/design/agent-chat-doc/project/
 
 The prototype is the spec: read all three boards before starting (`Main.dc.html` live, `Sleeping.dc.html` asleep,
@@ -37,8 +37,8 @@ Decisions made beyond the boards (the lead's calls, each with why):
 - **Picking a mode presses Shift+Tab and re-reads**, at most 6 presses and 12 reads, 250 ms apart, stopping when
   `tuiMode` reads the target, or when a mode seen earlier comes back (the target is not in this session's cycle:
   Bypass appears only when enabled). A read equal to the one before it means the TUI has not redrawn yet: read again
-  without pressing. A read that finds no footer pushes nothing; the press count, not the reads, caps the presses. The
-  order of the cycle is not assumed.
+  without pressing. A read that finds no footer (a permission dialog or a menu covers it) stops the loop with a toast
+  and presses nothing more: Shift+Tab under a permission dialog answers it. The order of the cycle is not assumed.
 - **Asleep, the model is a label, not a menu.** Wake takes no model today; changing it is done once awake.
 - **Sleeping and Chat are one pane** (the person's call). Today `agentsurface.tsx:833-837` swaps a
   `SleepingTranscript` overlay (which, for a Claude agent, already draws `ChatConversation` + `ChatComposer`) for
@@ -188,9 +188,13 @@ describe("modeStep", () => {
     it("gives up when an earlier mode comes back before the target", () => {
         expect(modeStep(["default", "acceptEdits", "plan", "default"], "bypassPermissions", 3, 4)).toBe("give-up");
     });
-    it("caps the presses even when no read finds the footer", () => {
-        expect(modeStep([], "plan", 5, 5)).toBe("press");
-        expect(modeStep([], "plan", 6, 6)).toBe("give-up");
+    it("stops without pressing when a read finds no footer", () => {
+        expect(modeStep([null], "plan", 0, 1)).toBe("no-footer");
+        expect(modeStep(["default", null], "plan", 1, 2)).toBe("no-footer");
+    });
+    it("caps the presses", () => {
+        expect(modeStep(["default", "acceptEdits"], "plan", 5, 6)).toBe("press");
+        expect(modeStep(["default", "acceptEdits"], "plan", 6, 7)).toBe("give-up");
     });
     it("caps the reads when the screen never redraws", () => {
         expect(modeStep(["default", "default"], "plan", 1, 12)).toBe("give-up");
@@ -244,18 +248,21 @@ const MODE_PRESSES_MAX = 6;
 const MODE_READS_MAX = 12;
 
 /**
- * What to do next while pressing Shift+Tab toward `target`. `seen` is each mode a read found (a read with no footer
- * adds nothing), the first before any press; `presses` the Shift+Tabs sent; `reads` every read made.
+ * What to do next while pressing Shift+Tab toward `target`. `seen` is what each read found, the first before any
+ * press, null for a read with no footer; `presses` the Shift+Tabs sent; `reads` every read made.
  */
 export function modeStep(
-    seen: ClaudeMode[],
+    seen: (ClaudeMode | null)[],
     target: ClaudeMode,
     presses: number,
     reads: number
-): "done" | "press" | "wait" | "give-up" {
+): "done" | "press" | "wait" | "give-up" | "no-footer" {
     const last = seen[seen.length - 1];
     if (last === target) {
         return "done";
+    }
+    if (last == null) {
+        return "no-footer"; // a dialog or menu covers it, and Shift+Tab there would answer it
     }
     if (presses >= MODE_PRESSES_MAX || reads >= MODE_READS_MAX) {
         return "give-up";
@@ -263,7 +270,7 @@ export function modeStep(
     if (seen.length >= 2 && last === seen[seen.length - 2]) {
         return "wait"; // the TUI has not redrawn since the press
     }
-    if (last != null && seen.indexOf(last) < seen.length - 1) {
+    if (seen.indexOf(last) < seen.length - 1) {
         return "give-up"; // an earlier mode came back: the target is not in this session's cycle
     }
     return "press";
@@ -295,10 +302,11 @@ attach button the composer already places (`chatcomposer.tsx:306-308` puts `<Cha
   `ChevronUp`. Its menu (`role="menu"`): a "Permission mode" caption, a `menuitemradio` row per `MODE_CHOICES` (label
   from `modeLabel`, its note under it in `text-muted`, a check on the current mode), and "Shift+Tab in the box cycles
   them too" in `text-ink-faint`. Picking runs the loop: read once (`readTermLines` + `tuiMode`; `reads = 1`, push the
-  mode if a footer was found), then until `modeStep(seen, target, presses, reads)` is `"done"` or `"give-up"`: on
-  `"press"` send Shift+Tab and `presses++`; on `"wait"` send nothing; then wait 250 ms, read (`reads++`), push the
-  mode if found. On `"give-up"` push a toast (`pushToast` from `@/app/cockpit/notificationstore`, as
-  `chatcomposer.tsx` uses it): "Claude Code did not offer <label> in this session". Stop the loop if the component
+  mode, or null when no footer was found), then while `modeStep(seen, target, presses, reads)` is `"press"` or
+  `"wait"`: on `"press"` send Shift+Tab and `presses++`; on `"wait"` send nothing; then wait 250 ms, read (`reads++`),
+  push the mode or null. On `"give-up"` push a toast (`pushToast` from `@/app/cockpit/notificationstore`, as
+  `chatcomposer.tsx` uses it): "Claude Code did not offer <label> in this session"; on `"no-footer"` the toast "Claude
+  Code's mode line is covered: answer what it shows, then pick again". Stop the loop if the component
   unmounts or the agent falls asleep. The old click-to-cycle is gone: the chip now opens the menu. Keep
   `data-chat-mode` on the chip (the `agent-chat` scenario reads it).
 - **Spacer**, then the **context ring** at the right (`data-chat-context`): a 14px SVG ring (track `stroke-edge-
@@ -322,10 +330,12 @@ the attach button, the mode chip and the "Asleep" word (a `Moon` 13px + "Asleep"
 asleep only, `data-chat-asleep`) enter and leave inside `AnimatePresence initial={false}`, each wrapped in a
 `motion.span` (or `div`) with Task 1's `foldX` variants and `overflow-hidden` while it moves. The model chip turns
 into the label in place (`microFade` crossfade). The Send button (`data-chat-send`, in `chatcomposer.tsx`) animates
-its width between the 30px arrow and its word ("Send", "Waking…"), the arrow and the word crossfading (a CSS
-`transition` on width with `easeFluidCss` and `MOTION.durMicro` from `motiontokens.ts`, plus
-`motion-reduce:transition-none`). Today `chatcomposer.tsx:307` drops the attach button with `asleep ? null :`; it
-becomes the presence-wrapped fold. Reduced motion snaps all of it.
+its width between fixed widths, as the board draws them: 30px for the arrow (live), 58px for "Send" and 78px for
+"Waking…" (asleep), the arrow and the word crossfading (a CSS `transition` on width with `easeFluidCss` and
+`MOTION.durMicro` from `motiontokens.ts`, plus `motion-reduce:transition-none`; CSS cannot transition to `auto`, so
+the widths are explicit). Today `chatcomposer.tsx:307` drops the attach button with `asleep ? null :`; it becomes the
+presence-wrapped fold. Reduced motion snaps all of it: the app root has no `MotionConfig`, so wrap the composer's
+folding row in `MotionConfig reducedMotion="user"` as `collapsiblerail.tsx:215` does.
 
 **Step 8:** `npx vitest run frontend/app/view/agents/chatfootermodel.test.ts` → PASS; `npx eslint` and
 `npx prettier --check` on the five files → clean.
@@ -369,10 +379,13 @@ place under `sleeping:<id>:<since>`.
   `ChatSwitch` only when `agent.sleeping == null`, and `agentheader.tsx:419`'s `chatShown` requires it, so the header
   drops Chat. Make both draw it for every `chatCapable` agent: `gridcellbar.tsx` passes the agent as before and
   `ChatSwitch` reads `agent.sleeping` itself; in `agentheader.tsx` `chatShown` is `chatCapable(agent)` and, while the
-  agent sleeps, `shownView` is the chat option (the pane shows whatever the stored mode). Asleep, both controls are
-  disabled (each button `disabled`, `cursor-default`), dimmed (`opacity-40` on the control) and titled "Wake the agent
-  to show its terminal", with Chat selected; `Segmented` gets an optional `disabled?: boolean` for this (without it,
-  it draws as today). Each carries `data-chat-view-asleep` while dimmed, for the scenario.
+  agent sleeps, `shownView` is the chat option (the pane shows whatever the stored mode). Asleep, only the Chat and
+  Terminal options are disabled: in `ChatSwitch` (which has only those two) the whole control is `opacity-40`, its
+  buttons `disabled`, `cursor-default`; in the header, `Segmented` gets an optional per-option `disabled?: boolean`
+  (each disabled option `disabled`, `opacity-40`, `cursor-default`, its own `title`; options without it draw as
+  today), so a sleeping agent's Canvas, Review or Brainstorm option stays usable. Both disabled options are titled
+  "Wake the agent to show its terminal", with Chat selected. The dimmed `ChatSwitch` root and each dimmed header
+  option carry `data-chat-view-asleep`, for the scenario.
 - `PendingBubble` (`chatpane.tsx:38-49`) matches Task 2's `YouBubble`: `max-w-[75%]`, `rounded-[12px]`,
   `text-[13.5px]`, keeping its `opacity-60` and its Sending… / Queued line.
 
@@ -396,7 +409,8 @@ return (
 wrapper's opacity still applies to it. Leaving Chat keeps the pane mounted for the exit (`durExit`); the terminal under
 it must take keys and clicks at once: the exit sets `pointer-events: none` on the wrapper, which `pointer-events` on
 `ChatPane`'s own root would override, so check `ChatPane`'s root sets none (or give the wrapper's child
-`pointer-events: inherit` while exiting via `useIsPresent`). Focus must not stay in the fading box: the existing
+`pointer-events: inherit` while exiting via `useIsPresent`). Wrap the `AnimatePresence` in `MotionConfig
+reducedMotion="user"` (the app root has none), so reduced motion snaps the fade. Focus must not stay in the fading box: the existing
 switch already moves focus to the xterm; keep it so.
 
 **Step 2: Sleep and wake keep the pane.** With Step 0 a Claude agent's chat stays mounted through a sleep and a wake
@@ -420,7 +434,7 @@ pressed button. Reduced motion must snap both: the app root has no `MotionConfig
 over the terminal, the view control's fill slides" -- <paths>`
 
 **Acceptance (Task 5 adds or changes the steps):** `agent-chat-6`, `agent-chat-14-asleep`, `agent-chat-32-woken`,
-`agent-chat-33-transitions`, and `agent-sleep` steps 2 and 4b.
+`agent-chat-33-transitions`, `agent-sleep` steps 2 and 4b, and `launcher-resume` step 6b.
 
 ### Task 5: Scenario steps, changelog, hand checks
 
@@ -432,7 +446,7 @@ over the terminal, the view control's fill slides" -- <paths>`
 `agent-sleep` scenario, from line ~41703.)
 
 **Step 1: Fix what the new look breaks.** Run both scenarios against the merged tree the way Final does
-(`node scripts/cdp/final-verify.mjs agent-chat agent-sleep`) and read each failed assert. Expect:
+(`node scripts/cdp/final-verify.mjs agent-chat agent-sleep launcher-resume`) and read each failed assert. Expect:
 - `agent-chat-1-bubbles`: asserts on the prose bubble's look or on an avatar.
 - `agent-chat-24-footer`: model · ctx words and the mode chip's click-to-cycle.
 - `agent-chat-14-asleep`: `send` reads the box's first `button`, which is now the folded attach or a chip; read
@@ -442,6 +456,9 @@ over the terminal, the view control's fill slides" -- <paths>`
 - `agent-sleep` step 2: the sleeping cell is now `ChatPane`, which with no transcript reads "No messages yet", not
   "No transcript found"; assert the new words and that the cover carries `data-agent-chat` too.
 - `agent-sleep` step 4b: reads `[data-sleeping-composer] button` for "Waking…"; read `[data-chat-send]` inside it.
+- `launcher-resume` step 6b (`scenarios.mjs:~26280`): reads the sleeping cover (`data-sleeping-transcript`, its
+  `[data-chat-you]` bubble, the `data-sleeping-composer` placeholder) that Task 4 moves onto `ChatPane`; it should
+  still pass, so fix only what fails.
 Change the asserts to the new facts; keep each step's screenshot name.
 
 **Step 2: Add a step per new view**, each with its shot (all unconditional):
@@ -450,28 +467,38 @@ Change the asserts to the new facts; keep each step's screenshot name.
   `getBoundingClientRect().top` minus the scroller's `scrollTop` before and after); click it → the prompt bubble is
   back in view.
 - `agent-chat-28-model-menu`: click `[data-chat-model]` → a `role=menu` with three `menuitemradio` rows, one
-  `aria-checked="true"`; Escape closes it. Do not pick (that types into the fixture's terminal).
-- `agent-chat-29-mode-menu`: click the mode chip → four rows with their notes, the current one checked; Escape.
+  `aria-checked="true"`; Escape closes it. Open it again and pick Sonnet → the scenario's mock records a
+  `controllerinput` (`scenarios.mjs:~42255`) whose data is `/model sonnet` for A's block, and the menu closes.
+- `agent-chat-29-mode-menu`: click the mode chip → four rows with their notes, the current one checked; Escape. Open
+  it again and pick a mode other than the current one (Accept edits, or Plan if that is current): the fixture's
+  screen never redraws, so the mock records exactly one Shift+Tab (`[Z`) `controllerinput`, then within ~4 s a
+  toast reads "did not offer".
 - `agent-chat-30-context`: `[data-chat-context]` shows the fixture's percent (seed `usage.contextpct` the way the
   footer step does, if it does not already).
 - In `agent-chat-14-asleep`, assert `[data-chat-model-label]` and `[data-chat-asleep]` show, no `[data-chat-mode]`
   and no `[data-chat-attach]` are in the box, the root carries both `data-agent-chat` and `data-sleeping-transcript`
-  (one pane), and the cell bar's `ChatSwitch` shows with `data-chat-view-asleep`, its buttons disabled and its
-  computed opacity about 0.4.
+  (one pane), and the header's view control (`acHeader`) shows Chat selected with its Chat and Terminal options
+  carrying `data-chat-view-asleep`, disabled, computed opacity about 0.4. A single cell draws no `GridCellBar`
+  (`agentsurface.tsx`: only with a split), so check `ChatSwitch` asleep inside a split: `G.openInSplit` F beside A
+  (as `scenarios.mjs:~42686` does), assert F's cell bar `ChatSwitch` carries `data-chat-view-asleep` with its buttons
+  disabled, then `G.endSplit`.
 - `agent-chat-32-woken`: set a marker attribute on F's `[data-sleeping-composer]` element, then call
   `AC.setRoster(h, …)` with F's `sleeping` cleared (give `acRoster` a per-row patch option if it has none) → the same
   element (marker still on it) no longer carries `data-sleeping-composer` and shows the mode chip once a mode is read
   (or at least `[data-chat-attach]` and `[data-chat-model]`), and `[data-chat-asleep]` is gone. Restore the roster
   after.
-- `agent-chat-33-transitions` (`Transitions.dc.html`): on the awake agent A in Chat, read the `[data-slide-fill]`
-  element in the header's view control and in `ChatSwitch`; pick Terminal → the same fill element (compare a marker
-  attribute) now sits in the Terminal option; within the exit (poll at once after the click) the exiting
-  `[data-agent-chat]` layer's wrapper computes `pointer-events: none`, and `document.activeElement` is inside the
-  cell's `.xterm`; pick Chat again and wait for the layer. Shot mid-exit and after.
+- `agent-chat-33-transitions` (`Transitions.dc.html`): on the awake agent A in Chat (no split), the header's view
+  control has one `[data-slide-fill]`, inside the Chat option. Pick Terminal (`acHeaderClick`) → at once there is one
+  `[data-slide-fill]`, inside the Terminal option (framer mounts a new node there, so compare places, not elements),
+  and its rect read ~80 ms after the click differs from its rect once settled (~500 ms): it slid. Within the exit
+  (poll at once after the click) the exiting `[data-agent-chat]` layer's wrapper computes `pointer-events: none`, and
+  `document.activeElement` is inside the cell's `.xterm`. Pick Chat again and wait for the layer. Then the same slide
+  check on `ChatSwitch` inside a split (`G.openInSplit` B beside A, pick Terminal on A's cell bar, back to Chat,
+  `G.endSplit`). Shot mid-exit and after.
 - `agent-chat-31-prose`: `[data-chat-prose]` has no background fill (computed `background-color` is transparent) and
   no `[data-chat-agent] [aria-hidden="true"]` avatar.
 
-**Step 3:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep` → every step PASS.
+**Step 3:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep launcher-resume` → every step PASS.
 
 **Step 4: Changelog** (`CHANGELOG.md`, top section `Unreleased`, under `Changed`; read the file's header first):
 
@@ -486,8 +513,7 @@ Change the asserts to the new facts; keep each step's screenshot name.
 ```
 
 **Step 5: Hand checks** (`docs/hand-checks.md`, at the top of the list, `(arcterm)` titles): picking a model from the
-chip switches Claude Code's model (its footer shows it); picking each mode lands on it, and a mode not in the cycle
-gives the toast; Sleep then Wake a Claude agent in Chat → the conversation never blinks, the chips fold out and back
+chip switches Claude Code's model (its footer shows it); picking each mode lands on it in a real session; Sleep then Wake a Claude agent in Chat → the conversation never blinks, the chips fold out and back
 in, Send shows "Waking…"; the chat fade and the slide play, and with the OS's reduce-motion on all of it snaps.
 
 **Step 6:** Commit: `git commit -m "test(chat): scenario steps for the document view, the chips and the pinned
