@@ -13,6 +13,7 @@
 import { cn } from "@/util/util";
 import { autoUpdate, flip, FloatingPortal, size as floatingSize, offset, shift, useFloating } from "@floating-ui/react";
 import { Fragment, useEffect, useRef, type ReactNode, type RefObject } from "react";
+import type { EditorLike } from "./chateditor";
 
 const LIST_MIN_WIDTH = 360;
 const LIST_MAX_WIDTH = 560;
@@ -22,8 +23,10 @@ const SCROLL_PAD = 5;
 
 /** The floating setup of a picker's list: anchored to the box itself, so the list starts under the text and follows the
  *  box as it grows. `shown` mounts it. `wide` lets it take the whole width of the box (no 560 px cap) and publishes the
- *  room the side has as `--mention-avail`, which a grouped list's 420 px cap is `min`'d with. */
-export function usePickerFloating(shown: boolean, anchor: RefObject<HTMLTextAreaElement | null>, wide = false) {
+ *  room the side has as `--mention-avail`, which a grouped list's 420 px cap is `min`'d with. The anchor is a text box
+ *  (a textarea) or the chat editor's handle, which floating-ui takes as a virtual element: its `contextElement` is the
+ *  editable root, so the list still follows the box when it grows or scrolls. */
+export function usePickerFloating(shown: boolean, anchor: RefObject<EditorLike | null>, wide = false) {
     const { refs, floatingStyles } = useFloating({
         open: shown,
         placement: "bottom-start",
@@ -86,7 +89,7 @@ export function PickerList<T>({
     footer,
     listAttrs,
 }: {
-    anchor: RefObject<HTMLTextAreaElement | null>;
+    anchor: RefObject<EditorLike | null>;
     shown: boolean;
     note: string | null;
     items: T[];
@@ -138,7 +141,9 @@ export function PickerList<T>({
     }
     const rows =
         note != null ? (
-            <li className="px-2 py-[5px] text-[12px] text-muted">{note}</li>
+            <li data-picker-note="" className="px-2 py-[5px] text-[12px] text-muted">
+                {note}
+            </li>
         ) : (
             items.map((item, i) => {
                 const group = groups?.find((g) => g.start === i);

@@ -11,7 +11,8 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { useEffect, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import type { EditorLike, KeyLike } from "./chateditor";
 import { PickerList, type PickerGroup } from "./pickerlist";
 import {
     BUILTIN_COMMANDS,
@@ -31,8 +32,8 @@ export interface SlashMenuState {
     commands: SlashCommand[];
     // the list is on screen (a `/` word with at least one match)
     shown: boolean;
-    onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
-    onCaret: (el: HTMLTextAreaElement) => void;
+    onKeyDown: (e: KeyLike) => void;
+    onCaret: (el: EditorLike) => void;
 }
 
 // The list may name a command twice (a skill and a plugin command of one name); the rows are keyed by name and a pick
@@ -45,7 +46,8 @@ function firstOfEachName(list: SlashCommand[]): SlashCommand[] {
 // A query no command matches shows nothing, so a `/` meant as text never blocks Enter; a query that already names the
 // highlighted command lets Enter send it (Tab completes). `cwd` is where the agent works (project-level skills and
 // commands are read from there on the fallback), "" when unknown; `blockId` is the agent's terminal block, the key of its
-// live list. `off` keeps the menu closed (a recalled message sits in the box).
+// live list. `off` keeps the menu closed (a recalled message sits in the box). `setText` takes the caret a pick puts
+// the text's caret at, for a box that draws the text again (the chat editor places it as it does).
 export function useSlashMenu({
     text,
     setText,
@@ -55,10 +57,10 @@ export function useSlashMenu({
     off = false,
 }: {
     text: string;
-    setText: (text: string) => void;
+    setText: (text: string, caret?: number) => void;
     cwd: string;
     blockId?: string;
-    inputRef: RefObject<HTMLTextAreaElement | null>;
+    inputRef: RefObject<EditorLike | null>;
     off?: boolean;
 }): SlashMenuState {
     const [caret, setCaret] = useState(0);
@@ -111,7 +113,7 @@ export function useSlashMenu({
 
     const choose = (c: SlashCommand) => {
         const next = insertSlash(text, caret, c.name);
-        setText(next.text);
+        setText(next.text, next.caret);
         setCaret(next.caret);
         setPick(0);
         requestAnimationFrame(() => {
@@ -120,7 +122,7 @@ export function useSlashMenu({
         });
     };
     // the menu's keys stop here: the box's own handler would send on Enter
-    const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const onKeyDown = (e: KeyLike) => {
         if (!shown || e.nativeEvent.isComposing) {
             return;
         }
@@ -151,7 +153,7 @@ export function useSlashMenu({
     // a keystroke or a click that moves the caret starts the list from its best match again; ↑↓ do not, and neither does a
     // select event that finds the caret where it was (the first key after the box is focused raises one, which would send
     // a first ↓ back to the top once its key is up)
-    const onCaret = (el: HTMLTextAreaElement) => {
+    const onCaret = (el: EditorLike) => {
         if (el.selectionStart !== caret) {
             setCaret(el.selectionStart);
             setPick(0);

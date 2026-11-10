@@ -12,7 +12,8 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { makeConnRoute } from "@/util/util";
 import { File as FileGlyph, Folder } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { EditorLike, KeyLike } from "./chateditor";
 import {
     browseMatches,
     browseQuery,
@@ -29,8 +30,10 @@ import { PickerList } from "./pickerlist";
 export interface FileMentionState {
     // the dropdown under the box, portaled out of its container (it draws nothing while no list shows)
     list: ReactNode;
-    onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
-    onCaret: (el: HTMLTextAreaElement) => void;
+    // the list is on screen (rows, or a note while it is being read)
+    shown: boolean;
+    onKeyDown: (e: KeyLike) => void;
+    onCaret: (el: EditorLike) => void;
 }
 
 // a row of the list: a path of the project's own ranking, or an entry of the folder being walked (`key` is the text a
@@ -65,7 +68,9 @@ async function listDir(base: string, dir: string): Promise<BrowseEntry[]> {
 // ranks; "" turns that off. A path that starts at a root walks folders instead, from `filesRoot`, else from `cwd` (an
 // agent outside a registered project has a folder but no file list); with neither the picker is off. Each folder is
 // read once while the list is open. `name` tags the list for scenarios (`data-<name>-mentions`, an option
-// `data-<name>-mention`).
+// `data-<name>-mention`). `setText` takes the caret a pick puts the text's caret at, for a box that draws the text again
+// (the chat editor): a folder pick (`@../src/`) leaves the mention the caret ends, which stays text to keep walking
+// instead of becoming a pill.
 export function useFileMention({
     text: task,
     setText,
@@ -75,10 +80,10 @@ export function useFileMention({
     name,
 }: {
     text: string;
-    setText: (text: string) => void;
+    setText: (text: string, caret?: number) => void;
     filesRoot: string;
     cwd?: string;
-    inputRef: RefObject<HTMLTextAreaElement | null>;
+    inputRef: RefObject<EditorLike | null>;
     name: string;
 }): FileMentionState {
     const [caret, setCaret] = useState(0);
@@ -158,7 +163,7 @@ export function useFileMention({
             row.kind === "path"
                 ? insertFileMention(task, mention.start, caret, row.path)
                 : insertBrowsePick(task, mention.start, caret, browse.dir, row);
-        setText(next.text);
+        setText(next.text, next.caret);
         setCaret(next.caret);
         setPick(0);
         requestAnimationFrame(() => {
@@ -168,7 +173,7 @@ export function useFileMention({
     };
     // the picker's keys stop here: the box's own handler would send on Enter (the chat box, the launcher's dialog), and
     // the dialog's trap Tab and close on Escape
-    const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const onKeyDown = (e: KeyLike) => {
         if (!shown || e.nativeEvent.isComposing) {
             return;
         }
@@ -194,7 +199,7 @@ export function useFileMention({
     };
     // a keystroke or a click moves the caret and starts the list from its best match again; ↑↓ do not (the picker
     // takes them, so the caret stays)
-    const onCaret = (el: HTMLTextAreaElement) => {
+    const onCaret = (el: EditorLike) => {
         setCaret(el.selectionStart);
         setPick(0);
         if (fileMentionAt(el.value, el.selectionStart) == null) {
@@ -241,5 +246,5 @@ export function useFileMention({
             }}
         />
     );
-    return { list, onKeyDown, onCaret };
+    return { list, shown, onKeyDown, onCaret };
 }

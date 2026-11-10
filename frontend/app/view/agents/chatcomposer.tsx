@@ -10,6 +10,11 @@
 // as a picture; Ctrl+U, Cmd+U on a Mac, opens the file dialog), the `/` command menu (slashmenu.tsx) and the `@` file
 // picker (filemention.tsx), Stop, and the look. Callers key it by agent id: its text and its attachments are local to the
 // box.
+//
+// The text is a small Lexical editor (chateditor.tsx) that draws a file you @-mentioned as a pill, but the plain text
+// stays the source of truth: `text` is the message as the agent receives it, and everything here (the menus, recall, the
+// insert registry, the send) works on that string and offsets in it, through the editor's handle (`editorRef`), which
+// answers like the part of a textarea they use.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { turnTransition } from "@/app/element/motiontokens";
@@ -22,10 +27,11 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Moon, Square } from "lucide-react";
 import { AnimatePresence, MotionConfig } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, type DragEvent, type KeyboardEvent } from "react";
-import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
+import { useEffect, useLayoutEffect, useRef, type DragEvent } from "react";
+import { canStop, useAgentSend } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachmentTray } from "./attachmenttray";
+import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatInsert } from "./chatinsert";
 import { setChatMode } from "./chatmodestore";
@@ -103,8 +109,18 @@ export function ChatComposer({
         asleep ? undefined : att.attachments,
         { keepDraft: true }
     );
-    const taRef = useRef<HTMLTextAreaElement>(null);
-    useGrowingTextarea(taRef, text, ChatMinH, ChatMaxH);
+    const editorRef = useRef<EditorLike>(null);
+    // The text the box was last given or said (every edit goes out through `onChange`, which skips a call that changes
+    // nothing: a click that only moves the caret says the same text again), and the caret an outside change asks for
+    // (setTextAt): the editor places it as it draws the text, and a mention it ends stays text rather than a pill.
+    const told = useRef(text);
+    told.current = text;
+    const outsideCaret = useRef<{ text: string; caret: number } | null>(null);
+    const setTextAt = (t: string, caret?: number) => {
+        outsideCaret.current = caret == null ? null : { text: t, caret };
+        told.current = t;
+        setText(t);
+    };
     const block = useAtomValue(
         agent.blockId ? WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", agent.blockId)) : NO_BLOCK
     );
@@ -116,49 +132,51 @@ export function ChatComposer({
     // a command being typed, so the menu stays closed over it until it is edited
     const slash = useSlashMenu({
         text,
-        setText,
+        setText: setTextAt,
         cwd: block?.meta?.["cmd:cwd"] ?? "",
         blockId: agent.blockId,
-        inputRef: taRef,
+        inputRef: editorRef,
         off: recalled.current.at != null && text === recalled.current.shown,
     });
+    const cwd = block?.meta?.["cmd:cwd"];
     const mention = useFileMention({
         text,
-        setText,
-        filesRoot: chatFilesRoot(block?.meta?.["cmd:cwd"], agent.project, projects),
-        inputRef: taRef,
+        setText: setTextAt,
+        filesRoot: chatFilesRoot(cwd, agent.project, projects),
+        cwd,
+        inputRef: editorRef,
         name: "chat",
     });
-    // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which a write to the
-    // textarea's value would lose to the next render; the caret is put after it once the new text is drawn.
-    const latest = useRef({ text, setText });
-    latest.current = { text, setText };
+    // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which the editor draws
+    // from; the caret is put after it once the new text is drawn.
+    const latest = useRef({ text, setText: setTextAt });
+    latest.current = { text, setText: setTextAt };
     const caretAfter = useRef<number | null>(null);
     useEffect(
         () =>
             registerChatInsert(agent.id, (insert) => {
-                const ta = taRef.current;
-                if (ta == null || ta.readOnly) {
+                const box = editorRef.current;
+                if (box == null || box.readOnly) {
                     return false;
                 }
-                const next = insertAt(latest.current.text, ta.selectionStart, ta.selectionEnd, insert);
+                const next = insertAt(latest.current.text, box.selectionStart, box.selectionEnd, insert);
                 caretAfter.current = next.caret;
-                latest.current.setText(next.text);
-                ta.focus({ preventScroll: true });
+                latest.current.setText(next.text, next.caret);
+                box.focus({ preventScroll: true });
                 return true;
             }),
         [agent.id]
     );
     useLayoutEffect(() => {
         const caret = caretAfter.current;
-        const ta = taRef.current;
-        if (caret != null && ta != null) {
+        const box = editorRef.current;
+        if (caret != null && box != null) {
             caretAfter.current = null;
-            ta.setSelectionRange(caret, caret);
+            box.setSelectionRange(caret, caret);
             // the menus read the caret from events, and a caret set from code may raise none before the next key: a `/`
             // put in the box by the + menu opens the `/` list at once
-            slash.onCaret(ta);
-            mention.onCaret(ta);
+            slash.onCaret(box);
+            mention.onCaret(box);
         }
     }, [text]);
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
@@ -222,29 +240,29 @@ export function ChatComposer({
     // a command being written and stays as it is; any other text gets `t` put before it. The box takes the focus, the
     // caret right after `t` when it was put in (so a lone `/` opens the `/` menu), where it was otherwise.
     const putText = (t: string) => {
-        const ta = taRef.current;
-        if (ta == null || ta.readOnly) {
+        const box = editorRef.current;
+        if (box == null || box.readOnly) {
             return;
         }
         if (!text.startsWith("/")) {
             recalled.current = { at: null, shown: "" };
             caretAfter.current = t.length;
-            setText(text === "" ? t : t + text);
+            setTextAt(text === "" ? t : t + text, t.length);
         }
-        ta.focus();
+        box.focus();
     };
     // ↑ in an empty box (or one still showing a recalled text, unedited, with the caret on its first line) puts back the
     // last message sent; ↓ walks forward and back to empty. True when the key was taken.
-    const recallKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    const recallKey = (e: KeyLike): boolean => {
         const dir = e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : null;
-        const ta = e.currentTarget;
+        const box = e.currentTarget;
         if (
             dir == null ||
             e.shiftKey ||
             e.altKey ||
             e.ctrlKey ||
             e.metaKey ||
-            ta.readOnly ||
+            box.readOnly ||
             e.nativeEvent.isComposing
         ) {
             return false;
@@ -258,8 +276,8 @@ export function ChatComposer({
         if (!empty) {
             const caretLine =
                 dir === "up"
-                    ? !text.slice(0, ta.selectionStart).includes("\n")
-                    : !text.slice(ta.selectionEnd).includes("\n");
+                    ? !text.slice(0, box.selectionStart).includes("\n")
+                    : !text.slice(box.selectionEnd).includes("\n");
             if (!caretLine) {
                 return false;
             }
@@ -270,7 +288,7 @@ export function ChatComposer({
         }
         const next = recall(history, r.at, dir);
         recalled.current = { at: next.at, shown: next.text };
-        setText(next.text);
+        setTextAt(next.text);
         return true;
     };
     const stop = () => {
@@ -288,7 +306,7 @@ export function ChatComposer({
             if (paths.length > 0) {
                 att.addPaths(paths);
             }
-            taRef.current?.focus();
+            editorRef.current?.focus();
         });
     };
     // the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file: any drag that holds
@@ -300,7 +318,7 @@ export function ChatComposer({
         }
     };
     // Explorer hands over real files (copied, as a paste is); arcterm's tree, VS Code, Obsidian and "Copy as path"
-    // hand over paths as text, which the textarea would otherwise take as typed text: those attach in place
+    // hand over paths as text, which the box would otherwise take as typed text: those attach in place
     const onDrop = (e: DragEvent<HTMLElement>) => {
         const dt = e.dataTransfer;
         if (dragHasFiles(dt)) {
@@ -318,7 +336,7 @@ export function ChatComposer({
         e.stopPropagation();
         if (!asleep) {
             att.addPaths(paths);
-            taRef.current?.focus();
+            editorRef.current?.focus();
         }
     };
     const showStop = !asleep && agent.blockId != null && canStop(agent.state, agent.sleeping);
@@ -338,23 +356,40 @@ export function ChatComposer({
             className="mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border border-edge-mid bg-surface-raised px-3 py-[10px] focus-within:border-edge-strong"
         >
             {asleep ? null : <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />}
-            <textarea
-                ref={taRef}
-                rows={2}
+            <ChatEditor
+                ref={editorRef}
                 value={text}
+                outsideCaret={outsideCaret.current}
                 readOnly={waking}
-                aria-label="Message"
-                onChange={(e) => {
-                    recalled.current = { at: null, shown: "" };
-                    setText(e.target.value);
-                    slash.onCaret(e.target);
-                    mention.onCaret(e.target);
+                minHeight={ChatMinH}
+                maxHeight={ChatMaxH}
+                placeholder={placeholder}
+                className="text-[13px] text-primary"
+                // also called when only the caret moved (a click, an arrow), with the same text: that is no edit, so it
+                // neither ends a recall nor sets the text again
+                onChange={(t) => {
+                    if (t !== recalled.current.shown) {
+                        recalled.current = { at: null, shown: "" };
+                    }
+                    if (t !== told.current) {
+                        told.current = t;
+                        setText(t);
+                    }
+                    const box = editorRef.current;
+                    if (box != null) {
+                        slash.onCaret(box);
+                        mention.onCaret(box);
+                    }
                 }}
-                onSelect={(e) => {
-                    slash.onCaret(e.currentTarget);
-                    mention.onCaret(e.currentTarget);
-                }}
-                onPaste={asleep ? undefined : att.onPaste}
+                onPasteFiles={
+                    asleep
+                        ? undefined
+                        : (e) => {
+                              // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
+                              att.onPaste(e as never);
+                              return e.defaultPrevented;
+                          }
+                }
                 onKeyDown={(e) => {
                     // the `/` menu's and the `@` picker's keys (↑↓, Enter and Tab to pick, Escape to close) come first; at
                     // most one of them has a list open
@@ -373,12 +408,7 @@ export function ChatComposer({
                         !e.shiftKey &&
                         (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
                     if (addFilesKey) {
-                        if (
-                            !asleep &&
-                            !waking &&
-                            !slash.shown &&
-                            document.querySelector("[data-chat-mentions]") == null
-                        ) {
+                        if (!asleep && !waking && !slash.shown && !mention.shown) {
                             e.preventDefault();
                             attach();
                         }
@@ -401,8 +431,6 @@ export function ChatComposer({
                         e.currentTarget.blur();
                     }
                 }}
-                placeholder={placeholder}
-                className="block min-w-0 resize-none overflow-y-auto bg-transparent text-[13px] leading-[19px] text-primary outline-none placeholder:text-muted"
             />
             {slash.list}
             {mention.list}
@@ -416,7 +444,7 @@ export function ChatComposer({
                                     onAttach={attach}
                                     onText={putText}
                                     onSend={sendCommand}
-                                    onFocusBox={() => taRef.current?.focus()}
+                                    onFocusBox={() => editorRef.current?.focus()}
                                     disabled={waking}
                                 />
                             </Fold>

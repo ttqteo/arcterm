@@ -12,7 +12,8 @@
 //
 // `onChange` fires when the text or the caret changed, so a click that only moves the caret calls it with the same text.
 // While an IME composition (Telex, Pinyin…) is on, nothing is reported and nothing is rebuilt: the text arrives when the
-// composition ends.
+// composition ends. A `value` that comes from outside meanwhile is held and drawn when the composition ends (in place of
+// the text typed), so the editor never says its own text over it.
 
 import { cn } from "@/util/util";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
@@ -37,6 +38,7 @@ import {
     $setSelection,
     CLEAR_HISTORY_COMMAND,
     COMMAND_PRIORITY_HIGH,
+    COMPOSITION_END_COMMAND,
     KEY_BACKSPACE_COMMAND,
     KEY_DELETE_COMMAND,
     KEY_DOWN_COMMAND,
@@ -67,6 +69,8 @@ export interface EditorLike {
     readonly selectionStart: number;
     readonly selectionEnd: number;
     readonly readOnly: boolean;
+    /** the element floating-ui follows when the handle anchors a list as a virtual element (a textarea is its own) */
+    readonly contextElement?: Element;
     focus(options?: FocusOptions): void;
     blur(): void;
     setSelectionRange(start: number, end: number): void;
@@ -90,6 +94,11 @@ export interface KeyLike {
 export interface ChatEditorProps {
     /** the message as the agent receives it */
     value: string;
+    /** where a `value` that comes from outside (a pick, an insert) puts the caret, applied when its `text` is the
+     *  `value` being drawn. A mention the caret is in or at the end of stays text (it is still being typed: a folder
+     *  pick, `@../src/`, goes on walking), where without it every complete mention becomes a pill and the caret lands at
+     *  the end of the text. */
+    outsideCaret?: { text: string; caret: number } | null;
     /** the text and the caret (an offset in it) after an edit or a caret move, not while a composition is on */
     onChange(text: string, caret: number): void;
     /** every key goes here first; a handler that calls `preventDefault` keeps the editor from acting on it */
@@ -223,8 +232,9 @@ function $selectOffsets(doc: Doc, anchor: number, focus: number): void {
 }
 
 /** replace the whole content by a message's segments: one paragraph, a line break between lines (an empty message is
- *  still one empty paragraph). With `caretAtEnd` the caret lands at the end, as a textarea's does when its value is set. */
-function $rebuild(segments: Segment[], caretAtEnd: boolean): void {
+ *  still one empty paragraph). With a `caret` (an offset in the text) the selection lands there, as a textarea's does at
+ *  the end when its value is set; with null there is none. */
+function $rebuild(segments: Segment[], caret: number | null): void {
     const root = $getRoot();
     root.clear();
     const paragraph = $createParagraphNode();
@@ -238,10 +248,8 @@ function $rebuild(segments: Segment[], caretAtEnd: boolean): void {
         }
     }
     root.append(paragraph);
-    if (caretAtEnd) {
-        const doc = $readDoc();
-        const end = linesText(doc.lines).length;
-        $selectOffsets(doc, end, end);
+    if (caret != null) {
+        $selectOffsets($readDoc(), caret, caret);
     } else {
         $setSelection(null);
     }
@@ -371,6 +379,9 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             get readOnly() {
                 return !editor.isEditable();
             },
+            get contextElement() {
+                return editor.getRootElement() ?? undefined;
+            },
             focus() {
                 editor.update(
                     () => {
@@ -408,11 +419,41 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         [editor]
     );
 
+    // an outside `value` that arrived in the middle of a composition waits (`held`) and is drawn when it ends, in place of
+    // the text typed: otherwise the editor would say its own text next and write over the outside change
+    const [composed, setComposed] = useState(0);
+    const held = useRef(false);
+    const release = useRef(() => {});
+    release.current = () => {
+        if (held.current && !editor.isComposing()) {
+            held.current = false;
+            setComposed((n) => n + 1);
+        }
+    };
+    useLayoutEffect(
+        () =>
+            // after the event, so the editor has settled; the update listener below does the same on the update that
+            // ends the composition, when there is one
+            editor.registerCommand(
+                COMPOSITION_END_COMMAND,
+                () => {
+                    queueMicrotask(() => release.current());
+                    return false;
+                },
+                COMMAND_PRIORITY_HIGH
+            ),
+        [editor]
+    );
+
     // what the user does in the editor goes out as text and a caret
     useLayoutEffect(
         () =>
             editor.registerUpdateListener(({ editorState, tags }) => {
                 if (tags.has("external") || editor.isComposing()) {
+                    return;
+                }
+                if (held.current) {
+                    release.current();
                     return;
                 }
                 const next = editorState.read(() => {
@@ -430,18 +471,29 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
     );
 
     // a value that is not what the editor last said comes from outside: draw it (never in the middle of a composition,
-    // which would drop the syllable being typed)
+    // which would drop the syllable being typed: it is held, and drawn when the composition ends)
     const { value } = props.current;
     useLayoutEffect(() => {
-        if (value === said.current.text || editor.isComposing()) {
+        if (value === said.current.text) {
+            held.current = false;
             return;
         }
+        if (editor.isComposing()) {
+            held.current = true;
+            return;
+        }
+        held.current = false;
+        const ask = props.current.outsideCaret;
+        const caret = ask != null && ask.text === value ? Math.min(Math.max(ask.caret, 0), value.length) : null;
         const focused = isFocused(editor);
-        said.current = { text: value, caret: value.length };
-        editor.update(() => $rebuild(segmentsOf(value), focused), { tag: "external", discrete: true });
+        said.current = { text: value, caret: caret ?? value.length };
+        editor.update(() => $rebuild(segmentsOf(value, caret ?? undefined), caret ?? (focused ? value.length : null)), {
+            tag: "external",
+            discrete: true,
+        });
         // like a textarea whose value is set from outside, what came before is not undoable
         editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
-    }, [editor, value, props, said]);
+    }, [editor, value, composed, props, said]);
 
     // read-only keeps the box on screen but not editable; it gets the focus back when it was in it
     const { readOnly = false } = props.current;
@@ -517,7 +569,7 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
         editable: !p.readOnly,
         onError: (error: Error) => console.error("chat editor:", error),
         // the draft the box mounts with (a restored one, with its pills)
-        editorState: () => $rebuild(segmentsOf(p.value), false),
+        editorState: () => $rebuild(segmentsOf(p.value), null),
     }));
     return (
         <LexicalComposer initialConfig={initialConfig}>
