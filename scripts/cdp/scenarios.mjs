@@ -42890,16 +42890,19 @@ const agentChat = {
             const chipPath = await h.ev(`${acLayer(A)}?.querySelector("[data-attachment-chip]")?.getAttribute("data-attachment-path") ?? null`);
             await h.shot("cdp-shots/agent-chat-3-attachment.png");
             await acType(h, acBox(A), "see the note");
-            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input.startsWith("see the note"))`, 3000);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input.replace(/^\\x1b\\[200~/, "").startsWith("see the note"))`, 3000);
             const inputs3 = await acInputs(h, blockA);
-            const withFile = inputs3.find((i) => i.startsWith("see the note")) ?? "";
+            // pasted through the agent's terminal (xterm turns its newlines into "\r"), or, when that terminal has not
+            // loaded yet, typed as a bracketed paste with its "\n" (typeIntoAgent): either way the same message
+            const unbracket = (i) => i.replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, "").replace(/\n/g, "\r");
+            const withFile = inputs3.map(unbracket).find((i) => i.startsWith("see the note")) ?? "";
             const trayAfter = await h.ev(`${acLayer(A)}?.querySelectorAll("[data-attachment-chip]").length ?? 0`);
             // a message over several lines goes in as a paste (typeIntoAgent), which xterm sends with its newlines as "\r"
             rec(
                 "3. a file pasted in the box shows in the tray, and the send carries its path",
                 pasted.taken === true && chipReady && chipPath != null && withFile.includes(`Attachments (read these files):\r- ${chipPath}`) &&
                     (await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\r")`, 3000)) && trayAfter === 0,
-                { pasted, chipPath, withFile, trayAfter }
+                { pasted, chipPath, withFile, trayAfter, inputs3 }
             );
 
             // 4. the agent working: the working line shows its activity, and Stop sends Esc
@@ -44204,7 +44207,8 @@ const agentChat = {
                 return {
                     note: note?.textContent.replace(/\\s+/g, " ").trim() ?? null,
                     code: code?.textContent ?? null,
-                    isCode: !!code && (code.matches("pre, code") || !!code.querySelector("pre, code")),
+                    // CodeBlock (codeblock.tsx) draws its lines as divs, under its [data-code-head]; no pre or code
+                    isCode: !!code && (code.matches("pre, code") || !!code.querySelector("pre, code, [data-code-head]")),
                     framed: !!${acLayer(A)}?.querySelector('[data-chat-visual$="/outside.html"]'),
                 };
             })()`);
