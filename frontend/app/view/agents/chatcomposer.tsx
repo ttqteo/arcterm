@@ -2,25 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The message box of the chat view (a Claude agent's cell in Chat, and its sleeping overlay): the board's rounded box
-// with the text on top and, under it, the attach button on the left and Stop and Send on the right. What it sends and
+// with the text on top and, under it, one row: the attach `+` and the model, mode and context chips (chatfooter.tsx) on
+// the left, Stop and Send on the right. That row's parts fold in place when the agent sleeps or wakes. What it sends and
 // how a sleeping agent is woken is useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds
 // attachments (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your
 // bubble draws as a picture), the `@` file picker (filemention.tsx), Stop, and the look. Callers key it by agent id: its
 // text and its attachments are local to the box.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { turnTransition } from "@/app/element/motiontokens";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { focusTerm } from "@/app/view/term/termpaste";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Moon, Square } from "lucide-react";
+import { AnimatePresence, MotionConfig } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, type DragEvent, type KeyboardEvent } from "react";
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
-import { ChatFooter } from "./chatfooter";
+import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatInsert } from "./chatinsert";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
@@ -245,6 +248,13 @@ export function ChatComposer({
         }
     };
     const showStop = !asleep && agent.blockId != null && canStop(agent.state, agent.sleeping);
+    // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
+    // finished wake does not swap "Waking…" for "Send" under the eye.
+    const showWord = asleep || waking;
+    const sendWord = useRef("Send");
+    if (showWord) {
+        sendWord.current = waking ? "Waking…" : "Send";
+    }
     return (
         <div
             {...dataAttrs}
@@ -303,39 +313,82 @@ export function ChatComposer({
             />
             {slash.list}
             {mention.list}
-            <div className="flex items-center gap-1.5">
-                {asleep ? null : <AttachButton onClick={attach} />}
-                <ChatFooter agent={agent} />
-                <div className="flex-1" />
-                {showStop ? (
+            {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
+            <MotionConfig reducedMotion="user">
+                <div className="flex items-center gap-1.5">
+                    <AnimatePresence initial={false}>
+                        {asleep ? null : (
+                            <Fold key="attach">
+                                <AttachButton onClick={attach} />
+                            </Fold>
+                        )}
+                    </AnimatePresence>
+                    <AnimatePresence initial={false}>
+                        {asleep ? (
+                            <Fold key="asleep">
+                                <div
+                                    data-chat-asleep
+                                    className="flex h-[28px] items-center gap-1.5 whitespace-nowrap pl-0.5 pr-1 text-[12px] text-muted"
+                                >
+                                    <Moon size={13} strokeWidth={1.8} aria-hidden />
+                                    Asleep
+                                </div>
+                            </Fold>
+                        ) : null}
+                    </AnimatePresence>
+                    {/* takes the row's free width, so Stop and Send stay at the far right */}
+                    <ChatFooter agent={agent} />
+                    {showStop ? (
+                        <button
+                            type="button"
+                            data-chat-stop
+                            title="Stop the agent (sends Esc)"
+                            onClick={stop}
+                            className="flex cursor-pointer items-center gap-1.5 rounded-[8px] border border-edge-mid px-2.5 py-1 text-[12px] text-secondary hover:border-edge-strong hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            <Square size={10} fill="currentColor" aria-hidden />
+                            Stop
+                        </button>
+                    ) : null}
+                    {/* Asleep (and while a wake is in flight) the button widens to its word, the arrow and the word
+                        crossfading: Waking… is the one sign that the message was taken. The widths are the board's
+                        (CSS cannot transition to auto). */}
                     <button
                         type="button"
-                        data-chat-stop
-                        title="Stop the agent (sends Esc)"
-                        onClick={stop}
-                        className="flex cursor-pointer items-center gap-1.5 rounded-[8px] border border-edge-mid px-2.5 py-1 text-[12px] text-secondary hover:border-edge-strong hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                        data-chat-send
+                        title={hold ?? blocker ?? "Send"}
+                        aria-label={hold ?? (showWord ? undefined : "Send")}
+                        onClick={submit}
+                        disabled={!sendable}
+                        style={turnTransition}
+                        className={cn(
+                            "relative flex h-[30px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-[8px] bg-accent text-background transition-[width] hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:cursor-default disabled:opacity-40 disabled:hover:opacity-40 motion-reduce:transition-none",
+                            waking ? "w-[78px]" : asleep ? "w-[58px]" : "w-[30px]"
+                        )}
                     >
-                        <Square size={10} fill="currentColor" aria-hidden />
-                        Stop
+                        <span
+                            aria-hidden
+                            style={turnTransition}
+                            className={cn(
+                                "absolute flex transition-opacity motion-reduce:transition-none",
+                                showWord ? "opacity-0" : "opacity-100"
+                            )}
+                        >
+                            <ArrowUp size={15} strokeWidth={2.2} aria-hidden />
+                        </span>
+                        <span
+                            aria-hidden={!showWord}
+                            style={turnTransition}
+                            className={cn(
+                                "whitespace-nowrap text-[12px] font-semibold transition-opacity motion-reduce:transition-none",
+                                showWord ? "opacity-100" : "opacity-0"
+                            )}
+                        >
+                            {sendWord.current}
+                        </span>
                     </button>
-                ) : null}
-                {/* asleep (and while a wake is in flight) the button says what it is doing in words: Waking… is the one
-                    sign that the message was taken */}
-                <button
-                    type="button"
-                    data-chat-send
-                    title={hold ?? blocker ?? "Send"}
-                    aria-label={hold ?? (asleep || waking ? undefined : "Send")}
-                    onClick={submit}
-                    disabled={!sendable}
-                    className={cn(
-                        "flex flex-none cursor-pointer items-center justify-center rounded-[8px] bg-accent text-background hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:cursor-default disabled:opacity-40 disabled:hover:opacity-40",
-                        asleep || waking ? "h-[30px] px-3 text-[12px] font-semibold" : "h-[30px] w-[30px]"
-                    )}
-                >
-                    {waking ? "Waking…" : asleep ? "Send" : <ArrowUp size={15} strokeWidth={2.2} aria-hidden />}
-                </button>
-            </div>
+                </div>
+            </MotionConfig>
         </div>
     );
 }
