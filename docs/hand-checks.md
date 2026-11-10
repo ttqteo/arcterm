@@ -11,6 +11,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   top right of Chat turns them off and on (it stays as you left it after a restart). The scenario injects its own store
   folder; only a live agent proves the real skim store file is found and its hashes match (`chatskimstore.ts`,
   `agent-chat` 34).
+- [ ] (arcterm) Chat pinned prompt beside the skim button: in a long Chat, scroll until your first prompt pins at the
+  top → the pinned bar's text stops short of the highlighter button at the top right instead of running under it
+  (`pr-10` on the bar, `chatconversation.tsx`). No scenario step shows the bar with the button in view.
 - [ ] (arcterm) Chat model chip: in a real Claude agent's Chat, click the model chip and pick another model → Claude
   Code switches to it (its own footer shows the new model; the chip follows once the agent's row updates). The CDP
   scenario only checks the menu and the `/model <alias>` it types, against a mock (`chatfooter.tsx`, `agent-chat` 28).
