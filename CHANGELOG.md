@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In Chat, the files you send show as cards under your message (type, name, folder and size; click to open), the files
   you @mention as pills, and pasted or tagged content (a paste, a system reminder, command output) as a folded card,
   instead of raw paths and tags.
+- Chat's message box shows a file you @mention as a pill, and @ walks folders: type @../ or @D:/ to browse, Tab to step
+  into a folder.
 
 ## 1.0.6 — 2026-11-10
 

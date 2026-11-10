@@ -6,6 +6,30 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's box takes Vietnamese typing (Telex) with pills and menus around it: in a live Claude agent's Chat
+  type a Vietnamese sentence in Telex (e.g. "chào bạn, xem giúp mình file này") with no menu open, again before and
+  after an `@` pill, and with the `/` list and the `@` list open → no letter is lost or doubled, a syllable being
+  composed is never rebuilt under you, and the caret stays where you typed. The scenarios type with `Input.insertText`,
+  which never goes through an IME composition; only a real IME proves the editor's hold-while-composing rule
+  (`chateditor.tsx`, `chatcomposer.tsx`).
+- [ ] (arcterm) Chat's box takes paste, drop and long text like the textarea it replaced: paste a screenshot → an
+  attachment chip over the box, no image in the text; paste text copied from a page or an editor → it lands as plain
+  text, no formatting or font; Alt-drop a file from the tree onto the cell → its `@mention` lands in the box as a pill
+  with the caret after it; type until the message passes the box's maximum height → the box scrolls inside itself, not
+  the page; Shift+Enter breaks a line, Enter sends; Ctrl+Z and Ctrl+Y (Cmd+Z / Cmd+Shift+Z) undo and redo typing, and
+  undo never brings back a text a pick or a recall replaced. The scenarios paste a file with a synthetic event and
+  drop with synthetic drag events (`chateditor.tsx`, `chatinsert.ts`, `agent-chat` 3, 17).
+- [ ] (arcterm) A sleeping agent's box wakes it with a pill in the message: sleep a Claude agent, open its Chat, type
+  `look at ` then `@` and a file name (or `@../` and pick one), send → the agent wakes, and Claude Code receives
+  `look at @<path>` as one message (a pill is plain `@path` text to it), and the box empties. A sleeping box takes
+  text only, as before: no attachment tray, no + button (`chatcomposer.tsx`, `agent-sleep` 4b).
+- [ ] (arcterm) Chat's `@` walks folders on a real disk: in a Claude agent's Chat type `@../` → the parent folder's
+  entries, folders first with a trailing `/`; type `@D:/` (or `@/` on a Mac) and `@~/` → the drive's and your home
+  folder's entries; Tab on a folder → the box reads `@../<folder>/` and the list shows that folder's entries, Tab on a
+  file → a pill; an agent started outside a registered project walks too; a folder you cannot read (a permission
+  error, a name that does not exist) → the list says `Cannot read <folder>`. The scenarios walk a temp folder and one
+  that does not exist; a folder whose name holds a space cannot be picked into a mention yet (`filemention.tsx`,
+  `launchermention.ts`, `agent-chat` 70-74).
 - [ ] (arcterm) Chat shows what you sent as cards and pills: in a live Claude agent's Chat send one message with a
   dropped PDF, a picked `.ts` file and an `@` mention → under your bubble a card for each file (type tag, name, folder
   and size) and the mention as a pill in the text, as the chat-file-mentions canvas draws them ("Sent"); click a card
