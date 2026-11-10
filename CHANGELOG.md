@@ -53,6 +53,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A subagent an agent starts while a Token burn card is already up waits for your answer on that card, instead of
+  starting unasked after 10 seconds.
 - A tool that is still running shows as running in Chat, with a spinner and how long it has run, instead of as done.
 - A message sent from an agent's message box with an attached picture, or written over several lines, is sent at once
   instead of sitting unsent in Claude's own prompt box while Chat shows "Sending…".

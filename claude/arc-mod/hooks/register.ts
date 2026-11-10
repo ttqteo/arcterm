@@ -433,6 +433,29 @@ async function askTokengate(
     return verdict;
 }
 
+// waits for until with a call of this hook's own in flight, `wsh tokengate hold`, ended once until settles: Claude Code
+// bills a hook's own time to its 10 s budget and stops the clock only then, so a spawn that joined another's card and
+// awaited it bare was skipped and ran ungated. a hold that ends first (an older wsh without it) leaves the bare wait
+async function waitInFlight($: EngineInterface, until: Promise<unknown>): Promise<void> {
+    const hold = $.process.spawn({ argv: [WSH, "tokengate", "hold"] });
+    const held = (async () => {
+        try {
+            for await (const _ of hold) {
+                // the hold prints nothing
+            }
+        } catch (err) {
+            $.ui.log(`arc: wsh tokengate hold failed: ${String(err)}`, { to: "debug" });
+        }
+    })();
+    try {
+        await Promise.race([until, held]);
+    } finally {
+        // ending the stream kills wsh. a no-op once it has exited
+        void hold.return(undefined as never).catch(() => undefined);
+    }
+    await until;
+}
+
 async function configDirOf($: EngineInterface): Promise<string | null> {
     return claudeConfigDir({
         configDir: await $.env.get("CLAUDE_CONFIG_DIR"),
@@ -687,8 +710,11 @@ export const register: Register = (on) => {
     for (const tool of ["Agent", "Task", "Workflow"] as const) {
         on("tool.call", { tool }, async ($, e, next) => {
             const why = active
-                ? await spawnGate.check(tool, e as unknown as Record<string, unknown>, (g, earlier, held) =>
-                      askTokengate($, g, earlier, held)
+                ? await spawnGate.check(
+                      tool,
+                      e as unknown as Record<string, unknown>,
+                      (g, earlier, held) => askTokengate($, g, earlier, held),
+                      (until) => waitInFlight($, until)
                   )
                 : null;
             return why === null ? next(e) : { deny: why };

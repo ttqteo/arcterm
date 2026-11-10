@@ -53,7 +53,22 @@ var tokengateReviewCmd = &cobra.Command{
 	RunE:  tokengateReviewRun,
 }
 
+// the Claude mod runs this while a spawn waits on another spawn's card: Claude Code stops a hook's 10 s budget only
+// while a call of that hook's own is in flight, so the joining hook waits inside this process and ends it once the
+// verdict is in. It touches nothing and exits by itself past the card's own deadline, so a crashed claude leaves no
+// lasting process
+var tokengateHoldCmd = &cobra.Command{
+	Use:    "hold",
+	Short:  "block until the caller ends it, at most past the Token burn card's deadline (agent hooks)",
+	Args:   cobra.NoArgs,
+	Hidden: true,
+	Run: func(cmd *cobra.Command, args []string) {
+		time.Sleep(askWaitTimeout + 2*time.Minute)
+	},
+}
+
 func init() {
+	tokengateCmd.AddCommand(tokengateHoldCmd)
 	tokengateCmd.Flags().StringVar(&tokengateSpawn.Tool, "tool", "Agent", "Agent, Task or Workflow")
 	tokengateCmd.Flags().IntVar(&tokengateSpawn.Agents, "agents", 1, "agents the group starts")
 	tokengateCmd.Flags().BoolVar(&tokengateSpawn.AtLeast, "at-least", false, "the agent count is a floor")

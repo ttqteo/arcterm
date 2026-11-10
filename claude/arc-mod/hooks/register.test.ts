@@ -167,3 +167,57 @@ describe("the ui check after a commit", () => {
         expect(ran).toEqual([]);
     });
 });
+
+describe("a spawn that joins another's Token burn card", () => {
+    // seen 2026-10-20: the joiner awaited the card bare, Claude Code skipped its hook at the 10 s budget, and it ran
+    // ungated. it now waits inside a `wsh tokengate hold` of its own, which it ends once the card is answered
+    it("waits inside its own wsh tokengate hold and ends it at the verdict", async () => {
+        const handlers = registered();
+        const spawned: string[][] = [];
+        let answer: () => void = () => {};
+        const answered = new Promise<void>((resolve) => (answer = resolve));
+        let holdEnded = false;
+        const base = arcEngine(spawned);
+        const $ = {
+            ...base,
+            process: {
+                ...base.process,
+                spawn: ({ argv }: { argv: string[] }) => {
+                    spawned.push(argv);
+                    if (argv[1] === "tokengate" && argv[2] === "hold") {
+                        let release: (r: IteratorResult<never>) => void = () => {};
+                        return {
+                            [Symbol.asyncIterator]() {
+                                return this;
+                            },
+                            next: () => new Promise<IteratorResult<never>>((resolve) => (release = resolve)),
+                            return: async () => {
+                                holdEnded = true;
+                                release({ done: true, value: undefined as never });
+                                return { done: true, value: undefined as never };
+                            },
+                        };
+                    }
+                    return (async function* () {
+                        yield { stream: "stdout", text: '{"hold":"Token burn: asking"}\n' };
+                        await answered;
+                        yield { stream: "stdout", text: '{"run":false,"reason":"Not run: no"}\n' };
+                    })();
+                },
+            },
+        };
+        await handlers.get("session.start")!($, { cwd: "/repo" }, async () => undefined);
+        const next = vi.fn(async () => "ran");
+        const agent = handlers.get("tool.call:Agent")!;
+        const a = agent($, { tool_use_id: "toolu_a", prompt: "x" }, next);
+        await new Promise((resolve) => setTimeout(resolve, 600)); // past the gather: the card is up
+        const b = agent($, { tool_use_id: "toolu_b", prompt: "y" }, next);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(spawned).toContainEqual(["__WSH_PATH__", "tokengate", "hold"]);
+        expect(holdEnded).toBe(false);
+        answer();
+        expect(await Promise.all([a, b])).toEqual([{ deny: "Not run: no" }, { deny: "Not run: no" }]);
+        expect(holdEnded).toBe(true);
+        expect(next).not.toHaveBeenCalled();
+    });
+});
