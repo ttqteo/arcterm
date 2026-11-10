@@ -28,6 +28,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The / menu in Chat lists every command Claude Code offers in that session (built-ins, its own skills, plugins, MCP),
   grouped and scrolling, and the + button opens a menu: add files or a folder, slash commands, MCP servers, plugins.
+- In Chat, the files you send show as cards under your message (type, name, folder and size; click to open), the files
+  you @mention as pills, and pasted or tagged content (a paste, a system reminder, command output) as a folded card,
+  instead of raw paths and tags.
 
 ## 1.0.6 — 2026-11-10
 

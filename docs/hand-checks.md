@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat shows what you sent as cards and pills: in a live Claude agent's Chat send one message with a
+  dropped PDF, a picked `.ts` file and an `@` mention → under your bubble a card for each file (type tag, name, folder
+  and size) and the mention as a pill in the text, as the chat-file-mentions canvas draws them ("Sent"); click a card
+  and the pill → the file opens in the File tab; delete one of the files, reload → its card reads Not found. The
+  scenario writes the message into a fixture transcript and mocks nothing of the files, but never sends one through a
+  real composer and agent (`chatfilecards.tsx`, `chatfilepill.tsx`, `chattagblock.tsx`, `agent-chat` 60-63).
 - [ ] (arcterm) Chat's `/` menu is the session's own list: start a new Claude agent after this build → in its Chat, `/`
   lists `/code-review`, `/simplify` and `/skim` (Built-in and Plugins groups) and the footer says "N commands in this
   session", matching Claude Code's own `/` typeahead in the terminal; connect an MCP server mid-session, send any

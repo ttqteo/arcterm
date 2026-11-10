@@ -42065,7 +42065,9 @@ const agentSleep = {
 // tuiscreen.fixtures.json, written to the fixture terminal), a tool in flight, and Copy. Steps 50-53 are the `/` menu's
 // second round: the session's own command list (a mocked GetClaudeLiveCommandsCommand for the main agent's block) grouped
 // and scrolling, filtered by what is typed, the + menu that replaces the attach button, and the disk fallback of an agent
-// with no live list.
+// with no live list. Steps 60-63 draw what you sent: the files of a message as cards under your bubble (a missing one
+// struck through, past five a "+N more" chip) and an @mention as a pill in its text, and a paste or a system reminder
+// as a folded card. The messages are appended to the main agent's transcript as the lines Claude Code writes for them.
 // Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
 const AC_MOCK_KEY = "__arcAgentChatMock";
 const AC = agentPageFixtures;
@@ -42512,6 +42514,39 @@ const acQueuedLine =(dir, prompt) =>
         attachment: { type: "queued_command", commandMode: "prompt", prompt },
     });
 const acAppend = (file, ...lines) => appendFileSync(file, lines.join("\n") + "\n");
+
+// What the files block of a sent message looks like (composerattachments.ts messageWithAttachments): the header, then one
+// `- <path>` line a file
+const acFilesBlock = (...paths) => `Attachments (read these files):\n${paths.map((p) => `- ${p}`).join("\n")}`;
+// The words of steps 60-63's messages that stay in the bubble as drawn. An @mention is a pill that reads its file's short
+// name, so the text a bubble holds ("Compare app.ts with the notes") has no `@src/` in it.
+const AC_FILES_KEY = "with the notes";
+const AC_MANY_KEY = "Check these eight files";
+const AC_TAGS_KEY = "Look at this";
+
+// One of your bubbles in a chat, found by a word of its text: the wrapper that holds the text and the cards under it
+const acYouWith = (id, text) =>
+    `[...(${acLayer(id)}?.querySelectorAll("[data-chat-you]") ?? [])].find((e) => e.textContent.includes(${JSON.stringify(text)}))`;
+// What a bubble shows of its files: its text, its cards (path, the icon's tag, name, the line under it, whether it reads as
+// missing) and the "+N more" chip. Null while the bubble is not there.
+const acFileCards = (h, id, text) =>
+    h.ev(`(() => {
+        const you = ${acYouWith(id, text)};
+        if (!you) return null;
+        return {
+            text: you.textContent,
+            cards: [...you.querySelectorAll("[data-chat-file-card]")].map((c) => ({
+                path: c.getAttribute("data-chat-file-card"),
+                tag: c.firstElementChild?.textContent.trim() ?? null,
+                name: c.lastElementChild?.firstElementChild?.textContent.trim() ?? null,
+                sub: c.lastElementChild?.children[1]?.textContent.trim() ?? null,
+                missing: c.hasAttribute("data-chat-file-missing"),
+                text: c.textContent.trim(),
+            })),
+            more: you.querySelector("[data-chat-file-more]")?.textContent.trim() ?? null,
+        };
+    })()`);
+const acScrollTo = (h, expr) => h.ev(`(() => { const e = ${expr}; e?.scrollIntoView({ block: "center" }); return !!e; })()`);
 
 // A captured screen (rows of text) on the fixture terminal of one block: cleared, then each row written at its place so the
 // last row lands on the terminal's last row, which is where readTermLines looks (the bottom rows of the buffer). Rows are cut
@@ -44052,6 +44087,173 @@ const agentChat = {
                     s53.rows.some((r) => r.name === "compact") && s53.rows.some((r) => r.name === "arc:council") &&
                     s53.groups.map((g) => g.title).join("|") === "Built-in|Plugins",
                 { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]) }
+            );
+
+            // 60. "Sent": a message with an @mention and a files block (the text the composer sends) draws without the block. The
+            // block's three files are cards under the bubble (the icon's tag, the name, the folder and size under it once
+            // FileInfoCommand answered) and the mention is a pill in the text that reads the file's short name and sits on the
+            // text's line. The agent got the same words: the transcript holds them as sent. The messages of steps 60-62 are
+            // appended together: the files of three (one gone), then eight (seven there, one gone)
+            const notes60 = join(ctx.dir, "notes.md");
+            const paper60 = join(ctx.dir, "paper.pdf");
+            const gone60 = join(ctx.dir, "gone.md");
+            writeFileSync(notes60, "# notes\n");
+            writeFileSync(paper60, "%PDF-1.4\n");
+            const many60 = Array.from({ length: 8 }, (_, i) => join(ctx.dir, `f${i + 1}.txt`));
+            many60.slice(0, 7).forEach((p, i) => writeFileSync(p, `file ${i + 1}\n`));
+            const sentBy = { cwd: ctx.dir };
+            acAppend(
+                ctx.files.main,
+                AC.userText(`Compare @src/app.ts ${AC_FILES_KEY}\n\n${acFilesBlock(notes60, paper60, gone60)}`, sentBy),
+                AC.userText(`${AC_MANY_KEY}\n\n${acFilesBlock(...many60)}`, sentBy)
+            );
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            const bubble60 = await polishWaitFor(h, `!!(${acYouWith(A, AC_FILES_KEY)}) && !!(${acYouWith(A, AC_MANY_KEY)})`, 15000);
+            // the sizes come from one FileInfoCommand a card
+            const sized60 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_FILES_KEY)})?.querySelector('[data-chat-file-card$="paper.pdf"]')?.textContent.includes(" B") === true`,
+                8000
+            );
+            await acScrollTo(h, acYouWith(A, AC_FILES_KEY));
+            await polishNap(250);
+            const cards60 = await acFileCards(h, A, AC_FILES_KEY);
+            // the pill and the words around it, on one line: the vertical centre of the pill against that of each text node
+            const pill60 = await h.ev(`(() => {
+                const you = ${acYouWith(A, AC_FILES_KEY)};
+                const pill = you?.querySelector('[data-chat-file-pill="src/app.ts"]');
+                if (!pill) return null;
+                const mid = (r) => r.top + r.height / 2;
+                const lines = [];
+                const walker = document.createTreeWalker(you, NodeFilter.SHOW_TEXT);
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    if (pill.contains(n) || n.parentElement?.closest("[data-chat-file-cards]") || !/Compare|with the notes/.test(n.data)) continue;
+                    const range = document.createRange();
+                    range.selectNodeContents(n);
+                    lines.push({ text: n.data, mid: mid(range.getBoundingClientRect()) });
+                }
+                const p = mid(pill.getBoundingClientRect());
+                return {
+                    label: pill.textContent.trim(),
+                    title: pill.getAttribute("title"),
+                    mid: p,
+                    lines,
+                    off: lines.map((l) => Math.abs(l.mid - p)),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-60-file-cards.png");
+            const dirName60 = basename(ctx.dir);
+            rec(
+                "60. a sent message with an @mention and a files block draws without the block (no Attachments (read these files) in the bubble); @src/app.ts is a pill reading app.ts, its vertical centre within 2 px of the text line's, and the three files are cards tagged MD, PDF, MD whose lines under the names hold the folder and the size (notes.md 8 B, paper.pdf 9 B)",
+                bubble60 && sized60 && cards60 != null && pill60 != null &&
+                    !cards60.text.includes("Attachments (read these files)") && !cards60.text.includes("@src/app.ts") &&
+                    pill60.label === "app.ts" && pill60.title === "src/app.ts" &&
+                    pill60.lines.length === 2 && pill60.off.every((d) => d <= 2) &&
+                    cards60.cards.length === 3 &&
+                    JSON.stringify(cards60.cards.map((c) => c.tag)) === JSON.stringify(["MD", "PDF", "MD"]) &&
+                    JSON.stringify(cards60.cards.map((c) => c.name)) === JSON.stringify(["notes.md", "paper.pdf", "gone.md"]) &&
+                    cards60.cards[0].sub === `${dirName60} · 8 B` && cards60.cards[1].sub === `${dirName60} · 9 B` &&
+                    cards60.more === null,
+                { bubble60, sized60, cards60, pill60 }
+            );
+
+            // 61. "Not found": the card of a file that is gone reads Not found, is marked missing and has no size line; the
+            // cards of the files that are there are not marked
+            const missing61 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_FILES_KEY)})?.querySelector('[data-chat-file-card$="gone.md"]')?.hasAttribute("data-chat-file-missing") === true`,
+                8000
+            );
+            await acScrollTo(h, acYouWith(A, AC_FILES_KEY));
+            const cards61 = await acFileCards(h, A, AC_FILES_KEY);
+            await h.shot("cdp-shots/agent-chat-61-file-missing.png");
+            const gone61 = cards61?.cards.find((c) => c.name === "gone.md");
+            rec(
+                "61. the card of gone.md has data-chat-file-missing and reads Not found (its name struck through, no size), and notes.md and paper.pdf are not marked missing",
+                missing61 && gone61 != null && gone61.missing && gone61.sub === "Not found" && gone61.text.includes("Not found") &&
+                    cards61.cards.filter((c) => c.missing).length === 1 &&
+                    cards61.cards.filter((c) => c.name !== "gone.md").every((c) => !c.missing && !c.text.includes("Not found")),
+                { missing61, cards61 }
+            );
+
+            // 62. "+N more": eight files show five cards and a "+3 more" chip; a click unfolds the other three in place (the
+            // chip goes) and the eighth, which was never written, reads Not found
+            await acScrollTo(h, acYouWith(A, AC_MANY_KEY));
+            await polishNap(250);
+            const folded62 = await acFileCards(h, A, AC_MANY_KEY);
+            await h.shot("cdp-shots/agent-chat-62-file-more.png");
+            await h.ev(`(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-more]")?.click()`);
+            const unfolded62 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_MANY_KEY)})?.querySelectorAll("[data-chat-file-card]").length === 8 && !(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-more]")`,
+                3000
+            );
+            const lastGone62 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_MANY_KEY)})?.querySelector('[data-chat-file-card$="f8.txt"]')?.hasAttribute("data-chat-file-missing") === true`,
+                8000
+            );
+            await acScrollTo(h, acYouWith(A, AC_MANY_KEY));
+            await polishNap(250);
+            const open62 = await acFileCards(h, A, AC_MANY_KEY);
+            await h.shot("cdp-shots/agent-chat-62-file-more-open.png");
+            rec(
+                "62. a message of eight files shows five cards and a +3 more chip; a click on the chip shows all eight in place, the chip gone, f1 to f7 found and f8 (never written) reading Not found",
+                folded62 != null && folded62.cards.length === 5 && folded62.more === "+3 more" &&
+                    JSON.stringify(folded62.cards.map((c) => c.name)) === JSON.stringify(["f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt"]) &&
+                    unfolded62 && lastGone62 && open62 != null && open62.cards.length === 8 && open62.more === null &&
+                    JSON.stringify(open62.cards.map((c) => c.name)) === JSON.stringify(many60.map((p) => basename(p))) &&
+                    JSON.stringify(open62.cards.map((c) => c.missing)) === JSON.stringify([false, false, false, false, false, false, false, true]) &&
+                    open62.cards.every((c) => c.tag === "TXT"),
+                { folded62, unfolded62, lastGone62, open62 }
+            );
+
+            // 63. "Tagged content": a paste Claude Code wrapped in <pasted_content> and a <system-reminder> block draw as folded
+            // cards in the bubble, never as their tags. The paste reads "Pasted · 3 lines" and is closed; a click opens it and
+            // shows its body
+            acAppend(
+                ctx.files.main,
+                AC.userText(
+                    `${AC_TAGS_KEY}\n<pasted_content id="p1">\nline one\nline two\nline three\n</pasted_content>\n<system-reminder>\nkeep it short\n</system-reminder>`,
+                    sentBy
+                )
+            );
+            const tagged63 = await polishWaitFor(h, `!!(${acYouWith(A, AC_TAGS_KEY)})`, 15000);
+            await acScrollTo(h, acYouWith(A, AC_TAGS_KEY));
+            await polishNap(250);
+            const readTags = () =>
+                h.ev(`(() => {
+                    const you = ${acYouWith(A, AC_TAGS_KEY)};
+                    if (!you) return null;
+                    const card = (tag) => {
+                        const c = you.querySelector('[data-chat-tag="' + tag + '"]');
+                        const b = c?.querySelector("button");
+                        return c
+                            ? { header: b?.textContent.trim() ?? c.textContent.trim(), expanded: b?.getAttribute("aria-expanded") ?? null, body: c.querySelector("[data-chat-tag-body]")?.textContent ?? null }
+                            : null;
+                    };
+                    return { text: you.textContent, paste: card("pasted_content"), reminder: card("system-reminder"), cards: you.querySelectorAll("[data-chat-tag]").length };
+                })()`);
+            const closed63 = await readTags();
+            await h.shot("cdp-shots/agent-chat-63-tag-blocks.png");
+            await h.ev(`(${acYouWith(A, AC_TAGS_KEY)})?.querySelector('[data-chat-tag="pasted_content"] button')?.click()`);
+            const opened63 = await polishWaitFor(h, `(${acYouWith(A, AC_TAGS_KEY)})?.querySelector('[data-chat-tag="pasted_content"] [data-chat-tag-body]')?.textContent.includes("line two") === true`, 3000);
+            await acScrollTo(h, acYouWith(A, AC_TAGS_KEY));
+            await polishNap(250);
+            const open63 = await readTags();
+            await h.shot("cdp-shots/agent-chat-63-tag-blocks-open.png");
+            rec(
+                "63. a message with a <pasted_content> block and a <system-reminder> block shows neither tag as text, the paste as a closed card reading Pasted · 3 lines and the reminder as a card reading System reminder; a click on the paste opens it and shows line two",
+                tagged63 && closed63 != null && open63 != null &&
+                    !closed63.text.includes("<pasted_content") && !closed63.text.includes("<system-reminder") &&
+                    !open63.text.includes("<pasted_content") && !open63.text.includes("<system-reminder") &&
+                    closed63.text.includes(AC_TAGS_KEY) && closed63.cards === 2 &&
+                    closed63.paste?.header === "Pasted · 3 lines" && closed63.paste.expanded === "false" && closed63.paste.body === null &&
+                    closed63.reminder?.header === "System reminder" &&
+                    opened63 && open63.paste?.expanded === "true" && open63.paste.body.includes("line two") &&
+                    open63.paste.header === "Pasted · 3 lines",
+                { tagged63, closed63, opened63, open63 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
