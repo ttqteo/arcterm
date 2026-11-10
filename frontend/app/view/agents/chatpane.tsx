@@ -287,7 +287,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             {/* the conversation's own column (760px), so the box lines up under the last message; keyed by the agent
                 alone, so its text and its attachments belong to one agent and the box is never remounted when the agent
                 sleeps or wakes (its parts fold in place). Asleep its Enter wakes the agent, and it carries
-                data-sleeping-composer for the scenarios' `[data-sleeping-composer] textarea`. */}
+                data-sleeping-composer on its frame for the scenarios' `[data-sleeping-composer] [data-chat-input]`. */}
             <div className="flex-none px-[22px] pb-4 pt-3">
                 <ChatComposer
                     key={agent.id}
