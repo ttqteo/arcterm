@@ -78,8 +78,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   stopped and offers Start, instead of it starting again by itself (a reinstall used to bring a stopped app back up).
 - A service whose page runs Claude (a dashboard asking Claude for an analysis) is no longer taken for an agent: it no
   longer shows as a sleeping agent, and the memory regulator no longer stops it to free RAM.
-- A `! command` you run in the agent's box shows in Chat as one card: the command, then what it printed (errors in red),
-  instead of an empty "Bash input" card and a bubble of raw `<bash-stdout>` tags.
+- A `! command` you run in the agent's box shows in Chat as one card: the command, then what it printed (errors in red,
+  "No output" for one that printed nothing), instead of an empty "Bash input" card and a bubble of raw `<bash-stdout>`
+  tags.
 - Chat's message box goes into bash mode when it starts with `!`, as Claude Code's own box does: its border and a
   "! Bash mode" chip say the text runs in the agent's shell.
 - A skill the agent runs by itself shows as a Skill step in its work, instead of a bubble on your side that looked like

@@ -96,6 +96,8 @@ function parseCommand(content: string): { name: string; args?: string } | null {
 const BASH_INPUT = /^\s*<bash-input>([^]*)<\/bash-input>\s*$/;
 const BASH_STDOUT = /<bash-stdout>([^]*?)<\/bash-stdout>/;
 const BASH_STDERR = /<bash-stderr>([^]*?)<\/bash-stderr>/;
+// what Claude Code writes as the stdout of a command that printed nothing: no output of the command's own
+const BASH_NO_OUTPUT = "(Bash completed with no output)";
 
 // captured output as plain text: the colours and cursor moves a terminal would draw, dropped
 function plainOutput(text: string): string {
@@ -353,8 +355,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     // it goes on its command; one whose command is not in the lines read is dropped, never a bubble
                     const last = entries[entries.length - 1];
                     if (last?.kind === "command" && last.name === "!" && last.shell == null) {
+                        const output = plainOutput(BASH_STDOUT.exec(content)?.[1] ?? "");
                         last.shell = {
-                            output: plainOutput(BASH_STDOUT.exec(content)?.[1] ?? ""),
+                            output: output === BASH_NO_OUTPUT ? "" : output,
                             error: plainOutput(BASH_STDERR.exec(content)?.[1] ?? ""),
                         };
                     }

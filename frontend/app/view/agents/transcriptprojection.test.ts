@@ -198,6 +198,20 @@ describe("projectTranscript commands and isMeta", () => {
         ]);
     });
 
+    // Claude Code (2.1.322) writes this placeholder as the stdout of a command that printed nothing
+    it("reads Claude Code's no-output placeholder as a command that printed nothing", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-input> command</bash-input>" } }),
+            L({
+                type: "user",
+                message: {
+                    content: "<bash-stdout>(Bash completed with no output)</bash-stdout><bash-stderr></bash-stderr>",
+                },
+            }),
+        ]);
+        expect(out).toEqual([{ kind: "command", name: "!", args: "command", shell: { output: "", error: "" } }]);
+    });
+
     it("drops a bash output whose command is not in the lines read, rather than drawing its tags", () => {
         const out = projectTranscript([
             L({ type: "user", message: { content: "<bash-stdout>orphan</bash-stdout><bash-stderr></bash-stderr>" } }),
