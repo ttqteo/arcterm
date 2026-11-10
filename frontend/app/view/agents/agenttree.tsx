@@ -955,9 +955,9 @@ function RunSubline({
                     <span
                         data-run-paused={paused ? "" : undefined}
                         className="truncate text-muted"
-                        title={runStatusView(run.status ?? "planning", run.land).label}
+                        title={runStatusView(run.status ?? "planning", run.land, run.pausedBy).label}
                     >
-                        {runStatusView(run.status ?? "planning", run.land).label}
+                        {runStatusView(run.status ?? "planning", run.land, run.pausedBy).label}
                     </span>
                 )}
                 <OriginFrom model={model} run={run} />

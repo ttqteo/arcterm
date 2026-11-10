@@ -42,6 +42,8 @@ export interface RunInfo {
     land?: RunLand;
     dag?: TaskGroup;
     digest?: DagStatusDigest;
+    // who paused the run, while it is paused: "manual" (the person), "auto" (the RAM regulator) or "boot"
+    pausedBy?: string;
 }
 
 export interface Lineage {
@@ -79,6 +81,7 @@ export function runInfoOf(
         land: leadRun?.land,
         dag,
         digest,
+        pausedBy: leadRun?.pause?.by || undefined,
     };
 }
 

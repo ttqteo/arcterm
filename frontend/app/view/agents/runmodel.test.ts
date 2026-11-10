@@ -86,6 +86,12 @@ describe("runStatusView", () => {
     it("maps paused to its own tone and the words that say when it resumes", () => {
         expect(runStatusView("paused")).toEqual({ label: "Paused · resumes when memory frees", tone: "paused" });
     });
+    it("words a run the person paused as waiting for them", () => {
+        expect(runStatusView("paused", undefined, "manual")).toEqual({
+            label: "Paused · until you resume",
+            tone: "paused",
+        });
+    });
 });
 
 describe("paused runs", () => {

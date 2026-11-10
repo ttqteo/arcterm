@@ -20,6 +20,34 @@ does not, say what you saw and it becomes a bug row under Actionable.
   closed), and write the difference per visual into the "Chat inline visuals" row of `docs/open-issues.md` §5 RAM watch
   (a frame is its own renderer, kept once mounted). No step could measure it: the dev app shares the installed app's
   WebView2 image names.
+- [ ] (arcterm) Round check after the two Chat runs: once run 3df0f2d3 (slash and + menus, file cards and pills, `@`
+  walks folders; 15 tasks) has landed on top of run b539a1af (inline visuals), run `node scripts/cdp/final-verify.mjs
+  agent-chat` on `main` → every step PASS, the inline-visual steps (`agent-chat-40` to `-44`) included, and the `@`
+  picker still opens above the box with recent files first. b539a1af's t-5 committed its scenario steps without
+  running them (the dev app could not boot in 10 min with RAM short); only its run's Final checks them before this.
+- [ ] (arcterm) `@` picker: in a live Claude agent's Chat that has edited a few files, type `@` → the list opens
+  above the box (also with the window short or the box near the top), the files the agent read or wrote this session
+  lead it, newest first; type part of a name (`@sto`) → a recent file that matches still leads, and the typed letters
+  are in the accent colour in each name and folder; the New launcher's Task box `@` also opens above its box. Unit
+  tests and the typecheck only (`launchermention.ts` `recentMentionPaths`, `mentionMatchMask`); no dev app was run.
+- [ ] (arcterm) Long Chat sends: in a live Claude agent's Chat, send a one-line message of ~500 characters, then one
+  of ~5,000 characters, then a multi-line one → each is submitted (the Terminal view shows it as Claude's prompt, not
+  as text left in the box), idle and while Claude works (Queued, then sent at the turn's end). Unit tests only
+  (`chatpending.ts` `pastesBody`, `submitDelayMs`; `agentcomposer.tsx` `typeIntoAgent`).
+- [ ] (arcterm) Esc clears a Queued bubble: while Claude works, send a message from Chat (Queued), switch to Terminal
+  and press Esc → back in Chat the Queued bubble goes within ~5 s of Claude stopping; a message queued and left alone
+  is still sent when the turn ends. Unit tests only (`chatpending.ts` `PENDING_IDLE_MS`).
+- [ ] (arcterm) Button motion: hover icon buttons, chips and tabs on several surfaces → the colour fades in over
+  ~140 ms instead of snapping; press and hold a small button → it sinks slightly (3%) and springs back on release; a
+  full-width row (History's session cards) and a drag handle (a tree row) do not shrink; drag a Cockpit card and the
+  fullscreen toggle in an agent header still behave as before; with Windows "Animation effects" off, colours change
+  at once and nothing sinks. Only the compiled stylesheet was checked (`tailwindsetup.css` base button rule); no dev
+  app was running.
+- [ ] (arcterm) Chat draft survives a switch: in an awake Claude agent's Chat, type a line and paste an image (and drop
+  a file), switch to another agent, then to Jarvis, then back → the text and both chips are still in the box, the
+  image's thumbnail still shows; send → the box empties and the chips go; sleep the agent with text in the box → the
+  wake box shows the same text. Unit tests and the typecheck only (`agentcomposer.tsx` `keepDraft`,
+  `composerattachments.ts` `draftKey`).
 - [ ] (arcterm) Chat skim highlights: in a live Claude agent's Chat, ask for a long explanation → its marked sentences
   show highlighted once the reply lands, the same ones the Terminal view highlights, and the highlighter button at the
   top right of Chat turns them off and on (it stays as you left it after a restart). The scenario injects its own store

@@ -4,6 +4,11 @@
 @import "tailwindcss";
 
 @theme {
+    /* every transition-* utility runs on the motion system's micro timing (motiontokens.ts durMicro + easeFluid),
+       so a control that names its own transition feels like the base button rule below */
+    --default-transition-duration: 140ms;
+    --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+
     /* Surfaces (handoff bg ramp) */
     --color-background: #1f1e1d;
     --color-surface: #262624;
@@ -406,6 +411,36 @@
     [role="tab"] {
         -webkit-user-select: none;
         user-select: none;
+    }
+
+    /* no control snaps: its hover, focus and press changes ease in on the micro timing (moment 7, app-wide). Only the
+       properties a hover or press changes, never transform or layout: Framer drives those per frame on a motion.*
+       control, and a CSS transition would drag behind it. A transition-* utility still wins. */
+    button,
+    [role="button"],
+    [role="tab"] {
+        transition-property:
+            color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity,
+            box-shadow, scale;
+        transition-duration: 140ms;
+        transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* a press sinks the button a little, so the click reads as landed. The scale property, not transform, so it stacks
+       on a Framer or translate transform instead of replacing it. Not on a full-width row or a drag handle, where a
+       3% shrink reads as a jump; a scale-* utility still wins. Reduced motion keeps the colour change, unanimated. */
+    @media (prefers-reduced-motion: no-preference) {
+        button:not(:disabled):not(.w-full):not([draggable="true"]):active {
+            scale: 0.97;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        button,
+        [role="button"],
+        [role="tab"] {
+            transition-duration: 0s;
+        }
     }
 
     /* and a box you type in keeps selecting inside a row or bar that is select-none */

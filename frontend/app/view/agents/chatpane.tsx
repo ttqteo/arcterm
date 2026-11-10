@@ -44,6 +44,15 @@ const NO_ENTRIES: AgentEntry[] = [];
 
 // A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
 // takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill).
+// when the agent last went idle (ms), null while it works; an agent idle at mount counts from the mount
+function useIdleSince(idle: boolean): number | null {
+    const [since, setSince] = useState<number | null>(() => (idle ? Date.now() : null));
+    useEffect(() => {
+        setSince(idle ? Date.now() : null);
+    }, [idle]);
+    return since;
+}
+
 function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
     const said = splitAttachedImages(text);
     return (
@@ -164,10 +173,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const hasEarlier = view != null && view.win.start > 0;
 
     // the messages sent from the box that the transcript does not hold yet; re-read each second while any shows, for the
-    // two-minute limit
+    // two-minute limit and the idle one (a message cleared with Esc in the terminal never lands: PENDING_IDLE_MS)
     const sent = usePending(agent.id);
     const [now, setNow] = useState(() => Date.now());
-    const pending = pendingStill(sent, entries, now);
+    const idleSince = useIdleSince(agent.state === "idle");
+    const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
     useEffect(() => {
         if (!showsPending) {

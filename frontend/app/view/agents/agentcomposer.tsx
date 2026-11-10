@@ -8,6 +8,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { pastesBody, submitDelayMs } from "./chatpending";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
@@ -48,16 +49,22 @@ export function useGrowingTextarea(
 }
 
 /** Types a message into an agent's terminal and presses Enter. A message with a line break (Shift+Enter, or an
- *  attachment's block) goes as a paste, then Enter on its own: typed raw in one chunk, Claude Code reads a multi-line
- *  chunk as a paste and takes the "\r" at its end for one more line, so the message sat in its box unsent. One line,
- *  or a terminal that is not mounted to paste into, is typed with its Enter. */
-function typeIntoAgent(blockId: string, message: string): Promise<void> {
+ *  attachment's block) or a long one goes in first (a paste when the terminal is mounted, typed otherwise), then
+ *  Enter on its own after Claude Code has taken it (submitDelayMs): sent in one chunk, Claude Code reads a big or
+ *  multi-line chunk as a paste and takes the "\r" at its end for one more line, so the message sat in its box unsent
+ *  while Chat showed it Queued. A short line is typed with its Enter. */
+async function typeIntoAgent(blockId: string, message: string): Promise<void> {
     const type = (data: string) =>
         RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(data) });
-    if (message.includes("\n") && pasteIntoTerm(blockId, message)) {
-        return type("\r");
+    if (!pastesBody(message)) {
+        return type(message + "\r");
     }
-    return type(message + "\r");
+    if (!pasteIntoTerm(blockId, message)) {
+        // no mounted terminal to paste into: bracket it ourselves, as the backend's typeWake does
+        await type("\x1b[200~" + message + "\x1b[201~");
+    }
+    await new Promise((resolve) => setTimeout(resolve, submitDelayMs(message.length)));
+    await type("\r");
 }
 
 export interface AgentComposerHandle {
@@ -96,9 +103,12 @@ export interface AgentSend {
 export function useAgentSend(
     blockId: string | undefined,
     agent: AgentSendTarget | undefined,
-    attachments?: Attachment[]
+    attachments?: Attachment[],
+    // keepDraft: the text lives in the drafts store under the agent's id awake too (the chat box), so switching to
+    // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft)
+    { keepDraft = false }: { keepDraft?: boolean } = {}
 ): AgentSend {
-    const draftId = agent?.sleeping ? agent.id : undefined;
+    const draftId = agent != null && (agent.sleeping || keepDraft) ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
     const [localText, setLocalText] = useState("");
     const text = draftId != null ? draft : localText;

@@ -120,6 +120,7 @@ func candidates(ctx context.Context, runs []*waveobj.Run, tight bool) []Candidat
 			c.Paused = true
 			if p := r.Pause; p != nil {
 				c.PausedTs, c.HeldBytes, c.NoAutoResumeUntil = p.PausedTs, p.HeldBytes, p.NoAutoResumeUntil
+				c.ByPerson = p.By == runpause.By_Manual
 			}
 			out = append(out, c)
 			continue

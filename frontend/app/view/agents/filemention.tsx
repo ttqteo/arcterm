@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The `@` file picker of a text box: the New launcher's Task box and the chat box. An `@` typed lists the folder's files
-// under the box, and a pick puts `@<path>` in the text (launchermention.ts holds the pure rules).
+// above the box, the files the agent touched first and what the query matched marked, and a pick puts `@<path>` in the
+// text (launchermention.ts holds the pure rules).
 
 import { FileIcon } from "@/app/element/fileicon";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { useEffect, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { fileMentionAt, fileMentionMatches, insertFileMention } from "./launchermention";
+import { fileMentionAt, fileMentionMatches, insertFileMention, mentionMatchMask, mentionRuns } from "./launchermention";
 import { PickerList } from "./pickerlist";
 
 export interface FileMentionState {
@@ -17,8 +18,9 @@ export interface FileMentionState {
     onCaret: (el: HTMLTextAreaElement) => void;
 }
 
-// A text box's `@` picker (the New launcher's Task box, the chat box), a dropdown under the box (pickerlist.tsx, which
-// portals it out of the box). The files are read again on the first `@` after each mount of the box (the launcher
+// A text box's `@` picker (the New launcher's Task box, the chat box), a list above the box (pickerlist.tsx, which
+// portals it out of the box). `recent` (newest first, relative to `filesRoot`) leads the list: the chat box passes the
+// files its agent touched. The files are read again on the first `@` after each mount of the box (the launcher
 // unmounts it on close): there is no watcher, and an agent creates files meanwhile. A query no file matches shows
 // nothing, so an `@` meant as text never blocks Enter. `filesRoot` "" turns it off. `name` tags the list for scenarios
 // (`data-<name>-mentions`, an option `data-<name>-mention`).
@@ -28,12 +30,14 @@ export function useFileMention({
     filesRoot,
     inputRef: taskRef,
     name,
+    recent,
 }: {
     text: string;
     setText: (text: string) => void;
     filesRoot: string;
     inputRef: RefObject<HTMLTextAreaElement | null>;
     name: string;
+    recent?: readonly string[];
 }): FileMentionState {
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
@@ -53,7 +57,7 @@ export function useFileMention({
         );
     }, [open, filesRoot, listing?.root]);
     const own = listing?.root === filesRoot ? listing : null;
-    const matches = open && own?.paths != null ? fileMentionMatches(mention.query, own.paths) : [];
+    const matches = open && own?.paths != null ? fileMentionMatches(mention.query, own.paths, undefined, recent) : [];
     const note = !open
         ? null
         : own?.error
@@ -121,16 +125,20 @@ export function useFileMention({
             label="Project files"
             listAttr={`data-${name}-mentions`}
             itemAttr={`data-${name}-mention`}
+            side="above"
             itemKey={(path) => path}
             itemTitle={(path) => path}
             renderItem={(path) => {
                 const slash = path.lastIndexOf("/");
+                const mask = mentionMatchMask(mention?.query ?? "", path);
                 return (
                     <>
                         <FileIcon path={path} size={14} />
-                        <span className="shrink-0 text-[12px] text-primary">{path.slice(slash + 1)}</span>
+                        <span className="shrink-0 text-[12px] text-primary">
+                            <MatchRuns path={path} mask={mask} start={slash + 1} end={path.length} />
+                        </span>
                         <span className="min-w-0 truncate text-[11px] text-muted">
-                            {slash === -1 ? "" : path.slice(0, slash)}
+                            {slash === -1 ? "" : <MatchRuns path={path} mask={mask} start={0} end={slash} />}
                         </span>
                     </>
                 );
@@ -138,4 +146,21 @@ export function useFileMention({
         />
     );
     return { list, onKeyDown, onCaret };
+}
+
+// a slice of a listed path with the characters the query matched in the accent colour
+function MatchRuns({ path, mask, start, end }: { path: string; mask: boolean[]; start: number; end: number }) {
+    return (
+        <>
+            {mentionRuns(path, mask, start, end).map((run, i) =>
+                run.hit ? (
+                    <span key={i} data-mention-hit="" className="font-semibold text-accent">
+                        {run.text}
+                    </span>
+                ) : (
+                    run.text
+                )
+            )}
+        </>
+    );
 }

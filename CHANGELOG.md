@@ -24,6 +24,26 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- Chat's `@` file list opens above the box, puts the files the agent just read or wrote first, and marks the
+  letters you typed in each name.
+- Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
+
+### Fixed
+
+- A run you pause stays paused until you resume it: Arc's memory regulator no longer resumes it a moment later, and
+  a restart no longer resumes it either. It reads "Paused · until you resume".
+- A long message sent from Chat is submitted instead of sitting in Claude Code's box as a new line while Chat showed
+  it Queued.
+- A message you cleared with Esc in the terminal no longer stays Queued in Chat: its bubble goes a few seconds after
+  Claude stops.
+- A run holds far less RAM: a task's worker stops once it hands its commit to review, and its reviewer once its
+  verdict is in, instead of both idling at their prompt (~1.5 GB each) until the lane landed. Pausing a run now stops
+  those idle sessions too.
+
+## 1.0.6 — 2026-11-10
+
 ### Added
 
 - A Claude agent's cell opens in Chat: its conversation as bubbles with a message box under it (Stop, attachments, pasted images that show in your message, and `@` for a project file included), an Allow / Deny card when Claude Code asks for permission, and the choices of a question it asks as buttons. The real terminal is one flip away, in the header's Chat / Terminal switch or with Ctrl+Shift+K (Cmd+Shift+K on a Mac); a split's cells each have their own switch. <!-- big -->
@@ -64,6 +84,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching to another agent or surface and back no longer empties Chat's message box: what you were writing and the
+  files you had attached are still there.
 - A file dragged onto Chat's message box from arcterm's file tree, VS Code or Obsidian is attached, as one dragged
   from Explorer is, instead of landing as its path in plain text.
 - A subagent an agent starts while a Token burn card is already up waits for your answer on that card, instead of

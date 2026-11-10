@@ -257,6 +257,21 @@ func TestTickHonoursTheNoFlapHoldOnAPausedRun(t *testing.T) {
 	}
 }
 
+func TestTickLeavesARunPausedByThePersonPaused(t *testing.T) {
+	f := install(t)
+	f.pressure = jobqueue.PressureNormal
+	r := f.pausedRun("mine", 1000, gb)
+	r.Pause.By = runpause.By_Manual
+	f.free = 64 * gb
+	var st State
+
+	f.tickAt(&st, 0)
+	f.tickAt(&st, time.Hour)
+	if len(f.resumes) != 0 {
+		t.Fatalf("resumed %v, a run the person paused", f.resumes)
+	}
+}
+
 func TestTickCountsAnUnknownReadingAsNormal(t *testing.T) {
 	f := install(t)
 	f.pressure = jobqueue.PressureUnknown

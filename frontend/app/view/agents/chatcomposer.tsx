@@ -19,7 +19,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Moon, Square } from "lucide-react";
 import { AnimatePresence, MotionConfig } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type DragEvent, type KeyboardEvent } from "react";
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachButton, AttachmentTray } from "./attachmenttray";
@@ -30,7 +30,7 @@ import { pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, noteSent, sentHistory } from "./chatpendingstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
-import { chatFilesRoot } from "./launchermention";
+import { chatFilesRoot, recentMentionPaths } from "./launchermention";
 import { isPathsDrag, pathsFromDrop } from "./pathdrop";
 import { usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
@@ -89,12 +89,15 @@ export function ChatComposer({
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
     const asleep = agent.sleeping != null;
-    const att = useComposerAttachments({ keep: true });
+    // the text and the chips are kept per agent outside the box, so switching to another agent or surface (which
+    // unmounts it) and back finds what you were writing
+    const att = useComposerAttachments({ keep: true, draftKey: agent.id });
     // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
     const { text, setText, message, canSend, waking, send } = useAgentSend(
         agent.blockId,
         agent,
-        asleep ? undefined : att.attachments
+        asleep ? undefined : att.attachments,
+        { keepDraft: true }
     );
     const taRef = useRef<HTMLTextAreaElement>(null);
     useGrowingTextarea(taRef, text, ChatMinH, ChatMaxH);
@@ -114,12 +117,16 @@ export function ChatComposer({
         inputRef: taRef,
         off: recalled.current.at != null && text === recalled.current.shown,
     });
+    const filesRoot = chatFilesRoot(block?.meta?.["cmd:cwd"], agent.project, projects);
+    // the files this agent read or wrote lead the `@` list, newest first
+    const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
     const mention = useFileMention({
         text,
         setText,
-        filesRoot: chatFilesRoot(block?.meta?.["cmd:cwd"], agent.project, projects),
+        filesRoot,
         inputRef: taRef,
         name: "chat",
+        recent: recentFiles,
     });
     // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which a write to the
     // textarea's value would lose to the next render; the caret is put after it once the new text is drawn.
