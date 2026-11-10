@@ -1,18 +1,25 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The `/` menu of the chat box: a `/` typed as the box's first character lists Claude Code's commands under the box, and
-// a pick puts `/<name> ` in the text (slashcommands.ts holds the pure rules). The built-ins show at once; the skills and
-// plugin commands come from wavesrv (`ListClaudeCommandsCommand`) on the first `/` after each mount of the box.
+// The `/` menu of the chat box: a `/` typed as the box's first character lists Claude Code's commands above the box,
+// grouped (Built-in, Skills, Plugins, MCP) in a list that scrolls, and a pick puts `/<name> ` in the text
+// (slashcommands.ts holds the pure rules). The commands are the ones Claude Code's own typeahead offers in that session,
+// which the arc mod publishes to wavesrv per agent (`GetClaudeLiveCommandsCommand`); the list is asked for again each
+// time the menu opens, so a skill or an MCP server added mid-session shows on the next `/`. With no such list (an agent
+// started before the mod published, a sleeping one, wavesrv just restarted) the menu falls back to the copied built-ins
+// plus what wavesrv reads off disk (`ListClaudeCommandsCommand`), and its footer says which list it is showing.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { PickerList } from "./pickerlist";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import type { EditorLike, KeyLike } from "./chateditor";
+import { PickerList, type PickerGroup } from "./pickerlist";
 import {
     BUILTIN_COMMANDS,
+    fromLive,
     insertSlash,
     mergeCommands,
+    slashGroups,
     slashMatches,
     slashQueryAt,
     type SlashCommand,
@@ -21,55 +28,92 @@ import {
 export interface SlashMenuState {
     // the dropdown under the box, portaled out of its container (it draws nothing while no list shows)
     list: ReactNode;
-    // every command the menu knows: the built-ins, plus the fetched ones once they are in
+    // every command the menu knows: the live list of the session, or the fallback's built-ins plus the fetched ones
     commands: SlashCommand[];
-    onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
-    onCaret: (el: HTMLTextAreaElement) => void;
+    // the list is on screen (a `/` word with at least one match)
+    shown: boolean;
+    onKeyDown: (e: KeyLike) => void;
+    onCaret: (el: EditorLike) => void;
+}
+
+// The list may name a command twice (a skill and a plugin command of one name); the rows are keyed by name and a pick
+// inserts the name, so the second would be a row indistinguishable from the first
+function firstOfEachName(list: SlashCommand[]): SlashCommand[] {
+    const seen = new Set<string>();
+    return list.filter((c) => !seen.has(c.name) && !!seen.add(c.name));
 }
 
 // A query no command matches shows nothing, so a `/` meant as text never blocks Enter; a query that already names the
 // highlighted command lets Enter send it (Tab completes). `cwd` is where the agent works (project-level skills and
-// commands are read from there), "" when unknown. `off` keeps the menu closed (a recalled message sits in the box).
+// commands are read from there on the fallback), "" when unknown; `blockId` is the agent's terminal block, the key of its
+// live list. `off` keeps the menu closed (a recalled message sits in the box). `setText` takes the caret a pick puts
+// the text's caret at, for a box that draws the text again (the chat editor places it as it does).
 export function useSlashMenu({
     text,
     setText,
     cwd,
+    blockId,
     inputRef,
     off = false,
 }: {
     text: string;
-    setText: (text: string) => void;
+    setText: (text: string, caret?: number) => void;
     cwd: string;
-    inputRef: RefObject<HTMLTextAreaElement | null>;
+    blockId?: string;
+    inputRef: RefObject<EditorLike | null>;
     off?: boolean;
 }): SlashMenuState {
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
     // Escape closed the list; it stays closed until the caret leaves the command word
     const [dismissed, setDismissed] = useState(false);
-    const [fetched, setFetched] = useState<SlashCommand[]>(BUILTIN_COMMANDS);
-    const requested = useRef(false);
+    // the last list asked for, kept between opens so the menu shows at once; `live` says it is the session's own
+    const [known, setKnown] = useState<{ commands: SlashCommand[]; live: boolean }>({
+        commands: BUILTIN_COMMANDS,
+        live: false,
+    });
     const query = off ? null : slashQueryAt(text, caret);
     const open = query != null && !dismissed;
     useEffect(() => {
-        if (!open || requested.current) {
+        if (!open) {
             return;
         }
-        requested.current = true;
-        RpcApi.ListClaudeCommandsCommand(TabRpcClient, { cwd }).then(
-            (found) => setFetched(mergeCommands(BUILTIN_COMMANDS, found ?? [])),
-            () => {
-                // the built-ins stay
+        let stale = false;
+        (async () => {
+            const live =
+                blockId != null
+                    ? await RpcApi.GetClaudeLiveCommandsCommand(TabRpcClient, { blockid: blockId }).catch(() => null)
+                    : null;
+            if (stale) {
+                return;
             }
-        );
-    }, [open, cwd]);
-    const matches = open ? slashMatches(query, fetched) : [];
+            if (live != null && live.length > 0) {
+                setKnown({ commands: firstOfEachName(fromLive(live)), live: true });
+                return;
+            }
+            const found = await RpcApi.ListClaudeCommandsCommand(TabRpcClient, { cwd }).catch(() => null);
+            if (!stale) {
+                setKnown({ commands: mergeCommands(BUILTIN_COMMANDS, found ?? []), live: false });
+            }
+        })();
+        return () => {
+            stale = true;
+        };
+    }, [open, cwd, blockId]);
+    const grouped = open ? slashGroups(slashMatches(query, known.commands)) : [];
+    const matches = grouped.flatMap((g) => g.items);
+    const groups: PickerGroup[] = [];
+    let start = 0;
+    for (const g of grouped) {
+        groups.push({ title: g.title, count: g.items.length, start });
+        start += g.items.length;
+    }
     const shown = matches.length > 0;
     const at = Math.min(pick, Math.max(matches.length - 1, 0));
 
     const choose = (c: SlashCommand) => {
         const next = insertSlash(text, caret, c.name);
-        setText(next.text);
+        setText(next.text, next.caret);
         setCaret(next.caret);
         setPick(0);
         requestAnimationFrame(() => {
@@ -78,7 +122,7 @@ export function useSlashMenu({
         });
     };
     // the menu's keys stop here: the box's own handler would send on Enter
-    const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const onKeyDown = (e: KeyLike) => {
         if (!shown || e.nativeEvent.isComposing) {
             return;
         }
@@ -106,15 +150,20 @@ export function useSlashMenu({
             choose(matches[at]);
         }
     };
-    // a keystroke or a click moves the caret and starts the list from its best match again; ↑↓ do not
-    const onCaret = (el: HTMLTextAreaElement) => {
-        setCaret(el.selectionStart);
-        setPick(0);
+    // a keystroke or a click that moves the caret starts the list from its best match again; ↑↓ do not, and neither does a
+    // select event that finds the caret where it was (the first key after the box is focused raises one, which would send
+    // a first ↓ back to the top once its key is up)
+    const onCaret = (el: EditorLike) => {
+        if (el.selectionStart !== caret) {
+            setCaret(el.selectionStart);
+            setPick(0);
+        }
         if (slashQueryAt(el.value, el.selectionStart) == null) {
             setDismissed(false);
         }
     };
 
+    const total = known.commands.length;
     const list = (
         <PickerList
             anchor={inputRef}
@@ -126,17 +175,49 @@ export function useSlashMenu({
             onHover={setPick}
             label="Commands"
             listAttr="data-chat-slash"
+            listAttrs={{ "data-chat-slash-live": String(known.live) }}
             itemAttr="data-chat-slash-item"
             itemKey={(c) => c.name}
             itemTitle={(c) => c.description ?? c.name}
+            groups={groups}
+            footer={
+                <div className="flex shrink-0 gap-3.5 border-t border-edge-faint px-3.5 py-[7px] text-[11.5px] text-ink-faint">
+                    <span>
+                        <span className="font-mono text-muted">↑↓</span> move
+                    </span>
+                    <span>
+                        <span className="font-mono text-muted">Tab</span> complete
+                    </span>
+                    <span>
+                        <span className="font-mono text-muted">Enter</span> run
+                    </span>
+                    <span className="flex-1" />
+                    <span>
+                        {total} {total === 1 ? "command" : "commands"}{" "}
+                        {known.live ? "in this session" : "found on disk"}
+                    </span>
+                </div>
+            }
             renderItem={(c) => (
                 <>
-                    <span className="shrink-0 text-[12px] text-primary">/{c.name}</span>
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted">{c.description}</span>
-                    {c.tui ? <span className="shrink-0 text-[10.5px] text-muted">opens in Terminal</span> : null}
+                    <span className="w-[210px] shrink-0 truncate text-[13px] text-ink-hi">/{c.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{c.description}</span>
+                    {c.plugin ? (
+                        <span className="shrink-0 rounded-[6px] border border-edge-mid px-1.5 text-[11px] text-muted">
+                            {c.plugin}
+                        </span>
+                    ) : null}
+                    {c.tui ? (
+                        <span
+                            title="Opens a menu on Claude Code's own screen"
+                            className="shrink-0 text-[11px] text-ink-faint"
+                        >
+                            opens in Terminal
+                        </span>
+                    ) : null}
                 </>
             )}
         />
     );
-    return { list, commands: fetched, onKeyDown, onCaret };
+    return { list, commands: known.commands, shown, onKeyDown, onCaret };
 }

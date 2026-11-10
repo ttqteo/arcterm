@@ -3,12 +3,15 @@
 //
 // The `@` file picker of the New launcher's Task box and the chat box (filemention.tsx): where an `@` being typed sits,
 // which of the project's files it lists, and the text once one is picked, `@<path>` relative to the project as Claude
-// Code reads it. Pure; the file list is codestore.ts's (the one Code and the palette's Files scope read), its ranking
-// codefinder.ts's.
+// Code reads it. A path that starts at a root (`../`, `~/`, `D:/`, `/`) walks folders instead: browseQuery splits it into
+// the folder and the name typed in it, and the rest here places the folder, orders its entries and writes a pick. Pure;
+// the file list is codestore.ts's (the one Code and the palette's Files scope read), its ranking codefinder.ts's.
 
 import { rankPaths } from "@/app/view/code/codefinder";
 import { normalizeRepoPath } from "@/util/paths";
 import type { AgentEntry } from "./agentsviewmodel";
+import { mentionText } from "./chateditormodel";
+import { resolvePath } from "./pathlinks";
 
 export const MENTION_FILE_LIMIT = 8;
 
@@ -16,21 +19,30 @@ export const MENTION_FILE_LIMIT = 8;
 // typed after it up to the caret: a path ends at whitespace
 const FILE_MENTION = /(^|[\s([{"'`])@([^\s@]{0,200})$/u;
 
+// the quoted form, `@"my dir/a b.ts"`, which a path with whitespace is written in (mentionText): the path runs up to the
+// caret, whitespace included, and a closing quote or a newline ends it. Its `@` follows whitespace or an opening bracket,
+// as filementiontokens.ts reads a mention, so `a@"b` is text
+const QUOTED_MENTION = /(^|[\s([{])@"([^"\r\n]{0,200})$/u;
+
 export interface FileMention {
     // where the `@` sits
     start: number;
-    // what follows it, up to the caret
+    // what follows it, up to the caret (a quoted mention's path, without its opening quote)
     query: string;
 }
 
 /** Pure: the `@` the caret is typing a path after, or null when the caret is not in one. A picked path is followed by
- *  a space, which ends it, so the picker closes after a pick. */
+ *  a space, which ends it, so the picker closes after a pick. A path being typed in quotes (`@"my dir/fo`) is read
+ *  whole, whitespace included, and its query leaves the quote out; a quote that closed before the caret ends the
+ *  mention. When an `@` follows an open quote (`@"a b @c`), the later one is the mention being typed. */
 export function fileMentionAt(text: string, caret: number): FileMention | null {
-    const found = FILE_MENTION.exec(text.slice(0, caret));
-    if (found == null) {
-        return null;
-    }
-    return { start: caret - found[2].length - 1, query: found[2] };
+    const head = text.slice(0, caret);
+    const quoted = QUOTED_MENTION.exec(head);
+    const plain = FILE_MENTION.exec(head);
+    const quotedAt = quoted == null ? null : { start: caret - quoted[2].length - 2, query: quoted[2] };
+    const plainAt = plain == null ? null : { start: caret - plain[2].length - 1, query: plain[2] };
+    // the later `@` is the one being typed; on the same `@` (`@"abc`) the quoted reading drops the quote from the query
+    return quotedAt != null && (plainAt == null || quotedAt.start >= plainAt.start) ? quotedAt : plainAt;
 }
 
 /** Pure: the files the picker lists for `query`, best first, ranked as the Code finder ranks them. `recent` (newest
@@ -144,21 +156,114 @@ export function mentionRuns(
     return runs;
 }
 
-/** Pure: `text` with the `@…` word around the caret (from `start` to the next whitespace) replaced by `@<path>` and a
- *  space (the one that already follows, if there is one), and where the caret goes: after that space. */
+// What follows the caret in the mention a pick replaces, which goes too: picking from "@src/fo|o.ts" must not leave
+// "o.ts" behind. A plain mention runs to the next whitespace; a quoted one (`@"…`) through its closing quote when one
+// follows on the line, else (an open quote nothing closes) to the next whitespace, so a stray `@"` never takes the line.
+function restOfMention(text: string, start: number, caret: number): string {
+    const rest = text.slice(caret);
+    if (text[start + 1] === '"') {
+        const closed = /^[^"\r\n]*"/.exec(rest);
+        if (closed != null) {
+            return rest.slice(closed[0].length);
+        }
+    }
+    return rest.replace(/^\S*/, "");
+}
+
+/** Pure: `text` with the `@…` word around the caret (from `start` to the next whitespace, or through the closing quote
+ *  of an `@"…` one) replaced by the mention of `path` and a space (the one that already follows, if there is one), and
+ *  where the caret goes: after that space. The mention is `@<path>`, or `@"<path>"` when the path holds whitespace
+ *  (`mentionText`, as the chat box writes a pill), so it reads back as one mention. */
 export function insertFileMention(
     text: string,
     start: number,
     caret: number,
     path: string
 ): { text: string; caret: number } {
-    const mention = `@${path}`;
-    // the rest of the word the caret sits in goes too: picking from "@src/fo|o.ts" must not leave "o.ts" behind
-    const rest = text.slice(caret).replace(/^\S*/, "");
+    const mention = mentionText(path);
+    const rest = restOfMention(text, start, caret);
     return {
         text: text.slice(0, start) + (rest.startsWith(" ") ? mention : `${mention} `) + rest,
         caret: start + mention.length + 1,
     };
+}
+
+export const BROWSE_LIMIT = 50;
+
+// a path that starts at a root the project's file list does not cover: ../ ./ ~/ a drive (D:/ D:\) or a separator
+const BROWSE_ROOT = /^(?:\.{1,2}[\\/]|~[\\/]|[A-Za-z]:[\\/]|[\\/])/;
+
+export interface BrowseQuery {
+    /** the folder as typed, up to and including its last separator: `../src/` */
+    dir: string;
+    /** the name typed in it so far */
+    leaf: string;
+}
+
+/** An entry of a folder listing: the part of a `FileInfo` the picker reads. */
+export interface BrowseEntry {
+    name?: string;
+    isdir?: boolean;
+}
+
+/** Pure: when the typed `@` path starts at a root (`../`, `./`, `~/`, `D:/x/`, `/etc/`), the folder to list and the name
+ *  typed in it; null for a project-relative query (`src/ap`, `foo`), which the project's own file ranking answers. */
+export function browseQuery(query: string): BrowseQuery | null {
+    if (!BROWSE_ROOT.test(query)) {
+        return null;
+    }
+    const cut = Math.max(query.lastIndexOf("/"), query.lastIndexOf("\\")) + 1;
+    return { dir: query.slice(0, cut), leaf: query.slice(cut) };
+}
+
+/** Pure: the absolute folder (forward slashes, `.` and `..` folded) a typed `dir` names: relative to `base`, `~` as
+ *  `home`, an absolute one on its own. Null when it cannot be placed (a relative `dir` with no `base`, `~` with no `home`). */
+export function resolveBrowseDir(base: string, dir: string, home: string): string | null {
+    return resolvePath(base === "" ? null : base, dir, home === "" ? null : home);
+}
+
+/** Pure: the entries of a folder the picker lists for `leaf`: folders before files, and in each the names that start
+ *  with `leaf` before those that only contain it, each alphabetical regardless of case. Names that start with a dot
+ *  stay hidden until `leaf` does too. At most BROWSE_LIMIT. */
+export function browseMatches<T extends BrowseEntry>(entries: readonly T[], leaf: string, limit = BROWSE_LIMIT): T[] {
+    const needle = leaf.toLowerCase();
+    const showDot = leaf.startsWith(".");
+    const ranked: { entry: T; lower: string; rank: number }[] = [];
+    for (const entry of entries) {
+        const name = entry.name ?? "";
+        const lower = name.toLowerCase();
+        if (name === "" || (name.startsWith(".") && !showDot)) {
+            continue;
+        }
+        const at = lower.indexOf(needle);
+        if (at < 0) {
+            continue;
+        }
+        ranked.push({ entry, lower, rank: (entry.isdir ? 0 : 2) + (at === 0 ? 0 : 1) });
+    }
+    ranked.sort((a, b) => a.rank - b.rank || (a.lower < b.lower ? -1 : a.lower > b.lower ? 1 : 0));
+    return ranked.slice(0, limit).map((r) => r.entry);
+}
+
+/** Pure: `text` with the `@…` word around the caret replaced by the picked entry of the folder `dir` (as typed, without
+ *  the opening quote of an `@"…` mention). A file is `@<dir><name>` and a space, as insertFileMention writes it. A
+ *  folder is `@<dir><name>/` with no space, the caret right after it, so the picker (still open on that word) lists the
+ *  folder's own entries next. A path with whitespace is quoted both ways (`@"<dir><name>"`), but a folder leaves its
+ *  quote open, `@"<dir><name>/`: the walk is not over, and the picker reads the quoted path up to the caret. */
+export function insertBrowsePick(
+    text: string,
+    start: number,
+    caret: number,
+    dir: string,
+    entry: { name: string; isdir?: boolean }
+): { text: string; caret: number } {
+    if (!entry.isdir) {
+        return insertFileMention(text, start, caret, `${dir}${entry.name}`);
+    }
+    const closed = mentionText(`${dir}${entry.name}/`);
+    const mention = closed.endsWith('"') ? closed.slice(0, -1) : closed;
+    const rest = restOfMention(text, start, caret);
+    return { text: text.slice(0, start) + mention + rest, caret: start + mention.length };
 }
 
 /** Pure: the folder whose files a chat box's `@` lists: the agent's own folder (its block's `cmd:cwd`, a run worker's

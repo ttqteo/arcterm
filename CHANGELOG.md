@@ -26,6 +26,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The / menu in Chat lists every command Claude Code offers in that session (built-ins, its own skills, plugins, MCP),
+  grouped and scrolling, and the + button opens a menu: add files or a folder, slash commands, MCP servers, plugins.
+- In Chat, the files you send show as cards under your message (type, name, folder and size; click to open), the files
+  you @mention as pills, and pasted or tagged content (a paste, a system reminder, command output) as a folded card,
+  instead of raw paths and tags.
+- Chat's message box shows a file you @mention as a pill, and @ walks folders: type @../ or @D:/ to browse, Tab to step
+  into a folder.
 - Chat's `@` file list opens above the box, puts the files the agent just read or wrote first, and marks the
   letters you typed in each name.
 - Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.

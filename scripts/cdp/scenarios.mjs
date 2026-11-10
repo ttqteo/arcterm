@@ -26312,7 +26312,8 @@ const launcherResume = {
                     conversation: (cover?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
                     // the conversation is chat's: your message as a bubble, from the transcript's one prompt
                     bubble: (cover?.querySelector('[data-chat-you]')?.textContent ?? '').trim(),
-                    composer: document.querySelector('[data-sleeping-composer="${tabId}"] textarea')?.placeholder ?? null,
+                    // the box is the chat pane's editor (a contenteditable): its placeholder is the sibling drawn while it is empty
+                    composer: document.querySelector('[data-sleeping-composer="${tabId}"] [data-chat-input]')?.parentElement?.querySelector(':scope > [aria-hidden]')?.textContent ?? null,
                 };
             })()`);
         }
@@ -41862,7 +41863,8 @@ const agentSleep = {
         await asMode(h, "wake", "ok");
 
         // 4b. under the conversation in the sleeping agent's cell, a composer: Enter wakes it with the typed line
-        const CELL_COMPOSER = `document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"] textarea')`;
+        // the chat pane's message box (a contenteditable); data-sleeping-composer sits on the composer's frame around it
+        const CELL_COMPOSER = `document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"] [data-chat-input]')`;
         const cellComposer = await polishWaitFor(h, `!!${CELL_COMPOSER}`, 3000);
         const cellWakesBefore = (await asCalls(h, "agentswake")).length;
         await asMode(h, "wake", "hold");
@@ -42067,6 +42069,11 @@ const agentSleep = {
 // the scenario's own (window.__chatVisualsDir, set in arrange; the pages are written by acWriteVisuals), drawn as a frame in the
 // conversation. The clicks on its buttons are CDP input at known offsets in the frame (a page of another origin cannot be
 // reached from the page); the mock records agentswake for the sleeping agent's prompt and never wakes anything.
+// Steps 50-53 are the `/` menu's second round: the session's own command list (a mocked GetClaudeLiveCommandsCommand for
+// the main agent's block) grouped and scrolling, filtered by what is typed, the + menu that replaces the attach button, and the disk fallback of an agent
+// with no live list. Steps 60-63 draw what you sent: the files of a message as cards under your bubble (a missing one
+// struck through, past five a "+N more" chip) and an @mention as a pill in its text, and a paste or a system reminder
+// as a folded card. The messages are appended to the main agent's transcript as the lines Claude Code writes for them.
 // Teardown puts the roster, the mock, the chat modes, the rail, the grid, Float and the page back.
 const AC_MOCK_KEY = "__arcAgentChatMock";
 const AC = agentPageFixtures;
@@ -42103,12 +42110,47 @@ const AC_ENDED_WAIT_MS = 240_000;
 const AC_WAIT_MS = 8000;
 // what the mocked ListClaudeCommandsCommand answers: a skill the `/` menu lists beside its built-ins
 const AC_COMMANDS = [{ name: "arc:council", description: "Ask a council of viewpoints", source: "skill" }];
+// what the mocked GetClaudeLiveCommandsCommand answers for the main agent's block: the list Claude Code's own typeahead shows in
+// that session (the arc mod publishes it, pkg/claudecmds/live.go). 12 built-ins (the bundled skills `code-review`,
+// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. No other
+// agent has one, so their menu falls back to the built-ins plus AC_COMMANDS. The `/re` filter of step 51 and the `/co` of step
+// 23 are worked out from these names: change one and read both. `mcp` and `model` are in it because a bare /mcp and /model
+// flip the cell to Terminal only while the menu's own list names them (opensTui).
+const AC_LIVE_COMMANDS = [
+    { name: "clear", description: "Start a new session with empty context", source: "builtin" },
+    { name: "code-review", description: "Review the current diff for bugs", source: "builtin" },
+    { name: "compact", description: "Free up context by summarizing the conversation so far", source: "builtin" },
+    { name: "help", description: "Show help and available commands", source: "builtin" },
+    { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation", source: "builtin" },
+    { name: "mcp", description: "Manage MCP servers", source: "builtin" },
+    { name: "model", description: "Set the AI model for Claude Code", source: "builtin" },
+    { name: "release-notes", description: "View the release notes", source: "builtin" },
+    { name: "resume", description: "Resume a previous conversation", source: "builtin" },
+    { name: "review", description: "Review a pull request", source: "builtin" },
+    { name: "security-review", description: "Complete a security review of the pending changes", source: "builtin" },
+    { name: "simplify", description: "Review the changed code for reuse and simplification", source: "builtin" },
+    { name: "standup", description: "Write the daily stand-up from yesterday's commits", source: "user" },
+    { name: "deploy-notes", description: "Draft the notes for a deploy", source: "user" },
+    { name: "arc:council", description: "Ask a council of viewpoints", source: "plugin", plugin: "arc" },
+    { name: "skim", description: "Highlight the sentences worth reading", source: "plugin", plugin: "skim" },
+    { name: "superpowers:brainstorming", description: "Explore intent and design before building", source: "plugin", plugin: "superpowers" },
+    { name: "superpowers:requesting-code-review", description: "Check the work against its requirements", source: "plugin", plugin: "superpowers" },
+    { name: "mcp__docs__summarize", description: "Summarize a page from the docs server", source: "mcp" },
+];
 // the screens Claude Code 2.1.319 drew (captured by the unit tests' fixtures): the step writes them to the fixture terminal
 const AC_SCREENS = JSON.parse(readFileSync(new URL("../../frontend/app/view/agents/tuiscreen.fixtures.json", import.meta.url), "utf8"));
 
 const acCell = (id) => `document.querySelector('[data-agent-terminal="${id}"]')`;
 const acLayer = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
-const acBox = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-agent-chat-composer] textarea')`;
+// the message box: a contenteditable div (the Lexical editor, chateditor.tsx), not a textarea
+const acBox = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-agent-chat-composer] [data-chat-input]')`;
+// What the box holds, read from an expression that finds it: its innerText, null when the box is not there. A contenteditable
+// has no .value, and an empty one reads "\n" (its <br>), so one trailing newline is dropped. A pill reads its short name
+// here, so a step that holds a pill asserts on [data-chat-pill] and on what the mock recorded.
+const acVal = (boxExpr) => `((e) => (e ? e.innerText.replace(/\\n$/, "") : null))(${boxExpr})`;
+// the box's placeholder: the sibling the editor draws while the box is empty
+const acPlaceholder = (wrapExpr) =>
+    `((w) => w?.querySelector("[data-chat-input]")?.parentElement?.querySelector(":scope > [aria-hidden]")?.textContent ?? null)(${wrapExpr})`;
 const acCard = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-permission-card="${id}"]')`;
 const acHeaderGroup = `document.querySelector('[data-agent-header] [role="group"]')`;
 // the element that scrolls one agent's chat, found from its conversation
@@ -42318,7 +42360,8 @@ async function installAgentChatMock(h, ctx) {
         if (window.${AC_MOCK_KEY}) return "already-installed";
         const prev = api.mockClient ?? null;
         const blocks = new Set(${JSON.stringify(blocks)});
-        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)} };
+        const mainBlock = ${JSON.stringify(ctx.tabs.main.blockId)};
+        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)}, live: ${JSON.stringify(AC_LIVE_COMMANDS)} };
         const drop = (data) => {
             const q = m.queues[data.oref] ?? [];
             m.queues[data.oref] = data.allow ? q.filter((r) => r.id !== data.id) : [];
@@ -42359,6 +42402,11 @@ async function installAgentChatMock(h, ctx) {
                 if (command === "listclaudecommands") {
                     m.calls.push({ command, data });
                     return Promise.resolve(m.commands);
+                }
+                // the live list of the main agent's block only; any other block goes down to wavesrv, which has none (null)
+                if (command === "getclaudelivecommands" && data?.blockid === mainBlock) {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(m.live);
                 }
                 if (command === "runtranscriptpath" && data?.runid === ${JSON.stringify(ctx.endedRun ?? "")}) {
                     return Promise.resolve(${JSON.stringify(ctx.files.ended)});
@@ -42411,8 +42459,12 @@ const acKeys = {
     modShiftK: { key: "K", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 8, mod: true },
     altC: { key: "c", code: "KeyC", windowsVirtualKeyCode: 67, modifiers: 1 },
     up: { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38 },
+    down: { key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 },
+    tab: { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 },
     enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
     escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
+    left: { key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 },
+    backspace: { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 },
 };
 async function acKey(h, { mod, ...k }) {
     const modifiers = (k.modifiers ?? 0) | (mod ? ((await h.ev(`/Mac/i.test(navigator.platform)`)) ? 4 : 2) : 0);
@@ -42450,19 +42502,86 @@ const acFocusIn = (h, id) =>
         const a = document.activeElement;
         return {
             xterm: !!a?.closest?.(".xterm") && a.closest("[data-agent-terminal]")?.getAttribute("data-agent-terminal") === ${JSON.stringify(id)},
-            box: a?.tagName === "TEXTAREA" && !!a.closest('[data-agent-chat="${id}"] [data-agent-chat-composer]'),
+            box: a?.hasAttribute?.("data-chat-input") === true && !!a.closest('[data-agent-chat="${id}"] [data-agent-chat-composer]'),
         };
     })()`);
 
-// the box emptied through the page's own input path (select all, delete), so the text state follows
-const acClear = (h, boxExpr) =>
+// The box emptied the way a person does it: focus, Ctrl+A, Backspace, as keys. A script's execCommand("selectAll") followed
+// at once by execCommand("delete") deleted one character of a Lexical editor, which has not heard of the new selection
+// until the browser's selectionchange arrives. Waits for the box to read empty; false when it is not there or stays full.
+async function acClear(h, boxExpr) {
+    const there = await h.ev(`(() => { const e = ${boxExpr}; if (!e) return false; e.focus(); return true; })()`);
+    if (!there) return false;
+    await acKey(h, { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, mod: true, commands: ["selectAll"] });
+    await acKey(h, acKeys.backspace);
+    return polishWaitFor(h, `${acVal(boxExpr)} === ""`, 2000);
+}
+
+// What the `/` list shows, read from the page: whether it is the session's own list, its groups in order (title, the count
+// the header prints, the rows under it), every row (its text, the plugin chip, "opens in Terminal", the highlight), the box's
+// height, the scroller's sizes and the footer's last line. Null while no list shows.
+const acSlashState = (h) =>
     h.ev(`(() => {
-        const ta = ${boxExpr};
-        if (!ta) return false;
-        ta.focus();
-        document.execCommand("selectAll");
-        document.execCommand("delete");
-        return true;
+        const box = document.querySelector("[data-chat-slash]");
+        if (!box) return null;
+        const sc = box.querySelector("[data-picker-scroll]");
+        const groups = [];
+        const rows = [];
+        for (const li of sc?.children ?? []) {
+            if (li.hasAttribute("data-chat-slash-group")) {
+                groups.push({ title: li.getAttribute("data-chat-slash-group"), count: li.lastElementChild?.textContent.trim() ?? null, rows: [] });
+            } else if (li.hasAttribute("data-chat-slash-item")) {
+                const name = li.getAttribute("data-chat-slash-item");
+                const spans = [...li.querySelectorAll("span")].map((s) => s.textContent.trim());
+                groups.at(-1)?.rows.push(name);
+                rows.push({
+                    name,
+                    text: li.textContent.replace(/\\s+/g, " ").trim(),
+                    chip: spans.slice(2).find((t) => t !== "opens in Terminal") ?? null,
+                    tui: spans.includes("opens in Terminal"),
+                    selected: li.getAttribute("aria-selected") === "true",
+                });
+            }
+        }
+        return {
+            live: box.getAttribute("data-chat-slash-live"),
+            groups,
+            rows,
+            height: Math.round(box.getBoundingClientRect().height * 10) / 10,
+            scroller: sc ? { client: sc.clientHeight, scroll: sc.scrollHeight, overflowY: getComputedStyle(sc).overflowY } : null,
+            footer: box.lastElementChild?.lastElementChild?.textContent.trim() ?? null,
+        };
+    })()`);
+
+// What the `@` list shows, read from the page: its label ("Folder entries" while a path is walked, "Project files" for a bare
+// name), every row (the text a pick writes, the name drawn, the highlight) and the note it holds instead of rows ("Listing
+// files…", "Cannot read <dir>"). Null while no list shows.
+const acMentionState = (h) =>
+    h.ev(`(() => {
+        const ul = document.querySelector("[data-chat-mentions]");
+        if (!ul) return null;
+        return {
+            label: ul.getAttribute("aria-label"),
+            rows: [...ul.querySelectorAll("[data-chat-mention]")].map((li) => ({
+                key: li.getAttribute("data-chat-mention"),
+                text: li.textContent.trim(),
+                selected: li.getAttribute("aria-selected") === "true",
+            })),
+            note: ul.querySelector("[data-picker-note]")?.textContent.trim() ?? null,
+        };
+    })()`);
+// The pills in one box: the path each was written with, its short name, whether it is selected (Backspace beside it) and its
+// frame's class (the accent ring of a selected one)
+const acPills = (h, boxExpr) =>
+    h.ev(`(() => {
+        const box = ${boxExpr};
+        return [...(box?.querySelectorAll("[data-chat-pill]") ?? [])].map((p) => ({
+            path: p.getAttribute("data-chat-pill"),
+            label: p.textContent.trim(),
+            title: p.getAttribute("title"),
+            selected: p.getAttribute("data-selected") === "true",
+            accent: p.classList.contains("border-accent"),
+        }));
     })()`);
 
 // Inline visuals (steps 40-44). A visual is a figure `[data-chat-visual="<path>"]` holding an iframe once it has been near the
@@ -42516,7 +42635,7 @@ async function acClickFrame(h, id, file, dx, dy) {
 }
 
 // One line of the transcript Claude Code writes for a message queued while it works and taken in mid-turn
-const acQueuedLine = (dir, prompt) =>
+const acQueuedLine =(dir, prompt) =>
     JSON.stringify({
         type: "attachment",
         timestamp: new Date().toISOString(),
@@ -42525,6 +42644,39 @@ const acQueuedLine = (dir, prompt) =>
         attachment: { type: "queued_command", commandMode: "prompt", prompt },
     });
 const acAppend = (file, ...lines) => appendFileSync(file, lines.join("\n") + "\n");
+
+// What the files block of a sent message looks like (composerattachments.ts messageWithAttachments): the header, then one
+// `- <path>` line a file
+const acFilesBlock = (...paths) => `Attachments (read these files):\n${paths.map((p) => `- ${p}`).join("\n")}`;
+// The words of steps 60-63's messages that stay in the bubble as drawn. An @mention is a pill that reads its file's short
+// name, so the text a bubble holds ("Compare app.ts with the notes") has no `@src/` in it.
+const AC_FILES_KEY = "with the notes";
+const AC_MANY_KEY = "Check these eight files";
+const AC_TAGS_KEY = "Look at this";
+
+// One of your bubbles in a chat, found by a word of its text: the wrapper that holds the text and the cards under it
+const acYouWith = (id, text) =>
+    `[...(${acLayer(id)}?.querySelectorAll("[data-chat-you]") ?? [])].find((e) => e.textContent.includes(${JSON.stringify(text)}))`;
+// What a bubble shows of its files: its text, its cards (path, the icon's tag, name, the line under it, whether it reads as
+// missing) and the "+N more" chip. Null while the bubble is not there.
+const acFileCards = (h, id, text) =>
+    h.ev(`(() => {
+        const you = ${acYouWith(id, text)};
+        if (!you) return null;
+        return {
+            text: you.textContent,
+            cards: [...you.querySelectorAll("[data-chat-file-card]")].map((c) => ({
+                path: c.getAttribute("data-chat-file-card"),
+                tag: c.firstElementChild?.textContent.trim() ?? null,
+                name: c.lastElementChild?.firstElementChild?.textContent.trim() ?? null,
+                sub: c.lastElementChild?.children[1]?.textContent.trim() ?? null,
+                missing: c.hasAttribute("data-chat-file-missing"),
+                text: c.textContent.trim(),
+            })),
+            more: you.querySelector("[data-chat-file-more]")?.textContent.trim() ?? null,
+        };
+    })()`);
+const acScrollTo = (h, expr) => h.ev(`(() => { const e = ${expr}; e?.scrollIntoView({ block: "center" }); return !!e; })()`);
 
 // A captured screen (rows of text) on the fixture terminal of one block: cleared, then each row written at its place so the
 // last row lands on the terminal's last row, which is where readTermLines looks (the bottom rows of the buffer). Rows are cut
@@ -42715,7 +42867,7 @@ const agentChat = {
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             await acType(h, acBox(A), "hello");
             const sent2 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "hello\\r")`, 3000);
-            const left2 = await h.ev(`${acBox(A)}?.value ?? null`);
+            const left2 = await h.ev(acVal(acBox(A)));
             await h.shot("cdp-shots/agent-chat-2-send.png");
             rec(
                 "2. typing hello and Enter sends hello\\r to the block, and the box empties",
@@ -42972,7 +43124,7 @@ const agentChat = {
                 return {
                     empty: l?.querySelector("[data-chat-empty]")?.textContent.trim() ?? null,
                     conversation: !!l?.querySelector("[data-chat-conversation]"),
-                    box: !!l?.querySelector("[data-agent-chat-composer] textarea"),
+                    box: !!l?.querySelector("[data-agent-chat-composer] [data-chat-input]"),
                     skeleton: !!l?.querySelector(".animate-pulse"),
                 };
             })()`);
@@ -42996,7 +43148,7 @@ const agentChat = {
                 return {
                     you: cover?.querySelector("[data-chat-you]")?.textContent.trim() ?? null,
                     agent: !!cover?.querySelector("[data-chat-agent]"),
-                    placeholder: box?.querySelector("textarea")?.placeholder ?? null,
+                    placeholder: ${acPlaceholder("box")},
                     send: box?.querySelector("[data-chat-send]")?.textContent.trim() ?? null,
                     label: box?.querySelector("[data-chat-model-label]")?.textContent.trim() ?? null,
                     modelChip: !!box?.querySelector("[data-chat-model]"),
@@ -43202,10 +43354,10 @@ const agentChat = {
             const mention = `@${E.slice(0, 8)} `;
             const before17 = await acInputs(h, blockA);
             const drop17 = await acAltDrop(h, { source: E, target: A });
-            const landed17 = await polishWaitFor(h, `${acBox(A)}?.value === ${JSON.stringify(mention)}`, 3000);
+            const landed17 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(mention)}`, 3000);
             const focus17 = await acFocusIn(h, A);
             const after17 = await acInputs(h, blockA);
-            const boxes17 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
+            const boxes17 = await h.ev(`({ a: ${acVal(acBox(A))}, b: ${acVal(acBox(B))} })`);
             await h.shot("cdp-shots/agent-chat-17-alt-drop-chat.png");
             rec(
                 "17. in a split, an Alt-drop of E's row onto A's cell in Chat leaves E's mention in A's message box with focus in it, and types nothing into A's block",
@@ -43231,13 +43383,13 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-18-alt-drop-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
-            const boxes18 = await h.ev(`({ a: ${acBox(A)}?.value ?? null, b: ${acBox(B)}?.value ?? null })`);
+            const boxes18 = await h.ev(`({ a: ${acVal(acBox(A))}, b: ${acVal(acBox(B))} })`);
             const typed18 = after18.slice(before18.length);
             rec(
-                "18. with A flipped to Terminal the same Alt-drop pastes the mention into A's PTY as before (no chat layer, focus in the xterm), and no chat box takes it",
+                "18. with A flipped to Terminal the same Alt-drop pastes the mention into A's PTY as before (no chat layer, focus in the xterm), and no chat box takes it: A's box holds only the draft step 17 left (a flip keeps the draft), not a second mention",
                 termUp18 && drop18?.ok === true && /^Mention @/.test(drop18.hint ?? "") &&
                     typed18.length > 0 && typed18.join("").includes(mention.trim()) && focus18.xterm && !focus18.box &&
-                    boxes18.a === "" && boxes18.b === "",
+                    boxes18.a === mention && boxes18.b === "",
                 { termUp18, drop18, typed18, focus18, boxes18 }
             );
             await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
@@ -43311,7 +43463,7 @@ const agentChat = {
             await polishNap(300);
             const hold21 = await h.ev(`(() => {
                 const b = ${acLayer(A)}?.querySelector("[data-chat-send]");
-                return { disabled: b?.disabled ?? null, title: b?.title ?? null, label: b?.getAttribute("aria-label") ?? null, box: ${acBox(A)}?.value ?? null };
+                return { disabled: b?.disabled ?? null, title: b?.title ?? null, label: b?.getAttribute("aria-label") ?? null, box: ${acVal(acBox(A))} };
             })()`);
             const after21 = await acInputs(h, blockA);
             await h.shot("cdp-shots/agent-chat-21-held.png");
@@ -43326,28 +43478,32 @@ const agentChat = {
             );
 
             // 22. ↑ in the empty box puts back the last message sent from it
-            await polishWaitFor(h, `${acBox(A)}?.value === ""`, 3000);
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await acKey(h, acKeys.up);
-            const recalled22 = await polishWaitFor(h, `${acBox(A)}?.value === ${JSON.stringify(S1)}`, 3000);
-            const box22 = await h.ev(`${acBox(A)}?.value ?? null`);
+            const recalled22 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(S1)}`, 3000);
+            const box22 = await h.ev(acVal(acBox(A)));
             await h.shot("cdp-shots/agent-chat-22-recall.png");
             await acClear(h, acBox(A));
             rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S1, { box22 });
 
-            // 23. `/` as the box's first character lists the built-ins and the skills from ListClaudeCommandsCommand (mocked);
-            // Enter on a partial name puts `/compact ` in the box; sending `/model` flips the cell to Terminal
-            await polishWaitFor(h, `${acBox(A)}?.value === ""`, 3000);
+            // 23. `/` as the box's first character lists the session's own commands (GetClaudeLiveCommandsCommand, mocked for this
+            // agent's block: the bundled skill `code-review` is in it, which the disk list never holds, and `arc:council`);
+            // the disk list is not asked for. Enter on a partial name puts `/compact ` in the box; sending `/model` flips the
+            // cell to Terminal
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await h.cdp("Input.insertText", { text: "/co" });
             const slashUp = await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
+            await polishWaitFor(h, `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "true"`, 5000);
             await polishWaitFor(h, `[...document.querySelectorAll("[data-chat-slash-item]")].some((e) => e.textContent.includes("arc:council"))`, 5000);
             const items23 = await h.ev(`[...document.querySelectorAll("[data-chat-slash-item]")].map((e) => e.textContent.replace(/\\s+/g, " ").trim())`);
             await h.shot("cdp-shots/agent-chat-23-slash.png");
             await h.cdp("Input.insertText", { text: "mp" });
             await acKey(h, acKeys.enter);
-            const picked23 = await polishWaitFor(h, `${acBox(A)}?.value === "/compact "`, 3000);
+            const picked23 = await polishWaitFor(h, `${acVal(acBox(A))} === "/compact "`, 3000);
             const fetched23 = await acCalls(h, "listclaudecommands");
+            const live23 = await acCalls(h, "getclaudelivecommands");
             await acClear(h, acBox(A));
             const beforeModel = (await acInputs(h, blockA)).length;
             await h.cdp("Input.insertText", { text: "/model" });
@@ -43360,11 +43516,13 @@ const agentChat = {
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
             rec(
-                "23. / opens the commands menu (compact, and a skill from the mocked list), Enter on /comp puts /compact in the box, and sending /model flips the cell to Terminal",
-                slashUp && items23.some((t) => t.startsWith("/compact")) && items23.some((t) => t.startsWith("/arc:council")) &&
-                    picked23 && fetched23.length === 1 && flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
+                "23. / opens the commands menu from the session's live list (compact, the bundled skill code-review and a plugin's arc:council; the disk list is not asked for), Enter on /comp puts /compact in the box, and sending /model flips the cell to Terminal",
+                slashUp && items23.some((t) => t.startsWith("/compact")) && items23.some((t) => t.startsWith("/code-review")) &&
+                    items23.some((t) => t.startsWith("/arc:council")) && picked23 && fetched23.length === 0 &&
+                    live23.length >= 1 && live23.every((c) => c.data.blockid === blockA) &&
+                    flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
                     JSON.stringify(sentModel) === JSON.stringify(["/model\r"]),
-                { slashUp, items23, picked23, fetched23: fetched23.length, flipped23, header23, sentModel }
+                { slashUp, items23, picked23, fetched23: fetched23.length, live23: live23.length, flipped23, header23, sentModel }
             );
 
             // 24. the footer shows the model chip and the context as a ring with its percent; once the fixture terminal shows the
@@ -43925,7 +44083,7 @@ const agentChat = {
             const fence = (p) => "```arc-visual\n" + p + "\n```";
             const stamp40 = () => ({ cwd: ctx.dir, ts: new Date().toISOString() });
             const typedSince = async (blockId, n) => (await acInputs(h, blockId)).slice(n);
-            const boxValue = (id) => h.ev(`${acBox(id)}?.value ?? null`);
+            const boxValue = (id) => h.ev(acVal(acBox(id)));
             const pendingOfA = (text) =>
                 `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(text)})`;
 
@@ -44086,6 +44244,533 @@ const agentChat = {
                 "44. in the asleep agent's chat a click on the visual's #ask sends exactly one agentswake for that agent whose message is Explain the retry policy",
                 sleeping44 && figure44 && sized44 && woke44 != null && wakeCalls44.length === 1 && wakeCalls44[0].data.tab === F && wakeCalls44[0].data.message === ASK,
                 { sleeping44, figure44, sized44, click44, wakeCalls44, stillAsleep44 }
+            );
+
+            // 50. "Typing /": a `/` in the main agent's box lists the session's whole command list (the mocked live list: 12
+            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped in that order with each group's count, no cap, in a
+            // box at most 420 px tall whose rows scroll; the footer counts them and says "in this session"; a plugin's row has
+            // its chip (arc:council "arc", skim "skim"), and a bare built-in that draws a menu on Claude Code's own screen
+            // (model) says "opens in Terminal"
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "/", false);
+            const total50 = AC_LIVE_COMMANDS.length;
+            const up50 = await polishWaitFor(
+                h,
+                `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "true" && document.querySelectorAll("[data-chat-slash-item]").length === ${total50}`,
+                5000
+            );
+            const s50 = await acSlashState(h);
+            await h.shot("cdp-shots/agent-chat-50-slash-all.png");
+            // the rows scroll: the scroller moves when set, and goes back for the next step
+            const moved50 = await h.ev(`(() => {
+                const sc = document.querySelector("[data-chat-slash] [data-picker-scroll]");
+                if (!sc) return null;
+                sc.scrollTop = 120;
+                const moved = sc.scrollTop;
+                sc.scrollTop = 0;
+                return moved;
+            })()`);
+            const row50 = (name) => s50?.rows.find((r) => r.name === name);
+            const want50 = [
+                ["Built-in", "builtin"],
+                ["Skills", "user"],
+                ["Plugins", "plugin"],
+                ["MCP", "mcp"],
+            ].map(([title, source]) => {
+                const rows = AC_LIVE_COMMANDS.filter((c) => c.source === source).map((c) => c.name);
+                return { title, count: String(rows.length), rows };
+            });
+            rec(
+                "50. / in the main agent's box lists the live list grouped Built-in 12, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal, and code-review sits in Built-in",
+                up50 && s50 != null && s50.live === "true" && s50.rows.length === total50 &&
+                    JSON.stringify(s50.groups) === JSON.stringify(want50) &&
+                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["12", "2", "4", "1"]) &&
+                    s50.height >= 200 && s50.height <= 420.5 &&
+                    s50.scroller?.overflowY === "auto" && s50.scroller.scroll > s50.scroller.client && moved50 > 0 &&
+                    s50.footer === `${total50} commands in this session` &&
+                    row50("arc:council")?.chip === "arc" && row50("skim")?.chip === "skim" && row50("clear")?.chip === null &&
+                    row50("model")?.tui === true && row50("release-notes")?.tui === false &&
+                    s50.groups[0].rows.includes("code-review"),
+                { up50, s50, moved50 }
+            );
+
+            // 51. "Typing /re": `re` after the `/` keeps the rows whose name holds it, the names that start with it (release-notes,
+            // resume, review) before the ones that only contain it, in their groups, and a group with no match is gone (Skills
+            // and MCP here); ↓ then Tab puts the second row, `/resume `, in the box
+            await acType(h, acBox(A), "re", false);
+            const want51 = ["release-notes", "resume", "review", "code-review", "security-review", "superpowers:requesting-code-review"];
+            const filtered51 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-slash-item]").length === ${want51.length}`, 3000);
+            const s51 = await acSlashState(h);
+            await h.shot("cdp-shots/agent-chat-51-slash-filter.png");
+            await acKey(h, acKeys.down);
+            const second51 = await polishWaitFor(h, `document.querySelector('[data-chat-slash-item][aria-selected="true"]')?.getAttribute("data-chat-slash-item") === "resume"`, 3000);
+            await acKey(h, acKeys.tab);
+            const picked51 = await polishWaitFor(h, `${acVal(acBox(A))} === "/resume "`, 3000);
+            const closed51 = await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
+            await acClear(h, acBox(A));
+            rec(
+                "51. /re keeps the rows holding re (release-notes, resume, review before code-review, security-review and the plugin's requesting-code-review), drops the Skills and MCP groups, and ↓ then Tab puts /resume in the box",
+                filtered51 && s51 != null && JSON.stringify(s51.rows.map((r) => r.name)) === JSON.stringify(want51) &&
+                    s51.rows.every((r) => r.name.includes("re")) &&
+                    JSON.stringify(s51.groups.map((g) => [g.title, g.count])) === JSON.stringify([["Built-in", "5"], ["Plugins", "1"]]) &&
+                    s51.live === "true" && second51 && picked51 && closed51,
+                { filtered51, s51, second51, picked51, closed51 }
+            );
+
+            // 52. "The + menu": the + button (still data-chat-attach) opens a menu of five rows in order, the first focused;
+            // Escape closes it, hands the focus back to the box and leaves the chat on screen; picking Slash commands puts `/`
+            // in the box and opens the `/` list; picking MCP servers types /mcp into the block and flips the cell to Terminal
+            await showAgent(A);
+            const plus52 = `${acLayer(A)}?.querySelector("[data-chat-plus]")`;
+            await polishWaitFor(h, `!!${plus52}`, 3000);
+            const attach52 = await h.ev(`${plus52}?.hasAttribute("data-chat-attach") === true`);
+            await h.ev(`${plus52}?.click()`);
+            const menuUp52 = await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            // the popover scales in
+            await polishNap(300);
+            const menu52 = await h.ev(`(() => {
+                const items = [...document.querySelectorAll("[data-chat-plus-menu] [data-chat-plus-item]")];
+                return {
+                    ids: items.map((e) => e.getAttribute("data-chat-plus-item")),
+                    texts: items.map((e) => e.textContent.trim()),
+                    expanded: ${plus52}?.getAttribute("aria-expanded"),
+                    focused: document.activeElement?.getAttribute("data-chat-plus-item") ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-52-plus.png");
+            await acKey(h, acKeys.escape);
+            const closed52 = await polishWaitFor(h, `!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            const focus52 = await polishWaitFor(h, `document.activeElement === ${acBox(A)}`, 3000);
+            const stayed52 = await h.ev(acOnScreen(A));
+            await h.ev(`${plus52}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            await h.ev(`document.querySelector('[data-chat-plus-item="slash"]')?.click()`);
+            const boxSlash52 = await polishWaitFor(h, `${acVal(acBox(A))} === "/"`, 3000);
+            const listSlash52 = await polishWaitFor(h, `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "true"`, 5000);
+            const focusSlash52 = await polishWaitFor(h, `document.activeElement === ${acBox(A)}`, 3000);
+            await h.shot("cdp-shots/agent-chat-52-plus-slash.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
+            await h.ev(`${plus52}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
+            const beforeMcp52 = (await acInputs(h, blockA)).length;
+            await h.ev(`document.querySelector('[data-chat-plus-item="mcp"]')?.click()`);
+            const flipped52 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
+            const sentMcp52 = (await acInputs(h, blockA)).slice(beforeMcp52);
+            await h.shot("cdp-shots/agent-chat-52-plus-mcp-terminal.png");
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)}`, 3000);
+            rec(
+                "52. the + button (data-chat-attach) opens a menu of Add files or photos, Add folder, Slash commands, MCP servers and Plugins with the first focused; Escape closes it with focus back in the box and the chat still on screen; Slash commands puts / in the box and opens the list; MCP servers types /mcp into the block and flips the cell to Terminal",
+                attach52 && menuUp52 && JSON.stringify(menu52.ids) === JSON.stringify(["files", "folder", "slash", "mcp", "plugins"]) &&
+                    ["Add files or photos", "Add folder", "Slash commands", "MCP servers", "Plugins"].every((t, i) => menu52.texts[i]?.startsWith(t)) &&
+                    menu52.expanded === "true" && menu52.focused === "files" &&
+                    closed52 && focus52 && stayed52 && boxSlash52 && listSlash52 && focusSlash52 &&
+                    flipped52 && JSON.stringify(sentMcp52) === JSON.stringify(["/mcp\r"]),
+                { attach52, menuUp52, menu52, closed52, focus52, stayed52, boxSlash52, listSlash52, focusSlash52, flipped52, sentMcp52 }
+            );
+
+            // 53. an agent with no live list (the second one: wavesrv holds none for its block) falls back to the copied built-ins
+            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk"
+            await showAgent(B);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(B)}`, AC_WAIT_MS);
+            await acClear(h, acBox(B));
+            await acType(h, acBox(B), "/", false);
+            const fallbackUp53 = await polishWaitFor(h, `document.querySelector("[data-chat-slash]")?.getAttribute("data-chat-slash-live") === "false"`, 5000);
+            // the disk list lands after the live lookup came back empty
+            const disk53 = await polishWaitFor(h, `[...document.querySelectorAll("[data-chat-slash-item]")].some((e) => e.textContent.includes("arc:council"))`, 5000);
+            const s53 = await acSlashState(h);
+            await h.shot("cdp-shots/agent-chat-53-slash-fallback.png");
+            await acClear(h, acBox(B));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
+            const found53 = /^(\d+) commands found on disk$/.exec(s53?.footer ?? "");
+            rec(
+                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list with data-chat-slash-live false and a footer reading N commands found on disk",
+                fallbackUp53 && disk53 && s53 != null && s53.live === "false" && found53 != null &&
+                    Number(found53[1]) === s53.rows.length && s53.rows.length >= 23 &&
+                    s53.rows.some((r) => r.name === "compact") && s53.rows.some((r) => r.name === "arc:council") &&
+                    s53.groups.map((g) => g.title).join("|") === "Built-in|Plugins",
+                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]) }
+            );
+
+            // 60. "Sent": a message with an @mention and a files block (the text the composer sends) draws without the block. The
+            // block's three files are cards under the bubble (the icon's tag, the name, the folder and size under it once
+            // FileInfoCommand answered) and the mention is a pill in the text that reads the file's short name and sits on the
+            // text's line. The agent got the same words: the transcript holds them as sent. The messages of steps 60-62 are
+            // appended together: the files of three (one gone), then eight (seven there, one gone)
+            const notes60 = join(ctx.dir, "notes.md");
+            const paper60 = join(ctx.dir, "paper.pdf");
+            const gone60 = join(ctx.dir, "gone.md");
+            writeFileSync(notes60, "# notes\n");
+            writeFileSync(paper60, "%PDF-1.4\n");
+            const many60 = Array.from({ length: 8 }, (_, i) => join(ctx.dir, `f${i + 1}.txt`));
+            many60.slice(0, 7).forEach((p, i) => writeFileSync(p, `file ${i + 1}\n`));
+            const sentBy = { cwd: ctx.dir };
+            acAppend(
+                ctx.files.main,
+                AC.userText(`Compare @src/app.ts ${AC_FILES_KEY}\n\n${acFilesBlock(notes60, paper60, gone60)}`, sentBy),
+                AC.userText(`${AC_MANY_KEY}\n\n${acFilesBlock(...many60)}`, sentBy)
+            );
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            const bubble60 = await polishWaitFor(h, `!!(${acYouWith(A, AC_FILES_KEY)}) && !!(${acYouWith(A, AC_MANY_KEY)})`, 15000);
+            // the sizes come from one FileInfoCommand a card
+            const sized60 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_FILES_KEY)})?.querySelector('[data-chat-file-card$="paper.pdf"]')?.textContent.includes(" B") === true`,
+                8000
+            );
+            await acScrollTo(h, acYouWith(A, AC_FILES_KEY));
+            await polishNap(250);
+            const cards60 = await acFileCards(h, A, AC_FILES_KEY);
+            // the pill and the words around it, on one line: the vertical centre of the pill against that of each text node
+            const pill60 = await h.ev(`(() => {
+                const you = ${acYouWith(A, AC_FILES_KEY)};
+                const pill = you?.querySelector('[data-chat-file-pill="src/app.ts"]');
+                if (!pill) return null;
+                const mid = (r) => r.top + r.height / 2;
+                const lines = [];
+                const walker = document.createTreeWalker(you, NodeFilter.SHOW_TEXT);
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    if (pill.contains(n) || n.parentElement?.closest("[data-chat-file-cards]") || !/Compare|with the notes/.test(n.data)) continue;
+                    const range = document.createRange();
+                    range.selectNodeContents(n);
+                    lines.push({ text: n.data, mid: mid(range.getBoundingClientRect()) });
+                }
+                const p = mid(pill.getBoundingClientRect());
+                return {
+                    label: pill.textContent.trim(),
+                    title: pill.getAttribute("title"),
+                    mid: p,
+                    lines,
+                    off: lines.map((l) => Math.abs(l.mid - p)),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-60-file-cards.png");
+            const dirName60 = basename(ctx.dir);
+            rec(
+                "60. a sent message with an @mention and a files block draws without the block (no Attachments (read these files) in the bubble); @src/app.ts is a pill reading app.ts, its vertical centre within 1 px of the text line's, and the three files are cards tagged MD, PDF, MD whose lines under the names hold the folder and the size (notes.md 8 B, paper.pdf 9 B)",
+                bubble60 && sized60 && cards60 != null && pill60 != null &&
+                    !cards60.text.includes("Attachments (read these files)") && !cards60.text.includes("@src/app.ts") &&
+                    pill60.label === "app.ts" && pill60.title === "src/app.ts" &&
+                    pill60.lines.length === 2 && pill60.off.every((d) => d <= 1) &&
+                    cards60.cards.length === 3 &&
+                    JSON.stringify(cards60.cards.map((c) => c.tag)) === JSON.stringify(["MD", "PDF", "MD"]) &&
+                    JSON.stringify(cards60.cards.map((c) => c.name)) === JSON.stringify(["notes.md", "paper.pdf", "gone.md"]) &&
+                    cards60.cards[0].sub === `${dirName60} · 8 B` && cards60.cards[1].sub === `${dirName60} · 9 B` &&
+                    cards60.more === null,
+                { bubble60, sized60, cards60, pill60 }
+            );
+
+            // 61. "Not found": the card of a file that is gone reads Not found, is marked missing and has no size line; the
+            // cards of the files that are there are not marked
+            const missing61 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_FILES_KEY)})?.querySelector('[data-chat-file-card$="gone.md"]')?.hasAttribute("data-chat-file-missing") === true`,
+                8000
+            );
+            await acScrollTo(h, acYouWith(A, AC_FILES_KEY));
+            const cards61 = await acFileCards(h, A, AC_FILES_KEY);
+            await h.shot("cdp-shots/agent-chat-61-file-missing.png");
+            const gone61 = cards61?.cards.find((c) => c.name === "gone.md");
+            rec(
+                "61. the card of gone.md has data-chat-file-missing and reads Not found (its name struck through, no size), and notes.md and paper.pdf are not marked missing",
+                missing61 && gone61 != null && gone61.missing && gone61.sub === "Not found" && gone61.text.includes("Not found") &&
+                    cards61.cards.filter((c) => c.missing).length === 1 &&
+                    cards61.cards.filter((c) => c.name !== "gone.md").every((c) => !c.missing && !c.text.includes("Not found")),
+                { missing61, cards61 }
+            );
+
+            // 62. "+N more": eight files show five cards and a "+3 more" chip; a click unfolds the other three in place (the
+            // chip goes) and the eighth, which was never written, reads Not found
+            await acScrollTo(h, acYouWith(A, AC_MANY_KEY));
+            await polishNap(250);
+            const folded62 = await acFileCards(h, A, AC_MANY_KEY);
+            await h.shot("cdp-shots/agent-chat-62-file-more.png");
+            await h.ev(`(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-more]")?.click()`);
+            const unfolded62 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_MANY_KEY)})?.querySelectorAll("[data-chat-file-card]").length === 8 && !(${acYouWith(A, AC_MANY_KEY)})?.querySelector("[data-chat-file-more]")`,
+                3000
+            );
+            const lastGone62 = await polishWaitFor(
+                h,
+                `(${acYouWith(A, AC_MANY_KEY)})?.querySelector('[data-chat-file-card$="f8.txt"]')?.hasAttribute("data-chat-file-missing") === true`,
+                8000
+            );
+            await acScrollTo(h, acYouWith(A, AC_MANY_KEY));
+            await polishNap(250);
+            const open62 = await acFileCards(h, A, AC_MANY_KEY);
+            await h.shot("cdp-shots/agent-chat-62-file-more-open.png");
+            rec(
+                "62. a message of eight files shows five cards and a +3 more chip; a click on the chip shows all eight in place, the chip gone, f1 to f7 found and f8 (never written) reading Not found",
+                folded62 != null && folded62.cards.length === 5 && folded62.more === "+3 more" &&
+                    JSON.stringify(folded62.cards.map((c) => c.name)) === JSON.stringify(["f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt"]) &&
+                    unfolded62 && lastGone62 && open62 != null && open62.cards.length === 8 && open62.more === null &&
+                    JSON.stringify(open62.cards.map((c) => c.name)) === JSON.stringify(many60.map((p) => basename(p))) &&
+                    JSON.stringify(open62.cards.map((c) => c.missing)) === JSON.stringify([false, false, false, false, false, false, false, true]) &&
+                    open62.cards.every((c) => c.tag === "TXT"),
+                { folded62, unfolded62, lastGone62, open62 }
+            );
+
+            // 63. "Tagged content": a paste Claude Code wrapped in <pasted_content> and a <system-reminder> block draw as folded
+            // cards in the bubble, never as their tags. The paste reads "Pasted · 3 lines" and is closed; a click opens it and
+            // shows its body
+            acAppend(
+                ctx.files.main,
+                AC.userText(
+                    `${AC_TAGS_KEY}\n<pasted_content id="p1">\nline one\nline two\nline three\n</pasted_content>\n<system-reminder>\nkeep it short\n</system-reminder>`,
+                    sentBy
+                )
+            );
+            const tagged63 = await polishWaitFor(h, `!!(${acYouWith(A, AC_TAGS_KEY)})`, 15000);
+            await acScrollTo(h, acYouWith(A, AC_TAGS_KEY));
+            await polishNap(250);
+            const readTags = () =>
+                h.ev(`(() => {
+                    const you = ${acYouWith(A, AC_TAGS_KEY)};
+                    if (!you) return null;
+                    const card = (tag) => {
+                        const c = you.querySelector('[data-chat-tag="' + tag + '"]');
+                        const b = c?.querySelector("button");
+                        return c
+                            ? { header: b?.textContent.trim() ?? c.textContent.trim(), expanded: b?.getAttribute("aria-expanded") ?? null, body: c.querySelector("[data-chat-tag-body]")?.textContent ?? null }
+                            : null;
+                    };
+                    return { text: you.textContent, paste: card("pasted_content"), reminder: card("system-reminder"), cards: you.querySelectorAll("[data-chat-tag]").length };
+                })()`);
+            const closed63 = await readTags();
+            await h.shot("cdp-shots/agent-chat-63-tag-blocks.png");
+            await h.ev(`(${acYouWith(A, AC_TAGS_KEY)})?.querySelector('[data-chat-tag="pasted_content"] button')?.click()`);
+            const opened63 = await polishWaitFor(h, `(${acYouWith(A, AC_TAGS_KEY)})?.querySelector('[data-chat-tag="pasted_content"] [data-chat-tag-body]')?.textContent.includes("line two") === true`, 3000);
+            await acScrollTo(h, acYouWith(A, AC_TAGS_KEY));
+            await polishNap(250);
+            const open63 = await readTags();
+            await h.shot("cdp-shots/agent-chat-63-tag-blocks-open.png");
+            rec(
+                "63. a message with a <pasted_content> block and a <system-reminder> block shows neither tag as text, the paste as a closed card reading Pasted · 3 lines and the reminder as a card reading System reminder; a click on the paste opens it and shows line two",
+                tagged63 && closed63 != null && open63 != null &&
+                    !closed63.text.includes("<pasted_content") && !closed63.text.includes("<system-reminder") &&
+                    !open63.text.includes("<pasted_content") && !open63.text.includes("<system-reminder") &&
+                    closed63.text.includes(AC_TAGS_KEY) && closed63.cards === 2 &&
+                    closed63.paste?.header === "Pasted · 3 lines" && closed63.paste.expanded === "false" && closed63.paste.body === null &&
+                    closed63.reminder?.header === "System reminder" &&
+                    opened63 && open63.paste?.expanded === "true" && open63.paste.body.includes("line two") &&
+                    open63.paste.header === "Pasted · 3 lines",
+                { tagged63, closed63, opened63, open63 }
+            );
+
+            // 70. "Typing": a file picked from the `@` list is a pill in the box, not `@../alpha.ts` text. The fixture agent has no
+            // registered project (the project-wide ranking of a bare `@name` needs one), so its folder (cmd:cwd) is set to
+            // <tmp>/walk/sub and the file is found by walking: @../al lists the parent's alpha.ts. Enter picks it. The pill reads
+            // the file's short name (the full path on hover), sits on the line of the words around it, and a send types the plain
+            // text, the pill as @<path>, then Enter, so the agent gets the same message as before
+            const walk70 = join(ctx.dir, "walk");
+            const cwd70 = join(walk70, "sub");
+            mkdirSync(join(walk70, "docs"), { recursive: true });
+            mkdirSync(cwd70, { recursive: true });
+            writeFileSync(join(walk70, "alpha.ts"), "export const alpha = 1;\n");
+            writeFileSync(join(walk70, "beta.md"), "# beta\n");
+            writeFileSync(join(walk70, "docs", "guide.md"), "# guide\n");
+            writeFileSync(join(cwd70, "inner.md"), "# inner\n");
+            await h.rpc("setmeta", { oref: orefA, meta: { "cmd:cwd": cwd70.replace(/\\/g, "/") } });
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "see @../al", false);
+            const listed70 = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="../alpha.ts"]')`, 8000);
+            const list70 = await acMentionState(h);
+            await acKey(h, acKeys.enter);
+            const pilled70 = await polishWaitFor(h, `!!${acBox(A)}?.querySelector('[data-chat-pill="../alpha.ts"]')`, 3000);
+            // the pick puts the caret back after the pill on the next frame
+            await polishNap(250);
+            await h.cdp("Input.insertText", { text: "now" });
+            const SENT70 = "see @../alpha.ts now";
+            await polishWaitFor(h, `(${acBox(A)}?.textContent ?? "").includes("now")`, 3000);
+            // the pill and the words around it, on one line: the vertical centre of the pill against that of each text node
+            const geo70 = await h.ev(`(() => {
+                const box = ${acBox(A)};
+                const pill = box?.querySelector("[data-chat-pill]");
+                if (!pill) return null;
+                const mid = (r) => r.top + r.height / 2;
+                const lines = [];
+                const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    if (pill.contains(n) || !/\\S/.test(n.data)) continue;
+                    const range = document.createRange();
+                    range.selectNodeContents(n);
+                    lines.push({ text: n.data, mid: mid(range.getBoundingClientRect()) });
+                }
+                const p = mid(pill.getBoundingClientRect());
+                return {
+                    label: pill.textContent.trim(),
+                    title: pill.getAttribute("title"),
+                    mid: p,
+                    lines,
+                    off: lines.map((l) => Math.abs(l.mid - p)),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-70-pill.png");
+            const before70 = (await acInputs(h, blockA)).length;
+            await acKey(h, acKeys.enter);
+            let typed70 = [];
+            for (let i = 0; i < 30 && !typed70.join("").endsWith("\r"); i++) {
+                await polishNap(100);
+                typed70 = (await acInputs(h, blockA)).slice(before70);
+            }
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            const left70 = await h.ev(acVal(acBox(A)));
+            // the pending bubble draws the mention as a pill too (Part B), so nothing jumps when the transcript's copy lands
+            const pending70 = await h.ev(`!!${acLayer(A)}?.querySelector('[data-chat-pending] [data-chat-file-pill="../alpha.ts"]')`);
+            rec(
+                "70. @../al lists the parent's alpha.ts and Enter turns the pick into a pill reading alpha.ts (the full path on hover) whose vertical centre is within 1 px of the words around it; a send types the plain text with the pill as @../alpha.ts, then Enter, and the box empties",
+                listed70 && list70?.label === "Folder entries" && list70.rows.some((r) => r.key === "../alpha.ts") && pilled70 && geo70 != null &&
+                    geo70.label === "alpha.ts" && geo70.title === "../alpha.ts" && geo70.lines.length >= 2 && geo70.off.every((d) => d <= 1) &&
+                    typed70.join("") === `${SENT70}\r` && left70 === "",
+                { listed70, list70, pilled70, geo70, typed70, left70, pending70 }
+            );
+
+            // 71. Backspace beside a pill selects it (the accent ring), the next one takes it away whole. A pick leaves the pill and a
+            // space with the caret after both, so one step left puts the caret right after the pill
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "@../al", false);
+            await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="../alpha.ts"]')`, 8000);
+            await acKey(h, acKeys.enter);
+            const pilled71 = await polishWaitFor(h, `!!${acBox(A)}?.querySelector("[data-chat-pill]")`, 3000);
+            await polishNap(250);
+            await acKey(h, acKeys.left);
+            await polishNap(150);
+            const idle71 = await acPills(h, acBox(A));
+            await acKey(h, acKeys.backspace);
+            const selected71 = await polishWaitFor(h, `${acBox(A)}?.querySelector("[data-chat-pill]")?.getAttribute("data-selected") === "true"`, 3000);
+            const ring71 = await acPills(h, acBox(A));
+            await h.shot("cdp-shots/agent-chat-71-pill-backspace.png");
+            await acKey(h, acKeys.backspace);
+            const gone71 = await polishWaitFor(h, `!${acBox(A)}?.querySelector("[data-chat-pill]")`, 3000);
+            const text71 = await h.ev(acVal(acBox(A)));
+            await h.shot("cdp-shots/agent-chat-71-pill-gone.png");
+            await acClear(h, acBox(A));
+            rec(
+                "71. with the caret right after a pill, Backspace selects it (data-selected, the accent border it did not have) and leaves it in place; Backspace again removes it whole, and the box's text has no @",
+                pilled71 && idle71.length === 1 && idle71[0].selected === false && idle71[0].accent === false &&
+                    selected71 && ring71.length === 1 && ring71[0].selected === true && ring71[0].accent === true && ring71[0].path === "../alpha.ts" &&
+                    gone71 && !text71.includes("@"),
+                { pilled71, idle71, selected71, ring71, gone71, text71 }
+            );
+
+            // 72. "@ walks folders": @../ lists the parent folder's entries, folders first with a trailing /, each as the text a pick
+            // writes; Tab on a folder steps into it (the box reads @../docs/, still text) and the list shows that folder's entries
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "@../", false);
+            const up72 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-mention]").length === 4`, 8000);
+            const top72 = await acMentionState(h);
+            await h.shot("cdp-shots/agent-chat-72-at-folders.png");
+            await acKey(h, acKeys.tab);
+            const into72 = await polishWaitFor(h, `${acVal(acBox(A))} === "@../docs/" && !!document.querySelector('[data-chat-mention="../docs/guide.md"]')`, 5000);
+            const inner72 = await acMentionState(h);
+            const text72 = await h.ev(acVal(acBox(A)));
+            const pills72 = await acPills(h, acBox(A));
+            await h.shot("cdp-shots/agent-chat-72-at-folders-into.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
+            rec(
+                "72. @../ lists the parent's entries as Folder entries, the folders docs/ and sub/ before alpha.ts and beta.md; Tab on docs/ makes the box read @../docs/ (no pill yet) and the list shows its guide.md",
+                up72 && top72?.label === "Folder entries" &&
+                    JSON.stringify(top72.rows.map((r) => r.key)) === JSON.stringify(["../docs/", "../sub/", "../alpha.ts", "../beta.md"]) &&
+                    JSON.stringify(top72.rows.map((r) => r.text)) === JSON.stringify(["docs/", "sub/", "alpha.ts", "beta.md"]) &&
+                    top72.rows[0].selected === true &&
+                    into72 && text72 === "@../docs/" && pills72.length === 0 &&
+                    JSON.stringify(inner72?.rows.map((r) => r.key)) === JSON.stringify(["../docs/guide.md"]),
+                { up72, top72, into72, text72, pills72, inner72 }
+            );
+
+            // 73. ↑ in the empty box puts back the last message sent (step 70's), its mention a pill again
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await h.ev(`${acBox(A)}?.focus()`);
+            await acKey(h, acKeys.up);
+            const recalled73 = await polishWaitFor(h, `!!${acBox(A)}?.querySelector('[data-chat-pill="../alpha.ts"]')`, 3000);
+            const pills73 = await acPills(h, acBox(A));
+            const words73 = await h.ev(`${acBox(A)}?.textContent ?? null`);
+            await h.shot("cdp-shots/agent-chat-73-recall-pills.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!${acBox(A)}?.querySelector("[data-chat-pill]")`, 3000);
+            rec(
+                "73. ↑ in the empty box brings step 70's message back with its mention drawn as the alpha.ts pill, the words before and after it kept",
+                recalled73 && pills73.length === 1 && pills73[0].label === "alpha.ts" && pills73[0].title === "../alpha.ts" &&
+                    (words73 ?? "").includes("see") && (words73 ?? "").includes("now"),
+                { recalled73, pills73, words73 }
+            );
+
+            // 74. a folder the list cannot read: the list holds one note naming it, as typed, and no rows (Enter then sends the text
+            // as it would with no list at all)
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "@../nope/", false);
+            const note74 = await polishWaitFor(h, `document.querySelector("[data-chat-mentions] [data-picker-note]")?.textContent.trim() === "Cannot read ../nope/"`, 8000);
+            const state74 = await acMentionState(h);
+            await h.shot("cdp-shots/agent-chat-74-at-unreadable.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
+            rec(
+                "74. @../nope/ (a folder that does not exist) shows the note Cannot read ../nope/ in the list, with no rows",
+                note74 && state74?.note === "Cannot read ../nope/" && state74.rows.length === 0,
+                { note74, state74 }
+            );
+
+            // 75. a mention that is already a pill is not one being typed. @../a lists alpha.ts and beta.md: the first ↓ moves to
+            // beta.md and stays there (a select event that finds the caret where it was does not send it back to the top), Enter
+            // picks it (a pill and a space). Backspace takes the space, so the caret is right after the pill and the box's text
+            // ends in @../beta.md: the list stays shut, and stays shut with the pill selected (←), where it used to open on the
+            // text of the pill it had just written
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "@../a", false);
+            const two75 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-mention]").length === 2`, 8000);
+            const top75 = await acMentionState(h);
+            await acKey(h, acKeys.down);
+            const moved75 = await polishWaitFor(h, `document.querySelectorAll("[data-chat-mention]")[1]?.getAttribute("aria-selected") === "true"`, 2000);
+            // a stray select event would come within a frame or two of the key
+            await polishNap(500);
+            const down75 = await acMentionState(h);
+            await acKey(h, acKeys.enter);
+            const pilled75 = await polishWaitFor(h, `!!${acBox(A)}?.querySelector('[data-chat-pill="../beta.md"]')`, 3000);
+            // the pick puts the caret back after the pill and its space on the next frame
+            await polishNap(250);
+            const shut75 = async (ms) => {
+                let seen = 0;
+                for (const end = Date.now() + ms; Date.now() < end; await polishNap(80)) {
+                    if (await h.ev(`!!document.querySelector("[data-chat-mentions]")`)) seen++;
+                }
+                return seen === 0;
+            };
+            const closedAfterPick75 = await shut75(500);
+            await acKey(h, acKeys.backspace);
+            // the box reads its pill by the short name, so what is left of "beta.md " is "beta.md" (the space is what the key took:
+            // a list that is shut with the space still there would prove nothing)
+            const boxText75 = `((e) => (e ? e.textContent.replace(/[\\u200b\\ufeff]/g, "") : null))(${acBox(A)})`;
+            const spaceGone75 = await polishWaitFor(h, `${boxText75} === "beta.md"`, 3000);
+            const text75 = await h.ev(`({ text: ${boxText75}, inner: ${acVal(acBox(A))} })`);
+            const shutAtEnd75 = await shut75(1000);
+            const atEnd75 = await acPills(h, acBox(A));
+            await acKey(h, acKeys.left);
+            await polishNap(150);
+            const shutLeft75 = await shut75(1000);
+            const left75 = await acPills(h, acBox(A));
+            await h.shot("cdp-shots/agent-chat-75-at-pill-shut.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
+            rec(
+                "75. @../a lists alpha.ts and beta.md; the first ↓ highlights beta.md and it stays there; Enter picks it as a pill; Backspace takes the space after it and the list stays shut for a second with the caret right after the pill, and with the pill selected (←)",
+                two75 && top75?.rows[0]?.selected === true && moved75 && down75?.rows.length === 2 && down75.rows[1].key === "../beta.md" &&
+                    down75.rows[1].selected === true && down75.rows[0].selected === false &&
+                    pilled75 && closedAfterPick75 &&
+                    spaceGone75 && shutAtEnd75 && atEnd75.length === 1 && atEnd75[0].path === "../beta.md" &&
+                    shutLeft75 && left75.length === 1 && left75[0].selected === true,
+                { two75, top75, moved75, down75, pilled75, closedAfterPick75, spaceGone75, text75, shutAtEnd75, atEnd75, shutLeft75, left75 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));

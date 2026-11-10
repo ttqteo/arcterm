@@ -367,6 +367,7 @@ declare global {
         name: string;
         description?: string;
         source: string;
+        plugin?: string;
     };
 
     // wshrpc.ClaudeContextFile
@@ -1383,6 +1384,11 @@ declare global {
         channels: Channel[];
     };
 
+    // wshrpc.CommandGetClaudeLiveCommandsData
+    type CommandGetClaudeLiveCommandsData = {
+        blockid: string;
+    };
+
     // wshrpc.CommandGetClaudeQuotaRtnData
     type CommandGetClaudeQuotaRtnData = {
         fivehourpct?: number;
@@ -2290,6 +2296,12 @@ declare global {
     type CommandSetChannelTierData = {
         channelid: string;
         tier: string;
+    };
+
+    // wshrpc.CommandSetClaudeLiveCommandsData
+    type CommandSetClaudeLiveCommandsData = {
+        blockid: string;
+        commands: ClaudeCommandInfo[];
     };
 
     // wshrpc.CommandSetDossierStatusData

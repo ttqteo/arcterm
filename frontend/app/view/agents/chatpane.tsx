@@ -21,19 +21,21 @@ import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
-import { workingText } from "./chatmodel";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
+import { ChatFileCards } from "./chatfilecards";
+import { splitAttachments } from "./chatfiles";
 import { chatCapable } from "./chatmode";
+import { workingText } from "./chatmodel";
+import { setChatMode, useChatMode } from "./chatmodestore";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
-import { setChatMode, useChatMode } from "./chatmodestore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
+import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
-import { splitAttachedImages } from "./launcherimages";
-import { PromptImages, PromptText } from "./narrationtimeline";
+import { PromptImages } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
@@ -42,8 +44,6 @@ import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const NO_ENTRIES: AgentEntry[] = [];
 
-// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
-// takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill).
 // when the agent last went idle (ms), null while it works; an agent idle at mount counts from the mount
 function useIdleSince(idle: boolean): number | null {
     const [since, setSince] = useState<number | null>(() => (idle ? Date.now() : null));
@@ -53,14 +53,26 @@ function useIdleSince(idle: boolean): number | null {
     return since;
 }
 
+// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
+// takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill). It splits
+// the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
+// under it), so nothing changes when the transcript's copy replaces it.
 function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
-    const said = splitAttachedImages(text);
+    const said = splitAttachments(text);
+    const body = said.text.trim();
     return (
         <div data-chat-pending className="flex flex-col items-end gap-1">
-            <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
-                {said.text ? <PromptText text={said.text} /> : null}
-                {said.paths.length > 0 ? <PromptImages paths={said.paths} /> : null}
-            </div>
+            {body !== "" || said.images.length > 0 ? (
+                <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
+                    {body !== "" ? <TaggedPromptText text={body} /> : null}
+                    {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                </div>
+            ) : null}
+            {said.files.length > 0 ? (
+                <div className="mt-1 max-w-[75%] opacity-60">
+                    <ChatFileCards paths={said.files} />
+                </div>
+            ) : null}
             <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
         </div>
     );
@@ -204,7 +216,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             )}
         >
             <div className="relative min-h-0 flex-1">
-                <div ref={scrollRef} onScroll={onScroll} className="flex h-full flex-col overflow-y-auto px-[22px] pb-[12px]">
+                <div
+                    ref={scrollRef}
+                    onScroll={onScroll}
+                    className="flex h-full flex-col overflow-y-auto px-[22px] pb-[12px]"
+                >
                     {loading ? (
                         <TranscriptSkeleton />
                     ) : empty ? (
@@ -236,9 +252,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     {/* always drawn, so it is one of the scroller's children from the first render: the scroll stays at
                         the end when a card arrives or the working line changes its height */}
                     <div data-chat-tail className="mx-auto flex w-full max-w-[760px] flex-none flex-col gap-3 pb-2">
-                        {pending.map((p) => (
-                            <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
-                        ))}
+                        {/* its own provider: a pill or card in a pending bubble opens as it will in the transcript's copy */}
+                        <AgentPathLinks agent={agent}>
+                            {pending.map((p) => (
+                                <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
+                            ))}
+                        </AgentPathLinks>
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}
@@ -246,7 +265,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         ) : null}
                         {working != null ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
-                                <span className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                                <span
+                                    className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot"
+                                    aria-hidden
+                                />
                                 <span className="min-w-0 truncate">{working}</span>
                             </div>
                         ) : null}
@@ -265,7 +287,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             {/* the conversation's own column (760px), so the box lines up under the last message; keyed by the agent
                 alone, so its text and its attachments belong to one agent and the box is never remounted when the agent
                 sleeps or wakes (its parts fold in place). Asleep its Enter wakes the agent, and it carries
-                data-sleeping-composer for the scenarios' `[data-sleeping-composer] textarea`. */}
+                data-sleeping-composer on its frame for the scenarios' `[data-sleeping-composer] [data-chat-input]`. */}
             <div className="flex-none px-[22px] pb-4 pt-3">
                 <ChatComposer
                     key={agent.id}

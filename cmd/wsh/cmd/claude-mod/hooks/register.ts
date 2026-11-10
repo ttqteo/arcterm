@@ -2,11 +2,12 @@
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
 // outside an arcterm block every hook passes straight through, but the memory lint.
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register } from "claude-code";
+import type { EngineInterface, Register, Timer } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply, settleAsk } from "./ask-core";
 import { drawCacheMiss } from "./cache-band";
 import { cacheMissNotice, transcriptEntries } from "./cache-core";
+import { claudecmdsArgs, commandsPayload } from "./commands-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { ALL_CATEGORIES, applyEdit, goalpostNote, goalpostRole, inspectChange, inspectCommand } from "./goalpost-core";
@@ -80,6 +81,50 @@ async function reportCacheMiss($: EngineInterface) {
         }
     } catch (err) {
         $.ui.log(`arc: reporting a cache miss failed: ${String(err)}`, { to: "debug" });
+    }
+}
+
+// the JSON of the slash-command list wavesrv last took, "" before the first. Chat's `/` menu reads that list, so a
+// publish sends only when the list differs from this
+let lastCommands = "";
+
+// the pending second publish after session.start, so a /clear (session.start again) does not stack timers
+let commandsTimer: Timer | null = null;
+
+// tells wavesrv the commands Claude Code's own typeahead shows now: the bundled skills, a mod's commands and MCP
+// prompts, which `~/.claude` does not hold. only inside arcterm. a failed call is logged and not retried on its own:
+// lastCommands stays as it was, so the next publish sends the list again
+async function publishCommands($: EngineInterface): Promise<void> {
+    if (!active) {
+        return;
+    }
+    try {
+        const payload = commandsPayload(await $.command.list());
+        if (payload === lastCommands) {
+            return;
+        }
+        const ran = await $.process.run([WSH, ...claudecmdsArgs()], { stdin: payload, timeoutMs: 10_000 });
+        if (ran.exitCode === 0) {
+            lastCommands = payload;
+        } else {
+            $.ui.log(`arc: wsh claudecmds set exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
+        }
+    } catch (err) {
+        $.ui.log(`arc: publishing the slash commands failed: ${String(err)}`, { to: "debug" });
+    }
+}
+
+// the publishes session.start owes: one now, and one once the MCP servers have connected (they do after the session
+// starts). the second is a $.clock.after, not a detached sleep: a sleep's wait is the hook's own time and would bill
+// to its budget. a /clear or a reload runs session.start again, so the list is sent again even when it is the same
+function publishCommandsAtStart($: EngineInterface): void {
+    lastCommands = "";
+    void publishCommands($);
+    try {
+        commandsTimer?.cancel();
+        commandsTimer = $.clock.after(10_000, () => void publishCommands($));
+    } catch (err) {
+        $.ui.log(`arc: scheduling the slash commands' second publish failed: ${String(err)}`, { to: "debug" });
     }
 }
 
@@ -531,6 +576,7 @@ export const register: Register = (on) => {
         if (active) {
             void listenToCockpit($);
         }
+        publishCommandsAtStart($);
         return started;
     });
 
@@ -559,6 +605,8 @@ export const register: Register = (on) => {
         const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
         if (m === null) {
             await promptStarted($, e.origin.kind);
+            // a skill or an MCP server added since the last prompt shows on the next `/`; not awaited
+            void publishCommands($);
             return next(e);
         }
         const putBack = () =>

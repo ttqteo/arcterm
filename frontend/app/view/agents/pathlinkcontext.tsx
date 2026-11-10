@@ -15,6 +15,11 @@ export interface PathOpener {
 
 const PathLinkContext = createContext<PathOpener | null>(null);
 
+// the opener a path link calls, or null with no agent around: for a piece that opens a file but is not a link (a file card)
+export function usePathOpener(): PathOpener | null {
+    return useContext(PathLinkContext);
+}
+
 export function AgentPathLinks({ agent, children }: { agent: AgentVM; children: ReactNode }) {
     const opener = useMemo<PathOpener>(
         () => ({ open: (path, line) => fireAndForget(() => openAgentPath(agent, path, line)) }),
@@ -35,7 +40,7 @@ export function PathLink({
     className?: string;
     children: ReactNode;
 }) {
-    const opener = useContext(PathLinkContext);
+    const opener = usePathOpener();
     if (opener == null) {
         return <span className={className}>{children}</span>;
     }

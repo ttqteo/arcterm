@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Putting text into an agent's chat box from outside it (an Alt-drop's @mention), the way termpaste.ts puts text into
-// an agent's terminal. The box's text is React state (useAgentSend's), so the insert goes through it: writing the
-// textarea's value from outside would be overwritten by the next render. Each ChatComposer registers its insert under
-// its agent id; this module has no imports, so no import cycle can run through it.
+// an agent's terminal. The box's text is React state (useAgentSend's), so the insert goes through it: the chat editor
+// draws from that text, and a change made to the editor alone would be overwritten by the next render. The offsets are
+// in the plain text (the message as the agent receives it, a file pill counting as the `@path` it is written as), which
+// the editor's handle reports the way a textarea does. Each ChatComposer registers its insert under its agent id; this
+// module has no imports, so no import cycle can run through it.
 
 // the text after an insert, and where the caret goes (both in UTF-16 units, as a textarea's selection counts them)
 export function insertAt(
