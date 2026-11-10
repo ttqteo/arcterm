@@ -47,24 +47,30 @@ function useNow(active: boolean): number {
 // how many rows off the bottom of the terminal hold the dialog, and how often the card re-reads them while it shows
 const SCREEN_ROWS = 30;
 const SECOND_POLL_MS = 1000;
+// the first read waits this long, so the TUI has drawn the dialog of a request that just became the head
+const SECOND_FIRST_READ_MS = 250;
 
-// The label of the prompt's own second "Yes, and …" option, read off the terminal under the chat on show and each
-// second while an answerable request is up; null otherwise.
-function useSecondChoice(blockId: string | undefined, active: boolean): string | null {
+// The label of the prompt's own second "Yes, and …" option, read off the terminal under the chat while answerable
+// request `headId` is up; null otherwise. A new head starts with no label and reads its own dialog: the one before it
+// may still be on screen for a moment, and its option 2 is not this request's.
+function useSecondChoice(blockId: string | undefined, headId: string | undefined): string | null {
     const [label, setLabel] = useState<string | null>(null);
     useEffect(() => {
-        if (!active || blockId == null) {
-            setLabel(null);
+        setLabel(null);
+        if (headId == null || blockId == null) {
             return;
         }
         const read = () => {
             const lines = readTermLines(blockId, SCREEN_ROWS);
             setLabel(lines == null ? null : secondChoice(tuiPermissionOptions(lines)));
         };
-        read();
+        const first = setTimeout(read, SECOND_FIRST_READ_MS);
         const timer = setInterval(read, SECOND_POLL_MS);
-        return () => clearInterval(timer);
-    }, [blockId, active]);
+        return () => {
+            clearTimeout(first);
+            clearInterval(timer);
+        };
+    }, [blockId, headId]);
     return label;
 }
 
@@ -77,7 +83,7 @@ export function PermissionCard({ agent, onOpenTerminal }: { agent: AgentVM; onOp
     // draws for the error line alone once the queue is empty.
     const shown = oref != null && (head != null || error != null) && cardShown(agent);
     const now = useNow(shown && head != null);
-    const second = useSecondChoice(agent.blockId, shown && head != null && head.answerable);
+    const second = useSecondChoice(agent.blockId, shown && head?.answerable ? head.id : undefined);
     if (!shown) {
         return null;
     }
