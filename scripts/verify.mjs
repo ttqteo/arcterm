@@ -502,20 +502,24 @@ function runVitest(args) {
 }
 
 async function main(patterns) {
-    if (patterns.length === 0) {
-        console.error("usage: node scripts/verify.mjs <go package pattern>...");
-        process.exit(2);
+    // a plan whose Verify names no Go package (a frontend-only run) skips the Go tests rather than failing every
+    // merge: the engine keeps the Verify line it was submitted with, so a run cannot correct it afterwards
+    const noGo = patterns.length === 0;
+    if (noGo) {
+        console.log("verify: no go package pattern given, Go tests skipped");
     }
     const listFile = process.env.ARC_VERIFY_CHANGED;
     const changed = listFile ? readChangedFile(listFile) : null;
     if (!changed) {
-        await goTest(patterns);
+        if (!noGo) {
+            await goTest(patterns);
+        }
         run("node", TSC);
         runVitest(VITEST);
         return;
     }
     const modulePath = readFileSync("go.mod", "utf8").match(/^module\s+(\S+)/m)[1];
-    const goChanged = needsGoGraph(changed);
+    const goChanged = !noGo && needsGoGraph(changed);
     const graph = goChanged ? goGraph() : [];
     const universe = goChanged ? new Set(goList(patterns)) : new Set();
     const plan = planVerify(changed, graph, universe, modulePath);
