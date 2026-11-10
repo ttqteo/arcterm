@@ -2,12 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The `@` file picker of a text box: the New launcher's Task box and the chat box. An `@` typed lists the folder's files
-// under the box, and a pick puts `@<path>` in the text (launchermention.ts holds the pure rules).
+// under the box, and a pick puts `@<path>` in the text (launchermention.ts holds the pure rules). A path that starts at
+// a root (`@../`, `@./`, `@~/`, `@D:/`, `@/`) is a walk instead: the picker lists that folder's entries, read off the
+// disk, and a folder pick steps into it.
 
 import { FileIcon } from "@/app/element/fileicon";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { reloadFileIndex } from "@/app/view/code/codestore";
-import { useEffect, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { fileMentionAt, fileMentionMatches, insertFileMention } from "./launchermention";
+import { makeConnRoute } from "@/util/util";
+import { File as FileGlyph, Folder } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import {
+    browseMatches,
+    browseQuery,
+    fileMentionAt,
+    fileMentionMatches,
+    insertBrowsePick,
+    insertFileMention,
+    resolveBrowseDir,
+    type BrowseEntry,
+} from "./launchermention";
+import { homeDir } from "./pathlinkroute";
 import { PickerList } from "./pickerlist";
 
 export interface FileMentionState {
@@ -17,21 +33,51 @@ export interface FileMentionState {
     onCaret: (el: HTMLTextAreaElement) => void;
 }
 
+// a row of the list: a path of the project's own ranking, or an entry of the folder being walked (`key` is the text a
+// pick writes for it: `../src/`, `../a.ts`)
+type MentionRow = { kind: "path"; path: string } | { kind: "entry"; key: string; name: string; isdir: boolean };
+
+const rowKey = (row: MentionRow) => (row.kind === "path" ? row.path : row.key);
+
+// one folder's listing while the picker is open: nothing yet (being read), its entries, or an error
+type DirListing = { entries?: BrowseEntry[]; error?: boolean };
+
+// The entries of the folder `dir` (as typed in the `@` path), read from the disk through wavesrv: relative to `base`, `~`
+// as the home folder. Throws when the folder cannot be placed or read.
+async function listDir(base: string, dir: string): Promise<BrowseEntry[]> {
+    const home = dir.startsWith("~") ? await homeDir() : "";
+    const abs = resolveBrowseDir(base, dir, home);
+    if (abs == null) {
+        throw new Error(`cannot place ${dir}`);
+    }
+    const entries: BrowseEntry[] = [];
+    const gen = RpcApi.RemoteListEntriesCommand(TabRpcClient, { path: abs }, { route: makeConnRoute(null) });
+    for await (const chunk of gen) {
+        entries.push(...(chunk.fileinfo ?? []));
+    }
+    return entries;
+}
+
 // A text box's `@` picker (the New launcher's Task box, the chat box), a dropdown under the box (pickerlist.tsx, which
 // portals it out of the box). The files are read again on the first `@` after each mount of the box (the launcher
 // unmounts it on close): there is no watcher, and an agent creates files meanwhile. A query no file matches shows
-// nothing, so an `@` meant as text never blocks Enter. `filesRoot` "" turns it off. `name` tags the list for scenarios
-// (`data-<name>-mentions`, an option `data-<name>-mention`).
+// nothing, so an `@` meant as text never blocks Enter. `filesRoot` is the project's folder, whose files a bare query
+// ranks; "" turns that off. A path that starts at a root walks folders instead, from `filesRoot`, else from `cwd` (an
+// agent outside a registered project has a folder but no file list); with neither the picker is off. Each folder is
+// read once while the list is open. `name` tags the list for scenarios (`data-<name>-mentions`, an option
+// `data-<name>-mention`).
 export function useFileMention({
     text: task,
     setText,
     filesRoot,
+    cwd,
     inputRef: taskRef,
     name,
 }: {
     text: string;
     setText: (text: string) => void;
     filesRoot: string;
+    cwd?: string;
     inputRef: RefObject<HTMLTextAreaElement | null>;
     name: string;
 }): FileMentionState {
@@ -40,10 +86,18 @@ export function useFileMention({
     // the `@` whose list Escape closed; it stays closed until the caret leaves it
     const [dismissed, setDismissed] = useState(-1);
     const [listing, setListing] = useState<{ root: string; paths?: string[]; error?: boolean } | null>(null);
-    const mention = filesRoot === "" ? null : fileMentionAt(task, caret);
+    // the folders read since the list opened, by base and typed folder; closing it forgets them (the disk moves on)
+    const [dirs, setDirs] = useState<Record<string, DirListing>>({});
+    // counts the closings: a folder still being read when the list closed must not land in the next opening's cache
+    const opening = useRef(0);
+    const base = filesRoot || cwd || "";
+    const mention = base === "" ? null : fileMentionAt(task, caret);
     const open = mention != null && mention.start !== dismissed;
+    const browse = open ? browseQuery(mention.query) : null;
+    const browseDir = browse?.dir ?? null;
+    const projectOpen = open && browse == null && filesRoot !== "";
     useEffect(() => {
-        if (!open || listing?.root === filesRoot) {
+        if (!projectOpen || listing?.root === filesRoot) {
             return;
         }
         setListing({ root: filesRoot });
@@ -51,20 +105,59 @@ export function useFileMention({
             (idx) => setListing((cur) => (cur?.root === filesRoot ? { root: filesRoot, paths: idx.paths } : cur)),
             () => setListing((cur) => (cur?.root === filesRoot ? { root: filesRoot, error: true } : cur))
         );
-    }, [open, filesRoot, listing?.root]);
+    }, [projectOpen, filesRoot, listing?.root]);
+    useEffect(() => {
+        if (!open) {
+            opening.current++;
+            setDirs((cur) => (Object.keys(cur).length === 0 ? cur : {}));
+        }
+    }, [open]);
+    const dirKey = browseDir == null ? null : `${base}\n${browseDir}`;
+    const dirListing = dirKey == null ? undefined : dirs[dirKey];
+    useEffect(() => {
+        if (dirKey == null || browseDir == null || dirListing != null) {
+            return;
+        }
+        const mine = opening.current;
+        const settle = (next: DirListing) => {
+            if (opening.current === mine) {
+                setDirs((cur) => ({ ...cur, [dirKey]: next }));
+            }
+        };
+        setDirs((cur) => ({ ...cur, [dirKey]: {} }));
+        listDir(base, browseDir).then(
+            (entries) => settle({ entries }),
+            () => settle({ error: true })
+        );
+    }, [dirKey, browseDir, base, dirListing]);
     const own = listing?.root === filesRoot ? listing : null;
-    const matches = open && own?.paths != null ? fileMentionMatches(mention.query, own.paths) : [];
-    const note = !open
-        ? null
-        : own?.error
-          ? "Could not list the project's files"
-          : own?.paths == null
-            ? "Listing files…"
-            : null;
-    const shown = note != null || matches.length > 0;
-    const at = Math.min(pick, Math.max(matches.length - 1, 0));
-    const choose = (path: string) => {
-        const next = insertFileMention(task, mention.start, caret, path);
+    let rows: MentionRow[] = [];
+    let note: string | null = null;
+    if (browse != null) {
+        if (dirListing?.entries != null) {
+            rows = browseMatches(dirListing.entries, browse.leaf).map((e) => ({
+                kind: "entry" as const,
+                key: `${browse.dir}${e.name}${e.isdir ? "/" : ""}`,
+                name: e.name ?? "",
+                isdir: !!e.isdir,
+            }));
+        } else {
+            note = dirListing?.error ? `Cannot read ${browse.dir}` : "Listing files…";
+        }
+    } else if (projectOpen) {
+        if (own?.paths != null) {
+            rows = fileMentionMatches(mention.query, own.paths).map((path) => ({ kind: "path" as const, path }));
+        } else {
+            note = own?.error ? "Could not list the project's files" : "Listing files…";
+        }
+    }
+    const shown = note != null || rows.length > 0;
+    const at = Math.min(pick, Math.max(rows.length - 1, 0));
+    const choose = (row: MentionRow) => {
+        const next =
+            row.kind === "path"
+                ? insertFileMention(task, mention.start, caret, row.path)
+                : insertBrowsePick(task, mention.start, caret, browse.dir, row);
         setText(next.text);
         setCaret(next.caret);
         setPick(0);
@@ -85,18 +178,18 @@ export function useFileMention({
             setDismissed(mention.start);
             return;
         }
-        if (matches.length === 0 || e.metaKey || e.ctrlKey || e.altKey) {
+        if (rows.length === 0 || e.metaKey || e.ctrlKey || e.altKey) {
             return;
         }
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
             e.stopPropagation();
-            const n = matches.length;
+            const n = rows.length;
             setPick((at + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
         } else if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
             e.preventDefault();
             e.stopPropagation();
-            choose(matches[at]);
+            choose(rows[at]);
         }
     };
     // a keystroke or a click moves the caret and starts the list from its best match again; ↑↓ do not (the picker
@@ -114,23 +207,34 @@ export function useFileMention({
             anchor={taskRef}
             shown={shown}
             note={note}
-            items={matches}
+            items={rows}
             at={at}
             onPick={choose}
             onHover={setPick}
-            label="Project files"
+            label={browse != null ? "Folder entries" : "Project files"}
             listAttr={`data-${name}-mentions`}
             itemAttr={`data-${name}-mention`}
-            itemKey={(path) => path}
-            itemTitle={(path) => path}
-            renderItem={(path) => {
-                const slash = path.lastIndexOf("/");
+            itemKey={rowKey}
+            itemTitle={rowKey}
+            renderItem={(row) => {
+                if (row.kind === "entry") {
+                    const Icon = row.isdir ? Folder : FileGlyph;
+                    return (
+                        <>
+                            <Icon size={14} className="shrink-0 text-muted" aria-hidden />
+                            <span className="min-w-0 truncate text-[12px] text-primary">
+                                {row.isdir ? `${row.name}/` : row.name}
+                            </span>
+                        </>
+                    );
+                }
+                const slash = row.path.lastIndexOf("/");
                 return (
                     <>
-                        <FileIcon path={path} size={14} />
-                        <span className="shrink-0 text-[12px] text-primary">{path.slice(slash + 1)}</span>
+                        <FileIcon path={row.path} size={14} />
+                        <span className="shrink-0 text-[12px] text-primary">{row.path.slice(slash + 1)}</span>
                         <span className="min-w-0 truncate text-[11px] text-muted">
-                            {slash === -1 ? "" : path.slice(0, slash)}
+                            {slash === -1 ? "" : row.path.slice(0, slash)}
                         </span>
                     </>
                 );

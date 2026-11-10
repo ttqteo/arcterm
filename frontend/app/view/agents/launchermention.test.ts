@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { chatFilesRoot, fileMentionAt, fileMentionMatches, insertFileMention } from "./launchermention";
+import {
+    browseMatches,
+    browseQuery,
+    chatFilesRoot,
+    fileMentionAt,
+    fileMentionMatches,
+    insertBrowsePick,
+    insertFileMention,
+    resolveBrowseDir,
+} from "./launchermention";
 
 describe("fileMentionAt", () => {
     it("opens on a bare @ at the start", () => {
@@ -31,6 +40,179 @@ describe("fileMentionAt", () => {
 
     it("finds nothing without an @", () => {
         expect(fileMentionAt("plain task", 10)).toBeNull();
+    });
+
+    it("keeps a folder walk's roots whole: a drive, a backslash, home, a parent", () => {
+        expect(fileMentionAt("see @D:/", 8)).toEqual({ start: 4, query: "D:/" });
+        expect(fileMentionAt("see @D:\\x\\", 10)).toEqual({ start: 4, query: "D:\\x\\" });
+        expect(fileMentionAt("@~/", 3)).toEqual({ start: 0, query: "~/" });
+        expect(fileMentionAt("@../src/ap", 10)).toEqual({ start: 0, query: "../src/ap" });
+        expect(fileMentionAt("@/etc/", 6)).toEqual({ start: 0, query: "/etc/" });
+    });
+});
+
+describe("browseQuery", () => {
+    it("splits a path that starts at a root into the folder and the name typed in it", () => {
+        expect(browseQuery("../")).toEqual({ dir: "../", leaf: "" });
+        expect(browseQuery("../src/ap")).toEqual({ dir: "../src/", leaf: "ap" });
+        expect(browseQuery("./")).toEqual({ dir: "./", leaf: "" });
+        expect(browseQuery("./src/ap")).toEqual({ dir: "./src/", leaf: "ap" });
+        expect(browseQuery("~/")).toEqual({ dir: "~/", leaf: "" });
+        expect(browseQuery("~/docs/no")).toEqual({ dir: "~/docs/", leaf: "no" });
+        expect(browseQuery("D:/x/")).toEqual({ dir: "D:/x/", leaf: "" });
+        expect(browseQuery("D:/x/re")).toEqual({ dir: "D:/x/", leaf: "re" });
+        expect(browseQuery("/etc/")).toEqual({ dir: "/etc/", leaf: "" });
+        expect(browseQuery("/etc/ho")).toEqual({ dir: "/etc/", leaf: "ho" });
+    });
+
+    it("reads a backslash as a separator", () => {
+        expect(browseQuery("D:\\x\\")).toEqual({ dir: "D:\\x\\", leaf: "" });
+        expect(browseQuery("D:\\x\\re")).toEqual({ dir: "D:\\x\\", leaf: "re" });
+        expect(browseQuery("..\\src\\")).toEqual({ dir: "..\\src\\", leaf: "" });
+    });
+
+    it("takes a drive or the filesystem root alone as a folder", () => {
+        expect(browseQuery("D:/")).toEqual({ dir: "D:/", leaf: "" });
+        expect(browseQuery("/")).toEqual({ dir: "/", leaf: "" });
+        expect(browseQuery("/et")).toEqual({ dir: "/", leaf: "et" });
+    });
+
+    it("leaves a project-relative query to the project's own ranking", () => {
+        expect(browseQuery("src/ap")).toBeNull();
+        expect(browseQuery("foo")).toBeNull();
+        expect(browseQuery("")).toBeNull();
+    });
+
+    it("needs the separator: a bare .., . or ~ is still a name being typed", () => {
+        expect(browseQuery("..")).toBeNull();
+        expect(browseQuery(".git")).toBeNull();
+        expect(browseQuery("~")).toBeNull();
+    });
+});
+
+describe("resolveBrowseDir", () => {
+    it("joins a relative folder onto the base", () => {
+        expect(resolveBrowseDir("/w/arcterm", "src/", "/Users/q")).toBe("/w/arcterm/src");
+        expect(resolveBrowseDir("/w/arcterm", "./", "/Users/q")).toBe("/w/arcterm");
+    });
+
+    it("steps up on ..", () => {
+        expect(resolveBrowseDir("/w/arcterm", "../", "/Users/q")).toBe("/w");
+        expect(resolveBrowseDir("/w/arcterm", "../../", "/Users/q")).toBe("/");
+        expect(resolveBrowseDir("/w/arcterm", "../other/src/", "/Users/q")).toBe("/w/other/src");
+    });
+
+    it("reads ~ as home", () => {
+        expect(resolveBrowseDir("/w/arcterm", "~/", "/Users/q")).toBe("/Users/q");
+        expect(resolveBrowseDir("/w/arcterm", "~/docs/", "/Users/q")).toBe("/Users/q/docs");
+    });
+
+    it("ignores the base for an absolute folder, a drive or a backslash path", () => {
+        expect(resolveBrowseDir("/w/arcterm", "/etc/", "/Users/q")).toBe("/etc");
+        expect(resolveBrowseDir("C:/w/arcterm", "D:/x/", "C:/Users/q")).toBe("D:/x");
+        expect(resolveBrowseDir("C:/w/arcterm", "D:\\x\\y\\", "C:/Users/q")).toBe("D:/x/y");
+        expect(resolveBrowseDir("C:/w/arcterm", "D:/", "C:/Users/q")).toBe("D:/");
+    });
+
+    it("walks a Windows base with forward slashes", () => {
+        expect(resolveBrowseDir("C:\\w\\arcterm", "..\\", "C:\\Users\\q")).toBe("C:/w");
+        expect(resolveBrowseDir("C:\\w\\arcterm", "src/", "C:\\Users\\q")).toBe("C:/w/arcterm/src");
+    });
+
+    it("cannot place a relative folder with no base, or ~ with no home", () => {
+        expect(resolveBrowseDir("", "../", "/Users/q")).toBeNull();
+        expect(resolveBrowseDir("/w/arcterm", "~/", "")).toBeNull();
+    });
+});
+
+describe("browseMatches", () => {
+    const dir = (name: string) => ({ name, isdir: true });
+    const file = (name: string) => ({ name, isdir: false });
+    const names = (entries: { name?: string; isdir?: boolean }[]) => entries.map((e) => e.name);
+
+    it("lists folders first, then files, each alphabetical regardless of case", () => {
+        const got = browseMatches(
+            [file("b.ts"), dir("src"), file("A.md"), dir("Docs"), file("c.go"), dir("assets")],
+            ""
+        );
+        expect(names(got)).toEqual(["assets", "Docs", "src", "A.md", "b.ts", "c.go"]);
+    });
+
+    it("puts prefix matches before names that only contain the leaf, within folders and within files", () => {
+        const got = browseMatches(
+            [file("my-app.ts"), file("app.ts"), dir("snap"), dir("app-core"), dir("map"), file("Apple.md")],
+            "ap"
+        );
+        expect(names(got)).toEqual(["app-core", "map", "snap", "app.ts", "Apple.md", "my-app.ts"]);
+    });
+
+    it("matches the leaf in any case and drops the rest", () => {
+        const got = browseMatches([file("README.md"), file("notes.md"), dir("readme-assets")], "READ");
+        expect(names(got)).toEqual(["readme-assets", "README.md"]);
+    });
+
+    it("hides dot-names unless the leaf starts with a dot", () => {
+        const entries = [dir(".git"), dir("src"), file(".env"), file("env.ts")];
+        expect(names(browseMatches(entries, ""))).toEqual(["src", "env.ts"]);
+        expect(names(browseMatches(entries, "e"))).toEqual(["env.ts"]);
+        // a bare "." also appears inside env.ts: contains-matches come after the dot-names that start with it
+        expect(names(browseMatches(entries, "."))).toEqual([".git", ".env", "env.ts"]);
+        expect(names(browseMatches(entries, ".g"))).toEqual([".git"]);
+    });
+
+    it("shows at most 50", () => {
+        const many = Array.from({ length: 80 }, (_, i) => file(`f${String(i).padStart(2, "0")}.txt`));
+        const got = browseMatches(many, "");
+        expect(got).toHaveLength(50);
+        expect(got[0].name).toBe("f00.txt");
+    });
+
+    it("skips an entry with no name and leaves the input alone", () => {
+        const entries = [{ isdir: false }, file("a.ts")];
+        expect(names(browseMatches(entries, ""))).toEqual(["a.ts"]);
+        expect(entries).toHaveLength(2);
+    });
+});
+
+describe("insertBrowsePick", () => {
+    it("writes a folder as @<dir><name>/ with no space and the caret after it", () => {
+        expect(insertBrowsePick("fix @../sr", 4, 10, "../", { name: "src", isdir: true })).toEqual({
+            text: "fix @../src/",
+            caret: 12,
+        });
+    });
+
+    it("steps into the folder it just wrote: the next pick builds on it", () => {
+        const first = insertBrowsePick("@../", 0, 4, "../", { name: "src", isdir: true });
+        expect(first).toEqual({ text: "@../src/", caret: 8 });
+        expect(insertBrowsePick(first.text, 0, first.caret, "../src/", { name: "app", isdir: true })).toEqual({
+            text: "@../src/app/",
+            caret: 12,
+        });
+    });
+
+    it("writes a file as @<dir><name> and a space, as the project picker does", () => {
+        expect(insertBrowsePick("fix @~/do", 4, 9, "~/", { name: "notes.md", isdir: false })).toEqual({
+            text: "fix @~/notes.md ",
+            caret: 16,
+        });
+        expect(insertBrowsePick("@D:/x/re", 0, 8, "D:/x/", { name: "readme.md", isdir: false })).toEqual(
+            insertFileMention("@D:/x/re", 0, 8, "D:/x/readme.md")
+        );
+    });
+
+    it("keeps the dir as typed, backslashes included", () => {
+        expect(insertBrowsePick("@D:\\x\\", 0, 6, "D:\\x\\", { name: "src", isdir: true })).toEqual({
+            text: "@D:\\x\\src/",
+            caret: 10,
+        });
+    });
+
+    it("swallows the rest of the word the caret sits in, and keeps what follows", () => {
+        expect(insertBrowsePick("@../sXXX then", 0, 5, "../", { name: "src", isdir: true })).toEqual({
+            text: "@../src/ then",
+            caret: 8,
+        });
     });
 });
 
