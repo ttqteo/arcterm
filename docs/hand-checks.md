@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Token burn joiner: after a build with 40f58fdd6 and `task install`, in a fresh Claude session ask for
+  three Agent calls in one message, the third with a long prompt, so it arrives after the card for the first two is
+  up; leave the card unanswered past 10 s → the third call waits (no "tool.call hook skipped" line, it does not start),
+  a `wsh tokengate hold` process runs while it waits, and after Allow or Don't spawn it follows that answer and the
+  hold process is gone. Unit tests only (`tokengate-core.ts` `SpawnWait`, `register.ts` `waitInFlight`). Effort
+  1dce9cf9 has the matching proposed live-check chunk.
 - [ ] (arcterm) Chat multi-line send: in a Claude agent's Chat, send a message with a pasted picture, then one written
   over two lines (Shift+Enter) → each is submitted at once (Claude starts on it, the terminal's prompt box is empty),
   no "Sending…" left hanging. A one-line message and a `/model` still work as before. Typecheck only
