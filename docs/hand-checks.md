@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) `@` picker: in a live Claude agent's Chat that has edited a few files, type `@` → the list opens
+  above the box (also with the window short or the box near the top), the files the agent read or wrote this session
+  lead it, newest first; type part of a name (`@sto`) → a recent file that matches still leads, and the typed letters
+  are in the accent colour in each name and folder; the New launcher's Task box `@` also opens above its box. Unit
+  tests and the typecheck only (`launchermention.ts` `recentMentionPaths`, `mentionMatchMask`); no dev app was run.
 - [ ] (arcterm) Long Chat sends: in a live Claude agent's Chat, send a one-line message of ~500 characters, then one
   of ~5,000 characters, then a multi-line one → each is submitted (the Terminal view shows it as Claude's prompt, not
   as text left in the box), idle and while Claude works (Queued, then sent at the turn's end). Unit tests only
