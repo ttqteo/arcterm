@@ -20,8 +20,10 @@ What changes, in one line each:
    permission-mode chip that opens a menu of the modes (picking presses Shift+Tab until Claude Code shows that mode),
    and the context as a small ring with its percent. Attach is a `+`. Asleep: the model as a plain label and the
    context ring dimmed, no mode chip.
-4. Transitions: the chat layer fades over the terminal and back; the sleeping overlay fades in and out; the Chat |
-   Terminal control's selected fill slides between its options.
+4. One chat for awake and asleep: a sleeping Claude agent shows the same `ChatPane` as an awake one (no separate
+   sleeping overlay), so the box stays one instance and its parts fold in place when the agent sleeps or wakes.
+5. Transitions: the chat layer fades over the terminal and back; the composer's parts fold between live and asleep;
+   the Chat | Terminal control's selected fill slides between its options.
 
 Decisions made beyond the boards (the lead's calls, each with why):
 
@@ -36,9 +38,13 @@ Decisions made beyond the boards (the lead's calls, each with why):
   the target, or when a mode already seen comes back (the target is not in this session's cycle: Bypass appears only
   when enabled). The order of the cycle is not assumed.
 - **Asleep, the model is a label, not a menu.** Wake takes no model today; changing it is done once awake.
-- **Live ⇄ asleep is a crossfade of the two overlays**, not the board's per-part fold: the live chat and the sleeping
-  overlay are two `ChatComposer` instances under different parents (`agentsurface.tsx:833-837`), so the parts cannot
-  fold in one box. The end states match the boards.
+- **Sleeping and Chat are one pane** (the person's call). Today `agentsurface.tsx:833-837` swaps a
+  `SleepingTranscript` overlay (which, for a Claude agent, already draws `ChatConversation` + `ChatComposer`) for
+  `ChatLayer`. After this plan a Claude agent always gets `ChatLayer`, shown while it sleeps whatever its stored chat
+  mode; `ChatPane` reads `agent.sleeping` for the few differences (no live stream, the wake placeholder, the
+  `data-sleeping-*` attributes the scenarios read). `SleepingTranscript` keeps only the other harnesses' compact
+  transcript. Because the `ChatComposer` (keyed by agent id) is never remounted, Task 2's folds play when the agent
+  sleeps or wakes.
 - **The sliding fill is opt-in on `Segmented`** (`slide` prop), turned on for the agent header's view control and
   built into `ChatSwitch`, so no other segmented control in the app changes.
 - **`CHANGELOG.md` and `docs/hand-checks.md` are written once, in Task 4**, so the parallel tasks never conflict in
@@ -248,21 +254,36 @@ Colors only through token utilities. Every icon-only control gets an `aria-label
 **Step 6: Attach is a `+`.** In `attachmenttray.tsx`, `AttachButton` draws `Plus` (size 16, `strokeWidth={1.8}`)
 instead of `Paperclip`; keep its title and aria-label. Remove `Paperclip` from the import if unused.
 
+**Step 6b: The parts fold between live and asleep** (`Transitions.dc.html`, played with its Sleep / Wake button).
+After Task 3 the same `ChatComposer` instance lives through a sleep and a wake, so when `agent.sleeping` flips:
+the attach button, the mode chip and the "Asleep" word (a `Moon` 13px + "Asleep" in `text-[12px] text-muted`, shown
+asleep only, `data-chat-asleep`) enter and leave inside `AnimatePresence initial={false}` with a fold: opacity, scale
+0.96 → 1 and width (`composerReveal`'s signature on the horizontal axis; add a `foldX` variant beside it in
+`motiontokens.ts` if none fits, durMicro, and test it as the file tests the others). The model chip turns into the
+label in place (crossfade). The Send button's width animates between the 30px arrow and its word ("Send",
+"Waking…"), the arrow and the word crossfading (CSS `transition` with `easeFluidCss` from `motiontokens.ts` is fine
+for the width). Today `chatcomposer.tsx:307` drops the attach button with `asleep ? null :`; it becomes the
+presence-wrapped fold. Reduced motion snaps all of it.
+
 **Step 7:** `npx vitest run frontend/app/view/agents/chatfootermodel.test.ts` → PASS; eslint and prettier on the
 four files → clean.
 
 **Step 8:** Commit: `git commit -m "feat(chat): the composer's model and mode are chips with menus, the context a
 ring" -- frontend/app/view/agents/chatfootermodel.ts frontend/app/view/agents/chatfootermodel.test.ts
 frontend/app/view/agents/chatfooter.tsx frontend/app/view/agents/chatcomposer.tsx
-frontend/app/view/agents/attachmenttray.tsx`
+frontend/app/view/agents/attachmenttray.tsx` (plus `motiontokens.ts` and its test if Step 6b added a variant)
 
-### Task 3: Transitions: chat over terminal, the sleeping overlay, the sliding view control
+### Task 3: One chat for awake and asleep, and the transitions around it
 
-**Depends on:** none
+**Depends on:** Task 2
+
+(Task 2 first: both edit `motiontokens.ts` possibly, and Task 2's folds only play once this task keeps the box
+mounted; serial keeps the merge clean.)
 
 **Files:**
-- Modify: `frontend/app/view/agents/chatpane.tsx` (`ChatLayer`, and the placeholder at `:180`)
-- Modify: `frontend/app/view/agents/agentsurface.tsx:833-837`
+- Modify: `frontend/app/view/agents/chatpane.tsx` (`ChatLayer`, `ChatPane`, the placeholder at `:180`)
+- Modify: `frontend/app/view/agents/agentsurface.tsx:829-837`
+- Modify: `frontend/app/view/agents/sleepingtranscript.tsx` (drop its chat branch)
 - Modify: `frontend/app/element/segmented.tsx`, `frontend/app/view/agents/agentheader.tsx:746`
 - Modify: `frontend/app/view/agents/chatswitch.tsx`
 - Possibly: `frontend/app/element/motiontokens.ts` (+ its test) if `viewFade` has no exit
@@ -270,6 +291,28 @@ frontend/app/view/agents/attachmenttray.tsx`
 Read `motiontokens.ts` first: `viewFade` (enter at `durMacro`), `microFade`, `indicatorSlide`. If `viewFade` has no
 `exit`, add `exit: { opacity: 0, transition: { duration: MOTION.durExit, ease: MOTION.easeFluid } }` and extend
 `motiontokens.test.ts` the way its other variants are tested.
+
+**Step 0: One pane.** Read `sleepingtranscript.tsx` whole: for a Claude agent (`chatCapable`) it already draws
+`ChatConversation` and `ChatComposer` (wake placeholder `` `message ${agent.name} to wake it… (Enter)` ``,
+`dataAttrs={{ "data-sleeping-composer": agent.id }}`), reads the transcript once (`useTranscriptRead`) and keeps its
+place under `sleeping:<id>:<since>`.
+- `agentsurface.tsx:833-837` becomes: a cell whose agent sleeps and is not `chatCapable` gets `SleepingTranscript`;
+  every other cell gets `ChatLayer` (keep `ChatLayer` in one JSX position so waking or sleeping never remounts it).
+  Update the comment above it. Nothing else in the file moves: the cell wrappers, the terminal stack and
+  `CockpitFocusPane` must not re-parent (AGENTS.md, "The Agent surface's terminal stack").
+- `ChatLayer` shows the pane when `useChatMode(agent) === "chat"` **or** the agent sleeps and is `chatCapable` (a
+  sleeping cell always draws the conversation; its terminal holds only the kill).
+- `ChatPane`, when `agent.sleeping != null`: no live stream (add `asleep` to the stream effect's guard and deps, and
+  read once on entering sleep with `requestAppend()` so the last turn is there); root also carries
+  `data-sleeping-transcript={agent.id}`; the composer gets the wake placeholder and the `data-sleeping-composer`
+  attribute (the `agent-sleep` and `agent-chat` scenarios select on both). The place key stays
+  `chat:<id>:<path>` for both states. Keep the composer `key={agent.id}` so it never remounts.
+- `sleepingtranscript.tsx`: keep only the compact branch (`CompactTranscript` + `AgentComposer`); drop the
+  `ChatConversation`/`ChatComposer` imports and the `chat` flag; rewrite its header comment (a Claude agent's
+  sleeping conversation is `ChatPane`'s now). Grep for other imports of anything removed.
+- While the agent sleeps, the Chat | Terminal controls (`ChatSwitch`, and the header's `Segmented` at
+  `agentheader.tsx:746` if it is shown for a sleeping agent) are disabled and dimmed (`opacity-40`, not clickable,
+  `title` "Wake the agent to show its terminal"), as `Transitions.dc.html` dims them.
 
 **Step 1: Chat fades over the terminal.** `ChatLayer` (`chatpane.tsx:53-55`) returns the pane or null. Make it:
 
@@ -288,11 +331,9 @@ cell, and the wrapper's opacity still applies to it. Leaving Chat keeps the pane
 the terminal under it takes keys at once (the chat layer must not hold focus or pointer events while it fades out:
 give the exiting wrapper `pointer-events: none`, e.g. a `style` from the exit variant or a class while `!isPresent`).
 
-**Step 2: The sleeping overlay fades.** In `agentsurface.tsx:833-837`, wrap the `SleepingTranscript` branch in
-`AnimatePresence initial={false}` with a keyed `motion.div` (`key={"asleep:" + a.id}`, `viewFade`), leaving
-`ChatLayer` as the other branch (its own presence handles its fade). Touch nothing else in this file: the cell
-wrappers, the terminal stack and `CockpitFocusPane` must not move or re-parent (AGENTS.md, "The Agent surface's
-terminal stack"). Waking: the overlay fades out over the live chat fading in.
+**Step 2: Sleep and wake keep the pane.** With Step 0 a Claude agent's chat stays mounted through a sleep and a wake
+(no fade: nothing leaves), and only the composer's parts fold (Task 2). The compact `SleepingTranscript` of other
+harnesses stays as it is.
 
 **Step 3: The sliding fill.** `Segmented` gets an optional `slide?: boolean`. With it, the selected option's fill is
 a `motion.span` with `layoutId` from `useId()` (unique per control) and `transition={indicatorSlide}`, absolutely
@@ -306,8 +347,8 @@ must cover both (check the app root has it; `PopoverReveal` wraps its own).
 **Step 5:** `npx vitest run frontend/app/element/motiontokens.test.ts` → PASS; eslint and prettier on the changed
 files → clean.
 
-**Step 6:** Commit with every changed path: `git commit -m "feat(chat): chat and the sleeping overlay fade in and
-out, the view control's fill slides" -- <paths>`
+**Step 6:** Commit with every changed path: `git commit -m "feat(chat): one chat pane awake and asleep, chat fades
+over the terminal, the view control's fill slides" -- <paths>`
 
 ### Task 4: Scenario steps, changelog, hand checks
 
@@ -331,7 +372,10 @@ facts; keep each step's screenshot name.
 - `agent-chat-29-mode-menu`: click the mode chip → four rows with their notes, the current one checked; Escape.
 - `agent-chat-30-context`: `[data-chat-context]` shows the fixture's percent (seed `usage.contextpct` the way the
   footer step does, if it does not already).
-- In `agent-chat-14-asleep`, assert `[data-chat-model-label]` shows and no `[data-chat-mode]` is in the box.
+- In `agent-chat-14-asleep`, assert `[data-chat-model-label]` and `[data-chat-asleep]` show, no `[data-chat-mode]`
+  and no attach button are in the box, and the root carries both `data-agent-chat` and `data-sleeping-transcript`
+  (one pane). If the scenario can wake the fixture agent, add `agent-chat-32-woken`: the same composer element
+  (compare an id set on it before the wake) now shows the mode chip and the attach button.
 - `agent-chat-31-prose`: `[data-chat-prose]` has no background fill (computed `background-color` is transparent) and
   no `[data-chat-agent] [aria-hidden="true"]` avatar.
 
@@ -344,13 +388,15 @@ facts; keep each step's screenshot name.
   of the chat once you scroll past it; click it to go back.
 - The Chat message box shows the model and the permission mode as chips: click either to pick another from a menu.
   The context shows as a small ring.
-- Chat fades over the terminal and back, a sleeping agent's conversation fades in and out, and the Chat | Terminal
-  control slides between its two sides.
+- A sleeping agent keeps the same chat as an awake one: putting it to sleep or waking it only folds the message
+  box's chips in or out. Chat fades over the terminal and back, and the Chat | Terminal control slides between its
+  two sides.
 ```
 
 **Step 5: Hand checks** (`docs/hand-checks.md`, at the top of the list, `(arcterm)` titles): picking a model from the
 chip switches Claude Code's model (its footer shows it); picking each mode lands on it, and a mode not in the cycle
-gives the toast; the three fades and the slide play, and with the OS's reduce-motion on they snap.
+gives the toast; Sleep then Wake a Claude agent in Chat → the conversation never blinks, the chips fold out and back
+in, Send shows "Waking…"; the chat fade and the slide play, and with the OS's reduce-motion on all of it snaps.
 
 **Step 6:** Commit: `git commit -m "test(chat): scenario steps for the document view, the chips and the pinned
 prompt" -- scripts/cdp/scenarios.mjs CHANGELOG.md docs/hand-checks.md`
