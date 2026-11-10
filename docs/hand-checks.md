@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Send now on a queued Chat message: while a Claude agent works on a long turn (a build, a `sleep 60`),
+  send it a message from Chat → its bubble reads Queued with Send now beside it; click Send now → the running command
+  moves to the background (Terminal shows it as a background task, not cancelled) and Claude answers the message at
+  once; while it asks for a permission no Send now shows (`chatpane.tsx` `PendingBubble`, `chatmodel.ts`
+  `SEND_NOW_KEYS`, 07b55af84).
+- [ ] (arcterm) Claude Code compacts an awake agent at arcterm's threshold: after this build start a Claude agent and
+  run `echo $CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` in its terminal (or a terminal beside it) → `100000` (your Compact
+  threshold); take one past 100k of context and leave it on screen and idle ~55 minutes → one compaction lands
+  (Transcript → Compactions), not two; Sleep on such an agent still compacts it first (`agentsleep/config.go`
+  `IdleCompactEnv`, b0b7b1f8a).
 - [ ] (arcterm) Fork a conversation: Agent → Conversations → right-click an ended Claude conversation → Fork → a new
   tab named "<title> (fork)" opens on the same conversation, and a message there leaves the original's transcript as
   it was (Conversation History lists both); open a conversation in the centre → Fork sits beside Resume and does the
