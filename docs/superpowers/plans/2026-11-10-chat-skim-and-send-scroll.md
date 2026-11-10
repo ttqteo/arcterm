@@ -135,7 +135,7 @@ highlights"`. It shows only when the conversation has prose. The pinned prompt b
 
 ### Task 2: Sending scrolls to the end
 
-**Depends on:** none
+**Depends on:** Task 1 (edits `chatpane.tsx` after it, beside the toggle it adds)
 
 **Files:** `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/chatpane.tsx`
 
@@ -145,7 +145,7 @@ highlights"`. It shows only when the conversation has prose. The pinned prompt b
 **Step 1:** `ChatComposer` takes `onSent?: () => void` and calls it right after `send()` returns true, before the
 pending bubble is added (so the stick re-arms and the bubble lands in view). A wake send (asleep) counts too.
 
-**Step 2:** `ChatPane` passes `onSent={jumpToBottom}`. If Task 1's edit to `chatpane.tsx` is merged first, keep both.
+**Step 2:** `ChatPane` passes `onSent={jumpToBottom}`, keeping Task 1's toggle and refresh as they are.
 
 **Step 3:** eslint and prettier on both files → clean.
 
