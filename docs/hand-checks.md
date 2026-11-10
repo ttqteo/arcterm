@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat multi-line send: in a Claude agent's Chat, send a message with a pasted picture, then one written
+  over two lines (Shift+Enter) → each is submitted at once (Claude starts on it, the terminal's prompt box is empty),
+  no "Sending…" left hanging. A one-line message and a `/model` still work as before. Typecheck only
+  (`agentcomposer.tsx` `typeIntoAgent`: paste then a separate Enter).
+- [ ] (arcterm) Chat long path: a Chat reply holding a long path in backticks (a scratchpad path) → the path ends in
+  "…" inside the bubble, hovering names it whole, clicking still opens it. Typecheck only (`markdownmessage.tsx`).
+
 - [ ] (arcterm) Graphs load blank: open a run's Route DAG, a project's Branches card, and a design canvas from the
   gallery after a reload → while each loads the area is plain background (the Branches card keeps its height), no grey
   placeholder blocks, then the content appears. Typecheck only (`dagmodal.tsx`, `daggraph.tsx`,

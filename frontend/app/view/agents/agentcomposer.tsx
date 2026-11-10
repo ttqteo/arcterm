@@ -3,6 +3,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { pasteIntoTerm } from "@/app/view/term/termpaste";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
@@ -46,6 +47,19 @@ export function useGrowingTextarea(
     }, [text]);
 }
 
+/** Types a message into an agent's terminal and presses Enter. A message with a line break (Shift+Enter, or an
+ *  attachment's block) goes as a paste, then Enter on its own: typed raw in one chunk, Claude Code reads a multi-line
+ *  chunk as a paste and takes the "\r" at its end for one more line, so the message sat in its box unsent. One line,
+ *  or a terminal that is not mounted to paste into, is typed with its Enter. */
+function typeIntoAgent(blockId: string, message: string): Promise<void> {
+    const type = (data: string) =>
+        RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(data) });
+    if (message.includes("\n") && pasteIntoTerm(blockId, message)) {
+        return type("\r");
+    }
+    return type(message + "\r");
+}
+
 export interface AgentComposerHandle {
     fill: (text: string) => void;
 }
@@ -72,8 +86,7 @@ export interface AgentSend {
     send: () => boolean;
 }
 
-// Sends free text to an agent's terminal block. "\r" submits (the PTY treats CR as Enter), mirroring
-// how term-model writes xterm input via ControllerInputCommand. A sleeping agent has no process to type into: given
+// Sends free text to an agent's terminal block (typeIntoAgent: "\r" submits, the PTY treats CR as Enter). A sleeping agent has no process to type into: given
 // its agent, the message goes through Wake instead, which delivers it once the agent is back, and the text stays in
 // the box until then (and for good when the wake fails). A sleeping agent's text is its wake draft (wakingstore), so
 // it outlives the box: picking another agent mid-wake and coming back still shows what is being sent.
@@ -114,12 +127,7 @@ export function useAgentSend(
             });
             return true;
         }
-        fireAndForget(() =>
-            RpcApi.ControllerInputCommand(TabRpcClient, {
-                blockid: blockId!,
-                inputdata64: stringToBase64(message + "\r"),
-            })
-        );
+        fireAndForget(() => typeIntoAgent(blockId!, message));
         setText("");
         return true;
     };

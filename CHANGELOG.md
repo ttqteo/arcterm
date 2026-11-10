@@ -54,6 +54,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - A tool that is still running shows as running in Chat, with a spinner and how long it has run, instead of as done.
+- A message sent from an agent's message box with an attached picture, or written over several lines, is sent at once
+  instead of sitting unsent in Claude's own prompt box while Chat shows "Sending…".
+- A long file path in an agent's Chat reply ends in "…" inside its bubble instead of running past the bubble's edge;
+  hover it to read the whole path.
 - A run's attention rows with a long task name cut the name short instead of hiding why the task stopped and pushing
   its retry/skip/escalate tag past the edge; hover the name to read it whole.
 - The Route DAG, a project's Branches graph and an opening design canvas load on a blank area instead of placeholder

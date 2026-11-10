@@ -67,8 +67,10 @@ const MD_COMPONENTS: Components = {
         if (found == null) {
             return <code className={className}>{children}</code>;
         }
+        // a link is an inline-block that does not wrap: capped at the line's width, a long path ends in an ellipsis
+        // inside the bubble instead of running out of it (its title still names the whole path)
         return (
-            <PathLink path={found.path} line={found.line}>
+            <PathLink path={found.path} line={found.line} className="max-w-full align-bottom">
                 <code>{children}</code>
             </PathLink>
         );
