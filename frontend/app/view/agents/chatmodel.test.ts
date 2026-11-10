@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
 import {
     bashMode,
+    canSendNow,
     CHAT_RENDER_STEP,
     chatItems,
+    SEND_NOW_KEYS,
     shownItems,
     turnStatsLabel,
     workingLine,
@@ -331,6 +333,18 @@ describe("bashMode", () => {
         expect(bashMode("fix it!")).toBe(false);
         expect(bashMode(" !ls")).toBe(false);
         expect(bashMode("/clear")).toBe(false);
+    });
+});
+
+describe("send now", () => {
+    it("is Claude Code's ctrl+x ctrl+s chord, which every terminal sends as itself", () => {
+        expect([...SEND_NOW_KEYS].map((c) => c.charCodeAt(0))).toEqual([0x18, 0x13]);
+    });
+
+    it("is offered only while Claude works, not while a prompt holds the keys or it waits", () => {
+        expect(canSendNow("working")).toBe(true);
+        expect(canSendNow("asking")).toBe(false);
+        expect(canSendNow("idle")).toBe(false);
     });
 });
 

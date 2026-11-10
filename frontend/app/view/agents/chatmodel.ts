@@ -212,6 +212,17 @@ export function bashMode(text: string): boolean {
     return text.startsWith("!");
 }
 
+/** Claude Code's send-now chord, ctrl+x ctrl+s (its other key, ctrl+enter, reaches it as a plain Enter from some
+ *  terminals): it sends every queued message at once, moving the running tools to the background instead of ending
+ *  the turn (v2.1.281 on). */
+export const SEND_NOW_KEYS = "\x18\x13";
+
+/** Pure: whether a queued message offers Send now: only while Claude works. While it asks, a permission or question
+ *  prompt holds the keys, and the chord would land in the prompt instead. */
+export function canSendNow(state: AgentState): boolean {
+    return state === "working";
+}
+
 /** Pure: the agent side's "working" line while the agent works, null otherwise. */
 export function workingLine(state: AgentState, activity: string | undefined): string | null {
     if (state !== "working") {

@@ -28,6 +28,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Fork a Claude conversation: a new session that starts from where it is, in a tab of its own, while the original
   stays as it was. It is in a conversation's right-click menu and beside Resume when you read one.
+- A message queued in Chat while Claude works has a Send now beside Queued: Claude moves what it is running to the
+  background and reads your queued messages at once, as Claude Code's own send-now key does.
 
 ### Changed
 

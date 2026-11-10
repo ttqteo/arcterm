@@ -13,10 +13,12 @@
 // AskUserQuestion's choices.
 
 import { layerFade } from "@/app/element/motiontokens";
-import { cn } from "@/util/util";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Highlighter } from "lucide-react";
-import { AnimatePresence, MotionConfig, motion, useIsPresent } from "motion/react";
+import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
@@ -26,7 +28,7 @@ import { ChatConversation } from "./chatconversation";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { chatCapable } from "./chatmode";
-import { turnStatsLabel, workingText } from "./chatmodel";
+import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
@@ -69,7 +71,7 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
     );
 }
 
-function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
+function PendingBubble({ text, queued, onSendNow }: { text: string; queued: boolean; onSendNow?: () => void }) {
     const said = splitAttachments(text);
     const body = said.text.trim();
     return (
@@ -85,7 +87,20 @@ function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
                     <ChatFileCards paths={said.files} />
                 </div>
             ) : null}
-            <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
+            <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
+                {queued && onSendNow != null ? (
+                    <button
+                        type="button"
+                        data-chat-send-now
+                        onClick={onSendNow}
+                        title="Send it now: Claude moves its running tools to the background and reads your queued messages at once"
+                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                    >
+                        Send now
+                    </button>
+                ) : null}
+            </div>
         </div>
     );
 }
@@ -207,6 +222,19 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
+    // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
+    // message at once
+    const blockid = agent.blockId;
+    const sendNow =
+        blockid != null && canSendNow(agent.state)
+            ? () =>
+                  fireAndForget(() =>
+                      RpcApi.ControllerInputCommand(TabRpcClient, {
+                          blockid,
+                          inputdata64: stringToBase64(SEND_NOW_KEYS),
+                      })
+                  )
+            : undefined;
     useEffect(() => {
         if (!showsPending) {
             return;
@@ -271,7 +299,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         {/* its own provider: a pill or card in a pending bubble opens as it will in the transcript's copy */}
                         <AgentPathLinks agent={agent}>
                             {pending.map((p) => (
-                                <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
+                                <PendingBubble
+                                    key={p.id}
+                                    text={p.text}
+                                    queued={agent.state !== "idle"}
+                                    onSendNow={sendNow}
+                                />
                             ))}
                         </AgentPathLinks>
                         {error != null && view != null ? (
