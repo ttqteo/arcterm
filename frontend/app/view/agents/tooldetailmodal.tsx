@@ -15,11 +15,14 @@ import { formatDuration } from "./tooldetail";
 export function AgentToolDetailModal({ action }: { action: AgentActionEntry }) {
     const close = () => modalsModel.popModal();
     const ok = action.outcome !== "fail";
+    // a call refused before it ran is neither a pass nor a failure
+    const mark = action.outcome === "blocked" ? "⊘" : ok ? "✓" : "✗";
+    const markColor = action.outcome === "blocked" ? "text-muted" : ok ? "text-success" : "text-error";
     return (
         <ModalShell open onClose={close} className="w-[min(720px,90vw)]">
             <div className="px-4 pt-5 pb-4">
                 <div className="flex w-full items-center gap-2.5 border-b border-edge-faint pb-3">
-                    <span className={ok ? "text-success" : "text-error"}>{ok ? "✓" : "✗"}</span>
+                    <span className={markColor}>{mark}</span>
                     <span className="text-xxxs font-bold uppercase tracking-[0.06em] text-feed-label">
                         {action.verb}
                     </span>

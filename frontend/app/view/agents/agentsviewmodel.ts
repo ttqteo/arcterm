@@ -28,7 +28,8 @@ export interface EditFile {
 export type ActionDetail =
     | { kind: "grep"; matches: GrepMatch[]; more?: string }
     | { kind: "read"; snippet: string; truncated?: boolean }
-    | { kind: "bash"; command?: string; output: string; exit: number }
+    // exit null: the call never ran (refused before it started), so it has no exit code
+    | { kind: "bash"; command?: string; output: string; exit: number | null }
     | { kind: "skill"; name: string; args?: string }
     | { kind: "edit"; files: EditFile[] }
     | { kind: "ask"; questions: AskQuestionDetail[] };
@@ -57,7 +58,8 @@ export type AgentEntry =
           verb: string;
           target: string;
           path?: string; // the file the tool touched, in full, when it names one; target keeps the base name
-          outcome?: "ok" | "fail";
+          // blocked: refused before it ran (a hook, a permission rule, the person declining it), which is not a failure
+          outcome?: "ok" | "fail" | "blocked";
           note?: string;
           summary?: string; // e.g. "14 matches", "80 lines", "24 passing"
           durationMs?: number; // tool_use → tool_result wall time, when timestamps present

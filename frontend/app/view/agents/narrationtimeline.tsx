@@ -54,15 +54,20 @@ function lineWrap(variant: "inline" | "modal"): string {
     return variant === "inline" ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre";
 }
 
-function ExitChip({ exit }: { exit: number }) {
+// exit null: the command never ran, so there is no code to show
+function ExitChip({ exit }: { exit: number | null }) {
     return (
         <span
             className={cn(
                 "rounded-[4px] px-[7px] py-px text-[10.5px] font-semibold uppercase tabular-nums tracking-[0.06em]",
-                exit ? "bg-error/15 text-error" : "bg-success/15 text-success"
+                exit == null
+                    ? "bg-surface-hover text-muted"
+                    : exit
+                      ? "bg-error/15 text-error"
+                      : "bg-success/15 text-success"
             )}
         >
-            exit {exit}
+            {exit == null ? "not run" : `exit ${exit}`}
         </span>
     );
 }
@@ -99,6 +104,15 @@ function RunningSquare() {
 // a tool with no result in a session that is not working: neither ✓ nor ✗, since nothing says how it ended
 function SettledSquare() {
     return <span className="flex h-4 w-4 shrink-0 rounded-[4px] bg-surface-hover" aria-hidden />;
+}
+
+// a call refused before it ran: grey, so it reads as passed over rather than as a failure
+function BlockedSquare() {
+    return (
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-surface-hover text-muted">
+            <Ban size={10} strokeWidth={2.6} aria-hidden />
+        </span>
+    );
 }
 
 function StatusSquare({ ok }: { ok: boolean }) {
@@ -364,6 +378,7 @@ export function ToolLine({
     const now = useNow(!!running);
     const neutral = !running && !!settled && action.outcome == null;
     const ok = action.outcome !== "fail";
+    const blocked = action.outcome === "blocked";
     const detail = action.detail;
     const long = detail ? detailExceedsInline(detail) : false;
     const toModal = long && !inline;
@@ -383,9 +398,18 @@ export function ToolLine({
                 onClick={onClick}
                 data-tool-running={running ? "" : undefined}
                 data-tool-settled={neutral ? "" : undefined}
+                data-tool-blocked={blocked ? "" : undefined}
                 className={cn(TOOL_ROW, detail && "cursor-pointer hover:bg-surface-hover")}
             >
-                {running ? <RunningSquare /> : neutral ? <SettledSquare /> : <StatusSquare ok={ok} />}
+                {running ? (
+                    <RunningSquare />
+                ) : neutral ? (
+                    <SettledSquare />
+                ) : blocked ? (
+                    <BlockedSquare />
+                ) : (
+                    <StatusSquare ok={ok} />
+                )}
                 <span className={VERB}>{action.verb}</span>
                 {action.path != null ? (
                     <PathLink path={action.path} className={TARGET}>
@@ -404,7 +428,7 @@ export function ToolLine({
                     <span className={cn("shrink-0 tabular-nums", FAINT_TEXT)}>
                         {runningFor(now - action.startedAt)}
                     </span>
-                ) : action.durationMs ? (
+                ) : action.durationMs && !blocked ? (
                     <span className={cn("shrink-0", FAINT_TEXT)}>{formatDuration(action.durationMs)}</span>
                 ) : null}
                 {detail ? <Affordance toModal={toModal} open={open} /> : null}

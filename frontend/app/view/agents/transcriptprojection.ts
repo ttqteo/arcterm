@@ -28,6 +28,15 @@ const VERB_BY_TOOL: Record<string, string> = {
     AskUserQuestion: "asked",
 };
 
+/** Pure: did an errored Bash result come back without the command ever running? One that ran and failed starts with its
+ *  exit code (`Exit code 1`; a timeout is `Exit code 143`), and one stopped mid-run says it was interrupted, so it may have
+ *  run. Every other error is Claude Code refusing the call before it started: a hook (`Refused by arcterm: …`), a
+ *  permission rule or the auto mode classifier, the person declining it, a malformed call. An empty body stays a failure. */
+export function bashNeverRan(body: string): boolean {
+    const t = body.trimStart();
+    return t !== "" && !/^Exit code \d+/.test(t) && !/^(Interrupted\b|\[Tool call interrupted)/.test(t);
+}
+
 function verbFor(name: string): string {
     return VERB_BY_TOOL[name] ?? name.toLowerCase();
 }
@@ -141,7 +150,7 @@ function mergeCompaction(entries: AgentEntry[], patch: Partial<Extract<AgentEntr
 
 /** Pure: project transcript JSONL lines into ordered previous-info entries.
  *  assistant text -> message; tool_use -> action; tool_result -> outcome on the matching
- *  action (fail on error; ok only for "ran", to avoid a checkmark on every read/edit).
+ *  action (ok, fail on error, or blocked for a Bash refused before it ran; see bashNeverRan).
  *  Unparseable lines and unknown record types are skipped. */
 export function projectTranscript(lines: string[]): AgentEntry[] {
     const entries: AgentEntry[] = [];
@@ -296,6 +305,11 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 }
                 const body = toolResultText(block.content);
                 const tool = (action as any)._tool as string | undefined;
+                // a refused command reads as blocked, not ran: it never started, and it is no failure of the work
+                const blocked = tool === "Bash" && block.is_error === true && bashNeverRan(body);
+                if (blocked) {
+                    action.verb = "blocked";
+                }
                 if (tool === "Grep" && body) {
                     const matches = parseGrep(body);
                     action.detail = { kind: "grep", matches };
@@ -309,7 +323,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         kind: "bash",
                         command: (action as any)._command,
                         output: body,
-                        exit: block.is_error === true ? 1 : 0,
+                        exit: blocked ? null : block.is_error === true ? 1 : 0,
                     };
                 } else if (action.detail?.kind === "ask" && typeof rec.toolUseResult?.answers === "object") {
                     // the answers ride on the record, keyed by question text; a rejected call carries a string there
@@ -321,7 +335,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     action.durationMs = resTs - useTs;
                 }
                 // a result that landed is an outcome, whatever the tool: a tool with none is still running (inFlight)
-                action.outcome = block.is_error === true ? "fail" : "ok";
+                action.outcome = blocked ? "blocked" : block.is_error === true ? "fail" : "ok";
             }
             if (images.length > 0) {
                 if (prompt != null) {

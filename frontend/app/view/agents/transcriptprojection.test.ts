@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    bashNeverRan,
     compactSummaryText,
     extractAiTitle,
     extractBackgroundTasks,
@@ -58,6 +59,19 @@ describe("projectTranscript", () => {
             JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "missing", is_error: true }] } }),
         ]);
         expect(out).toEqual([{ kind: "action", verb: "ran", target: "go test ./..." }]);
+    });
+
+    it("reads a Bash call refused before it ran as blocked, with no exit code, and one that ran and failed as fail", () => {
+        const refusal =
+            "<tool_use_error>Refused by arcterm: Claude Code already saves a background command's output to its output file.</tool_use_error>";
+        const out = projectTranscript([
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "task build > log", description: "build" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b1", is_error: true, content: refusal }] } }),
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b2", name: "Bash", input: { command: "grep x f", description: "find x" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b2", is_error: true, content: "Exit code 1\n" }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ verb: "blocked", outcome: "blocked", detail: { kind: "bash", exit: null, output: refusal } });
+        expect(out[1]).toMatchObject({ verb: "ran", outcome: "fail", detail: { kind: "bash", exit: 1 } });
     });
 
     it("keeps the full path of a file tool beside its base name", () => {
@@ -1287,5 +1301,37 @@ describe("projectTranscript: a message queued while Claude worked", () => {
             JSON.stringify({ type: "attachment", attachment: { type: "hook_success" } }),
         ]);
         expect(entries).toEqual([]);
+    });
+});
+
+// the shapes of errored Bash results Claude Code writes, as seen in real transcripts
+describe("bashNeverRan", () => {
+    it("reads a refusal before the command started as never ran", () => {
+        for (const body of [
+            "<tool_use_error>Refused by arcterm: Claude Code already saves a background command's output…</tool_use_error>",
+            "<tool_use_error>Blocked: sleep 30 followed by: tail -20 out.log. To wait for a condition, use Monitor…</tool_use_error>",
+            "<tool_use_error>InputValidationError: Bash failed due to the following issue:\nThe required parameter `command` is missing</tool_use_error>",
+            "The server-side auto mode classifier gave no verdict for Bash: a hook changed this call's input…",
+            "Permission for this action was denied by the Claude Code auto mode classifier. Reason: …",
+            "The user doesn't want to proceed with this tool use. The tool use was rejected…",
+            "This command requires approval",
+            "This Bash command contains multiple operations. The following part requires approval: awk …",
+            "This session is isolated in the worktree /repo/.claude/worktrees/x, but this command changes directory…",
+        ]) {
+            expect(bashNeverRan(body), body).toBe(true);
+        }
+    });
+
+    it("reads a command that ran, or may have, as a failure", () => {
+        for (const body of [
+            "Exit code 1",
+            "Exit code 1\nTraceback (most recent call last):",
+            "Exit code 143\nCommand timed out after 2m 0s\n",
+            "Interrupted: the response that made this tool call was stopped by a safety classifier while the call was running; it may have partially or fully completed.",
+            "[Tool call interrupted: the session ended before this call's result was recorded, so its outcome is unknown.]",
+            "",
+        ]) {
+            expect(bashNeverRan(body), body).toBe(false);
+        }
     });
 });

@@ -88,6 +88,15 @@ describe("groupCompact", () => {
         expect(w.failed).toBe(1);
     });
 
+    it("does not count a call refused before it ran as a failure", () => {
+        const [w] = works([
+            action("blocked", { outcome: "blocked" }),
+            action("blocked", { outcome: "blocked" }),
+            action("ran", { outcome: "ok" }),
+        ]);
+        expect(w.failed).toBe(0);
+    });
+
     it("reports no files for a stretch that edited nothing", () => {
         const [w] = works([action("read"), action("grep")]);
         expect(w.files).toEqual([]);
