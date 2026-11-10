@@ -42930,6 +42930,51 @@ const agentChat = {
                 sleep14
             );
 
+            // 14a. Alt+C on the asleep agent walks only what the header leaves usable: Chat and Terminal are disabled, so it
+            // never selects them. With nothing else open there is nothing to walk and the key passes whatever it did before, so
+            // the step gives F a canvas (nothing detaches one but a click; it is taken off at the end): one usable option, so
+            // the key still passes. Before the fix the key walked [terminal, canvas]: from Chat it went to the Canvas, from the
+            // Canvas back to the terminal's slot, which the header shows as Chat
+            const AC_VIEW_NOW = `[...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim() + (b.getAttribute("aria-pressed") === "true" ? "*" : "") + (b.disabled ? "!" : "")).join("|")`;
+            await AC.agentPage(
+                h,
+                `const C = await mod("app/view/agents/canvasstore.ts");
+                C.attachCanvas(${JSON.stringify(F)}, { topic: "ac-asleep", dir: "ac-asleep-canvas", projectDir: "ac-asleep-project" }, Date.now());
+                return true;`
+            );
+            const three14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!|Canvas"`, 4000);
+            const atChat14a = await h.ev(AC_VIEW_NOW);
+            await acKey(h, acKeys.altC);
+            await polishNap(500);
+            const afterChat14a = await h.ev(AC_VIEW_NOW);
+            await AC.agentPage(
+                h,
+                `const V = await mod("app/view/agents/agentview.ts"); V.setAgentView(${JSON.stringify(F)}, "canvas", Date.now()); return true;`
+            );
+            const onCanvas14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat!|Terminal!|Canvas*"`, 4000);
+            const atCanvas14a = await h.ev(AC_VIEW_NOW);
+            await acKey(h, acKeys.altC);
+            await polishNap(500);
+            const afterCanvas14a = await h.ev(AC_VIEW_NOW);
+            const mode14a = await h.ev(`window.__arcChatMode.get(${JSON.stringify(F)})`);
+            await h.shot("cdp-shots/agent-chat-14a-asleep-altc.png");
+            await AC.agentPage(
+                h,
+                `const V = await mod("app/view/agents/agentview.ts");
+                const C = await mod("app/view/agents/canvasstore.ts");
+                V.setAgentView(${JSON.stringify(F)}, "terminal", Date.now());
+                C.detachCanvas(${JSON.stringify(F)});
+                return true;`
+            );
+            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!"`, 4000);
+            rec(
+                "14a. Alt+C on the asleep agent leaves the header's selected option where it was and never selects Terminal: with a canvas attached (Chat and Terminal disabled, Canvas the one usable option) Chat stays selected, and with the Canvas showing it stays selected rather than going back to Chat; the stored chat mode is not Terminal",
+                three14a && atChat14a === "Chat*!|Terminal!|Canvas" && afterChat14a === atChat14a &&
+                    onCanvas14a && atCanvas14a === "Chat!|Terminal!|Canvas*" && afterCanvas14a === atCanvas14a &&
+                    mode14a !== "terminal" && restored14a,
+                { three14a, atChat14a, afterChat14a, onCanvas14a, atCanvas14a, afterCanvas14a, mode14a, restored14a }
+            );
+
             // 14b. the grid bar's switch of an asleep Claude agent: drawn, Chat selected, both options disabled and dimmed. A single
             // cell has no grid bar, so it is read in a split of A and F
             await showAgent(A);
@@ -43461,6 +43506,8 @@ const agentChat = {
             await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
             const up29 = await polishWaitFor(h, `${acMenuRows("Permission mode")}.length === 4`, 3000);
             const menu29 = await h.ev(`(() => ({
+                // the menu's last line: Shift+Tab is the terminal's key, the box does not forward it
+                foot: ${acMenu("Permission mode")}?.lastElementChild?.textContent.trim() ?? null,
                 rows: ${acMenuRows("Permission mode")}.map((r) => {
                     // the row's first span holds the label and the note, in that order
                     const words = r.querySelector(":scope > span:first-child");
@@ -43485,8 +43532,8 @@ const agentChat = {
             const typed29 = (await acInputs(h, blockA)).slice(before29);
             await h.shot("cdp-shots/agent-chat-29-mode-not-offered.png");
             rec(
-                "29. the mode chip opens a menu of Default, Accept edits, Plan and Auto with a note each and the shown mode (Plan) checked, Escape closes it and the chat stays on screen, and picking Accept edits presses Shift+Tab once and then a toast says Claude Code did not offer it",
-                screen29?.ok === true && chip29 && up29 &&
+                "29. the mode chip opens a menu of Default, Accept edits, Plan and Auto with a note each and the shown mode (Plan) checked, ending with the line `Shift+Tab in the terminal cycles them too`, Escape closes it and the chat stays on screen, and picking Accept edits presses Shift+Tab once and then a toast says Claude Code did not offer it",
+                screen29?.ok === true && chip29 && up29 && menu29.foot === "Shift+Tab in the terminal cycles them too" &&
                     JSON.stringify(menu29.rows.map((r) => r.mode)) === JSON.stringify(["default", "acceptEdits", "plan", "auto"]) &&
                     JSON.stringify(menu29.rows.map((r) => r.label)) === JSON.stringify(["Default", "Accept edits", "Plan", "Auto"]) &&
                     menu29.rows.every((r) => (r.note ?? "").length > 0) &&

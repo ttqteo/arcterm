@@ -312,7 +312,7 @@ function ModeChip({ mode, onPick }: { mode: ClaudeMode; onPick: (target: ClaudeM
                             </span>
                         </button>
                     ))}
-                    <div className={MENU_FOOT}>Shift+Tab in the box cycles them too</div>
+                    <div className={MENU_FOOT}>Shift+Tab in the terminal cycles them too</div>
                 </>
             )}
         />

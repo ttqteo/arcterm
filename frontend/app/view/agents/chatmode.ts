@@ -50,15 +50,21 @@ export function cellView(agentView: AgentView, chatMode: ChatMode): CellView {
 
 // The control's options in its order: Chat (only for a chat-capable agent), Terminal, the brainstorm or the canvas
 // (the brainstorm takes the canvas's slot), Review.
+// `asleep` is for a caller that walks the options (Alt+C): a sleeping chat-capable agent's header disables Chat and
+// Terminal (its cell draws the conversation whatever the stored mode, and its terminal holds only the kill), so the key
+// walks neither, only the canvas / brainstorm and the review. The header lists every option and disables those two
+// itself, so it leaves `asleep` out. An agent that is not chat-capable has no such rule: it is never "asleep" here.
 export function cellViewOptions(
     capable: boolean,
     hasCanvas: boolean,
     hasReview: boolean,
-    hasBrainstorm: boolean
+    hasBrainstorm: boolean,
+    asleep = false
 ): CellView[] {
+    const chatAsleep = capable && asleep;
     return [
-        ...(capable ? ["chat" as const] : []),
-        "terminal",
+        ...(capable && !chatAsleep ? ["chat" as const] : []),
+        ...(chatAsleep ? [] : ["terminal" as const]),
         ...(hasBrainstorm ? ["brainstorm" as const] : hasCanvas ? ["canvas" as const] : []),
         ...(hasReview ? ["review" as const] : []),
     ];
