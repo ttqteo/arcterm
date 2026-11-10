@@ -36,7 +36,7 @@ builder check itself, then sends the line Arc would send.
 Why: the skill is written for an agent in an Arc tab. Its judge and builder check go through wavesrv and are tied to a
 block (`cmd/wsh/cmd/wshcmd-brainstorm.go` resolves the block; `pkg/wshrpc/wshserver/wshserver_brainstorm.go`
 `startBrainstormSession` launches an orchestrate judging session and answers with `deliverAgentMessage`). The prompt
-builders are pure, though: `brainstormcheck.ReadJudgeInput` / `JudgePrompt` / `judgeFileBytes` / `JudgedLine` /
+builders are pure, though: `brainstormcheck.ReadJudgeInput` / `JudgePrompt` / `JudgeFileBytes` / `JudgedLine` /
 `JudgeFailedLine` (`pkg/brainstormcheck/judge.go`) and `brainstormcheck.Prompt` / `ReportPath` / `Line`
 (`pkg/brainstormcheck/brainstormcheck.go`), so the driver reuses them and the agent runs the skill unchanged.
 
@@ -103,7 +103,7 @@ without the Wave environment they do nothing.
   builder confirms on one real run which copy loaded.
 - **The skill's judge and reviewer (Agent's call, builder question 4).** Each is `claude -p --model opus` in the
   project copy with Read, Grep, Glob, Write and Bash, the fake wsh first on `PATH` (it takes
-  `jarvis complete --report` as exit 0). The driver reads `REPORT_PATH`: `judge.json` through `judgeFileBytes`, the
+  `jarvis complete --report` as exit 0). The driver reads `REPORT_PATH`: `judge.json` through `JudgeFileBytes`, the
   reviewer's report as written. The judge checks facts in the code, as in production.
 - **Key reads (Agent's call, builder question 7).** As for the team, a run whose tool calls name the `council-bench`
   folder (`readTranscripts`, `KeyReads`, `pkg/council/bench/teamtokens.go`) ends `failed` with that reason and is not
@@ -156,8 +156,11 @@ variant instead:
   it on a Review case and `--variant brainstorm` names it). It adds 5M per Brainstorm case per run: 10M for one run of
   today's two cases, 20M for a bare bench's default two runs. Council and team already cost ~13.3M per case per run, so
   a bare bench over every case can reach the 50M cap first; the cap then leaves the later items unrun, as it does
-  today (`Plan` orders run 1 of every case before run 2, so whole runs are cut, not half pairs). To measure the skill
-  alone, name it: `wsh council bench --variant brainstorm`, or the `go run` below.
+  today. `Plan` orders run 1 of every case before run 2, and `Run` checks the cap before every item, so the cap can
+  fall between one case's variants: a case's council then has a row for that run and its team or brainstorm does not,
+  and the team verdict for that case reads incomplete. A bare bench over today's cases is estimated at ~73M against
+  the 50M cap, so a bare bench's run 2 is likely cut this way. To measure the skill alone, name it:
+  `wsh council bench --variant brainstorm`, or the `go run` below.
 - `go run ./cmd/council-bench-brainstorm --case <id> [--runs N] [--data-dir <path>]` runs the same code straight from
   the checkout, reading the installed app's cases and appending to the same results file (data dir defaults as
   `scripts/council-bench-cases.mjs` documents: `%LOCALAPPDATA%\dev.arc.app\data` on Windows,

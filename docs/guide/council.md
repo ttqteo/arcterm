@@ -357,7 +357,9 @@ sau lượt kiểm của builder; cột `recall` cuối là cột so với counc
 `wsh council bench results` chia bảng thành hai phần theo chế độ của case: **Review** và **Brainstorm** (council, team,
 solo và brainstorm đứng cạnh nhau trên cùng các case). Phần Brainstorm có thêm cột `skill` (mã của SKILL.md đã chạy và
 phiên bản superpowers, để hai bản skill không bị cộng chung một hàng), `recall@done`, `decisions` và `questions`; một
-dòng note dưới bảng nhắc rằng council chỉ cắt ở 3 mục còn brainstorm chấm hết.
+dòng note dưới bảng nhắc rằng council chỉ cắt ở 3 mục còn brainstorm chấm hết. Một lệnh `wsh council bench` không kèm
+`--variant` có thể chạm mức tối đa 50M token ngay giữa các variant của một case, nên để đo riêng skill brainstorm hãy
+chạy `wsh council bench --variant brainstorm` hoặc lệnh `go run` dưới đây.
 
 Để đo riêng skill, ngay từ checkout, không cần build lại app:
 
