@@ -21,6 +21,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
+import { withMarks } from "./chatskim";
+import { useSkimMarks } from "./chatskimstore";
 import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
 import { CouncilText } from "./councilchat";
 import { splitAttachedImages } from "./launcherimages";
@@ -64,6 +66,15 @@ function BubbleCopy({ text, align }: { text: string; align: "left" | "right" }) 
             <CopyButton title="Copy" content={text} className="p-1 text-[12px]" />
         </div>
     );
+}
+
+// What the agent said, as Markdown, with the sentences the skim mod marked highlighted (the terminal's own highlight, found
+// by the hash of the stored text: chatskimstore.ts) while Chat's highlighter toggle is on. Its own component so the hook
+// runs per part. The copy button and the context menu keep the text as stored, without marks.
+function ProseText({ text }: { text: string }) {
+    const marks = useSkimMarks(text);
+    const shown = useMemo(() => withMarks(text, marks), [text, marks]);
+    return <CouncilText text={shown} className="text-[14px] leading-[1.65] text-ink-hi" />;
 }
 
 type CopyMenu = (text: string) => (e: React.MouseEvent) => void;
@@ -474,7 +485,7 @@ export function ChatConversation({
                         onContextMenu={copyMenu(part.text)}
                         className="group relative mb-3 min-w-0 max-w-full self-stretch"
                     >
-                        <CouncilText text={part.text} className="text-[14px] leading-[1.65] text-ink-hi" />
+                        <ProseText text={part.text} />
                         <BubbleCopy text={part.text} align="left" />
                     </div>
                 );
@@ -533,7 +544,7 @@ export function ChatConversation({
                 index={pinned}
                 text={prompts[pinned]}
                 bg="bg-background"
-                className="-mb-4"
+                className="-mb-4 pr-10"
             />
             {hidden > 0 || onLoadEarlier != null ? (
                 <button
