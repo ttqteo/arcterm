@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat skim highlights: in a live Claude agent's Chat, ask for a long explanation → its marked sentences
+  show highlighted once the reply lands, the same ones the Terminal view highlights, and the highlighter button at the
+  top right of Chat turns them off and on (it stays as you left it after a restart). The scenario injects its own store
+  folder; only a live agent proves the real skim store file is found and its hashes match (`chatskimstore.ts`,
+  `agent-chat` 34).
+- [ ] (arcterm) Chat pinned prompt beside the skim button: in a long Chat, scroll until your first prompt pins at the
+  top → the pinned bar's text stops short of the highlighter button at the top right instead of running under it
+  (`pr-10` on the bar, `chatconversation.tsx`). No scenario step shows the bar with the button in view.
 - [ ] (arcterm) Drag a file into Chat's message box from each source → an attachment chip, no path text in the box:
   a file row of arcterm's Worktree files tree, a file from VS Code's explorer, one from Obsidian, and (as before) one
   from Explorer; dragging ordinary text (a sentence from a page) still drops it as text. Unit tests only

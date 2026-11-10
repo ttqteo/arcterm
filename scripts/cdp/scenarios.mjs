@@ -42080,7 +42080,9 @@ const AC_NAMES = {
 };
 const AC_USER_TEXT = "add a retry to the sync client";
 const AC_PROSE_1 = "I will read the sync client first.";
-const AC_PROSE_2 = "The client now retries three times with backoff.";
+// its second sentence is what step 34 marks as a skim highlight; it holds non-ASCII letters so the store file's UTF-8 decode is exercised
+const AC_SKIM_SENTENCE = "Không mất request nào.";
+const AC_PROSE_2 = `The client now retries three times with backoff. ${AC_SKIM_SENTENCE}`;
 const AC_ACTIVITY = "Reading chatpane.tsx";
 const AC_QUESTION = "Which retry policy should the sync client use?";
 const AC_CHOICES = ["Exponential backoff", "Fixed delay"];
@@ -43720,6 +43722,107 @@ const agentChat = {
                 splitB === true && barUp33 && JSON.stringify(bar33) === JSON.stringify(["Chat"]) && slid(barTerm, "Chat", "Terminal"),
                 { splitB, barUp33, bar33, barTerm }
             );
+
+            // 34. skim: the sentences the skim mod marked draw highlighted in Chat. The marks come from a skim_fixture.json in a folder
+            // of the scenario's own (window.__chatSkimStoreDir, DEV only; the person's real ~/.claude is not touched) through the
+            // real read path: the folder is listed, the file read and its UTF-8 decoded; the hash is of the fixture's raw prose text
+            ctx.prevSkim = await h.ev(`localStorage.getItem("chat.skim")`);
+            const skimDir = join(ctx.dir, "skim-store");
+            mkdirSync(skimDir, { recursive: true });
+            const hash34 = await AC.agentPage(h, `const K = await mod("app/view/agents/chatskim.ts"); return K.hashText(${JSON.stringify(AC_PROSE_2)});`);
+            writeFileSync(join(skimDir, "skim_fixture.json"), JSON.stringify({ highlightMarks: [[hash34, [AC_SKIM_SENTENCE]]] }), "utf8");
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            const toggle = `${acLayer(A)}?.querySelector("[data-chat-skim-toggle]")`;
+            const marksIn = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-prose] mark[data-council-mark]") ?? [])]`;
+            const toggle34 = await polishWaitFor(h, `!!${toggle} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            // chat.skim may be false from earlier use of the dev app: the step starts with the toggle on
+            await h.ev(`(() => { const b = ${toggle}; if (b?.getAttribute("aria-pressed") === "false") b.click(); return true; })()`);
+            await polishWaitFor(h, `${toggle}?.getAttribute("aria-pressed") === "true"`, 3000);
+            await AC.agentPage(
+                h,
+                `window.__chatSkimStoreDir = ${JSON.stringify(skimDir.replace(/\\/g, "/"))};
+                const S = await mod("app/view/agents/chatskimstore.ts");
+                S.refreshSkimMarks();
+                return true;`
+            );
+            // the refresh is throttled to one a second and may be deferred to the window's end
+            const marked34 = await polishWaitFor(h, `${marksIn}.some((m) => m.textContent === ${JSON.stringify(AC_SKIM_SENTENCE)})`, 4000);
+            const skim34 = await h.ev(`(() => {
+                const marks = ${marksIn};
+                const prose = marks[0]?.closest("[data-chat-prose]");
+                return {
+                    marks: marks.map((m) => m.textContent),
+                    proseText: prose?.textContent.trim() ?? null,
+                    pressed: ${toggle}?.getAttribute("aria-pressed") ?? null,
+                    title: ${toggle}?.getAttribute("title") ?? null,
+                };
+            })()`);
+            await h.ev(`${marksIn}[0]?.scrollIntoView({ block: "center" })`);
+            await polishNap(250);
+            await h.shot("cdp-shots/agent-chat-34-skim.png");
+            rec(
+                "34. with the skim store holding the fixture reply's marked sentence under the hash of its text, that sentence draws as a highlight in the reply's prose (the rest of the prose is unmarked and no == shows), and the highlighter toggle in the chat's corner is on",
+                toggle34 && marked34 && skim34.marks.length === 1 && skim34.proseText === AC_PROSE_2 && skim34.pressed === "true" && /on/.test(skim34.title ?? ""),
+                { toggle34, marked34, skim34 }
+            );
+
+            // 35. skim off: the toggle hides the highlights and is remembered; turning it on brings them back
+            await h.ev(`${toggle}?.click()`);
+            const off35 = await polishWaitFor(h, `${toggle}?.getAttribute("aria-pressed") === "false" && ${marksIn}.length === 0`, 3000);
+            const stored35 = await h.ev(`localStorage.getItem("chat.skim")`);
+            const proseOff35 = await h.ev(`[...(${acLayer(A)}?.querySelectorAll("[data-chat-prose]") ?? [])].map((p) => p.textContent.trim())`);
+            await h.shot("cdp-shots/agent-chat-35-skim-off.png");
+            await h.ev(`${toggle}?.click()`);
+            const on35 = await polishWaitFor(h, `${toggle}?.getAttribute("aria-pressed") === "true" && ${marksIn}.some((m) => m.textContent === ${JSON.stringify(AC_SKIM_SENTENCE)})`, 3000);
+            const storedOn35 = await h.ev(`localStorage.getItem("chat.skim")`);
+            rec(
+                "35. clicking the toggle turns the highlights off (aria-pressed false, no mark in any prose, the prose text unchanged, chat.skim stored as false); clicking again brings the mark back (aria-pressed true, chat.skim true)",
+                off35 && stored35 === "false" && proseOff35.includes(AC_PROSE_2) && on35 && storedOn35 === "true",
+                { off35, stored35, proseOff35, on35, storedOn35 }
+            );
+
+            // 36. send scrolls: a message sent from the box scrolls the chat to the end even when the reader had scrolled up to
+            // read (the stick-to-bottom only follows while at the bottom), and its pending bubble lands in view. jumpToBottom
+            // scrolls smoothly, so the end is polled for
+            const S36 = "scroll me to the end";
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            const gap36 = `(() => { const sc = ${acScroller(A)}; return sc ? sc.scrollHeight - sc.scrollTop - sc.clientHeight : null; })()`;
+            const tall36 = await polishWaitFor(
+                h,
+                `(() => { const sc = ${acScroller(A)}; return !!sc && sc.scrollHeight > sc.clientHeight + 200; })()`,
+                AC_WAIT_MS
+            );
+            await h.ev(`(() => { const sc = ${acScroller(A)}; if (sc) sc.scrollTop = 0; return true; })()`);
+            const away36 = await polishWaitFor(h, `${gap36} > 200`, 3000);
+            // the scroll event releases the tail a frame later
+            await polishNap(150);
+            const scrolledUp36 = await h.ev(gap36);
+            await acType(h, acBox(A), S36);
+            const pendingOf36 = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S36)})`;
+            const pendingUp36 = await polishWaitFor(h, `${pendingOf36}.length === 1`, 5000);
+            const atEnd36 = await polishWaitFor(h, `(() => { const g = ${gap36}; return g != null && g < 40; })()`, 3000);
+            const geo36 = await h.ev(`(() => {
+                const sc = ${acScroller(A)};
+                const bubble = ${pendingOf36}[0];
+                const s = sc?.getBoundingClientRect();
+                const b = bubble?.getBoundingClientRect();
+                return {
+                    scroller: s ? { top: Math.round(s.top), bottom: Math.round(s.bottom) } : null,
+                    bubble: b ? { top: Math.round(b.top), bottom: Math.round(b.bottom) } : null,
+                    inside: !!s && !!b && b.top >= s.top - 1 && b.bottom <= s.bottom + 1,
+                    gap: ${gap36},
+                    scrollTop: sc ? Math.round(sc.scrollTop) : null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-36-send-scrolls.png");
+            rec(
+                "36. with the chat scrolled up to its top, sending a message from the box scrolls the chat to its end (within 40 px of it) and the message's pending bubble lies inside the scroller",
+                tall36 && away36 && scrolledUp36 > 200 && pendingUp36 && atEnd36 && geo36.inside,
+                { tall36, away36, scrolledUp36, pendingUp36, atEnd36, geo36 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -43748,6 +43851,22 @@ const agentChat = {
         );
         await step("end the split", () =>
             AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`)
+        );
+        // step 34 points the skim read at the scenario's folder and may leave the toggle changed; the atom is set first (it writes
+        // localStorage), then the stored value is put back as it was, the key removed only if it was absent
+        await step("restore the skim toggle", () =>
+            ctx.prevSkim === undefined
+                ? null
+                : AC.agentPage(
+                      h,
+                      `delete window.__chatSkimStoreDir;
+                      const S = await mod("app/view/agents/chatskimstore.ts");
+                      const prev = ${JSON.stringify(ctx.prevSkim ?? null)};
+                      globalStore.set(S.chatSkimOnAtom, prev !== "false");
+                      if (prev == null) localStorage.removeItem("chat.skim");
+                      else localStorage.setItem("chat.skim", prev);
+                      return true;`
+                  )
         );
         await step("remove the mock", () => removeAgentChatMock(h));
         await step("restore the roster", () => AC.restoreRoster(h));

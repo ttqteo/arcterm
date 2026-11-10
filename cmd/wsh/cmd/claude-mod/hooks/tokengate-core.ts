@@ -158,6 +158,15 @@ export const RUN_VERDICT: SpawnVerdict = { run: true, scope: null, reason: null,
 // up (wsh's hold line). register.ts passes `wsh tokengate`, which never rejects
 export type SpawnAsk = (g: Group, earlier: number, held: () => void) => Promise<SpawnVerdict>;
 
+// how a spawn that joined another's group waits for its verdict. Claude Code bills a hook's own time to its 10 s budget
+// and stops the clock only while a `$` call of that hook's is in flight: the opener waits inside its own `wsh
+// tokengate` spawn, but a joiner awaiting the opener's promise was skipped at 10 s and ran ungated (seen 2026-10-20 and
+// 10-22, while a card was up). register.ts waits with a `$.process.spawn` of the joiner's own; the default awaits
+export type SpawnWait = (until: Promise<unknown>) => Promise<void>;
+const plainWait: SpawnWait = async (until) => {
+    await until;
+};
+
 // an open group: gathering its siblings, then wsh deciding, then (when a rule fires) its card up
 type OpenGroup = { group: Group; phase: "gathering" | "deciding" | "card"; verdict: Promise<SpawnVerdict> };
 
@@ -172,7 +181,12 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
     // Agent call reaches check from both hooks. a call's answer is kept by its tool_use_id until the next prompt
     const calls = new Map<string, Promise<string | null>>();
 
-    async function decide(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
+    async function decide(
+        tool: SpawnTool,
+        input: Record<string, unknown>,
+        ask: SpawnAsk,
+        wait: SpawnWait
+    ): Promise<string | null> {
         if (decision === "allow-turn" || decision === "allow-session") {
             return null;
         }
@@ -189,53 +203,56 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
             // wsh is weighing a group it was asked about without this spawn: wait for that, then decide this one on
             // its own, its chain counting the group if it ran
             const busy = open;
-            await busy.verdict;
-            return decide(tool, input, ask);
+            await wait(busy.verdict);
+            return decide(tool, input, ask, wait);
         }
-        let mine = open;
-        if (mine) {
-            // gathering, or the card is already up: this spawn shares the group's verdict
-            mine.group = joinGroup(mine.group, tool, count);
-        } else {
-            const opened: OpenGroup = {
-                group: joinGroup(null, tool, count),
-                phase: "gathering",
-                verdict: Promise.resolve(RUN_VERDICT),
-            };
-            opened.verdict = (async () => {
-                try {
-                    await sleep(GATHER_MS);
-                    opened.phase = "deciding";
-                    const v = await ask(opened.group, chain.started, () => (opened.phase = "card"));
-                    if (v.run) {
-                        chain.started += opened.group.agents;
-                    }
-                    const kind = decisionAfter(v);
-                    if (kind) {
-                        decision = kind;
-                    }
-                    return v;
-                } finally {
-                    open = null;
+        if (open) {
+            // gathering, or the card is already up: this spawn shares the group's verdict, and waits for it through
+            // wait, as the group's ask is the opener's call, not this hook's
+            open.group = joinGroup(open.group, tool, count);
+            const joined = open.verdict;
+            await wait(joined);
+            const v = await joined;
+            return v.run ? null : v.reason;
+        }
+        const opened: OpenGroup = {
+            group: joinGroup(null, tool, count),
+            phase: "gathering",
+            verdict: Promise.resolve(RUN_VERDICT),
+        };
+        opened.verdict = (async () => {
+            try {
+                await sleep(GATHER_MS);
+                opened.phase = "deciding";
+                const v = await ask(opened.group, chain.started, () => (opened.phase = "card"));
+                if (v.run) {
+                    chain.started += opened.group.agents;
                 }
-            })();
-            mine = opened;
-            open = opened;
-        }
-        const v = await mine.verdict;
+                const kind = decisionAfter(v);
+                if (kind) {
+                    decision = kind;
+                }
+                return v;
+            } finally {
+                open = null;
+            }
+        })();
+        open = opened;
+        const v = await opened.verdict;
         return v.run ? null : v.reason;
     }
 
     return {
         // why the spawn may not run; null lets it. a call already asked about gets the same answer, kept before any
         // await so a hook that arrives while the gate gathers finds it too
-        check(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
+        // a seen call's hook is the inner of the two (claude nests them), so its answer is in by then
+        check(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk, wait: SpawnWait = plainWait): Promise<string | null> {
             const id = filled(input.tool_use_id) ? input.tool_use_id : null;
             const seen = id ? calls.get(id) : undefined;
             if (seen) {
                 return seen;
             }
-            const answer = decide(tool, input, ask);
+            const answer = decide(tool, input, ask, wait);
             if (id) {
                 calls.set(id, answer);
             }

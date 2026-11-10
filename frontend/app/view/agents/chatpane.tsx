@@ -14,7 +14,8 @@
 
 import { layerFade } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
+import { Highlighter } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion, useIsPresent } from "motion/react";
 import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -27,6 +28,7 @@ import { chatCapable } from "./chatmode";
 import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { setChatMode, useChatMode } from "./chatmodestore";
+import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { splitAttachedImages } from "./launcherimages";
@@ -85,6 +87,28 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
     );
 }
 
+// Chat's skim toggle, in the pane's top-right corner over the scroller: whether the sentences the skim mod marked draw
+// highlighted (chatskimstore.ts). It is Chat's own and global; the terminal's /skim is a separate, per-session fold.
+function SkimToggle() {
+    const [on, setOn] = useAtom(chatSkimOnAtom);
+    return (
+        <button
+            type="button"
+            data-chat-skim-toggle
+            aria-pressed={on}
+            aria-label="Skim highlights"
+            title={`Skim highlights in Chat: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
+            onClick={() => setOn(!on)}
+            className={cn(
+                "absolute right-3 top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
+                on ? "text-warning" : "text-muted"
+            )}
+        >
+            <Highlighter size={13} strokeWidth={2} aria-hidden />
+        </button>
+    );
+}
+
 // `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the chat
 export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
     const path = agent.transcriptPath ?? "";
@@ -122,6 +146,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             requestAppend();
         }
     }, [stamp]);
+
+    // the skim mod's store is read again whenever the transcript grows: it writes the marks before the transcript line, so
+    // the newest reply's marks are there when its text arrives (refreshSkimMarks throttles to one read a second)
+    useEffect(() => {
+        refreshSkimMarks();
+    }, [entries]);
 
     const working = workingText(agent.state, agent.activity, entries);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
@@ -215,6 +245,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         ) : null}
                     </div>
                 </div>
+                {/* floats over the scroller (the pinned prompt bar leaves room for it); not on the loading or empty state */}
+                {!loading && !empty ? <SkimToggle /> : null}
                 <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
             {/* the conversation's own column (760px), so the box lines up under the last message; keyed by the agent
@@ -226,6 +258,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     key={agent.id}
                     agent={agent}
                     entries={entries}
+                    onSent={jumpToBottom}
                     placeholder={
                         asleep
                             ? `message ${agent.name} to wake it… (Enter)`

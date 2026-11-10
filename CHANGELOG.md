@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In an agent's Files tab, drag files or folders onto a folder of the tree to move them there; pins and open file tabs
   follow. Dragging onto a terminal still types the paths.
 - A session's menu in History has Copy session id, beside Copy title and Copy transcript path.
+- Chat shows Claude's skim highlights, the sentences worth reading, as the terminal does; the highlighter button at the
+  top of Chat turns them off and on.
 
 ### Changed
 
@@ -82,6 +84,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   agents open: following an agent's transcript no longer holds open every other session file of its project.
 - Agents keep their colors in an arcterm reopened by an installer run from an agent's shell: Claude Code's PowerShell
   sets `NO_COLOR`, which arcterm passed on to every agent it started. A `NO_COLOR` you set yourself still applies.
+- Sending a message from Chat scrolls to the end, even when you had scrolled up to read.
 
 ## 1.0.5 — 2026-11-06
 

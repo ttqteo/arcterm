@@ -75,12 +75,16 @@ export function ChatComposer({
     placeholder,
     dataAttrs,
     entries,
+    onSent,
 }: {
     agent: AgentVM;
     placeholder: string;
     /** the conversation as drawn: a send of an awake agent is shown as a pending bubble until the transcript holds it.
      *  The sleeping overlay passes none (a wake delivers the message, no bubble stands in for it). */
     entries?: AgentEntry[];
+    /** called as soon as a message is taken (a wake send too), before its pending bubble is added: the chat scrolls to
+     *  the end, so the bubble lands in view even when the reader had scrolled up */
+    onSent?: () => void;
     /** extra data attributes on the box: the sleeping overlay keeps `data-sleeping-composer` there */
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
@@ -156,6 +160,7 @@ export function ChatComposer({
         }
         const sent = message;
         if (send()) {
+            onSent?.();
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
             if (!asleep) {
