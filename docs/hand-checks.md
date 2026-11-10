@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A refused command reads as Blocked in Chat: in a live Claude agent's Chat, have it run a background
+  command with a `> file` redirect (arcterm's hook refuses it), or deny a Bash prompt → its tool row shows a grey ⊘
+  square and `BLOCKED`, no duration, and its open panel says `NOT RUN` instead of an exit code; the work fold's
+  `· N failed` leaves it out, while a command that ran and exited non-zero (`grep` with no match) still counts red.
+  Unit tests cover the projection (`transcriptprojection.ts` `bashNeverRan`); the row was never drawn (ea97fa2ea).
 - [ ] (arcterm) Chat's box takes Vietnamese typing (Telex) with pills and menus around it: in a live Claude agent's Chat
   type a Vietnamese sentence in Telex (e.g. "chào bạn, xem giúp mình file này") with no menu open, again before and
   after an `@` pill, and with the `/` list and the `@` list open → no letter is lost or doubled, a syllable being
