@@ -42,6 +42,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A service you stop stays stopped, through a restart of arcterm and when it shows on screen: its card says it is
+  stopped and offers Start, instead of it starting again by itself (a reinstall used to bring a stopped app back up).
+- A service whose page runs Claude (a dashboard asking Claude for an analysis) is no longer taken for an agent: it no
+  longer shows as a sleeping agent, and the memory regulator no longer stops it to free RAM.
 - A `! command` you run in the agent's box shows in Chat as one card: the command, then what it printed (errors in red),
   instead of an empty "Bash input" card and a bubble of raw `<bash-stdout>` tags.
 - Chat's message box goes into bash mode when it starts with `!`, as Claude Code's own box does: its border and a

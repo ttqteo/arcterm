@@ -204,6 +204,10 @@ describe("appSurfaceBody", () => {
         expect(appSurfaceBody(svc("x", "stopped"))).toBe("waiting");
         expect(appSurfaceBody(svc("x", "mystery"))).toBe("waiting");
     });
+
+    it("draws the card for one the person stopped (off): showing it does not start it, so there is nothing to wait for", () => {
+        expect(appSurfaceBody(svc("x", "sleeping", { off: true }))).toBe("card");
+    });
 });
 
 describe("appWaitTitle", () => {
@@ -218,9 +222,21 @@ describe("appWaitTitle", () => {
     it("a state it does not know reads as sleeping does", () => {
         expect(appWaitTitle(svc("svc", "stopped"))).toBe("svc is asleep");
     });
+
+    it("one the person stopped (off): <name> is stopped", () => {
+        expect(appWaitTitle(svc("svc", "sleeping", { off: true }))).toBe("svc is stopped");
+    });
 });
 
 describe("appCard", () => {
+    it("stopped by the person: says so, and Start", () => {
+        expect(appCard(svc("svc", "sleeping", { off: true }), NOW)).toEqual({
+            title: "svc is stopped",
+            line: "You stopped it, so it stays off until you start it.",
+            action: "start",
+        });
+    });
+
     it("crashed: the exit code, Restart", () => {
         expect(appCard(svc("svc", "crashed", { exitcode: 1 }), NOW)).toEqual({
             title: "svc stopped after 5 crashes",

@@ -4540,6 +4540,7 @@ declare global {
         retryatms?: number;
         holder?: string;
         autostart: boolean;
+        off?: boolean;
     };
 
     // wshrpc.ServicesData

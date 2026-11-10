@@ -31,6 +31,14 @@ function svc(state: string, extra: Partial<ServiceStatus> = {}): ServiceStatus {
 }
 
 describe("serviceRowWords", () => {
+    it("stopped by the person (off): stopped, a hollow muted dot (Start is in its menu and card)", () => {
+        expect(serviceRowWords(svc("sleeping", { off: true }), NOW)).toEqual({
+            words: "stopped",
+            tone: "muted",
+            dot: "hollow",
+        });
+    });
+
     it("sleeping: a hollow muted dot and no action", () => {
         const w = serviceRowWords(svc("sleeping"), NOW);
         expect(w).toEqual({ words: "sleeping", tone: "muted", dot: "hollow" });
@@ -115,6 +123,10 @@ describe("serviceRowWords", () => {
 });
 
 describe("serviceHeaderLine", () => {
+    it("stopped by the person (off): it waits for Start, not for being shown", () => {
+        expect(serviceHeaderLine(svc("sleeping", { off: true }), NOW)).toBe("Stopped · starts when you press Start");
+    });
+
     it("running: the address and how long it has been up", () => {
         const s = svc("running", { port: 8386, startedms: NOW - 8_040_000 });
         expect(serviceHeaderLine(s, NOW)).toBe("Running on 127.0.0.1:8386 · up 2h 14m");

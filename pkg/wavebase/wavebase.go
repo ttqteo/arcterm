@@ -39,6 +39,9 @@ const (
 	// marks a wavesrv running on a copy of the user's packaged store (scripts/cdp/snapshot-dev.mjs). The copy holds live
 	// runs and agents whose cwds are real checkouts, so nothing it does may reach them, the vault remote or the harness homes
 	ArcSnapshotVarName = "ARC_SNAPSHOT"
+	// set to the tool id in a service's process (pkg/services BlockMeta): a Claude a service runs inherits the service
+	// block's WAVETERM_BLOCKID, and must not report into it as if the service were an agent (wsh agent-hook skips it)
+	ArcServiceVarName = "ARC_SERVICE"
 
 	WaveJwtTokenVarName  = "WAVETERM_JWT"
 	WaveSwapTokenVarName = "WAVETERM_SWAPTOKEN"

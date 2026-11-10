@@ -39,6 +39,10 @@ function heldBy(s: ServiceStatus): string {
 }
 
 export function serviceRowWords(s: ServiceStatus, nowMs: number): ServiceRowWords {
+    // one the person stopped stays off when shown (wavesrv's Off), so it does not read as sleeping
+    if (s.state === "sleeping" && s.off) {
+        return { words: "stopped", tone: "muted", dot: "hollow" };
+    }
     switch (s.state) {
         case "starting":
             return { words: "starting…", tone: "working", dot: "pulse" };
@@ -75,6 +79,9 @@ export function upFor(ms: number): string {
 }
 
 export function serviceHeaderLine(s: ServiceStatus, nowMs: number): string {
+    if (s.state === "sleeping" && s.off) {
+        return "Stopped · starts when you press Start";
+    }
     switch (s.state) {
         case "running":
             return `Running on 127.0.0.1:${s.port} · up ${upFor(nowMs - (s.startedms ?? nowMs))}`;

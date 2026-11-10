@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/arctools"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -212,6 +213,26 @@ func autoTool(id string) arctools.Tool {
 	return arctools.Tool{Id: id, Name: id, Command: "npm", Args: "run dev", Port: arctools.PortAuto, Autostart: true}
 }
 
+// the meta a Claude the portfolio service ran left on its block (seen on a real install), cleared; its own keys stay
+func TestStaleAgentMeta(t *testing.T) {
+	meta := waveobj.MetaMapType{
+		"agent:sleeping":       float64(1792930492235),
+		"agent:sleepfreed":     float64(145724320),
+		"agent:transcriptpath": "/Users/u/.claude/projects/-u-portfolio-journal/ce63e68a.jsonl",
+		"cmd:args":             []any{"--resume", "a19b2f33"},
+		"cmd":                  "npm run dash",
+		"tool:id":              "portfolio",
+		"tool:service":         true,
+	}
+	want := waveobj.MetaMapType{"agent:sleeping": nil, "agent:sleepfreed": nil, "agent:transcriptpath": nil, "cmd:args": nil}
+	if got := StaleAgentMeta(meta); !reflect.DeepEqual(got, want) {
+		t.Errorf("StaleAgentMeta = %#v, want %#v", got, want)
+	}
+	if got := StaleAgentMeta(BlockMeta(Def{Tool: arctools.Tool{Id: "portfolio", Command: "npm"}})); got != nil {
+		t.Errorf("a clean block has stale meta %#v", got)
+	}
+}
+
 func TestBlockMeta(t *testing.T) {
 	d := Def{Tool: arctools.Tool{Id: "portfolio", Name: "Portfolio", Command: "npm", Args: "run dash"}, Port: 8386, Project: "journal"}
 	meta := BlockMeta(d)
@@ -223,12 +244,16 @@ func TestBlockMeta(t *testing.T) {
 		"cmd:jwt":        true,
 		"cmd:runonstart": false,
 		"cmd:cwd":        "~",
-		"cmd:env":        map[string]any{"PORT": "8386"},
+		"cmd:env":        map[string]any{"PORT": "8386", "ARC_SERVICE": "portfolio"},
 		"tool:id":        "portfolio",
 		"tool:service":   true,
 	}
 	if !reflect.DeepEqual(map[string]any(meta), want) {
 		t.Errorf("BlockMeta = %#v, want %#v", meta, want)
+	}
+	// with no port its process is still marked, so a Claude it runs does not report into the service's block
+	if got := BlockMeta(Def{Tool: d.Tool})["cmd:env"]; !reflect.DeepEqual(got, map[string]any{"ARC_SERVICE": "portfolio"}) {
+		t.Errorf("cmd:env with no port = %#v", got)
 	}
 	for _, k := range []string{"cmd:args", "cmd:runonce", "cmd:closeonexit"} {
 		if _, ok := meta[k]; ok {
@@ -353,8 +378,15 @@ func TestStopSleepsAndIsNotRetried(t *testing.T) {
 		t.Errorf("starts = %v: boot started a service the person stopped", h2.starts)
 	}
 
-	// showing it starts it and forgets the Stop, so the boot after starts it again
+	// showing it does not start it: only the person's Start does, and that forgets the Stop, so the boot after starts it
 	h2.seen("portfolio")
+	h2.wantState("portfolio", StateSleeping)
+	if len(h2.starts) != 0 {
+		t.Errorf("starts = %v: showing a service the person stopped started it", h2.starts)
+	}
+	if err := h2.sup.Start(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
 	h2.wantState("portfolio", StateStarting)
 	if got := h2.state.Get("portfolio"); got != (Remembered{}) {
 		t.Errorf("a start kept %+v, want the Stop forgotten", got)
@@ -367,7 +399,8 @@ func TestStopSleepsAndIsNotRetried(t *testing.T) {
 	h3.wantState("portfolio", StateStarting)
 }
 
-func TestStopWithoutKeepRunningRemembersNothing(t *testing.T) {
+// a service without Keep running keeps a Stop too: a boot that shows it (the pane arcterm reopens on) leaves it off
+func TestStopWithoutKeepRunningIsRemembered(t *testing.T) {
 	h := newHarness(t)
 	h.boot(demandTool("portfolio", dashURL))
 	h.seen("portfolio")
@@ -376,8 +409,22 @@ func TestStopWithoutKeepRunningRemembersNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.wantState("portfolio", StateSleeping)
-	if got := h.state.Get("portfolio"); got != (Remembered{}) {
-		t.Errorf("Stop remembered %+v: only a Keep running service keeps a Stop", got)
+	if got := h.state.Get("portfolio"); got != (Remembered{Off: true}) {
+		t.Errorf("Stop remembered %+v, want Off", got)
+	}
+	if !h.status("portfolio").Off {
+		t.Error("the status does not say the person stopped it, so its card cannot offer Start")
+	}
+
+	h2 := newHarness(t)
+	h2.state = h.state
+	h2.sup = New(h2.deps())
+	h2.seen("portfolio") // on screen before the boot, as the frontend reports it
+	h2.boot(demandTool("portfolio", dashURL))
+	h2.advance(time.Second)
+	h2.wantState("portfolio", StateSleeping)
+	if len(h2.starts) != 0 {
+		t.Errorf("starts = %v: a boot started a stopped service because it was on screen", h2.starts)
 	}
 }
 
@@ -1063,7 +1110,7 @@ func TestUnreadableTreeCountsAsIdle(t *testing.T) {
 	h.wantState("portfolio", StateSleeping)
 }
 
-func TestStopIsNotRemembered(t *testing.T) {
+func TestStoppedServiceShownAgainStaysStopped(t *testing.T) {
 	h := newHarness(t)
 	h.boot(demandTool("portfolio", dashURL))
 	h.seen("portfolio")
@@ -1073,8 +1120,11 @@ func TestStopIsNotRemembered(t *testing.T) {
 	}
 	h.wantState("portfolio", StateSleeping)
 	h.seen()
-	h.seen("portfolio") // shown again: it starts
-	h.wantState("portfolio", StateStarting)
+	h.seen("portfolio") // shown again: it stays stopped, its card offers Start
+	h.wantState("portfolio", StateSleeping)
+	if len(h.starts) != 1 {
+		t.Errorf("starts = %v, want only the first", h.starts)
+	}
 }
 
 func TestSeenSleepingStarts(t *testing.T) {

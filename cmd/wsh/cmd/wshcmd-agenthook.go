@@ -19,6 +19,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -713,9 +714,16 @@ func hookDebugLine(msg string) {
 }
 
 // agentHookRun always returns nil: a hook must never break the agent's turn.
+// reportsToBlock says whether an agent hook has a block to report into: it runs inside an arcterm block, and not in a
+// service's process tree (ARC_SERVICE), where a Claude the service runs (its page asking Claude, a script) inherits the
+// service block's id and would make that block read as an agent, one the sleep regulator then stops. Pure.
+func reportsToBlock(blockId, service string) bool {
+	return blockId != "" && service == ""
+}
+
 func agentHookRun(cmd *cobra.Command, args []string) error {
-	if os.Getenv("WAVETERM_BLOCKID") == "" {
-		return nil // not inside an arcterm block; near-instant no-op (not logged: not an error)
+	if !reportsToBlock(os.Getenv("WAVETERM_BLOCKID"), os.Getenv(wavebase.ArcServiceVarName)) {
+		return nil // not inside an arcterm block, or inside a service; near-instant no-op (not logged: not an error)
 	}
 	// stamped before any rpc: the per-tool hooks run in the background, and wavesrv orders their reports
 	// by when the hook started, not by when a slow one got through

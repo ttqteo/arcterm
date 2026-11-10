@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/codexhook"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -39,8 +40,9 @@ func init() {
 
 // codexHookRun always returns nil and prints nothing: a hook must never change or break Codex's turn.
 func codexHookRun(cmd *cobra.Command, args []string) error {
-	// outside an arcterm block (the Codex desktop app shares hooks.json, or a plain terminal) there is nothing to report to
-	if os.Getenv("WAVETERM_BLOCKID") == "" {
+	// outside an arcterm block (the Codex desktop app shares hooks.json, or a plain terminal) there is nothing to report to,
+	// and inside a service's process tree the block is the service's (reportsToBlock)
+	if !reportsToBlock(os.Getenv("WAVETERM_BLOCKID"), os.Getenv(wavebase.ArcServiceVarName)) {
 		return nil
 	}
 	// stamped before any rpc: the per-tool hooks run in the background, and wavesrv orders reports by when the hook

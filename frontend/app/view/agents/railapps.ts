@@ -99,6 +99,10 @@ export function appSurfaceService(id: string | null, pins: string[], services: S
 export type AppSurfaceBody = "page" | "waiting" | "card";
 
 export function appSurfaceBody(s: ServiceStatus): AppSurfaceBody {
+    // one the person stopped is not started by showing it (wavesrv's Off): its card offers Start instead of a wait
+    if (s.state === "sleeping" && s.off) {
+        return "card";
+    }
     switch (s.state) {
         case "running":
         case "elsewhere":
@@ -117,7 +121,10 @@ export function appSurfaceBody(s: ServiceStatus): AppSurfaceBody {
 /** The waiting card's title: Starting <name>, or, for a sleeping app, <name> is asleep: after a Stop with the app on
  *  screen nothing starts it until it is shown again or its header's Start is pressed, so the card must not say Starting. */
 export function appWaitTitle(s: ServiceStatus): string {
-    return s.state === "starting" ? `Starting ${s.name}` : `${s.name} is asleep`;
+    if (s.state === "starting") {
+        return `Starting ${s.name}`;
+    }
+    return s.off ? `${s.name} is stopped` : `${s.name} is asleep`;
 }
 
 export type AppCard = { title: string; line: string; action: "restart" | "start" };
@@ -125,6 +132,13 @@ export type AppCard = { title: string; line: string; action: "restart" | "start"
 /** The card the app surface draws in place of the page when the service has none to show. */
 export function appCard(s: ServiceStatus, nowMs: number): AppCard {
     const action = canRestart(s) ? "restart" : "start";
+    if (s.state === "sleeping" && s.off) {
+        return {
+            title: `${s.name} is stopped`,
+            line: "You stopped it, so it stays off until you start it.",
+            action: "start",
+        };
+    }
     switch (s.state) {
         case "crashed":
             return {

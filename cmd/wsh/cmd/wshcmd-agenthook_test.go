@@ -16,6 +16,25 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 )
 
+// a Claude the portfolio service's page ran (ARC_SERVICE set by pkg/services) inherits the service block's id: it must
+// not report into it
+func TestReportsToBlock(t *testing.T) {
+	cases := []struct {
+		blockId, service string
+		want             bool
+	}{
+		{"blk-1", "", true},
+		{"", "", false},
+		{"blk-portfolio", "portfolio", false},
+		{"", "portfolio", false},
+	}
+	for _, c := range cases {
+		if got := reportsToBlock(c.blockId, c.service); got != c.want {
+			t.Errorf("reportsToBlock(%q, %q) = %v, want %v", c.blockId, c.service, got, c.want)
+		}
+	}
+}
+
 func TestPlanEmission(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -35,7 +35,18 @@ func NewFileStore(path string) *FileStore {
 		log.Printf("[services] %s is not readable, starting empty: %v\n", path, err)
 		f.data = map[string]Remembered{}
 	}
+	for id, r := range f.data {
+		f.data[id] = migrated(r)
+	}
 	return f
+}
+
+// migrated is r with the older "stopped" key read as Off, so a Stop made before Off covered every service holds.
+func migrated(r Remembered) Remembered {
+	if r.Stopped {
+		r.Off, r.Stopped = true, false
+	}
+	return r
 }
 
 func (f *FileStore) Get(id string) Remembered {

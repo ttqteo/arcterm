@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A stopped service stays stopped: Setup → Tools → portfolio → Stop, then quit and reopen arcterm (or
+  `task install`) → it does not run (no `node live/server.mjs` in Activity Monitor, :8386 refuses); open it from the rail
+  → the card "portfolio is stopped" with Start, and Start brings the page up; after that a restart starts it as before.
+  The portfolio tab no longer shows as a sleeping agent in the Agent tree. A dashboard request that runs Claude leaves
+  the service block with no `agent:*` meta (`wsh getmeta -b block:<its id>`). Go unit tests only (`pkg/services`,
+  `reportsToBlock`); the boot order that showed the service pane was not reproduced.
 - [ ] (arcterm) Bash mode in Chat's box: type `!` at the start of a Claude agent's Chat box → the border turns accent and
   "! Bash mode" shows beside +; delete the `!` → both go; send `! ls` → no Queued bubble, and the `! ls` card with its
   output lands; a `!` later in a message changes nothing (`chatcomposer.tsx` `bash`, `chatmodel.ts` `bashMode`).

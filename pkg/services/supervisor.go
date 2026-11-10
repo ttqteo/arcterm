@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/arctools"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -40,7 +41,9 @@ type BlockRef struct {
 // file's "stopped" key is ignored: Off took its place with a narrower meaning.
 type Remembered struct {
 	Port int  `json:"port,omitempty"` // the port of a service on "port": "auto"
-	Off  bool `json:"off,omitempty"`  // the person stopped this Keep running service: boot leaves it off until it starts again
+	Off  bool `json:"off,omitempty"`  // the person stopped it: neither a boot nor showing it starts it until they start it
+	// Stopped is the name an older build wrote Off under; the file store reads it as Off and never writes it
+	Stopped bool `json:"stopped,omitempty"`
 }
 
 type StateStore interface {
@@ -91,10 +94,30 @@ func BlockMeta(d Def) waveobj.MetaMapType {
 		waveobj.MetaKey_ToolId:        d.Tool.Id,
 		waveobj.MetaKey_ToolService:   true,
 	}
+	// the service's process carries its id, so a Claude it runs (one inherits WAVETERM_BLOCKID) reports nothing into
+	// this block: wsh agent-hook skips it, or the service would read as an agent and be put to sleep as one
+	env := map[string]any{wavebase.ArcServiceVarName: d.Tool.Id}
 	if d.Port > 0 {
-		meta[waveobj.MetaKey_CmdEnv] = map[string]any{"PORT": strconv.Itoa(d.Port)}
+		env["PORT"] = strconv.Itoa(d.Port)
 	}
+	meta[waveobj.MetaKey_CmdEnv] = env
 	return meta
+}
+
+// StaleAgentMeta is what clears from a service's block the agent meta a Claude run inside it reported before its
+// process was marked (ARC_SERVICE): every agent:* key, and the cmd:args a sleep left for a --resume (a shell service
+// ignores them). Nil when there is none. Pure.
+func StaleAgentMeta(meta waveobj.MetaMapType) waveobj.MetaMapType {
+	var out waveobj.MetaMapType
+	for k := range meta {
+		if strings.HasPrefix(k, "agent:") || k == waveobj.MetaKey_CmdArgs {
+			if out == nil {
+				out = waveobj.MetaMapType{}
+			}
+			out[k] = nil
+		}
+	}
+	return out
 }
 
 // TabMeta is the meta of a service's tab.
@@ -207,7 +230,8 @@ func (s *Supervisor) Seen(ctx context.Context, ids []string) {
 		}
 		if v := s.svcs[id]; v != nil {
 			s.cancelSleepLocked(v)
-			if v.state == StateSleeping {
+			// one the person stopped stays stopped on screen: its card offers Start instead
+			if v.state == StateSleeping && !s.d.State.Get(id).Off {
 				wake = append(wake, id)
 			}
 		}
@@ -305,7 +329,7 @@ func (s *Supervisor) sleepTick(id string, tok int) {
 // startsNowLocked reports whether a service starts as soon as the supervisor knows it: it is on screen, or has Keep
 // running and the person did not stop it.
 func (s *Supervisor) startsNowLocked(v *svc) bool {
-	return s.shown[v.tool.Id] || (v.tool.Autostart && !s.d.State.Get(v.tool.Id).Off)
+	return !s.d.State.Get(v.tool.Id).Off && (s.shown[v.tool.Id] || v.tool.Autostart)
 }
 
 // Status is every service, by id. Never nil.
@@ -345,6 +369,7 @@ func (s *Supervisor) statusOf(v *svc) wshrpc.ServiceStatus {
 		RetryAtMs: v.retryAtMs,
 		Holder:    v.holder,
 		Autostart: v.tool.Autostart,
+		Off:       s.d.State.Get(v.tool.Id).Off,
 	}
 }
 
@@ -795,20 +820,17 @@ func (s *Supervisor) probeTick(id string, gen int) {
 	s.scheduleProbeLocked(v, gen)
 }
 
-// Stop stops a service now, whatever work it is in the middle of. The service starts again the next time it is shown
-// (a Seen that newly shows it), or when Start is called. A Keep running service also remembers the Stop (Off), so the
-// next boot leaves it off instead of starting it: a restart of arcterm keeps it as it was. Any start forgets it.
+// Stop stops a service now, whatever work it is in the middle of, and remembers it (Off): it stays stopped until the
+// person starts it (Start, Restart), through a restart of arcterm and while it is on screen, where its card offers
+// Start. Showing it no longer starts it, and neither does a boot, Keep running or not. Any start forgets it.
 func (s *Supervisor) Stop(ctx context.Context, id string) error {
 	if err := s.stop(id); err != nil {
 		return err
 	}
+	s.remember(id, func(r *Remembered) { r.Off = true })
 	s.mu.Lock()
-	v := s.svcs[id]
-	keep := v != nil && v.tool.Autostart
+	s.publishLocked() // the card reads Off from the status
 	s.mu.Unlock()
-	if keep {
-		s.remember(id, func(r *Remembered) { r.Off = true })
-	}
 	return nil
 }
 
