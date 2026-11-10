@@ -22,6 +22,12 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
+
 ## 1.0.6 — 2026-11-10
 
 ### Added

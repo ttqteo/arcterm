@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Button motion: hover icon buttons, chips and tabs on several surfaces → the colour fades in over
+  ~140 ms instead of snapping; press and hold a small button → it sinks slightly (3%) and springs back on release; a
+  full-width row (History's session cards) and a drag handle (a tree row) do not shrink; drag a Cockpit card and the
+  fullscreen toggle in an agent header still behave as before; with Windows "Animation effects" off, colours change
+  at once and nothing sinks. Only the compiled stylesheet was checked (`tailwindsetup.css` base button rule); no dev
+  app was running.
 - [ ] (arcterm) Chat draft survives a switch: in an awake Claude agent's Chat, type a line and paste an image (and drop
   a file), switch to another agent, then to Jarvis, then back → the text and both chips are still in the box, the
   image's thumbnail still shows; send → the box empties and the chips go; sleep the agent with text in the box → the
