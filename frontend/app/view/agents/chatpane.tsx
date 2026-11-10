@@ -29,6 +29,7 @@ import { pendingStill } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
+import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { splitAttachedImages } from "./launcherimages";
@@ -209,16 +210,18 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             ) : null}
                         </div>
                     ) : (
-                        <AgentPathLinks agent={agent}>
-                            <ChatConversation
-                                key={`${view!.path}:${view!.epoch}`}
-                                entries={entries}
-                                placeId={placeId}
-                                active={agent.state !== "idle"}
-                                working={agent.state === "working"}
-                                onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
-                            />
-                        </AgentPathLinks>
+                        <ChatVisualHost agentId={agent.id}>
+                            <AgentPathLinks agent={agent}>
+                                <ChatConversation
+                                    key={`${view!.path}:${view!.epoch}`}
+                                    entries={entries}
+                                    placeId={placeId}
+                                    active={agent.state !== "idle"}
+                                    working={agent.state === "working"}
+                                    onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
+                                />
+                            </AgentPathLinks>
+                        </ChatVisualHost>
                     )}
                     {/* always drawn, so it is one of the scroller's children from the first render: the scroll stays at
                         the end when a card arrives or the working line changes its height */}
