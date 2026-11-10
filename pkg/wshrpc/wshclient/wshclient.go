@@ -830,6 +830,12 @@ func GetChannelsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Comman
 	return resp, err
 }
 
+// command "getclaudelivecommands", wshserver.GetClaudeLiveCommandsCommand
+func GetClaudeLiveCommandsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetClaudeLiveCommandsData, opts *wshrpc.RpcOpts) ([]wshrpc.ClaudeCommandInfo, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.ClaudeCommandInfo](w, "getclaudelivecommands", data, opts)
+	return resp, err
+}
+
 // command "getclaudequota", wshserver.GetClaudeQuotaCommand
 func GetClaudeQuotaCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetClaudeQuotaRtnData](w, "getclaudequota", nil, opts)
@@ -1599,6 +1605,12 @@ func SetChannelReadCommand(w *wshutil.WshRpc, data wshrpc.CommandSetChannelReadD
 // command "setchanneltier", wshserver.SetChannelTierCommand
 func SetChannelTierCommand(w *wshutil.WshRpc, data wshrpc.CommandSetChannelTierData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setchanneltier", data, opts)
+	return err
+}
+
+// command "setclaudelivecommands", wshserver.SetClaudeLiveCommandsCommand
+func SetClaudeLiveCommandsCommand(w *wshutil.WshRpc, data wshrpc.CommandSetClaudeLiveCommandsData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "setclaudelivecommands", data, opts)
 	return err
 }
 

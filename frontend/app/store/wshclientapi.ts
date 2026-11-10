@@ -834,6 +834,12 @@ export class RpcApiType {
         return client.wshRpcCall("getchannels", null, opts);
     }
 
+    // command "getclaudelivecommands" [call]
+    GetClaudeLiveCommandsCommand(client: WshClient, data: CommandGetClaudeLiveCommandsData, opts?: RpcOpts): Promise<ClaudeCommandInfo[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getclaudelivecommands", data, opts);
+        return client.wshRpcCall("getclaudelivecommands", data, opts);
+    }
+
     // command "getclaudequota" [call]
     GetClaudeQuotaCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetClaudeQuotaRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getclaudequota", null, opts);
@@ -1606,6 +1612,12 @@ export class RpcApiType {
     SetChannelTierCommand(client: WshClient, data: CommandSetChannelTierData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setchanneltier", data, opts);
         return client.wshRpcCall("setchanneltier", data, opts);
+    }
+
+    // command "setclaudelivecommands" [call]
+    SetClaudeLiveCommandsCommand(client: WshClient, data: CommandSetClaudeLiveCommandsData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setclaudelivecommands", data, opts);
+        return client.wshRpcCall("setclaudelivecommands", data, opts);
     }
 
     // command "setconfig" [call]
