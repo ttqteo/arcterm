@@ -10,8 +10,9 @@ that.
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/launchermention.ts`, `frontend/app/view/agents/launchermention.test.ts`, and
-`frontend/app/view/agents/filemention.tsx` only if the picker needs it.
+**Files:** `frontend/app/view/agents/launchermention.ts`, `frontend/app/view/agents/launchermention.test.ts`, `frontend/app/view/agents/filemention.tsx`
+
+`filemention.tsx` only if the picker needs it.
 
 Today a pick of `my file.txt` writes `@../my file.txt `, which the box and your bubble read as the mention `@../my` and
 the text `file.txt` (t-10 and t-12 found it). The quoted form `@"…"` is already what the box writes for a pill whose
@@ -41,8 +42,9 @@ must still pass unchanged) and `task check:ts`.
 
 **Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/filemention.tsx`, `frontend/app/view/agents/chateditor.tsx` and/or
-`frontend/app/view/agents/chatcomposer.tsx`, `scripts/cdp/scenarios.mjs`.
+**Files:** `frontend/app/view/agents/filemention.tsx`, `frontend/app/view/agents/chateditor.tsx`, `frontend/app/view/agents/chatcomposer.tsx`, `scripts/cdp/scenarios.mjs`
+
+`chateditor.tsx` and `chatcomposer.tsx`: either or both, wherever the fix belongs.
 
 Two defects the reports name:
 
@@ -72,8 +74,9 @@ from main, included: they now drive the editor box).
 
 **Depends on:** Task 2
 
-**Files:** `frontend/app/view/agents/chatfilepill.tsx`, `frontend/app/view/agents/chateditorpill.tsx` (only if the box's
-pill is off too), `scripts/cdp/scenarios.mjs`.
+**Files:** `frontend/app/view/agents/chatfilepill.tsx`, `frontend/app/view/agents/chateditorpill.tsx`, `scripts/cdp/scenarios.mjs`
+
+`chateditorpill.tsx` only if the box's pill is off too.
 
 Step 60 measures the bubble's pill's vertical centre 1.97 px below the centre of the text beside it, against a 2 px
 limit, and the shot reads low (t-14). Centre the pill on the text's line in your bubble (and in the box, step 70, if
