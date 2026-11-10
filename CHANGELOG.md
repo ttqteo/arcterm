@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Chat message you send while the agent is working shows as you wrote it, its pictures as thumbnails, instead of
+  raw `<pasted_content id="…">` tags around the text and a list of image paths.
 - A command Claude Code refused before it ran (a hook, a permission rule, you declining it) shows as Blocked in grey
   in the agent's transcript, instead of a red failure in the "N failed" count of the tools it worked through.
 - A run you pause stays paused until you resume it: Arc's memory regulator no longer resumes it a moment later, and

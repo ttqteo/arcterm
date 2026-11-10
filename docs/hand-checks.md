@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A Chat message queued mid-turn reads as you wrote it: while a Claude agent works, send from its Chat a
+  message of two lines with a pasted screenshot → once Claude takes it in, your bubble shows the two lines and the
+  picture as a thumbnail, with no `<pasted_content id="…">` tags and no `Attached images:` list; a paste inside a
+  message you typed around it still folds into a `Pasted · N lines` card (`chattagblocks.ts` `unwrapWholePaste`).
 - [ ] (arcterm) A refused command reads as Blocked in Chat: in a live Claude agent's Chat, have it run a background
   command with a `> file` redirect (arcterm's hook refuses it), or deny a Bash prompt → its tool row shows a grey ⊘
   square and `BLOCKED`, no duration, and its open panel says `NOT RUN` instead of an exit code; the work fold's

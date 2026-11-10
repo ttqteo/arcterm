@@ -29,6 +29,13 @@ describe("splitAttachments", () => {
         expect(splitAttachments(msg)).toEqual({ text: "look", files: [], images: ["/a/shot.png", "C:\\a\\two.png"] });
     });
 
+    it("reads the images block of a message Claude Code wrapped whole as a paste", () => {
+        // a Chat message queued while the agent worked, as the transcript's queued_command holds it
+        const msg =
+            '<pasted_content id="cdd1">\nhiển thị đẹp hơn\n\nAttached images:\n- /a/shot.png\n</pasted_content id="cdd1">';
+        expect(splitAttachments(msg)).toEqual({ text: "hiển thị đẹp hơn", files: [], images: ["/a/shot.png"] });
+    });
+
     it("reads both blocks, the files block first and the images block last", () => {
         const msg = `look\n\n${FILES_HEADER}\n- /a/err.log\n\nAttached images:\n- /a/shot.png`;
         expect(splitAttachments(msg)).toEqual({ text: "look", files: ["/a/err.log"], images: ["/a/shot.png"] });

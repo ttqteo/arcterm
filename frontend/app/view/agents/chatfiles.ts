@@ -6,14 +6,16 @@
 // text (composerattachments.ts messageWithAttachments: the "read these files" block, then the "Attached images:"
 // block); this reads them back without changing what was sent. Pure.
 
+import { unwrapWholePaste } from "./chattagblocks";
 import { FILES_HEADER } from "./composerattachments";
 import { ABSOLUTE_PATH, splitAttachedImages } from "./launcherimages";
 
 /** Pure: a sent message's text without its trailing attachment blocks, and the paths they name. The images block is
  *  always last (splitAttachedImages reads it); the files block, when one ends what is left, is read the same way. A
- *  block whose lines are not all absolute paths stays in the text. */
+ *  block whose lines are not all absolute paths stays in the text. A message the harness wrapped whole as one paste is
+ *  read as what it wraps (unwrapWholePaste), so its blocks are found inside it. */
 export function splitAttachments(text: string): { text: string; files: string[]; images: string[] } {
-    const { text: rest, paths: images } = splitAttachedImages(text);
+    const { text: rest, paths: images } = splitAttachedImages(unwrapWholePaste(text));
     const lines = rest.trimEnd().split(/\r?\n/);
     let i = lines.length - 1;
     while (i >= 0 && lines[i].startsWith("- ")) {
