@@ -337,3 +337,34 @@ agrees with which idea in Map" mở nó.
 | `wsh council pin <id>` / `pin --off` | Ghim / bỏ ghim một council, ở bất kỳ trạng thái nào |
 | `wsh council rm <id>` | Xóa hẳn một council đã kết thúc |
 | `wsh council bench` | Chạy bộ benchmark của council (hỏi Token burn trước); `bench results`, `bench stop` |
+
+## Benchmark
+
+`wsh council bench` chạy các case trong `<data dir>/council-bench/cases.json` và chấm kết quả của từng lần chạy bằng
+một judge, so với đáp án (key) của case. Có bốn variant, cùng một bảng điểm:
+
+- `council`: một council chạy trên case.
+- `team`: một nhóm agent Claude Code với các vai của council.
+- `solo`: một agent làm một mình; chỉ chạy khi gọi `--variant solo`.
+- `brainstorm`: skill brainstorm của Arc. Một agent Claude Code brainstorm với một người giả lập luôn chọn đáp án được
+  đề xuất (và không bao giờ thấy key), rồi bản thiết kế cuối được chấm với key. Chỉ chạy trên case ở chế độ
+  Brainstorm; case Review bỏ qua variant này.
+
+Brainstorm chấm **mọi quyết định** của bản thiết kế (phần "Left to the builder" không tính), không cắt ở 3 mục đầu như
+council. Nó có hai mốc: `recall@done`, khi skill báo xong lần đầu với mọi quyết định đã là `yours`, và `recall` cuối,
+sau lượt kiểm của builder; cột `recall` cuối là cột so với council, còn `recall@done` cho thấy lượt kiểm thêm được gì.
+
+`wsh council bench results` chia bảng thành hai phần theo chế độ của case: **Review** và **Brainstorm** (council, team,
+solo và brainstorm đứng cạnh nhau trên cùng các case). Phần Brainstorm có thêm cột `skill` (mã của SKILL.md đã chạy và
+phiên bản superpowers, để hai bản skill không bị cộng chung một hàng), `recall@done`, `decisions` và `questions`; một
+dòng note dưới bảng nhắc rằng council chỉ cắt ở 3 mục còn brainstorm chấm hết.
+
+Để đo riêng skill, ngay từ checkout, không cần build lại app:
+
+```
+go run ./cmd/council-bench-brainstorm --case <id> [--runs N] [--data-dir <path>]
+```
+
+Lệnh đọc case của app đã cài, ghi thêm vào cùng file `council-bench.jsonl` (`--data-dir` mặc định là thư mục data của
+app đã cài) và cần Claude Code đã cài plugin superpowers; Ctrl+C dừng nó. `--case` bắt buộc và có thể lặp. Khi app
+được build lại, `wsh council bench --variant brainstorm` chạy cùng code đó.

@@ -2164,12 +2164,17 @@ func TestCouncilBenchStop(t *testing.T) {
 	}
 }
 
-// TestCouncilBenchWireHasEveryCall: the real wiring gives the bench its team runner beside the council calls, so a bare
-// bench's team cells run instead of failing for want of one.
+// TestCouncilBenchWireHasEveryCall: the real wiring gives the bench its team and brainstorm runners beside the council
+// calls, so a bare bench's team and brainstorm cells run instead of failing for want of one, and the tracking wrapper
+// keeps them.
 func TestCouncilBenchWireHasEveryCall(t *testing.T) {
 	f := councilBenchWire()
-	if f.Start == nil || f.Wait == nil || f.Judge == nil || f.Remind == nil || f.Team == nil {
-		t.Errorf("wiring = %+v, want every call set, the team runner included", f)
+	if f.Start == nil || f.Wait == nil || f.Judge == nil || f.Remind == nil || f.Team == nil || f.Brainstorm == nil {
+		t.Errorf("wiring = %+v, want every call set, the team and brainstorm runners included", f)
+	}
+	tracked := (&councilBenchRun{}).tracking(f)
+	if tracked.Team == nil || tracked.Brainstorm == nil || tracked.Judge == nil || tracked.Remind == nil {
+		t.Errorf("tracked wiring = %+v, want the calls tracking does not wrap passed through", tracked)
 	}
 }
 

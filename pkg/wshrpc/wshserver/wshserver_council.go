@@ -529,7 +529,10 @@ func (ws *WshServer) CouncilMemoryCommand(ctx context.Context, data wshrpc.Comma
 // councilBenchWire is what bench.Run is given beside the data dir and the options: the real calls. A test replaces it
 // with fakes, so no council runs and no claude is called.
 var councilBenchWire = func() bench.Funcs {
-	return bench.Funcs{Start: benchStartCouncil, Wait: benchWaitCouncil, Judge: bench.Judge, Remind: benchRemind, Team: bench.RunTeam}
+	return bench.Funcs{
+		Start: benchStartCouncil, Wait: benchWaitCouncil, Judge: bench.Judge, Remind: benchRemind,
+		Team: bench.RunTeam, Brainstorm: bench.RunBrainstorm,
+	}
 }
 
 // benchStartCouncil starts the council a plan item built. The bench leaves the panel empty, so it is filled from the
@@ -592,8 +595,9 @@ func (b *councilBenchRun) inflightId() string {
 	return b.inflight
 }
 
-// tracking wraps the Start and Wait of a bench so Stop knows which council is in flight. A team cell has no council to
-// track: Stop ends it by cancelling the run's context, which RunTeam ends its lead on.
+// tracking wraps the Start and Wait of a bench so Stop knows which council is in flight. A team or brainstorm cell has
+// no council to track: Stop ends it by cancelling the run's context, which RunTeam and RunBrainstorm end their agent
+// on. The other calls pass through unchanged.
 func (b *councilBenchRun) tracking(f bench.Funcs) bench.Funcs {
 	start, wait := f.Start, f.Wait
 	f.Start = func(ctx context.Context, c *council.Council) (*council.Council, error) {
