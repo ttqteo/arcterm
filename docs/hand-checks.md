@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Round check after the two Chat runs: once run 3df0f2d3 (slash and + menus, file cards and pills, `@`
+  walks folders; 15 tasks) has landed on top of run b539a1af (inline visuals), run `node scripts/cdp/final-verify.mjs
+  agent-chat` on `main` → every step PASS, the inline-visual steps (`agent-chat-40` to `-44`) included, and the `@`
+  picker still opens above the box with recent files first. b539a1af's t-5 committed its scenario steps without
+  running them (the dev app could not boot in 10 min with RAM short); only its run's Final checks them before this.
 - [ ] (arcterm) `@` picker: in a live Claude agent's Chat that has edited a few files, type `@` → the list opens
   above the box (also with the window short or the box near the top), the files the agent read or wrote this session
   lead it, newest first; type part of a name (`@sto`) → a recent file that matches still leads, and the typed letters
