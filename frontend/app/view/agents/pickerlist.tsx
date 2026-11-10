@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The dropdown under a text box that the chat box's pickers share: the `@` file picker (filemention.tsx) and the `/`
+// The dropdown at a text box that the chat box's pickers share: the `@` file picker (filemention.tsx) and the `/`
 // command menu (slashmenu.tsx). It is portaled out of the box, as the launcher's route picker is: the launcher's fields
 // area scrolls, and a chat cell clips, so a dropdown inside either would be cut off at its edge.
 
@@ -13,16 +13,24 @@ const LIST_MIN_WIDTH = 360;
 const LIST_MAX_WIDTH = 560;
 const LIST_MAX_HEIGHT = 320;
 
-/** The floating setup of a picker's list: anchored to the box itself, so the list starts under the text and follows the
+/** Where a picker's list opens: "below" the box, turning above it when there is no room, or "above" it always (the
+ *  `@` picker: its box sits at the foot of the chat, and a list that flips with the room left jumps as you type). */
+export type PickerSide = "below" | "above";
+
+/** The floating setup of a picker's list: anchored to the box itself, so the list starts at the text and follows the
  *  box as it grows. `shown` mounts it. */
-export function usePickerFloating(shown: boolean, anchor: RefObject<HTMLTextAreaElement | null>) {
+export function usePickerFloating(
+    shown: boolean,
+    anchor: RefObject<HTMLTextAreaElement | null>,
+    side: PickerSide = "below"
+) {
     const { refs, floatingStyles } = useFloating({
         open: shown,
-        placement: "bottom-start",
+        placement: side === "above" ? "top-start" : "bottom-start",
         strategy: "fixed",
         middleware: [
             offset(4),
-            flip({ padding: 8 }),
+            ...(side === "above" ? [] : [flip({ padding: 8 })]),
             shift({ padding: 8 }),
             floatingSize({
                 padding: 8,
@@ -61,6 +69,7 @@ export function PickerList<T>({
     renderItem,
     listAttr,
     itemAttr,
+    side = "below",
 }: {
     anchor: RefObject<HTMLTextAreaElement | null>;
     shown: boolean;
@@ -77,8 +86,9 @@ export function PickerList<T>({
     listAttr: string;
     /** the data attribute on each row, its value `itemKey(item)` (`data-chat-mention`) */
     itemAttr: string;
+    side?: PickerSide;
 }) {
-    const { setFloating, floatingStyles } = usePickerFloating(shown, anchor);
+    const { setFloating, floatingStyles } = usePickerFloating(shown, anchor, side);
     if (!shown) {
         return null;
     }

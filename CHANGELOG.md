@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat's `@` file list opens above the box, puts the files the agent just read or wrote first, and marks the
+  letters you typed in each name.
 - Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
 
 ### Fixed
