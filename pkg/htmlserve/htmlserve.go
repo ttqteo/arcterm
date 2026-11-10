@@ -216,6 +216,12 @@ const scrollScript = `<script>(function () {
 // opened in the File tab that calls sendPrompt is not heard. The theme keys are held to a short name and the values to
 // a short string, so a message cannot set anything but a custom property of this prefix. A page whose own
 // Content-Security-Policy refuses inline scripts has no bridge, and Chat keeps the height it last knew.
+//
+// The height is the root element's laid-out height, never scrollHeight: in standards mode
+// documentElement.scrollHeight is at least the viewport, which in a frame is the frame's own height, so a 120 px page
+// in Chat's 160 px loading frame would report 160 and a frame that grew would never shrink. With the default
+// html { height: auto } the root's height is the content's, the body's margins included. body.scrollHeight is the
+// fallback for a root that reads 0.
 const bridgeScript = `<script>(function () {
   var p = window.parent;
   if (p === window) return;
@@ -223,8 +229,8 @@ const bridgeScript = `<script>(function () {
   function report() {
     raf = 0;
     var b = document.body;
-    var h = Math.ceil(Math.max(document.documentElement.scrollHeight, b ? b.scrollHeight : 0));
-    if (h === last) return;
+    var h = Math.ceil(document.documentElement.getBoundingClientRect().height) || (b ? Math.ceil(b.scrollHeight) : 0);
+    if (!h || h === last) return;
     last = h;
     p.postMessage({ type: "arc-html-height", h: h }, "*");
   }

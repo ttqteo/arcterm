@@ -259,6 +259,18 @@ func TestHandlerAddsTheBridgeToPagesOnly(t *testing.T) {
 	}
 }
 
+// documentElement.scrollHeight is never below the viewport, which in a frame is the frame's own height: a 120 px page in
+// Chat's 160 px loading frame would report 160, and a frame that grew would never shrink. The bridge measures the root
+// element's laid-out height instead.
+func TestBridgeMeasuresTheContentNotTheViewport(t *testing.T) {
+	if strings.Contains(bridgeScript, "documentElement.scrollHeight") {
+		t.Errorf("the bridge measures documentElement.scrollHeight, which never reads below the frame's own height")
+	}
+	if !strings.Contains(bridgeScript, "document.documentElement.getBoundingClientRect().height") {
+		t.Errorf("the bridge never measures the root element's laid-out height")
+	}
+}
+
 func TestWithSuffixReadsTheFileThenTheSuffix(t *testing.T) {
 	s := withSuffix{f: strings.NewReader("abcdef"), size: 6, suffix: []byte("XYZ")}
 	for _, tc := range []struct {
