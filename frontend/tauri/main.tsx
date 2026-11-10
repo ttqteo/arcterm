@@ -18,6 +18,13 @@ if (!window.requestIdleCallback) {
     window.cancelIdleCallback = (id) => window.clearTimeout(id);
 }
 
+// React's dev build logs every component render as a performance.measure entry, and the page keeps them all: a dev
+// app up 59 hours held 8.58M of them, 1.1 GB of Blink heap and 3.8 GB of renderer working set (2026-11-09). A
+// DevTools Performance recording reads the trace, not this buffer, so clearing it loses nothing.
+if (import.meta.env.DEV) {
+    window.setInterval(() => performance.clearMeasures(), 60_000);
+}
+
 // WebKit's stack is frames only, without the message line Chromium's starts with.
 window.addEventListener("error", (e) => {
     const stack: string | undefined = e.error?.stack;
