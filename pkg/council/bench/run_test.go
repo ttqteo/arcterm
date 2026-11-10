@@ -484,7 +484,7 @@ func TestRunFailedAndStoppedRows(t *testing.T) {
 	if runs[2].State != "done" || runs[2].Recall != 1 || runs[2].Keys != 3 {
 		t.Errorf("third row = %+v, want a scored done run", runs[2])
 	}
-	rows := Summarize(runs)
+	rows := Summarize(runs, nil)
 	if len(rows) != 1 || rows[0].Runs != 3 || rows[0].Scored != 1 || rows[0].Tokens != 300_000+150_000+1_400_000 {
 		t.Errorf("summary = %+v, want 3 runs, 1 scored, every run's tokens", rows)
 	}

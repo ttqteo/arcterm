@@ -196,35 +196,53 @@ func validRating(r CouncilBenchRating) bool {
 	return r.Council != "" && (r.Rating == RatingUseful || r.Rating == RatingNot)
 }
 
-// CouncilBenchRow is the table's row for one harness version and variant. The scores count only the runs that ended
-// done (Scored), so a failed or stopped run lowers neither the recall nor the denominator it is read against; its
-// tokens are real spend and stay in.
+// CouncilBenchRow is the table's row for one harness version, mode, variant and skill text. The scores count only the
+// runs that ended done (Scored), so a failed or stopped run lowers neither the recall nor the denominator it is read
+// against; its tokens are real spend and stay in.
 type CouncilBenchRow struct {
-	Harness    string  `json:"harness"`
+	Harness string `json:"harness"`
+	// Mode is the mode of the cases the row's runs were on (council.ModeReview or council.ModeBrainstorm); empty when a
+	// run's line has none and its case is no longer in cases.json.
+	Mode       string  `json:"mode"`
 	Variant    string  `json:"variant"`
-	Runs       int     `json:"runs"`   // every run, failed and stopped ones too
-	Scored     int     `json:"scored"` // the runs that ended done
-	Recall     int     `json:"recall"` // key lines matched in the top items, summed over the scored runs
-	Keys       int     `json:"keys"`   // the key lines those runs were scored against
+	Skill      string  `json:"skill,omitempty"` // a brainstorm row's skill text: two never add up in one row
+	Runs       int     `json:"runs"`            // every run, failed and stopped ones too
+	Scored     int     `json:"scored"`          // the runs that ended done
+	Recall     int     `json:"recall"`          // key lines matched in the top items, summed over the scored runs
+	Keys       int     `json:"keys"`            // the key lines those runs were scored against
 	Kept       int     `json:"kept"`
 	Wrong      int     `json:"wrong"`
 	Tokens     int64   `json:"tokens"`     // of every run
 	RecallPerM float64 `json:"recallperm"` // key lines matched per million tokens
+
+	// A brainstorm row's, each summed over the scored runs, and zero on any other variant's: RecallDone is the recall at
+	// the done mark (Recall is the final mark's), Decisions the decision parts of the final designs, Questions the
+	// questions the person answered.
+	RecallDone int `json:"recall_done,omitempty"`
+	Decisions  int `json:"decisions,omitempty"`
+	Questions  int `json:"questions,omitempty"`
 }
 
-// Summarize groups the runs by harness version and variant, the newest harness first (within it solo, council, then
-// team), so one version's score is never read as another's.
-func Summarize(results []CouncilBenchResult) []CouncilBenchRow {
-	type groupKey struct{ harness, variant string }
+// Summarize groups the runs by harness version, mode, variant and skill text, the newest harness first (within it
+// review, then brainstorm, then any other mode; within a mode solo, council, team, then brainstorm), so one version's
+// score is never read as another's and a council on a Review case is never added to one on a Brainstorm case. A run's
+// mode is its own, else its case's in modes (the case id -> mode map of cases.json, nil when it cannot be read), else
+// empty.
+func Summarize(results []CouncilBenchResult, modes map[string]string) []CouncilBenchRow {
+	type groupKey struct{ harness, mode, variant, skill string }
 	index := map[groupKey]int{}
 	var rows []CouncilBenchRow
 	for _, r := range results {
-		k := groupKey{r.Harness, r.Variant}
+		mode := r.Mode
+		if mode == "" {
+			mode = modes[r.Case]
+		}
+		k := groupKey{r.Harness, mode, r.Variant, r.Skill}
 		i, ok := index[k]
 		if !ok {
 			i = len(rows)
 			index[k] = i
-			rows = append(rows, CouncilBenchRow{Harness: r.Harness, Variant: r.Variant})
+			rows = append(rows, CouncilBenchRow{Harness: r.Harness, Mode: mode, Variant: r.Variant, Skill: r.Skill})
 		}
 		row := &rows[i]
 		row.Runs++
@@ -237,6 +255,9 @@ func Summarize(results []CouncilBenchResult) []CouncilBenchRow {
 		row.Keys += r.Keys
 		row.Kept += r.Kept
 		row.Wrong += r.Wrong
+		row.RecallDone += r.RecallDone
+		row.Decisions += r.Decisions
+		row.Questions += r.Questions
 	}
 	for i := range rows {
 		if rows[i].Tokens > 0 {
@@ -247,9 +268,35 @@ func Summarize(results []CouncilBenchResult) []CouncilBenchRow {
 		if c := compareHarness(b.Harness, a.Harness); c != 0 {
 			return c
 		}
-		return compareVariant(a.Variant, b.Variant)
+		if c := compareMode(a.Mode, b.Mode); c != 0 {
+			return c
+		}
+		if c := compareVariant(a.Variant, b.Variant); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Skill, b.Skill)
 	})
 	return rows
+}
+
+// compareMode orders review, then brainstorm, then any other named mode by name, then no mode (a line whose case is
+// gone) last.
+func compareMode(a, b string) int {
+	rank := func(m string) int {
+		switch m {
+		case council.ModeReview:
+			return 0
+		case council.ModeBrainstorm:
+			return 1
+		case "":
+			return 3
+		}
+		return 2
+	}
+	if c := cmp.Compare(rank(a), rank(b)); c != 0 {
+		return c
+	}
+	return strings.Compare(a, b)
 }
 
 // CouncilBenchRatingRow is the ratings' row for one harness version and mode.

@@ -698,9 +698,11 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 	return &wshrpc.CouncilBenchStopRtnData{Stopped: true}, nil
 }
 
-// CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
-// bench runs, and per harness version and mode for the ratings, beside every run line as written (its matches included),
-// in file order. With cases tagged bench.TeamPassTag (retired or not) it
+// CouncilBenchResultsCommand reads the results file back as the table: a row per harness version, mode, variant and
+// skill text for the bench runs, and per harness version and mode for the ratings, beside every run line as written
+// (its matches included), in file order. A run line written before lines carried their case's mode takes it from
+// cases.json (retired cases included); a line whose case is gone, or every old line when cases.json cannot be read,
+// groups under no mode. With cases tagged bench.TeamPassTag (retired or not) it
 // adds the go / no-go verdict on the council against the agent team; with none, no cases.json, or cases that cannot be
 // read, there is no verdict (only the last is logged: the table is still the results).
 func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
@@ -709,7 +711,15 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
-	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
+	cases, _, casesErr := bench.LoadCases(dataDir)
+	var modes map[string]string
+	if casesErr == nil {
+		modes = make(map[string]string, len(cases))
+		for _, c := range cases {
+			modes[c.Id] = c.Mode
+		}
+	}
+	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs, modes), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
 	if rtn.Runs == nil {
 		rtn.Runs = []bench.CouncilBenchRow{}
 	}
@@ -719,11 +729,10 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 	if rtn.Ratings == nil {
 		rtn.Ratings = []bench.CouncilBenchRatingRow{}
 	}
-	cases, _, err := bench.LoadCases(dataDir)
-	if err != nil {
+	if casesErr != nil {
 		// a data dir with no cases.json (someone who only rates councils) has no verdict and nothing to say about it
-		if !errors.Is(err, fs.ErrNotExist) {
-			log.Printf("[council-bench] no verdict: %v", err)
+		if !errors.Is(casesErr, fs.ErrNotExist) {
+			log.Printf("[council-bench] no verdict, and old run lines have no mode: %v", casesErr)
 		}
 		return rtn, nil
 	}
