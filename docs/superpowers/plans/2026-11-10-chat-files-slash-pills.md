@@ -5,7 +5,7 @@
 **Final:** `node scripts/cdp/final-verify.mjs agent-chat agent-sleep launcher`
 **Prototype:** D:/work/arcterm/.superpowers/design/chat-slash-menu/project/
 
-Runs after run b539a1af (inline visuals in Chat) has landed: it edits `chatcomposer.tsx`, `chatpane.tsx` and
+Runs beside run b539a1af (inline visuals in Chat), started together at the person's call; both edit `chatcomposer.tsx`, `chatpane.tsx` and
 `markdownmessage.tsx` too. One run for three plans the person asked to merge (2026-11-10): Part A (the slash menu),
 Part B (files and tagged content in your bubble) and Part C (pills in the box, the folder walk). Part C's box
 rewrite comes after Part A's menus (Task 12 depends on Task 4); the three scenario tasks run last, one after another,
