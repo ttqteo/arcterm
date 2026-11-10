@@ -425,6 +425,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
+    // what Alt+C walks: asleep it skips the disabled Chat and Terminal (agent:view-cycle passes the same asleep flag)
+    const keyOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null, chatAsleep);
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
     // can be cells (gridstore.eligibleIds).
@@ -738,7 +740,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         className="cursor-default"
                         title={
                             chatShown
-                                ? `Switch ${listViews(viewOptions, "and", true)}, also from inside the terminal`
+                                ? keyOptions.length >= 2
+                                    ? `Switch ${listViews(keyOptions, "and", true)}, also from inside the terminal`
+                                    : "Switches the view once the agent wakes"
                                 : brainstorm != null
                                   ? "Switch Terminal, Brainstorm and Review, also from inside the terminal"
                                   : "Switch Terminal, Canvas and Review, also from inside the terminal"

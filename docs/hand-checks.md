@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Alt+C tooltip on a sleeping Claude agent: hover the Alt+C key cap in the header of a sleeping Claude
+  agent → with a canvas and a review open it reads "Switch Canvas and Review, …" (no Chat or Terminal, which the key
+  skips while asleep); with neither open it reads "Switches the view once the agent wakes". Awake, it still lists
+  Chat and Terminal (`agentheader.tsx` key cap title).
 - [ ] (arcterm) Chat model chip: in a real Claude agent's Chat, click the model chip and pick another model → Claude
   Code switches to it (its own footer shows the new model; the chip follows once the agent's row updates). The CDP
   scenario only checks the menu and the `/model <alias>` it types, against a mock (`chatfooter.tsx`, `agent-chat` 28).
