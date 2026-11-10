@@ -60,6 +60,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A `claude -p` (or any claude) an agent starts from its own terminal no longer takes the agent over: its state, its
+  conversation in Chat and the agent's control stream stay the agent's, where they used to switch to the nested
+  session and, once it ended, leave the agent without its stream until it restarted.
 - A message sent from Chat (or the cockpit, a slash command, Compact, Clear, a model pick, a nudge) is submitted every
   time, instead of now and then landing in Claude Code's box with a line break after it and waiting there unsent.
 - A service you stop stays stopped, through a restart of arcterm and when it shows on screen: its card says it is

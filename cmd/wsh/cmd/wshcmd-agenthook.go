@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
@@ -758,6 +759,12 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		if out := skillContextOutput(ev, os.Getenv(jarvis.RunAgentEnv) != ""); out != "" {
 			_, _ = os.Stdout.WriteString(out + "\n")
 		}
+		return nil
+	}
+	// a claude nested in the block's agent (a `claude -p` its Bash tool ran) inherits the block's WAVETERM_BLOCKID:
+	// its state, transcript path and login are not the agent's
+	if agentHookShadow == "" && agentobserve.NestedSession() {
+		hookDebugLine("skip: a claude session nested in another event=" + ev.HookEventName)
 		return nil
 	}
 	em := planEmission(ev)

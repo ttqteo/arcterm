@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
@@ -32,6 +33,10 @@ func init() {
 }
 
 func agentCtlRun(cmd *cobra.Command, args []string) error {
+	// a claude nested in the block's agent would replace the agent's stream, and take it away when it ends
+	if agentobserve.NestedSession() {
+		return nil
+	}
 	oref, err := resolveBlockArg()
 	if err != nil {
 		return fmt.Errorf("resolving block: %w", err)
