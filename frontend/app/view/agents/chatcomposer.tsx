@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The message box of the chat view (a Claude agent's cell in Chat, and its sleeping overlay): the board's rounded box
-// with the text on top and, under it, one row: the attach `+` and the model, mode and context chips (chatfooter.tsx) on
-// the left, Stop and Send on the right. That row's parts fold in place when the agent sleeps or wakes. What it sends and
-// how a sleeping agent is woken is useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds
-// attachments (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your
-// bubble draws as a picture), the `@` file picker (filemention.tsx), Stop, and the look. Callers key it by agent id: its
-// text and its attachments are local to the box.
+// with the text on top and, under it, one row: the `+` menu (chatplusmenu.tsx: add files, a folder, a slash command, MCP
+// servers, plugins) and the model, mode and context chips (chatfooter.tsx) on the left, Stop and Send on the right. That
+// row's parts fold in place when the agent sleeps or wakes. What it sends and how a sleeping agent is woken is
+// useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
+// (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
+// as a picture; Ctrl+U, Cmd+U on a Mac, opens the file dialog), the `/` command menu (slashmenu.tsx) and the `@` file
+// picker (filemention.tsx), Stop, and the look. Callers key it by agent id: its text and its attachments are local to the
+// box.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { turnTransition } from "@/app/element/motiontokens";
@@ -15,6 +17,7 @@ import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { focusTerm } from "@/app/view/term/termpaste";
+import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUp, Moon, Square } from "lucide-react";
@@ -22,12 +25,13 @@ import { AnimatePresence, MotionConfig } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, type DragEvent, type KeyboardEvent } from "react";
 import { canStop, useAgentSend, useGrowingTextarea } from "./agentcomposer";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
-import { AttachButton, AttachmentTray } from "./attachmenttray";
+import { AttachmentTray } from "./attachmenttray";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatInsert } from "./chatinsert";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, noteSent, sentHistory } from "./chatpendingstore";
+import { ChatPlusMenu } from "./chatplusmenu";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot } from "./launchermention";
@@ -114,6 +118,7 @@ export function ChatComposer({
         text,
         setText,
         cwd: block?.meta?.["cmd:cwd"] ?? "",
+        blockId: agent.blockId,
         inputRef: taRef,
         off: recalled.current.at != null && text === recalled.current.shown,
     });
@@ -146,9 +151,14 @@ export function ChatComposer({
     );
     useLayoutEffect(() => {
         const caret = caretAfter.current;
-        if (caret != null && taRef.current != null) {
+        const ta = taRef.current;
+        if (caret != null && ta != null) {
             caretAfter.current = null;
-            taRef.current.setSelectionRange(caret, caret);
+            ta.setSelectionRange(caret, caret);
+            // the menus read the caret from events, and a caret set from code may raise none before the next key: a `/`
+            // put in the box by the + menu opens the `/` list at once
+            slash.onCaret(ta);
+            mention.onCaret(ta);
         }
     }, [text]);
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
@@ -157,6 +167,16 @@ export function ChatComposer({
     const permission = usePermission(agent.blockId != null ? `block:${agent.blockId}` : undefined);
     const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
     const sendable = canSend && blocker == null && hold == null;
+    // a bare /model, /config… draws a menu on Claude Code's own screen: show that screen to answer it
+    const flipIfTui = (sent: string) => {
+        if (opensTui(sent, slash.commands)) {
+            setChatMode(agent.id, "terminal");
+            const blockId = agent.blockId;
+            if (blockId != null) {
+                requestAnimationFrame(() => focusTerm(blockId));
+            }
+        }
+    };
     const submit = () => {
         if (!sendable) {
             return;
@@ -172,19 +192,46 @@ export function ChatComposer({
                 if (entries != null && pendsAsBubble(sent)) {
                     addPending(agent.id, sent, entries);
                 }
-                // a bare /model, /config… draws a menu on Claude Code's own screen: show that screen to answer it
-                if (opensTui(sent, slash.commands)) {
-                    setChatMode(agent.id, "terminal");
-                    const blockId = agent.blockId;
-                    if (blockId != null) {
-                        requestAnimationFrame(() => focusTerm(blockId));
-                    }
-                }
+                flipIfTui(sent);
                 for (const a of att.attachments) {
                     att.remove(a.id);
                 }
             }
         }
+    };
+    // The + menu's MCP servers and Plugins rows: a one-line command typed into the terminal, as the send path types it
+    // (useAgentSend), without touching the box's own text or its attachments. It waits behind a permission prompt or a
+    // question as Send does.
+    const sendCommand = (command: string) => {
+        const blockid = agent.blockId;
+        if (asleep || waking || blockid == null) {
+            return;
+        }
+        if (hold != null) {
+            pushToast({ title: "Not sent", message: hold, level: "info" });
+            return;
+        }
+        fireAndForget(() =>
+            RpcApi.ControllerInputCommand(TabRpcClient, { blockid, inputdata64: stringToBase64(command + "\r") })
+        );
+        onSent?.();
+        noteSent(agent.id, command);
+        flipIfTui(command);
+    };
+    // The + menu's Add folder and Slash commands rows: an empty box becomes `t`; a box that already starts with `/` is
+    // a command being written and stays as it is; any other text gets `t` put before it. The box takes the focus, the
+    // caret right after `t` when it was put in (so a lone `/` opens the `/` menu), where it was otherwise.
+    const putText = (t: string) => {
+        const ta = taRef.current;
+        if (ta == null || ta.readOnly) {
+            return;
+        }
+        if (!text.startsWith("/")) {
+            recalled.current = { at: null, shown: "" };
+            caretAfter.current = t.length;
+            setText(text === "" ? t : t + text);
+        }
+        ta.focus();
     };
     // ↑ in an empty box (or one still showing a recalled text, unedited, with the caret on its first line) puts back the
     // last message sent; ↓ walks forward and back to empty. True when the key was taken.
@@ -318,6 +365,25 @@ export function ChatComposer({
                     if (e.defaultPrevented) {
                         return;
                     }
+                    // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
+                    // open `/` or `@` list leaves it alone. An asleep agent takes text only, as its + is not drawn.
+                    const addFilesKey =
+                        e.key.toLowerCase() === "u" &&
+                        !e.altKey &&
+                        !e.shiftKey &&
+                        (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+                    if (addFilesKey) {
+                        if (
+                            !asleep &&
+                            !waking &&
+                            !slash.shown &&
+                            document.querySelector("[data-chat-mentions]") == null
+                        ) {
+                            e.preventDefault();
+                            attach();
+                        }
+                        return;
+                    }
                     if (recallKey(e)) {
                         e.preventDefault();
                         return;
@@ -346,7 +412,13 @@ export function ChatComposer({
                     <AnimatePresence initial={false}>
                         {asleep ? null : (
                             <Fold key="attach">
-                                <AttachButton onClick={attach} />
+                                <ChatPlusMenu
+                                    onAttach={attach}
+                                    onText={putText}
+                                    onSend={sendCommand}
+                                    onFocusBox={() => taRef.current?.focus()}
+                                    disabled={waking}
+                                />
                             </Fold>
                         )}
                     </AnimatePresence>
