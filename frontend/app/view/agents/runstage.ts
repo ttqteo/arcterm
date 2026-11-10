@@ -41,6 +41,13 @@ export interface RunStageView {
  *  words and tone change, since nothing in it is moving. Only a top-level run reads paused (its status), and done and
  *  cancelled win over it. */
 export const PAUSED_LABEL = "Paused · resumes when memory frees";
+/** A run the person paused: Arc never resumes it on its own, not when memory frees and not at a restart. */
+export const PAUSED_BY_YOU_LABEL = "Paused · until you resume";
+
+/** Pure: a paused run's words, by who paused it (its Pause.by: "manual" is the person). */
+export function pausedLabel(by: string | undefined): string {
+    return by === "manual" ? PAUSED_BY_YOU_LABEL : PAUSED_LABEL;
+}
 
 const LABEL: Record<RunStageKey, string> = {
     planning: "Planning",
@@ -99,7 +106,7 @@ function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
     return "planning";
 }
 
-export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking = false): RunStageView {
+export function runStage(run: Pick<RunInfo, "status" | "land" | "dag" | "pausedBy">, asking = false): RunStageView {
     const key = stageKey(run);
     const status = run.status ?? "";
     const dagStatus = run.dag?.status ?? "";
@@ -175,7 +182,7 @@ export function runStage(run: Pick<RunInfo, "status" | "land" | "dag">, asking =
     }
     return {
         key,
-        label: paused ? PAUSED_LABEL : stageLabel(key, run.land?.state),
+        label: paused ? pausedLabel(run.pausedBy) : stageLabel(key, run.land?.state),
         tone,
         needsYou,
         outcome,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunInfo } from "./runlineage";
-import { PAUSED_LABEL, runStage } from "./runstage";
+import { PAUSED_BY_YOU_LABEL, PAUSED_LABEL, runStage } from "./runstage";
 
 type R = Pick<RunInfo, "status" | "land" | "dag">;
 const dag = (status: string, final?: Partial<FinalStage>): TaskGroup =>
@@ -164,6 +164,12 @@ describe("runStage", () => {
             });
         }
         expect(PAUSED_LABEL).toBe("Paused · resumes when memory frees");
+    });
+
+    it("says a run the person paused waits for them, since Arc never resumes it", () => {
+        expect(runStage({ status: "paused", pausedBy: "manual" }).label).toBe(PAUSED_BY_YOU_LABEL);
+        expect(PAUSED_BY_YOU_LABEL).toBe("Paused · until you resume");
+        expect(runStage({ status: "paused", pausedBy: "auto" }).label).toBe(PAUSED_LABEL);
     });
 
     it("keeps the stage a paused run stopped in, and its tail, under the paused words", () => {

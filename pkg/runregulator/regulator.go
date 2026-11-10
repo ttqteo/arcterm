@@ -61,6 +61,9 @@ type Candidate struct {
 	// paused when it is. Only the runs the regulator may pause are measured.
 	HeldBytes         uint64
 	NoAutoResumeUntil int64 // Unix ms; the no-flap hold, paused runs only
+	// ByPerson is a run the person paused (Pause.By manual): it stays paused until they resume it, and it does not
+	// hold the line for the runs the regulator paused itself
+	ByPerson bool
 }
 
 // Input is everything Decide reads: no clock, no store.
@@ -182,12 +185,12 @@ func decideResume(st *State, in Input) Action {
 	if in.Now.Sub(st.normalSince) < NormalFor {
 		return Action{}
 	}
-	// The run paused longest whose hold has passed. It waits for its RAM rather than being passed by a smaller run, so
+	// The run paused longest whose hold has passed, of those the regulator may resume. It waits for its RAM rather than being passed by a smaller run, so
 	// a big run is not starved.
 	var pick *Candidate
 	for i := range in.Candidates {
 		c := &in.Candidates[i]
-		if !c.Paused || c.NoAutoResumeUntil > in.Now.UnixMilli() {
+		if !c.Paused || c.ByPerson || c.NoAutoResumeUntil > in.Now.UnixMilli() {
 			continue
 		}
 		if pick == nil || c.PausedTs < pick.PausedTs || (c.PausedTs == pick.PausedTs && c.RunID < pick.RunID) {

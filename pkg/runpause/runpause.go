@@ -205,8 +205,9 @@ func Resume(ctx context.Context, channelId, runId, by string) error {
 	return nil
 }
 
-// ResumeAtBoot runs once at startup: every paused top-level run resumes with By_Boot, unless memory is already
-// tight, when each stays paused for the regulator. Errors are logged per run.
+// ResumeAtBoot runs once at startup: every top-level run Arc paused resumes with By_Boot, unless memory is already
+// tight, when each stays paused for the regulator. A run the person paused (By_Manual) stays paused across the restart
+// until they resume it. Errors are logged per run.
 func ResumeAtBoot(ctx context.Context) {
 	if p := readPressure(ctx); p == jobqueue.PressureWarn || p == jobqueue.PressureCritical {
 		log.Printf("runpause: memory is tight at startup: paused runs stay paused until it frees")
@@ -218,7 +219,7 @@ func ResumeAtBoot(ctx context.Context) {
 		return
 	}
 	for _, r := range runs {
-		if !runqueue.TopLevel(r) {
+		if !runqueue.TopLevel(r) || (r.Pause != nil && r.Pause.By == By_Manual) {
 			continue
 		}
 		if err := Resume(ctx, r.ChannelOID, r.ID, By_Boot); err != nil {
