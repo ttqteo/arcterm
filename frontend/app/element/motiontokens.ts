@@ -54,6 +54,16 @@ export const composerReveal: Variants = {
     exit: { opacity: 0, height: 0, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
 };
 
+// Fold in x: composerReveal's signature on the horizontal axis, plus a 0.96 scale. A composer part (a chip, the mode
+// chip, the wake button) folding into or out of a row of siblings: the width opens or closes the gap the neighbours
+// slide across, and the scale keeps the part from reading as a wipe. Never x/y/height, so a part never shifts the row's
+// height or fights a transform something else owns.
+export const foldX: Variants = {
+    initial: { opacity: 0, scale: 0.96, width: 0 },
+    animate: { opacity: 1, scale: 1, width: "auto", transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    exit: { opacity: 0, scale: 0.96, width: 0, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+};
+
 // Sent rise: the message the person just sent rising into the chat from the composer below it, so the eye follows
 // it from the box to the log. y is safe here: a chat row has no Reorder.Item owning its transform. Scales from the
 // bubble's tail corner (set transform-origin per site); arrive only, the row never leaves this way.
@@ -100,6 +110,20 @@ export const indicatorSlide: Transition = { duration: MOTION.durMacro, ease: MOT
 export const viewFade: Variants = {
     initial: { opacity: 0 },
     animate: { opacity: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
+};
+
+// Layer fade: a whole layer fading over another one that stays mounted under it (the chat over the terminal).
+// Opacity only, like viewFade, but unlike viewFade it has an exit: the layer underneath is already there, so the
+// leaving one cannot stack in the flow. The exit also stops taking pointer events at once, so a layer on its way
+// out never takes a click or a key meant for the one beneath.
+export const layerFade: Variants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
+    exit: {
+        opacity: 0,
+        pointerEvents: "none",
+        transition: { duration: MOTION.durExit, ease: MOTION.easeFluid },
+    },
 };
 
 // Micro swap: one small mark trading for another in place (a status glyph, copy -> copied). Opacity only and
