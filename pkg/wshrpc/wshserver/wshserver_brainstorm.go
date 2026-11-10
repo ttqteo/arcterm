@@ -80,8 +80,8 @@ type sessionKind struct {
 	reportFile string // the session's report file in the temp dir, a Sprintf pattern for a uuid
 	route      func(ch *waveobj.Channel, agent string) waveobj.RoutePin
 	prompt     func(s brainstormSession, reportPath string) (string, error)
-	// decide judges the run; on Deliver it returns the bytes to write to resultPath
-	decide      func(run *waveobj.Run, lostReason string) (brainstormcheck.Action, []byte)
+	// decide judges the run; on sessionDeliver it returns the bytes to write to resultPath
+	decide      func(run *waveobj.Run, lostReason string) (sessionAction, []byte)
 	resultPath  func(brainstormFile string) string
 	line        func(path string) string
 	failLine    func(reason string) string // nil when the pane shows the failure on its own card
@@ -104,9 +104,9 @@ var builderCheckKind = &sessionKind{
 	prompt: func(s brainstormSession, reportPath string) (string, error) {
 		return brainstormcheck.Prompt(s.Spec, reportPath), nil
 	},
-	decide: func(run *waveobj.Run, lostReason string) (brainstormcheck.Action, []byte) {
-		action := brainstormcheck.Decide(run, lostReason)
-		if action.Kind != brainstormcheck.Deliver {
+	decide: func(run *waveobj.Run, lostReason string) (sessionAction, []byte) {
+		action := decideBuilderCheck(run, lostReason)
+		if action.Kind != sessionDeliver {
 			return action, nil
 		}
 		return action, []byte(run.Report)
@@ -133,11 +133,11 @@ var judgeKind = &sessionKind{
 		return waveobj.RoutePin{Runtime: "claude", Model: "opus"}
 	},
 	prompt: judgePrompt,
-	decide: func(run *waveobj.Run, lostReason string) (brainstormcheck.Action, []byte) {
+	decide: func(run *waveobj.Run, lostReason string) (sessionAction, []byte) {
 		if lostReason != "" {
 			lostReason = judgeLostHead + lostReason
 		}
-		return brainstormcheck.DecideJudge(run, lostReason)
+		return decideJudge(run, lostReason)
 	},
 	resultPath:  brainstormcheck.JudgeResultPath,
 	line:        brainstormcheck.JudgedLine,
@@ -510,7 +510,7 @@ func tickBrainstormSession(ctx context.Context, s brainstormSession, now int64) 
 	}
 	action, out := k.decide(run, lost)
 	switch action.Kind {
-	case brainstormcheck.Deliver:
+	case sessionDeliver:
 		path := k.resultPath(s.File)
 		if err := os.WriteFile(path, out, 0o644); err != nil {
 			failBrainstormSession(ctx, s, fmt.Sprintf(k.writeFailed, path, err))
@@ -521,7 +521,7 @@ func tickBrainstormSession(ctx context.Context, s brainstormSession, now int64) 
 			log.Printf("%s: %v", k.what, err)
 		}
 		return true
-	case brainstormcheck.Fail:
+	case sessionFail:
 		if run != nil && run.Status != jarvis.RunStatus_Done {
 			stopStageSession(*run)
 		}

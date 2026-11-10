@@ -858,7 +858,7 @@ func TestBrainstormJudgeDelivers(t *testing.T) {
 	if !tickBrainstormSession(ctx, c, time.Now().UnixMilli()) {
 		t.Fatal("a done run with a good result did not settle the judge")
 	}
-	_, want := brainstormcheck.DecideJudge(run, "")
+	_, want := decideJudge(run, "")
 	path := brainstormcheck.JudgeResultPath(file)
 	if got, err := os.ReadFile(path); err != nil || len(want) == 0 || string(got) != string(want) {
 		t.Fatalf("judge.json = %q, %v, want %q", got, err, want)
@@ -902,7 +902,7 @@ func TestBrainstormJudgeFailsWithALine(t *testing.T) {
 		{"an unusable report", "Here it is:\n" + goodJudgeReport, func(r string) bool {
 			return strings.HasPrefix(r, "The judge's result is not usable: it is not the one JSON object")
 		}},
-		{"an empty report", "  \n", func(r string) bool { return r == brainstormcheck.JudgeEmptyReason }},
+		{"an empty report", "  \n", func(r string) bool { return r == judgeEmptyReason }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, file := seedJudgeBrainstorm(t, 5)
