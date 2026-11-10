@@ -54,8 +54,7 @@ Decisions made beyond the boards (the lead's calls, each with why):
 
 **Depends on:** none
 
-**Files:**
-- Modify: `frontend/app/view/agents/chatconversation.tsx`
+**Files:** `frontend/app/view/agents/chatconversation.tsx`
 
 Today (`chatconversation.tsx:459-470`) a prose part is a `bg-surface-raised` bubble, and an agent item
 (`:503-517`) puts a `CouncilAvatar` beside its parts.
@@ -104,11 +103,10 @@ frontend/app/view/agents/chatconversation.tsx`
 
 **Depends on:** none
 
-**Files:**
-- Modify: `frontend/app/view/agents/chatfootermodel.ts`, `frontend/app/view/agents/chatfootermodel.test.ts`
-- Modify: `frontend/app/view/agents/chatfooter.tsx`
-- Modify: `frontend/app/view/agents/attachmenttray.tsx` (the `AttachButton` icon; `chatcomposer.tsx:307` is its
-  only user)
+**Files:** `frontend/app/view/agents/chatfootermodel.ts`, `frontend/app/view/agents/chatfootermodel.test.ts`, `frontend/app/view/agents/chatfooter.tsx`, `frontend/app/view/agents/chatcomposer.tsx`, `frontend/app/view/agents/attachmenttray.tsx`, `frontend/app/element/motiontokens.ts`, `frontend/app/element/motiontokens.test.ts`
+
+(`attachmenttray.tsx` for the `AttachButton` icon; `chatcomposer.tsx:307` is its only user. `motiontokens.ts` only if
+Step 6b needs a variant.)
 
 **Step 1: Write the failing tests** in `chatfootermodel.test.ts`:
 
@@ -280,13 +278,11 @@ frontend/app/view/agents/attachmenttray.tsx` (plus `motiontokens.ts` and its tes
 (Task 2 first: both edit `motiontokens.ts` possibly, and Task 2's folds only play once this task keeps the box
 mounted; serial keeps the merge clean.)
 
-**Files:**
-- Modify: `frontend/app/view/agents/chatpane.tsx` (`ChatLayer`, `ChatPane`, the placeholder at `:180`)
-- Modify: `frontend/app/view/agents/agentsurface.tsx:829-837`
-- Modify: `frontend/app/view/agents/sleepingtranscript.tsx` (drop its chat branch)
-- Modify: `frontend/app/element/segmented.tsx`, `frontend/app/view/agents/agentheader.tsx:746`
-- Modify: `frontend/app/view/agents/chatswitch.tsx`
-- Possibly: `frontend/app/element/motiontokens.ts` (+ its test) if `viewFade` has no exit
+**Files:** `frontend/app/view/agents/chatpane.tsx`, `frontend/app/view/agents/agentsurface.tsx`, `frontend/app/view/agents/sleepingtranscript.tsx`, `frontend/app/element/segmented.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/chatswitch.tsx`, `frontend/app/element/motiontokens.ts`, `frontend/app/element/motiontokens.test.ts`
+
+(`chatpane.tsx`: `ChatLayer`, `ChatPane`, the placeholder at `:180`; `agentsurface.tsx:829-837`;
+`sleepingtranscript.tsx` drops its chat branch; `agentheader.tsx:746`; `motiontokens.ts` only if `viewFade` has no
+exit.)
 
 Read `motiontokens.ts` first: `viewFade` (enter at `durMacro`), `microFade`, `indicatorSlide`. If `viewFade` has no
 `exit`, add `exit: { opacity: 0, transition: { duration: MOTION.durExit, ease: MOTION.easeFluid } }` and extend
@@ -354,9 +350,9 @@ over the terminal, the view control's fill slides" -- <paths>`
 
 **Depends on:** Task 1, Task 2, Task 3
 
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (the `agent-chat` scenario, from line ~42443)
-- Modify: `CHANGELOG.md`, `docs/hand-checks.md`
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
+
+(`scenarios.mjs`: the `agent-chat` scenario, from line ~42443.)
 
 **Step 1: Fix what the new look breaks.** Run the scenario against the merged tree the way Final does
 (`node scripts/cdp/final-verify.mjs agent-chat`) and read each failed assert. Expect: asserts on the prose bubble's
