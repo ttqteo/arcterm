@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run you pause stays paused until you resume it: Arc's memory regulator no longer resumes it a moment later, and
+  a restart no longer resumes it either. It reads "Paused · until you resume".
 - A long message sent from Chat is submitted instead of sitting in Claude Code's box as a new line while Chat showed
   it Queued.
 - A message you cleared with Esc in the terminal no longer stays Queued in Chat: its bubble goes a few seconds after

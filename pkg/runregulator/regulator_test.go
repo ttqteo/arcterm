@@ -262,3 +262,23 @@ func TestTasksDoneCountsOnlyDoneTasks(t *testing.T) {
 		t.Fatalf("TasksDone(nil) = %d, want 0", got)
 	}
 }
+
+// a run the person paused stays paused until they resume it: run 3df0f2d3, paused by hand on 2026-11-10, was resumed
+// by the regulator about a second later, its RAM freed by the pause being what let the resume through
+func TestAPauseByThePersonIsNeverResumed(t *testing.T) {
+	var st State
+	mine := paused("mine", 1000, gb)
+	mine.ByPerson = true
+	Decide(&st, in(jobqueue.PressureNormal, 64*gb, at(0), mine))
+	wantAction(t, Decide(&st, in(jobqueue.PressureNormal, 64*gb, at(time.Hour), mine)), ActionNone, "")
+}
+
+// and it does not hold the line: the run the regulator paused behind it still resumes
+func TestAPauseByThePersonDoesNotHoldBackTheRegulatorsOwn(t *testing.T) {
+	var st State
+	mine := paused("mine", 1000, gb)
+	mine.ByPerson = true
+	its := paused("its", 2000, gb)
+	Decide(&st, in(jobqueue.PressureNormal, 64*gb, at(0), mine, its))
+	wantAction(t, Decide(&st, in(jobqueue.PressureNormal, 64*gb, at(5*time.Minute), mine, its)), ActionResume, "its")
+}

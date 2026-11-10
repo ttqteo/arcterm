@@ -14,7 +14,7 @@ import type { AgentVM } from "../agents/agentsviewmodel";
 import { finalStageActivity } from "../agents/finalstage";
 import { landPlace, landSlotOfRun } from "../agents/landline";
 import { canResume, currentPhaseIndex, isTerminal, leadWorker } from "../agents/runmodel";
-import { PAUSED_LABEL } from "../agents/runstage";
+import { pausedLabel } from "../agents/runstage";
 import {
     cleanupOnly,
     firstLine,
@@ -139,7 +139,7 @@ function pausedStatus(read: SheetRead): SheetStatus {
     const pausedTs = run.pause?.pausedts ?? 0;
     const by = run.pause?.by === "manual" ? "you paused it" : "Arc paused it to free memory";
     return {
-        verb: PAUSED_LABEL,
+        verb: pausedLabel(run.pause?.by),
         sub: `${by}: its agents are suspended and keep their sessions`,
         tone: "muted",
         pulse: false,

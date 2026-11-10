@@ -524,7 +524,7 @@ export function RunSection({ model, run, asks }: { model: AgentsViewModel; run: 
             {run.dag == null ? (
                 // an absent dag is not "planning": a bounded run never submits one, so the run says where it is
                 <div className="text-[11px] text-muted">
-                    {runStatusView(run.status ?? "planning").label} · no plan submitted
+                    {runStatusView(run.status ?? "planning", undefined, run.pausedBy).label} · no plan submitted
                 </div>
             ) : (
                 <RunStatus
