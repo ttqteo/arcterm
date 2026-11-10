@@ -3,7 +3,8 @@
 //
 // Your prompt, pinned to the top of a transcript once it has scrolled away (pinnedprompt.ts decides which), so a long
 // turn's reply still says what it answers. A click scrolls back to the prompt. Shared by the live feed
-// (narrationtimeline.tsx) and the compact read (compacttranscript.tsx); each marks its prompts with data-user-prompt.
+// (narrationtimeline.tsx), the compact read (compacttranscript.tsx) and chat (chatconversation.tsx); each marks its
+// prompts with data-user-prompt.
 // The scroll back is smooth, so the reply visibly runs back up to the prompt it answers, unless motion is reduced.
 // The band sticks at the scroller's padding edge, so a scroller that holds it has no top padding: content scrolling
 // past would show in the gap above the band.
@@ -68,17 +69,20 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
 }
 
 /** The pinned prompt: a zero-height sticky row, so showing it never moves the transcript under it. bg is the
- *  scroller's own background, which the row's band paints over what scrolls beneath it. */
+ *  scroller's own background, which the row's band paints over what scrolls beneath it. className goes on the sticky
+ *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. */
 export function PinnedPromptBar({
     rootRef,
     index,
     text,
     bg,
+    className,
 }: {
     rootRef: RefObject<HTMLElement>;
     index: number;
     text: string | undefined;
     bg: string;
+    className?: string;
 }) {
     const reduce = useReducedMotion();
     if (index < 0 || text == null) {
@@ -95,7 +99,7 @@ export function PinnedPromptBar({
     };
     // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more
     return (
-        <div data-pinned-prompt className="sticky top-0 z-10 h-0">
+        <div data-pinned-prompt className={cn("sticky top-0 z-10 h-0", className)}>
             <div className={cn("pb-2 pt-1", bg)}>
                 <div className="relative">
                     {index > 0 ? (
