@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A `! command` reads as one card in Chat: in a Claude agent's Chat send `! ls` (or type it in the
+  Terminal) → on your side one card, `! ls` in mono with the `!` in the accent, then its output under a rule on the
+  code ground; `! ls nope` → the error in red; a command that prints nothing → "No output"; a long output scrolls inside
+  the card; Copy takes the command and its output (`chatconversation.tsx` `ShellBubble`).
 - [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent

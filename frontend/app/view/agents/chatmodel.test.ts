@@ -118,6 +118,17 @@ describe("chatItems", () => {
         ]);
     });
 
+    it("turns a bash-mode command you ran into a 'you' carrying the command and, once it lands, its output", () => {
+        const items = chatItems([
+            { kind: "command", name: "!", args: "task install", shell: { output: "done", error: "" } },
+            { kind: "command", name: "!", args: "sleep 60" },
+        ]);
+        expect(items).toEqual([
+            { kind: "you", key: expect.any(String), command: "! task install", shell: { output: "done", error: "" } },
+            { kind: "you", key: expect.any(String), command: "! sleep 60" },
+        ]);
+    });
+
     it("draws compactions, interruptions and background notifications as markers between agent groups", () => {
         const items = chatItems([
             you("go"),

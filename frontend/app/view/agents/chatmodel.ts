@@ -18,7 +18,7 @@ import {
     type Card,
 } from "../../../../claude/arc-view-mod/hooks/prompt-core";
 import { parseWake, recapLine, wakeSummary, type Wake } from "../../../../claude/arc-view-mod/hooks/wake-core";
-import type { AgentEntry, AgentState, EditFile } from "./agentsviewmodel";
+import type { AgentEntry, AgentState, EditFile, ShellResult } from "./agentsviewmodel";
 import { groupCompact, type CompactItem, type WorkItem } from "./compacttimeline";
 
 /** One piece of what the agent did between two of your messages. */
@@ -37,8 +37,9 @@ export type ChatMarker = Extract<CompactItem, { kind: "compaction" | "interrupte
 export type ChatItem =
     // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none
     | { kind: "you"; key: string; text: string; images?: string[] }
-    // a slash command or skill you typed, as "/name args" (check with `"command" in item`)
-    | { kind: "you"; key: string; command: string }
+    // a slash command or skill you typed, as "/name args" (check with `"command" in item`); a bash-mode command reads
+    // "! cmd", with `shell` its output once that lands
+    | { kind: "you"; key: string; command: string; shell?: ShellResult }
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES)
     | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[] }
     // everything the agent said and did between two of the items around it
@@ -133,7 +134,12 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
             }
             case "command":
                 group = null;
-                out.push({ kind: "you", key: keyOf("you", item.index), command: commandText(item) });
+                out.push({
+                    kind: "you",
+                    key: keyOf("you", item.index),
+                    command: commandText(item),
+                    ...(item.shell != null ? { shell: item.shell } : {}),
+                });
                 break;
             case "message":
                 agentParts(item.index).push({ kind: "prose", text: item.text });

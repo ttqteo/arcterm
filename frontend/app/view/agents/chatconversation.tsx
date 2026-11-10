@@ -19,7 +19,14 @@ import { cn } from "@/util/util";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
+import {
+    burstRenderMode,
+    conversationText,
+    isNearBottom,
+    type AgentEntry,
+    type EditFile,
+    type ShellResult,
+} from "./agentsviewmodel";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
@@ -81,8 +88,61 @@ function ProseText({ text }: { text: string }) {
 
 type CopyMenu = (text: string) => (e: React.MouseEvent) => void;
 
+// a command you ran in bash mode (`! cmd`): the command as you typed it, then what it printed under a rule, stderr in red,
+// scrolling past 200 px, as the TUI draws it under its `!` line. Before its output lands, the command alone.
+function ShellBubble({
+    command,
+    shell,
+    onContextMenu,
+}: {
+    command: string;
+    shell?: ShellResult;
+    onContextMenu: CopyMenu;
+}) {
+    const printed = shell != null && (shell.output !== "" || shell.error !== "");
+    // what Copy takes: the command and what it printed, as the terminal shows them
+    const copyText = [`! ${command}`, shell?.output ?? "", shell?.error ?? ""].filter((s) => s !== "").join("\n");
+    return (
+        <div
+            data-chat-you
+            data-chat-command
+            data-chat-shell
+            onContextMenu={onContextMenu(copyText)}
+            className="group relative mb-1 max-w-[75%] min-w-[220px] self-end"
+        >
+            <div className="flex flex-col overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised">
+                <div className="flex items-baseline gap-2 px-[14px] py-[8px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]">
+                    <span aria-label="bash" className="flex-none select-none font-semibold text-accent">
+                        !
+                    </span>
+                    <span className="min-w-0">{command}</span>
+                </div>
+                {shell != null ? (
+                    <div
+                        data-chat-shell-output
+                        className="max-h-[200px] overflow-auto border-t border-edge-faint bg-surface-code px-[14px] py-[8px] font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]"
+                    >
+                        {printed ? (
+                            <>
+                                {shell.output !== "" ? <div className="text-ink-mid">{shell.output}</div> : null}
+                                {shell.error !== "" ? <div className="text-error-soft">{shell.error}</div> : null}
+                            </>
+                        ) : (
+                            <span className="font-sans text-muted">No output</span>
+                        )}
+                    </div>
+                ) : null}
+            </div>
+            <BubbleCopy text={copyText} align="right" />
+        </div>
+    );
+}
+
 // your message: a bubble on the right, long ones clamped (PromptText, as userNeedsClamp says), what you pasted under it
 function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "you" }>; onContextMenu: CopyMenu }) {
+    if ("command" in item && item.command.startsWith("! ")) {
+        return <ShellBubble command={item.command.slice(2)} shell={item.shell} onContextMenu={onContextMenu} />;
+    }
     if ("command" in item) {
         return (
             <div

@@ -42,6 +42,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A `! command` you run in the agent's box shows in Chat as one card: the command, then what it printed (errors in red),
+  instead of an empty "Bash input" card and a bubble of raw `<bash-stdout>` tags.
 - A skill the agent runs by itself shows as a Skill step in its work, instead of a bubble on your side that looked like
   you had typed the slash command.
 - A Chat message you send while the agent is working shows as you wrote it, its pictures as thumbnails, instead of

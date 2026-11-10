@@ -130,6 +130,41 @@ describe("projectTranscript user turns", () => {
 describe("projectTranscript commands and isMeta", () => {
     const L = (o: unknown) => JSON.stringify(o);
 
+    // `! cmd` in Claude Code's box (bash mode) is written as two user records, as this session's transcript holds them
+    it("reads a bash-mode command you ran and its output as one shell command entry", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-input> task install</bash-input>" } }),
+            L({
+                type: "user",
+                message: {
+                    content:
+                        "<bash-stdout>task: [install:macos] node scripts/install-mac.mjs\n\x1b[32mreopens\x1b[0m in a few seconds.</bash-stdout><bash-stderr></bash-stderr>",
+                },
+            }),
+            L({ type: "user", message: { content: "<bash-input>ls nope</bash-input>" } }),
+            L({ type: "user", message: { content: "<bash-stdout></bash-stdout><bash-stderr>ls: nope: No such file or directory</bash-stderr>" } }),
+            L({ type: "user", message: { content: "<bash-input>sleep 60</bash-input>" } }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "!",
+                args: "task install",
+                shell: { output: "task: [install:macos] node scripts/install-mac.mjs\nreopens in a few seconds.", error: "" },
+            },
+            { kind: "command", name: "!", args: "ls nope", shell: { output: "", error: "ls: nope: No such file or directory" } },
+            // its output has not landed yet
+            { kind: "command", name: "!", args: "sleep 60" },
+        ]);
+    });
+
+    it("drops a bash output whose command is not in the lines read, rather than drawing its tags", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-stdout>orphan</bash-stdout><bash-stderr></bash-stderr>" } }),
+        ]);
+        expect(out).toEqual([]);
+    });
+
     it("parses a <command-name> user string into a command entry (slash kept, message dropped, args when present)", () => {
         const withArgs = "<command-name>/review</command-name>\n  <command-message>review</command-message>\n  <command-args>PR #402</command-args>";
         const bare = "<command-name>/clear</command-name>\n  <command-message>clear</command-message>\n  <command-args></command-args>";

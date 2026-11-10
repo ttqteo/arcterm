@@ -5,6 +5,7 @@
 // No React, no Wave runtime imports. Deterministic; no LLM (spec §5.3).
 
 import type { AgentEntry, CardTask } from "./agentsviewmodel";
+import { parseAnsiLines } from "./ansitext";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
 const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline uses the per-kind budget
@@ -87,6 +88,20 @@ function parseCommand(content: string): { name: string; args?: string } | null {
     const argsMatch = /<command-args>([^]*?)<\/command-args>/.exec(content);
     const args = argsMatch ? argsMatch[1].trim() : "";
     return args !== "" ? { name, args } : { name };
+}
+
+// `! cmd` typed in Claude Code's box (bash mode) is written as a user record holding <bash-input>, then one holding
+// <bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr> once it finishes
+const BASH_INPUT = /^\s*<bash-input>([^]*)<\/bash-input>\s*$/;
+const BASH_STDOUT = /<bash-stdout>([^]*?)<\/bash-stdout>/;
+const BASH_STDERR = /<bash-stderr>([^]*?)<\/bash-stderr>/;
+
+// captured output as plain text: the colours and cursor moves a terminal would draw, dropped
+function plainOutput(text: string): string {
+    return parseAnsiLines(text.split("\n"))
+        .map((runs) => runs.map((r) => r.text).join(""))
+        .join("\n")
+        .trim();
 }
 
 // Claude interruption marker, both "[Request interrupted by user]" and the "...for tool use]" variant.
@@ -251,6 +266,17 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 } else if (content.includes("<local-command-stdout>")) {
                     // slash-command stdout (e.g. "Compacted …", with raw ANSI) — not shown, matching the
                     // system/local_command record that is already skipped. Never a user bubble.
+                } else if (BASH_INPUT.test(content)) {
+                    entries.push({ kind: "command", name: "!", args: BASH_INPUT.exec(content)![1].trim() });
+                } else if (BASH_STDOUT.test(content) || BASH_STDERR.test(content)) {
+                    // it goes on its command; one whose command is not in the lines read is dropped, never a bubble
+                    const last = entries[entries.length - 1];
+                    if (last?.kind === "command" && last.name === "!" && last.shell == null) {
+                        last.shell = {
+                            output: plainOutput(BASH_STDOUT.exec(content)?.[1] ?? ""),
+                            error: plainOutput(BASH_STDERR.exec(content)?.[1] ?? ""),
+                        };
+                    }
                 } else if (isInterrupted(content)) {
                     entries.push({ kind: "interrupted" });
                 } else {

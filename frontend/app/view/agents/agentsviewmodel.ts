@@ -43,11 +43,18 @@ export interface AskQuestionDetail {
     typed?: string;
 }
 
+/** What a bash-mode command (`! cmd`) printed, its ANSI codes dropped: stdout and stderr, either possibly empty. */
+export interface ShellResult {
+    output: string;
+    error: string;
+}
+
 // One item of "previous info": something the agent said, or something it did.
 export type AgentEntry =
     | { kind: "message"; text: string }
     | { kind: "user"; text: string; images?: string[] } // images: what was pasted with it, as data URLs
-    | { kind: "command"; name: string; args?: string; isSkill?: boolean }
+    // a slash command or skill you ran, or (name "!", `shell` set once its output lands) a bash-mode command you typed
+    | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string }
     // a background Task/subagent finished (Claude's <task-notification>): summary + optional full result
     | { kind: "notification"; summary: string; status?: string; result?: string }
@@ -249,7 +256,7 @@ export function detailExceedsInline(d: ActionDetail): boolean {
 export type TimelineItem =
     | { kind: "message"; text: string; index: number }
     | { kind: "user"; text: string; images?: string[]; index: number }
-    | { kind: "command"; name: string; args?: string; isSkill?: boolean; index: number }
+    | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult; index: number }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string; index: number }
     | { kind: "notification"; summary: string; status?: string; result?: string; index: number }
     | { kind: "interrupted"; index: number }
@@ -315,7 +322,7 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
                     : { kind: "user", text: e.text, index: i }
             );
         } else if (e.kind === "command") {
-            items.push({ kind: "command", name: e.name, args: e.args, isSkill: e.isSkill, index: i });
+            items.push({ kind: "command", name: e.name, args: e.args, isSkill: e.isSkill, shell: e.shell, index: i });
         } else if (e.kind === "compaction") {
             items.push({
                 kind: "compaction",
