@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A skill the agent runs by itself shows as a Skill step in its work, instead of a bubble on your side that looked like
+  you had typed the slash command.
 - A Chat message you send while the agent is working shows as you wrote it, its pictures as thumbnails, instead of
   raw `<pasted_content id="…">` tags around the text and a list of image paths.
 - A command Claude Code refused before it ran (a hook, a permission rule, you declining it) shows as Blocked in grey

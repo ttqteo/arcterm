@@ -156,25 +156,29 @@ describe("projectTranscript commands and isMeta", () => {
         ]);
         expect(out).toEqual([{ kind: "user", text: "real prompt" }]);
     });
-    it("renders a user-invoked skill (caller.direct) as a skill command chip with the leaf name", () => {
+    // Claude Code writes caller {type: "direct"} on every tool call the model makes, so a Skill call is the agent's own
+    // step, never a command you ran: yours arrive as <command-name> user records
+    it("reads a Skill call the agent made as a skill action, not a command of yours", () => {
         const out = projectTranscript([
             L({
                 type: "assistant",
                 message: {
                     content: [
-                        { type: "tool_use", id: "s1", name: "Skill", input: { skill: "superpowers:brainstorming", args: "design the cache" }, caller: { type: "direct" } },
+                        { type: "tool_use", id: "s1", name: "Skill", input: { skill: "arc:design", args: "Chat header" }, caller: { type: "direct" } },
                     ],
                 },
             }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "s1", content: "Launching skill: arc:design" }] } }),
         ]);
-        expect(out).toEqual([{ kind: "command", name: "brainstorming", isSkill: true, args: "design the cache" }]);
-    });
-
-    it("omits args for a skill chip with no args", () => {
-        const out = projectTranscript([
-            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "s2", name: "Skill", input: { skill: "commit" }, caller: { type: "direct" } }] } }),
+        expect(out).toEqual([
+            {
+                kind: "action",
+                verb: "skill",
+                target: "arc:design",
+                outcome: "ok",
+                detail: { kind: "skill", name: "arc:design", args: "Chat header" },
+            },
         ]);
-        expect(out).toEqual([{ kind: "command", name: "commit", isSkill: true }]);
     });
 });
 

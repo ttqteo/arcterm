@@ -89,11 +89,6 @@ function parseCommand(content: string): { name: string; args?: string } | null {
     return args !== "" ? { name, args } : { name };
 }
 
-function skillLeaf(skill: string): string {
-    const parts = skill.split(":");
-    return parts[parts.length - 1] || skill;
-}
-
 // Claude interruption marker, both "[Request interrupted by user]" and the "...for tool use]" variant.
 function isInterrupted(text: string): boolean {
     return text.trimStart().startsWith("[Request interrupted by user");
@@ -187,16 +182,8 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     if (block.name === HANDBACK_TOOL) {
                         continue;
                     }
-                    if (block.name === "Skill" && block?.caller?.type === "direct" && typeof block.input?.skill === "string") {
-                        const args = typeof block.input.args === "string" ? block.input.args.trim() : "";
-                        entries.push({
-                            kind: "command",
-                            name: skillLeaf(block.input.skill),
-                            isSkill: true,
-                            ...(args !== "" ? { args } : {}),
-                        });
-                        continue;
-                    }
+                    // a Skill call is the agent's own step, drawn as a skill action: Claude Code writes caller "direct" on
+                    // every tool call the model makes, and a skill you run arrives as a <command-name> user record
                     const action: ActionEntry = { kind: "action", verb: verbFor(block.name), target: targetFor(block.input) };
                     if (typeof block.input?.file_path === "string" && block.input.file_path !== "") {
                         action.path = block.input.file_path;
