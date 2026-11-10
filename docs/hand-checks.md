@@ -19,9 +19,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the `/goal …` card a rule and "Goal set: …"; `/compact` with the network off → its error in red; `/login` from the
   terminal → a `/login` card with "Login successful". Send `/usage` (or `/config`) from Chat → a dimmed `/usage` card with
   "Open in Terminal" and Show Terminal while the panel is open; close it in the terminal → the card turns into `/usage`
-  with "Opens in Terminal" and Show Terminal (no "dialog dismissed" line). Unit tests only; nothing was drawn
-  (`transcriptprojection.ts` `attachLocalOutput`, `chatmodel.ts` `commandItem`, `chatconversation.tsx` `CommandCard`).
-
+  with "Opens in Terminal" and Show Terminal (no "dialog dismissed" line). The `! command` card is now drawn by the
+  same `CommandCard`: `! ls` still lands as one card, its long output scrolling inside it, `! cmd`'s error in red (both
+  held on the build before this change, 2026-11-11), a command that prints nothing → "No output", and Copy takes the
+  command and its output. Unit tests only; nothing was drawn (`transcriptprojection.ts` `attachLocalOutput`,
+  `chatmodel.ts` `commandItem`, `chatconversation.tsx` `CommandCard`, 21b328d69).
 - [ ] (arcterm) Send now on a queued Chat message: while a Claude agent works on a long turn (a build, a `sleep 60`),
   send it a message from Chat → its bubble reads Queued with Send now beside it; click Send now → the running command
   moves to the background (Terminal shows it as a background task, not cancelled) and Claude answers the message at
@@ -70,10 +72,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Bash mode in Chat's box: type `!` at the start of a Claude agent's Chat box → the border turns accent and
   "! Bash mode" shows beside +; delete the `!` → both go; send `! ls` → no Queued bubble, and the `! ls` card with its
   output lands; a `!` later in a message changes nothing (`chatcomposer.tsx` `bash`, `chatmodel.ts` `bashMode`).
-- [ ] (arcterm) A `! command` reads as one card in Chat: in a Claude agent's Chat send `! ls` (or type it in the
-  Terminal) → on your side one card, `! ls` in mono with the `!` in the accent, then its output under a rule on the
-  code ground; `! ls nope` → the error in red; a command that prints nothing → "No output"; a long output scrolls inside
-  the card; Copy takes the command and its output (`chatconversation.tsx` `ShellBubble`).
 - [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent
