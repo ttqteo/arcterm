@@ -510,7 +510,8 @@ export default function (kit) {
                 const u = (sec) => ts(ctx, sec * 1000);
                 append(ctx, AC.toolResult("toolu_cr_inflight", "export const delay = 100;", u(0)), AC.assistantText(REPLY, u(1)));
                 await setRoster({});
-                const folded = await polishWaitFor(h, `(${lastFold(A)}?.textContent ?? "").startsWith("Worked for")`, WAIT_MS);
+                // the fold flips with the roster, before the transcript re-read draws the reply row: wait for both, then for the arrival spring (0.35 s) to finish
+                const folded = await polishWaitFor(h, `(${lastFold(A)}?.textContent ?? "").startsWith("Worked for") && (${layerOf(A)}?.textContent ?? "").includes("What changed")`, WAIT_MS);
                 await polishNap(700);
                 await h.ev(`(() => { const s = ${scrollerOf(A)}; if (s) s.scrollTop = s.scrollHeight; return true; })()`);
                 await polishNap(400);
