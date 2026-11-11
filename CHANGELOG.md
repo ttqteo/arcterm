@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Each agent in the Agent sidebar shows the RAM it and the commands it runs hold now, beside its tokens. Settings →
+  Appearance → Agent sidebar → RAM turns it off.
 - In Chat, a `!` command you send shows at once with Running… until it finishes, instead of nothing until its output
   lands.
 - Chat keys: Tab puts you back in the chat box after you scrolled or clicked in the conversation, and Ctrl+Enter

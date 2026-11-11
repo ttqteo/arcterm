@@ -45269,6 +45269,345 @@ const agentChat = {
     },
 };
 
+// --- chat-scroll-keep: a Chat read halfway up stays where it is when another agent appears in the sidebar. Reported on
+// 2026-11-11: the conversation being read jumped up as a new agent's row came in. The roster is one fixture Claude agent
+// with a long transcript over a real tab; the step scrolls it halfway, records every write to the scroller's scrollTop and
+// every class change above it, then adds a second agent (a real tab, as a launch makes one) to the roster, then a third
+// as a pending launch, and reads the scroll back after each.
+const CSK_NAMES = { main: "scroll keep main", second: "scroll keep second", third: "scroll keep third" };
+const CSK_WAIT_MS = 8000;
+const CSK_SETTLE_MS = 2000;
+
+function cskRoster(ctx, keys) {
+    const now = Date.now();
+    return keys.map((key) => ({
+        project: "arcterm",
+        task: "",
+        agent: "claude",
+        model: "opus",
+        state: "idle",
+        idleSince: now - 60_000,
+        id: ctx.tabs[key].tabId,
+        name: CSK_NAMES[key],
+        blockId: ctx.tabs[key].blockId,
+        ...(key === "main" ? { transcriptPath: ctx.transcript } : {}),
+    }));
+}
+
+// what the step reads of the main agent's scroller: its scroll, and whether it is the node the probe marked
+const cskRead = (id) => `(() => {
+    const s = document.querySelector('[data-agent-chat="${id}"] .overflow-y-auto');
+    if (s == null) return { found: false };
+    return { found: true, marked: s.hasAttribute("data-csk-mark"), top: Math.round(s.scrollTop), height: s.scrollHeight, client: s.clientHeight,
+        writes: (window.__cskProbe?.writes ?? []).slice(), hides: (window.__cskProbe?.hides ?? []).slice() };
+})()`;
+
+const chatScrollKeep = {
+    name: "chat-scroll-keep",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-scroll-keep-")),
+            tabs: {},
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 3_600_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const para = (n) =>
+                `Reply ${n}. ` + "The sync client retries with backoff, and each attempt logs what it sent and what came back. ".repeat(8);
+            const lines = [];
+            for (let i = 0; i < 30; i++) {
+                lines.push(AC.userText(`question ${i}: how does part ${i} of the sync client work?`, o(i * 10)));
+                lines.push(AC.assistantText(para(i), o(i * 10 + 2)));
+            }
+            ctx.transcript = AC.writeTranscript(ctx.dir, "scroll-keep-main", lines);
+            // CSK_TRANSCRIPT=<a .jsonl> reads a copy of a real conversation instead: tool rows, code and long replies
+            if (process.env.CSK_TRANSCRIPT) {
+                copyFileSync(process.env.CSK_TRANSCRIPT, ctx.transcript);
+            }
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the main tab";
+            ctx.tabs.main = await acMakeTab(h, ctx, { label: CSK_NAMES.main });
+            at = "setting the roster";
+            await AC.setRoster(h, cskRoster(ctx, ["main"]));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        try {
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 10`, 15000);
+            // halfway up, and the probe: every scrollTop write on the scroller (with the stack that made it) and every class
+            // that hides an element above it
+            const placed = await h.ev(`(async () => {
+                const s = document.querySelector('[data-agent-chat="${A}"] .overflow-y-auto');
+                if (s == null) return null;
+                s.scrollTop = Math.round((s.scrollHeight - s.clientHeight) / 2);
+                s.dispatchEvent(new Event("scroll"));
+                await new Promise((r) => setTimeout(r, 600));
+                s.setAttribute("data-csk-mark", "");
+                const probe = { writes: [], hides: [] };
+                window.__cskProbe = probe;
+                const desc = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+                Object.defineProperty(s, "scrollTop", {
+                    configurable: true,
+                    get() { return desc.get.call(this); },
+                    set(v) {
+                        probe.writes.push({ from: Math.round(desc.get.call(this)), to: Math.round(v), stack: (new Error().stack ?? "").split("\\n").slice(2, 7).join(" | ") });
+                        desc.set.call(this, v);
+                    },
+                });
+                let last = s.scrollTop;
+                s.addEventListener("scroll", () => {
+                    if (Math.abs(s.scrollTop - last) > 2) probe.writes.push({ event: true, from: Math.round(last), to: Math.round(s.scrollTop) });
+                    last = s.scrollTop;
+                });
+                const mo = new MutationObserver((ms) => {
+                    for (const m of ms) {
+                        const el = m.target;
+                        if (el.contains(s) && getComputedStyle(el).display === "none") probe.hides.push(el.className.slice(0, 80));
+                    }
+                });
+                for (let el = s.parentElement; el != null; el = el.parentElement) mo.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
+                window.__cskMo = mo;
+                return Math.round(s.scrollTop);
+            })()`);
+            rec("1. the main agent's chat opens and scrolls halfway up", loaded && placed != null && placed > 0, { loaded, placed });
+
+            // 2. a second agent arrives in the roster, over a real tab made as a launch makes one
+            ctx.tabs.second = await acMakeTab(h, ctx, { label: CSK_NAMES.second });
+            await AC.setRoster(h, cskRoster(ctx, ["main", "second"]));
+            const rowUp = await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${ctx.tabs.second.tabId}"]')`, CSK_WAIT_MS);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const after2 = await h.ev(cskRead(A));
+            rec(
+                "2. a new agent's row arrives in the sidebar; the chat being read keeps its node and its scroll (within 2 px)",
+                rowUp && after2.found && after2.marked && Math.abs(after2.top - placed) <= 2,
+                { rowUp, placed, ...after2 }
+            );
+
+            // 3. a third arrives as a launch still booting (a pending launch), the way + New shows one before its roster row
+            ctx.tabs.third = await acMakeTab(h, ctx, { label: CSK_NAMES.third, pending: true });
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const after3 = await h.ev(cskRead(A));
+            rec(
+                "3. a launch still booting shows; the chat keeps its node and its scroll (within 2 px)",
+                after3.found && after3.marked && Math.abs(after3.top - placed) <= 2,
+                { placed, ...after3 }
+            );
+
+            // 4. + New: the new agent takes the focus (launchAgent), then the person goes back to the one they were reading
+            await AC.setRoster(h, cskRoster(ctx, ["main", "second", "third"]));
+            await AC.focusAgent(h, ctx.tabs.third.tabId);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const away = await h.ev(cskRead(A));
+            await AC.focusAgent(h, A);
+            await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 10`, CSK_WAIT_MS);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const back = await h.ev(cskRead(A));
+            const firstShown = await h.ev(`(() => {
+                const s = document.querySelector('[data-agent-chat="${A}"] .overflow-y-auto');
+                const top = s?.getBoundingClientRect().top ?? 0;
+                const items = [...(s?.querySelectorAll("[data-chat-item]") ?? [])];
+                const at = items.find((x) => x.getBoundingClientRect().bottom > top);
+                return at?.textContent?.slice(0, 60) ?? null;
+            })()`);
+            rec(
+                "4. a new agent takes the focus as + New gives it; back on the first agent its chat is where it was read (within 40 px)",
+                back.found && Math.abs(back.top - placed) <= 40,
+                { placed, away: { found: away.found, top: away.top }, back: { top: back.top, height: back.height, marked: back.marked }, firstShown }
+            );
+
+            // 5. the real + New path: the New dialog opens (Ctrl+N) and closes, then launchAgent opens a terminal, which
+            // takes the focus with a live process; back on the first agent its chat is where it was read
+            await h.ev(`(() => { const s = document.querySelector('[data-agent-chat="${A}"] .overflow-y-auto'); s.setAttribute("data-csk-mark", ""); return true; })()`);
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            const key = (type, k, code, vk, modifiers = 0) =>
+                h.cdp("Input.dispatchKeyEvent", { type, key: k, code, windowsVirtualKeyCode: vk, modifiers });
+            await key("keyDown", "n", "KeyN", 78, 2);
+            await key("keyUp", "n", "KeyN", 78, 2);
+            await new Promise((r) => setTimeout(r, 800));
+            const dialogOpen = await h.ev(`!!document.querySelector('[role="dialog"]')`);
+            const inDialog = await h.ev(cskRead(A));
+            await key("keyDown", "Escape", "Escape", 27);
+            await key("keyUp", "Escape", "Escape", 27);
+            await new Promise((r) => setTimeout(r, 800));
+            const afterDialog = await h.ev(cskRead(A));
+            ctx.launched = await AC.agentPage(
+                h,
+                `const C = await mod("app/cockpit/cockpit-actions.ts");
+                return await C.launchAgent(agentsModel(), { runtime: "terminal", startupCommand: "", task: "", projectPath: ${JSON.stringify(ctx.dir)}, projectName: "scroll keep launch" });`
+            );
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS * 2));
+            const focusedNew = await AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+            await AC.focusAgent(h, A);
+            await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 10`, CSK_WAIT_MS);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const back5 = await h.ev(cskRead(A));
+            rec(
+                "5. the New dialog opens and closes, a launch takes the focus, and back on the first agent its chat is where it was read (within 40 px)",
+                back5.found && Math.abs(back5.top - placed) <= 40 && Math.abs(afterDialog.top - placed) <= 2,
+                {
+                    placed,
+                    dialogOpen,
+                    inDialog: { top: inDialog.top, marked: inDialog.marked },
+                    afterDialog: { top: afterDialog.top, marked: afterDialog.marked, writes: afterDialog.writes?.length },
+                    launched: ctx.launched,
+                    focusedNew,
+                    back: { top: back5.top, marked: back5.marked, height: back5.height },
+                }
+            );
+        } catch (e) {
+            rec("the steps ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-scroll-keep teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the probe", () => h.ev(`(() => { window.__cskMo?.disconnect(); delete window.__cskMo; delete window.__cskProbe; return true; })()`));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        await step("close the launched terminal", () =>
+            ctx.launched == null ? null : waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.launched, false])
+        );
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
+// --- sidebar-agent-ram: an agent row in the sidebar shows the RAM its processes hold (agentram.ts), read from the Resource
+// Manager's snapshot, which the step pins (window.__resmonFixture) so the figures are known: 412 MB for the first agent,
+// 1.3 GB for the second, none for the third (no group). Settings → Appearance → Agent sidebar → RAM off hides them.
+const SAR_NAMES = { main: "ram first", second: "ram second", third: "ram third" };
+
+const sidebarAgentRam = {
+    name: "sidebar-agent-ram",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { tabs: {}, prevFields: await h.ev(`localStorage.getItem("agent.row.fields")`) };
+        try {
+            await h.ev(`localStorage.removeItem("agent.row.fields")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            for (const key of Object.keys(SAR_NAMES)) {
+                ctx.tabs[key] = await acMakeTab(h, ctx, { label: SAR_NAMES[key] });
+            }
+            const now = Date.now();
+            await AC.setRoster(
+                h,
+                Object.keys(SAR_NAMES).map((key) => ({
+                    project: "arcterm",
+                    task: "",
+                    agent: "claude",
+                    model: "opus",
+                    state: "idle",
+                    idleSince: now - 60_000,
+                    id: ctx.tabs[key].tabId,
+                    name: SAR_NAMES[key],
+                    blockId: ctx.tabs[key].blockId,
+                }))
+            );
+            const MB = 1024 * 1024;
+            const group = (key, mem) => ({ key: `g-${key}`, ownerkind: "block", ownerid: ctx.tabs[key].blockId, label: key, killable: true, cpu: 1, mem, rows: [] });
+            const snap = {
+                supported: true,
+                ready: true,
+                ts: now,
+                cpu: 5,
+                mem: 8 * 1024 * MB,
+                totalmem: 16 * 1024 * MB,
+                busycpu: false,
+                busymem: false,
+                groups: [group("main", 412 * MB), group("second", Math.round(1.3 * 1024 * MB))],
+            };
+            await h.ev(`window.__resmonFixture.set(${JSON.stringify(snap)})`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agents and the pinned snapshot", false, ctx.arrangeError);
+            return steps;
+        }
+        const ram = () =>
+            h.ev(`(() => Object.fromEntries(${JSON.stringify(Object.values(ctx.tabs).map((t) => t.tabId))}.map((id) => [id, document.querySelector('[data-agent-ram="' + id + '"]')?.textContent ?? null])))()`);
+        try {
+            const shown = await polishWaitFor(h, `!!document.querySelector('[data-agent-ram="${ctx.tabs.main.tabId}"]')`, 8000);
+            const got = await ram();
+            await h.shot("cdp-shots/sidebar-agent-ram.png");
+            rec(
+                "1. each agent row shows its RAM from the snapshot: 412 MB, 1.3 GB, and nothing for an agent with no group",
+                shown && got[ctx.tabs.main.tabId] === "412 MB" && got[ctx.tabs.second.tabId] === "1.3 GB" && got[ctx.tabs.third.tabId] === null,
+                got
+            );
+            await AC.agentPage(h, `const F = await mod("app/view/agents/rowfieldsstore.ts"); globalStore.set(F.rowFieldsAtom, "ram", false); return true;`);
+            await new Promise((r) => setTimeout(r, 300));
+            const off = await ram();
+            rec("2. with the RAM field off no row shows it", Object.values(off).every((v) => v === null), off);
+        } catch (e) {
+            rec("the steps ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`sidebar-agent-ram teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("unpin the snapshot", () => h.ev(`window.__resmonFixture?.clear()`));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        await step("restore the row fields", () =>
+            h.ev(
+                ctx.prevFields == null
+                    ? `localStorage.removeItem("agent.row.fields")`
+                    : `localStorage.setItem("agent.row.fields", ${JSON.stringify(ctx.prevFields)})`
+            )
+        );
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- machine-servers: the footer's Servers chip and popover (docs/superpowers/specs/2026-10-08-machine-servers-design.md).
 // listalldevservers is mocked the way consumers-popover mocks getconsumers, so the rows, owners and counts are known, and
 // stopdevserver is recorded, never run: nothing on the machine is stopped. Every other command passes through. The roster is
@@ -66290,6 +66629,8 @@ export const SCENARIOS = [
     consumersClosePicked,
     agentSleep,
     agentChat,
+    chatScrollKeep,
+    sidebarAgentRam,
     machineServers,
     sidebarAgentGlyph,
     capacityWarn,

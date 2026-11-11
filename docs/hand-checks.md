@@ -18,6 +18,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Resume shows its chat while loading: New agent → a project → pick a past Claude session → Resume, with
   the cell on Chat → the conversation's messages show at once, not "No messages yet", and stay when the agent reports
   in (`agentsviewmodel.ts` pendingToVM transcriptPath, `cockpit-actions.ts` launchAgent; fix/resume-chat-transcript).
+- [ ] (arcterm) Agent sidebar RAM on a Mac: with an awake agent running, its row in the Agent sidebar shows an MB or GB
+  figure beside its tokens within 10 s, close to the agent's row in the app bar's RAM (Consumers) panel; a sleeping
+  agent shows none (`agentramstore.ts` useAgentRamPoll: no Resource Manager there, so it polls GetConsumers every 10 s
+  while the field is on; checked on Windows only, `sidebar-agent-ram` scenario).
 
 - [ ] (arcterm) Chat folds no reply by default: in a Claude agent's Chat with the skim button on, a reply over 10
   lines draws in full with its highlighted sentences and no Show more; Settings → Appearance → Chat → Fold long replies

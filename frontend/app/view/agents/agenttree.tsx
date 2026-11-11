@@ -278,6 +278,7 @@ import { ServerMark, StatusDot } from "./statusdot";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
+import { agentRamAtom, useAgentRamPoll } from "./agentramstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
@@ -1190,6 +1191,8 @@ function ParentRow({
     const fields = useAtomValue(rowFieldsAtom);
     const shownBranch = fields.branch ? notableBranch(branch) : undefined;
     const shownModel = fields.model ? agent.model : undefined;
+    // what its processes hold now (agentram.ts); an asleep agent has none, whatever a reading still names
+    const ram = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
@@ -1389,6 +1392,15 @@ function ParentRow({
                         </button>
                     ) : null}
                     <ServerMark servers={servers} />
+                    {fields.ram && ram ? (
+                        <span
+                            data-agent-ram={agent.id}
+                            title="RAM the agent and the commands it runs hold now"
+                            className={RAM_COL}
+                        >
+                            {ram}
+                        </span>
+                    ) : null}
                     {fields.tokens && tokens ? (
                         <span className={cn(TOKENS_COL, dim && "text-ink-faint")}>{formatTokens(tokens)}</span>
                     ) : null}
@@ -2017,7 +2029,8 @@ function ConversationHead({
 }
 
 const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tabular-nums text-muted";
-// a row's tokens and age end its first line as two right-aligned columns, so they line up down the list
+// a row's RAM, tokens and age end its meta line as right-aligned columns, so they line up down the list
+const RAM_COL = "min-w-[40px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
 const TOKENS_COL = "min-w-[34px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted";
 const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
 // a second line starts under the title, past the runtime glyph and the gap after it
@@ -3577,6 +3590,7 @@ function ElsewhereRow({ model, agents, asking }: { model: AgentsViewModel; agent
 // render there has motion measure every layout="position" row at (0,0) and start sliding it there, so
 // returning within the ~400ms tween shows the whole list shrinking back into place.
 export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewModel }) {
+    useAgentRamPoll();
     const agents = useAtomValue(model.agentsAtom);
     const order = useAtomValue(model.orderAtom);
     const lineage = useAtomValue(model.lineageAtom);

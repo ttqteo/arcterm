@@ -12,10 +12,17 @@ describe("rowFieldsOf", () => {
     });
 
     it("keeps what was turned off and defaults the rest", () => {
-        expect(rowFieldsOf({ tokens: false })).toEqual({ model: true, branch: true, tokens: false, age: true });
-        expect(rowFieldsOf({ model: false, age: false, branch: true })).toEqual({
+        expect(rowFieldsOf({ tokens: false })).toEqual({
+            model: true,
+            branch: true,
+            ram: true,
+            tokens: false,
+            age: true,
+        });
+        expect(rowFieldsOf({ model: false, age: false, branch: true, ram: false })).toEqual({
             model: false,
             branch: true,
+            ram: false,
             tokens: true,
             age: false,
         });
