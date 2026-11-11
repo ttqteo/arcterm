@@ -15,6 +15,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
@@ -414,7 +415,7 @@ export function RunLauncher({ projectPath }: { projectPath: string }) {
                         how it should run
                     </span>
                     <span className="text-[11.5px] leading-[1.5] text-muted">
-                        Set it up here, then give Jarvis the goal below and press Run ⏎.
+                        Set it up here, then give Jarvis the goal below and press Run {formatChordString("Enter")}.
                     </span>
                 </div>
                 <RunLauncherSections projectPath={projectPath} />

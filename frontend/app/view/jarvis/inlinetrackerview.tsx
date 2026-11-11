@@ -8,6 +8,7 @@
 // in the chunk view (chunkview.tsx) inside the same sheet. IdeaDetail is the plan's place for an idea, which has none.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import {
@@ -472,7 +473,7 @@ export function InitiativeDetail({
                                 <MenuItem onClick={() => startEdit(row.id, label)}>Rename</MenuItem>
                                 <MenuItem
                                     glyph={<ArrowUp size={12} aria-hidden />}
-                                    hint="alt ↑"
+                                    hint={formatChordString("Alt:ArrowUp")}
                                     disabled={!edits.canMove(label, "up")}
                                     onClick={() => {
                                         setMenu(null);
@@ -483,7 +484,7 @@ export function InitiativeDetail({
                                 </MenuItem>
                                 <MenuItem
                                     glyph={<ArrowDown size={12} aria-hidden />}
-                                    hint="alt ↓"
+                                    hint={formatChordString("Alt:ArrowDown")}
                                     disabled={!edits.canMove(label, "down")}
                                     onClick={() => {
                                         setMenu(null);

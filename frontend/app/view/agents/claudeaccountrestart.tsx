@@ -17,6 +17,7 @@ import { ModalShell } from "@/app/modals/modalshell";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -301,7 +302,7 @@ export function ClaudeAccountRestartModal({
                         <div>Open terminals keep the previous account until they are reopened.</div>
                     </div>
                     <div className="mt-[18px] flex justify-end gap-2.5">
-                        <DialogButton variant="secondary" hint="esc" onClick={close}>
+                        <DialogButton variant="secondary" hint={formatChordString("Escape")} onClick={close}>
                             Later
                         </DialogButton>
                         <DialogButton

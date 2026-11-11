@@ -16,7 +16,7 @@ import { KeyCap } from "@/app/element/keycap";
 import { layerFade } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { isMacOS } from "@/util/platformutil";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Highlighter } from "lucide-react";
@@ -57,8 +57,8 @@ import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 // Send now's key in the chat box (chatpending.ts isSendNowKey), as its button shows it
-// read per render: at module load setPlatform has not run yet, so the platform still reads as macOS (⌘↵ on Windows)
-const sendNowChord = () => (isMacOS() ? "⌘↵" : "Ctrl+↵");
+// read per render: at module load setPlatform has not run yet, so the platform still reads as macOS (⌘⏎ on Windows)
+const sendNowChord = () => formatChordString("Mod:Enter");
 
 const NO_ENTRIES: AgentEntry[] = [];
 

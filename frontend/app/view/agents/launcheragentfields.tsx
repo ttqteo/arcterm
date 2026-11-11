@@ -16,6 +16,7 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
@@ -281,8 +282,8 @@ export function AgentFields({
     const branchNames = branches.map((b) => b.name);
     const taskHint =
         (resume
-            ? "optional · sent as the next message · shift+enter for a new line · paste or drop images"
-            : "optional · sent as the first prompt · shift+enter for a new line · paste or drop images") +
+            ? `optional · sent as the next message · ${formatChordString("Shift:Enter")} for a new line · paste or drop images`
+            : `optional · sent as the first prompt · ${formatChordString("Shift:Enter")} for a new line · paste or drop images`) +
         (filesRoot !== "" ? " · @ for a file" : "");
     const showTask = runtimeShowsTask(runtime);
     const showWorktree = runtimeSupportsWorktree(runtime) && resume == null && !home;

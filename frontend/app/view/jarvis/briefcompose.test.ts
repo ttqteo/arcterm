@@ -11,8 +11,8 @@ describe("resolveComposerLabels", () => {
         expect(resolveComposerLabels("waveterm")).toEqual({
             scope: "goes straight to its terminal",
             hint: "Message the lead of this session",
-            action: "Send ⏎",
-            alt: "shift+⏎ standing rule for waveterm",
+            action: "Send Enter",
+            alt: "Shift+Enter standing rule for waveterm",
         });
     });
 

@@ -24,6 +24,7 @@ import { addAccountStep, knownClaudeEmails, type AddAction, type AddStep } from 
 import { closeTabLogged } from "@/app/view/agents/closetab";
 import { claudeIdentityAtom, savedRateLimitsAtom } from "@/app/view/agents/ratelimitstore";
 import { setupTokenCommand, TokenScanner } from "@/app/view/agents/setuptokenscan";
+import { formatChordString } from "@/util/keysym";
 import { base64ToString, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -352,11 +353,21 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                 )}
                 <div className="mt-auto flex justify-end gap-2.5 pt-[18px]">
                     {step.kind === "name" ? (
-                        <DialogButton variant="primary" hint="⏎" disabled={busy} onClick={() => void done()}>
+                        <DialogButton
+                            variant="primary"
+                            hint={formatChordString("Enter")}
+                            disabled={busy}
+                            onClick={() => void done()}
+                        >
                             Done
                         </DialogButton>
                     ) : (
-                        <DialogButton variant="secondary" hint="esc" data-claude-signin-cancel onClick={onClose}>
+                        <DialogButton
+                            variant="secondary"
+                            hint={formatChordString("Escape")}
+                            data-claude-signin-cancel
+                            onClick={onClose}
+                        >
                             {step.kind === "error" ? "Close" : "Cancel"}
                         </DialogButton>
                     )}

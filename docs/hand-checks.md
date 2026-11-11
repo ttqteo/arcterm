@@ -14,6 +14,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   while the run's Setup is still going → the empty conversation shows no "Could not read the transcript: …" line, and
   the lead's messages appear once it starts (`chatempty.ts` chatEmptyError, `transcript.go` noTranscriptFile;
   fix/chat-no-transcript-yet). Unit tests and typecheck were not run for the frontend half.
+- [ ] (arcterm) Shortcut labels in words on Windows: the footer chips (`Esc back`, `Enter send`, `Space · Ctrl+click
+  peek`), the Ctrl+P palette footer (`Enter`, `Ctrl+Enter`, `Esc close`, the 76px key column not clipping
+  `Ctrl+Enter`), a confirm dialog's `Esc` / `Enter` chips, Chat's Send now `Ctrl+Enter`, the Ctrl+Tab switcher's
+  `Shift+Tab` / `Esc`, the tool picker's `Enter` / `Shift+Enter`, and a tooltip's shortcut (`Ctrl+Shift+P`, no
+  lower-case `ctrl+`) — no ⏎ ↵ ⌫ left; on a Mac the same places keep ⌘⏎ ⇧ (branch `fix/shortcut-labels`).
 - [ ] (arcterm) A new agent's first message with Send now: + New → Claude with a task → Chat shows the task as a dimmed
   bubble captioned "Starting Claude Code…" with a pulsing dot and no Send now; once the session is up, a message sent
   while it works reads "Queued" with Send now (`chatpane.tsx` PendingBubble, merge 69fa01de1 of chat-empty-start over

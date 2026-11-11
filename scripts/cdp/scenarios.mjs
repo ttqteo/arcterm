@@ -98,7 +98,11 @@ const PEEK_BIT = MOD_BIT;
 const PEEK_KEY = ON_MAC
     ? { key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91 }
     : { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17 };
-const PEEK_GLYPH = `space · ${ON_MAC ? "⌘-click" : "ctrl+click"}`;
+const PEEK_GLYPH = `Space · ${ON_MAC ? "⌘-click" : "Ctrl+click"}`;
+// key labels as keysym.ts draws them: Mac glyphs on a Mac, words on Windows (DESIGN.md "Shortcut labels")
+const ENTER_LABEL = ON_MAC ? "⏎" : "Enter";
+const MOD_ENTER_LABEL = ON_MAC ? "⌘⏎" : "Ctrl+Enter";
+const ESC_LABEL = ON_MAC ? "esc" : "Esc";
 import { CHRISTMAS_ASKER, SCENARIOS as COCKPIT_FIXTURES } from "../cockpit-fixtures/scenarios.mjs";
 
 // A step this profile cannot run: no scan report to cite, no pi session focused. Neither a pass nor a
@@ -27559,10 +27563,10 @@ const historyOlder = {
             await h.ev(`document.querySelector("[data-agent-history] [data-agent-session-delete]")?.click()`);
             const confirmUp = await ahWait(
                 h,
-                `[...document.querySelectorAll("button")].some((b) => /^Delete(\\s*⏎)?$/.test(b.textContent.trim()))`,
+                `[...document.querySelectorAll("button")].some((b) => /^Delete(\\s*(⏎|Enter))?$/.test(b.textContent.trim()))`,
                 4000
             );
-            await h.ev(`[...document.querySelectorAll("button")].find((b) => /^Delete(\\s*⏎)?$/.test(b.textContent.trim()))?.click()`);
+            await h.ev(`[...document.querySelectorAll("button")].find((b) => /^Delete(\\s*(⏎|Enter))?$/.test(b.textContent.trim()))?.click()`);
             const rowGone = await ahWait(h, `!(${historyHasText(ctx.olderTitle)})`, 8000);
             let fileGone = false;
             for (let i = 0; i < 20 && !fileGone; i++) {
@@ -28713,7 +28717,7 @@ const autonomousRuns = {
             offToggle.opened &&
                 (steer?.rows ?? []).some((r) => r.startsWith("Go autonomous")) &&
                 (offState.selected ?? "").startsWith("Go autonomousasks you") &&
-                (offState.selected ?? "").includes("Go ⏎") &&
+                (offState.selected ?? "").includes(`Go ${ENTER_LABEL}`) &&
                 offState.text.includes("The lead answers everything from now on, starting with the Spec review it is waiting on."),
             JSON.stringify({ opened: offToggle.opened, selected: offState?.selected, steer, footer: offState?.text.slice(-200) })
         );
@@ -28736,7 +28740,7 @@ const autonomousRuns = {
                 runWidth === 0 &&
                 onToggle.opened &&
                 (onState?.selected ?? "").startsWith("Ask me againautonomous") &&
-                (onState.selected ?? "").includes("Ask me ⏎") &&
+                (onState.selected ?? "").includes(`Ask me ${ENTER_LABEL}`) &&
                 onState.text.includes(AUTONOMOUS_BACK_TO_ASK),
             JSON.stringify({ autonomous: runAuto, parallelism: runWidth, selected: onState?.selected, footer: onState?.text.slice(-200) })
         );
@@ -28823,7 +28827,7 @@ const paletteGoal = {
         );
         rec(
             "3. the footer names Ctrl+Enter's Orchestrate",
-            launch != null && launch.text.includes("ctrl ⏎") && launch.text.includes("Opens an orchestrator run instead"),
+            launch != null && launch.text.includes(MOD_ENTER_LABEL) && launch.text.includes("Opens an orchestrator run instead"),
             launch?.text.slice(-240) ?? ""
         );
 
@@ -29115,7 +29119,7 @@ const paletteNotes = {
         rec(
             "7. one del arms, another key disarms",
             armed?.arm?.key === "del" &&
-                armed.arm.text.includes(`del again deletes “${fixtures.narwhal.title}”`) &&
+                armed.arm.text.includes(`Del again deletes “${fixtures.narwhal.title}”`) &&
                 armedExists &&
                 disarmed?.arm == null &&
                 disarmed?.selected === ids.long &&
@@ -29198,7 +29202,7 @@ const paletteNotes = {
                 list.newRow?.last === true &&
                 list.newRow.text.includes("New note") &&
                 !list.newRow.selected &&
-                list.text.includes("ctrl ⏎ Edits it"),
+                list.text.includes(`${MOD_ENTER_LABEL} Edits it`),
             JSON.stringify({ selected: list?.selected, newRow: list?.newRow, text: list?.text.slice(-260) })
         );
 
@@ -29326,7 +29330,7 @@ const paletteNotes = {
         const discarded = await notesStateWhen(h, inList, 3000);
         const keptNote = await noteOf(ids.long);
         const armedOk = (r, text) =>
-            r.open === true && r.body === text && r.arm?.key === "esc" && r.arm.text.includes("esc again discards your changes");
+            r.open === true && r.body === text && r.arm?.key === "esc" && r.arm.text.includes(`${ESC_LABEL} again discards your changes`);
         rec(
             "18. esc on a changed draft asks once, and so do Ctrl+P and a click outside",
             armedOk(byEsc, "typed, then esc") &&

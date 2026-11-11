@@ -19,7 +19,7 @@ export function resolveComposerLabels(project?: string): ComposerLabels {
     return {
         scope: "goes straight to its terminal",
         hint: "Message the lead of this session",
-        action: "Send ⏎",
+        action: `Send ${formatChordString("Enter")}`,
         // a standing rule outlives the session, so it needs a project to stand for: no project, no offer.
         ...(p ? { alt: `${formatChordString("Shift:Enter")} standing rule for ${p}` } : {}),
     };

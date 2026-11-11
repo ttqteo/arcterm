@@ -86,7 +86,7 @@ describe("agent canvas mode chips", () => {
             "Mod:Shift:Enter full",
             "c canvas",
             "Alt:c switch view",
-            "esc back",
+            "Escape back",
             "Ctrl:Tab switch",
             ...globals(),
         ]);
@@ -142,11 +142,11 @@ describe("agent canvas mode chips", () => {
     it("History, the canvases and a session offer only esc terminal and switch: F11 and send stand down, even mid-marking", () => {
         for (const mode of ["history", "session", "canvases"] as const) {
             globalStore.set(centerModeAtom, mode);
-            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab switch", ...globals()]);
+            expect(chips()).toEqual(["Escape terminal", "Ctrl:Tab switch", ...globals()]);
             setCanvasMode("a1", "canvas", 1);
             setMarking("a1", true);
             updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
-            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab switch", ...globals()]);
+            expect(chips()).toEqual(["Escape terminal", "Ctrl:Tab switch", ...globals()]);
             setMarking("a1", false);
             setCanvasMode("a1", "terminal", 2);
         }
@@ -200,9 +200,9 @@ describe("agent brainstorm mode chips", () => {
     it("with a board widened in the rail or the design open over the question, esc back joins the list", () => {
         setAgentView("a1", "brainstorm", 1);
         openBrainstormBoard("a1", "Split.dc.html");
-        expect(chips()).toContain("esc back");
+        expect(chips()).toContain("Escape back");
         openBrainstormBoard("a1", null);
-        expect(chips()).not.toContain("esc back");
+        expect(chips()).not.toContain("Escape back");
     });
 
     it("a widened board adds [ ] board to the pane's keys, the question's way back to the terminal stays, and marking drops the board keys", () => {
@@ -216,7 +216,7 @@ describe("agent brainstorm mode chips", () => {
                 "↑↓ move",
                 "Alt:c switch view",
                 "Ctrl:Shift:b brainstorm",
-                "esc back",
+                "Escape back",
                 "Ctrl:Tab switch",
                 "[ ] board",
                 "b terminal",
@@ -224,7 +224,7 @@ describe("agent brainstorm mode chips", () => {
             ]);
             setMarking("a1", true);
             expect(chips()).not.toContain("[ ] board");
-            expect(chips()).toContain("esc back");
+            expect(chips()).toContain("Escape back");
             setMarking("a1", false);
             openBrainstormBoard("a1", null);
             expect(chips()).not.toContain("[ ] board");
@@ -237,18 +237,18 @@ describe("agent brainstorm mode chips", () => {
         setAgentView("a1", "brainstorm", 1);
         inPane();
         const typing = chips({ ...rest, editable: true });
-        expect(typing).toContain("⏎ send");
+        expect(typing).toContain("Enter send");
         expect(typing).toContain("Ctrl:Shift:b brainstorm");
         expect(typing).not.toContain("b terminal"); // b types a letter there
     });
 
     it("Enter send is the pane's alone: not in the terminal, not on another field of the surface", () => {
-        expect(chips({ ...rest, editable: true })).not.toContain("⏎ send"); // terminal mode
+        expect(chips({ ...rest, editable: true })).not.toContain("Enter send"); // terminal mode
         setAgentView("a1", "brainstorm", 1);
         vi.stubGlobal("document", { activeElement: { closest: () => null } });
-        expect(chips({ ...rest, editable: true })).not.toContain("⏎ send");
+        expect(chips({ ...rest, editable: true })).not.toContain("Enter send");
         inPane();
-        expect(chips(rest)).not.toContain("⏎ send"); // a focused button, not a field
+        expect(chips(rest)).not.toContain("Enter send"); // a focused button, not a field
     });
 });
 
@@ -273,10 +273,10 @@ describe("peek chip", () => {
     it("shows on a list whose cursor row has a target, lit while the peek key is held", () => {
         publish(() => ({ kind: "run", runId: "r1" }));
         setPlatform("win32");
-        expect(peekChip(jarvis)).toEqual({ glyph: "space · ctrl+click", label: "peek", ctrlLit: true });
+        expect(peekChip(jarvis)).toEqual({ glyph: "Space · Ctrl+click", label: "peek", ctrlLit: true });
         // a Mac peeks on Command: its Ctrl+click is the right click
         setPlatform("darwin");
-        expect(peekChip(jarvis)).toEqual({ glyph: "space · ⌘-click", label: "peek", ctrlLit: true });
+        expect(peekChip(jarvis)).toEqual({ glyph: "Space · ⌘-click", label: "peek", ctrlLit: true });
     });
 
     it("hides when the list has nothing to peek, and in a field", () => {

@@ -120,7 +120,7 @@ export function InitiativeProjectPicker({ model }: { model: AgentsViewModel }) {
                             New project…
                         </button>
                         <div className="flex-1" />
-                        <DialogButton variant="secondary" hint="esc" onClick={close}>
+                        <DialogButton variant="secondary" hint={formatChordString("Escape")} onClick={close}>
                             Cancel
                         </DialogButton>
                         <DialogButton

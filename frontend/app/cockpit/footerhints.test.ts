@@ -42,8 +42,8 @@ describe("the Agent footer lists the brainstorm pane's keys", () => {
     it("has a chip for b, Esc, Enter and the chord that works inside the terminal", () => {
         expect(chip("agent:brainstorm-open")).toMatchObject({ glyph: "b", label: "brainstorm" });
         expect(chip("agent:brainstorm-close")).toMatchObject({ glyph: "b", label: "terminal" });
-        expect(chip("agent:brainstorm-back")).toMatchObject({ glyph: "esc", label: "back" });
-        expect(chip("agent:brainstorm-send")).toMatchObject({ glyph: "⏎", label: "send" });
+        expect(chip("agent:brainstorm-back")).toMatchObject({ keys: "Escape", label: "back" });
+        expect(chip("agent:brainstorm-send")).toMatchObject({ keys: "Enter", label: "send" });
         expect(chip("agent:view-chord")).toMatchObject({ keys: "Ctrl:Shift:b" });
     });
 

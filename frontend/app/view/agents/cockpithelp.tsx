@@ -84,8 +84,8 @@ export function HintsBar({ model, hints, office }: { model: AgentsViewModel; hin
     const HINTS: [string, string][] = [
         ["↑↓ / j k", "move"],
         ["← → / h l", "column"],
-        ["⏎", "open"],
-        ["esc", "back"],
+        [formatChordString("Enter"), "open"],
+        [formatChordString("Escape"), "back"],
         ["1–9", "answer"],
         ["r", "reply"],
         ["t", "terminal"],

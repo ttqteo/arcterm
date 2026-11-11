@@ -56,6 +56,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- On Windows, shortcuts are written out in words everywhere: Ctrl+Enter, Shift+Enter, Esc, Ctrl+Shift+P, instead of
+  ⏎, ↵, ⌫ or lower-case ctrl+p. A Mac keeps its ⌘⇧ glyphs.
 - A folded long reply keeps its point: every heading keeps a line, a bold label keeps the sentence after it, the
   options a "choose one:" sentence points at stay, and so do the warnings and what waits on you that the old fold cut
   away. A fold that would be most of the reply shows the reply in full instead.

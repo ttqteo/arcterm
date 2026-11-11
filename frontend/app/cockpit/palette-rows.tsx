@@ -7,7 +7,7 @@
 
 import { displayKeys } from "@/app/store/keybindings/matcher";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
-import { formatChord } from "@/util/keysym";
+import { formatChord, formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import {
     Contrast,
@@ -134,15 +134,20 @@ export function Highlighted({ text, query }: { text: string; query: string }) {
 }
 
 export function VerbHint({ verb }: { verb: string }) {
-    return <span className="shrink-0 text-[10.5px] text-accent-soft">{verb} ⏎</span>;
+    return (
+        <span className="shrink-0 text-[10.5px] text-accent-soft">
+            {verb} {formatChordString("Enter")}
+        </span>
+    );
 }
 
-// a footer line under Enter's: a key and what it does; armed, it is the confirmation a second press takes
+// a footer line under Enter's: a key in binding notation ("Mod:Enter", "del") and what it does; armed, it is the
+// confirmation a second press takes
 export function FooterKeyLine({ k, text, arm }: { k: string; text: string; arm?: boolean }) {
     return (
         <div data-palette-arm={arm ? k : undefined} className="flex items-center gap-3">
-            <span className={cn("w-[60px] shrink-0 font-mono text-[11px]", arm ? "text-error" : "text-accent-soft")}>
-                {k}
+            <span className={cn("w-[76px] shrink-0 font-mono text-[11px]", arm ? "text-error" : "text-accent-soft")}>
+                {formatChordString(k)}
             </span>
             <span className={cn("min-w-0 flex-1 truncate text-[12px]", arm ? "text-error-soft" : "text-secondary")}>
                 {text}

@@ -43,11 +43,11 @@ describe("itemHints", () => {
         itemHints(kind).map((h) => `${h.keys.join("")} ${h.label}`);
 
     it("offers open, back and close", () => {
-        expect(labels("run")).toEqual(["↵ open run", "⌫ back", "esc close"]);
+        expect(labels("run")).toEqual(["Enter open run", "Backspace back", "Escape close"]);
     });
 
     it("offers a note only back and close", () => {
-        expect(labels("note")).toEqual(["⌫ back", "esc close"]);
+        expect(labels("note")).toEqual(["Backspace back", "Escape close"]);
     });
 });
 

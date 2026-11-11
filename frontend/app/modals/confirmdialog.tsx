@@ -11,6 +11,7 @@
 // panel — with focus left in an xterm, xterm's handler stops the keydown before it ever bubbles.
 
 import type { ConfirmHow } from "@/app/view/agents/closelog";
+import { formatChordString } from "@/util/keysym";
 import { cn, makeIconClass } from "@/util/util";
 import { useEffect, useRef, type ReactNode } from "react";
 import { DialogButton } from "./dialogbutton";
@@ -102,7 +103,7 @@ export function ConfirmDialog({
                 </div>
                 <div className="mt-[22px] flex justify-end gap-2.5">
                     {cancelLabel && (
-                        <DialogButton variant="secondary" hint="esc" onClick={onClose}>
+                        <DialogButton variant="secondary" hint={formatChordString("Escape")} onClick={onClose}>
                             {cancelLabel}
                         </DialogButton>
                     )}
@@ -113,7 +114,7 @@ export function ConfirmDialog({
                     )}
                     <DialogButton
                         variant={tone === "danger" ? "danger" : "primary"}
-                        hint="⏎"
+                        hint={formatChordString("Enter")}
                         disabled={confirmDisabled}
                         onClick={() => onConfirm({ via: "click", afterMs: Date.now() - openedAt.current })}
                     >
