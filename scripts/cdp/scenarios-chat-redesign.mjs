@@ -391,6 +391,25 @@ export default function (kit) {
                 );
             });
 
+            // 4b. a command Chat answers itself runs on one click: /cont, then the context row, empties the box and draws the
+            // context card, with nothing sent to the agent
+            await run("4b. in-chat command runs on pick", async (name) => {
+                await clearBox(h, A);
+                await typeInBox(h, A, "/cont");
+                const up = await polishWaitFor(h, `!!document.querySelector('[data-chat-suggest-panel] [data-chat-slash-item="context"]')`, SHORT_MS);
+                const group = await h.ev(`document.querySelector("[data-chat-suggest-panel] [data-chat-slash-group]")?.getAttribute("data-chat-slash-group") ?? null`);
+                // a row picks on mousedown (the box keeps the focus), as a real click starts
+                await h.ev(`document.querySelector('[data-chat-suggest-panel] [data-chat-slash-item="context"]')?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))`);
+                const card = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector('[data-chat-local="context"]')`, SHORT_MS);
+                const got = await h.ev(`({ text: (${inputOf(A)})?.innerText.replace(/\\n$/, "") ?? null, panel: !!document.querySelector("[data-chat-suggest-panel]") })`);
+                await shot(h, "4b-in-chat-run");
+                rec(
+                    `${name}: /cont lists context under In Chat; a click on it draws the [data-chat-local="context"] card and leaves the box empty with the panel shut`,
+                    up && group === "In Chat" && card && got.text === "" && !got.panel,
+                    { up, group, card, ...got }
+                );
+            });
+
             // 5. `@` opens the same panel with the mention list
             await run("5. mention panel open", async (name) => {
                 await typeInBox(h, A, "@");

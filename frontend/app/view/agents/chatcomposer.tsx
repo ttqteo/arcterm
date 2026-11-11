@@ -206,8 +206,18 @@ export function ChatComposer({
         off: recalled.current.at != null && text === recalled.current.shown,
         look: "frosted",
         frame: boxRef,
-        // the box answers /usage, /context… itself only when Chat takes local commands
+        // the box answers /usage, /context… itself only when Chat takes local commands, and a pick of one runs it at once:
+        // it goes through the one send path, as Enter on the typed command would
         inChat: onLocal != null ? answersInChat : undefined,
+        onRun: (name) => {
+            const typed = `/${name}`;
+            if (typed === text) {
+                submitRef.current();
+                return;
+            }
+            submitNext.current = true;
+            setTextAt(typed);
+        },
     });
     const cwd = block?.meta?.["cmd:cwd"];
     // Bash mode's ghost text (as Claude Code's TUI has it): the newest `!` command from its history that starts with what

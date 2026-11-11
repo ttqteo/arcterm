@@ -161,6 +161,17 @@ export function slashGroups(
     return GROUP_ORDER.filter((g) => by.has(g)).map((g) => ({ title: g, items: by.get(g)! }));
 }
 
+/** Pure: what picking `c` in the menu does. A click or Enter on a command Chat answers itself (`inChat`, chatlocal.ts) runs
+ *  it at once, as it takes no argument; any other pick, and Tab on any command, puts `/<name> ` in the box to go on
+ *  typing. */
+export function pickAction(
+    c: SlashCommand,
+    how: "pick" | "complete",
+    inChat?: (name: string) => boolean
+): "run" | "insert" {
+    return how === "pick" && groupOf(c, inChat) === "In Chat" ? "run" : "insert";
+}
+
 // `/` as the box's first character, then the command's name up to the caret; a `/` anywhere else ("and/or", "src/app",
 // a path after a slash command) is text
 const SLASH_QUERY = /^\/([^\s/]*)$/u;

@@ -7,6 +7,7 @@ import {
     mergeCommands,
     opensPanel,
     opensTui,
+    pickAction,
     slashGroups,
     slashMatches,
     slashQueryAt,
@@ -182,6 +183,19 @@ describe("groupOf", () => {
         expect(groupOf({ name: "my-cmd", source: "command" })).toBe("Skills");
         expect(groupOf({ name: "superpowers:brainstorming", source: "skill" })).toBe("Plugins");
         expect(groupOf({ name: "git:sync", source: "command" })).toBe("Plugins");
+    });
+});
+
+describe("pickAction", () => {
+    const inChat = (name: string) => name === "context";
+    it("runs a command Chat answers itself on a click or Enter", () => {
+        expect(pickAction({ name: "context", source: "builtin" }, "pick", inChat)).toBe("run");
+    });
+    it("puts it in the box on Tab, and puts every other command in the box", () => {
+        expect(pickAction({ name: "context", source: "builtin" }, "complete", inChat)).toBe("insert");
+        expect(pickAction({ name: "compact", source: "builtin" }, "pick", inChat)).toBe("insert");
+        expect(pickAction({ name: "context", source: "user" }, "pick", inChat)).toBe("insert");
+        expect(pickAction({ name: "context", source: "builtin" }, "pick")).toBe("insert");
     });
 });
 
