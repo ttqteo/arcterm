@@ -73,9 +73,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   The portfolio tab no longer shows as a sleeping agent in the Agent tree. A dashboard request that runs Claude leaves
   the service block with no `agent:*` meta (`wsh getmeta -b block:<its id>`). Go unit tests only (`pkg/services`,
   `reportsToBlock`); the boot order that showed the service pane was not reproduced.
-- [ ] (arcterm) Bash mode in Chat's box: type `!` at the start of a Claude agent's Chat box → the border turns accent and
-  "! Bash mode" shows beside +; delete the `!` → both go; send `! ls` → no Queued bubble, and the `! ls` card with its
-  output lands; a `!` later in a message changes nothing (`chatcomposer.tsx` `bash`, `chatmodel.ts` `bashMode`).
+- [ ] (arcterm) Bash mode in Chat's box: type `!` at the start of a Claude agent's Chat box → the Bash caption and a dark
+  shell well show (the border stays as it is); delete the `!` → both go; send `! ls` → no Queued bubble, and the `! ls`
+  card with its output lands; a `!` later in a message changes nothing (`chatcomposer.tsx` `bash`, `chatmodel.ts`
+  `bashMode`).
+- [ ] (arcterm) Chat bash mode on Windows: Tab on a path and on a command word in a `!` command completes through Git
+  Bash with no console window flashing (`shellcomplete.hideWindow`); the list's code is `bashcomplete.tsx`.
 - [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent

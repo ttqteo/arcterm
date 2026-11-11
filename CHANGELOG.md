@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   background and reads your queued messages at once, as Claude Code's own send-now key does.
 - `/btw <question>` from Chat gets its answer in Chat: a card under your question, the answer from the conversation so
   far, marked as a side answer that Claude's conversation never sees; the agent's work goes on meanwhile.
+- Chat's bash mode (a message that starts with !) shows the command in a shell well, suggests the last matching !
+  command you ran (→ takes it), and completes commands, $variables and files with Tab.
 
 ### Changed
 
@@ -89,8 +91,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A `! command` you run in the agent's box shows in Chat as one card: the command, then what it printed (errors in red,
   "No output" for one that printed nothing), instead of an empty "Bash input" card and a bubble of raw `<bash-stdout>`
   tags.
-- Chat's message box goes into bash mode when it starts with `!`, as Claude Code's own box does: its border and a
-  "! Bash mode" chip say the text runs in the agent's shell.
+- Chat's message box goes into bash mode when it starts with `!`, as Claude Code's own box does: a Bash caption says
+  the text runs in the agent's shell.
 - A skill the agent runs by itself shows as a Skill step in its work, instead of a bubble on your side that looked like
   you had typed the slash command.
 - A Chat message you send while the agent is working shows as you wrote it, its pictures as thumbnails, instead of

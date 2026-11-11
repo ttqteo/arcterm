@@ -15,6 +15,8 @@
 // While an IME composition (Telex, Pinyin…) is on, nothing is reported and nothing is rebuilt: the text arrives when the
 // composition ends. A `value` that comes from outside meanwhile is held and drawn when the composition ends (in place of
 // the text typed), so the editor never says its own text over it.
+// Two things are drawn over the text without being in it, in one overlay that mirrors it (`ghost`, `bash`): the grey ghost text
+// after the last character, and the accent `!` of a bash command.
 
 import { cn } from "@/util/util";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
@@ -119,6 +121,12 @@ export interface ChatEditorProps {
     maxHeight: number;
     /** extra attributes for the editable element (`data-…`) */
     dataAttrs?: Record<string, string>;
+    /** the text is a bash command (it starts with `!`, Chat's bash mode): its leading `!` is drawn in the accent colour
+     *  and semibold, over the editor's own, in the overlay `ghost` is drawn in */
+    bash?: boolean;
+    /** grey text drawn right after the last character, not part of the message (bash mode's suggestion from Claude Code's
+     *  history); empty draws nothing */
+    ghost?: string;
 }
 
 // ---- reading the editor's content as lines (all `$` functions run inside editor.read / editor.update) ----
@@ -592,6 +600,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
     const props = useRef(p);
     props.current = p;
     const said = useRef({ text: p.value, caret: p.value.length });
+    const ghost = p.ghost ?? "";
+    const bang = p.bash === true && p.value.startsWith("!");
     // read once, when the editor is made; later values reach it through the Bridge
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
@@ -628,6 +638,29 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                     }
                     ErrorBoundary={LexicalErrorBoundary}
                 />
+                {/* A mirror of the text laid over the editor, with the same type and wrapping, so what it draws lands
+                    exactly where the editor's own text is: the text itself invisible, the bash `!` drawn over the
+                    editor's (its box filled with the well's colour so the editor's thinner one does not show at the
+                    edges), the ghost after the last character. */}
+                {bang || ghost !== "" ? (
+                    <div
+                        aria-hidden
+                        data-chat-ghost-layer=""
+                        className="pointer-events-none absolute inset-0 overflow-hidden leading-[1.9] whitespace-pre-wrap select-none [overflow-wrap:anywhere]"
+                    >
+                        {bang ? (
+                            <span data-chat-bang="" className="bg-surface-code font-semibold text-accent">
+                                !
+                            </span>
+                        ) : null}
+                        <span className="invisible">{bang ? p.value.slice(1) : p.value}</span>
+                        {ghost !== "" ? (
+                            <span data-chat-ghost="" className="text-ink-faint">
+                                {ghost}
+                            </span>
+                        ) : null}
+                    </div>
+                ) : null}
                 <HistoryPlugin />
                 <Bridge ref={ref} props={props} said={said} />
             </div>
