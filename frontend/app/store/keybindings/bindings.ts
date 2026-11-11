@@ -16,6 +16,7 @@ import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
 import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
+import { focusChatBox } from "@/app/view/agents/chatinsert";
 import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
 import {
     checkMain,
@@ -1861,6 +1862,23 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 }
                 const showingChat = slotView() === "terminal" && getChatMode(agent) === "chat";
                 selectCellView(agent.id, showingChat ? "terminal" : "chat", Date.now());
+            },
+        },
+        {
+            // Reading Chat, the focus has left the box (a scroll, a click in the conversation or on a pill): Tab puts it
+            // back in the focused agent's chat box, so you type on. Not from a field or the terminal, where Tab is theirs;
+            // it passes when the agent shows no Chat
+            id: "agent:chat-focus-box",
+            keys: "Tab",
+            group: "Agent",
+            label: "Type in the chat box (while reading Chat)",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && !ctx.editable && centerAtRest(),
+            run: () => {
+                const agent = claudeAgent();
+                if (agent == null || slotView() !== "terminal" || getChatMode(agent) !== "chat") {
+                    return false;
+                }
+                return focusChatBox(agent.id) ? undefined : false;
             },
         },
         {

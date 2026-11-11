@@ -6,6 +6,7 @@ import {
     PENDING_MAX_MS,
     PENDING_QUEUED_MAX_MS,
     btwQuestion,
+    isSendNowKey,
     pastesBody,
     pendingKind,
     pendingStill,
@@ -40,6 +41,17 @@ describe("userTextCount", () => {
         expect(userTextCount(entries, "/btw other")).toBe(0);
     });
 
+    it("counts a `! cmd` as the bash row the projection makes of it (name !, the command as args)", () => {
+        const entries: AgentEntry[] = [
+            { kind: "command", name: "!", args: "git status", shell: { output: "clean", error: "" } },
+            { kind: "command", name: "!", args: "ls" },
+        ];
+        expect(userTextCount(entries, "!git status")).toBe(1);
+        expect(userTextCount(entries, "! git  status")).toBe(1);
+        expect(userTextCount(entries, "!ls")).toBe(1);
+        expect(userTextCount(entries, "!pwd")).toBe(0);
+    });
+
     it("counts a message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in so)", () => {
         const sent = "bash mode không đẹp lắm\n\nAttached images:\n- C:\\a\\image.png";
         const entries = [user(`<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`)];
@@ -65,6 +77,13 @@ describe("btwQuestion and pendingKind", () => {
         expect(pendingKind("/model opus")).toBeUndefined();
         expect(pendingKind("/compact")).toBeUndefined();
         expect(pendingKind("hello")).toBeUndefined();
+    });
+
+    it("is bash for a bash-mode `! cmd`, and nothing for a bare ! or a message ending in one", () => {
+        expect(pendingKind("!git status")).toBe("bash");
+        expect(pendingKind("! ls -la")).toBe("bash");
+        expect(pendingKind("!")).toBeUndefined();
+        expect(pendingKind("great!")).toBeUndefined();
     });
 });
 
@@ -102,7 +121,7 @@ describe("pendingStill", () => {
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS, null)).toHaveLength(1);
     });
     it("keeps a side question or an open panel while the agent sits idle, up to PENDING_MAX_MS", () => {
-        for (const kind of ["btw", "panel"] as const) {
+        for (const kind of ["btw", "panel", "bash"] as const) {
             const q = p({ kind, text: "/config", seen: 0 });
             expect(pendingStill([q], [], 3000 + PENDING_IDLE_MS + 1, 3000)).toHaveLength(1);
             expect(pendingStill([q], [], 1000 + PENDING_MAX_MS, 3000)).toEqual([]);
@@ -153,6 +172,29 @@ describe("recall", () => {
     });
 });
 
+describe("isSendNowKey", () => {
+    const k = (over: Partial<Parameters<typeof isSendNowKey>[0]> = {}) => ({
+        key: "Enter",
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        ...over,
+    });
+    it("is Ctrl+Enter, and Cmd+Enter on a Mac", () => {
+        expect(isSendNowKey(k({ ctrlKey: true }), false)).toBe(true);
+        expect(isSendNowKey(k({ metaKey: true }), true)).toBe(true);
+        expect(isSendNowKey(k({ metaKey: true }), false)).toBe(false);
+        expect(isSendNowKey(k({ ctrlKey: true }), true)).toBe(false);
+    });
+    it("is not a plain Enter, nor one with Shift or Alt held too", () => {
+        expect(isSendNowKey(k(), false)).toBe(false);
+        expect(isSendNowKey(k({ ctrlKey: true, shiftKey: true }), false)).toBe(false);
+        expect(isSendNowKey(k({ ctrlKey: true, altKey: true }), false)).toBe(false);
+        expect(isSendNowKey(k({ key: "s", ctrlKey: true }), false)).toBe(false);
+    });
+});
+
 describe("sendHold", () => {
     it("names why a send waits", () => {
         expect(sendHold(true, false)).toBe("Answer the permission prompt first");
@@ -176,9 +218,12 @@ describe("pendsAsBubble", () => {
         expect(pendsAsBubble("/btw")).toBe(false);
     });
 
-    it("is false for a `! cmd`, which the projection draws as its shell card", () => {
-        expect(pendsAsBubble("! ls")).toBe(false);
-        expect(pendsAsBubble("!git status")).toBe(false);
+    // Claude Code writes a `! cmd`'s row only once it finishes (or goes to the background at 120 s)
+    it("is true for a `! cmd`, which shows nothing in the transcript while it runs; false for a bare !", () => {
+        expect(pendsAsBubble("! ls")).toBe(true);
+        expect(pendsAsBubble("!git status")).toBe(true);
+        expect(pendsAsBubble("!")).toBe(false);
+        expect(pendsAsBubble("!  ")).toBe(false);
         expect(pendsAsBubble("great!")).toBe(true);
     });
 });

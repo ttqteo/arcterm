@@ -9,9 +9,10 @@ import type { AgentEntry } from "./agentsviewmodel";
 import { unwrapWholePaste } from "./chattagblocks";
 import { opensPanel } from "./slashcommands";
 
-/** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), or a panel
- *  open on Claude Code's own screen (`panel`), which writes its row only once it closes. */
-export type PendingKind = "btw" | "panel";
+/** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), a panel
+ *  open on Claude Code's own screen (`panel`), which writes its row only once it closes, or a bash-mode `! cmd` running
+ *  (`bash`), whose row Claude Code writes only once it finishes or goes to the background at 120 s. */
+export type PendingKind = "btw" | "panel" | "bash";
 
 /** A message sent and not yet in the transcript. `seen` is how many of the agent's user entries already held its text
  *  when it was sent, so an earlier identical message is not taken for this one. */
@@ -37,16 +38,31 @@ const HISTORY_MAX = 20;
 // a command as it was typed, every run of whitespace one space: the transcript keeps a /btw's question on one line
 const flat = (s: string): string => s.replace(/\s+/g, " ").trim();
 
+// the command of a bash-mode `! cmd`, every run of whitespace one space, or null for anything else (a bare ! included)
+function bashCommand(text: string): string | null {
+    const t = text.trimStart();
+    if (!t.startsWith("!")) {
+        return null;
+    }
+    const cmd = flat(t.slice(1));
+    return cmd !== "" ? cmd : null;
+}
+
 /** How many of the entries are your messages with exactly this text (edge whitespace aside), or commands typed as it.
  *  A message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in as one) counts as its
- *  body, or its Queued bubble never goes. */
+ *  body, or its Queued bubble never goes. A `! cmd` counts as its bash row (name `!`, the command as args). */
 export function userTextCount(entries: AgentEntry[], text: string): number {
     const want = text.trim();
     const wantFlat = flat(text);
+    const bash = bashCommand(text);
     let n = 0;
     for (const e of entries) {
         if (e.kind === "user" && unwrapWholePaste(e.text).trim() === want) {
             n++;
+        } else if (e.kind === "command" && e.name === "!") {
+            if (bash != null && flat(e.args ?? "") === bash) {
+                n++;
+            }
         } else if (e.kind === "command" && !e.isSkill && flat(e.args ? `${e.name} ${e.args}` : e.name) === wantFlat) {
             n++;
         }
@@ -62,10 +78,13 @@ export function btwQuestion(text: string): string | null {
 }
 
 /** Pure: what a send stands for until its row lands, when it is a command with a pending bubble of its own: a side
- *  question, or a bare built-in whose panel shows on Claude Code's own screen. */
+ *  question, a bare built-in whose panel shows on Claude Code's own screen, or a bash-mode `! cmd` running. */
 export function pendingKind(text: string): PendingKind | undefined {
     if (btwQuestion(text) != null) {
         return "btw";
+    }
+    if (bashCommand(text) != null) {
+        return "bash";
     }
     const bare = /^\/([^\s/]+)$/u.exec(text.trim());
     return bare != null && opensPanel(bare[1]) ? "panel" : undefined;
@@ -96,13 +115,21 @@ export function pendingStill(
 }
 
 /** Whether a send gets a pending bubble. A message does, and so does a command with a pending kind (a /btw, a bare
- *  panel command), which the chat would otherwise show nothing of for a while. Any other `/command` does not, nor a
- *  bash-mode `! cmd`: each lands as its command row at once, and some (a /clear) never land in this transcript. */
+ *  panel command, a `! cmd`), which the chat would otherwise show nothing of for a while. Any other `/command` does
+ *  not, nor a bare `!`: each lands as its command row at once, and some (a /clear) never land in this transcript. */
 export function pendsAsBubble(text: string): boolean {
     if (pendingKind(text) != null) {
         return true;
     }
     return !text.trimStart().startsWith("/") && !text.startsWith("!");
+}
+
+/** Pure: whether a key in the chat box is Send now's: Ctrl+Enter, Cmd+Enter on a Mac, nothing else held. */
+export function isSendNowKey(
+    e: { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean },
+    mac: boolean
+): boolean {
+    return e.key === "Enter" && !e.shiftKey && !e.altKey && (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
 }
 
 /** The sent history with `text` last: newest last, at most 20, no repeat of the newest. */

@@ -142,4 +142,10 @@ describe("chatFold", () => {
         expect(chatFold(`${long}\nWhich one do you want?`, [], true)).toBeNull();
         expect(chatFold(long, ["Which one do you want?"], true)).toBeNull();
     });
+
+    // a fold keeps prose only: the visuals an agent drew, the point of its reply, would be behind Show more
+    it("draws in full a reply that holds an arc-visual block", () => {
+        expect(chatFold(`${long}\n\n\`\`\`arc-visual\n~/.arc/visuals/chart.html\n\`\`\``, [], true)).toBeNull();
+        expect(chatFold(`${long}\n\n\`\`\`ts\nconst a = 1;\n\`\`\``, [], true)).not.toBeNull();
+    });
 });

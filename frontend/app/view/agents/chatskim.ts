@@ -11,6 +11,10 @@
 
 import { canFold, endsOnQuestion, folded, lineCount } from "../../../../claude/skim-mod/hooks/fold-core";
 import { askOf } from "../../../../claude/skim-mod/hooks/highlight-core";
+import { VISUAL_LANG } from "./chatvisual";
+
+// a fenced block an agent drew a visual in (chatvisual.ts): ```arc-visual at the start of a line
+const VISUAL_FENCE = new RegExp(`^\\s*\`\`\`${VISUAL_LANG}\\b`, "m");
 
 // FNV-1a over the stored text, the key the marks are kept under once the reply is stored without them
 export function hashText(text: string): string {
@@ -198,10 +202,11 @@ export function parseSkimOn(raw: string | null): boolean {
 /** Pure: a long reply's folded form in Chat, as the skim mod folds it on Claude Code's own screen (its fold-core.ts,
  *  imported, not copied: the cut is the mod's): the verdict and the marked sentences, or the verdict and the lead of
  *  each top reason when nothing is marked, with the marks it kept put back as ==…==. Null when the reply draws in full:
- *  skim is off, it is short, it ends on a question, or its last mark is one (a question waiting on you, whose options
- *  are to be read). `lines` is the full reply's, for the "Show more · N lines" button. */
+ *  skim is off, it is short, it ends on a question, its last mark is one (a question waiting on you, whose options
+ *  are to be read), or it holds an arc-visual block (the visual an agent drew is its point, and a fold keeps prose
+ *  only). `lines` is the full reply's, for the "Show more · N lines" button. */
 export function chatFold(text: string, marks: readonly string[], on: boolean): { short: string; lines: number } | null {
-    if (!on || askOf(marks) != null || endsOnQuestion(text) || !canFold(text)) {
+    if (!on || askOf(marks) != null || endsOnQuestion(text) || VISUAL_FENCE.test(text) || !canFold(text)) {
         return null;
     }
     const f = folded(text, marks);
