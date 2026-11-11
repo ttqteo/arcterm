@@ -64,6 +64,7 @@ import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
+import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeImageZoomScenarios from "./scenarios-code-imagezoom.mjs";
 import diffFileKeysScenarios from "./scenarios-diff-file-keys.mjs";
@@ -43170,7 +43171,7 @@ const agentChat = {
                 return {
                     empty: l?.querySelector("[data-chat-empty]")?.textContent.trim() ?? null,
                     working: !!l?.querySelector("[data-chat-working]"),
-                    box: !!l?.querySelector("[data-agent-chat-composer] textarea"),
+                    box: !!l?.querySelector("[data-agent-chat-composer] [data-chat-input]"),
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-13b-starting.png");
@@ -56988,6 +56989,21 @@ const RT_KIT = {
     MOD_BIT,
 };
 
+// what the Chat redesign's scenario (scenarios-chat-redesign.mjs) needs of this file: the wavesrv service route and the
+// waits, the project registry wait and the reload, the reveal route, the saved-grid keys, and the brainstorm hint card's
+// seen mark
+const CR_KIT = {
+    waveService,
+    polishWaitFor,
+    polishNap,
+    ahReload,
+    waitForProjectInConfig,
+    UI_ROUTE,
+    GRID_KEY,
+    GRID_EMPTY,
+    bsSeeHints,
+};
+
 // what the Jarvis revamp's scenario modules (scenarios-jarvis-{cards,activity,sheet}.mjs,
 // docs/superpowers/plans/2026-11-05-jarvis-revamp.md) need of this file: the Brief's own helpers (open Jarvis on a reload,
 // pick a briefing fixture, seed and clear initiatives, the viewport, the localStorage keys), the fixture-run helpers that
@@ -66677,6 +66693,7 @@ export const SCENARIOS = [
     agentSleep,
     agentChat,
     chatScrollKeep,
+    ...chatRedesignScenarios(CR_KIT),
     sidebarAgentRam,
     machineServers,
     sidebarAgentGlyph,

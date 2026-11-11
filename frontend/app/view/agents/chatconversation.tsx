@@ -5,37 +5,49 @@
 // bubbles on the right, a prompt arcterm typed (a run's launch prompt, a wake, a message from another agent) as an
 // outlined card naming who sent it, and everything the agent said and did between two of them as a document column: its
 // prose as Markdown with no bubble and no avatar, and between the paragraphs a stretch of tools as one plain "Worked for
-// 38s · 5 tools" line that opens to the tool lines, and the files that work edited as a chip each that opens its diff.
-// Your prompt pins to the top once it scrolls away (pinnedpromptbar.tsx), as in the live feed. The items are
-// chatmodel.ts's; the pieces shared with the other transcript views (a tool line, a diff, the compaction and
+// 38s · 5 tools" line that opens to one step line per call (chatstepsview.tsx), and the files that work edited as a chip
+// each that opens its diff. Your prompt pins to the top once it scrolls away (pinnedpromptbar.tsx), as in the live feed.
+// The items are chatmodel.ts's; the pieces shared with the other transcript views (a diff body, the compaction and
 // interruption markers) are narrationtimeline.tsx's.
 // Only the last CHAT_RENDER_STEP items are drawn at first; "Show earlier" draws that many more and, once all are drawn,
 // asks the caller for earlier entries. The place the reader left it is kept under `placeId` (transcriptplace.ts).
+// A row that arrives at the tail, or a part that lands in a row already there, opens its height on the spring instead of
+// shoving what is above it (Arriving, chatarrival.ts); what is drawn at once (the first load, Show earlier, a restored place)
+// never animates.
+// The agent's brainstorm shows here as well (chatbrainstormcard.tsx): the question it waits on is a card after the last row,
+// which opens and leaves on the spring, and each of your messages that answered a question draws as that question's ✓ row in
+// place of its bubble (chatbrainstorm.ts pairs them by the record of what Arc sent). Chat never switches to the Brainstorm
+// tab for it; the card's button does that.
 
 import { CopyButton } from "@/app/element/copybutton";
-import { composerReveal } from "@/app/element/motiontokens";
+import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-    burstRenderMode,
     conversationText,
     isNearBottom,
     type AgentEntry,
+    type AgentVM,
     type BtwAnswer,
     type EditFile,
     type ShellResult,
 } from "./agentsviewmodel";
+import { arrivalFrom, tailArrivals } from "./chatarrival";
+import { pairAnswers, type OpenQuestion, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
+import { ChatBrainstormAnswered, ChatBrainstormCard } from "./chatbrainstormcard";
+import { answerMessages, answeredText } from "./chatbrainstormwire";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
+import { sameChatItem } from "./chatitemeq";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
+import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { foldCommandParts, splitTagged, tagHeading, type TagPart } from "./chattagblocks";
-import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
 import { CouncilText } from "./councilchat";
 import {
     CompactionDivider,
@@ -43,14 +55,21 @@ import {
     PromptImages,
     TaskNotificationRow,
     ToolDetailBody,
-    ToolLine,
-    useNow,
 } from "./narrationtimeline";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
 
 /** A sent card shows this many of its lines until it is opened. */
 const SENT_FOLD_LINES = 3;
+
+// The agent's prose: 14px on a 1.65 line, and its headings 15px at weight 600 (the Markdown sheet sets them at 1em; its rules
+// are outside Tailwind's layers, which win over a plain utility, so the size and the line are `!`)
+const PROSE = [
+    "text-[14px] leading-[1.65] text-ink-hi",
+    "[&_h1]:text-[15px]! [&_h2]:text-[15px]! [&_h3]:text-[15px]! [&_h4]:text-[15px]!",
+    "[&_h1]:font-semibold! [&_h2]:font-semibold! [&_h3]:font-semibold! [&_h4]:font-semibold!",
+    "[&_h1]:leading-[1.4]! [&_h2]:leading-[1.4]! [&_h3]:leading-[1.4]! [&_h4]:leading-[1.4]!",
+].join(" ");
 
 // the entry index an item's key starts with ("agent:12" → 12): the key transcriptplace.ts keeps a place under, the same
 // number CompactTranscript keeps for the item starting at that entry, so a place survives the switch between the two
@@ -89,7 +108,7 @@ function ProseText({ text }: { text: string }) {
     const folded = fold != null && !open;
     return (
         <>
-            <CouncilText text={folded ? fold.short : full} className="text-[14px] leading-[1.65] text-ink-hi" />
+            <CouncilText text={folded ? fold.short : full} className={PROSE} />
             {fold != null ? (
                 <button
                     type="button"
@@ -253,7 +272,7 @@ function YouBubble({
                 data-chat-you
                 data-chat-command
                 onContextMenu={onContextMenu(item.command)}
-                className="max-w-[75%] self-end rounded-[12px] bg-surface-raised px-[14px] py-[9px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]"
+                className="max-w-[75%] self-end rounded-[16px] bg-surface-raised px-[14px] py-[9px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]"
             >
                 {item.command}
             </div>
@@ -276,7 +295,7 @@ function YouBubble({
             {text !== "" || hasPictures ? (
                 <div
                     className={cn(
-                        "group relative max-w-full rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
+                        "group relative max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
                         // the copy button hangs in the gap under the bubble: leave it room above the cards
                         hasFiles ? "mb-3" : "mb-1"
                     )}
@@ -352,66 +371,122 @@ function SentCard({ item }: { item: Extract<ChatItem, { kind: "sent" }> }) {
     );
 }
 
-// "› Worked for 38s · 5 tools": a stretch of tools as one plain line between the agent's bubbles, opening to its tool
-// lines, which open in place (never the full-view modal, which is their button). A live session's last one is open
-// while the agent works, drawn plain so it never strobes (burstRenderMode)
-function WorkPill({
-    work,
-    open,
-    closed,
-    autoOpen,
-    live,
-    onToggle,
+// The gaps of the columns Arriving sits in: gap-4 between the items, gap-2 between an item's parts. A row that opens from
+// nothing takes its gap back (a negative margin that opens to 0 with the height) while it is closed, or its first frame
+// would shove what is above it by the gap.
+const ITEM_GAP = 16;
+const PART_GAP = 8;
+
+// A row of the conversation, or a part of an agent's reply. `arrive`: it landed just now at the tail, so it opens its height
+// 0 -> its own on the spring (MOTION.spring, as springReveal) and fades in on the micro ease; otherwise it is drawn at once. A
+// tall one opens only over its last ARRIVAL_CAP_PX. It is a plain div, never a motion component: a conversation holds
+// hundreds of rows and parts, a motion element per one made every block's render pay for all of them (frame timing,
+// chat-redesign step 16), and a row that has settled is just a div. Only the one render that mounts it decides, and the
+// animation runs imperatively from there: its height is read before the first paint, the styles that close it are set in
+// the same layout effect (so no frame shows it open), and all of them are removed when it ends, with the clip, so a copy
+// button hanging under a bubble or a focus ring is never cut at rest. `arrive` is false under reduced motion (the caller).
+function Arriving({
+    arrive,
+    gap,
+    itemKey,
+    className,
+    children,
 }: {
-    work: WorkItem;
-    open: boolean;
-    // the user folded it while it was the auto-open one
-    closed: boolean;
-    autoOpen: boolean;
-    // the session is working: a tool with no result is running, and the stretch counts up to now
-    live: boolean;
-    onToggle: () => void;
+    arrive: boolean;
+    gap: number;
+    itemKey?: string;
+    className?: string;
+    children: ReactNode;
 }) {
-    const mode = burstRenderMode({ userOpened: open, autoOpen, userClosed: closed });
-    const shown = mode !== "collapsed";
-    const running = work.actions.some((a) => inFlight(a, live));
-    const now = useNow(running);
-    const lines = work.actions.map((action, k) => (
-        <ToolLine key={work.startIndex + k} action={action} inline running={inFlight(action, live)} settled={!live} />
-    ));
+    const ref = useRef<HTMLDivElement>(null);
+    const arrivedAtMount = useRef(arrive);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!arrivedAtMount.current || el == null) {
+            return;
+        }
+        const full = el.getBoundingClientRect().height;
+        if (full <= 0) {
+            return;
+        }
+        const from = arrivalFrom(full) ?? 0;
+        const rest = () => {
+            for (const prop of ["height", "margin-top", "opacity", "overflow"]) {
+                el.style.removeProperty(prop);
+            }
+        };
+        el.style.overflow = "hidden";
+        el.style.height = `${from}px`;
+        el.style.marginTop = `${-gap}px`;
+        el.style.opacity = "0";
+        const runs = [
+            animate(el, { height: [from, full] }, MOTION.spring),
+            animate(el, { marginTop: [-gap, 0] }, MOTION.spring),
+            animate(el, { opacity: [0, 1] }, { duration: MOTION.durMicro, ease: MOTION.easeFluid }),
+        ];
+        let over = false;
+        const end = () => {
+            if (!over) {
+                over = true;
+                rest();
+            }
+        };
+        // all three are over before the styles go: a spring still running would write its value back after them
+        void Promise.all(runs.map((run) => run.finished)).then(end, end);
+        return () => {
+            for (const run of runs) {
+                run.stop();
+            }
+            end();
+        };
+    }, [gap]);
     return (
-        <div data-chat-work className="flex flex-col">
-            <button
-                type="button"
-                data-fold
-                aria-expanded={shown}
-                onClick={onToggle}
-                className="flex cursor-pointer items-center gap-[6px] self-start py-[2px] text-[12px] text-muted hover:text-secondary"
-            >
-                <Caret open={shown} />
-                <span>
-                    {running ? workingFor(stretchMs(work, now, live)) : workedFor(work.durationMs)} ·{" "}
-                    {toolCountLabel(work.actions.length)}
-                </span>
-                {work.failed > 0 ? <span className="tabular-nums text-error">· {work.failed} failed</span> : null}
-            </button>
-            {mode === "reveal" ? (
-                <motion.div
-                    data-chat-tools
-                    variants={composerReveal}
-                    initial="initial"
-                    animate="animate"
-                    className="overflow-hidden pt-1"
-                >
-                    {lines}
-                </motion.div>
-            ) : mode === "open" ? (
-                <div data-chat-tools className="pt-1">
-                    {lines}
-                </div>
-            ) : null}
+        <div ref={ref} data-chat-item={itemKey} className={className}>
+            {children}
         </div>
     );
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set();
+const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
+
+/** The agent's brainstorm as the conversation draws it: `question` is what it waits on now (a card, or the one line that
+ *  points to the Brainstorm tab), `answers` and `topic` are what Arc sent to its questions, which pair with your messages
+ *  so each answered question draws as one ✓ row in place of your bubble. */
+export interface ChatBrainstorm {
+    agent: AgentVM;
+    topic: string;
+    answers: readonly SentAnswer[];
+    question: OpenQuestion | null;
+}
+
+// the one string an answered row is drawn from, for the item's kept element to be compared by
+function answerKey(a: PairedAnswer | undefined): string {
+    return a == null ? "" : `${a.n}\n${a.part}\n${a.text}`;
+}
+
+// an item's element as last drawn, and what it was drawn from (ChatConversation's drawnItems)
+interface DrawnItem {
+    item: ChatItem;
+    last: boolean;
+    active: boolean;
+    live: boolean;
+    terminal: boolean;
+    folds: string;
+    answer: string;
+    element: ReactNode;
+}
+
+// the folds opened inside one item: the keys of `opened` that are its own (`<item key>#<part>…`, drawPart's), as one string
+function openedFor(opened: ReadonlySet<string>, itemKey: string): string {
+    const prefix = `${itemKey}#`;
+    let out = "";
+    for (const key of opened) {
+        if (key.startsWith(prefix)) {
+            out += `${key}\n`;
+        }
+    }
+    return out;
 }
 
 // the files a stretch of work edited, a chip each ("session.ts +4 −1"), each opening its diff under the row
@@ -457,7 +532,7 @@ function FileChips({
                     <motion.div
                         key={f.path}
                         data-chat-diff={f.path}
-                        variants={composerReveal}
+                        variants={springReveal}
                         initial="initial"
                         animate="animate"
                         exit="exit"
@@ -498,6 +573,7 @@ export function ChatConversation({
     active,
     working,
     onOpenTerminal,
+    brainstorm,
     className,
 }: {
     entries: AgentEntry[];
@@ -515,10 +591,24 @@ export function ChatConversation({
     // shows the agent's terminal, for a command whose panel only Claude Code's own screen draws; left out where there is
     // no live terminal to show (an ended session)
     onOpenTerminal?: () => void;
+    // the agent's brainstorm: its open question as a card after the last row, and its answered questions as ✓ rows. Left
+    // out where there is none (a caller that has no agent to answer to)
+    brainstorm?: ChatBrainstorm;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
     const items = useMemo(() => chatItems(entries), [entries]);
+    // which of your messages answered a question, by row key: every answered question of the conversation, not only the
+    // latest. Nothing to pair, nothing computed
+    const sentAnswers = brainstorm?.answers;
+    const sentTopic = brainstorm?.topic;
+    const answers = useMemo(
+        () =>
+            sentAnswers == null || sentAnswers.length === 0 || sentTopic == null
+                ? NO_ANSWERS
+                : pairAnswers(sentAnswers, answerMessages(items), sentTopic),
+        [items, sentAnswers, sentTopic]
+    );
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
     const [win, setWin] = useState({ shown: CHAT_RENDER_STEP, len: items.length, head: entries[0], asked: false });
@@ -539,15 +629,36 @@ export function ChatConversation({
     }
     const visible = shownItems(items, Math.max(win.shown, Math.min(CHAT_RENDER_STEP, items.length)));
     const hidden = items.length - visible.length;
+    // what the last commit drew, to tell what is new now: a row appended at the tail, or a part landing in a row that was
+    // already there, opens on the spring (Arriving); a row the first load, Show earlier or a restored place draws does not.
+    // Your own message is drawn at once too: its pending twin (chatpane.tsx) stood in the tail until it landed, and a twin
+    // swapped for a row that opens from nothing would dip. Under reduced motion nothing opens.
+    const reduceMotion = useReducedMotion();
+    // the card row's margin is no height or transform, so MotionConfig's reduced motion would still glide it: it jumps here
+    const rowSpring = reduceMotion ? { duration: 0 } : MOTION.spring;
+    const lastDrawn = useRef<{ items: string[]; parts: Set<string> }>({ items: [], parts: new Set() });
+    const visibleKeys = visible.map((item) => item.key);
+    const arrived = reduceMotion ? NO_KEYS : tailArrivals(lastDrawn.current.items, visibleKeys);
+    const drawnBefore = new Set(lastDrawn.current.items);
+    useLayoutEffect(() => {
+        lastDrawn.current = {
+            items: visibleKeys,
+            parts: new Set(
+                visible.flatMap((item) => (item.kind === "agent" ? item.parts.map((_, p) => `${item.key}#${p}`) : []))
+            ),
+        };
+    });
     // a fold is kept by its item's key and its part's place in the item, so it stays with its item as entries arrive
     const [opened, setOpened] = useState<Set<string>>(new Set());
     const rootRef = useRef<HTMLDivElement>(null);
     // your message pins to the top once it scrolls off it; `prompts` is the text of each data-user-prompt bubble, in
-    // document order (only YouBubble's prompt branch carries it, not the command bubble), which the bar shows for the
-    // pinned index
+    // document order (only YouBubble's prompt branch carries it, not the command bubble, nor the ✓ row a message that
+    // answered a brainstorm question draws in its place), which the bar shows for the pinned index
     const pinned = usePinnedPrompt(rootRef);
     const prompts = visible.flatMap((item) =>
-        item.kind === "you" && !("command" in item) ? [pinnedLabel(item.text, item.images?.length ?? 0)] : []
+        item.kind === "you" && !("command" in item) && !answers.has(item.key)
+            ? [pinnedLabel(item.text, item.images?.length ?? 0)]
+            : []
     );
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);
@@ -664,18 +775,32 @@ export function ChatConversation({
         };
     }, [placeId]);
 
-    const copyMenu: CopyMenu = (text) => (e) =>
-        ContextMenuModel.getInstance().showContextMenu(
-            [
-                { label: "Copy text", icon: <Copy size={15} />, click: () => void navigator.clipboard.writeText(text) },
-                {
-                    label: "Copy conversation",
-                    icon: <Copy size={15} />,
-                    click: () => void navigator.clipboard.writeText(conversationText(entries)),
-                },
-            ],
-            e
-        );
+    // Both read what is current when they are used, never what the render that made them saw: an item's element is kept
+    // while the item is unchanged (drawnItems below), so the handlers inside it outlive the render that created them.
+    const entriesRef = useRef(entries);
+    entriesRef.current = entries;
+    const openTerminalRef = useRef(onOpenTerminal);
+    openTerminalRef.current = onOpenTerminal;
+    const openTerminal = useCallback(() => openTerminalRef.current?.(), []);
+    const copyMenu: CopyMenu = useCallback(
+        (text) => (e) =>
+            ContextMenuModel.getInstance().showContextMenu(
+                [
+                    {
+                        label: "Copy text",
+                        icon: <Copy size={15} />,
+                        click: () => void navigator.clipboard.writeText(text),
+                    },
+                    {
+                        label: "Copy conversation",
+                        icon: <Copy size={15} />,
+                        click: () => void navigator.clipboard.writeText(conversationText(entriesRef.current)),
+                    },
+                ],
+                e
+            ),
+        []
+    );
 
     const drawPart = (
         item: Extract<ChatItem, { kind: "agent" }>,
@@ -690,7 +815,6 @@ export function ChatConversation({
             case "prose":
                 return (
                     <div
-                        key={key}
                         data-chat-prose
                         onContextMenu={copyMenu(part.text)}
                         className="group relative mb-3 min-w-0 max-w-full self-stretch"
@@ -704,8 +828,7 @@ export function ChatConversation({
                 // so a click on it folds it (a key of its own, which stops counting once the agent is done)
                 const autoOpen = !!active && last && item.parts.slice(p + 1).every((q) => q.kind === "files");
                 return (
-                    <WorkPill
-                        key={key}
+                    <ChatSteps
                         work={part.work}
                         open={opened.has(key)}
                         closed={opened.has(`${key}^closed`)}
@@ -718,12 +841,7 @@ export function ChatConversation({
             case "files": {
                 const openPaths = new Set(part.files.filter((f) => opened.has(`${key}:${f.path}`)).map((f) => f.path));
                 return (
-                    <FileChips
-                        key={key}
-                        files={part.files}
-                        openPaths={openPaths}
-                        onToggle={(path) => toggle(`${key}:${path}`)}
-                    />
+                    <FileChips files={part.files} openPaths={openPaths} onToggle={(path) => toggle(`${key}:${path}`)} />
                 );
             }
         }
@@ -731,14 +849,42 @@ export function ChatConversation({
 
     const drawItem = (item: ChatItem, last: boolean): ReactNode => {
         switch (item.kind) {
-            case "you":
-                return <YouBubble item={item} onContextMenu={copyMenu} onOpenTerminal={onOpenTerminal} />;
+            case "you": {
+                // a message that answered a brainstorm question: the question's ✓ row in place of its bubble, so the
+                // answer is shown once
+                const answer = "command" in item ? undefined : answers.get(item.key);
+                if (answer != null) {
+                    return (
+                        <div className="min-w-0 self-stretch">
+                            <ChatBrainstormAnswered n={answer.n} part={answer.part} text={answeredText(answer.text)} />
+                        </div>
+                    );
+                }
+                return (
+                    <YouBubble
+                        item={item}
+                        onContextMenu={copyMenu}
+                        onOpenTerminal={onOpenTerminal != null ? openTerminal : undefined}
+                    />
+                );
+            }
             case "sent":
                 return <SentCard item={item} />;
             case "agent":
                 return (
                     <div data-chat-agent className="flex min-w-0 flex-col gap-2">
-                        {item.parts.map((part, p) => drawPart(item, part, p, last))}
+                        {/* a part landing in a row that was already there opens on the spring; one of a row that arrives
+                            now, or of a row drawn at once, is part of it */}
+                        {item.parts.map((part, p) => {
+                            const key = `${item.key}#${p}`;
+                            const arrive =
+                                !reduceMotion && drawnBefore.has(item.key) && !lastDrawn.current.parts.has(key);
+                            return (
+                                <Arriving key={key} gap={PART_GAP} arrive={arrive} className="min-w-0">
+                                    {drawPart(item, part, p, last)}
+                                </Arriving>
+                            );
+                        })}
                     </div>
                 );
             case "marker":
@@ -746,11 +892,63 @@ export function ChatConversation({
         }
     };
 
+    // An item that is the same as the one drawn for its key last time keeps that element: React skips an element it has
+    // already seen, so a block landing at the end of a long conversation renders the last item and not every one before it
+    // (chat-redesign step 16 reads that cost as frame time). The keep is by what the item draws from: its content
+    // (sameChatItem), whether it is the last, whether the session is live, the folds opened inside it, whether there is
+    // a terminal to open and the brainstorm answer it stands for, if any. Everything else it draws from is state of its
+    // own components or read through a ref.
+    const drawnItems = useRef(new Map<string, DrawnItem>());
+    const drawnNow = new Map<string, DrawnItem>();
+    const rows = visible.map((item, i) => {
+        const last = i === visible.length - 1;
+        const folds = openedFor(opened, item.key);
+        const answer = answerKey(answers.get(item.key));
+        const kept = drawnItems.current.get(item.key);
+        const reuse =
+            kept != null &&
+            kept.last === last &&
+            kept.active === !!active &&
+            kept.live === toolsLive &&
+            kept.terminal === (onOpenTerminal != null) &&
+            kept.folds === folds &&
+            kept.answer === answer &&
+            sameChatItem(kept.item, item);
+        const drawn: DrawnItem = reuse
+            ? kept
+            : {
+                  item,
+                  last,
+                  active: !!active,
+                  live: toolsLive,
+                  terminal: onOpenTerminal != null,
+                  folds,
+                  answer,
+                  element: drawItem(item, last),
+              };
+        drawnNow.set(item.key, drawn);
+        return (
+            <Arriving
+                key={item.key}
+                itemKey={item.key}
+                gap={ITEM_GAP}
+                arrive={item.kind !== "you" && arrived.has(item.key)}
+                className={cn("flex flex-col", item.kind === "you" || item.kind === "sent" ? "items-end" : undefined)}
+            >
+                {drawn.element}
+            </Arriving>
+        );
+    });
+    drawnItems.current = drawnNow;
+
     return (
         <div
             ref={rootRef}
             data-chat-conversation
-            className={cn("mx-auto flex w-full max-w-[760px] flex-col gap-4 pb-2 pt-4 leading-relaxed", className)}
+            className={cn(
+                "mx-auto flex w-full max-w-[760px] flex-col gap-4 pb-2 pt-4 leading-relaxed tracking-[-0.01em]",
+                className
+            )}
         >
             {/* the sticky row is a flex child of a gap-4 column: -mb-4 cancels the gap its zero-height row would add */}
             <PinnedPromptBar
@@ -771,18 +969,24 @@ export function ChatConversation({
                 </button>
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
-            {visible.map((item, i) => (
-                <div
-                    key={item.key}
-                    data-chat-item={item.key}
-                    className={cn(
-                        "flex flex-col",
-                        item.kind === "you" || item.kind === "sent" ? "items-end" : undefined
-                    )}
-                >
-                    {drawItem(item, i === visible.length - 1)}
-                </div>
-            ))}
+            {rows}
+            {/* The question the brainstorm waits on, after the last row: a row kind of its own, not an item (it is no
+                data-chat-item, so the place kept and restored never counts it). The card opens its height on the spring
+                and leaves on it (the card's own variants); this wrapper does the same with the column's gap, which a
+                closed row would otherwise hold open, so nothing above it shoves. The first render draws it at once. */}
+            <AnimatePresence initial={false}>
+                {brainstorm?.question != null ? (
+                    <motion.div
+                        key={brainstorm.question.state === "pointer" ? "pointer" : `question:${brainstorm.question.n}`}
+                        data-chat-brainstorm-row
+                        initial={{ marginTop: -ITEM_GAP }}
+                        animate={{ marginTop: 0, transition: rowSpring }}
+                        exit={{ marginTop: -ITEM_GAP, transition: rowSpring }}
+                    >
+                        <ChatBrainstormCard agent={brainstorm.agent} question={brainstorm.question} />
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 }

@@ -18,12 +18,13 @@ environment), follow them and do not use this skill: the cockpit shows those que
 What changes from plain brainstorming:
 
 - A playback is a part written to the file, not 200-300 words in the terminal.
-- The user reads the pane, not the terminal. Your terminal reply is one short line on what you
-  changed, then the question you are waiting on. Never repeat a part's text there.
+- The user reads the pane, not the terminal. While the pane is open, your terminal reply is one
+  short line on what you changed and never repeats the question: Arc's Chat draws the question as
+  a card from the file, so a reply that states it shows it twice. Never repeat a part's text there.
 - Mockups are `arc:design` boards, listed on the part they illustrate, one per option when a
   question's options differ in UI. Never start the visual companion's server inside Arc. A live spike is listed on its part too, never only in the terminal.
-- Still end every turn on the question in the terminal: the file is what Arc shows, the terminal is
-  what you wait on.
+- Still end every turn waiting on the question in `question`: the file is what Arc shows, and the
+  terminal reply stays one line that does not restate it.
 
 ## The file
 
@@ -169,8 +170,8 @@ Every other action is a `brainstorm:` line:
 | `brainstorm: approved` | Stop. Arc opens the run launcher with the spec attached. Do not start a run yourself. |
 | `brainstorm: run <id>` | A run started from this brainstorm: set `run` to the id. |
 
-After acting on any line, write the file once, then end the turn with a short reply in the
-terminal (the next question, when there is one).
+After acting on any line, write the file once, then end the turn with one short line in the
+terminal on what changed, without repeating the next question.
 
 ## Rules
 

@@ -3,9 +3,9 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentsViewModel } from "./agents";
-import type { AgentVM } from "./agentsviewmodel";
+import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import {
     approveBlocker,
     brainstormLine,
@@ -23,8 +23,13 @@ import {
     updateBrainstorm,
     type BrainstormState,
 } from "./brainstormstore";
+import { brainstormAnswers, brainstormSentAtom, SENT_STORAGE_KEY } from "./chatbrainstormstore";
 import type { LauncherKind } from "./launcher";
 import { launcherPrefillAtom } from "./launcherstore";
+
+// the loaded transcript comes from the Chat window's cache (railtranscript.tsx); a test passes its own entries through
+// the io, so the pane's module graph is not loaded for it
+vi.mock("./railtranscript", () => ({ cachedTranscriptEntries: () => null }));
 
 const AGENT = { id: "a1", name: "lag-alerts", blockId: "blk-1", project: "siem" } as AgentVM;
 
@@ -65,8 +70,23 @@ const WAIT: BrainstormFile = {
     },
 };
 
-// calls holds every call in order, so a stop can be seen to come before the prompt
-function fakeIO(fail = false, stopFails = false, armFails = false) {
+// an open question with two answers, as the agent leaves it for the user
+const ASKING: BrainstormFile = {
+    ...FILE,
+    done: false,
+    question: {
+        n: 2,
+        text: "How should alerts reach on-call?",
+        part: "page",
+        options: [
+            { label: "Page directly", detail: "", pick: true },
+            { label: "Via the channel", detail: "" },
+        ],
+    },
+};
+
+// calls holds every call in order, so a stop can be seen to come before the prompt; entries is the loaded transcript
+function fakeIO(fail = false, stopFails = false, armFails = false, entries: AgentEntry[] | null = null) {
     const sent: [string, string][] = [];
     const armed: [string, string, string][] = [];
     const woken: [string, string][] = [];
@@ -103,7 +123,23 @@ function fakeIO(fail = false, stopFails = false, armFails = false) {
             }
             calls.push(`stop ${blockId}`);
         },
+        entries: () => entries,
     };
+}
+
+// a localStorage that holds what is written, as the webview's does
+function mockLocalStorage(): Record<string, string> {
+    const store: Record<string, string> = {};
+    (globalThis as any).localStorage = {
+        getItem: (k: string) => (k in store ? store[k] : null),
+        setItem: (k: string, v: string) => {
+            store[k] = v;
+        },
+        removeItem: (k: string) => {
+            delete store[k];
+        },
+    };
+    return store;
 }
 
 function fakeModel(): AgentsViewModel {
@@ -120,6 +156,8 @@ beforeEach(() => {
 afterEach(() => {
     globalStore.set(launcherPrefillAtom, null);
     globalStore.set(brainstormsAtom, {});
+    globalStore.set(brainstormSentAtom, {});
+    delete (globalThis as any).localStorage;
 });
 
 describe("sendBrainstorm", () => {
@@ -267,6 +305,100 @@ describe("sendBrainstorm", () => {
         const io = fakeIO();
         await sendBrainstorm(AGENT, { kind: "answer", text: "yes" }, io);
         expect(io.calls).toEqual(["prompt blk-1"]);
+    });
+});
+
+describe("recording an answer for Chat", () => {
+    const user = (text: string): AgentEntry => ({ kind: "user", text });
+    const asking = () => updateBrainstorm(AGENT.id, (s) => ({ ...s, file: ASKING }));
+
+    it("records the question, the exact line sent and how many same-text messages were there", async () => {
+        asking();
+        const store = mockLocalStorage();
+        const io = fakeIO(false, false, false, [user("hello"), user("Page directly"), user("later")]);
+        await sendBrainstorm(AGENT, { kind: "answer", text: "Page directly" }, io, 1000);
+        expect(io.sent).toEqual([["blk-1", "Page directly"]]);
+        expect(brainstormAnswers(AGENT.id)).toEqual([
+            { topic: "lag", n: 2, part: "What on-call sees", text: "Page directly", sentAt: 1000, seen: 1 },
+        ]);
+        // and it is kept for a reload
+        expect(JSON.parse(store[SENT_STORAGE_KEY])).toEqual({ [AGENT.id]: brainstormAnswers(AGENT.id) });
+    });
+
+    it("records the line as sent: a multi-line answer is one line", async () => {
+        asking();
+        await sendBrainstorm(AGENT, { kind: "answer", text: "  one\n\ntwo " }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)[0]).toMatchObject({ n: 2, text: "one two", seen: 0 });
+    });
+
+    it("counts none already there when no transcript is loaded", async () => {
+        asking();
+        const io = fakeIO(false, false, false, null);
+        await sendBrainstorm(AGENT, { kind: "answer", text: "Page directly" }, io, 1000);
+        expect(brainstormAnswers(AGENT.id)[0].seen).toBe(0);
+    });
+
+    it("records an answer that wakes a sleeping agent", async () => {
+        asking();
+        const asleep = { ...AGENT, sleeping: { since: 1, freedBytes: 0 } };
+        await sendBrainstorm(asleep, { kind: "answer", text: "Via the channel" }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toHaveLength(1);
+    });
+
+    it("records an answer sent during the judge's wait, against the question the judge is weighing", async () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: WAIT }));
+        await sendBrainstorm(AGENT, { kind: "answer", text: "Page directly" }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toMatchObject([{ n: 2, text: "Page directly" }]);
+    });
+
+    it("records a second answer to the same question once only: the first already hides it", async () => {
+        asking();
+        await sendBrainstorm(AGENT, { kind: "answer", text: "Page directly" }, fakeIO(), 1000);
+        await sendBrainstorm(AGENT, { kind: "answer", text: "Via the channel" }, fakeIO(), 2000);
+        expect(brainstormAnswers(AGENT.id).map((r) => r.text)).toEqual(["Page directly"]);
+    });
+
+    it("records nothing for an answer typed with no question open", async () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        await sendBrainstorm(AGENT, { kind: "answer", text: "why not the clarify artifact?" }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toEqual([]);
+    });
+
+    it.each([
+        { kind: "guess" },
+        { kind: "skip" },
+        { kind: "confirm", part: "page" },
+        { kind: "builder-answer", text: "Only report." },
+        { kind: "check" },
+        { kind: "approved" },
+    ] as BrainstormAction[])("records nothing for a $kind line", async (action) => {
+        asking();
+        await sendBrainstorm(AGENT, action, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toEqual([]);
+    });
+
+    it("records nothing when the line cannot be sent", async () => {
+        asking();
+        await expect(sendBrainstorm(AGENT, { kind: "answer", text: "Page directly" }, fakeIO(true))).rejects.toThrow();
+        expect(brainstormAnswers(AGENT.id)).toEqual([]);
+    });
+
+    it("still sends and records for the session when storage throws", async () => {
+        asking();
+        (globalThis as any).localStorage = {
+            getItem: () => {
+                throw new Error("denied");
+            },
+            setItem: () => {
+                throw new Error("denied");
+            },
+        };
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const io = fakeIO();
+        await sendBrainstorm(AGENT, { kind: "answer", text: "Page directly" }, io, 1000);
+        expect(io.sent).toHaveLength(1);
+        expect(brainstormAnswers(AGENT.id)).toHaveLength(1);
+        warn.mockRestore();
     });
 });
 

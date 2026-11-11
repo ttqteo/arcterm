@@ -7,9 +7,10 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "./agents";
 import { wakeAgent } from "./agentsleep";
-import { projectOf, type AgentVM } from "./agentsviewmodel";
+import { projectOf, type AgentEntry, type AgentVM } from "./agentsviewmodel";
 import {
     brainstormLine,
+    partTitle,
     runPrefill,
     sendBlocker,
     sentKind,
@@ -23,13 +24,20 @@ import {
     updateBrainstorm,
     type BrainstormState,
 } from "./brainstormstore";
+import type { SentAnswer } from "./chatbrainstorm";
+import { recordBrainstormAnswer } from "./chatbrainstormstore";
+import { userTextCount } from "./chatpending";
 import { openLauncher } from "./launcherstore";
+import { cachedTranscriptEntries } from "./railtranscript";
 
 type PromptIO = {
     prompt(blockId: string, text: string): Promise<void>;
     wake(tabId: string, text: string): Promise<void>;
     stopJudge(blockId: string): Promise<void>;
     sleepAfterRun(tabId: string, runId: string, path: string): Promise<void>;
+    // the entries of the agent's loaded transcript, the Chat window's cache: a pane that sends holds none of its own.
+    // Absent or null, an answer is recorded as having no same-text message before it (chatbrainstorm.ts SentAnswer.seen)
+    entries?(agent: AgentVM): AgentEntry[] | null;
 };
 
 // a session whose arc mod holds a control stream runs the line as a prompt, leaving the user's draft in the
@@ -48,7 +56,35 @@ const tauriPromptIO: PromptIO = {
     async sleepAfterRun(tabId, runId, path) {
         await RpcApi.AgentsSleepAfterRunCommand(TabRpcClient, { tab: tabId, runid: runId, path });
     },
+    entries: (agent) => cachedTranscriptEntries(agent.transcriptPath, agent.agent),
 };
+
+// What Chat keeps of an answer to the question the file asks, so the user message that carries it draws as the question's
+// ✓ row. Built before the line goes: `seen` must not count the message the send is about to cause. Only an answer to the
+// question Arc shows open is kept (one sent already hides it until the agent writes the file again); a line typed with
+// none open (pushback, a question back), a builder answer and every other action answer nothing the card could fold.
+function answerRecord(
+    agent: AgentVM,
+    action: BrainstormAction,
+    line: string,
+    state: BrainstormState | null,
+    io: PromptIO,
+    now: number
+): SentAnswer | null {
+    const file = shownBrainstormFile(state);
+    const q = file?.question;
+    if (action.kind !== "answer" || state == null || file == null || q == null) {
+        return null;
+    }
+    return {
+        topic: state.topic,
+        n: q.n,
+        part: partTitle(file, q.part),
+        text: line,
+        sentAt: now,
+        seen: userTextCount(io.entries?.(agent) ?? [], line),
+    };
+}
 
 export async function sendBrainstorm(
     agent: AgentVM,
@@ -68,6 +104,7 @@ export async function sendBrainstorm(
     if (blocked != null) {
         throw new Error(blocked);
     }
+    const answer = answerRecord(agent, action, line, state, io, now);
     // a judge left running would hold the next approach question's judge, and its result would land for a question
     // already answered
     if (stopsJudge(action, state?.file ?? null, state?.sent != null)) {
@@ -89,6 +126,9 @@ export async function sendBrainstorm(
         } catch (e) {
             throw new Error(`Couldn't send to ${agent.name}: ${e instanceof Error ? e.message : String(e)}`);
         }
+    }
+    if (answer != null) {
+        recordBrainstormAnswer(agent.id, answer);
     }
     // the agent writes its file once, at the end of its turn: until then the pane says it is writing
     const modifiedMs = getBrainstorm(agent.id)?.modifiedMs ?? null;

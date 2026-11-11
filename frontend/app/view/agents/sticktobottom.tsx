@@ -52,12 +52,15 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
         const pin = () => {
             if (stickRef.current) {
                 el.scrollTop = el.scrollHeight;
+                lastTopRef.current = el.scrollTop;
             }
         };
         pin();
         // content that grows without a new entry (an opened composer, a reply that wraps) must not push
-        // the tail of a stuck region out of view
+        // the tail of a stuck region out of view; nor must the region itself getting shorter (Chat's floating
+        // box sits outside the scroller and takes its height as it grows)
         const ro = new ResizeObserver(pin);
+        ro.observe(el);
         for (const child of el.children) {
             ro.observe(child);
         }
@@ -104,6 +107,14 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
                 return;
             }
             leavingRef.current = false;
+        }
+        // a stuck tail lets go only when the reader moves up. The scroll event of a pin is read a frame later, and content
+        // opening on a spring (Chat's arriving rows) can grow past the threshold in between: that is the content leaving
+        // the view behind, not the reader leaving the end, so it pins again
+        if (stickRef.current && !near && !wentUp) {
+            el.scrollTop = el.scrollHeight;
+            lastTopRef.current = el.scrollTop;
+            return;
         }
         stickRef.current = near;
         setAtBottom(near);

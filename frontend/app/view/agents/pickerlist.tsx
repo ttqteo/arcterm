@@ -9,9 +9,16 @@
 // plain dropdown: a box up to 420 px tall as wide as the text box, the rows scrolling in it and the footer fixed under
 // them. The box carries `listAttr`; the scroller inside is the listbox (and `data-picker-scroll`), each header is tagged
 // `<listAttr>-group` (its value the group's title). The keys belong to the caller and see rows only: a header is no option.
+//
+// `look: "frosted"` is Chat's suggestion panel instead (the chat box passes it; the launcher keeps the plain list): the
+// same list and rows inside `[data-chat-suggest-panel]`, a 16 px panel on `--color-panel` with a static blur that stands
+// just above `frame` (the message box) as wide as it is, under a key line (↑↓ to navigate, ⏎ to select, esc to close),
+// and enters and leaves on `springPop` from its bottom edge. The blur is never animated, only the scale and opacity.
 
+import { springPop } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { autoUpdate, flip, FloatingPortal, size as floatingSize, offset, shift, useFloating } from "@floating-ui/react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { Fragment, useEffect, useRef, type ReactNode, type RefObject } from "react";
 import type { EditorLike } from "./chateditor";
 
@@ -20,28 +27,37 @@ const LIST_MAX_WIDTH = 560;
 const LIST_MAX_HEIGHT = 320;
 // the scroller's padding, kept in view above a header scrolled to and below a row
 const SCROLL_PAD = 5;
+// the room between a list and what it opens over: the plain dropdown's and the frosted panel's
+const PLAIN_GAP = 4;
+const FROSTED_GAP = 8;
 
 /** Where a picker's list opens: "below" the box, turning above it when there is no room, or "above" it always (the
  *  `@` picker: its box sits at the foot of the chat, and a list that flips with the room left jumps as you type). */
 export type PickerSide = "below" | "above";
 
+/** The look of a picker's list: the plain dropdown (nothing passed) or Chat's frosted suggestion panel. */
+export type PickerLook = "frosted";
+
 /** The floating setup of a picker's list: anchored to the box itself, so the list starts at the text and follows the
  *  box as it grows. `shown` mounts it. `wide` lets it take the whole width of the box (no 560 px cap) and publishes the
  *  room the side has as `--mention-avail`, which a grouped list's 420 px cap is `min`'d with. The anchor is a text box
  *  (a textarea) or the chat editor's handle, which floating-ui takes as a virtual element: its `contextElement` is the
- *  editable root, so the list still follows the box when it grows or scrolls. */
+ *  editable root, so the list still follows the box when it grows or scrolls. `frame` (the frosted look) is an element
+ *  the list stands over and matches in width instead of the anchor: the message box. */
 export function usePickerFloating(
     shown: boolean,
     anchor: RefObject<EditorLike | null>,
     side: PickerSide = "below",
-    wide = false
+    wide = false,
+    frame?: RefObject<HTMLElement | null>,
+    gap = PLAIN_GAP
 ) {
     const { refs, floatingStyles } = useFloating({
         open: shown,
         placement: side === "above" ? "top-start" : "bottom-start",
         strategy: "fixed",
         middleware: [
-            offset(4),
+            offset(gap),
             ...(side === "above" ? [] : [flip({ padding: 8 })]),
             shift({ padding: 8 }),
             floatingSize({
@@ -63,9 +79,61 @@ export function usePickerFloating(
         whileElementsMounted: autoUpdate,
     });
     useEffect(() => {
-        refs.setReference(shown ? anchor.current : null);
-    }, [shown, refs, anchor]);
+        refs.setReference(shown ? (frame?.current ?? anchor.current) : null);
+    }, [shown, refs, anchor, frame]);
     return { setFloating: refs.setFloating, floatingStyles };
+}
+
+// One key of the panel's key line
+function KeyCap({ children }: { children: ReactNode }) {
+    return (
+        <kbd className="rounded-[4px] border border-edge-strong px-[5px] py-px font-mono text-[11px] leading-[1.3] text-muted">
+            {children}
+        </kbd>
+    );
+}
+
+// The panel's header: what the keys do, as the board draws it (esc at the far end)
+function KeyLine() {
+    return (
+        <div
+            data-chat-suggest-keys=""
+            className="flex shrink-0 items-center gap-3.5 whitespace-nowrap px-4 pb-1 pt-2.5 text-[11.5px] text-muted"
+        >
+            <span>
+                <KeyCap>↑↓</KeyCap> to navigate
+            </span>
+            <span>
+                <KeyCap>⏎</KeyCap> to select
+            </span>
+            <span className="ml-auto">
+                <KeyCap>esc</KeyCap> to close
+            </span>
+        </div>
+    );
+}
+
+// The frosted panel: scales in from its bottom edge on the spring and out again (the exit plays because the caller keeps
+// it under an AnimatePresence). The blur is plain CSS and never animates. While it leaves, what it shows is the last
+// frame of a list that is already closed: it is inert (no clicks, no focus) and hidden from assistive tech, it drops its
+// own tag, and `children(false)` is asked to drop the list's, so the page names an open panel only while one is open.
+function FrostedPanel({ children }: { children: (present: boolean) => ReactNode }) {
+    const present = useIsPresent();
+    return (
+        <motion.div
+            data-chat-suggest-panel={present ? "" : undefined}
+            aria-hidden={present ? undefined : true}
+            inert={!present}
+            variants={springPop}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{ originX: 0.5, originY: 1 }}
+            className="flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[16px] border border-edge-mid bg-panel shadow-popover-soft backdrop-blur-[18px]"
+        >
+            {children(present)}
+        </motion.div>
+    );
 }
 
 export interface PickerGroup {
@@ -98,6 +166,8 @@ export function PickerList<T>({
     footer,
     listAttrs,
     side = "below",
+    look,
+    frame,
 }: {
     anchor: RefObject<EditorLike | null>;
     shown: boolean;
@@ -121,9 +191,21 @@ export function PickerList<T>({
     /** more data attributes on the list (`data-chat-slash-live`) */
     listAttrs?: Record<`data-${string}`, string>;
     side?: PickerSide;
+    /** "frosted": Chat's suggestion panel (see the file header); it always opens above, as wide as `frame` */
+    look?: PickerLook;
+    /** the frosted panel stands over this element (the message box) and takes its width; without it, over `anchor` */
+    frame?: RefObject<HTMLElement | null>;
 }) {
+    const frosted = look === "frosted";
     const boxed = groups != null || footer != null;
-    const { setFloating, floatingStyles } = usePickerFloating(shown, anchor, side, boxed);
+    const { setFloating, floatingStyles } = usePickerFloating(
+        shown,
+        anchor,
+        frosted ? "above" : side,
+        boxed || frosted,
+        frosted ? frame : undefined,
+        frosted ? FROSTED_GAP : PLAIN_GAP
+    );
     const scroller = useRef<HTMLUListElement>(null);
     // the row the pointer last moved onto: its highlight is already under the pointer, so it is not scrolled to
     const hovered = useRef(-1);
@@ -147,7 +229,9 @@ export function PickerList<T>({
             ul.scrollTop = bottom + SCROLL_PAD - ul.clientHeight;
         }
     }, [at, shown, listSig]);
-    if (!shown) {
+    // a plain list just goes; the frosted panel is handed to its AnimatePresence below even when nothing shows, which
+    // plays its exit
+    if (!shown && !frosted) {
         return null;
     }
     const rows =
@@ -188,7 +272,7 @@ export function PickerList<T>({
                             }}
                             className={cn(
                                 "flex min-w-0 cursor-pointer items-center gap-2 rounded-[7px] px-2 py-[5px]",
-                                i === at && "bg-surface-hover"
+                                i === at && (frosted ? "bg-hover" : "bg-surface-hover")
                             )}
                         >
                             {renderItem(item)}
@@ -197,40 +281,77 @@ export function PickerList<T>({
                 );
             })
         );
+    // the plain look is today's dropdown, class for class; the frosted one drops the list's own border, fill and shadow
+    // (the panel has them) and lets the panel's max height bound it. `present` is false only for a frosted panel on its
+    // way out: its list no longer carries the tag that says a list is open.
+    const list = (present: boolean) => {
+        const tag = present ? { [listAttr]: "", ...listAttrs } : {};
+        return boxed ? (
+            <div
+                {...tag}
+                className={
+                    frosted
+                        ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                        : "flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md"
+                }
+            >
+                <ul
+                    ref={scroller}
+                    role="listbox"
+                    data-picker-scroll=""
+                    aria-label={label}
+                    className={
+                        frosted
+                            ? "relative m-0 min-h-0 flex-1 list-none overflow-y-auto p-[6px] pt-0"
+                            : "relative m-0 min-h-0 flex-1 list-none overflow-y-auto p-[5px]"
+                    }
+                >
+                    {rows}
+                </ul>
+                {footer}
+            </div>
+        ) : (
+            <ul
+                ref={scroller}
+                role="listbox"
+                {...tag}
+                data-picker-scroll=""
+                aria-label={label}
+                className={
+                    frosted
+                        ? "relative m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto p-[6px] pt-0"
+                        : "relative m-0 flex max-h-[var(--mention-max-height)] list-none flex-col overflow-y-auto rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
+                }
+            >
+                {rows}
+            </ul>
+        );
+    };
+    if (frosted) {
+        return (
+            <AnimatePresence>
+                {shown ? (
+                    <FloatingPortal key="suggest-panel">
+                        <div ref={setFloating} style={floatingStyles} className="z-[80]">
+                            <FrostedPanel>
+                                {(present) => (
+                                    <>
+                                        <KeyLine />
+                                        {list(present)}
+                                    </>
+                                )}
+                            </FrostedPanel>
+                        </div>
+                    </FloatingPortal>
+                ) : null}
+            </AnimatePresence>
+        );
+    }
     return (
         <FloatingPortal>
             {/* above ModalShell's z-[70] backdrop (the launcher), as the route picker sits */}
             <div ref={setFloating} style={floatingStyles} className="z-[80]">
-                {boxed ? (
-                    <div
-                        {...{ [listAttr]: "" }}
-                        {...listAttrs}
-                        className="flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md"
-                    >
-                        <ul
-                            ref={scroller}
-                            role="listbox"
-                            data-picker-scroll=""
-                            aria-label={label}
-                            className="relative m-0 min-h-0 flex-1 list-none overflow-y-auto p-[5px]"
-                        >
-                            {rows}
-                        </ul>
-                        {footer}
-                    </div>
-                ) : (
-                    <ul
-                        ref={scroller}
-                        role="listbox"
-                        {...{ [listAttr]: "" }}
-                        {...listAttrs}
-                        data-picker-scroll=""
-                        aria-label={label}
-                        className="relative m-0 flex max-h-[var(--mention-max-height)] list-none flex-col overflow-y-auto rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
-                    >
-                        {rows}
-                    </ul>
-                )}
+                {list(true)}
             </div>
         </FloatingPortal>
     );

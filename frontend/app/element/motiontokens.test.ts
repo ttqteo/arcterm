@@ -22,6 +22,8 @@ import {
     settleClass,
     sheetPanel,
     shouldFadeEntry,
+    springPop,
+    springReveal,
     turnTransition,
     viewFade,
 } from "./motiontokens";
@@ -218,6 +220,63 @@ describe("paneReveal", () => {
 
     it("leaves a touch quicker than it arrives, like every other exit", () => {
         expect((paneReveal.exit as any).transition.duration).toBe(MOTION.durExit);
+    });
+});
+
+describe("MOTION.spring", () => {
+    it("is a no-bounce spring that settles in about the macro duration", () => {
+        expect(MOTION.spring).toEqual({ type: "spring", visualDuration: 0.35, bounce: 0 });
+        expect(MOTION.spring.visualDuration).toBeCloseTo(MOTION.durMacro, 1);
+    });
+});
+
+describe("springReveal", () => {
+    it("opens height 0 -> auto on the spring and fades opacity on the micro fluid ease", () => {
+        expect(springReveal.initial).toEqual({ opacity: 0, height: 0 });
+        expect(springReveal.animate).toMatchObject({ opacity: 1, height: "auto" });
+        const t = (springReveal.animate as any).transition;
+        expect(t.height).toEqual(MOTION.spring);
+        expect(t.opacity).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+    });
+
+    it("closes back to height 0 on the spring, with opacity on the same ease", () => {
+        expect(springReveal.exit).toMatchObject({ opacity: 0, height: 0 });
+        const t = (springReveal.exit as any).transition;
+        expect(t.height).toEqual(MOTION.spring);
+        expect(t.opacity).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+    });
+
+    it("never animates x, y or scale", () => {
+        for (const target of [springReveal.initial, springReveal.animate, springReveal.exit]) {
+            expect(target).not.toHaveProperty("x");
+            expect(target).not.toHaveProperty("y");
+            expect(target).not.toHaveProperty("scale");
+        }
+    });
+});
+
+describe("springPop", () => {
+    it("scales 0.97 -> 1 on the spring and fades opacity on the micro fluid ease", () => {
+        expect(springPop.initial).toEqual({ opacity: 0, scale: 0.97 });
+        expect(springPop.animate).toMatchObject({ opacity: 1, scale: 1 });
+        const t = (springPop.animate as any).transition;
+        expect(t.scale).toEqual(MOTION.spring);
+        expect(t.opacity).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+    });
+
+    it("scales back down on the spring when it leaves", () => {
+        expect(springPop.exit).toMatchObject({ opacity: 0, scale: 0.97 });
+        const t = (springPop.exit as any).transition;
+        expect(t.scale).toEqual(MOTION.spring);
+        expect(t.opacity).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+    });
+
+    it("never animates x, y or height (a caller sets transform-origin)", () => {
+        for (const target of [springPop.initial, springPop.animate, springPop.exit]) {
+            expect(target).not.toHaveProperty("x");
+            expect(target).not.toHaveProperty("y");
+            expect(target).not.toHaveProperty("height");
+        }
     });
 });
 

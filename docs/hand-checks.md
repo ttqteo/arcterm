@@ -2176,3 +2176,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **A multi-question ask switches tabs in Chat.** Have a Claude agent call AskUserQuestion with two
   questions; in Chat, click the second tab: it shows the second question. Pick an option on the first: it moves to the
   second. Same in a held command's dialog and a run's worker card (`AskRow`, wired to `answerTabAtom` 2026-11-11).
+- [ ] (arcterm) **Chat redesign: what the `chat-redesign` scenario cannot see.** In the packaged app, with a Claude
+  agent in Chat: (1) motion at 60fps: while the agent streams a long reply and runs tools, the new rows and step lines
+  ease in without a hitch or a jump, the box springs between idle, running and a dragged-over state, and a Windows
+  "reduce animations" setting makes all of it jump instead; (2) drag real files from Explorer onto the box → it turns
+  into the drop zone, and dropping attaches them as @ mentions; (3) a real brainstorm answered from Chat: have the
+  agent start one (`arc:brainstorm`) and ask a question → the card shows in the conversation and the box says "Answer
+  question N in your own words, or pick A–C above"; click an option, then ask another and answer it by typing in the
+  box → each folds into a "Question N · … · You picked" row in place of your message, Chat stays on Chat the whole time
+  (`chatconversation.tsx`, `chatpane.tsx`, `chatbrainstormcard.tsx`, `chatbrainstormwire.ts`; spec
+  `docs/superpowers/specs/2026-11-11-chat-redesign-design.md`).

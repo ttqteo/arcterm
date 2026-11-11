@@ -12,6 +12,10 @@ export const MOTION = {
     durExit: 0.28, // exits leave a touch quicker than they arrive
     durTip: 0.09, // a hover tooltip: there before the eye arrives, never a wait
     easeFluid: [0.22, 1, 0.36, 1] as [number, number, number, number],
+    // Anything that changes shape (a box's height, a panel's scale, a row opening). A spring keeps its velocity when
+    // its target moves mid-way, so a fast change never stalls or jumps the way a fixed-duration tween does. No bounce;
+    // it settles in ~durMacro. Opacity stays on easeFluid: a spring on opacity overshoots past 1.
+    spring: { type: "spring", visualDuration: 0.35, bounce: 0 } satisfies Transition,
 } as const;
 
 // Card entrance/exit. IMPORTANT: opacity + scale only — never x/y. Reorder.Item
@@ -52,6 +56,39 @@ export const composerReveal: Variants = {
     initial: { opacity: 0, height: 0 },
     animate: { opacity: 1, height: "auto", transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
     exit: { opacity: 0, height: 0, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+};
+
+// Spring reveal: composerReveal / paneReveal on MOTION.spring. The height opens 0 -> auto on the spring while opacity
+// fades on the micro ease, so a row arriving in a stuck-to-bottom feed grows rather than jumps. Chat's rows, parts and
+// folds use it; other surfaces keep their tween reveals.
+export const springReveal: Variants = {
+    initial: { opacity: 0, height: 0 },
+    animate: {
+        opacity: 1,
+        height: "auto",
+        transition: { height: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
+    exit: {
+        opacity: 0,
+        height: 0,
+        transition: { height: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
+};
+
+// Spring pop: popoverReveal's signature on the spring, for a panel that scales in from the edge it is anchored to
+// (set transform-origin per site: the suggestion panel scales from its bottom edge). Opacity + scale only, never x/y.
+export const springPop: Variants = {
+    initial: { opacity: 0, scale: 0.97 },
+    animate: {
+        opacity: 1,
+        scale: 1,
+        transition: { scale: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
+    exit: {
+        opacity: 0,
+        scale: 0.97,
+        transition: { scale: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
 };
 
 // Fold in x: composerReveal's signature on the horizontal axis, plus a 0.96 scale. A composer part (a chip, the mode

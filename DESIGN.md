@@ -461,6 +461,25 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   `element/motiontokens.ts` (`MOTION.durMacro` ~360ms on
   `cubic-bezier(0.22,1,0.36,1)`, micro ~140ms, exits ~280ms); card entrances
   animate opacity + scale, never x/y; `MotionConfig reducedMotion="user"`.
+  **Anything that changes shape** (a box's height, a panel's scale, a row
+  opening or folding) rides the no-bounce spring `MOTION.spring`
+  (`visualDuration` 0.35s, ~`durMacro`) instead of a tween, through `springReveal`
+  (height 0 → auto) or `springPop` (scale 0.97 → 1, from the anchored edge): a
+  spring keeps its velocity when its target moves mid-way, so a fast change never
+  stalls or jumps. Opacity stays on the Fluid ease at `durMicro`, never on the
+  spring (it would overshoot 1). Chat uses these; other surfaces keep their
+  tween reveals until they are moved on purpose.
+- **Chat's floating box** (the message box and conversation of an agent's Chat)
+  makes three deliberate exceptions, and only there:
+  - the box is a floating pill at **radius 22px** with `shadow-popover-soft`,
+    where depth is otherwise tonal and the radius scale stops at `rounded-lg`;
+  - a **functional fade** (a gradient from transparent to `--color-background`,
+    built with `color-mix`, never a hex) sits under the box over the last lines
+    of the conversation, so text scrolls under it without a hard edge. It is a
+    gradient but not a wash: it carries no colour of its own;
+  - the slash / @ suggestion panel is **frosted**: a *static* `backdrop-filter`
+    blur on `--color-panel`. The blur is never animated (animating it is a perf
+    trap); the panel enters and leaves on `springPop`.
 - **Modals** — `modalshell.tsx` with `role="dialog"` + `aria-modal`, Escape
   to close, focus trap; rendered centrally via `ModalsRenderer`.
 - **Accessibility** — `aria-label` on every icon-only control; `aria-live`
