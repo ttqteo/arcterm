@@ -168,6 +168,15 @@ describe("groupOf", () => {
         expect(groupOf({ name: "p:cmd", source: "plugin" })).toBe("Plugins");
         expect(groupOf({ name: "mcp__s__p", source: "mcp" })).toBe("MCP");
     });
+    it("puts a built-in that inChat names in In Chat, and nothing else", () => {
+        const inChat = (name: string) => name === "usage" || name === "status";
+        expect(groupOf({ name: "usage", source: "builtin" }, inChat)).toBe("In Chat");
+        expect(groupOf({ name: "status", source: "builtin", tui: true }, inChat)).toBe("In Chat");
+        expect(groupOf({ name: "compact", source: "builtin" }, inChat)).toBe("Built-in");
+        // a skill or plugin that happens to share the name is not Chat's to answer
+        expect(groupOf({ name: "usage", source: "user" }, inChat)).toBe("Skills");
+        expect(groupOf({ name: "usage", source: "builtin" })).toBe("Built-in");
+    });
     it("groups the fallback's disk entries by their colon", () => {
         expect(groupOf({ name: "my-skill", source: "skill" })).toBe("Skills");
         expect(groupOf({ name: "my-cmd", source: "command" })).toBe("Skills");
@@ -190,6 +199,12 @@ describe("slashGroups", () => {
         const groups = slashGroups(items);
         expect(groups.map((g) => g.title)).toEqual(["Built-in", "Skills", "Plugins", "MCP"]);
         expect(groups.map((g) => g.items.length)).toEqual([2, 2, 2, 1]);
+    });
+    it("lists In Chat first when inChat names some built-ins", () => {
+        const groups = slashGroups(items, (name) => name === "compact");
+        expect(groups.map((g) => g.title)).toEqual(["In Chat", "Built-in", "Skills", "Plugins", "MCP"]);
+        expect(groups[0].items.map((c) => c.name)).toEqual(["compact"]);
+        expect(groups[1].items.map((c) => c.name)).toEqual(["clear"]);
     });
     it("keeps the input order inside a group", () => {
         const groups = slashGroups(items);

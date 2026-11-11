@@ -47,7 +47,7 @@ import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
-import { localCommand, type LocalRoute } from "./chatlocal";
+import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
@@ -206,6 +206,8 @@ export function ChatComposer({
         off: recalled.current.at != null && text === recalled.current.shown,
         look: "frosted",
         frame: boxRef,
+        // the box answers /usage, /context… itself only when Chat takes local commands
+        inChat: onLocal != null ? answersInChat : undefined,
     });
     const cwd = block?.meta?.["cmd:cwd"];
     // Bash mode's ghost text (as Claude Code's TUI has it): the newest `!` command from its history that starts with what

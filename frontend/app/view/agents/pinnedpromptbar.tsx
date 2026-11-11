@@ -70,19 +70,23 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
 
 /** The pinned prompt: a zero-height sticky row, so showing it never moves the transcript under it. bg is the
  *  scroller's own background, which the row's band paints over what scrolls beneath it. className goes on the sticky
- *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. */
+ *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. cardClassName
+ *  goes on the card inside the band, for room beside it (a button in the corner): the band still spans the row, so
+ *  nothing scrolling beneath shows in that room. */
 export function PinnedPromptBar({
     rootRef,
     index,
     text,
     bg,
     className,
+    cardClassName,
 }: {
     rootRef: RefObject<HTMLElement>;
     index: number;
     text: string | undefined;
     bg: string;
     className?: string;
+    cardClassName?: string;
 }) {
     const reduce = useReducedMotion();
     if (index < 0 || text == null) {
@@ -101,7 +105,7 @@ export function PinnedPromptBar({
     return (
         <div data-pinned-prompt className={cn("sticky top-0 z-10 h-0", className)}>
             <div className={cn("pb-2 pt-1", bg)}>
-                <div className="relative">
+                <div className={cn("relative", cardClassName)}>
                     {index > 0 ? (
                         <div
                             aria-hidden

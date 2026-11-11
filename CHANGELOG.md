@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- In Chat, the / menu lists the commands Chat answers with its own card (/usage, /context, /tasks, /status…) first,
+  under In Chat, and no longer marks them opens in Terminal.
 - Auto in the heavy-job queue watches the CPU as well as the RAM: one heavy job per 6 CPU threads runs at once (2 on a
   12-thread PC, 1 on an 8-core Mac), so several agents' typechecks and builds no longer run side by side and lag the
   machine while the RAM still fits. A council's experts don't count, and the next job waits with "CPU busy".
@@ -109,6 +111,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A reply scrolling under your pinned message in Chat no longer shows through beside it, under the Skim button.
 - A message you send in Chat while Claude is idle reads Sending… until it lands, instead of flashing Queued with a Send
   now button as the turn it starts gets going; one sent while Claude works still reads Queued.
 - An agent's shell commands no longer freeze while arcterm is busy: an ordinary command never waits on the heavy-job

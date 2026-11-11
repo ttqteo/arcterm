@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    answersInChat,
     contextFigures,
     ENDED_SHOWN,
     formatUsd,
@@ -13,6 +14,30 @@ import {
     type LocalCard,
 } from "./chatlocal";
 import type { BackgroundTask } from "./transcriptprojection";
+
+describe("answersInChat", () => {
+    it("names the bare built-ins Chat answers itself, aliases included", () => {
+        for (const name of [
+            "usage",
+            "cost",
+            "context",
+            "tasks",
+            "bashes",
+            "stats",
+            "skills",
+            "help",
+            "status",
+            "diff",
+        ]) {
+            expect(answersInChat(name)).toBe(true);
+        }
+    });
+    it("leaves every other name to Claude Code", () => {
+        for (const name of ["compact", "model", "Usage", "/usage", "", "constructor", "toString"]) {
+            expect(answersInChat(name)).toBe(false);
+        }
+    });
+});
 
 describe("localCommand", () => {
     it("answers the bare panel commands in Chat", () => {
@@ -43,6 +68,8 @@ describe("localCommand", () => {
         expect(localCommand("/Usage")).toBeNull();
         expect(localCommand("show /usage")).toBeNull();
         expect(localCommand("usage")).toBeNull();
+        // an Object.prototype key is no route
+        expect(localCommand("/constructor")).toBeNull();
         expect(localCommand("")).toBeNull();
     });
 });
