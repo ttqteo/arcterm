@@ -4,6 +4,7 @@
 import { composerReveal } from "@/app/element/motiontokens";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -140,7 +141,7 @@ export function RadarFindingsList({
                 </span>
                 {activateLabel ? (
                     <span className="flex items-center gap-1.5">
-                        <Kbd>↵</Kbd>
+                        <Kbd>{formatChordString("Enter")}</Kbd>
                         {activateLabel}
                     </span>
                 ) : null}

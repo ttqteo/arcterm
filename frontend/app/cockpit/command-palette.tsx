@@ -59,6 +59,7 @@ import { taskListAtom } from "@/app/view/jarvis/tasksstore";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
+import { formatChordString } from "@/util/keysym";
 import { atom, useAtomValue } from "jotai";
 import { LayoutGroup, motion } from "motion/react";
 import {
@@ -1531,7 +1532,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                       : { ...g, items: [...g.items.slice(0, at + 1), ...answerRows, ...g.items.slice(at + 1)] };
               });
     const footerExtra: { k: string; text: string; arm?: boolean }[] = [
-        ...(selected?.alt != null ? [{ k: "ctrl ⏎", text: selected.alt.echo }] : []),
+        ...(selected?.alt != null ? [{ k: "Mod:Enter", text: selected.alt.echo }] : []),
         ...(answerRows.length > 0
             ? [
                   {
@@ -1544,8 +1545,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         ...(selectedNote != null
             ? [
                   armedDelete
-                      ? { k: "del", text: `del again deletes “${selectedNote.title}”`, arm: true }
-                      : { k: "del", text: "Deletes it, after a second del" },
+                      ? { k: "del", text: `${formatChordString("del")} again deletes “${selectedNote.title}”`, arm: true }
+                      : { k: "del", text: `Deletes it, after a second ${formatChordString("del")}` },
               ]
             : []),
     ];
@@ -1884,10 +1885,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             <span
                                 className={cn(
                                     "shrink-0 font-mono text-[11px] text-accent-soft",
-                                    footerExtra.length > 0 && "w-[60px]"
+                                    footerExtra.length > 0 && "w-[76px]"
                                 )}
                             >
-                                ⏎
+                                {formatChordString("Enter")}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">
                                 {selected?.echo ?? "Nothing to run"}
@@ -1895,7 +1896,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             <span className="flex shrink-0 items-center gap-3 text-[10.5px] text-muted">
                                 <span>↑↓ move</span>
                                 <span>{nav.actions != null ? "← back" : "Tab scope"}</span>
-                                <span>esc close</span>
+                                <span>{formatChordString("Escape")} close</span>
                             </span>
                         </div>
                         {footerExtra.map((f) => (

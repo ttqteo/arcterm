@@ -17,6 +17,7 @@ import * as WOS from "@/app/store/wos";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { runAtom } from "@/app/view/agents/channelsstore";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom } from "jotai";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, Copy, X } from "lucide-react";
@@ -657,7 +658,9 @@ function NoteBlock({
                         className="w-full resize-y rounded-[7px] border border-accent/60 bg-background px-2.5 py-2 text-[12.5px] leading-[1.6] text-primary outline-none"
                     />
                     <div className="flex items-center gap-1.5">
-                        <span className="flex-1 text-[10.5px] text-muted">ctrl+enter save · esc cancel</span>
+                        <span className="flex-1 text-[10.5px] text-muted">
+                            {formatChordString("Mod:Enter")} save · {formatChordString("Escape")} cancel
+                        </span>
                         <button
                             type="button"
                             onClick={() => setEditing(null)}

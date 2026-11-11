@@ -9,6 +9,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { projectListAtom } from "@/app/view/agents/projectsstore";
 import { cn } from "@/util/util";
+import { formatChordString } from "@/util/keysym";
 import { useAtomValue } from "jotai";
 import { Fragment, useEffect, useState } from "react";
 import { loadBriefingAsync, stateRpcTimeoutMs } from "./briefingstore";
@@ -149,7 +150,7 @@ export function EffortCreateForm({
                     {edit != null ? "Edit initiative" : "New initiative"}
                 </span>
                 <span className="rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid">
-                    ctrl+⏎ to save
+                    {formatChordString("Mod:Enter")} to save
                 </span>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-[13px] overflow-y-auto px-[18px] py-4">

@@ -444,6 +444,11 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   (`titletip.ts` `tipDelay`), so passing over it while reading does not cover the
   text. `data-tip-placement` overrides where it opens. Put a detail's `title` on
   the small thing it explains, never on a row as wide as the text under it.
+- **Shortcut labels** — on Windows a shortcut is spelled out in words joined by
+  `+`, each key capitalized: `Ctrl+Enter`, `Ctrl+Shift+P`, `Alt+Backspace`, `Esc`.
+  No key symbols there (`⏎`, `↵`, `^`, `⌫`, `⌃`, `⇧`): a Windows user does not
+  read them. The Mac glyphs (`⌘⇧P`) stay on a Mac only. Every label goes through
+  `util/keysym.ts`, never a glyph typed into a component.
 - **Status indicators** — dot + color + pulse (`pulse-dot` on `bg-working`/`bg-asking`;
   `pulse-dot-slow`, `pulse-soft` for the slower curves); status is never color alone.
   The pulse is drawn at 12fps by `element/pulsedriver.tsx`, not a CSS animation:

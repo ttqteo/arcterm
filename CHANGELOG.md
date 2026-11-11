@@ -61,6 +61,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   and folds into "Worked for …" when the agent moves on, and a brainstorm question draws in the conversation as a card
   you can answer from (a click, or the box), which folds into one ✓ row once answered. New rows and opened details
   ease in instead of jumping.
+- On Windows, shortcuts are written out in words everywhere: Ctrl+Enter, Shift+Enter, Esc, Ctrl+Shift+P, instead of
+  ⏎, ↵, ⌫ or lower-case ctrl+p. A Mac keeps its ⌘⇧ glyphs.
 - A folded long reply keeps its point: every heading keeps a line, a bold label keeps the sentence after it, the
   options a "choose one:" sentence points at stay, and so do the warnings and what waits on you that the old fold cut
   away. A fold that would be most of the reply shows the reply in full instead.
@@ -97,6 +99,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent's shell commands no longer freeze while arcterm is busy: an ordinary command never waits on the heavy-job
+  queue, and a build or test suite waits at most 5 seconds for the queue to answer before it runs anyway.
+- Chat no longer shows "Could not read the transcript: … cannot find the path specified" for a run's lead or worker
+  that has not written its first message yet
 - In Chat, the "Worked for …" line of what the agent is doing now folds when you click it; before, it stayed open
   until the agent stopped. Selecting a tool line's text no longer opens or closes the line.
 - Resuming a conversation from New agent shows its messages in Chat at once, while Claude Code is still loading, instead
@@ -158,8 +164,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A background command that left a server running is named in the Agent tree by the server and its port
   (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
-- The peek of a background command or Monitor widens to fit its output, up to the edge of the window, so a wide build
-  log no longer wraps every line.
+- The peek of a background command or Monitor opens at a set size and no longer stretches across the window to fit a
+  long line: drag its right edge, bottom edge or corner to make it larger, and it keeps that size the next time it
+  opens (double-click an edge for the default again).
 ### Changed
 
 - A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched

@@ -11,8 +11,8 @@ export interface TipText {
     keys?: string;
 }
 
-// a chord as formatChordString draws it (ctrl+p, ⌘⇧O, ⏎, esc) or as titles spell it by hand (Esc,
-// Ctrl+K, F2)
+// a chord as formatChordString draws it (Ctrl+P, Enter, Esc on Windows; ⌘⇧O, ⏎, esc on a Mac) or as titles spell it
+// by hand (Ctrl+K, F2)
 const NAMED_KEY = /^(esc|escape|enter|return|tab|space|del|delete|backspace|home|end|pgup|pgdn|f\d{1,2})$/i;
 const MOD_PLUS = /^(ctrl|cmd|alt|option|shift|meta|win)\+\S+$/i;
 const GLYPH_CHORD = /^[\^⌘⌥⇧]\S{0,6}$|^Alt\S{1,3}$/;

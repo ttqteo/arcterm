@@ -21,7 +21,7 @@ import { KeyCap } from "@/app/element/keycap";
 import { layerFade, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { isMacOS } from "@/util/platformutil";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowDown, Highlighter } from "lucide-react";
@@ -43,7 +43,7 @@ import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstorms
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
-import { chatEmptyView } from "./chatempty";
+import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -70,8 +70,8 @@ import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 // Send now's key in the chat box (chatpending.ts isSendNowKey), as its button shows it
-// read per render: at module load setPlatform has not run yet, so the platform still reads as macOS (⌘↵ on Windows)
-const sendNowChord = () => (isMacOS() ? "⌘↵" : "Ctrl+↵");
+// read per render: at module load setPlatform has not run yet, so the platform still reads as macOS (⌘⏎ on Windows)
+const sendNowChord = () => formatChordString("Mod:Enter");
 
 const NO_ENTRIES: AgentEntry[] = [];
 
@@ -194,6 +194,7 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
     const v = chatEmptyView(agent);
     const logo = runtimeLogo(agent.agent);
     const starting = v.phase === "starting";
+    const shownError = chatEmptyError(error, v.phase);
     return (
         <div
             data-chat-empty={v.phase}
@@ -244,9 +245,9 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
                 <span className="text-[11.5px] text-muted">{v.hint}</span>
             ) : null}
             {/* a transcript the harness has not written yet is the normal start, not an error to show */}
-            {error != null && !starting ? (
+            {shownError != null ? (
                 <span data-chat-error className="max-w-[420px] text-[11.5px] text-muted">
-                    Could not read the transcript: {error}
+                    Could not read the transcript: {shownError}
                 </span>
             ) : null}
         </div>

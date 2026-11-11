@@ -7,6 +7,7 @@
 // what a key does are toolpickermodel.ts.
 
 import { ModalShell } from "@/app/modals/modalshell";
+import { formatChordString } from "@/util/keysym";
 import { PLATFORM } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -167,7 +168,11 @@ function ToolRow({ row, index, selected, onHover, onOpen, onInstall, onShow, onR
                 <>
                     {opensIn ? <span className="flex-none text-[11px] text-muted">{opensIn}</span> : null}
                     <Cmd selected={selected}>{toolCommandLine(tool)}</Cmd>
-                    {selected ? <span className={cn(KEY_CAP, "border-edge-strong text-secondary")}>↵</span> : null}
+                    {selected ? (
+                        <span className={cn(KEY_CAP, "border-edge-strong text-secondary")}>
+                            {formatChordString("Enter")}
+                        </span>
+                    ) : null}
                 </>
             )}
         </div>
@@ -440,13 +445,13 @@ export function ToolPicker({ model }: { model: AgentsViewModel }) {
                     <div className="flex shrink-0 items-center gap-3.5 border-t border-border px-4 py-[9px] text-[12px] text-muted">
                         {hints.open ? (
                             <span className="flex items-center gap-1.5">
-                                <span className={KEY_CAP}>↵</span>
+                                <span className={KEY_CAP}>{formatChordString("Enter")}</span>
                                 {hints.open}
                             </span>
                         ) : null}
                         {hints.panel ? (
                             <span className="flex items-center gap-1.5">
-                                <span className={KEY_CAP}>Shift ↵</span>
+                                <span className={KEY_CAP}>{formatChordString("Shift:Enter")}</span>
                                 {hints.panel}
                             </span>
                         ) : null}

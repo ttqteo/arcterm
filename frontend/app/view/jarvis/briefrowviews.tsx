@@ -6,6 +6,7 @@
 // design gives them different anatomies: Waiting acts in place, an initiative row carries its segment bar,
 // Behind you is two lines under a wording column. Activity's runs and councils are cards (activityregion.tsx).
 
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ArrowLeft, ArrowRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
@@ -734,7 +735,7 @@ export function ReviewBody({
                     className={cn(REVIEW_BTN, "border-edge-strong bg-surface-selected text-primary")}
                 >
                     Mark reviewed
-                    <kbd className="font-mono text-[10px] font-normal text-ink-mid">↵</kbd>
+                    <kbd className="font-mono text-[10px] font-normal text-ink-mid">{formatChordString("Enter")}</kbd>
                 </button>
             </div>
         </>

@@ -60,6 +60,20 @@ export function chatEmptyView(
     };
 }
 
+// The words wavesrv starts a read's error with when the transcript file is not there (transcript.go's noTranscriptFile).
+// A session's path is known before its file is: Claude Code writes the file at its first message, and a run's lead or
+// worker has its path from launch, minutes before (a run's Setup), so a read in that time is the normal start.
+export const NO_TRANSCRIPT_FILE = "no transcript file yet at";
+
+/** Pure: the read error the empty conversation shows, or null. A transcript not written yet is no error, in any phase,
+ * and a harness that is starting says so itself. */
+export function chatEmptyError(error: string | null, phase: ChatEmptyPhase): string | null {
+    if (error == null || phase === "starting" || error.includes(NO_TRANSCRIPT_FILE)) {
+        return null;
+    }
+    return error;
+}
+
 function capitalize(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }

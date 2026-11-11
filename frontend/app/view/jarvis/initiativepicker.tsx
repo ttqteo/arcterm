@@ -8,6 +8,7 @@
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import {
     autoUpdate,
@@ -267,7 +268,7 @@ function PickerBody({
                 </span>
                 <span className="flex items-center gap-[5px]">
                     <kbd className="rounded-[4px] border border-edge-strong px-[5px] font-mono text-[10.5px] leading-[16px]">
-                        ⏎
+                        {formatChordString("Enter")}
                     </kbd>
                     {pickVerb}
                 </span>

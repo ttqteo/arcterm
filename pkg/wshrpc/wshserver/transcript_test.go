@@ -52,6 +52,22 @@ func TestReadTranscriptTail(t *testing.T) {
 	}
 }
 
+// A file the harness has not written yet (Claude Code creates it at its first message), or a missing folder above it,
+// reads as an error whose words the cockpit knows (noTranscriptFile; chatempty.ts's NO_TRANSCRIPT_FILE), not the OS's.
+func TestMissingTranscriptSaysNotWrittenYet(t *testing.T) {
+	dir := t.TempDir()
+	for _, path := range []string{filepath.Join(dir, "nope.jsonl"), filepath.Join(dir, "no-dir", "nope.jsonl")} {
+		_, err := readAgentTranscript(wshrpc.CommandGetAgentTranscriptData{Path: path})
+		if err == nil || !strings.HasPrefix(err.Error(), noTranscriptFile+" ") {
+			t.Errorf("tail read of %s: want %q..., got %v", path, noTranscriptFile, err)
+		}
+		_, err = readAgentTranscript(wshrpc.CommandGetAgentTranscriptData{Path: path, FromByte: 5})
+		if err == nil || !strings.HasPrefix(err.Error(), noTranscriptFile+" ") {
+			t.Errorf("append read of %s: want %q..., got %v", path, noTranscriptFile, err)
+		}
+	}
+}
+
 // taillines/maxlines -1 requests complete history: every complete line comes back, while a positive
 // limit still tails (the bounded behavior all other runtimes use). Pi alone requests the full read.
 func TestReadTranscriptTailNegativeIsAllLines(t *testing.T) {

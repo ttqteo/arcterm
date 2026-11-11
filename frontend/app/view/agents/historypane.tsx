@@ -97,7 +97,7 @@ function ClearFiltersButton({ kbd }: { kbd?: boolean }) {
             className="flex flex-none items-center gap-[7px] rounded-[7px] border border-edge-mid bg-surface px-[10px] py-[4px] text-[11.5px] font-semibold text-ink-hi hover:border-edge-strong"
         >
             Clear filters
-            {kbd ? <span className="font-mono text-[10.5px] text-muted">esc</span> : null}
+            {kbd ? <span className="font-mono text-[10.5px] text-muted">{formatChordString("Escape")}</span> : null}
         </button>
     );
 }

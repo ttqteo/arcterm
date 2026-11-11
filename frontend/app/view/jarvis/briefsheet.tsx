@@ -59,6 +59,7 @@ import {
 import { RunLauncher } from "@/app/view/agents/runlauncher";
 import { isTerminal, leadAsker } from "@/app/view/agents/runmodel";
 import { runQueueAtom, runQueueStartedAtom } from "@/app/view/agents/runqueuestore";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -230,7 +231,7 @@ function ChannelLaunch({ channel }: { channel: Channel }) {
                     disabled={launching || blocker != null || runRoute == null}
                     className="flex-none cursor-pointer rounded-[7px] border border-accent/40 bg-surface-raised px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-soft hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40"
                 >
-                    {launching ? "Starting…" : "Run ⏎"}
+                    {launching ? "Starting…" : `Run ${formatChordString("Enter")}`}
                 </button>
             </div>
             <span className="text-[11px] text-muted">

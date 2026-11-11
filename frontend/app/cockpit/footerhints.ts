@@ -12,7 +12,7 @@ import { peekClickLabel } from "./ctrlheld";
 export interface FooterHint {
     ids: string[]; // binding ids this chip represents (>=1); shown if any is active in ctx
     keys?: string; // chord in binding notation ("Mod:p"); glyph computed at render (platform-aware)
-    glyph?: string; // literal glyph for composite/non-modifier hints ("↑↓", "[ ]", "esc")
+    glyph?: string; // literal glyph for composite hints ("↑↓", "[ ]", "j k"); a key with a name goes in keys
     label: string; // terse action, e.g. "move", "palette"
     ctrlLit?: boolean; // renders lit while the peek key is held (ctrlheld.ts): the key that turns a click into this action
 }
@@ -20,12 +20,12 @@ export interface FooterHint {
 // Appended to every surface; each filtered by its binding's live when(ctx).
 export const GLOBAL_HINTS: FooterHint[] = [
     { ids: ["leader:enter"], keys: "Mod:g", label: "go" }, // the go-to leader, from anywhere including the terminal
-    { ids: ["surface:back-home"], glyph: "esc", label: "home" }, // deep surfaces only (via its when)
+    { ids: ["surface:back-home"], keys: "Escape", label: "home" }, // deep surfaces only (via its when)
     {
         ids: ["list:peek", "cockpit:peek"],
         // a getter, read at render: the platform is not known at module load (keysym.ts)
         get glyph() {
-            return `space · ${peekClickLabel()}`;
+            return `Space · ${peekClickLabel()}`;
         },
         label: "peek",
         ctrlLit: true,
@@ -51,8 +51,8 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:brainstorm-open"], glyph: "b", label: "brainstorm" }, // terminal mode with a brainstorm
         { ids: ["agent:view-cycle"], keys: "Alt:c", label: "switch view" }, // a canvas, brainstorm or review, also in the terminal
         { ids: ["agent:view-chord"], keys: "Ctrl:Shift:b", label: "brainstorm" }, // reachable in the terminal, and in the pane while b picks an answer
-        { ids: ["agent:back", "agent:brainstorm-back"], glyph: "esc", label: "back" }, // also: shrink a board widened in the brainstorm's rail
-        { ids: ["agent:leave-center"], glyph: "esc", label: "terminal" }, // History or a session only, via its binding
+        { ids: ["agent:back", "agent:brainstorm-back"], keys: "Escape", label: "back" }, // also: shrink a board widened in the brainstorm's rail
+        { ids: ["agent:leave-center"], keys: "Escape", label: "terminal" }, // History or a session only, via its binding
         { ids: ["switcher:next", "switcher:prev"], keys: "Ctrl:Tab", label: "switch" },
         { ids: ["agent:return-nav"], keys: "Shift:Escape", label: "leave" }, // editable-only via its binding
         // canvas mode hides every chip above but leave; this order serves both canvas mode and marking
@@ -62,7 +62,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:canvas-prev", "agent:canvas-next"], glyph: "[ ]", label: "board" }, // canvas mode, and a board widened in the brainstorm's rail
         { ids: ["agent:mark-start"], glyph: "m", label: "mark" },
         // brainstorm pane: the keys it answers to, first the one that sends what is typed, then the way back
-        { ids: ["agent:brainstorm-send"], glyph: "⏎", label: "send" }, // while a field of the pane has focus
+        { ids: ["agent:brainstorm-send"], keys: "Enter", label: "send" }, // while a field of the pane has focus
         { ids: ["agent:brainstorm-close"], glyph: "b", label: "terminal" }, // not while the question offers a B: b picks it, widened board or not
         // review mode: Ctrl+Enter names the tray's accent answer
         { ids: ["agent:review-approve"], keys: "Mod:Enter", label: "approve" },
@@ -71,7 +71,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:review-close"], glyph: "r", label: "terminal" },
         { ids: ["agent:review-prev", "agent:review-next"], glyph: "[ ]", label: "tab" },
     ],
-    // ↑↓, ⏎ and g g left the footer for room; they still work and are in ? help.
+    // ↑↓, Enter and g g left the footer for room; they still work and are in ? help.
     files: [
         // first, so a narrow footer keeps it: shown only while line comments wait to be sent
         { ids: ["files:review-send"], keys: "Mod:Enter", label: "send comments" },
@@ -85,14 +85,14 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["files:toggle-sidebar"], keys: "Shift:b", label: "panel" },
         { ids: ["files:compare"], glyph: "c", label: "compare" }, // history-only via its binding
         { ids: ["files:refresh"], glyph: "r", label: "refresh" },
-        { ids: ["files:switch-side"], glyph: "⇥", label: "side" }, // compare-only via its binding
-        { ids: ["files:clear-filters"], glyph: "esc", label: "clear filters" }, // filtered-only via its binding
-        { ids: ["files:exit-compare"], glyph: "esc", label: "leave compare" }, // compare-only via its binding
+        { ids: ["files:switch-side"], keys: "Tab", label: "side" }, // compare-only via its binding
+        { ids: ["files:clear-filters"], keys: "Escape", label: "clear filters" }, // filtered-only via its binding
+        { ids: ["files:exit-compare"], keys: "Escape", label: "leave compare" }, // compare-only via its binding
     ],
     // peek and help come from GLOBAL_HINTS; the list cursor is the Brief's (briefsurface.tsx useSurfaceListNav)
     jarvis: [
         { ids: ["list:next-j", "list:prev-k", "list:next", "list:prev"], glyph: "j k", label: "move" },
-        { ids: ["list:activate"], glyph: "⏎", label: "open" },
+        { ids: ["list:activate"], keys: "Enter", label: "open" },
         { ids: ["jarvis:new-run"], glyph: "r", label: "new run" },
         { ids: ["jarvis:work-on"], glyph: "w", label: "work on" },
         { ids: ["jarvis:filter"], glyph: "/", label: "filter" },

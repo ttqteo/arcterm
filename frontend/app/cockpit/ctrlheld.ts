@@ -34,5 +34,5 @@ export function isPeekGesture(e: { ctrlKey: boolean; metaKey?: boolean } | undef
 
 // The peek click as the footer and the cheat sheet name it.
 export function peekClickLabel(): string {
-    return isMacOS() ? "⌘-click" : "ctrl+click";
+    return isMacOS() ? "⌘-click" : "Ctrl+click";
 }

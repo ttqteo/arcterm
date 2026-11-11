@@ -21,7 +21,7 @@ const VARIANTS: Record<DialogButtonVariant, string> = {
 
 interface DialogButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: DialogButtonVariant;
-    hint?: string; // small key-hint chip, e.g. "⏎" or "esc"
+    hint?: string; // small key-hint chip, from formatChordString: "Enter", "Esc"
     children: ReactNode;
 }
 
