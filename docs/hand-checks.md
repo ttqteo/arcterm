@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Jobslot never holds a command: after installing a build from 7835c75de, an agent's `ls` runs at once
+  and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
+  command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).
+
 - [ ] (arcterm) A new agent's first message with Send now: + New → Claude with a task → Chat shows the task as a dimmed
   bubble captioned "Starting Claude Code…" with a pulsing dot and no Send now; once the session is up, a message sent
   while it works reads "Queued" with Send now (`chatpane.tsx` PendingBubble, merge 69fa01de1 of chat-empty-start over
