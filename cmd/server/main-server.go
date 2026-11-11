@@ -19,6 +19,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/authkey"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
@@ -42,6 +43,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
 	"github.com/wavetermdev/waveterm/pkg/service"
 	"github.com/wavetermdev/waveterm/pkg/services"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/sleepwatch"
 	"github.com/wavetermdev/waveterm/pkg/stablewsh"
@@ -92,6 +94,7 @@ var snapshotBootSkips = []string{
 	"harnessupdate.StartLoop",
 	"reporadar.RecoverInterruptedScans",
 	"sessiontrash.StartPurgeLoop",
+	"sessionarchive.StartSweepLoop",
 	"wshserver.StartStorage",
 	"wshserver.SweepCanvasFeedback",
 	"orchestrate.SweepWorktreeRoot",
@@ -606,6 +609,15 @@ func main() {
 	// trashed sessions older than 7 days are removed: now, then daily
 	if !snapshotSkips("sessiontrash.StartPurgeLoop") { // the trash is the user's own, under their home
 		sessiontrash.StartPurgeLoop(context.Background())
+	}
+	// the sessions engine runs, temp folders and headless passes leave in ~/.claude/projects move to
+	// ~/.arc/archive/claude-sessions, where Claude Desktop does not list them: now, then hourly
+	if !snapshotSkips("sessionarchive.StartSweepLoop") { // it moves files in the user's own ~/.claude
+		sessionarchive.StartSweepLoop(context.Background(), sessionarchive.Rules{
+			TempDir:      os.TempDir(),
+			WorktreeRoot: orchestrate.WorktreeRoot(),
+			HeadlessSlug: agentobserve.HeadlessAgentSlug(),
+		})
 	}
 	// the daily token tally behind a project's Activity card: a scan after a short delay, then every 30 minutes
 	projectactivity.StartLoop(context.Background())

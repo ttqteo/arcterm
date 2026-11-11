@@ -182,6 +182,32 @@ func TestScanPage_projectWalksOnlyItsClaudeFolder(t *testing.T) {
 	}
 }
 
+// the archive holds hundreds of run folders: a project page reads its own folder there or nothing, never the whole
+// archive, while the unfiltered list reads both roots
+func TestScanPage_archiveReadsOnlyAProjectsOwnFolder(t *testing.T) {
+	root, archiveRoot := t.TempDir(), t.TempDir()
+	now := time.Now()
+	writeClaudeSession(t, mkProjectDir(t, root, agentobserve.SlugifyCwd("/p/a")), "live", "/p/a", "task", now.Add(-time.Hour))
+	writeClaudeSession(t, mkProjectDir(t, archiveRoot, "arc-wt-0f74867d-t-1"), "worker", "/p/a", "task", now.Add(-2*time.Hour))
+	archive := claudeProvider(archiveRoot)
+	archive.archive = true
+	providers := []provider{claudeProvider(root), archive}
+	page, err := scanPageFrom(providers, PageOpts{Runtime: "claude", ProjectPath: "/p/a", Limit: 30}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ID != "live" {
+		t.Errorf("a project page must not walk the archive, got %+v", page.Sessions)
+	}
+	page, err = scanPageFrom(providers, PageOpts{Runtime: "claude", Limit: 30}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 2 {
+		t.Errorf("the unfiltered list reads the archive too, got %+v", page.Sessions)
+	}
+}
+
 func TestScanPage_projectWithNoFolderWalksTheRoot(t *testing.T) {
 	root := t.TempDir()
 	writeClaudeSession(t, mkProjectDir(t, root, "shortened-slug"), "short", "/p/z", "task", time.Now().Add(-time.Hour))

@@ -22,6 +22,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/pisession"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
@@ -733,6 +734,20 @@ type provider struct {
 	// projectDir is the folder under root that holds a project's sessions, when the runtime files them by project;
 	// nil when it does not
 	projectDir func(projectPath string) string
+	// archive marks the folder arcterm moves its runs' and temp folders' sessions to: a project page reads its own
+	// folder there or nothing, never a walk of the whole archive
+	archive bool
+}
+
+// claudeArchiveProvider reads the sessions sessionarchive moved out of root, nil when root has no archive.
+func claudeArchiveProvider(root string) []provider {
+	archive := sessionarchive.ArchiveOf(root)
+	if archive == "" {
+		return nil
+	}
+	p := claudeProvider(archive)
+	p.archive = true
+	return []provider{p}
 }
 
 func claudeProvider(root string) provider {
@@ -1400,13 +1415,16 @@ func ScanSessions(windowDays, limit int) ([]SessionInfo, error) {
 func allProviders() []provider {
 	home := wavebase.GetHomeDir()
 	opencodeRoot := filepath.Join(home, ".local", "share", "opencode", "storage")
-	return []provider{
-		claudeProvider(filepath.Join(home, ".claude", "projects")),
+	claudeRoot := filepath.Join(home, ".claude", "projects")
+	providers := []provider{
+		claudeProvider(claudeRoot),
 		codexProvider(filepath.Join(home, ".codex", "sessions")),
 		opencodeProvider(opencodeRoot),
 		piProvider(filepath.Join(home, ".pi", "agent", "sessions")),
 		agyProvider(filepath.Join(home, ".gemini", "antigravity-cli", "brain")),
 	}
+	// after every live root, so SessionRoot("claude") stays the projects folder
+	return append(providers, claudeArchiveProvider(claudeRoot)...)
 }
 
 // SessionRoot returns the on-disk root a runtime writes its transcripts under, or "" for a runtime
@@ -1437,7 +1455,19 @@ func TranscriptForSession(root, runtime, cwd, sessionId string) string {
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}
-		pattern = filepath.Join(root, "*", sessionId+".jsonl")
+		if matches, _ := filepath.Glob(filepath.Join(root, "*", sessionId+".jsonl")); len(matches) > 0 {
+			return matches[0]
+		}
+		// a finished run's workers, moved out of the projects folder by sessionarchive
+		archive := sessionarchive.ArchiveOf(root)
+		if archive == "" {
+			return ""
+		}
+		path = filepath.Join(archive, agentobserve.SlugifyCwd(cwd), sessionId+".jsonl")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+		pattern = filepath.Join(archive, "*", sessionId+".jsonl")
 	case "codex":
 		if filepath.Base(sessionId) != sessionId || strings.ContainsAny(sessionId, "*?[]") {
 			return ""

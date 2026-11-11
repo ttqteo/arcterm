@@ -436,13 +436,15 @@ func TestPurgeOfAMissingTrashIsQuiet(t *testing.T) {
 func TestProjectsDirsHonorsClaudeConfigDir(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	dirs := ProjectsDirs()
-	if len(dirs) != 1 || !strings.HasSuffix(filepath.ToSlash(dirs[0]), ".claude/projects") {
+	if len(dirs) != 2 || !strings.HasSuffix(filepath.ToSlash(dirs[0]), ".claude/projects") ||
+		!strings.HasSuffix(filepath.ToSlash(dirs[1]), ".arc/archive/claude-sessions") {
 		t.Fatalf("default dirs = %v", dirs)
 	}
 	cfg := filepath.Join(t.TempDir(), "cfg")
 	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
 	dirs = ProjectsDirs()
-	if len(dirs) != 2 || dirs[0] != filepath.Join(cfg, "projects") || !strings.HasSuffix(filepath.ToSlash(dirs[1]), ".claude/projects") {
+	if len(dirs) != 3 || dirs[0] != filepath.Join(cfg, "projects") || !strings.HasSuffix(filepath.ToSlash(dirs[1]), ".claude/projects") ||
+		!strings.HasSuffix(filepath.ToSlash(dirs[2]), ".arc/archive/claude-sessions") {
 		t.Fatalf("dirs with CLAUDE_CONFIG_DIR = %v", dirs)
 	}
 }
