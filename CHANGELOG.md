@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent can reopen a past conversation for you: `wsh ui reveal session:<id>` opens it in a tab, as Resume in
+  Conversation History does, and `wsh agents send` then wakes it with a message.
 - `wsh council bench` also measures Arc's brainstorm skill, and its results table is split into Review and Brainstorm.
 - A goal meter for Claude Code's `/goal`: above Chat's box and above the prompt in the terminal, the goal, a mark for
   each check Claude's evaluator made, how long it has run, and Goal met or stopped with its counts; the evaluator's
@@ -41,6 +43,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Claude sessions arcterm's runs, verify checks and background passes leave behind move to
+  `~/.arc/archive/claude-sessions` once their worktree is gone, so Claude Desktop no longer lists hundreds of worker
+  sessions as projects; arcterm's history, run usage and token stats still read them there.
 - A Claude agent that stays awake and idle is compacted by Claude Code's own idle compaction, which arcterm now
   starts at your Compact threshold (100k unless you changed it) instead of Claude's 200k; arcterm compacts only the
   agents it puts to sleep, so the two never compact the same agent. It applies to agents started after the update.
@@ -65,6 +70,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A new Claude Code session you have sent nothing to reads as waiting at its prompt, not "Working…" with a Stop
+  button.
 - A question card with several questions in Chat, a run's card or a held command's dialog switches between its tabs
   again, and picking an answer moves on to the next question.
 - A Chat message with a picture or several lines, sent while Claude works, no longer shows twice, once still marked

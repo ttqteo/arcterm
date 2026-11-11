@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
@@ -80,13 +81,14 @@ type meta struct {
 }
 
 // ProjectsDirs is where Claude Code keeps its transcripts: CLAUDE_CONFIG_DIR/projects when that is set, and
-// always ~/.claude/projects, where the sessions archive reads them from.
+// always ~/.claude/projects, where the sessions archive reads them from; last, that archive (sessionarchive.Dir),
+// where arcterm moves its runs' and temp folders' sessions, which history lists and Storage cleans like the rest.
 func ProjectsDirs() []string {
 	var dirs []string
 	if cfg := os.Getenv("CLAUDE_CONFIG_DIR"); cfg != "" {
 		dirs = append(dirs, filepath.Join(cfg, "projects"))
 	}
-	return append(dirs, filepath.Join(wavebase.GetHomeDir(), ".claude", "projects"))
+	return append(dirs, sessionarchive.ProjectsRoot(), sessionarchive.Dir())
 }
 
 // TrashDir is ~/.arc/trash.

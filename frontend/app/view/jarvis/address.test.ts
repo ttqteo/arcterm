@@ -151,8 +151,22 @@ describe("parseAddress", () => {
         });
     });
 
+    describe("session:", () => {
+        it("reads a session id, or a prefix of one", () => {
+            expect(parseAddress("session:c0781a87-db5e-4b73-8913-4ca9eb9a8f2c")).toEqual({
+                kind: "session",
+                sessionId: "c0781a87-db5e-4b73-8913-4ca9eb9a8f2c",
+            });
+            expect(parseAddress("session:c0781a87")).toEqual({ kind: "session", sessionId: "c0781a87" });
+        });
+
+        it("refuses an empty id", () => {
+            expect(parseAddress("session:")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+    });
+
     // radar: is the attachment namespace (resolveAttached), not an address
-    it.each(["commit:abc", "session:s-1", "radar:f-1", "decision:dec-1"])("leaves %s unsupported", (address) => {
+    it.each(["commit:abc", "radar:f-1", "decision:dec-1"])("leaves %s unsupported", (address) => {
         expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
     });
 

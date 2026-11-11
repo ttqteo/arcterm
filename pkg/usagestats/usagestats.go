@@ -22,6 +22,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/pisession"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
@@ -459,8 +460,17 @@ func sessionStem(root, path string) (stem, transcript string) {
 
 // walkClaudeFiles collects in-window Claude transcript files (recursively, so subagent dirs are
 // included), pruning by modtime against cutoff and skipping the backend's own headless passes —
-// those tokens are real, but they are Wave's maintenance work rather than the user's agent activity.
+// those tokens are real, but they are Wave's maintenance work rather than the user's agent activity. The real
+// projects root brings its archive along (sessionarchive moves engine workers' and temp folders' sessions there).
 func walkClaudeFiles(root string, cutoff time.Time) []scanFile {
+	files := walkClaudeRoot(root, cutoff)
+	if archive := sessionarchive.ArchiveOf(root); archive != "" {
+		files = append(files, walkClaudeRoot(archive, cutoff)...)
+	}
+	return files
+}
+
+func walkClaudeRoot(root string, cutoff time.Time) []scanFile {
 	var files []scanFile
 	headlessSlug := agentobserve.HeadlessAgentSlug()
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

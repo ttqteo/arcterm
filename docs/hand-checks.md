@@ -6,6 +6,19 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Run sessions leave Claude Desktop: after installing a build with baf99c646, `waveapp.log` says
+  "archived N Claude sessions" within a minute of start once a run has landed, Claude Desktop's sidebar shows no
+  `arc-wt-…` / `verify-…` / `.waveterm/worktrees` groups, and in arcterm Conversation History still lists a landed
+  run's workers under it, the run's usage rows are filled, and Usage's token totals did not drop
+  (`pkg/sessionarchive`, baf99c646).
+- [ ] (arcterm) A new Claude session reads idle: after installing a build with d24f57019, check `~/.claude/settings.json`
+  has a `SessionStart` group with matcher `startup` running `wsh.exe agent-hook`, then + New agent (Claude, no task) →
+  within a few seconds Chat shows no "Working…" line and no Stop button, and the tree dot reads idle. A launch with a
+  task still reads working through its first turn (`cmd/wsh/cmd/wshcmd-agenthook.go` planEmission, d24f57019).
+- [ ] (arcterm) An agent reopens a past conversation: from an agent's terminal run `wsh ui reveal session:<8-char id of
+  an ended Claude session>` → it prints `Opened "<title>" as agent:<tab>`, and a tab for that conversation shows asleep
+  in the Agent tree; `wsh agents send <tab> continue` wakes it and the turn runs. The same id again goes to that tab
+  instead of opening a second (`frontend/app/view/jarvis/openref.ts` openSession, feat/reveal-session).
 - [ ] (arcterm) The dev app no longer piles up React's render measures: leave `task dev` up an hour while using the
   cockpit, then in its DevTools console `performance.getEntriesByType("measure").length` → a few thousand at most, not
   millions, and the renderer's working set stays flat instead of climbing toward GBs (`frontend/tauri/main.tsx`,

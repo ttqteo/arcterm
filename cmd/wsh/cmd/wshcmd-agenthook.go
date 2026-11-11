@@ -127,6 +127,13 @@ func planEmission(ev ccHookEvent) agentEmission {
 		if ev.Source == "compact" || ev.Source == "clear" {
 			return agentEmission{State: baseds.AgentState_Idle}
 		}
+		// a new session waits at its prompt and reports nothing else before its first prompt, so the cockpit kept
+		// its launch placeholder, working: Chat showed "Working…" and Stop on a session nothing was sent to. a
+		// launch with a prompt reports working from its UserPromptSubmit right after, and its transcript holds
+		// no title yet
+		if ev.Source == "startup" {
+			return agentEmission{State: baseds.AgentState_Idle}
+		}
 		// a resumed session waits at its prompt and reports nothing else before its next prompt, so the cockpit
 		// would show only its launch placeholder, named for the folder. its transcript already holds the title
 		if ev.Source == "resume" {
@@ -782,7 +789,7 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 	if agentHookShadow != "" {
 		em = agentEmission{State: agentHookState, AttachModelTitle: true}
 	}
-	// a claude SessionStart reports no state of its own, but still tells the block which account it runs on
+	// a claude SessionStart also tells the block which account it runs on
 	loginEmail, stampLoginEmail := loginEmailStamp(ev, agentHookAgent, agentHookShadow, os.Getenv("ARC_CLAUDE_ACCOUNT"), claudequota.LoginEmail)
 	if em.State == "" && !stampLoginEmail {
 		hookDebugLine("skip: no emission for event=" + ev.HookEventName)
