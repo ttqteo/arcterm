@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Graphite theme is closer to Antigravity: brighter, near-white text, a touch lighter background, and code blocks
+  in Chat sit as a lighter card instead of a darker well.
 - In Chat, the / menu lists the commands Chat answers with its own card (/usage, /context, /tasks, /status…) first,
   under In Chat, and a click or Enter on one runs it at once instead of only filling the box.
 - Auto in the heavy-job queue watches the CPU as well as the RAM: one heavy job per 6 CPU threads runs at once (2 on a
