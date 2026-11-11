@@ -40,6 +40,7 @@ import { CodeChangedPane } from "./codechangedpane";
 import { CodeEditorArea } from "./codeeditorarea";
 import { canBack, canForward } from "./codehistory";
 import { pickerRecents } from "./coderecents";
+import { CodeReviewBar } from "./codereviewbar";
 import { CodeSearchPane } from "./codesearchpane";
 import { codeSearchModeAtom } from "./codesearchstore";
 import {
@@ -303,6 +304,7 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
                                 </form>
                             </PopoverReveal>
                         </div>
+                        <CodeReviewBar model={model} />
                         <SaveControls />
                         {/* the affordance for an empty or unfocused tree, where there is no row to
                             right-click */}

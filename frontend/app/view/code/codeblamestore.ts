@@ -9,7 +9,8 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { blameEntries, blameIsCurrent, type BlameState } from "./codeblame";
-import { codeProjectAtom, draftKey } from "./codestore";
+import { codeFileAtom, codeProjectAtom, codeViewModeAtom, draftKey } from "./codestore";
+import { sourceEditorShowing } from "./codeviewmodestore";
 
 // past GitBlameCommand's own 30s budget: the client's timeout binds the server's context, and the first
 // blame after launch reads every landed run's commits to credit them
@@ -64,6 +65,13 @@ export async function loadBlame(rel: string, modtime: number, lineCount: number)
     }
 }
 
+// The column draws beside the source editor only, so asking for it anywhere else brings the editor up with it
+// on: the press always shows a column, never a pressed button with nothing beside it.
 export function toggleBlame(): void {
+    if (globalStore.get(codeFileAtom).kind === "text" && !sourceEditorShowing()) {
+        globalStore.set(codeViewModeAtom, "source");
+        globalStore.set(codeBlameOnAtom, true);
+        return;
+    }
     globalStore.set(codeBlameOnAtom, (on) => !on);
 }
