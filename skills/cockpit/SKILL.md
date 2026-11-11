@@ -13,6 +13,8 @@ You run inside arcterm. `wsh ui` lets you see and steer the cockpit the user is 
   `surface:<cockpit|jarvis|agent|code|files|radar|usage|setup|settings|history>` (`history` is Conversation History, a mode of the Agent surface).
   Your own terminal is `agent:$WAVETERM_TABID`. Files: use `wsh view <path>` instead.
   A `memnote:` has no surface: it shows in the avatar popup and leaves the user where they are.
+  `session:<id>` (a session id or a unique prefix) reopens a past conversation in a tab, as its Resume does: asleep
+  when it can sleep. It prints `agent:<tabId>`; `wsh agents send <tabId> "<text>"` wakes it with that message.
 - `wsh ui actions` — the actions available right now (they depend on the surface and selection).
 - `wsh ui do <action-id>` — run one, exactly as if the user pressed its key.
 

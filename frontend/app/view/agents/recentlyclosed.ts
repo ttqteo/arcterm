@@ -83,3 +83,23 @@ export function archivedSession(
         sessions?.find((s) => s.transcriptpath && sameTranscript(s.transcriptpath, transcriptPath))
     );
 }
+
+/** Pure: the scanned session with this id, or the one session whose id starts with it (as `wsh agents` takes a tab id
+ *  prefix), ignoring case; else why not. A full id wins over a longer id it happens to prefix. */
+export function sessionById(
+    sessions: SessionActivity[] | null,
+    id: string
+): { session: SessionActivity } | { error: string } {
+    const want = id.toLowerCase();
+    const exact = sessions?.find((s) => s.id.toLowerCase() === want);
+    if (exact) {
+        return { session: exact };
+    }
+    const hits = sessions?.filter((s) => s.id.toLowerCase().startsWith(want)) ?? [];
+    if (hits.length === 1) {
+        return { session: hits[0] };
+    }
+    return hits.length > 1
+        ? { error: `more than one conversation starts with "${id}"` }
+        : { error: `no conversation "${id}" in Conversation History` };
+}

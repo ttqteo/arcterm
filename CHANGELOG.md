@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent can reopen a past conversation for you: `wsh ui reveal session:<id>` opens it in a tab, as Resume in
+  Conversation History does, and `wsh agents send` then wakes it with a message.
 - `wsh council bench` also measures Arc's brainstorm skill, and its results table is split into Review and Brainstorm.
 - A goal meter for Claude Code's `/goal`: above Chat's box and above the prompt in the terminal, the goal, a mark for
   each check Claude's evaluator made, how long it has run, and Goal met or stopped with its counts; the evaluator's
