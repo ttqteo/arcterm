@@ -182,6 +182,9 @@ export function ChatComposer({
     // ↑ / ↓ walk what was sent from this box. `at` is the place in the history; `shown` the text recall put in the box,
     // so an edit (the text no longer equal to it) ends the recall.
     const recalled = useRef<{ at: number | null; shown: string }>({ at: null, shown: "" });
+    // the whole message box: the frosted suggestion panels (the `/` and `@` lists) stand just above it as wide as it is,
+    // and Tab's list in bash mode opens over it
+    const boxRef = useRef<HTMLDivElement>(null);
     // a `/` as the box's first character lists Claude Code's commands; a recalled "/compact" is a message to resend, not
     // a command being typed, so the menu stays closed over it until it is edited
     const slash = useSlashMenu({
@@ -191,6 +194,8 @@ export function ChatComposer({
         blockId: agent.blockId,
         inputRef: editorRef,
         off: recalled.current.at != null && text === recalled.current.shown,
+        look: "frosted",
+        frame: boxRef,
     });
     const cwd = block?.meta?.["cmd:cwd"];
     // Bash mode's ghost text (as Claude Code's TUI has it): the newest `!` command from its history that starts with what
@@ -205,7 +210,6 @@ export function ChatComposer({
               ? outsideCaret.current.caret
               : text.length;
     // Tab completes the word under the caret in bash mode: one answer is put in the text, several open a list over the box
-    const boxRef = useRef<HTMLDivElement>(null);
     const bashList = useBashComplete({ text, setText: setTextAt, cwd, inputRef: editorRef, boxRef, on: bash });
     // the ghost text steps aside while the Tab list is open, so → and Tab do not offer two things at once
     const ghost = bash && !waking && !bashList.shown ? bashGhost(bashHistory, text, caretNow) : "";
@@ -221,6 +225,8 @@ export function ChatComposer({
         inputRef: editorRef,
         name: "chat",
         recent: recentFiles,
+        look: "frosted",
+        frame: boxRef,
     });
     // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which the editor draws
     // from; the caret is put after it once the new text is drawn.

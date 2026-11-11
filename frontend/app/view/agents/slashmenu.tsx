@@ -8,12 +8,15 @@
 // time the menu opens, so a skill or an MCP server added mid-session shows on the next `/`. With no such list (an agent
 // started before the mod published, a sleeping one, wavesrv just restarted) the menu falls back to the copied built-ins
 // plus what wavesrv reads off disk (`ListClaudeCommandsCommand`), and its footer says which list it is showing.
+//
+// `look: "frosted"` (only the chat box passes it) draws the list as Chat's suggestion panel (pickerlist.tsx), whose key
+// line replaces the footer's key hints, so the footer keeps just the count; the launcher keeps the plain list.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import type { EditorLike, KeyLike } from "./chateditor";
-import { PickerList, type PickerGroup } from "./pickerlist";
+import { PickerList, type PickerGroup, type PickerLook } from "./pickerlist";
 import {
     BUILTIN_COMMANDS,
     fromLive,
@@ -64,7 +67,8 @@ export async function fetchSlashCommands(
 // highlighted command lets Enter send it (Tab completes). `cwd` is where the agent works (project-level skills and
 // commands are read from there on the fallback), "" when unknown; `blockId` is the agent's terminal block, the key of its
 // live list. `off` keeps the menu closed (a recalled message sits in the box). `setText` takes the caret a pick puts
-// the text's caret at, for a box that draws the text again (the chat editor places it as it does).
+// the text's caret at, for a box that draws the text again (the chat editor places it as it does). `look` and `frame` are
+// the frosted panel and the element it stands over (the message box).
 export function useSlashMenu({
     text,
     setText,
@@ -72,6 +76,8 @@ export function useSlashMenu({
     blockId,
     inputRef,
     off = false,
+    look,
+    frame,
 }: {
     text: string;
     setText: (text: string, caret?: number) => void;
@@ -79,6 +85,8 @@ export function useSlashMenu({
     blockId?: string;
     inputRef: RefObject<EditorLike | null>;
     off?: boolean;
+    look?: PickerLook;
+    frame?: RefObject<HTMLElement | null>;
 }): SlashMenuState {
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
@@ -169,9 +177,16 @@ export function useSlashMenu({
     };
 
     const total = known.commands.length;
+    const count = (
+        <span>
+            {total} {total === 1 ? "command" : "commands"} {known.live ? "in this session" : "found on disk"}
+        </span>
+    );
     const list = (
         <PickerList
             anchor={inputRef}
+            look={look}
+            frame={frame}
             shown={shown}
             note={null}
             items={matches}
@@ -186,22 +201,25 @@ export function useSlashMenu({
             itemTitle={(c) => c.description ?? c.name}
             groups={groups}
             footer={
-                <div className="flex shrink-0 gap-3.5 border-t border-edge-faint px-3.5 py-[7px] text-[11.5px] text-ink-faint">
-                    <span>
-                        <span className="font-mono text-muted">↑↓</span> move
-                    </span>
-                    <span>
-                        <span className="font-mono text-muted">Tab</span> complete
-                    </span>
-                    <span>
-                        <span className="font-mono text-muted">Enter</span> run
-                    </span>
-                    <span className="flex-1" />
-                    <span>
-                        {total} {total === 1 ? "command" : "commands"}{" "}
-                        {known.live ? "in this session" : "found on disk"}
-                    </span>
-                </div>
+                look === "frosted" ? (
+                    <div className="flex shrink-0 justify-end border-t border-edge-faint px-4 py-[7px] text-[11.5px] text-ink-faint">
+                        {count}
+                    </div>
+                ) : (
+                    <div className="flex shrink-0 gap-3.5 border-t border-edge-faint px-3.5 py-[7px] text-[11.5px] text-ink-faint">
+                        <span>
+                            <span className="font-mono text-muted">↑↓</span> move
+                        </span>
+                        <span>
+                            <span className="font-mono text-muted">Tab</span> complete
+                        </span>
+                        <span>
+                            <span className="font-mono text-muted">Enter</span> run
+                        </span>
+                        <span className="flex-1" />
+                        {count}
+                    </div>
+                )
             }
             renderItem={(c) => (
                 <>

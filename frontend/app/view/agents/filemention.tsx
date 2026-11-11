@@ -27,7 +27,7 @@ import {
     type BrowseEntry,
 } from "./launchermention";
 import { homeDir } from "./pathlinkroute";
-import { PickerList } from "./pickerlist";
+import { PickerList, type PickerLook } from "./pickerlist";
 
 export interface FileMentionState {
     // the dropdown under the box, portaled out of its container (it draws nothing while no list shows)
@@ -74,7 +74,9 @@ async function listDir(base: string, dir: string): Promise<BrowseEntry[]> {
 // `data-<name>-mention`). `setText` takes the caret a pick puts the text's caret at, for a box that draws the text again
 // (the chat editor): a folder pick (`@../src/`) leaves the mention the caret ends, which stays text to keep walking
 // instead of becoming a pill. A mention that already is a pill (the editor's `onPill`: the caret right after one, or one
-// selected) is never one being typed, so the list stays shut on it.
+// selected) is never one being typed, so the list stays shut on it. `look: "frosted"` (only the chat box passes it)
+// draws the list as Chat's suggestion panel over `frame`, the message box (pickerlist.tsx); the launcher keeps the plain
+// list.
 export function useFileMention({
     text: task,
     setText,
@@ -83,6 +85,8 @@ export function useFileMention({
     inputRef: taskRef,
     name,
     recent,
+    look,
+    frame,
 }: {
     text: string;
     setText: (text: string, caret?: number) => void;
@@ -91,6 +95,8 @@ export function useFileMention({
     inputRef: RefObject<EditorLike | null>;
     name: string;
     recent?: readonly string[];
+    look?: PickerLook;
+    frame?: RefObject<HTMLElement | null>;
 }): FileMentionState {
     const [caret, setCaret] = useState(0);
     // the selection is on a pill (the chat editor tells: EditorLike.onPill): that mention is complete, not one being typed
@@ -228,6 +234,8 @@ export function useFileMention({
     const list = (
         <PickerList
             anchor={taskRef}
+            look={look}
+            frame={frame}
             shown={shown}
             note={note}
             items={rows}
