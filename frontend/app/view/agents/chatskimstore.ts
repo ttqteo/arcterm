@@ -1,11 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Skim highlights in Chat, the state half (chatskim.ts is the pure half). Two module-level atoms, as every surface but
+// Skim highlights in Chat, the state half (chatskim.ts is the pure half). Module-level atoms, as every surface but
 // Agent unmounts on a switch: the marks the skim mod keeps, read from its plugin store file with the file commands the
-// other stores here use (no wshrpc command of its own), and Chat's own highlight toggle, global and remembered in
-// localStorage `chat.skim` (on unless it says false), which also folds a long reply as the skim mod does in the terminal
-// (useSkimFold; which replies are opened is a third atom). The toggle does not type /skim into the agent: that is the
+// other stores here use (no wshrpc command of its own); Chat's own highlight toggle, global and remembered in
+// localStorage `chat.skim` (on unless it says false); and Settings → Appearance → Chat's fold switch, `chat.fold` (off
+// unless it says true), which with the highlights on folds a long reply as the skim mod does in the terminal
+// (useSkimFold; which replies are opened is one more atom). The toggle does not type /skim into the agent: that is the
 // terminal's fold and dim, per session, and a command typed from a display toggle would add a row to the conversation.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -14,7 +15,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { base64ToString, makeConnRoute } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
 import { useMemo } from "react";
-import { chatFold, hashText, marksByHash, parseSkimOn, sameMarks, skimStoreFiles } from "./chatskim";
+import { chatFold, hashText, marksByHash, parseFoldOn, parseSkimOn, sameMarks, skimStoreFiles } from "./chatskim";
 import { homeDir } from "./pathlinkroute";
 
 const STORAGE_KEY = "chat.skim";
@@ -45,6 +46,31 @@ export const chatSkimOnAtom = atom(
     }
 );
 
+const FOLD_KEY = "chat.fold";
+
+function readFoldOn(): boolean {
+    try {
+        return parseFoldOn(localStorage.getItem(FOLD_KEY));
+    } catch {
+        return false;
+    }
+}
+
+const foldOnAtom = atom<boolean>(readFoldOn());
+
+// whether a long reply in Chat folds to its verdict and marked sentences (with the highlights on); kept in localStorage
+export const chatFoldOnAtom = atom(
+    (get) => get(foldOnAtom),
+    (_get, set, next: boolean) => {
+        set(foldOnAtom, next);
+        try {
+            localStorage.setItem(FOLD_KEY, next ? "true" : "false");
+        } catch {
+            // storage unavailable: the switch holds for this session
+        }
+    }
+);
+
 // the marks of every reply the skim mod kept, by the hash of the reply's stored text
 const marksAtom = atom<Map<string, string[]>>(new Map());
 
@@ -59,14 +85,17 @@ export function useSkimMarks(text: string): string[] {
 // stays open when its cell is switched away and back
 const openedAtom = atom<ReadonlySet<string>>(new Set<string>());
 
-/** A prose part as Chat draws it with skim on: folded (chatFold) until it is opened, with the marks to highlight. */
+/** A prose part as Chat draws it: with the marks to highlight, and, with skim and the fold switch both on, folded
+ *  (chatFold) until it is opened. */
 export function useSkimFold(text: string): {
     marks: string[];
     fold: { short: string; lines: number } | null;
     open: boolean;
     toggle: () => void;
 } {
-    const on = useAtomValue(chatSkimOnAtom);
+    const skimOn = useAtomValue(chatSkimOnAtom);
+    const foldOn = useAtomValue(chatFoldOnAtom);
+    const on = skimOn && foldOn;
     const marks = useSkimMarks(text);
     const opened = useAtomValue(openedAtom);
     const hash = hashText(text);

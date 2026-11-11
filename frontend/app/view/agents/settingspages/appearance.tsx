@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, and what an agent row in the sidebar shows. The terminal's own face is a Terminal setting; Jarvis and
+// faces, what an agent row in the sidebar shows, and whether Chat folds a long reply. The terminal's own face is a Terminal setting; Jarvis and
 // the office are Jarvis & Office.
 
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
+import { chatFoldOnAtom } from "../chatskimstore";
 import { CHRISTMAS_THEME } from "../christmas";
 import { SantaHatSvg } from "../christmashat";
 import { LightString } from "../christmaslights";
@@ -37,7 +38,19 @@ export function AppearancePage() {
             <SettingCard id="agentrows" label="Agent sidebar">
                 <AgentRowFieldRows />
             </SettingCard>
+            <SettingCard id="chat" label="Chat">
+                <ChatFoldRow />
+            </SettingCard>
         </>
+    );
+}
+
+function ChatFoldRow() {
+    const [fold, setFold] = useAtom(chatFoldOnAtom);
+    return (
+        <SettingRow id="chat.fold">
+            <Toggle on={fold} onToggle={() => setFold(!fold)} label="Fold long replies" />
+        </SettingRow>
     );
 }
 

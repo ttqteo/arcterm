@@ -80,8 +80,9 @@ function BubbleCopy({ text, align }: { text: string; align: "left" | "right" }) 
 
 // What the agent said, as Markdown, with the sentences the skim mod marked highlighted (the terminal's own highlight, found
 // by the hash of the stored text: chatskimstore.ts) while Chat's highlighter toggle is on. Its own component so the hook
-// runs per part. The copy button and the context menu keep the text as stored, without marks. With the toggle on, a long
-// reply folds as the skim mod folds it in the terminal (chatFold): its verdict and marked sentences, then Show more.
+// runs per part. The copy button and the context menu keep the text as stored, without marks. With the toggle and
+// Settings → Appearance → Chat's fold switch on, a long reply folds as the skim mod folds it in the terminal (chatFold):
+// its verdict and marked sentences, then Show more.
 function ProseText({ text }: { text: string }) {
     const { marks, fold, open, toggle } = useSkimFold(text);
     const full = useMemo(() => withMarks(text, marks), [text, marks]);
