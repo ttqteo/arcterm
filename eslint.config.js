@@ -26,15 +26,10 @@ export default [
         ],
     },
 
-    {
-        files: ["frontend/**/*.{ts,tsx}"],
-        languageOptions: {
-            parserOptions: {
-                tsconfigRootDir,
-                project: "./tsconfig.json",
-            },
-        },
-    },
+    // no parserOptions.project: no rule here reads types (tseslint's recommended set, not recommendedTypeChecked),
+    // and a project made every eslint run build the whole frontend's TypeScript program first, one file included:
+    // 862 MB and 36 s for one file against 229 MB and 1 s without, and 40 files ran out of heap (2026-11-11). Add it
+    // back only with a rule that needs it.
 
     eslint.configs.recommended,
     ...tseslint.configs.recommended,
