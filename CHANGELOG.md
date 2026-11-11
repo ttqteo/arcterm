@@ -63,6 +63,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A question card with several questions in Chat, a run's card or a held command's dialog switches between its tabs
+  again, and picking an answer moves on to the next question.
 - A run whose agent hits your Claude usage limit pauses until the limit resets, reading "Paused · usage limit,
   resumes 05:02", and carries on by itself after it, instead of retrying the worker into the same limit every 15
   minutes until the retries ran out. An agent stopped by any API error now reads idle instead of working.

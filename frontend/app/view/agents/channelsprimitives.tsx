@@ -27,6 +27,8 @@ export function AskRow({ model, agent, alert }: { model: AgentsViewModel; agent:
     const answerSel = useAtomValue(model.answerSelAtom);
     const answerText = useAtomValue(model.answerTextAtom);
     const sentIds = useAtomValue(model.sentIdsAtom);
+    // the shown question of a multi-question ask: the same per-agent tab the keys and the lead card read
+    const answerTab = useAtomValue(model.answerTabAtom);
     const dismiss = agent.ask?.oref
         ? () => fireAndForget(() => RpcApi.AgentAskClearCommand(TabRpcClient, agent.ask!.oref!))
         : undefined;
@@ -45,6 +47,8 @@ export function AskRow({ model, agent, alert }: { model: AgentsViewModel; agent:
                 texts={answerText[agent.id] ?? {}}
                 sent={sentIds.has(askSentKey(agent) ?? "")}
                 numbered
+                activeQuestion={answerTab[agent.id] ?? 0}
+                onSelectQuestion={(qi) => globalStore.set(model.answerTabAtom, (prev) => ({ ...prev, [agent.id]: qi }))}
                 onToggle={(qi, oi) => model.toggleAnswer(agent.id, qi, oi)}
                 onText={(qi, value) => model.setAnswerText(agent.id, qi, value)}
                 onSubmit={() => model.submitAnswer(agent.id)}

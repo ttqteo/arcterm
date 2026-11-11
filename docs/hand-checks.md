@@ -2087,3 +2087,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   and Allow on the first leaves the second's card up until it is answered. The `agent-chat` scenario drives the card
   on fixtures with a mocked answer command; the `PermissionRequest` hook (`wsh install-agent-hooks`), the `1` / Esc
   it types and the queue in wavesrv (`pkg/agentperm`) were not tried against a live Claude Code.
+- [ ] (arcterm) **A multi-question ask switches tabs in Chat.** Have a Claude agent call AskUserQuestion with two
+  questions; in Chat, click the second tab: it shows the second question. Pick an option on the first: it moves to the
+  second. Same in a held command's dialog and a run's worker card (`AskRow`, wired to `answerTabAtom` 2026-11-11).
