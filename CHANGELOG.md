@@ -112,6 +112,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - A reply scrolling under your pinned message in Chat no longer shows through beside it, under the Skim button.
+- When Claude wants to start a subagent and arcterm asks you first, Chat shows the card (what the subagent is for, its
+  type and model, with Allow and Deny) instead of leaving the question to the terminal, and the agent reads waiting
+  on you until you answer.
 - A message you send in Chat while Claude is idle reads Sending… until it lands, instead of flashing Queued with a Send
   now button as the turn it starts gets going; one sent while Claude works still reads Queued.
 - An agent's shell commands no longer freeze while arcterm is busy: an ordinary command never waits on the heavy-job
