@@ -45,7 +45,7 @@ import { localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
-import { pendsAsBubble, recall, sendHold } from "./chatpending";
+import { isSendNowKey, pendsAsBubble, recall, sendHold } from "./chatpending";
 import { addPending, dropPending, noteSent, sentHistory } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
@@ -99,6 +99,7 @@ export function ChatComposer({
     entries,
     onSent,
     onLocal,
+    onSendNow,
 }: {
     agent: AgentVM;
     placeholder: string;
@@ -111,6 +112,9 @@ export function ChatComposer({
     /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
      *  every command is sent. */
     onLocal?: (route: LocalRoute) => void;
+    /** a queued message's Send now, while one shows: Ctrl+Enter (Cmd+Enter on a Mac) in an empty box presses it. A box
+     *  with text sends it as Enter does: the chord could reach the terminal before the text was typed in */
+    onSendNow?: () => void;
     /** extra data attributes on the box: the sleeping overlay keeps `data-sleeping-composer` there */
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
@@ -265,6 +269,14 @@ export function ChatComposer({
                     latest.current.setText(cur.trim() ? cur.replace(/\s+$/, "") + "\n" + added : added);
                     return true;
                 },
+                focus: () => {
+                    const box = editorRef.current;
+                    if (box == null || box.readOnly) {
+                        return false;
+                    }
+                    box.focus({ preventScroll: true });
+                    return true;
+                },
                 replace: (t) => {
                     const box = editorRef.current;
                     if (box == null || box.readOnly) {
@@ -319,8 +331,9 @@ export function ChatComposer({
             clearLocalCards(agent.id);
             if (!asleep) {
                 // a /command is no bubble of yours: the transcript draws it as a command row, which would leave the
-                // pending bubble up beside it for minutes. A /btw and a bare panel command are: nothing of them lands
-                // until the side answer comes or the panel closes (chatpending.ts pendingKind)
+                // pending bubble up beside it for minutes. A /btw, a bare panel command and a `! cmd` are: nothing of
+                // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
+                // pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
                     addPending(agent.id, sent, entries);
                 }
@@ -601,6 +614,16 @@ export function ChatComposer({
                         }
                         if (recallKey(e)) {
                             e.preventDefault();
+                            return;
+                        }
+                        if (
+                            onSendNow != null &&
+                            text.trim() === "" &&
+                            !e.nativeEvent.isComposing &&
+                            isSendNowKey(e, isMacOS())
+                        ) {
+                            e.preventDefault();
+                            onSendNow();
                             return;
                         }
                         if (e.key === "Enter" && !e.shiftKey) {

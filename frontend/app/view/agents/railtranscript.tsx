@@ -35,6 +35,7 @@ import {
     type ReadAnswer,
 } from "./railtranscriptmodel";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
+import { TranscriptCache } from "./transcriptcache";
 import { projectorFor } from "./transcriptregistry";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
@@ -63,6 +64,13 @@ interface View {
     scroll?: { index: number; nonce: number };
 }
 
+// the windows read most recently, by transcript: an agent switched back to shows its kept window at once and reads only
+// what was written since (transcriptcache.ts). Kept without a pending scroll, which belonged to the press that asked it
+const viewCache = new TranscriptCache<View>(8);
+
+// epochs count across every reader, so a kept window's epoch never matches a fresh read's in another one
+let nextEpoch = 0;
+
 // the focus bump the tab last handled, kept outside the component: the bump of a key press can land before the tab
 // mounts (it was not showing), and a later mount from a plain tab click sees that same value and must not take focus
 let handledFocusBump = 0;
@@ -87,7 +95,6 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
     const ctx = useRef({ path, runtime });
     ctx.current = { path, runtime };
     const token = useRef(0); // changes with the transcript: an answer for an older one is dropped
-    const epoch = useRef(0);
     const nonce = useRef(0);
     const tailing = useRef(false);
     const appending = useRef(false);
@@ -102,6 +109,10 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
     const commit = (next: View | null) => {
         viewRef.current = next;
         setView(next);
+        if (next != null) {
+            const { scroll: _scroll, ...kept } = next;
+            viewCache.put(next.path, ctx.current.runtime, kept);
+        }
     };
     const fail = (what: string, e: unknown) => {
         console.warn(`${what} ${ctx.current.path} failed`, e);
@@ -123,11 +134,10 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
                 return;
             }
             const win = firstWindow(answerOf(rtn));
-            epoch.current += 1;
             lastShown.current = null;
             setNoEarlier(false);
             setError(null);
-            commit({ path: at, win, entries: project(win.lines), keyOffset: 0, epoch: epoch.current });
+            commit({ path: at, win, entries: project(win.lines), keyOffset: 0, epoch: ++nextEpoch });
         } catch (e) {
             if (mine === token.current) {
                 fail("reading transcript", e);
@@ -319,11 +329,12 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
         }
     }
 
-    // a new transcript (or the first) starts over; leaving cancels what is in flight
+    // a new transcript (or the first) starts over, from its kept window when it has one; leaving cancels what is in flight
     useEffect(() => {
         const mine = ++token.current;
-        viewRef.current = null;
-        setView(null);
+        const kept = path ? (viewCache.get(path, runtime) ?? null) : null;
+        viewRef.current = kept;
+        setView(kept);
         setError(null);
         setNoEarlier(false);
         chunk.current = null;
@@ -334,7 +345,8 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
         lastShown.current = null;
         lastReadAt.current = null;
         if (path) {
-            void readTail(mine);
+            // a kept window reads only the lines written since it was left (a rewritten file reads the tail again)
+            void (kept != null ? readAppend(mine) : readTail(mine));
         }
         return () => {
             token.current += 1;
@@ -346,8 +358,9 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
     }, [path, runtime]);
 
     return {
-        // the window belongs to its own transcript: right after a switch the old one is not shown
-        view: view != null && view.path === path ? view : null,
+        // the window belongs to its own transcript: right after a switch the old one is not shown, the new one's kept
+        // window is (until the effect above has put it in state), so a switch back draws no skeleton frame
+        view: view != null && view.path === path ? view : path ? (viewCache.get(path, runtime) ?? null) : null,
         error,
         noEarlier,
         loadEarlier,

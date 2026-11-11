@@ -15,6 +15,7 @@
 import { layerFade } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Highlighter } from "lucide-react";
@@ -51,6 +52,9 @@ import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
+// Send now's key in the chat box (chatpending.ts isSendNowKey), as its button shows it
+const SEND_NOW_CHORD = isMacOS() ? "⌘↵" : "Ctrl+↵";
+
 const NO_ENTRIES: AgentEntry[] = [];
 
 // when the agent last went idle (ms), null while it works; an agent idle at mount counts from the mount
@@ -77,9 +81,10 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
     );
 }
 
-// a /btw or a bare panel command sent and not in the transcript yet: the command, dimmed, as its card will draw it, and
-// under it what it waits on: the side answer the arc mod is asking a fork of the session for, or the panel open on Claude
-// Code's own screen (its row lands only once it closes), with a way there
+// a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet: the command, dimmed, as its card will
+// draw it, and under it what it waits on: the side answer the arc mod is asking a fork of the session for, the panel
+// open on Claude Code's own screen (its row lands only once it closes), or the command running (its row and output land
+// only once it finishes, or goes to the background at 120 s), with a way to the terminal for the last two
 function PendingCommand({
     text,
     kind,
@@ -96,9 +101,9 @@ function PendingCommand({
             </div>
             <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted">
-                    {kind === "btw" ? "Asking on the side…" : "Open in Terminal"}
+                    {kind === "btw" ? "Asking on the side…" : kind === "bash" ? "Running…" : "Open in Terminal"}
                 </span>
-                {kind === "panel" && onOpenTerminal != null ? (
+                {kind !== "btw" && onOpenTerminal != null ? (
                     <button
                         type="button"
                         onClick={onOpenTerminal}
@@ -135,10 +140,11 @@ function PendingBubble({ text, queued, onSendNow }: { text: string; queued: bool
                         type="button"
                         data-chat-send-now
                         onClick={onSendNow}
-                        title="Send it now: Claude moves its running tools to the background and reads your queued messages at once"
-                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                        title={`Send it now (${SEND_NOW_CHORD} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
+                        className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-secondary hover:text-primary"
                     >
                         Send now
+                        <kbd className="font-sans text-[10.5px] text-muted">{SEND_NOW_CHORD}</kbd>
                     </button>
                 ) : null}
             </div>
@@ -281,6 +287,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                       })
                   )
             : undefined;
+    // a message bubble captioned Queued is up (PendingBubble's queued): Ctrl+Enter in the empty box is its Send now
+    const queuedShown = agent.state !== "idle" && pending.some((p) => p.kind == null);
     useEffect(() => {
         if (!showsPending) {
             return;
@@ -420,6 +428,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     agent={agent}
                     entries={entries}
                     onSent={jumpToBottom}
+                    onSendNow={queuedShown ? sendNow : undefined}
                     onLocal={(route) => {
                         if ("open" in route) {
                             openDiff(model, agentDiffScope(agent.id, agent.name));

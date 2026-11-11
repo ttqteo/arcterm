@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat keys and agent switching: in a Claude agent's Chat scroll up and click in the conversation, then
+  Tab → the focus is in the chat box and typing goes there (Tab inside the terminal or a field still does what it did).
+  While the agent works send a message so it shows Queued, then Ctrl+Enter (⌘+Enter on a Mac) in the empty box → it is
+  sent now, as the Send now button (which shows the key) does. Switch to another agent and back → its conversation shows
+  at once, no skeleton, and a reply written meanwhile is there (`chatpane.tsx`, `railtranscript.tsx` viewCache,
+  `bindings.ts` agent:chat-focus-box; fix/chat-bash-running).
 - [ ] (arcterm) Run sessions leave Claude Desktop: after installing a build with baf99c646, `waveapp.log` says
   "archived N Claude sessions" within a minute of start once a run has landed, Claude Desktop's sidebar shows no
   `arc-wt-…` / `verify-…` / `.waveterm/worktrees` groups, and in arcterm Conversation History still lists a landed

@@ -42881,16 +42881,16 @@ const agentChat = {
                 codex
             );
 
-            // 2. typing and Enter sends the line plus Enter to the block
+            // 2. typing and Enter sends the line, then Enter as a write of its own (f498aa7b6), to the block
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             await acType(h, acBox(A), "hello");
-            const sent2 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "hello\\r")`, 3000);
+            const sent2 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\r")`, 3000);
             const left2 = await h.ev(acVal(acBox(A)));
             await h.shot("cdp-shots/agent-chat-2-send.png");
             rec(
-                "2. typing hello and Enter sends hello\\r to the block, and the box empties",
-                sent2 && JSON.stringify(await acInputs(h, blockA)) === JSON.stringify(["hello\r"]) && left2 === "",
+                "2. typing hello and Enter sends hello, then Enter, to the block, and the box empties",
+                sent2 && JSON.stringify(await acInputs(h, blockA)) === JSON.stringify(["hello", "\r"]) && left2 === "",
                 { inputs: await acInputs(h, blockA), left2 }
             );
 
@@ -43459,7 +43459,8 @@ const agentChat = {
                 const mine = ${pendingOf};
                 return {
                     text: mine[0]?.firstElementChild?.textContent.trim() ?? null,
-                    caption: mine[0]?.lastElementChild?.textContent.trim() ?? null,
+                    // the caption's own text: a Send now button stands beside it while the message is queued
+                    caption: mine[0]?.lastElementChild?.firstElementChild?.textContent.trim() ?? null,
                     pending: mine.length,
                     asYou: ${youHas(S1)},
                 };
@@ -43471,7 +43472,7 @@ const agentChat = {
             rec(
                 "20. a queued_command line draws as your bubble; a message sent while Claude works shows at once as a pending bubble captioned Queued (and is typed into the block), and is gone once a matching line is in the transcript",
                 queuedUp && pendingUp && pend20.text === S1 && pend20.caption === "Queued" && pend20.pending === 1 && pend20.asYou === 0 &&
-                    JSON.stringify(sent20) === JSON.stringify([`${S1}\r`]) && landed20,
+                    JSON.stringify(sent20) === JSON.stringify([S1, "\r"]) && landed20,
                 { queuedUp, pend20, sent20, landed20 }
             );
 
@@ -43543,7 +43544,7 @@ const agentChat = {
                     items23.some((t) => t.startsWith("/arc:council")) && picked23 && fetched23.length === 0 &&
                     live23.length >= 1 && live23.every((c) => c.data.blockid === blockA) &&
                     flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
-                    JSON.stringify(sentModel) === JSON.stringify(["/model\r"]),
+                    JSON.stringify(sentModel) === JSON.stringify(["/model", "\r"]),
                 { slashUp, items23, picked23, fetched23: fetched23.length, live23: live23.length, flipped23, header23, sentModel }
             );
 
@@ -43761,14 +43762,14 @@ const agentChat = {
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
             await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
             await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
-            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet\\r")`, 3000);
+            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet")`, 3000);
             const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
             const typed28 = (await acInputs(h, blockA)).slice(before28);
             rec(
                 "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
                 up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
                     menu28.rows.filter((r) => r[1] === "true").map((r) => r[0]).join() === "opus" && menu28.expanded === "true" &&
-                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model sonnet\r"]) && closedAfter28,
+                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model sonnet", "\r"]) && closedAfter28,
                 { menu28, closed28, stayed28, picked28, typed28, closedAfter28 }
             );
 
@@ -44391,7 +44392,7 @@ const agentChat = {
                     ["Add files or photos", "Add folder", "Slash commands", "MCP servers", "Plugins"].every((t, i) => menu52.texts[i]?.startsWith(t)) &&
                     menu52.expanded === "true" && menu52.focused === "files" &&
                     closed52 && focus52 && stayed52 && boxSlash52 && listSlash52 && focusSlash52 &&
-                    flipped52 && JSON.stringify(sentMcp52) === JSON.stringify(["/mcp\r"]),
+                    flipped52 && JSON.stringify(sentMcp52) === JSON.stringify(["/mcp", "\r"]),
                 { attach52, menuUp52, menu52, closed52, focus52, stayed52, boxSlash52, listSlash52, focusSlash52, flipped52, sentMcp52 }
             );
 
@@ -44910,6 +44911,36 @@ const agentChat = {
                     sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" &&
                     gone76.mode === false && gone76.caption === null && gone76.well?.bg === "rgba(0, 0, 0, 0)" && gone76.bang === null,
                 { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, mentions76, sent76, front76, ghostAfterSend76, gone76 }
+            );
+
+            // 76b. The !git stash list step 76 sent runs with nothing of it in the transcript: Claude Code writes its <bash-input> row
+            // only once the command finishes (or goes to the background at 120 s). Till then the chat shows a pending card, the command
+            // in the mono font captioned Running… with a Show Terminal button, which goes once the row lands
+            const cmd76b = "!git stash list";
+            const runningOf = `[...(${acLayer(A)}?.querySelectorAll('[data-chat-pending-kind="bash"]') ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(cmd76b)})`;
+            const runningUp76b = await polishWaitFor(h, `${runningOf}.length === 1`, 5000);
+            const running76b = await h.ev(`(() => {
+                const card = ${runningOf}[0];
+                const caption = card?.lastElementChild;
+                return {
+                    caption: caption?.firstElementChild?.textContent.trim() ?? null,
+                    button: caption?.querySelector("button")?.textContent.trim() ?? null,
+                    mono: /JetBrains Mono|monospace/.test(card ? getComputedStyle(card.firstElementChild).fontFamily : ""),
+                };
+            })()`);
+            await h.ev(`document.querySelector("[data-chat-tail]")?.scrollIntoView({ block: "end" })`);
+            await h.shot("cdp-shots/agent-chat-76b-bash-running.png");
+            const at76b = { cwd: ctx.dir, ts: new Date().toISOString() };
+            acAppend(
+                ctx.files.main,
+                AC.userText("<bash-input>git stash list</bash-input>", at76b),
+                AC.userText("<bash-stdout>stash@{0}: WIP on main</bash-stdout><bash-stderr></bash-stderr>", at76b)
+            );
+            const landed76b = await polishWaitFor(h, `${runningOf}.length === 0`, 15000);
+            rec(
+                "76b. the !git stash list step 76 sent shows at once as a pending card, the command in the mono font captioned Running… with a Show Terminal button, and goes once its bash row lands in the transcript",
+                runningUp76b && running76b.caption === "Running…" && running76b.button === "Show Terminal" && running76b.mono && landed76b,
+                { runningUp76b, running76b, landed76b }
             );
 
             // 77. Tab in bash mode, three answers. The box's folder is step 76's (cmd:cwd on the main agent's block). The mocked

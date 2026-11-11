@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In Chat, a `!` command you send shows at once with Running… until it finishes, instead of nothing until its output
+  lands.
+- Chat keys: Tab puts you back in the chat box after you scrolled or clicked in the conversation, and Ctrl+Enter
+  (⌘+Enter on a Mac) in the empty box is Send now for a queued message, shown beside the button.
 - An agent can reopen a past conversation for you: `wsh ui reveal session:<id>` opens it in a tab, as Resume in
   Conversation History does, and `wsh agents send` then wakes it with a message.
 - Chat answers `/usage`, `/cost`, `/context`, `/tasks`, `/stats`, `/skills`, `/help` and `/status` itself: a card under
@@ -79,6 +83,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching between agents no longer shows Chat loading each time: an agent you come back to shows its conversation at
+  once and reads only what was written since.
 - A new Claude Code session you have sent nothing to reads as waiting at its prompt, not "Working…" with a Stop
   button.
 - A question card with several questions in Chat, a run's card or a held command's dialog switches between its tabs
