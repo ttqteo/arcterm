@@ -9,6 +9,7 @@ import { useTabModel } from "@/app/store/tab-model";
 import { termFontStack } from "@/app/view/agents/fonts";
 import { activePalette, deriveTermTheme } from "@/app/view/agents/themes";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
+import { CodePeekHost } from "@/app/view/code/codepeekhost";
 import type { TermViewModel } from "@/app/view/term/term-model";
 import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, WOS } from "@/store/global";
 import { isMacOS } from "@/util/platformutil";
@@ -267,6 +268,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             />
             <NullErrorBoundary debugName="TermLinkTooltip">
                 <TermLinkTooltip termWrap={termWrapInst} />
+            </NullErrorBoundary>
+            <NullErrorBoundary debugName="CodePeekHost">
+                <CodePeekHost termWrap={termWrapInst} blockId={blockId} />
             </NullErrorBoundary>
             <Search {...searchProps} />
         </div>

@@ -7,6 +7,14 @@
 
 export const MAX_VIEW_BYTES = 2 * 1024 * 1024;
 
+// the reason a git-only affordance gives for being disabled in a plain directory. The Code store keeps its own
+// copy of these three strings; the terminal peek reads them here, so it never imports the store
+export const NOT_TRACKED = "Not a git repository — no change tracking";
+
+// why a committed copy cannot be shown, worded the same in the Code surface and the terminal peek
+export const HEAD_BINARY = "The committed copy is a binary blob.";
+export const HEAD_TOOLARGE = "The committed copy is larger than the 2 MB view limit.";
+
 // READMEs and other prose read as documents; the viewer renders them with the app's markdown
 // component. Extension-only: the backend maps unknown extensions to an empty mimetype (how Go and
 // Rust files pass the text gate), so MIME would misclassify .md reliably.
@@ -59,6 +67,8 @@ export type FileClass = "text" | "binary" | "toolarge" | "pdf" | "image";
 
 // an empty mimetype means the backend did not recognize the extension — Go, Rust and most config
 // files land there, so empty must be viewable or the surface would call this repo binary.
+// The MIME is checked before the size: a large font or archive is binary, and "too large" would wrongly suggest a
+// bigger limit would open it (the fork's 19e16133d). Only a text-like file can be too large for the text view.
 export function classifyFile(size: number, mimeType: string): FileClass {
     const m = (mimeType ?? "").split(";")[0].trim().toLowerCase();
     if (m === "application/pdf") {
@@ -67,13 +77,17 @@ export function classifyFile(size: number, mimeType: string): FileClass {
     if (IMAGE_MIME.has(m)) {
         return size > MAX_IMAGE_BYTES ? "toolarge" : "image";
     }
-    if (size > MAX_VIEW_BYTES) {
-        return "toolarge";
-    }
     if (m === "" || m.startsWith("text/") || TEXTISH_MIME.has(m)) {
-        return "text";
+        return size > MAX_VIEW_BYTES ? "toolarge" : "text";
     }
     return "binary";
+}
+
+const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
+
+// by name alone, for a message about a file that was never opened (the terminal peek's "Image — open it in Code")
+export function isImagePath(path: string): boolean {
+    return IMAGE_EXT.test(path);
 }
 
 const NUL_SCAN_CHARS = 8192;

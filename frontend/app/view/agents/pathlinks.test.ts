@@ -7,6 +7,7 @@ import {
     findSpanningPaths,
     inlinePathOf,
     isBareName,
+    linkGesture,
     matchKnownPath,
     nearbyFolders,
     resolvePath,
@@ -208,5 +209,69 @@ describe("matchKnownPath", () => {
         expect(matchKnownPath("/huong_C/plan_C.md", known)).toBeNull();
         expect(matchKnownPath("../huong_C/plan_C.md", known)).toBeNull();
         expect(matchKnownPath("~/huong_C/plan_C.md", known)).toBeNull();
+    });
+});
+
+// the terminal Code peek's additions (the fork's 294cde415 and a93db601c, fitted to this detector)
+describe("findPathCandidates: a path shortened with an ellipsis", () => {
+    const names = (line: string) => findPathCandidates(line).map((c) => c.path);
+
+    it("leaves a path Claude Code shortened in the middle unlinked: no file is named that", () => {
+        const line = "Read ~\\IdeaProjects\\SIEM\\src\\test\\java\\com\\futuredata\\servic…\\QueryTest.java";
+        expect(names(line)).toEqual([]);
+        expect(names("Read src/app/…/deep/a.ts")).toEqual([]);
+        expect(names("Read …/deep/a.ts")).toEqual([]);
+    });
+
+    it("keeps a path elsewhere on the line, and an ellipsis set apart from one", () => {
+        expect(names("Read src/a.ts … and src/b.ts…")).toEqual(["src/a.ts"]);
+        expect(names("… +12 lines (ctrl+o to expand) src/a.ts")).toEqual(["src/a.ts"]);
+    });
+});
+
+describe("findPathCandidates: well-known extensionless files", () => {
+    const names = (line: string) => findPathCandidates(line).map((c) => c.path);
+
+    it("takes a bare Makefile, Dockerfile or LICENSE, and one with a folder as before", () => {
+        expect(names("edit Makefile now")).toEqual(["Makefile"]);
+        expect(names("edit Dockerfile and LICENSE")).toEqual(["Dockerfile", "LICENSE"]);
+        expect(names("see build/docker/Dockerfile and cmd/Makefile")).toEqual([
+            "build/docker/Dockerfile",
+            "cmd/Makefile",
+        ]);
+    });
+
+    it("reads a :line suffix on one", () => {
+        expect(paths("Makefile:12: missing separator")).toEqual([["Makefile", 12, undefined]]);
+    });
+
+    it("leaves the same words in prose alone", () => {
+        expect(names("the makefile and the license")).toEqual([]);
+        expect(names("and/or TCP/IP")).toEqual(["and/or", "TCP/IP"]);
+    });
+
+    it("does not make inline code a path: the transcript's links stay as they were", () => {
+        expect(inlinePathOf("Makefile")).toBeNull();
+    });
+});
+
+describe("linkGesture", () => {
+    const none = { ctrlKey: false, metaKey: false, shiftKey: false };
+
+    it("opens on Ctrl+click (Cmd+click on a Mac), as a link always did", () => {
+        expect(linkGesture({ ...none, ctrlKey: true }, false)).toBe("open");
+        expect(linkGesture({ ...none, metaKey: true }, true)).toBe("open");
+    });
+
+    it("peeks on the same click with Shift held", () => {
+        expect(linkGesture({ ...none, ctrlKey: true, shiftKey: true }, false)).toBe("peek");
+        expect(linkGesture({ ...none, metaKey: true, shiftKey: true }, true)).toBe("peek");
+    });
+
+    it("does nothing without the platform's modifier, Shift alone included", () => {
+        expect(linkGesture(none, false)).toBeNull();
+        expect(linkGesture({ ...none, shiftKey: true }, false)).toBeNull();
+        expect(linkGesture({ ...none, metaKey: true }, false)).toBeNull();
+        expect(linkGesture({ ...none, ctrlKey: true }, true)).toBeNull();
     });
 });

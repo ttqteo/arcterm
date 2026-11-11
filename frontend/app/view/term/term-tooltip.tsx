@@ -4,7 +4,7 @@
 import { TOOLTIP_SURFACE } from "@/app/element/tooltip";
 import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
-import { FloatingPortal, VirtualElement, flip, offset, shift, useFloating } from "@floating-ui/react";
+import { FloatingPortal, Placement, VirtualElement, flip, offset, shift, useFloating } from "@floating-ui/react";
 import * as React from "react";
 import type { TermWrap } from "./termwrap";
 
@@ -14,6 +14,8 @@ interface TermTooltipProps {
     /** Screen-space mouse position (clientX/clientY). null means hidden. */
     mousePos: { x: number; y: number } | null;
     content: React.ReactNode;
+    /** Where the tooltip sits against the pointer; floating-ui flips it when it does not fit. Defaults to above. */
+    placement?: Placement;
 }
 
 /**
@@ -21,7 +23,11 @@ interface TermTooltipProps {
  * Uses a floating-ui virtual element (via refs.setPositionReference) so no
  * real DOM reference is required.  Renders into a FloatingPortal.
  */
-export const TermTooltip = React.memo(function TermTooltip({ mousePos, content }: TermTooltipProps) {
+export const TermTooltip = React.memo(function TermTooltip({
+    mousePos,
+    content,
+    placement = "top-start",
+}: TermTooltipProps) {
     const isOpen = mousePos != null;
 
     // Keep latest mousePos in a ref so the virtual element always reflects it.
@@ -30,7 +36,7 @@ export const TermTooltip = React.memo(function TermTooltip({ mousePos, content }
 
     const { refs, floatingStyles } = useFloating({
         open: isOpen,
-        placement: "top-start",
+        placement,
         middleware: [offset({ mainAxis: 12, crossAxis: -20 }), flip(), shift({ padding: 0 })],
     });
 
