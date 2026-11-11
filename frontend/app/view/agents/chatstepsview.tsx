@@ -358,7 +358,9 @@ export function ChatSteps({
                     {running ? workingFor(stretchMs(work, now, live)) : workedFor(work.durationMs)} ·{" "}
                     {toolCountLabel(work.actions.length)}
                 </span>
-                {work.failed > 0 ? <span className="tabular-nums text-error">· {work.failed} failed</span> : null}
+                {/* no failed count here: a tool that fails mid-turn is mostly the agent's own probe (a grep with no hit, a
+                    missing tool) that it gets past, and red on the folded line asks you to look at what needs nothing.
+                    A failed step keeps its red on its own line, once the fold is open. */}
             </button>
             <AnimatePresence initial={false}>
                 {shown ? (

@@ -105,16 +105,17 @@ export function PinnedPromptBar({
                     {index > 0 ? (
                         <div
                             aria-hidden
-                            className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-accent/20 bg-accent/[0.06]"
+                            className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-edge-mid bg-surface"
                         />
                     ) : null}
-                    {/* the scroller's ground under the tinted card, so the card behind does not show through it */}
+                    {/* the scroller's ground under the card, so the card behind does not show through it. The card is
+                        neutral, your message bubble's surface: an accent tint goes muddy over a coloured theme */}
                     <div className={cn("relative rounded-[8px]", bg)}>
                         <button
                             type="button"
                             onClick={jump}
                             title="Back to this prompt"
-                            className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-[5px] text-left hover:border-accent/50"
+                            className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[5px] text-left hover:border-edge-strong hover:bg-surface-hover"
                         >
                             <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
                             <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />

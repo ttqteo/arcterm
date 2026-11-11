@@ -56,6 +56,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat is calmer: your pinned message at the top is a plain card like your message bubble instead of an orange one,
+  Show the diff and Open the terminal are two small icons beside Stop instead of a row of chips, and a folded "Worked
+  for …" line no longer shows a red failed count (a failed step stays red when you open it). Click a pasted image in
+  the box to see it full size.
 - Chat has a new look and moves more smoothly: the message box floats over the conversation as a rounded pill that
   changes shape while the agent works or files are dragged onto it, a stretch of tools shows one compact line per step
   and folds into "Worked for …" when the agent moves on, and a brainstorm question draws in the conversation as a card

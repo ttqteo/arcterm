@@ -25,7 +25,7 @@
 // answers like the part of a textarea they use.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { microFade, MOTION, turnTransition } from "@/app/element/motiontokens";
+import { MOTION, turnTransition } from "@/app/element/motiontokens";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -45,7 +45,7 @@ import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
-import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
+import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
@@ -124,7 +124,7 @@ export function ChatComposer({
     /** the box's state (chatboxstate.ts) whenever it changes, and once as the box mounts: the pane words the empty box's
      *  placeholder from it */
     onBoxState?: (state: BoxState) => void;
-    /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
+    /** the running agent's "Show the diff" icon; left out, the icon is not drawn */
     onShowDiff?: () => void;
     /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
      *  every command is sent. */
@@ -811,12 +811,6 @@ export function ChatComposer({
                 {slash.list}
                 {bashList.list}
                 {mention.list}
-                {/* a running agent: the two things Chat can show for it, as chips (the diff of what it is changing, its terminal) */}
-                <AnimatePresence initial={false}>
-                    {showStop ? (
-                        <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
-                    ) : null}
-                </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
                 <MotionConfig reducedMotion="user">
                     <div className="flex items-center gap-1.5">
@@ -848,6 +842,22 @@ export function ChatComposer({
                         </AnimatePresence>
                         {/* takes the row's free width, so Stop and Send stay at the far right */}
                         <ChatFooter agent={agent} />
+                        {/* a running agent: the two things Chat can show for it (the diff of what it is changing, its
+                            terminal), as icons beside Stop, so the box grows no row for them */}
+                        <AnimatePresence initial={false}>
+                            {showStop && onShowDiff != null ? (
+                                <Fold key="diff">
+                                    <ActionIcon icon={FileDiff} label="Show the diff" onClick={onShowDiff} />
+                                </Fold>
+                            ) : null}
+                        </AnimatePresence>
+                        <AnimatePresence initial={false}>
+                            {showStop ? (
+                                <Fold key="terminal">
+                                    <ActionIcon icon={Terminal} label="Open the terminal" onClick={showTerminal} />
+                                </Fold>
+                            ) : null}
+                        </AnimatePresence>
                         {/* the round Stop where Send is while the agent works; Send folds out beside it with nothing to send */}
                         <AnimatePresence initial={false}>
                             {showStop ? (
@@ -938,28 +948,19 @@ export function ChatComposer({
     );
 }
 
-// The running agent's suggested actions: what Chat already offers, as chips (no new commands). They fade in on the micro
-// ease; the box's own height spring makes room for them.
-function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal: () => void }) {
-    const part = usePartMotion(microFade);
-    return (
-        <motion.div {...part} className="flex flex-wrap items-center gap-1.5">
-            {onShowDiff != null ? <ActionChip icon={FileDiff} label="Show the diff" onClick={onShowDiff} /> : null}
-            <ActionChip icon={Terminal} label="Open the terminal" onClick={onOpenTerminal} />
-        </motion.div>
-    );
-}
-
-function ActionChip({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+// One of the running agent's actions (what Chat already offers, no new commands): a bare icon the size of the `+`, its
+// name in the tooltip
+function ActionIcon({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
     return (
         <button
             type="button"
-            data-chat-action-chip=""
+            data-chat-action=""
+            aria-label={label}
+            title={label}
             onClick={onClick}
-            className="flex h-[28px] cursor-pointer items-center gap-1.5 rounded-full border border-edge-mid bg-surface px-[11px] text-[12.5px] text-secondary transition-colors hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className="flex size-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
         >
-            <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" />
-            {label}
+            <Icon size={15} strokeWidth={1.8} aria-hidden />
         </button>
     );
 }
