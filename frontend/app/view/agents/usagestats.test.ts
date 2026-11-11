@@ -3,9 +3,13 @@ import {
     aggregateBuckets,
     bucketSpend,
     bucketTokens,
+    coverageStr,
+    estimateStr,
     foldModels,
     modelGridClass,
     pctStr,
+    usd,
+    windowStartDay,
     type ModelUsage,
 } from "./usagestats";
 
@@ -290,5 +294,85 @@ describe("foldModels", () => {
 
     it("returns an empty list unchanged", () => {
         expect(foldModels([], 4)).toEqual([]);
+    });
+});
+
+describe("usd", () => {
+    it("is unchanged under a cent: its other callers keep their text", () => {
+        expect([usd(0.004), usd(0.005), usd(0)]).toEqual(["$0.00", "$0.01", "$0.00"]);
+    });
+});
+
+describe("coverageStr", () => {
+    it("floors, and never rounds up to 100%", () => {
+        expect([coverageStr(99.6), coverageStr(100), coverageStr(50.4), coverageStr(50.9)]).toEqual([
+            ">99%",
+            "100%",
+            "50%",
+            "50%",
+        ]);
+    });
+});
+
+describe("estimateStr", () => {
+    it("reads unpriced when there are tokens and none of them priced", () => {
+        expect(estimateStr(0, 0, 500)).toBe("unpriced");
+    });
+    it("prints the estimate otherwise", () => {
+        expect(estimateStr(1.5, 100, 500)).toBe("≈ $1.50");
+        expect(estimateStr(0, 0, 0)).toBe("≈ $0.00");
+    });
+    it("prints a real cost under a cent as <$0.01, not $0.00", () => {
+        expect([estimateStr(0.004, 10, 10), estimateStr(0.0001, 10, 10), estimateStr(0.005, 10, 10)]).toEqual([
+            "≈ <$0.01",
+            "≈ <$0.01",
+            "≈ $0.01",
+        ]);
+    });
+});
+
+describe("windowStartDay", () => {
+    const now = new Date(2026, 10, 5, 0, 30).getTime();
+    it("is the local day windowDays-1 back, and undefined for all time or no window", () => {
+        expect(windowStartDay(7, now)).toBe("2026-10-30");
+        expect(windowStartDay(28, now)).toBe("2026-10-09");
+        expect(windowStartDay(0, now)).toBeUndefined();
+        expect(windowStartDay(null, now)).toBeUndefined();
+    });
+});
+
+describe("aggregateBuckets fromDay", () => {
+    const now = Date.parse("2026-06-26T12:00:00.000Z");
+    const days = (buckets: UsageBucket[], fromDay?: string) =>
+        aggregateBuckets(buckets, now, "all", fromDay).daily.map((d) => d.day);
+
+    it("pads a 7-day window to 7 columns for a scope active 3 days", () => {
+        const buckets = ["2026-06-24", "2026-06-25", "2026-06-26"].map((day) => bkt({ day, input: 10 }));
+        const daily = aggregateBuckets(buckets, now, "all", windowStartDay(7, now)).daily;
+        expect(daily.map((d) => d.day)).toEqual([
+            "2026-06-20",
+            "2026-06-21",
+            "2026-06-22",
+            "2026-06-23",
+            "2026-06-24",
+            "2026-06-25",
+            "2026-06-26",
+        ]);
+        expect(daily[0].byHarness).toEqual({});
+    });
+
+    it("starts at a bucket older than the given start day", () => {
+        expect(days([bkt({ day: "2026-06-23", input: 10 })], "2026-06-25")).toEqual([
+            "2026-06-23",
+            "2026-06-24",
+            "2026-06-25",
+            "2026-06-26",
+        ]);
+    });
+
+    it("is what it was without a start day", () => {
+        const buckets = [bkt({ day: "2026-06-24", input: 10 })];
+        expect(days(buckets)).toEqual(["2026-06-24", "2026-06-25", "2026-06-26"]);
+        expect(aggregateBuckets(buckets, now, "all")).toEqual(aggregateBuckets(buckets, now, "all", undefined));
     });
 });
