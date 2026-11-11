@@ -63,10 +63,14 @@ func withoutStrayEnds(tail string) string {
 	}
 }
 
-// steeringState reports the harness's region against the shared doc: current when a re-render would
-// change nothing, stale when it would, absent when there is no region to compare.
+// steeringState reports the harness's region against the shared doc: blank when the shared doc is
+// empty, whatever the harness file holds; current when a re-render would change nothing, stale when
+// it would, absent when there is no region to compare.
 func steeringState(existing, shared string) string {
-	if !strings.Contains(existing, steeringBegin) || strings.TrimSpace(shared) == "" {
+	if strings.TrimSpace(shared) == "" {
+		return "blank"
+	}
+	if !strings.Contains(existing, steeringBegin) {
 		return "absent"
 	}
 	if applyRegion(existing, shared) == existing {

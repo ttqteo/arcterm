@@ -63,3 +63,14 @@ func TestApplyRegionDropsMarkersInTheBodyAndHealsStrayEnds(t *testing.T) {
 		t.Fatalf("a healed file reads %q against the marker-carrying doc", steeringState(got, body))
 	}
 }
+
+func TestSteeringStateBlank(t *testing.T) {
+	withRegion := "# Prefs\n\n" + renderRegion("old rules")
+	for _, shared := range []string{"", "  \n\t\n"} {
+		for _, existing := range []string{"", "# Prefs\n", withRegion} {
+			if got := steeringState(existing, shared); got != "blank" {
+				t.Errorf("steeringState(%q, %q) = %q, want blank", existing, shared, got)
+			}
+		}
+	}
+}

@@ -44,6 +44,7 @@ const (
 	ActionSkillWrite     = "skill-write"
 	ActionSkillRemove    = "skill-remove"
 	ActionSkillUnmanaged = "skill-unmanaged"
+	ActionSkillLinked    = "skill-linked"
 )
 
 // Action is one change a sync run made, or would make under dryRun.

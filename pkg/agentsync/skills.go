@@ -29,6 +29,10 @@ const (
 type ObservedEntry struct {
 	Name    string
 	Managed bool
+	// Linked marks a symlink or junction: never a skill, never written through, never adopted.
+	// Target is where it points, which may be gone.
+	Linked bool
+	Target string
 }
 
 // ---- frontmatter ----
@@ -421,6 +425,13 @@ func observeSkills(dir string) ([]ObservedEntry, error) {
 	}
 	out := make([]ObservedEntry, 0, len(entries))
 	for _, e := range entries {
+		// every link is reported, a dangling one too: a junction left from the junction era under a vault
+		// skill's name would otherwise read as an empty slot, and the reconcile would write through it
+		if e.Type()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+			target, _ := os.Readlink(filepath.Join(dir, e.Name()))
+			out = append(out, ObservedEntry{Name: e.Name(), Linked: true, Target: target})
+			continue
+		}
 		if !e.IsDir() {
 			continue
 		}
@@ -454,6 +465,7 @@ const (
 	stateSynced    = "synced"
 	stateDiffers   = "differs"
 	stateUnmanaged = "unmanaged"
+	stateLinked    = "linked"
 	stateAbsent    = "absent"
 )
 
@@ -464,6 +476,8 @@ func skillStateFor(dir string, observed map[string]ObservedEntry, name string, w
 	switch {
 	case !present:
 		return stateDiffers // nothing there yet; a sync would write it
+	case e.Linked:
+		return stateLinked
 	case !e.Managed:
 		return stateUnmanaged
 	case treeMatches(filepath.Join(dir, name), want):
@@ -561,6 +575,9 @@ func reconcileSkillsDir(p Paths, dir, runtime string, names []string, dryRun boo
 		case stateUnmanaged:
 			actions = append(actions, Action{Kind: ActionSkillUnmanaged, Runtime: runtime, Path: target,
 				Detail: "the user's own directory; adopt it to bring it into the vault"})
+		case stateLinked:
+			actions = append(actions, Action{Kind: ActionSkillLinked, Runtime: runtime, Path: target,
+				Detail: "a link to another folder; arcterm never writes through one"})
 		case stateSynced:
 		default:
 			actions = append(actions, Action{Kind: ActionSkillWrite, Runtime: runtime, Path: target})
@@ -614,7 +631,7 @@ func Apply(p Paths, dryRun bool) ([]Action, error) {
 type SkillRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	// States maps runtime -> synced | differs | unmanaged | absent. A harness with no fixed skills
+	// States maps runtime -> synced | differs | unmanaged | linked | absent. A harness with no fixed skills
 	// directory (pi) never appears: it reads an explicit list of paths from its own settings.
 	States map[string]string `json:"states"`
 	// Deltas maps runtime -> what that harness overrides: frontmatter keys and sidecar paths.
@@ -767,4 +784,35 @@ func SkillRows(p Paths) ([]SkillRow, error) {
 		}
 	}
 	return rows, nil
+}
+
+// SkillLink is a link in a harness skills directory, a vault skill's name included. arcterm leaves it
+// alone: it is not adopted, and nothing is written through it.
+type SkillLink struct {
+	Runtime string `json:"runtime"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Target  string `json:"target"`
+}
+
+// SkillLinks lists every link in each present harness's skills directory, a vault skill's included so
+// its matrix cell can show the target: harnesses in catalog order, names sorted within each.
+func SkillLinks(p Paths) ([]SkillLink, error) {
+	var out []SkillLink
+	for _, spec := range harness.List() {
+		dir := spec.SkillsPath(p.Home)
+		if dir == "" || !configRootExists(spec, p.Home) {
+			continue
+		}
+		observed, err := observeSkills(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range observed {
+			if e.Linked {
+				out = append(out, SkillLink{Runtime: spec.Runtime, Name: e.Name, Path: filepath.Join(dir, e.Name), Target: e.Target})
+			}
+		}
+	}
+	return out, nil
 }
