@@ -90,14 +90,23 @@ import {
     loadUsage,
     usageBucketsAtom,
     usageErrorAtom,
+    usageLensAtom,
     usageLoadedAtom,
     usageMetricAtom,
     usageTabChosenAtom,
     usageWindowAtom,
+    type UsageLens,
 } from "./usagestore";
 import { formatProjectedDate, projectWeeklyExhaustion } from "./weeklyforecast";
+import { WorkflowLens } from "./workflowlensview";
 
 const ALL = "all";
+// the lens switch in the header: today's provider page, and the Workflow scan (workflowlensview.tsx). By work, the
+// third lens of usageattribution.ts, adds its own option here.
+const LENS_OPTIONS: { key: UsageLens; label: string }[] = [
+    { key: "provider", label: "By provider" },
+    { key: "workflow", label: "Workflow" },
+];
 // daily, where it goes and models in one row of three cards (one column below the breakpoint); the cards in a row
 // stretch to the tallest
 const CHART_ROW = "grid grid-cols-1 gap-3.5 @6xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]";
@@ -507,6 +516,10 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     // the selected tab and the historical scope filter are the same state, by construction
     const [sel, setSel] = useAtom(model.usageHarnessFilterAtom);
     const [tabChosen, setTabChosen] = useAtom(usageTabChosenAtom);
+    // The Workflow lens owns the page below the header (workflowlensview.tsx); every other lens value is the provider
+    // page below, as before. Keys that act on that page (← / →, j / k, a) stand down while the lens is up.
+    const [lens, setLens] = useAtom(usageLensAtom);
+    const workflow = lens === "workflow";
     // a click or a key is the person's choice; the default tab below stops following the busiest provider
     const pickTab = useCallback(
         (id: string) => {
@@ -579,7 +592,10 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     }, [usageLoaded, tabChosen, rows, sel, setSel]);
 
     // the ids in the order the strip draws them; none when the strip is hidden for a lone provider
-    const tabIds = useMemo(() => (solo != null ? [] : [...tabRows(rows).map((r) => r.harness), ALL]), [solo, rows]);
+    const tabIds = useMemo(
+        () => (solo != null || workflow ? [] : [...tabRows(rows).map((r) => r.harness), ALL]),
+        [solo, workflow, rows]
+    );
 
     // Claude's sessions: rows for the By session table, the Insights card's state, and whether Analyze is held.
     // All of it is for the Claude tab only; elsewhere the lists stay empty and nothing is published to the list nav.
@@ -635,7 +651,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     // sessions to read, or while an analysis runs or is held. The `a` key reaches it through a ref, since the
     // bindings below are built once.
     const analyze = (lang = insightsLang) => {
-        if (!claude || sessionRows.length === 0 || insightsRunning || held != null) {
+        if (workflow || !claude || sessionRows.length === 0 || insightsRunning || held != null) {
             return;
         }
         // the levers come from the same rows the digest numbers its sessions by, so their refs agree
@@ -686,7 +702,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     // j / k / Enter drive the By session table on the Claude tab; the tabs are ← / →.
     const listNav = useMemo<ListNavController | null>(() => {
-        if (!claude || visibleRows.length === 0) {
+        if (workflow || !claude || visibleRows.length === 0) {
             return null;
         }
         return {
@@ -701,7 +717,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                 }
             },
         };
-    }, [claude, visibleRows, sessionCursor, setSessionCursor, openSession]);
+    }, [workflow, claude, visibleRows, sessionCursor, setSessionCursor, openSession]);
     useSurfaceListNav(listNav);
 
     // ← / → switch tabs. The bindings are built once; the handlers read the live ids and selection from a ref.
@@ -812,6 +828,19 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                   },
               ];
 
+    const lensSwitch = (
+        <Segmented<UsageLens>
+            value={lens === "workflow" ? "workflow" : "provider"}
+            onChange={setLens}
+            role="group"
+            ariaLabel="Lens"
+            options={LENS_OPTIONS}
+        />
+    );
+    if (workflow) {
+        return <WorkflowLens model={model} lensSwitch={lensSwitch} />;
+    }
+
     return (
         <MotionConfig reducedMotion="user">
             <div className="flex h-full min-h-0 flex-col bg-background">
@@ -840,14 +869,17 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                         )
                     }
                     actions={
-                        <Segmented<"7d" | "all">
-                            value={usageWindow}
-                            onChange={setUsageWindow}
-                            options={[
-                                { key: "7d", label: "7 days" },
-                                { key: "all", label: "All time" },
-                            ]}
-                        />
+                        <>
+                            {lensSwitch}
+                            <Segmented<"7d" | "all">
+                                value={usageWindow}
+                                onChange={setUsageWindow}
+                                options={[
+                                    { key: "7d", label: "7 days" },
+                                    { key: "all", label: "All time" },
+                                ]}
+                            />
+                        </>
                     }
                 />
 

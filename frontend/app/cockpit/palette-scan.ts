@@ -4,15 +4,10 @@
 // The palette's Scan workflow row: start a workflow scan in the home project, then open the run through the one
 // router (workflowscan:<runid>), which lands on the scan's agent, where it asks which fixes to apply.
 
-import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
-import { RpcApi } from "@/app/store/wshclientapi";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { createWorkflowScan } from "@/app/view/agents/workflowscanstart";
 import { openTarget } from "@/app/view/jarvis/openref";
-
-// creating the run starts the scan agent's tab, which outlasts the 5s default
-const START_SCAN_TIMEOUT_MS = 60_000;
 
 // The agent enters the roster only once its tab's block loads in the frontend or its hook reports a status, both
 // after the start returns. Past this wait the open goes on without it and lands on the run's sheet.
@@ -54,18 +49,12 @@ function waitForScanAgent(model: AgentsViewModel, runId: string, timeoutMs: numb
 }
 
 // A start error propagates: the palette shows it as its action error, where the row was. An open that fails after
-// the scan began reports itself (openTarget's own toast); the scan runs on.
+// the scan began reports itself (openTarget's own toast); the scan runs on. The scan is also the one the Usage
+// surface's Workflow lens follows next (createWorkflowScan sets workflowScanRunAtom); the lens itself is left as it is.
 export async function startWorkflowScan(model: AgentsViewModel, channelId: string): Promise<Run> {
-    const rtn = await RpcApi.WorkflowScanStartCommand(
-        TabRpcClient,
-        { channelid: channelId, workspaceid: globalStore.get(atoms.workspaceId) },
-        { timeout: START_SCAN_TIMEOUT_MS }
-    );
-    if (rtn?.run == null) {
-        throw new Error("starting the scan returned no run");
-    }
+    const run = await createWorkflowScan(channelId);
     // openTarget reads the roster once, so a start that opens before the agent shows would land on the sheet
-    await waitForScanAgent(model, rtn.run.id, SCAN_AGENT_WAIT_MS);
-    await openTarget(model, { kind: "workflowscan", runId: rtn.run.id });
-    return rtn.run;
+    await waitForScanAgent(model, run.id, SCAN_AGENT_WAIT_MS);
+    await openTarget(model, { kind: "workflowscan", runId: run.id });
+    return run;
 }

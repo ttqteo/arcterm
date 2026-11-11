@@ -35,7 +35,7 @@ export const usageMetricAtom = atom<"tokens" | "spend">("tokens");
 // true once the person has picked a provider tab (click or key). Until then the surface writes the busiest
 // provider into usageHarnessFilterAtom; after, the person's tab is left alone.
 export const usageTabChosenAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
-export type UsageLens = "provider" | "work";
+export type UsageLens = "provider" | "work" | "workflow";
 export const usageLensAtom = atom<UsageLens>("provider");
 // By work: the rail scope ("all" or a project key), the run or session opened from a list with the
 // scope its Back returns to, and whether the ranked list is expanded
