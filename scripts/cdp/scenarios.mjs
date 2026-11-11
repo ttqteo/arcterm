@@ -43167,7 +43167,7 @@ const agentChat = {
                 return {
                     empty: l?.querySelector("[data-chat-empty]")?.textContent.trim() ?? null,
                     working: !!l?.querySelector("[data-chat-working]"),
-                    box: !!l?.querySelector("[data-agent-chat-composer] textarea"),
+                    box: !!l?.querySelector("[data-agent-chat-composer] [data-chat-input]"),
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-13b-starting.png");
