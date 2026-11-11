@@ -42110,6 +42110,11 @@ const AC_ENDED_WAIT_MS = 240_000;
 const AC_WAIT_MS = 8000;
 // what the mocked ListClaudeCommandsCommand answers: a skill the `/` menu lists beside its built-ins
 const AC_COMMANDS = [{ name: "arc:council", description: "Ask a council of viewpoints", source: "skill" }];
+// what the mocked BashHistoryCommand answers: the `!` commands Claude Code's history holds for the folder, newest first (step 76's ghost text)
+const AC_BASH_HISTORY = ["git log --oneline -5", "git status -sb"];
+// what the mocked ShellCompleteCommand answers while a step has not set another (acSetShell): the files a Tab in bash mode lists for
+// the word under the caret (steps 77 and 78)
+const AC_SHELL_FILES = ["frontend/app/view/agents/chatpane.tsx", "frontend/app/view/agents/chatpanes/", "frontend/app/view/agents/chatpending.ts"];
 // what the mocked GetClaudeLiveCommandsCommand answers for the main agent's block: the list Claude Code's own typeahead shows in
 // that session (the arc mod publishes it, pkg/claudecmds/live.go). 12 built-ins (the bundled skills `code-review`,
 // `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. No other
@@ -42361,7 +42366,7 @@ async function installAgentChatMock(h, ctx) {
         const prev = api.mockClient ?? null;
         const blocks = new Set(${JSON.stringify(blocks)});
         const mainBlock = ${JSON.stringify(ctx.tabs.main.blockId)};
-        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)}, live: ${JSON.stringify(AC_LIVE_COMMANDS)} };
+        const m = { api, prev, calls: [], queues: {}, answer: "ok", held: [], commands: ${JSON.stringify(AC_COMMANDS)}, live: ${JSON.stringify(AC_LIVE_COMMANDS)}, bash: ${JSON.stringify(AC_BASH_HISTORY)}, shell: ${JSON.stringify(AC_SHELL_FILES)} };
         const drop = (data) => {
             const q = m.queues[data.oref] ?? [];
             m.queues[data.oref] = data.allow ? q.filter((r) => r.id !== data.id) : [];
@@ -42403,6 +42408,17 @@ async function installAgentChatMock(h, ctx) {
                     m.calls.push({ command, data });
                     return Promise.resolve(m.commands);
                 }
+                // step 76: the folder's ! history (the ghost text of bash mode)
+                if (command === "bashhistory") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(m.bash);
+                }
+                // steps 77-78: the shell's completions of the word under the caret (Tab in bash mode): recorded, answered from m.shell. The
+                // real command is step 79's, which calls the page's own client and so goes past this mock
+                if (command === "shellcomplete") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(m.shell);
+                }
                 // the live list of the main agent's block only; any other block goes down to wavesrv, which has none (null)
                 if (command === "getclaudelivecommands" && data?.blockid === mainBlock) {
                     m.calls.push({ command, data });
@@ -42440,6 +42456,8 @@ const acInputs = async (h, blockId) =>
         .filter((c) => c.data.blockid === blockId && c.data.input !== "" && !/^\x1b\[[IO]$/.test(c.data.input))
         .map((c) => c.data.input);
 const acSetAnswer = (h, mode) => h.ev(`(() => { window.${AC_MOCK_KEY}.answer = ${JSON.stringify(mode)}; return true; })()`);
+// what the mocked ShellCompleteCommand answers from now on: the completions of the next Tab in bash mode
+const acSetShell = (h, items) => h.ev(`(() => { window.${AC_MOCK_KEY}.shell = ${JSON.stringify(items)}; return true; })()`);
 const acRelease = (h) =>
     h.ev(`(() => {
         const held = window.${AC_MOCK_KEY}.held.splice(0);
@@ -42464,6 +42482,7 @@ const acKeys = {
     enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
     escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
     left: { key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 },
+    right: { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 },
     backspace: { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 },
 };
 async function acKey(h, { mod, ...k }) {
@@ -44775,6 +44794,312 @@ const agentChat = {
                     spaceGone75 && shutAtEnd75 && atEnd75.length === 1 && atEnd75[0].path === "../beta.md" &&
                     shutLeft75 && left75.length === 1 && left75[0].selected === true,
                 { two75, top75, moved75, down75, pilled75, closedAfterPick75, spaceGone75, text75, shutAtEnd75, atEnd75, shutLeft75, left75 }
+            );
+
+            // 76. Bash mode: a text that starts with `!` sits in a shell well (a dark, rounded box) under a "Bash" caption, the editor
+            // in the mono font and its `!` drawn in the accent colour and semibold (a span of the overlay that also holds the ghost).
+            // Typing `!git l` shows the newest `!` command of Claude Code's history that starts so (the mocked BashHistoryCommand
+            // answers AC_BASH_HISTORY) as grey ghost text right after the last character, with "→ accept" in the caption; → takes it.
+            // `!` alone has the well and no ghost. The `@` picker stays shut over `!ls @../` (step 72 opens it in a plain box), and a
+            // command sent moves to the front of the list the ghost reads. The history is read per folder, so the box's folder is
+            // set first, to the scenario's own (not one an earlier step has read)
+            await h.rpc("setmeta", { oref: orefA, meta: { "cmd:cwd": ctx.dir.replace(/\\/g, "/") } });
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            const composer76 = `document.querySelector('[data-agent-chat="${A}"] [data-agent-chat-composer]')`;
+            const plainFont76 = await h.ev(`getComputedStyle(${acBox(A)}).fontFamily`);
+            const read76 = () =>
+                h.ev(`(() => {
+                    const c = ${composer76};
+                    const box = c?.querySelector("[data-chat-input]");
+                    const cap = c?.querySelector("[data-chat-bash-caption]");
+                    const bang = c?.querySelector("[data-chat-bang]");
+                    const ghost = c?.querySelector("[data-chat-ghost]");
+                    const icon = cap?.querySelector("svg");
+                    const well = box?.parentElement?.parentElement;
+                    const ws = well ? getComputedStyle(well) : null;
+                    // where the editor's own text ends, against where the ghost starts
+                    let textRight = null;
+                    if (box) {
+                        let last = null;
+                        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+                        for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\\S/.test(n.data)) last = n;
+                        if (last) {
+                            const r = document.createRange();
+                            r.selectNodeContents(last);
+                            textRight = r.getBoundingClientRect().right;
+                        }
+                    }
+                    const gr = ghost?.getBoundingClientRect();
+                    return {
+                        mode: c?.hasAttribute("data-chat-bash-mode") ?? false,
+                        text: ${acVal(acBox(A))},
+                        caption: cap?.querySelector("span")?.textContent.trim() ?? null,
+                        accept: cap?.querySelector("[data-chat-bash-accept]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                        chip: !!c?.querySelector("[data-chat-bash]"),
+                        font: box ? getComputedStyle(box).fontFamily : null,
+                        well: ws ? { bg: ws.backgroundColor, radius: ws.borderRadius } : null,
+                        bang: bang ? { text: bang.textContent, color: getComputedStyle(bang).color, weight: getComputedStyle(bang).fontWeight } : null,
+                        accent: icon ? getComputedStyle(icon).color : null,
+                        ghost: ghost?.textContent ?? null,
+                        ghostGap: gr && textRight != null ? Math.abs(gr.left - textRight) : null,
+                        mentions: !!document.querySelector("[data-chat-mentions]"),
+                    };
+                })()`);
+            await acType(h, acBox(A), "!git l", false);
+            const ghosted76 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === "og --oneline -5"`, 8000);
+            await polishNap(250);
+            const typed76 = await read76();
+            const asked76 = await acCalls(h, "bashhistory");
+            await h.shot("cdp-shots/agent-chat-76-bash-ghost.png");
+            await acKey(h, acKeys.right);
+            const taken76 = await polishWaitFor(h, `${acVal(acBox(A))} === "!git log --oneline -5"`, 3000);
+            await polishNap(250);
+            const after76 = await read76();
+            // `!` alone: the well and the caption, no ghost and no hint
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "!", false);
+            await polishWaitFor(h, `!!${composer76}?.querySelector("[data-chat-bang]")`, 3000);
+            await polishNap(250);
+            const bare76 = await read76();
+            await h.shot("cdp-shots/agent-chat-76-bash-well.png");
+            // the `@` picker stays shut in bash mode
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "!ls @../", false);
+            await polishWaitFor(h, `${acVal(acBox(A))} === "!ls @../"`, 3000);
+            let mentions76 = 0;
+            for (const end = Date.now() + 900; Date.now() < end; await polishNap(100)) {
+                if (await h.ev(`!!document.querySelector("[data-chat-mentions]")`)) mentions76++;
+            }
+            // a command sent goes to the front of the list: `!git s` then takes the stash one rather than `!git status -sb`
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "!git stash list", false);
+            await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
+            const before76 = (await acInputs(h, blockA)).length;
+            await acKey(h, acKeys.enter);
+            let sent76 = [];
+            for (let i = 0; i < 30 && !sent76.join("").endsWith("\r"); i++) {
+                await polishNap(100);
+                sent76 = (await acInputs(h, blockA)).slice(before76);
+            }
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "!git s", false);
+            const front76 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === "tash list"`, 3000);
+            const ghostAfterSend76 = await h.ev(`${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null`);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            const gone76 = await read76();
+            rec(
+                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list; an empty box has no caption, well or bang",
+                ghosted76 && asked76.length >= 1 && asked76[0].data.cwd === ctx.dir.replace(/\\/g, "/") &&
+                    typed76.mode === true && typed76.text === "!git l" && typed76.caption === "Bash" && typed76.chip === false &&
+                    typed76.well != null && typed76.well.radius === "8px" && typed76.well.bg !== "rgba(0, 0, 0, 0)" &&
+                    /JetBrains Mono/.test(typed76.font ?? "") && !/JetBrains Mono/.test(plainFont76 ?? "") &&
+                    typed76.bang?.text === "!" && typed76.accent != null && typed76.bang.color === typed76.accent && typed76.bang.weight === "600" &&
+                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ accept" &&
+                    taken76 && after76.ghost === null && after76.accept === null && after76.mode === true &&
+                    bare76.mode === true && bare76.text === "!" && bare76.caption === "Bash" && bare76.bang?.text === "!" &&
+                    bare76.ghost === null && bare76.accept === null &&
+                    mentions76 === 0 &&
+                    sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" &&
+                    gone76.mode === false && gone76.caption === null && gone76.well?.bg === "rgba(0, 0, 0, 0)" && gone76.bang === null,
+                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, mentions76, sent76, front76, ghostAfterSend76, gone76 }
+            );
+
+            // 77. Tab in bash mode, three answers. The box's folder is step 76's (cmd:cwd on the main agent's block). The mocked
+            // ShellCompleteCommand answers three files for the word under the caret, so Tab opens a list above the whole box (its caption
+            // is not covered), headed Files 3, the rows in the mono font with the folder part muted (a folder keeps its trailing /), the
+            // first highlighted, a footer with the keys and the agent's folder. Tab asked for kind file and the word typed, in that folder,
+            // and the focus stayed in the box. ↓ and ↑ move the highlight; Enter puts the highlighted file in place of the word with a
+            // space after it and sends nothing; Escape closes the list and leaves the text and the focus; any other key closes it too.
+            // The ghost text and its hint step aside while the list is open and come back when it closes
+            const cwd77 = ctx.dir.replace(/\\/g, "/");
+            const word77 = "frontend/app/view/agents/chatp";
+            const cmd77 = `!npx vitest run ${word77}`;
+            // a space the editor draws as a no-break one reads as a plain one
+            const boxText77 = async () => ((await h.ev(acVal(acBox(A)))) ?? "").replace(/ /g, " ");
+            const listUp77 = (ms) => polishWaitFor(h, `!!document.querySelector("[data-chat-bash-list]")`, ms);
+            const listGone77 = (ms) => polishWaitFor(h, `!document.querySelector("[data-chat-bash-list]")`, ms);
+            const selected77 = (key) =>
+                polishWaitFor(h, `document.querySelector('[data-chat-bash-item][aria-selected="true"]')?.getAttribute("data-chat-bash-item") === ${JSON.stringify(key)}`, 3000);
+            // the box emptied, `typed` put in it, then Tab pressed
+            const tabOn77 = async (typed) => {
+                await acClear(h, acBox(A));
+                await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+                await acType(h, acBox(A), typed, false);
+                await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(typed)}`, 3000);
+                await acKey(h, acKeys.tab);
+            };
+            const read77 = () =>
+                h.ev(`(() => {
+                    const list = document.querySelector("[data-chat-bash-list]");
+                    if (!list) return null;
+                    const lr = list.getBoundingClientRect();
+                    const cr = ${composer76}?.getBoundingClientRect();
+                    const head = list.querySelector("[data-chat-bash-list-group]");
+                    const rows = [...list.querySelectorAll("[data-chat-bash-item]")].map((li) => {
+                        const name = li.firstElementChild;
+                        const dir = name?.firstElementChild;
+                        return {
+                            key: li.getAttribute("data-chat-bash-item"),
+                            selected: li.getAttribute("aria-selected") === "true",
+                            text: li.textContent,
+                            mono: /JetBrains Mono/.test(name ? getComputedStyle(name).fontFamily : ""),
+                            dir: dir?.textContent ?? "",
+                            dirMuted: !!dir && !!name && getComputedStyle(dir).color !== getComputedStyle(name).color,
+                        };
+                    });
+                    return {
+                        group: head?.getAttribute("data-chat-bash-list-group") ?? null,
+                        count: head?.lastElementChild?.textContent.trim() ?? null,
+                        rows,
+                        footer: list.lastElementChild?.textContent ?? null,
+                        above: !!cr && lr.bottom <= cr.top + 1,
+                        ghost: ${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null,
+                        focused: document.activeElement === ${acBox(A)},
+                        text: ${acVal(acBox(A))},
+                    };
+                })()`);
+            await acSetShell(h, AC_SHELL_FILES);
+            const before77 = (await acCalls(h, "shellcomplete")).length;
+            await tabOn77(cmd77);
+            const opened77 = await listUp77(5000);
+            await polishNap(250);
+            const list77 = await read77();
+            const asked77 = (await acCalls(h, "shellcomplete")).slice(before77);
+            await h.shot("cdp-shots/agent-chat-77-bash-tab-list.png");
+            await acKey(h, acKeys.down);
+            const movedDown77 = await selected77(AC_SHELL_FILES[1]);
+            await acKey(h, acKeys.up);
+            const movedUp77 = await selected77(AC_SHELL_FILES[0]);
+            const inputs77 = (await acInputs(h, blockA)).length;
+            await acKey(h, acKeys.enter);
+            const want77 = `!npx vitest run ${AC_SHELL_FILES[0]} `;
+            const picked77 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want77)}`, 3000);
+            const shutAfterPick77 = await listGone77(3000);
+            await polishNap(300);
+            const sentOnPick77 = (await acInputs(h, blockA)).length - inputs77;
+            const afterPick77 = await boxText77();
+            // Escape: the list closes, the text and the focus stay (the box's own Escape would have let go of the focus)
+            await tabOn77(cmd77);
+            const reopened77 = await listUp77(5000);
+            await acKey(h, acKeys.escape);
+            const escShut77 = await listGone77(3000);
+            await polishNap(250);
+            const esc77 = { text: await boxText77(), focused: (await acFocusIn(h, A)).box };
+            // any other key closes it (the next Tab asks again with the word as it is by then)
+            await acKey(h, acKeys.tab);
+            const reopenedAgain77 = await listUp77(5000);
+            await acKey(h, { key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
+            const otherShut77 = await listGone77(3000);
+            const other77 = await boxText77();
+            // the ghost text of `!git l` steps aside for the list and comes back with Escape
+            await acSetShell(h, ["lib/", "log.txt"]);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "!git l", false);
+            const ghostAt77 = `${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null`;
+            const ghostBefore77 = await polishWaitFor(h, `(${ghostAt77}) === "og --oneline -5"`, 3000);
+            await acKey(h, acKeys.tab);
+            const ghostListUp77 = await listUp77(5000);
+            await polishNap(250);
+            const ghostOpen77 = await h.ev(ghostAt77);
+            const hintOpen77 = await h.ev(`!!${composer76}?.querySelector("[data-chat-bash-accept]")`);
+            await acKey(h, acKeys.escape);
+            await listGone77(3000);
+            const ghostBack77 = await polishWaitFor(h, `(${ghostAt77}) === "og --oneline -5"`, 3000);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "77. Tab on `!npx vitest run frontend/app/view/agents/chatp` (the mock answers three files) asks for kind file and that word in the box's folder and opens a list above the box headed Files 3: the three rows in order in the mono font, the folder part of each muted (a folder keeps its trailing /), the first highlighted, a footer with Tab complete, Esc close and `in <folder>`; the focus stays in the box and the text is as typed; ↓ then ↑ move the highlight; Enter puts frontend/app/view/agents/chatpane.tsx and a space in place of the word, sends nothing and closes the list; Escape closes it and keeps the text and the focus; any other key closes it; the ghost text of `!git l` and its hint are gone while the list is open and back after Escape",
+                opened77 && asked77.length === 1 && asked77[0].data.kind === "file" && asked77[0].data.word === word77 && asked77[0].data.cwd === cwd77 &&
+                    list77 != null && list77.group === "Files" && list77.count === "3" &&
+                    list77.rows.map((r) => r.key).join("|") === AC_SHELL_FILES.join("|") &&
+                    list77.rows.map((r) => r.text).join("|") === AC_SHELL_FILES.join("|") &&
+                    list77.rows[0].selected === true && list77.rows.slice(1).every((r) => !r.selected) &&
+                    list77.rows.every((r) => r.mono && r.dir === "frontend/app/view/agents/" && r.dirMuted) &&
+                    /Tab complete/.test(list77.footer ?? "") && /Esc close/.test(list77.footer ?? "") && (list77.footer ?? "").endsWith(`in ${cwd77}`) &&
+                    list77.above === true && list77.focused === true && list77.text === cmd77 && list77.ghost === null &&
+                    movedDown77 && movedUp77 && picked77 && shutAfterPick77 && sentOnPick77 === 0 && afterPick77 === want77 &&
+                    reopened77 && escShut77 && esc77.text === cmd77 && esc77.focused === true &&
+                    reopenedAgain77 && otherShut77 && other77.startsWith(cmd77) &&
+                    ghostBefore77 && ghostListUp77 && ghostOpen77 === null && hintOpen77 === false && ghostBack77,
+                { opened77, asked77, list77, movedDown77, movedUp77, picked77, shutAfterPick77, sentOnPick77, afterPick77, reopened77, escShut77, esc77, reopenedAgain77, otherShut77, other77, ghostBefore77, ghostListUp77, ghostOpen77, hintOpen77, ghostBack77 }
+            );
+
+            // 78. One answer goes in at once, with no list, as a shell does (the mock answers one name): a file word (`!cat READ` ->
+            // `!cat README.md `), the first word asks for commands (`!gi` -> `!git `), a $word for variables, which the shell names without
+            // the $ and the box puts after the one typed (`!echo $HO` -> `!echo $HOME `). Each Tab asked for its kind and the word (a
+            // variable's without its $) in the box's folder. No answer changes nothing, and Tab does not take the focus out of the box
+            const cases78 = [
+                { typed: "!cat READ", answer: ["README.md"], kind: "file", word: "READ", want: "!cat README.md " },
+                { typed: "!gi", answer: ["git"], kind: "command", word: "gi", want: "!git " },
+                { typed: "!echo $HO", answer: ["HOME"], kind: "variable", word: "HO", want: "!echo $HOME " },
+            ];
+            const res78 = [];
+            for (const c of cases78) {
+                await acSetShell(h, c.answer);
+                const n = (await acCalls(h, "shellcomplete")).length;
+                await tabOn77(c.typed);
+                let text = "";
+                for (let i = 0; i < 20 && text !== c.want; i++) {
+                    await polishNap(150);
+                    text = await boxText77();
+                }
+                const asked = (await acCalls(h, "shellcomplete")).slice(n).map((a) => a.data);
+                const list = await h.ev(`!!document.querySelector("[data-chat-bash-list]")`);
+                res78.push({ ...c, text, list, asked });
+            }
+            await acSetShell(h, []);
+            const n78 = (await acCalls(h, "shellcomplete")).length;
+            await tabOn77("!cat zzz");
+            await polishNap(700);
+            const none78 = {
+                text: await boxText77(),
+                list: await h.ev(`!!document.querySelector("[data-chat-bash-list]")`),
+                asked: (await acCalls(h, "shellcomplete")).length - n78,
+                focused: (await acFocusIn(h, A)).box,
+            };
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "78. one answer is put in at once with no list: `!cat READ` + Tab (kind file, word READ) -> `!cat README.md `, `!gi` (kind command, word gi) -> `!git `, `!echo $HO` (kind variable, word HO) -> `!echo $HOME `, each asked once in the box's folder; an empty answer to `!cat zzz` changes nothing, opens no list and leaves the focus in the box",
+                res78.every(
+                    (r) =>
+                        r.text === r.want && r.list === false && r.asked.length === 1 &&
+                        r.asked[0].kind === r.kind && r.asked[0].word === r.word && r.asked[0].cwd === cwd77
+                ) &&
+                    none78.text === "!cat zzz" && none78.list === false && none78.asked === 1 && none78.focused === true,
+                { res78, none78 }
+            );
+
+            // 79. The real wire. Steps 77 and 78 mock ShellCompleteCommand, so they prove the box and not the backend; this calls the page's
+            // own client, which goes past the mock, and asks wavesrv's shell (Git Bash on Windows) in the repo's folder: the files that start
+            // with a word (a folder keeps its trailing /), the commands that start with `ech`, the variables that start with `PAT`
+            const repo79 = resolve(fileURLToPath(new URL("../../", import.meta.url)));
+            const real79 = async (kind, word) => {
+                try {
+                    return await h.rpc("shellcomplete", { cwd: repo79, kind, word });
+                } catch (e) {
+                    return { error: String(e?.message ?? e) };
+                }
+            };
+            const files79 = await real79("file", word77);
+            const dirs79 = await real79("file", "frontend/app/view/agen");
+            const cmds79 = await real79("command", "ech");
+            const vars79 = await real79("variable", "PAT");
+            const has79 = (got, name) => Array.isArray(got) && got.includes(name);
+            rec(
+                "79. the real shellcomplete in the repo's folder: file frontend/app/view/agents/chatp lists chatpane.tsx and chatpending.ts, file frontend/app/view/agen lists frontend/app/view/agents/ with its trailing /, command ech lists echo, variable PAT lists PATH (without a $)",
+                has79(files79, "frontend/app/view/agents/chatpane.tsx") && has79(files79, "frontend/app/view/agents/chatpending.ts") &&
+                    has79(dirs79, "frontend/app/view/agents/") && has79(cmds79, "echo") && has79(vars79, "PATH"),
+                { repo79, files79, dirs79, cmds79, vars79 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));

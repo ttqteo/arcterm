@@ -8,8 +8,11 @@
 // useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
 // (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
 // as a picture; Ctrl+U, Cmd+U on a Mac, opens the file dialog), the `/` command menu (slashmenu.tsx) and the `@` file
-// picker (filemention.tsx), Stop, and the look. Callers key it by agent id: its text and its attachments are local to the
-// box.
+// picker (filemention.tsx), Stop, and the look. A text that starts with `!` is a bash command (chatmodel.ts `bashMode`): the
+// box draws it in a shell well under a "Bash" caption, with the newest `!` command of Claude Code's history that starts so
+// as grey ghost text, which → takes (chatbash.ts has the rules, chatbashstore.ts the history), and Tab completes the word
+// under the caret (commands, `$variables`, files) in a list over the box (bashcomplete.tsx). Callers key it by agent id:
+// its text and its attachments are local to the box.
 //
 // The text is a small Lexical editor (chateditor.tsx) that draws a file you @-mentioned as a pill, but the plain text
 // stays the source of truth: `text` is the message as the agent receives it, and everything here (the menus, recall, the
@@ -25,13 +28,16 @@ import { focusTerm } from "@/app/view/term/termpaste";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUp, Moon, Square } from "lucide-react";
+import { ArrowUp, Moon, Square, Terminal } from "lucide-react";
 import { AnimatePresence, MotionConfig } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachmentTray } from "./attachmenttray";
+import { useBashComplete } from "./bashcomplete";
+import { bashGhost } from "./chatbash";
+import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
@@ -54,6 +60,8 @@ import { useSlashMenu } from "./slashmenu";
 // two lines, as the board's box; grows as the text wraps, then scrolls
 const ChatMinH = 38;
 const ChatMaxH = 200;
+// in bash mode the editor sits in a well with 8px of padding above and below, so one line of it is about the box's height
+const ChatBashMinH = 25;
 
 const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
 // a drag that may name files by path (pathsFromDrop decides at the drop, when the data is readable)
@@ -164,11 +172,28 @@ export function ChatComposer({
         off: recalled.current.at != null && text === recalled.current.shown,
     });
     const cwd = block?.meta?.["cmd:cwd"];
+    // Bash mode's ghost text (as Claude Code's TUI has it): the newest `!` command from its history that starts with what
+    // is typed, shown after the caret at the end of the text. `saidCaret` is the caret the editor last said, with its text;
+    // a text that came from outside (a recall, a pick, the ghost taken) has the caret where setTextAt put it, or at the end.
+    const [saidCaret, setSaidCaret] = useState({ text, caret: text.length });
+    const bashHistory = useBashHistory(cwd, bash);
+    const caretNow =
+        saidCaret.text === text
+            ? saidCaret.caret
+            : outsideCaret.current?.text === text
+              ? outsideCaret.current.caret
+              : text.length;
+    // Tab completes the word under the caret in bash mode: one answer is put in the text, several open a list over the box
+    const boxRef = useRef<HTMLDivElement>(null);
+    const bashList = useBashComplete({ text, setText: setTextAt, cwd, inputRef: editorRef, boxRef, on: bash });
+    // the ghost text steps aside while the Tab list is open, so → and Tab do not offer two things at once
+    const ghost = bash && !waking && !bashList.shown ? bashGhost(bashHistory, text, caretNow) : "";
     const filesRoot = chatFilesRoot(cwd, agent.project, projects);
     // the files this agent read or wrote lead the `@` list, newest first
     const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
     const mention = useFileMention({
-        text,
+        // a bash command has no @mentions: the picker is shut while the text starts with `!`
+        text: bash ? "" : text,
         setText: setTextAt,
         filesRoot,
         cwd,
@@ -286,6 +311,10 @@ export function ChatComposer({
             onSent?.();
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
+            // a command run moves to the front of the ghost text's list, as Claude Code moves it in its own history
+            if (bash) {
+                noteBashRun(cwd, text.slice(1).trim());
+            }
             // going on closes Chat's own cards, as a panel on Claude Code's screen closes
             clearLocalCards(agent.id);
             if (!asleep) {
@@ -440,93 +469,157 @@ export function ChatComposer({
     return (
         <div
             {...dataAttrs}
+            ref={boxRef}
             data-agent-chat-composer={agent.id}
             data-chat-bash-mode={bash ? "" : undefined}
             onDragOver={onDragOver}
             onDrop={onDrop}
-            className={cn(
-                "mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border bg-surface-raised px-3 py-[10px] transition-colors duration-[140ms] motion-reduce:transition-none",
-                bash ? "border-accent/60" : "border-edge-mid focus-within:border-edge-strong"
-            )}
+            className="mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border border-edge-mid bg-surface-raised px-3 py-[10px] transition-colors duration-[140ms] focus-within:border-edge-strong motion-reduce:transition-none"
         >
             {asleep ? null : <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />}
-            <ChatEditor
-                ref={editorRef}
-                value={text}
-                outsideCaret={outsideCaret.current}
-                readOnly={waking}
-                minHeight={ChatMinH}
-                maxHeight={ChatMaxH}
-                placeholder={placeholder}
-                className="text-[13px] text-primary"
-                // also called when only the caret moved (a click, an arrow), with the same text: that is no edit, so it
-                // neither ends a recall nor sets the text again
-                onChange={(t) => {
-                    if (t !== recalled.current.shown) {
-                        recalled.current = { at: null, shown: "" };
-                    }
-                    if (t !== told.current) {
-                        told.current = t;
-                        setText(t);
-                    }
-                    const box = editorRef.current;
-                    if (box != null) {
-                        slash.onCaret(box);
-                        mention.onCaret(box);
-                    }
-                }}
-                onPasteFiles={
-                    asleep
-                        ? undefined
-                        : (e) => {
-                              // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
-                              att.onPaste(e as never);
-                              return e.defaultPrevented;
-                          }
-                }
-                onKeyDown={(e) => {
-                    // the `/` menu's and the `@` picker's keys (↑↓, Enter and Tab to pick, Escape to close) come first; at
-                    // most one of them has a list open
-                    slash.onKeyDown(e);
-                    if (!e.defaultPrevented) {
-                        mention.onKeyDown(e);
-                    }
-                    if (e.defaultPrevented) {
-                        return;
-                    }
-                    // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
-                    // open `/` or `@` list leaves it alone. An asleep agent takes text only, as its + is not drawn.
-                    const addFilesKey =
-                        e.key.toLowerCase() === "u" &&
-                        !e.altKey &&
-                        !e.shiftKey &&
-                        (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
-                    if (addFilesKey) {
-                        if (!asleep && !waking && !slash.shown && !mention.shown) {
-                            e.preventDefault();
-                            attach();
+            {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
+            {bash ? (
+                <div data-chat-bash-caption="" className="flex items-center gap-1.5 whitespace-nowrap text-[12px]">
+                    <Terminal size={13} strokeWidth={2} aria-hidden className="flex-none text-accent" />
+                    <span className="font-medium text-primary">Bash</span>
+                    <span className="min-w-0 truncate text-muted">
+                        · runs in the agent's shell, output joins the chat
+                    </span>
+                    {ghost !== "" ? (
+                        <span data-chat-bash-accept="" className="ml-auto flex-none text-ink-faint">
+                            <span className="font-mono text-muted">→</span> accept
+                        </span>
+                    ) : null}
+                </div>
+            ) : null}
+            {/* always this wrapper, so the editor is not remounted when the well comes and goes */}
+            <div className={cn("min-w-0", bash && "rounded-[8px] bg-surface-code px-2.5 py-2")}>
+                <ChatEditor
+                    ref={editorRef}
+                    value={text}
+                    outsideCaret={outsideCaret.current}
+                    readOnly={waking}
+                    minHeight={bash ? ChatBashMinH : ChatMinH}
+                    maxHeight={ChatMaxH}
+                    placeholder={placeholder}
+                    bash={bash}
+                    ghost={ghost}
+                    // a shell command line is mono (DESIGN.md)
+                    className={cn("text-[13px] text-primary", bash && "font-mono")}
+                    // also called when only the caret moved (a click, an arrow), with the same text: that is no edit, so it
+                    // neither ends a recall nor sets the text again
+                    onChange={(t, caret) => {
+                        if (t !== recalled.current.shown) {
+                            recalled.current = { at: null, shown: "" };
                         }
-                        return;
+                        if (t !== told.current) {
+                            told.current = t;
+                            setText(t);
+                        }
+                        setSaidCaret((cur) => (cur.text === t && cur.caret === caret ? cur : { text: t, caret }));
+                        const box = editorRef.current;
+                        if (box != null) {
+                            slash.onCaret(box);
+                            mention.onCaret(box);
+                            bashList.onCaret(box);
+                        }
+                    }}
+                    onPasteFiles={
+                        asleep
+                            ? undefined
+                            : (e) => {
+                                  // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
+                                  att.onPaste(e as never);
+                                  return e.defaultPrevented;
+                              }
                     }
-                    if (recallKey(e)) {
-                        e.preventDefault();
-                        return;
-                    }
-                    if (e.key === "Enter" && !e.shiftKey) {
-                        // Enter that commits an IME composition (Telex, Pinyin…) is not a send
-                        if (e.nativeEvent.isComposing) {
+                    onKeyDown={(e) => {
+                        // the Tab list's keys (bash mode), the `/` menu's and the `@` picker's (↑↓, Enter and Tab to pick,
+                        // Escape to close) come first; at most one of them has a list open (the `/` and `@` lists are shut
+                        // while the text starts with `!`)
+                        if (bash) {
+                            bashList.onKeyDown(e);
+                        }
+                        if (!e.defaultPrevented) {
+                            slash.onKeyDown(e);
+                        }
+                        if (!e.defaultPrevented) {
+                            mention.onKeyDown(e);
+                        }
+                        if (e.defaultPrevented) {
                             return;
                         }
-                        e.preventDefault();
-                        submit();
-                    } else if (e.key === "Escape") {
-                        // the box lets go of the keys; Stop is its own button, so a stray Esc never interrupts the agent
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                    }
-                }}
-            />
+                        // a Tab the Tab list had nothing to do with (the caret before the `!`) stays in the box: in bash mode
+                        // Tab is for completing, never for moving the focus out
+                        if (
+                            bash &&
+                            e.key === "Tab" &&
+                            !e.shiftKey &&
+                            !e.altKey &&
+                            !e.ctrlKey &&
+                            !e.metaKey &&
+                            !e.nativeEvent.isComposing
+                        ) {
+                            e.preventDefault();
+                            return;
+                        }
+                        // → at the end of a bash command with the ghost text showing takes it, as Claude Code's does
+                        if (
+                            ghost !== "" &&
+                            e.key === "ArrowRight" &&
+                            !e.shiftKey &&
+                            !e.altKey &&
+                            !e.ctrlKey &&
+                            !e.metaKey &&
+                            !e.nativeEvent.isComposing
+                        ) {
+                            const box = e.currentTarget;
+                            if (
+                                !box.readOnly &&
+                                box.selectionStart === text.length &&
+                                box.selectionEnd === text.length
+                            ) {
+                                e.preventDefault();
+                                recalled.current = { at: null, shown: "" };
+                                setTextAt(text + ghost, text.length + ghost.length);
+                                return;
+                            }
+                        }
+                        // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
+                        // open `/` or `@` list leaves it alone. An asleep agent takes text only, as its + is not drawn.
+                        const addFilesKey =
+                            e.key.toLowerCase() === "u" &&
+                            !e.altKey &&
+                            !e.shiftKey &&
+                            (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
+                        if (addFilesKey) {
+                            if (!asleep && !waking && !slash.shown && !mention.shown) {
+                                e.preventDefault();
+                                attach();
+                            }
+                            return;
+                        }
+                        if (recallKey(e)) {
+                            e.preventDefault();
+                            return;
+                        }
+                        if (e.key === "Enter" && !e.shiftKey) {
+                            // Enter that commits an IME composition (Telex, Pinyin…) is not a send
+                            if (e.nativeEvent.isComposing) {
+                                return;
+                            }
+                            e.preventDefault();
+                            submit();
+                        } else if (e.key === "Escape") {
+                            // the box lets go of the keys; Stop is its own button, so a stray Esc never interrupts the agent
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                        }
+                    }}
+                />
+            </div>
             {slash.list}
+            {bashList.list}
             {mention.list}
             {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
             <MotionConfig reducedMotion="user">
@@ -543,22 +636,6 @@ export function ChatComposer({
                                 />
                             </Fold>
                         )}
-                    </AnimatePresence>
-                    <AnimatePresence initial={false}>
-                        {bash ? (
-                            <Fold key="bash">
-                                <div
-                                    data-chat-bash
-                                    title="Bash mode: runs in the agent's shell, and what it prints joins the conversation"
-                                    className="flex h-[28px] items-center gap-1.5 whitespace-nowrap pl-1 pr-1 text-[12px] text-accent"
-                                >
-                                    <span aria-hidden className="font-mono font-semibold">
-                                        !
-                                    </span>
-                                    Bash mode
-                                </div>
-                            </Fold>
-                        ) : null}
                     </AnimatePresence>
                     <AnimatePresence initial={false}>
                         {asleep ? (

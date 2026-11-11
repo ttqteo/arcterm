@@ -61,6 +61,7 @@ type WshRpcInterface interface {
 	AskCommands
 	AgentPermCommands
 	ClaudeCmdsCommands
+	ShellCompleteCommands
 	NotifyCommands
 	TelegramCommands
 	VaultCommands
