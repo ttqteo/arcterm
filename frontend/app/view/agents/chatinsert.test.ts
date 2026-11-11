@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
     appendToChatBox,
-    replaceChatBox,
     chatBoxText,
     insertAt,
     insertIntoChatBox,
     registerChatBox,
     registerChatInsert,
+    replaceChatBox,
     submitIntoChatBox,
 } from "./chatinsert";
 

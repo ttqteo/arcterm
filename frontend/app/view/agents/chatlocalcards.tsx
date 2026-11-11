@@ -185,14 +185,20 @@ function UsageBody({ model, agent }: { model: AgentsViewModel; agent: AgentVM })
 function ContextBody({ agent }: { agent: AgentVM }) {
     const f = contextFigures(agent.usage);
     if (f == null) {
-        return <span className="text-[12.5px] text-muted">No context reading yet: it comes with Claude's first reply.</span>;
+        return (
+            <span className="text-[12.5px] text-muted">
+                No context reading yet: it comes with Claude's first reply.
+            </span>
+        );
     }
     const warn = contextWarn(f.pct);
     return (
         <>
             <div className="flex flex-col gap-1.5">
                 <div className="flex items-baseline gap-2">
-                    <span className={cn("text-[20px] font-semibold tabular-nums", warn ? "text-warning" : "text-primary")}>
+                    <span
+                        className={cn("text-[20px] font-semibold tabular-nums", warn ? "text-warning" : "text-primary")}
+                    >
                         {Math.round(f.pct)}%
                     </span>
                     <span className="text-[12.5px] tabular-nums text-secondary">
@@ -208,7 +214,9 @@ function ContextBody({ agent }: { agent: AgentVM }) {
                     Nearly full: compact soon, or Claude compacts on its own and loses detail.
                 </span>
             ) : null}
-            <span className="text-[11px] text-muted">The breakdown by part (tools, memory, messages) is in the Terminal.</span>
+            <span className="text-[11px] text-muted">
+                The breakdown by part (tools, memory, messages) is in the Terminal.
+            </span>
         </>
     );
 }
@@ -239,11 +247,15 @@ function TaskRow({
                 title={onPeek != null ? "Show its output" : undefined}
                 className="flex min-w-0 flex-1 flex-col items-start text-left enabled:cursor-pointer enabled:hover:text-primary"
             >
-                <span className={cn("max-w-full truncate text-[12.5px] text-ink-hi", !monitor && "font-mono text-[12px]")}>
+                <span
+                    className={cn("max-w-full truncate text-[12.5px] text-ink-hi", !monitor && "font-mono text-[12px]")}
+                >
                     {task.label}
                 </span>
                 <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted">
-                    {running ? <span className="h-[6px] w-[6px] rounded-full bg-working pulse-dot" aria-hidden /> : null}
+                    {running ? (
+                        <span className="h-[6px] w-[6px] rounded-full bg-working pulse-dot" aria-hidden />
+                    ) : null}
                     {backgroundTaskSubline(task, now)}
                 </span>
             </button>
@@ -365,7 +377,9 @@ function StatsBody() {
             {top.length > 0 ? (
                 <Fact label="Top models">{top.map((m) => `${m.model} ${formatTokens(m.tokens)}`).join(" · ")}</Fact>
             ) : null}
-            {failed ? <span className="text-[11px] text-warning">Could not refresh: showing the last read.</span> : null}
+            {failed ? (
+                <span className="text-[11px] text-warning">Could not refresh: showing the last read.</span>
+            ) : null}
         </>
     );
 }
@@ -398,7 +412,9 @@ function CommandsBody({ agent, skillsOnly }: { agent: AgentVM; skillsOnly: boole
     if (got == null) {
         return <span className="text-[12.5px] text-muted">Reading the commands…</span>;
     }
-    const shown = skillsOnly ? got.commands.filter((c) => groupOf(c) === "Skills" || groupOf(c) === "Plugins") : got.commands;
+    const shown = skillsOnly
+        ? got.commands.filter((c) => groupOf(c) === "Skills" || groupOf(c) === "Plugins")
+        : got.commands;
     const groups = slashGroups(shown);
     if (groups.length === 0) {
         return <span className="text-[12.5px] text-muted">No skills in this session.</span>;
