@@ -78,6 +78,19 @@ Do not port, and skip every hunk of a listed commit that touches them:
 - The Jarvis → Hub rename, the fork's Brief layout and Jarvis pet, and the Radar removal: ours keeps Jarvis and Radar.
 - Orchestrate engine changes: judged separately.
 
+## Our code wins (the owner's hard rule)
+
+The port must not conflict with, overwrite or undo our own code. It is additive:
+
+- Never rewrite, rename, remove or restyle an existing behaviour, component, binding, wire field or test of ours to
+  match the fork. Where the fork's change and ours touch the same thing differently, ours stays as it is and the
+  fork's addition is fitted around it; when it cannot fit without changing ours, skip that part and name it under
+  the commit's "Differs from plan" (and in the run report), never "harmonise" ours toward the fork.
+- Prefer new files and small hook points in ours over editing large shared files; an edit to an existing file of
+  ours keeps every existing line's behaviour, and its existing tests pass unchanged (a test of ours is never edited
+  to make a port pass).
+- A plan reviewer or task reviewer treats any changed or removed existing behaviour of ours as a failure.
+
 ## Our differences that matter
 
 - Ours has no New agent modal file (`newagentmodal.tsx`) and no Sessions surface; port onto our equivalents.
