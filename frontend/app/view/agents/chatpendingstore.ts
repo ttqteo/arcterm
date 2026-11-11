@@ -50,6 +50,30 @@ export function dropPending(agentId: string, text: string): void {
     globalStore.set(pendingAtom, m);
 }
 
+// the agents whose box holds a message queued behind a permission prompt or a question (chatpending.ts holdLine): kept
+// out of the box, which unmounts while the person answers in the terminal
+const heldAtom = atom<ReadonlySet<string>>(new Set<string>());
+
+/** Marks (or clears) the agent's box text as queued to send once its prompt is answered. */
+export function setHeldSend(agentId: string, held: boolean): void {
+    const cur = globalStore.get(heldAtom);
+    if (cur.has(agentId) === held) {
+        return;
+    }
+    const next = new Set(cur);
+    if (held) {
+        next.add(agentId);
+    } else {
+        next.delete(agentId);
+    }
+    globalStore.set(heldAtom, next);
+}
+
+/** Whether the agent's box text is queued behind its prompt. */
+export function useHeldSend(agentId: string): boolean {
+    return useAtomValue(heldAtom).has(agentId);
+}
+
 /** The agent's messages sent and not yet confirmed by the transcript, oldest first (filter with `pendingStill`). */
 export function usePending(agentId: string): PendingMessage[] {
     return useAtomValue(pendingAtom).get(agentId) ?? NONE;

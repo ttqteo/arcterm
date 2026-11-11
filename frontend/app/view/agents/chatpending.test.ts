@@ -6,6 +6,7 @@ import {
     PENDING_MAX_MS,
     PENDING_QUEUED_MAX_MS,
     btwQuestion,
+    holdLine,
     isSendNowKey,
     pastesBody,
     pendingKind,
@@ -13,6 +14,7 @@ import {
     pendsAsBubble,
     pushSent,
     recall,
+    releasesHeld,
     sendHold,
     submitDelayMs,
     submitSteps,
@@ -201,6 +203,31 @@ describe("sendHold", () => {
         expect(sendHold(false, true)).toBe("Answer Claude's question first");
         expect(sendHold(true, true)).toBe("Answer the permission prompt first");
         expect(sendHold(false, false)).toBeNull();
+    });
+});
+
+describe("holdLine", () => {
+    it("says what to answer and that Send queues, then that the queued message waits", () => {
+        const hold = sendHold(false, true);
+        expect(holdLine(hold, false)).toBe("Answer Claude's question first · Send queues your message");
+        expect(holdLine(hold, true)).toBe("Queued · sends once you answer");
+    });
+
+    it("draws nothing when no prompt holds the send", () => {
+        expect(holdLine(null, false)).toBeNull();
+        expect(holdLine(null, true)).toBeNull();
+    });
+});
+
+describe("releasesHeld", () => {
+    it("sends a queued message once the prompt is answered and the box can send", () => {
+        expect(releasesHeld(true, null, true)).toBe(true);
+    });
+
+    it("keeps it while the prompt is up or the box cannot send, and has nothing to send unqueued", () => {
+        expect(releasesHeld(true, "Answer the permission prompt first", false)).toBe(false);
+        expect(releasesHeld(true, null, false)).toBe(false);
+        expect(releasesHeld(false, null, true)).toBe(false);
     });
 });
 

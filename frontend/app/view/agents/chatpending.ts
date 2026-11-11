@@ -168,6 +168,20 @@ export function sendHold(permissionPending: boolean, asking: boolean): string | 
     return null;
 }
 
+/** The line over the box while a send waits (sendHold): what to answer first, and that Send keeps the message until then;
+ *  once Send was pressed, that the message goes by itself when the prompt is answered. Null when nothing holds. */
+export function holdLine(hold: string | null, held: boolean): string | null {
+    if (hold == null) {
+        return null;
+    }
+    return held ? "Queued · sends once you answer" : `${hold} · Send queues your message`;
+}
+
+/** Whether a message queued behind a prompt goes now: the prompt is answered and the box can send. */
+export function releasesHeld(held: boolean, hold: string | null, sendable: boolean): boolean {
+    return held && hold == null && sendable;
+}
+
 /** A message longer than this goes in as a paste even on one line: Claude Code reads a big chunk of typed input as a
  *  paste, and then takes an Enter that rides in the same chunk as one more line, so the message sat in its box. */
 export const PASTE_OVER = 200;

@@ -43476,39 +43476,51 @@ const agentChat = {
                 { queuedUp, pend20, sent20, landed20 }
             );
 
-            // 21. with a permission request pending the send is held: the button is disabled with the reason, and Enter sends
-            // nothing (a message's first digit would pick an option in Claude Code's dialog)
+            // 21. with a permission request pending the send is held (a message's first digit would pick an option in Claude
+            // Code's dialog): a line over the box says why, and Send queues the message instead, typing nothing; it goes by
+            // itself once the card is gone
             const HOLD = "Answer the permission prompt first";
+            const S21 = "2 more things";
+            const holdOf = `${acLayer(A)}?.querySelector("[data-chat-hold]")`;
             await acQueue(h, orefA, [perm("perm-5", "Bash", "npm run lint")]);
             const card21 = await polishWaitFor(h, `!!${acCard(A)}`, 3000);
             const before21 = await acInputs(h, blockA);
-            await acType(h, acBox(A), "2 more things");
-            await polishNap(300);
+            await acType(h, acBox(A), S21, false);
+            await polishWaitFor(h, `${holdOf}?.getAttribute("data-chat-hold") === "waiting"`, 3000);
             const hold21 = await h.ev(`(() => {
                 const b = ${acLayer(A)}?.querySelector("[data-chat-send]");
-                return { disabled: b?.disabled ?? null, title: b?.title ?? null, label: b?.getAttribute("aria-label") ?? null, box: ${acVal(acBox(A))} };
+                return { disabled: b?.disabled ?? null, label: b?.getAttribute("aria-label") ?? null, line: ${holdOf}?.textContent.trim() ?? null };
             })()`);
-            const after21 = await acInputs(h, blockA);
             await h.shot("cdp-shots/agent-chat-21-held.png");
+            await h.ev(`${acBox(A)}?.focus()`);
+            await acKey(h, acKeys.enter);
+            const queued21 = await polishWaitFor(h, `${holdOf}?.getAttribute("data-chat-hold") === "queued"`, 3000);
+            const line21 = await h.ev(`${holdOf}?.textContent.trim() ?? null`);
+            const box21 = await h.ev(acVal(acBox(A)));
+            const after21 = await acInputs(h, blockA);
+            await h.shot("cdp-shots/agent-chat-21-queued.png");
             await acQueue(h, orefA, []);
-            const freed21 = await polishWaitFor(h, `${acLayer(A)}?.querySelector("[data-chat-send]")?.disabled === false`, 3000);
-            await acClear(h, acBox(A));
+            const sent21ok = await polishWaitFor(h, `${acVal(acBox(A))} === "" && !${holdOf}`, 5000);
+            const sent21 = (await acInputs(h, blockA)).slice(before21.length);
             rec(
-                "21. with a permission request pending the Send button is disabled with the hold's reason, Enter sends nothing, and the text stays in the box; the send is free again once the card is gone",
-                card21 && hold21.disabled === true && hold21.title === HOLD && hold21.label === HOLD && hold21.box === "2 more things" &&
-                    JSON.stringify(after21) === JSON.stringify(before21) && freed21,
-                { card21, hold21, before21, after21, freed21 }
+                "21. with a permission request pending a line over the box names the hold and Send stays live as Queue; Enter queues the message (Queued line, nothing typed, the text kept), and it is typed into the block once the card is gone",
+                card21 && hold21.disabled === false && hold21.label === "Queue" &&
+                    hold21.line === `${HOLD} · Send queues your message` && queued21 &&
+                    line21 === "Queued · sends once you answerCancel" && box21 === S21 &&
+                    JSON.stringify(after21) === JSON.stringify(before21) && sent21ok &&
+                    JSON.stringify(sent21) === JSON.stringify([S21, "\r"]),
+                { card21, hold21, queued21, line21, box21, before21, after21, sent21ok, sent21 }
             );
 
-            // 22. ↑ in the empty box puts back the last message sent from it
+            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went)
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await acKey(h, acKeys.up);
-            const recalled22 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(S1)}`, 3000);
+            const recalled22 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(S21)}`, 3000);
             const box22 = await h.ev(acVal(acBox(A)));
             await h.shot("cdp-shots/agent-chat-22-recall.png");
             await acClear(h, acBox(A));
-            rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S1, { box22 });
+            rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S21, { box22 });
 
             // 23. `/` as the box's first character lists the session's own commands (GetClaudeLiveCommandsCommand, mocked for this
             // agent's block: the bundled skill `code-review` is in it, which the disk list never holds, and `arc:council`);

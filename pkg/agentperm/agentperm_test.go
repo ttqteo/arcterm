@@ -5,6 +5,7 @@ package agentperm
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -304,6 +305,90 @@ func TestNoteStatusClears(t *testing.T) {
 	t.Run("a nil status is ignored", func(t *testing.T) {
 		if NoteStatus(nil) {
 			t.Fatal("nil reported a change")
+		}
+	})
+}
+
+// A question answered on the cockpit card types nothing into the terminal and, raced, runs no PostToolUse hook, so its
+// request is retired by the next tool report once the transcript holds the answer; until then it stays (2026-11-11:
+// the card stood for minutes while the agent worked on, and held the Chat box shut).
+func TestNoteStatusRetiresAnsweredQuestion(t *testing.T) {
+	ask := json.RawMessage(`{"questions":[{"question":"Fold?"}]}`)
+	withAskOpen := func(t *testing.T, open bool, err error) *[]string {
+		t.Helper()
+		var read []string
+		prev := askOpen
+		askOpen = func(path string) (bool, error) {
+			read = append(read, path)
+			return open, err
+		}
+		t.Cleanup(func() { askOpen = prev })
+		return &read
+	}
+	report := func(hook string) *baseds.AgentStatusData {
+		st := statusFor(hook)
+		st.TranscriptPath = "t.jsonl"
+		return st
+	}
+
+	t.Run("a tool report after the answer drops the question and keeps the rest", func(t *testing.T) {
+		resetGlobal(t)
+		withAskOpen(t, false, nil)
+		GlobalRegistry.Raise(testORef, "AskUserQuestion", ask, 1)
+		GlobalRegistry.Raise(testORef, "Bash", bash("two"), 2)
+		for _, hook := range []string{baseds.AgentHook_PreToolUse, baseds.AgentHook_PostToolUse} {
+			GlobalRegistry.Raise(testORef, "AskUserQuestion", ask, 3)
+			if !NoteStatus(report(hook)) {
+				t.Fatalf("%s after the answer reported no change", hook)
+			}
+			if got := ids(GlobalRegistry.Snapshot(testORef)); !sameStrings(got, []string{"two"}) {
+				t.Fatalf("%s: queue = %v, want only the Bash request", hook, got)
+			}
+		}
+	})
+
+	t.Run("an open question stays", func(t *testing.T) {
+		resetGlobal(t)
+		withAskOpen(t, true, nil)
+		GlobalRegistry.Raise(testORef, "AskUserQuestion", ask, 1)
+		if NoteStatus(report(baseds.AgentHook_PostToolUse)) || len(GlobalRegistry.Snapshot(testORef)) != 1 {
+			t.Fatal("a question still open in the transcript was dropped")
+		}
+	})
+
+	t.Run("an unreadable transcript keeps it", func(t *testing.T) {
+		resetGlobal(t)
+		withAskOpen(t, false, errors.New("gone"))
+		GlobalRegistry.Raise(testORef, "AskUserQuestion", ask, 1)
+		if NoteStatus(report(baseds.AgentHook_PostToolUse)) {
+			t.Fatal("a failed read dropped the question")
+		}
+	})
+
+	t.Run("no question waiting reads no transcript", func(t *testing.T) {
+		resetGlobal(t)
+		read := withAskOpen(t, false, nil)
+		GlobalRegistry.Raise(testORef, "Bash", bash("one"), 1)
+		NoteStatus(report(baseds.AgentHook_PostToolUse))
+		if len(*read) != 0 {
+			t.Fatalf("read the transcript %d times with no question queued", len(*read))
+		}
+	})
+
+	t.Run("other hooks and a report without a transcript leave it", func(t *testing.T) {
+		resetGlobal(t)
+		withAskOpen(t, false, nil)
+		GlobalRegistry.Raise(testORef, "AskUserQuestion", ask, 1)
+		if NoteStatus(report(baseds.AgentHook_Notification)) || NoteStatus(report("PermissionRequest")) ||
+			NoteStatus(statusFor(baseds.AgentHook_PostToolUse)) {
+			t.Fatal("a report that cannot show the answer dropped the question")
+		}
+	})
+
+	t.Run("its key ignores the answers its PostToolUse input carries", func(t *testing.T) {
+		answered := json.RawMessage(`{"questions":[{"question":"Fold?"}],"answers":{"Fold?":"Yes"}}`)
+		if ToolKey("AskUserQuestion", ask) != ToolKey("AskUserQuestion", answered) {
+			t.Fatal("the raise and the PostToolUse of one question key differently")
 		}
 	})
 }

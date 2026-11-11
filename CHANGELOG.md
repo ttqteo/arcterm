@@ -80,8 +80,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In Chat, the agent's header keeps only its name and project: the model and the context are in the message box, and
   what it is doing in the chat. Link to initiative moved into the … menu (`i` still opens it); the Terminal view keeps
   the full header.
+- While Claude waits on a permission prompt or a question, Chat's message box says so above your text, and Send
+  queues the message instead of doing nothing: it goes by itself once you answer (Cancel takes it back).
 
 ### Fixed
+
+- Chat's card for a Claude question (AskUserQuestion) now goes away once the question is answered, instead of staying
+  until the turn ended and keeping the message box from sending.
+- Chat's Send now shows Ctrl+↵ on Windows instead of ⌘↵.
 
 - Switching between agents no longer shows Chat loading each time: an agent you come back to shows its conversation at
   once and reads only what was written since.
