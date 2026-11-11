@@ -56,8 +56,10 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
         };
         pin();
         // content that grows without a new entry (an opened composer, a reply that wraps) must not push
-        // the tail of a stuck region out of view
+        // the tail of a stuck region out of view; nor must the region itself getting shorter (Chat's floating
+        // box sits outside the scroller and takes its height as it grows)
         const ro = new ResizeObserver(pin);
+        ro.observe(el);
         for (const child of el.children) {
             ro.observe(child);
         }
