@@ -754,8 +754,8 @@ export default function (kit) {
                 await shot(h, "16-frame-timing");
                 const round = (v) => Math.round(v * 10) / 10;
                 rec(
-                    `${name}: while ${BLOCKS} blocks land ${BLOCK_GAP_MS} ms apart the p95 frame interval is at most ${FRAME_P95_MAX_MS} ms`,
-                    stats != null && stats.frames > 30 && stats.p95 <= FRAME_P95_MAX_MS && shown,
+                    `${name}: while ${BLOCKS} blocks land ${BLOCK_GAP_MS} ms apart the p95 frame interval is at most ${FRAME_P95_MAX_MS} ms and the view follows the tail to the end`,
+                    stats != null && stats.frames > 30 && stats.p95 <= FRAME_P95_MAX_MS && shown && stats.atEnd,
                     stats == null ? "no frames were recorded" : { p95Ms: round(stats.p95), worstMs: round(stats.worst), p50Ms: round(stats.p50), frames: stats.frames, followedTail: stats.atEnd, lastBlockShown: shown }
                 );
             });

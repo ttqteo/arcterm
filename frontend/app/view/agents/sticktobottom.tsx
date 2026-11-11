@@ -52,6 +52,7 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
         const pin = () => {
             if (stickRef.current) {
                 el.scrollTop = el.scrollHeight;
+                lastTopRef.current = el.scrollTop;
             }
         };
         pin();
@@ -106,6 +107,14 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
                 return;
             }
             leavingRef.current = false;
+        }
+        // a stuck tail lets go only when the reader moves up. The scroll event of a pin is read a frame later, and content
+        // opening on a spring (Chat's arriving rows) can grow past the threshold in between: that is the content leaving
+        // the view behind, not the reader leaving the end, so it pins again
+        if (stickRef.current && !near && !wentUp) {
+            el.scrollTop = el.scrollHeight;
+            lastTopRef.current = el.scrollTop;
+            return;
         }
         stickRef.current = near;
         setAtBottom(near);
