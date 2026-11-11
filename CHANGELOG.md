@@ -56,6 +56,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- In Chat's bash mode the `!` sits beside the command as a marker with a gap after it, as in Claude Code's own box,
+  instead of running into the first word; Backspace at the start of the command leaves bash mode.
 - Chat has a new look and moves more smoothly: the message box floats over the conversation as a rounded pill that
   changes shape while the agent works or files are dragged onto it, a stretch of tools shows one compact line per step
   and folds into "Worked for …" when the agent moves on, and a brainstorm question draws in the conversation as a card

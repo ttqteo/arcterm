@@ -77,13 +77,20 @@ describe("boxPlaceholder", () => {
     });
 
     it("the states that show text over the placeholder fall back to the idle line", () => {
-        for (const s of ["drop", "suggest", "bash"] as const) {
+        for (const s of ["drop", "suggest"] as const) {
             expect(boxPlaceholder(s, "Atlas")).toBe("Reply to Atlas, @ to mention, / for commands");
         }
     });
 
-    it("an override wins in every state", () => {
-        const states: BoxState[] = ["idle", "running", "drop", "suggest", "bash", "asleep"];
+    it("bash says the box takes a shell command and how to leave, over an override", () => {
+        expect(boxPlaceholder("bash", "Atlas")).toBe("a command for the agent's shell; Backspace leaves bash mode");
+        expect(boxPlaceholder("bash", "Atlas", "Answer question 2 in your own words")).toBe(
+            "a command for the agent's shell; Backspace leaves bash mode"
+        );
+    });
+
+    it("an override wins in every other state", () => {
+        const states: BoxState[] = ["idle", "running", "drop", "suggest", "asleep"];
         for (const s of states) {
             expect(boxPlaceholder(s, "Atlas", "Answer question 2 in your own words")).toBe(
                 "Answer question 2 in your own words"

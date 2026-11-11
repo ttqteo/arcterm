@@ -14,6 +14,23 @@ import { mentionTokens } from "./filementiontokens";
 
 export type Segment = { kind: "text"; text: string } | { kind: "pill"; path: string };
 
+/** Pure: how many leading characters of the box's text the editor leaves out: a bash command's `!` (Chat's bash mode) is
+ *  drawn as a marker beside the editor, as Claude Code's own box draws it, so the command starts in the editor after a gap.
+ *  It stays in the text: the agent receives `!<command>`. */
+export function bangSkip(text: string, bash: boolean): number {
+    return bash && text.startsWith("!") ? 1 : 0;
+}
+
+/** Pure: the part of the box's text the editor shows, past the `skip` characters drawn beside it. */
+export function shownText(text: string, skip: number): string {
+    return text.slice(skip);
+}
+
+/** Pure: what the editor says (its text and caret) as the box's text and caret: the skipped `!` put back in front. */
+export function fromShown(shown: string, caret: number, skip: number): { text: string; caret: number } {
+    return { text: "!".repeat(skip) + shown, caret: caret + skip };
+}
+
 /** Pure: how a pill is written in the message: `@path`, or `@"path"` when the path holds whitespace. */
 export function mentionText(path: string): string {
     return /\s/.test(path) ? `@"${path}"` : `@${path}`;

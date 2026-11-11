@@ -15,8 +15,10 @@
 // While an IME composition (Telex, Pinyin…) is on, nothing is reported and nothing is rebuilt: the text arrives when the
 // composition ends. A `value` that comes from outside meanwhile is held and drawn when the composition ends (in place of
 // the text typed), so the editor never says its own text over it.
-// Two things are drawn over the text without being in it, in one overlay that mirrors it (`ghost`, `bash`): the grey ghost text
-// after the last character, and the accent `!` of a bash command.
+// The grey ghost text after the last character (`ghost`) is drawn over the text without being in it, in an overlay that
+// mirrors it. A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
+// beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
+// the editor takes or gives is mapped across it, and Backspace at the command's start takes the `!` away, leaving bash mode.
 
 import { cn } from "@/util/util";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
@@ -52,7 +54,7 @@ import {
     type PointType,
 } from "lexical";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { segmentLength, segmentsOf, type Segment } from "./chateditormodel";
+import { bangSkip, fromShown, segmentLength, segmentsOf, shownText, type Segment } from "./chateditormodel";
 import {
     adjacentPill,
     buildLine,
@@ -121,8 +123,8 @@ export interface ChatEditorProps {
     maxHeight: number;
     /** extra attributes for the editable element (`data-…`) */
     dataAttrs?: Record<string, string>;
-    /** the text is a bash command (it starts with `!`, Chat's bash mode): its leading `!` is drawn in the accent colour
-     *  and semibold, over the editor's own, in the overlay `ghost` is drawn in */
+    /** the text is a bash command (it starts with `!`, Chat's bash mode): its leading `!` is left out of the editor and
+     *  drawn beside it as an accent, semibold marker, a gap before the command */
     bash?: boolean;
     /** grey text drawn right after the last character, not part of the message (bash mode's suggestion from Claude Code's
      *  history); empty draws nothing */
@@ -251,6 +253,15 @@ function $selectionOnPill(doc: Doc): boolean {
     return adjacentPill(doc.lines[place.line] ?? [], place.index, place.offset, true) != null;
 }
 
+/** whether the selection is a caret at the very start of the text (nothing selected) */
+function $caretAtStart(): boolean {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+        return false;
+    }
+    return $selectionOffsets($readDoc())?.end === 0;
+}
+
 function $selectOffsets(doc: Doc, anchor: number, focus: number): void {
     const selection = $createRangeSelection();
     $setPoint(selection.anchor, doc, placeOf(doc.lines, anchor));
@@ -376,10 +387,17 @@ const NO_RECT = typeof DOMRect === "undefined" ? ({} as DOMRect) : new DOMRect()
 
 // ---- the editor ----
 
+interface Said {
+    text: string;
+    caret: number;
+    skip: number;
+}
+
 interface BridgeProps {
     props: React.MutableRefObject<ChatEditorProps>;
-    /** what the editor last said to its parent */
-    said: React.MutableRefObject<{ text: string; caret: number }>;
+    /** what the editor last said to its parent (the whole text and caret, a bash `!` included), and how many leading
+     *  characters of it the editor leaves out (`skip`, the bash `!`) */
+    said: React.MutableRefObject<Said>;
 }
 
 /** the plugin that connects the Lexical editor to the box's props, its handle and its keys */
@@ -388,11 +406,14 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
     const wasFocused = useRef(false);
 
     const handle = useMemo<EditorLike>(() => {
-        const offsets = () =>
-            editor.read(() => $selectionOffsets($readDoc())) ?? {
-                start: said.current.text.length,
-                end: said.current.text.length,
-            };
+        // in the whole text's offsets: past the `!` the editor leaves out
+        const offsets = () => {
+            const at = editor.read(() => $selectionOffsets($readDoc()));
+            const skip = said.current.skip;
+            return at == null
+                ? { start: said.current.text.length, end: said.current.text.length }
+                : { start: at.start + skip, end: at.end + skip };
+        };
         const self: EditorLike = {
             get value() {
                 return said.current.text;
@@ -429,7 +450,10 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
                 editor.blur();
             },
             setSelectionRange(start, end) {
-                editor.update(() => $selectOffsets($readDoc(), start, end), { discrete: true });
+                const skip = said.current.skip;
+                editor.update(() => $selectOffsets($readDoc(), Math.max(0, start - skip), Math.max(0, end - skip)), {
+                    discrete: true,
+                });
             },
             getBoundingClientRect() {
                 return editor.getRootElement()?.getBoundingClientRect() ?? NO_RECT;
@@ -488,10 +512,12 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
                     release.current();
                     return;
                 }
+                const skip = said.current.skip;
                 const next = editorState.read(() => {
                     const doc = $readDoc();
-                    const text = linesText(doc.lines);
-                    return { text, caret: $selectionOffsets(doc)?.end ?? text.length, pill: $selectionOnPill(doc) };
+                    const shown = linesText(doc.lines);
+                    const out = fromShown(shown, $selectionOffsets(doc)?.end ?? shown.length, skip);
+                    return { ...out, pill: $selectionOnPill(doc) };
                 });
                 if (
                     next.text === said.current.text &&
@@ -500,7 +526,7 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
                 ) {
                     return;
                 }
-                said.current = { text: next.text, caret: next.caret };
+                said.current = { text: next.text, caret: next.caret, skip };
                 onPill.current = next.pill;
                 props.current.onChange(next.text, next.caret);
             }),
@@ -508,10 +534,13 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
     );
 
     // a value that is not what the editor last said comes from outside: draw it (never in the middle of a composition,
-    // which would drop the syllable being typed: it is held, and drawn when the composition ends)
-    const { value } = props.current;
+    // which would drop the syllable being typed: it is held, and drawn when the composition ends). So is the editor's own
+    // text when the `!` it leaves out changed: a typed or pasted `!` first made it a bash command, and the editor now
+    // shows only what follows it, the caret where it was
+    const { value, bash = false } = props.current;
     useLayoutEffect(() => {
-        if (value === said.current.text) {
+        const skip = bangSkip(value, bash);
+        if (value === said.current.text && skip === said.current.skip) {
             held.current = false;
             return;
         }
@@ -521,17 +550,24 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         }
         held.current = false;
         const ask = props.current.outsideCaret;
-        const caret = ask != null && ask.text === value ? Math.min(Math.max(ask.caret, 0), value.length) : null;
+        const caret =
+            ask != null && ask.text === value
+                ? Math.min(Math.max(ask.caret, 0), value.length)
+                : value === said.current.text
+                  ? said.current.caret
+                  : null;
         const focused = isFocused(editor);
-        said.current = { text: value, caret: caret ?? value.length };
-        editor.update(() => $rebuild(segmentsOf(value, caret ?? undefined), caret ?? (focused ? value.length : null)), {
+        said.current = { text: value, caret: caret ?? value.length, skip };
+        const shown = shownText(value, skip);
+        const at = caret == null ? null : Math.max(0, caret - skip);
+        editor.update(() => $rebuild(segmentsOf(shown, at ?? undefined), at ?? (focused ? shown.length : null)), {
             tag: "external",
             discrete: true,
         });
         onPill.current = editor.read(() => $selectionOnPill($readDoc()));
         // like a textarea whose value is set from outside, what came before is not undoable
         editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
-    }, [editor, value, composed, props, said]);
+    }, [editor, value, bash, composed, props, said]);
 
     // read-only keeps the box on screen but not editable; it gets the focus back when it was in it
     const { readOnly = false } = props.current;
@@ -562,7 +598,18 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         );
         const offBackspace = editor.registerCommand(
             KEY_BACKSPACE_COMMAND,
-            (event: KeyboardEvent) => $deletePill(event, true),
+            (event: KeyboardEvent) => {
+                // at the start of a bash command, Backspace takes the `!` drawn beside the editor away (as it took the
+                // character before the caret when the `!` was in it), and the box leaves bash mode
+                if (said.current.skip > 0 && $caretAtStart()) {
+                    event.preventDefault();
+                    const shown = linesText($readDoc().lines);
+                    said.current = { text: shown, caret: 0, skip: 0 };
+                    props.current.onChange(shown, 0);
+                    return true;
+                }
+                return $deletePill(event, true);
+            },
             COMMAND_PRIORITY_HIGH
         );
         const offDelete = editor.registerCommand(
@@ -591,7 +638,7 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             offDelete();
             offPaste();
         };
-    }, [editor, handle, props]);
+    }, [editor, handle, props, said]);
 
     return null;
 });
@@ -599,9 +646,10 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
 export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatEditor(p, ref) {
     const props = useRef(p);
     props.current = p;
-    const said = useRef({ text: p.value, caret: p.value.length });
+    const skip = bangSkip(p.value, p.bash === true);
+    const said = useRef<Said>({ text: p.value, caret: p.value.length, skip });
     const ghost = p.ghost ?? "";
-    const bang = p.bash === true && p.value.startsWith("!");
+    const shown = shownText(p.value, skip);
     // read once, when the editor is made; later values reach it through the Bridge
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
@@ -609,60 +657,63 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
         editable: !p.readOnly,
         onError: (error: Error) => console.error("chat editor:", error),
         // the draft the box mounts with (a restored one, with its pills)
-        editorState: () => $rebuild(segmentsOf(p.value), null),
+        editorState: () => $rebuild(segmentsOf(shown), null),
     }));
     return (
         <LexicalComposer initialConfig={initialConfig}>
-            <div className={cn("relative min-w-0", p.className)}>
-                <PlainTextPlugin
-                    contentEditable={
-                        <ContentEditable
-                            data-chat-input=""
-                            {...p.dataAttrs}
-                            role="textbox"
-                            aria-multiline="true"
-                            aria-label="Message"
-                            // the webview's English checker underlines every Vietnamese word, as the app's other boxes
-                            spellCheck={false}
-                            className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
-                            style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
-                        />
-                    }
-                    placeholder={
+            <div className={cn("flex min-w-0 items-start", p.className)}>
+                {/* a bash command's `!`, beside the editor and a gap before the command (the editor holds what follows it) */}
+                {skip > 0 ? (
+                    <span
+                        aria-hidden
+                        data-chat-bang=""
+                        className="mr-2 flex-none leading-[1.9] font-semibold text-accent select-none"
+                    >
+                        !
+                    </span>
+                ) : null}
+                <div className="relative min-w-0 flex-1">
+                    <PlainTextPlugin
+                        contentEditable={
+                            <ContentEditable
+                                data-chat-input=""
+                                {...p.dataAttrs}
+                                role="textbox"
+                                aria-multiline="true"
+                                aria-label="Message"
+                                // the webview's English checker underlines every Vietnamese word, as the app's other boxes
+                                spellCheck={false}
+                                className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
+                                style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
+                            />
+                        }
+                        placeholder={
+                            <div
+                                aria-hidden
+                                className="pointer-events-none absolute top-0 left-0 max-w-full truncate leading-[1.9] text-muted select-none"
+                            >
+                                {p.placeholder}
+                            </div>
+                        }
+                        ErrorBoundary={LexicalErrorBoundary}
+                    />
+                    {/* A mirror of the text laid over the editor, with the same type and wrapping, so what it draws lands
+                    exactly where the editor's own text is: the text itself invisible, the ghost after the last character. */}
+                    {ghost !== "" ? (
                         <div
                             aria-hidden
-                            className="pointer-events-none absolute top-0 left-0 max-w-full truncate leading-[1.9] text-muted select-none"
+                            data-chat-ghost-layer=""
+                            className="pointer-events-none absolute inset-0 overflow-hidden leading-[1.9] whitespace-pre-wrap select-none [overflow-wrap:anywhere]"
                         >
-                            {p.placeholder}
-                        </div>
-                    }
-                    ErrorBoundary={LexicalErrorBoundary}
-                />
-                {/* A mirror of the text laid over the editor, with the same type and wrapping, so what it draws lands
-                    exactly where the editor's own text is: the text itself invisible, the bash `!` drawn over the
-                    editor's (its box filled with the well's colour so the editor's thinner one does not show at the
-                    edges), the ghost after the last character. */}
-                {bang || ghost !== "" ? (
-                    <div
-                        aria-hidden
-                        data-chat-ghost-layer=""
-                        className="pointer-events-none absolute inset-0 overflow-hidden leading-[1.9] whitespace-pre-wrap select-none [overflow-wrap:anywhere]"
-                    >
-                        {bang ? (
-                            <span data-chat-bang="" className="bg-surface-code font-semibold text-accent">
-                                !
-                            </span>
-                        ) : null}
-                        <span className="invisible">{bang ? p.value.slice(1) : p.value}</span>
-                        {ghost !== "" ? (
+                            <span className="invisible">{shown}</span>
                             <span data-chat-ghost="" className="text-ink-faint">
                                 {ghost}
                             </span>
-                        ) : null}
-                    </div>
-                ) : null}
-                <HistoryPlugin />
-                <Bridge ref={ref} props={props} said={said} />
+                        </div>
+                    ) : null}
+                    <HistoryPlugin />
+                    <Bridge ref={ref} props={props} said={said} />
+                </div>
             </div>
         </LexicalComposer>
     );

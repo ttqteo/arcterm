@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { locate, mentionText, plainOffset, segmentLength, segmentsOf, type Segment } from "./chateditormodel";
+import {
+    bangSkip,
+    fromShown,
+    locate,
+    mentionText,
+    plainOffset,
+    segmentLength,
+    segmentsOf,
+    shownText,
+    type Segment,
+} from "./chateditormodel";
 
 const text = (t: string): Segment => ({ kind: "text", text: t });
 const pill = (path: string): Segment => ({ kind: "pill", path });
@@ -127,5 +137,32 @@ describe("plainOffset and locate", () => {
         expect(locate(segments, 999)).toEqual({ index: 4, offset: 4 });
         expect(locate([], 0)).toEqual({ index: 0, offset: 0 });
         expect(locate([], 7)).toEqual({ index: 0, offset: 0 });
+    });
+});
+
+describe("bash's `!` beside the editor", () => {
+    it("skips the leading `!` of a bash command only", () => {
+        expect(bangSkip("!git status", true)).toBe(1);
+        expect(bangSkip("!", true)).toBe(1);
+        expect(bangSkip("git status", true)).toBe(0);
+        expect(bangSkip("!git status", false)).toBe(0);
+        expect(bangSkip("", true)).toBe(0);
+    });
+
+    it("the editor shows the text past the skipped `!`", () => {
+        expect(shownText("!git status", 1)).toBe("git status");
+        expect(shownText("!", 1)).toBe("");
+        expect(shownText("!!x", 1)).toBe("!x");
+        expect(shownText("hello", 0)).toBe("hello");
+    });
+
+    it("what the editor says goes back out with the `!` and the caret one further", () => {
+        expect(fromShown("git status", 3, 1)).toEqual({ text: "!git status", caret: 4 });
+        expect(fromShown("", 0, 1)).toEqual({ text: "!", caret: 1 });
+        expect(fromShown("hello", 2, 0)).toEqual({ text: "hello", caret: 2 });
+    });
+
+    it("an outside caret maps into the shown text, never before its start", () => {
+        expect(fromShown(shownText("!ls", 1), 2 - 1, 1)).toEqual({ text: "!ls", caret: 2 });
     });
 });
