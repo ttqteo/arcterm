@@ -128,3 +128,47 @@ approved.
   findings past its five directions (`judgedItems`). In round 1, K4 of bugs-orchestrate sat at rank 7–8 in both council
   runs and was not counted. Logged for a later round.
 - A depth score per item, and any change to the brainstorm skill or to the council.
+
+## Builder's decisions (2026-11-12, autonomous run)
+
+Made without the person, as the run's contract asks; each with why.
+
+- **One judge prompt for both sides.** On a Brainstorm case a council is judged through the same input as a design:
+  its directions, then its wild ideas kept aside, as one numbered list, with no answer or summary text ahead of it
+  (a design has none, and the spec asks that both sides be scored the same way). Every item is judged; nothing is cut.
+  The judge maps each key line to the rank of the *first* item that names it; the parser also takes the lowest rank
+  among the items whose verdict is `key:Kn`, so a reply whose map and item list disagree still counts the earliest
+  match. The judge's separate `kept` answer, `Verdict.Kept` and `KeptMatched` go: nothing asks for them any more.
+- **Row fields.** A Brainstorm row from this harness on: `recall` is recall@all, the new `recall3` is recall@3 (a
+  match ranked 1–3), the new `judged` is the items judged (the denominator of the wrong rate), and `kept` /
+  `keptmatches` are no longer written. They stay in `CouncilBenchResult` so a row of an earlier harness still reads
+  back whole. A Review row is unchanged. `CouncilBenchRow` sums `recall3` and `judged` and drops `kept`; the Review
+  table's kept column goes too, since a Review was never judged with a kept list and the column only ever read 0.
+- **Table.** The Brainstorm section prints `harness, variant, skill, scored/runs, recall@3, recall@all, recall@done,
+  wrong, decisions, questions, tokens, recall@all/M tokens`; `wrong` is `<wrong>/<judged>`. A row with no `judged`
+  (written before harness 2026-11-12.1) prints `-` for recall@3 and its wrong count alone; the note under the table
+  says such rows were scored the old way (a council cut at 3).
+- **The running wavesrv's harness.** `CouncilBenchResultsRtnData` gains `harness`: the `council.HarnessVersion` of the
+  wavesrv that answers. The driver reads it from `wsh council bench results --json`; an older wavesrv answers without
+  it, which reads as a mismatch. `HarnessVersion` becomes `2026-11-12.1`.
+- **Saved items.** A brainstorm run that is done writes `<data dir>/council-bench-items/<session>.json`
+  (`case`, `harness`, `session`, `final`, `done`: the two lists of items its marks were judged on) before its row is
+  appended. A write that fails is logged and the row still goes in: the score is the result, the file only allows a
+  rejudge.
+- **Cases.** One file per case, `scripts/council-bench-brainstorm-cases/<id>.json`, read by a new installer
+  `scripts/council-bench-brainstorm-cases.mjs` (beside, not inside, the Review script, which keeps its own `CASES`).
+  Each key line carries `at` (`path:line` in the project copy) and `shows` (text that line holds); the installer
+  archives the snapshot, checks every `at` / `shows` against the copy, scrubs, runs the leak check, writes the key file
+  with each cite on an indented line under its `Kn:` line (which `parseKey` ignores, so the judge never sees it), and
+  marks `launcher-declutter` retired. Snapshots: run-pause `d04210830^` (the commit its round-1 copy matches),
+  held-services `33d3bc63a^`, heavy-job-queue `5ed9cdb6b^`, goalpost-guard `90db6e666^`. The council panel stays
+  `ui-feature` / `solo-ui` for all four, as round 1's run-pause case had it, so round 2 changes the cases and the
+  scoring and nothing of the council.
+- **Approval.** Nobody is at the cockpit to approve the drafts. Each case task's reviewer checks every key line against
+  its cite and the spec's rule (a mechanism or edge case only reading the code finds; the question states the wants and
+  preferences, never the build). The person reads them in the installer's `--dry-run` listing before the install that
+  starts round 2.
+- **Driver.** `scripts/council-bench-all.mjs` counts a cell's rows by harness (`harness` = the checkout's
+  `HarnessVersion`), not by a date: a row of round 1 never fills a round-2 cell. Its pure planning (cells missing,
+  what to start next, the harness check) is exported and unit-tested; the process side stays thin. It is started with
+  `wsh detach -- node scripts/council-bench-all.mjs` after the install.
