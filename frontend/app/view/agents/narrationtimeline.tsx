@@ -384,7 +384,9 @@ export function ToolLine({
     const long = detail ? detailExceedsInline(detail) : false;
     const toModal = long && !inline;
     const onClick = () => {
-        if (!detail) {
+        // a drag that selected the row's text ends in a click too: it copies, it does not open the row
+        const sel = window.getSelection();
+        if (!detail || (sel != null && !sel.isCollapsed)) {
             return;
         }
         if (toModal) {

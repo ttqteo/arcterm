@@ -358,18 +358,21 @@ function SentCard({ item }: { item: Extract<ChatItem, { kind: "sent" }> }) {
 function WorkPill({
     work,
     open,
+    closed,
     autoOpen,
     live,
     onToggle,
 }: {
     work: WorkItem;
     open: boolean;
+    // the user folded it while it was the auto-open one
+    closed: boolean;
     autoOpen: boolean;
     // the session is working: a tool with no result is running, and the stretch counts up to now
     live: boolean;
     onToggle: () => void;
 }) {
-    const mode = burstRenderMode({ userOpened: open, autoOpen });
+    const mode = burstRenderMode({ userOpened: open, autoOpen, userClosed: closed });
     const shown = mode !== "collapsed";
     const running = work.actions.some((a) => inFlight(a, live));
     const now = useNow(running);
@@ -696,18 +699,22 @@ export function ChatConversation({
                         <BubbleCopy text={part.text} align="left" />
                     </div>
                 );
-            case "work":
+            case "work": {
+                // the work the agent is doing now: nothing but its files chip after it in the last item. It shows open,
+                // so a click on it folds it (a key of its own, which stops counting once the agent is done)
+                const autoOpen = !!active && last && item.parts.slice(p + 1).every((q) => q.kind === "files");
                 return (
                     <WorkPill
                         key={key}
                         work={part.work}
                         open={opened.has(key)}
-                        // the work the agent is doing now: nothing but its files chip after it in the last item
-                        autoOpen={!!active && last && item.parts.slice(p + 1).every((q) => q.kind === "files")}
+                        closed={opened.has(`${key}^closed`)}
+                        autoOpen={autoOpen}
                         live={toolsLive}
-                        onToggle={() => toggle(key)}
+                        onToggle={() => toggle(autoOpen ? `${key}^closed` : key)}
                     />
                 );
+            }
             case "files": {
                 const openPaths = new Set(part.files.filter((f) => opened.has(`${key}:${f.path}`)).map((f) => f.path));
                 return (

@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's live "Worked for …" folds: while a Claude agent works, click its last "Worked for … · N tools"
+  line in Chat → its tool lines fold; click again → they open; once the agent stops it is folded as the others. Drag
+  over a tool line's text to select it → the text is selected and the line does not open (`burstRenderMode`
+  userClosed, `chatconversation.tsx` WorkPill, `narrationtimeline.tsx` ToolLine; fix/chat-work-fold).
 - [ ] (arcterm) Chat's question card goes once answered, and Send queues behind it: in a real Claude agent's Chat
   (installed build, so wavesrv has `pkg/agentperm`'s change) have it call AskUserQuestion → the "Wants to use
   AskUserQuestion" card shows and the box says "Answer the permission prompt first · Send queues your message"; type a

@@ -366,10 +366,15 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
 // Pure: how a collapsed action group renders. "reveal" = the user expanded a historical burst, so
 // it animates open. "open" = the auto-open trailing burst during live streaming — plain, never
 // animated (the burst guard: a streaming run must not strobe, even if the user had also expanded it).
-// "collapsed" = show the summary button.
-export function burstRenderMode(o: { userOpened: boolean; autoOpen: boolean }): "reveal" | "open" | "collapsed" {
+// "collapsed" = show the summary button. `userClosed` = the user folded the auto-open burst by hand; it only counts
+// while the burst is the auto-open one, so once the agent stops the burst falls back to its own fold.
+export function burstRenderMode(o: {
+    userOpened: boolean;
+    autoOpen: boolean;
+    userClosed?: boolean;
+}): "reveal" | "open" | "collapsed" {
     if (o.autoOpen) {
-        return "open";
+        return o.userClosed ? "collapsed" : "open";
     }
     return o.userOpened ? "reveal" : "collapsed";
 }

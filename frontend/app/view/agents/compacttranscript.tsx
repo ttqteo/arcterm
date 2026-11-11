@@ -122,15 +122,18 @@ function AssistantMessage({ text, onContextMenu }: { text: string; onContextMenu
 function WorkLine({
     work,
     open,
+    closed,
     autoOpen,
     onToggle,
 }: {
     work: WorkItem;
     open: boolean;
+    // the user folded it while it was the live trailing line
+    closed: boolean;
     autoOpen: boolean;
     onToggle: () => void;
 }) {
-    const mode = burstRenderMode({ userOpened: open, autoOpen });
+    const mode = burstRenderMode({ userOpened: open, autoOpen, userClosed: closed });
     const shown = mode !== "collapsed";
     const lines = work.actions.map((action, k) => <ToolLine key={work.startIndex + k} action={action} />);
     return (
@@ -255,6 +258,8 @@ export function CompactTranscript({
     pinBg?: string;
 }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
+    // the live trailing work lines the reader folded by hand
+    const [closed, setClosed] = useState<Set<number>>(new Set());
     const items = useMemo(() => groupCompact(entries), [entries]);
     const spans = useMemo(() => items.map((item) => itemSpan(item, keyOffset)), [items, keyOffset]);
     // the drawn window is remembered as the key of its first item (compactwindow.ts), set on the first render with items
@@ -424,14 +429,15 @@ export function CompactTranscript({
             e
         );
     // a fold is kept by its key, not its entry index, so it stays with its item when entries are put in front
-    const toggle = (key: number) =>
-        setOpened((prev) => {
-            const next = new Set(prev);
-            if (!next.delete(key)) {
-                next.add(key);
-            }
-            return next;
-        });
+    const flip = (prev: Set<number>, key: number) => {
+        const next = new Set(prev);
+        if (!next.delete(key)) {
+            next.add(key);
+        }
+        return next;
+    };
+    const toggle = (key: number) => setOpened((prev) => flip(prev, key));
+    const toggleClosed = (key: number) => setClosed((prev) => flip(prev, key));
     const drawItem = (item: CompactItem, idx: number): ReactNode => {
         switch (item.kind) {
             case "user":
@@ -440,13 +446,17 @@ export function CompactTranscript({
                 return <AssistantMessage text={item.text} onContextMenu={copyMenu(item.text)} />;
             case "work": {
                 const key = keyFor(item.startIndex, keyOffset);
+                // the live trailing line shows open, so a click on it folds it (kept apart; it stops counting once the
+                // agent is done)
+                const autoOpen = !!active && idx === visible.length - 1;
                 return (
                     <>
                         <WorkLine
                             work={item}
                             open={opened.has(key)}
-                            autoOpen={!!active && idx === visible.length - 1}
-                            onToggle={() => toggle(key)}
+                            closed={closed.has(key)}
+                            autoOpen={autoOpen}
+                            onToggle={() => (autoOpen ? toggleClosed(key) : toggle(key))}
                         />
                         {item.files.length > 0 ? (
                             <FilesChangedBar files={item.files} adds={item.adds} dels={item.dels} onReview={onReview} />
