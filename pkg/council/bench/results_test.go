@@ -451,6 +451,53 @@ func TestSummarizeSumsBrainstormFieldsOverScoredRunsOnly(t *testing.T) {
 	}
 }
 
+func TestSummarizeSumsRecall3AndJudged(t *testing.T) {
+	brainstorm := func(state string, recall, recall3, judged int) CouncilBenchResult {
+		return CouncilBenchResult{Harness: "h", Case: "c", Mode: council.ModeBrainstorm, Variant: VariantBrainstorm, Skill: "s",
+			State: state, Recall: recall, Recall3: recall3, Keys: 5, Judged: judged, Wrong: 1, Tokens: 1_000_000}
+	}
+	rows := Summarize([]CouncilBenchResult{
+		brainstorm("done", 4, 2, 9),
+		brainstorm("done", 3, 1, 7),
+		// a run that did not finish adds neither, even when its line carries some
+		brainstorm("failed", 2, 2, 5),
+	}, nil)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v, want one", rows)
+	}
+	r := rows[0]
+	if r.Runs != 3 || r.Scored != 2 || r.Recall != 7 || r.Keys != 10 {
+		t.Errorf("row = %+v, want 3 runs, 2 scored, recall 7/10", r)
+	}
+	if r.Recall3 != 3 || r.Judged != 16 {
+		t.Errorf("row recall3 = %d, judged = %d, want 3 and 16 (the two done runs'; the failed run's 2 and 5 stay out)", r.Recall3, r.Judged)
+	}
+	// RecallPerM stays recall@all per million tokens, over every run's tokens
+	if want := 7 / 3.0; r.RecallPerM != want {
+		t.Errorf("RecallPerM = %v, want %v (recall@all per million tokens)", r.RecallPerM, want)
+	}
+}
+
+func TestLoadResultsReadsAnOldBrainstormLineWithKept(t *testing.T) {
+	dir := t.TempDir()
+	// a Brainstorm line of a harness before 2026-11-12.1: its council was cut at 3 items and its wild ideas judged apart
+	old := `{"kind":"run","date":"2026-11-10T10:00:00Z","harness":"2026-11-06.1","case":"run-pause","variant":"council","run":1,"council":"c0","state":"done","recall":2,"keys":5,"kept":1,"wrong":1,"tokens":10,"minutes":1,"messages":2,"matches":{"K1":1,"K2":3},"keptmatches":{"K4":1},"mode":"brainstorm"}` + "\n"
+	if err := os.WriteFile(resultsPath(dir), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs = %+v, err = %v, want 1", runs, err)
+	}
+	r := runs[0]
+	if r.Kept != 1 || r.KeptMatches["K4"] != 1 || r.Recall != 2 || r.Matches["K2"] != 3 {
+		t.Errorf("old line = %+v, want it read whole, kept and keptmatches included", r)
+	}
+	if r.Recall3 != 0 || r.Judged != 0 {
+		t.Errorf("old line = %+v, want recall3 and judged at 0: the harness that wrote it had neither", r)
+	}
+}
+
 func TestSummarizeRatingsLatestCounts(t *testing.T) {
 	dir := t.TempDir()
 	rate := func(at, harness, mode, id, rating string) {

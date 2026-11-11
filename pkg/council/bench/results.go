@@ -47,21 +47,30 @@ type CouncilBenchResult struct {
 	Run      int     `json:"run"`
 	Council  string  `json:"council"`
 	State    string  `json:"state"`
-	Recall   int     `json:"recall"`         // key lines matched in the top items
-	Keys     int     `json:"keys"`           // the case's key lines: the denominator of recall
-	Kept     int     `json:"kept,omitempty"` // Brainstorm: key lines matched among the wild ideas kept aside, outside recall
-	Wrong    int     `json:"wrong"`          // report items the judge called wrong
+	Recall   int     `json:"recall"` // key lines matched in the items judged: the top items of a Review row, recall@all (every item) of a Brainstorm row from harness 2026-11-12.1 on
+	Keys     int     `json:"keys"`   // the case's key lines: the denominator of recall
+	Wrong    int     `json:"wrong"`  // report items the judge called wrong
 	Tokens   int64   `json:"tokens"`
 	Minutes  float64 `json:"minutes"`
 	Messages int     `json:"messages"`
 
 	JudgeTokens int64 `json:"judgetokens,omitempty"` // the judge's call, apart from Tokens: the bench's cap counts both
 
-	// Matches is which key lines the judge matched in the top items: key line id -> its rank among them (1 is the
-	// first). KeptMatches is the same for the wild ideas kept aside: key line id -> rank among them. Both are nil on a
-	// row written before they existed, and on a row with no match.
-	Matches     map[string]int `json:"matches,omitempty"`
+	// A Brainstorm row from harness 2026-11-12.1 on also has these two, apart from Recall: Recall3 is the key lines
+	// matched at rank 1 to 3 of the one list the judge was shown, and Judged the items in that list, the denominator of
+	// Wrong. Both are 0 on any other row.
+	Recall3 int `json:"recall3,omitempty"`
+	Judged  int `json:"judged,omitempty"`
+
+	// Kept is the Brainstorm key lines matched among the wild ideas kept aside, outside recall, and KeptMatches the same
+	// as key line id -> rank among them. Only a row of a harness before 2026-11-12.1 carries them (those judged the
+	// wild ideas apart); no row written since sets them, and they stay so that an earlier row reads back whole.
+	Kept        int            `json:"kept,omitempty"`
 	KeptMatches map[string]int `json:"keptmatches,omitempty"`
+
+	// Matches is which key lines the judge matched in the items it was shown: key line id -> its rank among them (1 is
+	// the first). It is nil on a row written before it existed, and on a row with no match.
+	Matches map[string]int `json:"matches,omitempty"`
 
 	// Mode is the case's mode (council.ModeReview or council.ModeBrainstorm), so a table can split rows by it; a line
 	// written before the field existed has none. The rest are a brainstorm row's, and empty on any other variant's:
@@ -208,16 +217,20 @@ type CouncilBenchRow struct {
 	Skill      string  `json:"skill,omitempty"` // a brainstorm row's skill text: two never add up in one row
 	Runs       int     `json:"runs"`            // every run, failed and stopped ones too
 	Scored     int     `json:"scored"`          // the runs that ended done
-	Recall     int     `json:"recall"`          // key lines matched in the top items, summed over the scored runs
+	Recall     int     `json:"recall"`          // key lines matched in the items judged, summed over the scored runs
 	Keys       int     `json:"keys"`            // the key lines those runs were scored against
-	Kept       int     `json:"kept"`
+	Kept       int     `json:"kept"`            // key lines matched among wild ideas kept aside: only runs of a harness before 2026-11-12.1 have any
 	Wrong      int     `json:"wrong"`
 	Tokens     int64   `json:"tokens"`     // of every run
-	RecallPerM float64 `json:"recallperm"` // key lines matched per million tokens
+	RecallPerM float64 `json:"recallperm"` // Recall per million tokens
 
-	// A brainstorm row's, each summed over the scored runs, and zero on any other variant's: RecallDone is the recall at
-	// the done mark (Recall is the final mark's), Decisions the decision parts of the final designs, Questions the
+	// A brainstorm row's, each summed over the scored runs, and zero on any other variant's: Recall3 is the key lines
+	// matched at rank 1 to 3 of the list judged (Recall is recall@all), Judged the items in those lists, the
+	// denominator of Wrong (0 on a run of a harness before 2026-11-12.1, which had no such count), RecallDone the recall
+	// at the done mark (Recall is the final mark's), Decisions the decision parts of the final designs, Questions the
 	// questions the person answered.
+	Recall3    int `json:"recall3"`
+	Judged     int `json:"judged"`
 	RecallDone int `json:"recall_done,omitempty"`
 	Decisions  int `json:"decisions,omitempty"`
 	Questions  int `json:"questions,omitempty"`
@@ -254,6 +267,8 @@ func Summarize(results []CouncilBenchResult, modes map[string]string) []CouncilB
 		row.Recall += r.Recall
 		row.Keys += r.Keys
 		row.Kept += r.Kept
+		row.Recall3 += r.Recall3
+		row.Judged += r.Judged
 		row.Wrong += r.Wrong
 		row.RecallDone += r.RecallDone
 		row.Decisions += r.Decisions
