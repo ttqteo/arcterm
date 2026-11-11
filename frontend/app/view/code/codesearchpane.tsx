@@ -18,6 +18,7 @@ import {
     codeSearchInvalidAtom,
     codeSearchOptsAtom,
     codeSearchQueryAtom,
+    codeSearchTitleAtom,
     runSearch,
     type SearchState,
 } from "./codesearchstore";
@@ -43,6 +44,7 @@ export function CodeSearchPane({ model }: { model: AgentsViewModel }) {
     const [opts, setOpts] = useAtom(codeSearchOptsAtom);
     const [invalid, setInvalid] = useAtom(codeSearchInvalidAtom);
     const state = useAtomValue(codeSearchAtom);
+    const title = useAtomValue(codeSearchTitleAtom);
     const inputRef = useRef<HTMLInputElement>(null);
     const filteringPaths = opts.include.trim() !== "" || opts.exclude.trim() !== "";
     // starts open when a path filter is set, so a filter that empties the result is never hidden
@@ -170,6 +172,11 @@ export function CodeSearchPane({ model }: { model: AgentsViewModel }) {
                     </>
                 )}
             </div>
+            {title != null && (
+                <div data-code-search-title className="flex-none truncate px-3 pb-1 text-[11.5px] text-primary">
+                    {title}
+                </div>
+            )}
             <SearchBody model={model} state={state} groups={groups} onRetry={submit} />
         </div>
     );

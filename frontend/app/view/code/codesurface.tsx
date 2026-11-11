@@ -23,6 +23,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
     ArrowRight,
+    Braces,
     ChevronDown,
     FilePlus,
     FolderGit2,
@@ -90,6 +91,7 @@ import {
     startCreate,
     type CodeProject,
 } from "./codestore";
+import { CodeSymbolsPane } from "./codesymbolspane";
 import { CodeTreePane, CodeTreeTools } from "./codetreepane";
 
 export function CodeSurface({ model }: { model: AgentsViewModel }) {
@@ -541,7 +543,7 @@ function CodePanesSkeleton() {
 }
 
 const CODE_SIDEBAR_PREFS_KEY = "code.sidebar.prefs";
-const CODE_SIDEBAR_MODES: readonly CodeSidebarMode[] = ["files", "search", "changed"];
+const CODE_SIDEBAR_MODES: readonly CodeSidebarMode[] = ["files", "search", "changed", "symbols"];
 // icon tabs: the label is the accessible name and the tooltip, with the mode's binding (bindings.ts
 // code:focus-tree, code:search) when it has one. Chords are formatted at render: the platform glyphs
 // are not known at module load (keysym.ts).
@@ -549,6 +551,7 @@ const CODE_SIDEBAR_TABS: Record<CodeSidebarMode, { label: string; chord?: string
     files: { label: "Files", chord: "Alt:t", icon: <FolderTree size={14} strokeWidth={1.8} /> },
     search: { label: "Search", chord: "Mod:Shift:f", icon: <Search size={14} strokeWidth={1.8} /> },
     changed: { label: "Changed files", icon: <GitCompareArrows size={14} strokeWidth={1.8} /> },
+    symbols: { label: "Symbols", icon: <Braces size={14} strokeWidth={1.8} /> },
 };
 
 function codeSidebarTabTitle(m: CodeSidebarMode): string {
@@ -797,8 +800,10 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
                         <CodeTreePane model={model} />
                     ) : mode === "search" ? (
                         <CodeSearchPane model={model} />
-                    ) : (
+                    ) : mode === "changed" ? (
                         <CodeChangedPane model={model} />
+                    ) : (
+                        <CodeSymbolsPane />
                     )}
                 </div>
                 <button

@@ -33,6 +33,7 @@ import { isHtmlPath, isMarkdownPath, isTexPath, languageForPath, resolveViewMode
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter, type FrontmatterSplit } from "./codefrontmatter";
+import { langOf, type Lang } from "./codelang";
 import { resolveDocLink } from "./codelink";
 import { isPreviewable } from "./codepreviewable";
 import { applyScroll, keepScroll, keptScroll, scrollKey } from "./codescroll";
@@ -46,12 +47,16 @@ import {
     codeViewModeAtom,
     draftKey,
     editDraft,
+    findReferences,
+    goToDefinition,
     openInCode,
     refreshIndex,
     setCaretLineReader,
+    setCaretWordReader,
     texPdfFor,
     type CodeProject,
 } from "./codestore";
+import { wordAt } from "./codesymbolquery";
 import { useWrap } from "./codewrap";
 import { FrontmatterCard } from "./frontmattercard";
 import { texPdfMeta } from "./texpdf";
@@ -81,6 +86,70 @@ function setEditor(ed: MonacoTypes.editor.IStandaloneCodeEditor | null): void {
 }
 
 setCaretLineReader(() => editor?.getPosition()?.lineNumber ?? null);
+setCaretWordReader(codeEditorWordAtCursor);
+
+// The identifier at the caret and the open file's language. The word is cut by wordAt rather than
+// Monaco's getWordAtPosition, whose per-language word rules (CSS's leading ".") would hand the
+// definition query a name it was not built for; the language comes from codelang for the same reason.
+export function codeEditorWordAtCursor(): { word: string; lang: Lang } | null {
+    const pos = editor?.getPosition();
+    const textModel = editor?.getModel();
+    const file = globalStore.get(codeFileAtom);
+    if (pos == null || textModel == null || file.kind !== "text") {
+        return null;
+    }
+    const lang = langOf(file.path);
+    const word = wordAt(textModel.getLineContent(pos.lineNumber), pos.column, lang);
+    return word == null ? null : { word, lang };
+}
+
+// A listed answer (several definitions, or the references) fills the Search column; a collapsed sidebar
+// would hide it, so its opener is pressed. A DOM read in a run, as the keybindings do (bindings.ts).
+function openCodeSidebarIfCollapsed(): void {
+    const opener = document.querySelector<HTMLButtonElement>('button[aria-label^="Expand Code sidebar"]');
+    if (opener != null && !opener.classList.contains("hidden")) {
+        opener.click();
+    }
+}
+
+// Go to definition and find references in the editor's context menu. Monaco's own entries of those names
+// need a language service, which only TypeScript and JavaScript have here, so these two are the project
+// search the symbol query (codesymbolquery.ts) shapes. No chord is set: F12 and Shift+F12 are bound by the
+// surface's keybindings, ahead of Monaco's.
+function addSymbolActions(ed: MonacoTypes.editor.IStandaloneCodeEditor, model: AgentsViewModel): () => void {
+    const actions = [
+        ed.addAction({
+            id: "arc.code.goToDefinition",
+            label: "Go to Definition in Project",
+            contextMenuGroupId: "navigation",
+            contextMenuOrder: 1.4,
+            run: () => {
+                const at = codeEditorWordAtCursor();
+                if (at != null) {
+                    fireAndForget(async () => {
+                        if (await goToDefinition(model, at.word, at.lang)) {
+                            openCodeSidebarIfCollapsed();
+                        }
+                    });
+                }
+            },
+        }),
+        ed.addAction({
+            id: "arc.code.findReferences",
+            label: "Find References in Project",
+            contextMenuGroupId: "navigation",
+            contextMenuOrder: 1.5,
+            run: () => {
+                const at = codeEditorWordAtCursor();
+                if (at != null) {
+                    openCodeSidebarIfCollapsed();
+                    fireAndForget(() => findReferences(at.word));
+                }
+            },
+        }),
+    ];
+    return () => actions.forEach((a) => a.dispose());
+}
 
 // The editor unmounts on every file, mode and surface switch. Its model is kept alive and its view
 // state saved here, keyed like drafts by absolute path, so coming back restores the caret, scroll,
@@ -482,7 +551,9 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                         setEditor(ed);
                         restoreKept(ed, abs);
                         applyPendingLine(ed);
+                        const removeSymbolActions = addSymbolActions(ed, model);
                         return () => {
+                            removeSymbolActions();
                             if (editor === ed) {
                                 setEditor(null);
                             }

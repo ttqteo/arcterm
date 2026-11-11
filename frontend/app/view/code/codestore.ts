@@ -43,12 +43,25 @@ import {
     withLine,
     type History,
 } from "./codehistory";
+import { langGlobs, langOf, type Lang } from "./codelang";
 import { deleteWarning, renamedPath, targetDir } from "./codemutate";
+import { outlineOf } from "./codeoutline";
 import { cleanPathInput, pathErrorMessage, statPathError, validatePathInput } from "./codepathinput";
 import { parsePins, renamePins, togglePin, unpinUnder } from "./codepins";
 import { pruneRecent, pushRecent } from "./coderecents";
-import { resetSearch } from "./codesearchstore";
+import { DEFAULT_SEARCH_OPTS, type SearchOpts } from "./codesearchopts";
+import {
+    codeSearchModeAtom,
+    codeSearchOptsAtom,
+    codeSearchQueryAtom,
+    grepProject,
+    resetSearch,
+    runSearch,
+    showSearch,
+    type SearchState,
+} from "./codesearchstore";
 import { changedDirs, statusByPath, type CodeStatus } from "./codestatus";
+import { definitionPattern, rankDefinitions } from "./codesymbolquery";
 import { ancestorsOf, buildTree, dirsToList, lazyDirs, visibleRows } from "./codetree";
 
 export interface CodeProject {
@@ -177,6 +190,18 @@ let readCaretLine: () => number | null = () => null;
 export function setCaretLineReader(read: () => number | null): void {
     readCaretLine = read;
 }
+// The same seam for the identifier under the caret, with the open file's language, for F12.
+export interface CaretWord {
+    word: string;
+    lang: Lang;
+}
+let readCaretWord: () => CaretWord | null = () => null;
+export function setCaretWordReader(read: () => CaretWord | null): void {
+    readCaretWord = read;
+}
+export function caretWord(): CaretWord | null {
+    return readCaretWord();
+}
 // Whether the tree pane holds focus. An atom rather than a document.activeElement query because the
 // keybinding `when` predicates are evaluated by store.test.ts in vitest's node environment, where
 // there is no document — and because this codebase keeps DOM reads in `run`, never in `when`.
@@ -269,6 +294,18 @@ function codeIgnoredEntries(get: Getter): string[] {
     const top = get(codeIndexAtom)?.ignored ?? [];
     return listed.size === 0 ? top : [...top, ...[...listed.values()].flat()];
 }
+
+// The open file's declarations, derived from the buffer with the draft overlaid, so the outline
+// follows typing with nothing to invalidate. A file that is not text has no symbols.
+export const codeOutlineAtom = atom((get) => {
+    const file = get(codeFileAtom);
+    const project = get(codeProjectAtom);
+    if (file.kind !== "text" || project == null) {
+        return [];
+    }
+    const text = get(codeDraftsAtom).get(draftKey(project, file.path))?.text ?? file.text;
+    return outlineOf(text, langOf(file.path));
+});
 
 // Lists the expanded ignored directories nobody has listed yet. The tree pane runs it whenever the
 // expanded set or the index changes, so every way a directory opens (click, keys, a reveal) is covered.
@@ -1078,6 +1115,17 @@ export async function reloadFromDisk(): Promise<void> {
     await openPath(file.path, { pushHistory: false });
 }
 
+// A jump to a line of the file already open: no read, but a history move, so Back returns to where
+// the caret was. A symbol row and an @ pick both land here.
+export function goToLine(line: number): void {
+    const file = globalStore.get(codeFileAtom);
+    if (file.kind !== "text") {
+        return;
+    }
+    globalStore.set(codeHistoryAtom, (h) => push(withLine(h, readCaretLine()), file.path, line));
+    globalStore.set(codePendingLineAtom, line);
+}
+
 // back/forward re-read from disk rather than replaying cached text: simpler, and it shows the file
 // as it is now rather than as it was when you first opened it. The entry's line rides the same
 // pending-line reveal a jump uses.
@@ -1173,4 +1221,70 @@ function resolveJumpProject(projectPath: string): CodeProject {
     // not know. git ls-files needs only a path, so browse it under its directory name rather than
     // refusing the jump — the header shows the full path, so nothing is hidden.
     return { name: repoBasename(projectPath), path: projectPath };
+}
+
+// Go to definition is a grep for the name's declaration forms in files of the caller's language. One
+// hit jumps there; none or several fill the search pane under "Definitions of <name>", with the
+// pattern left in the input to loosen by hand. Resolves true when it listed rather than jumped, so
+// the caller can bring the sidebar into view.
+export async function goToDefinition(model: AgentsViewModel, name: string, lang: Lang): Promise<boolean> {
+    const project = globalStore.get(codeProjectAtom);
+    if (project == null) {
+        return false;
+    }
+    const pattern = definitionPattern(name, lang);
+    if (pattern == null) {
+        // no declaration forms for this language: the honest answer is where the name appears
+        await findReferences(name);
+        return true;
+    }
+    const file = globalStore.get(codeFileAtom);
+    const from = file.kind === "none" ? "" : file.path;
+    const opts: SearchOpts = {
+        ...DEFAULT_SEARCH_OPTS,
+        regex: true,
+        caseSensitive: true,
+        include: langGlobs(lang).join(", "),
+    };
+    const show = (state: SearchState) => showSearch({ query: pattern, opts, title: `Definitions of ${name}`, state });
+    try {
+        const res = await grepProject(project.path, pattern, opts);
+        if (globalStore.get(codeProjectAtom)?.path !== project.path) {
+            return false; // the project changed under the lookup; its answer is for a repository not shown
+        }
+        if (res.invalidpattern) {
+            // the pattern is built here, so this is a bug in codesymbolquery, never the user's typo
+            show({ kind: "error", query: pattern, message: "the definition pattern was rejected as invalid" });
+            return true;
+        }
+        const ranked = rankDefinitions(res.matches ?? [], name, lang, from);
+        if (ranked.length === 1 && !res.truncated) {
+            await openInCode(model, { projectPath: project.path, rel: ranked[0].path, line: ranked[0].line });
+            return false;
+        }
+        show({
+            kind: "done",
+            query: pattern,
+            matches: ranked.map(({ path, line, text }) => ({ path, line, text })),
+            truncated: res.truncated ?? false,
+        });
+        return true;
+    } catch (e) {
+        show({ kind: "error", query: pattern, message: errorText(e) });
+        return true;
+    }
+}
+
+// Without a type system, find references is what it honestly is: the name as a whole, case-sensitive
+// word across the repository, through the ordinary search with its query filled in.
+export async function findReferences(name: string): Promise<void> {
+    const project = globalStore.get(codeProjectAtom);
+    if (project == null) {
+        return;
+    }
+    const opts: SearchOpts = { ...DEFAULT_SEARCH_OPTS, wholeWord: true, caseSensitive: true };
+    globalStore.set(codeSearchQueryAtom, name);
+    globalStore.set(codeSearchOptsAtom, opts);
+    globalStore.set(codeSearchModeAtom, "search");
+    await runSearch(project, name, opts, `References to ${name}`);
 }

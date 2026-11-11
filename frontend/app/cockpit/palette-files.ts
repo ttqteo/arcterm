@@ -5,7 +5,7 @@
 // ranking (rankPaths) and its query language (a trailing ":123" is a line) rather than growing a
 // second one.
 
-import { parseFinderQuery, rankPaths } from "@/app/view/code/codefinder";
+import { parsePathQuery, rankPaths } from "@/app/view/code/codefinder";
 
 export interface FileHit {
     path: string; // repo-relative
@@ -37,7 +37,7 @@ export function assembleFileGroups(
     limit: number,
     pinned: readonly string[] = []
 ): FileGroups {
-    const { text, line } = parseFinderQuery(query);
+    const { text, line } = parsePathQuery(query);
     const pinnedSet = new Set(pinned);
     const head = [...pinned, ...recent.filter((p) => !pinnedSet.has(p))];
     const ranked = rankPaths(text, paths, limit, head).map((m) => hit(m.path));

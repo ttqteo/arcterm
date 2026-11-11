@@ -104,6 +104,7 @@ function emptyQuery(paths: readonly string[], limit: number, recent: readonly st
 export interface FinderQuery {
     text: string;
     line?: number;
+    symbol?: boolean; // a leading "@": rank the open file's symbols, not paths
 }
 
 // A trailing ":<digits>" is a line. Reusing the finder for this is why there is no second overlay
@@ -111,7 +112,18 @@ export interface FinderQuery {
 // stays part of the text.
 const LINE_SUFFIX = /:(\d+)$/;
 
+// A leading "@" asks for symbols, the convention VS Code set. It carries no line: a symbol is the line.
 export function parseFinderQuery(raw: string): FinderQuery {
+    const q = raw.trim();
+    if (q.startsWith("@")) {
+        return { text: q.slice(1).trim(), symbol: true };
+    }
+    return parsePathQuery(q);
+}
+
+// The query as a path and an optional line, with no symbol mode: a leading "@" stays part of the text. The
+// palette's Files scope ranks paths with it, so a path typed with an "@" there reads as it always did.
+export function parsePathQuery(raw: string): FinderQuery {
     const q = raw.trim();
     const m = LINE_SUFFIX.exec(q);
     if (m == null) {

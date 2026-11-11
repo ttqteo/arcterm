@@ -132,6 +132,8 @@ export class AgentsViewModel implements ViewModel {
     launcherAtom = atom<LauncherKind | null>(null) as PrimitiveAtom<LauncherKind | null>;
     newInitiativeOpenAtom = atom(false);
     paletteOpenAtom = atom(false);
+    // the query the next open starts with, consumed by that open (Code's Ctrl+Shift+O seeds "@")
+    paletteSeedAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
     // handoff-parity filters + per-card layout (spec §State). Project scope is a single source bound to
     // both the app-bar switcher and the header button.

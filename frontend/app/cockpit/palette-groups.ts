@@ -32,7 +32,8 @@ export type GroupKind =
     | "launch" // the "Start in #project" rows
     | "as-goal" // the one quiet row that expands into the launch rows
     | "widen" // "Search everything for …" in an empty narrowed scope
-    | "line"; // ":152" on Code: that line of the open file
+    | "line" // ":152" on Code: that line of the open file
+    | "symbol"; // "@name" on Code: a declaration in the open file
 
 export interface GroupableItem {
     key: string;

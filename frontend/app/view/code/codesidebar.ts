@@ -10,10 +10,10 @@ export const CODE_SIDEBAR_EDITOR_FLOOR = 280;
 export const CODE_SIDEBAR_COMPACT_WIDTH = 36;
 export const CODE_SIDEBAR_SEPARATOR_WIDTH = 8;
 
-// One width for every mode, so switching between Files, Search and Changed never moves the editor's edge.
+// One width for every mode, so switching between Files, Search, Changed and Symbols never moves the editor's edge.
 export const CODE_SIDEBAR_DEFAULT_WIDTH = 280;
 
-export type CodeSidebarMode = "files" | "search" | "changed";
+export type CodeSidebarMode = "files" | "search" | "changed" | "symbols";
 
 export type CodeSidebarPrefs = {
     width: number;
