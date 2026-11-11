@@ -130,33 +130,41 @@ export function outputTail(lines: string[], maxChars = OUTPUT_MAX_CHARS): string
     return tail.split("\n");
 }
 
-/** The peek's width with nothing wider to fit. */
-export const PEEK_MIN_WIDTH_PX = 560;
-// the share of lines the width fits: a long stack frame or JSON blob past it wraps instead of widening the peek
-const FIT_SHARE = 0.9;
+/** The peek's size until it is dragged: its width, and the most its body grows to before it scrolls. */
+export const PEEK_DEFAULT_WIDTH_PX = 560;
+export const PEEK_DEFAULT_BODY_PX = 360;
+/** The least a drag leaves it. */
+export const PEEK_MIN_WIDTH_PX = 360;
+export const PEEK_MIN_BODY_PX = 96;
 
-function columnsOf(line: string): number {
-    let cols = 0;
-    for (const ch of line) {
-        cols = ch === "\t" ? (Math.floor(cols / 8) + 1) * 8 : cols + 1;
-    }
-    return cols;
+/** The peek's width and its body's height; a null body fits its lines up to PEEK_DEFAULT_BODY_PX, a dragged one is
+ *  that tall. */
+export type PeekSize = { width: number; body: number | null };
+
+export const PEEK_DEFAULT_SIZE: PeekSize = { width: PEEK_DEFAULT_WIDTH_PX, body: null };
+
+function clampPx(px: number, min: number, max: number): number {
+    return Math.round(Math.min(Math.max(px, min), Math.max(min, max)));
 }
 
-/** Pure: how many columns the peek's output wants: the width FIT_SHARE of its lines (plain text, escapes already
- *  dropped) fit in, so a few outliers do not stretch it. */
-export function textColumns(lines: string[]): number {
-    if (lines.length === 0) {
-        return 0;
-    }
-    const widths = lines.map(columnsOf).sort((a, b) => a - b);
-    return widths[Math.ceil(widths.length * FIT_SHARE) - 1];
+/** Pure: `size` held inside the room the window leaves (`maxWidth`, `maxBody`) and over the least a drag leaves. */
+export function clampPeekSize(size: PeekSize, maxWidth: number, maxBody: number): PeekSize {
+    return {
+        width: clampPx(size.width, PEEK_MIN_WIDTH_PX, maxWidth),
+        body: size.body == null ? null : clampPx(size.body, PEEK_MIN_BODY_PX, maxBody),
+    };
 }
 
-/** Pure: the peek's width for `columns` of monospace text, `charPx` wide each, with `chromePx` of padding, gutter and
- *  scrollbar around them; never under PEEK_MIN_WIDTH_PX. The screen's edge caps it where it is drawn. */
-export function peekWidthPx(columns: number, charPx: number, chromePx: number): number {
-    return Math.max(PEEK_MIN_WIDTH_PX, Math.ceil(columns * charPx + chromePx));
+/** Pure: the size the peek keeps between opens, read back from storage; anything unreadable is the default. */
+export function parsePeekSize(raw: string | null): PeekSize {
+    try {
+        const v = raw == null ? null : JSON.parse(raw);
+        const width = typeof v?.width === "number" && v.width > 0 ? v.width : PEEK_DEFAULT_WIDTH_PX;
+        const body = typeof v?.body === "number" && v.body > 0 ? v.body : null;
+        return { width, body };
+    } catch {
+        return PEEK_DEFAULT_SIZE;
+    }
 }
 
 /** Pure: the task a peek names, by its agent and task id; undefined when the peek is closed or the agent no longer

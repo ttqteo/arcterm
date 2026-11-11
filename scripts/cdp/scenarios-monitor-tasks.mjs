@@ -25,8 +25,10 @@ const SHELL = {
     startedAgo: 14 * MIN,
     output: ["preview on :4173", "ready in 312 ms", "dist/assets/redux-selector-B5jgC3IP.svg                     1.51 kB │ gzip:     0.77 kB"],
 };
-// the build line wider than the peek's base 560px: the peek widens to it rather than wrapping it
+// the build line wider than the peek's default 560px: it wraps there, and reads on one line once the peek is dragged wider
 const WIDE_LINE = SHELL.output[2];
+// where the peek keeps its dragged size (backgroundtaskpeek.tsx)
+const PEEK_SIZE_KEY = "bgtaskpeek.size";
 // a line as the page's text() reads it: runs of spaces squashed to one
 const squash = (s) => s.replace(/\s+/g, " ").trim();
 const MONITORS = [
@@ -327,6 +329,12 @@ export default function (kit) {
                 prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
             };
             try {
+                // the peek opens at its default size: a size the app kept from an earlier drag is set aside until teardown
+                ctx.prevPeekSize = await h.ev(`(() => {
+                    const v = localStorage.getItem(${JSON.stringify(PEEK_SIZE_KEY)});
+                    localStorage.removeItem(${JSON.stringify(PEEK_SIZE_KEY)});
+                    return v;
+                })()`);
                 ctx.transcript = writeTranscript(ctx.cwd);
                 const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
                 const wslist = await h.rpc("workspacelist", null);
@@ -566,24 +574,75 @@ export default function (kit) {
                 // 7. a background shell has no tabs: its output, followed live; pressing its row again closes the peek
                 const shell = await openPeek(h, SHELL.id, `(tid(p, "background-task-peek-output")?.textContent ?? "").includes(${JSON.stringify(SHELL.output[0])})`);
                 await h.shot("cdp-shots/monitor-tasks-7.png");
-                // the peek is as wide as its output: the build line sits on one line instead of wrapping at 560px
-                const fit = await h.ev(`(() => {
+                // the peek opens at its default size whatever its output: the build line wraps at 560px. Then its right
+                // edge and its corner are dragged, and a double click on an edge puts the default back
+                const measure = () =>
+                    h.ev(`(() => {
                     ${LIB}
                     const p = peek();
-                    const body = tid(p, "background-task-peek-output");
-                    const line = [...(body?.querySelectorAll("div > div") ?? [])].find((d) => text(d) === ${JSON.stringify(squash(WIDE_LINE))});
+                    const body = p?.querySelector("[data-peek-body]");
+                    const line = [...(tid(p, "background-task-peek-output")?.querySelectorAll("div > div") ?? [])].find((d) => text(d) === ${JSON.stringify(squash(WIDE_LINE))});
                     const lh = line ? parseFloat(getComputedStyle(line).lineHeight) : NaN;
                     return {
                         width: p ? Math.round(p.getBoundingClientRect().width) : null,
-                        lineHeight: line ? Math.round(line.getBoundingClientRect().height) : null,
+                        body: body ? Math.round(body.getBoundingClientRect().height) : null,
                         oneLine: line != null && line.getBoundingClientRect().height < lh * 1.5,
                         inView: p != null && p.getBoundingClientRect().right <= window.innerWidth,
+                        stored: localStorage.getItem(${JSON.stringify(PEEK_SIZE_KEY)}),
                     };
                 })()`);
+                const gripAt = (axis) =>
+                    h.ev(`(() => {
+                    ${LIB}
+                    const r = tid(peek(), "background-task-peek-resize-${axis}")?.getBoundingClientRect();
+                    return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+                })()`);
+                // a move while the button is held says so (buttons: 1), or Chromium reads it as a hover and the drag is lost
+                const mouse = (type, x, y, clickCount = 1, held = type === "mousePressed") =>
+                    h.cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: held ? 1 : 0, clickCount });
+                const dragGrip = async (axis, dx, dy) => {
+                    const at = await gripAt(axis);
+                    if (at == null) return false;
+                    await mouse("mouseMoved", at.x, at.y);
+                    await mouse("mousePressed", at.x, at.y);
+                    for (let i = 1; i <= 5; i++) await mouse("mouseMoved", at.x + (dx * i) / 5, at.y + (dy * i) / 5, 1, true);
+                    await mouse("mouseReleased", at.x + dx, at.y + dy);
+                    await polishNap(250);
+                    return true;
+                };
+                const fitDefault = await measure();
+                const draggedX = await dragGrip("x", 240, 0);
+                const fitWide = await measure();
+                const draggedXY = await dragGrip("xy", 0, 80);
+                const fitTall = await measure();
+                const at = await gripAt("x");
+                if (at != null) {
+                    await mouse("mouseMoved", at.x, at.y);
+                    await mouse("mousePressed", at.x, at.y, 1);
+                    await mouse("mouseReleased", at.x, at.y, 1);
+                    await mouse("mousePressed", at.x, at.y, 2);
+                    await mouse("mouseReleased", at.x, at.y, 2);
+                    await polishNap(250);
+                }
+                const fitReset = await measure();
+                await h.shot("cdp-shots/monitor-tasks-7b.png");
                 rec(
-                    "7b. Width: the shell's peek widens past 560px to its build line, which reads on one line, and the peek stays on screen",
-                    fit.width > 560 && fit.oneLine && fit.inView,
-                    JSON.stringify(fit)
+                    "7b. Size: the shell's peek opens 560px wide with its build line wrapped; dragging its right edge 240px widens it to fit that line on one line and on screen, dragging its corner down makes its body taller, the size is stored, and a double click on the edge puts the default back",
+                    fitDefault.width === 560 &&
+                        !fitDefault.oneLine &&
+                        draggedX &&
+                        Math.abs(fitWide.width - 800) <= 2 &&
+                        fitWide.oneLine &&
+                        fitWide.inView &&
+                        draggedXY &&
+                        fitTall.body != null &&
+                        fitWide.body != null &&
+                        fitTall.body > fitWide.body &&
+                        fitTall.stored != null &&
+                        JSON.parse(fitTall.stored).width === fitTall.width &&
+                        fitReset.width === 560 &&
+                        JSON.parse(fitReset.stored ?? "{}").body === null,
+                    JSON.stringify({ fitDefault, fitWide, fitTall, fitReset })
                 );
                 await h.ev(`(() => { ${LIB} row(${JSON.stringify(SHELL.id)})?.click(); })()`);
                 const closedByRow = await closed(h);
@@ -673,6 +732,12 @@ export default function (kit) {
                 }
             };
             await step("put the page's rpc client back", () => h.ev(`(() => { window.__mtKill?.restore(); delete window.__mtKill; })()`));
+            await step("put the peek's kept size back", () =>
+                h.ev(`(() => {
+                    const k = ${JSON.stringify(PEEK_SIZE_KEY)}, v = ${JSON.stringify(ctx.prevPeekSize ?? null)};
+                    v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v);
+                })()`)
+            );
             for (const t of ctx.terminals ?? []) {
                 await step("close the terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
             }
