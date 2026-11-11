@@ -92,6 +92,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat no longer shows "Could not read the transcript: … cannot find the path specified" for a run's lead or worker
+  that has not written its first message yet
 - In Chat, the "Worked for …" line of what the agent is doing now folds when you click it; before, it stayed open
   until the agent stopped. Selecting a tool line's text no longer opens or closes the line.
 - Resuming a conversation from New agent shows its messages in Chat at once, while Claude Code is still loading, instead

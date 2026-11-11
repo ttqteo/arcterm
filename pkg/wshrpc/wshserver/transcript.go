@@ -23,12 +23,21 @@ import (
 
 const defaultTranscriptTailLines = 200
 
+// noTranscriptFile starts the error of a read whose file is not there. A session's path is known before its file is:
+// Claude Code creates the JSONL (and the project folder) at its first message, and a run's lead or worker has its path
+// set at launch. The cockpit's Chat reads these words (chatempty.ts's NO_TRANSCRIPT_FILE) as "not written yet", the
+// normal start of a conversation, rather than show the OS's "cannot find the path specified" as a failure.
+const noTranscriptFile = "no transcript file yet at"
+
 // statTranscript checks that path names a transcript file that exists and returns its size.
 func statTranscript(path string) (int64, error) {
 	if path == "" {
 		return 0, fmt.Errorf("transcript path is required")
 	}
 	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, fmt.Errorf("%s %s: %w", noTranscriptFile, path, fs.ErrNotExist)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("stat transcript: %w", err)
 	}
