@@ -2,7 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { chatEmptyView } from "./chatempty";
+import { chatEmptyError, chatEmptyView } from "./chatempty";
+
+describe("chatEmptyError", () => {
+    // the words wavesrv's getagenttranscript answers for a file not there (transcript.go's noTranscriptFile)
+    const notWritten =
+        "reading agent transcript: no transcript file yet at C:\\Users\\me\\.claude\\projects\\C--wt-28577415\\8bbe.jsonl: file does not exist";
+
+    it("shows nothing for a transcript not written yet, whatever the phase", () => {
+        expect(chatEmptyError(notWritten, "ready")).toBeNull();
+        expect(chatEmptyError(notWritten, "starting")).toBeNull();
+        expect(chatEmptyError(notWritten, "asleep")).toBeNull();
+    });
+
+    it("shows any other failure to read, except while the harness starts", () => {
+        const denied = "reading agent transcript: read transcript: Access is denied.";
+        expect(chatEmptyError(denied, "ready")).toBe(denied);
+        expect(chatEmptyError(denied, "starting")).toBeNull();
+        expect(chatEmptyError(null, "ready")).toBeNull();
+    });
+});
 
 describe("chatEmptyView", () => {
     it("reads a working agent with no message as its harness starting, in its project", () => {

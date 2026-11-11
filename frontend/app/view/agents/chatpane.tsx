@@ -30,7 +30,7 @@ import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
-import { chatEmptyView } from "./chatempty";
+import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -181,6 +181,7 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
     const v = chatEmptyView(agent);
     const logo = runtimeLogo(agent.agent);
     const starting = v.phase === "starting";
+    const shownError = chatEmptyError(error, v.phase);
     return (
         <div
             data-chat-empty={v.phase}
@@ -231,9 +232,9 @@ function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
                 <span className="text-[11.5px] text-muted">{v.hint}</span>
             ) : null}
             {/* a transcript the harness has not written yet is the normal start, not an error to show */}
-            {error != null && !starting ? (
+            {shownError != null ? (
                 <span data-chat-error className="max-w-[420px] text-[11.5px] text-muted">
-                    Could not read the transcript: {error}
+                    Could not read the transcript: {shownError}
                 </span>
             ) : null}
         </div>

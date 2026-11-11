@@ -94,6 +94,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - An agent's shell commands no longer freeze while arcterm is busy: an ordinary command never waits on the heavy-job
   queue, and a build or test suite waits at most 5 seconds for the queue to answer before it runs anyway.
+- Chat no longer shows "Could not read the transcript: … cannot find the path specified" for a run's lead or worker
+  that has not written its first message yet
 - In Chat, the "Worked for …" line of what the agent is doing now folds when you click it; before, it stayed open
   until the agent stopped. Selecting a tool line's text no longer opens or closes the line.
 - Resuming a conversation from New agent shows its messages in Chat at once, while Claude Code is still loading, instead

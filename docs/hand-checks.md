@@ -10,6 +10,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
   command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).
 
+- [ ] (arcterm) No transcript error before a run's first message: start an orchestrator run, open its lead in Chat
+  while the run's Setup is still going → the empty conversation shows no "Could not read the transcript: …" line, and
+  the lead's messages appear once it starts (`chatempty.ts` chatEmptyError, `transcript.go` noTranscriptFile;
+  fix/chat-no-transcript-yet). Unit tests and typecheck were not run for the frontend half.
 - [ ] (arcterm) A new agent's first message with Send now: + New → Claude with a task → Chat shows the task as a dimmed
   bubble captioned "Starting Claude Code…" with a pulsing dot and no Send now; once the session is up, a message sent
   while it works reads "Queued" with Send now (`chatpane.tsx` PendingBubble, merge 69fa01de1 of chat-empty-start over
