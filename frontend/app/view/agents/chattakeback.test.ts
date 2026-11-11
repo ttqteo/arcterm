@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+import type { AgentEntry } from "./agentsviewmodel";
+import type { PendingMessage } from "./chatpending";
+import { boxHolds, inputBoxRows, mergeTaken, takeBackPlan } from "./chattakeback";
+
+const rule = "─".repeat(40);
+const pend = (id: string, text: string, queued: boolean, kind?: PendingMessage["kind"]): PendingMessage => ({
+    id,
+    text,
+    sentAt: 0,
+    seen: 0,
+    queued,
+    ...(kind != null ? { kind } : {}),
+});
+const you = (text: string): AgentEntry => ({ kind: "user", text });
+const said = (text: string): AgentEntry => ({ kind: "message", text });
+
+describe("takeBackPlan", () => {
+    it("takes back every queued message, oldest first, with ↑ or Esc, while Claude works", () => {
+        const pending = [pend("a", "first", true), pend("b", "second", true)];
+        const plan = { kind: "queued", ids: ["a", "b"], texts: ["first", "second"] };
+        expect(takeBackPlan("Escape", pending, [], "working")).toEqual(plan);
+        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual(plan);
+    });
+    it("leaves commands out: Claude Code does not take them back", () => {
+        const pending = [pend("a", "/btw why", true, "btw"), pend("b", "and this", true)];
+        expect(takeBackPlan("Escape", pending, [], "working")).toEqual({
+            kind: "queued",
+            ids: ["b"],
+            texts: ["and this"],
+        });
+    });
+    it("stops a turn Claude has not answered yet with Esc, for the message that started it", () => {
+        expect(takeBackPlan("Escape", [pend("a", "fix it", false)], [], "working")).toEqual({
+            kind: "interrupt",
+            ids: ["a"],
+            texts: ["fix it"],
+        });
+        // its bubble already gone: the transcript's last entry is still that message
+        expect(takeBackPlan("Escape", [], [said("done"), you("fix it")], "working")).toEqual({
+            kind: "interrupt",
+            ids: [],
+            texts: ["fix it"],
+        });
+    });
+    it("takes nothing back once Claude answered: Esc leaves the box as before", () => {
+        expect(takeBackPlan("Escape", [], [you("fix it"), said("on it")], "working")).toBeNull();
+    });
+    it("never stops a turn with ↑: it recalls the history unless a message is queued", () => {
+        expect(takeBackPlan("ArrowUp", [pend("a", "fix it", false)], [you("x")], "working")).toBeNull();
+    });
+    it("takes nothing back while Claude is idle or asks: the keys belong to the box, or to the dialog", () => {
+        const pending = [pend("a", "first", true)];
+        expect(takeBackPlan("Escape", pending, [you("x")], "idle")).toBeNull();
+        expect(takeBackPlan("Escape", pending, [you("x")], "asking")).toBeNull();
+        expect(takeBackPlan("ArrowUp", pending, [you("x")], "asking")).toBeNull();
+    });
+});
+
+describe("inputBoxRows and boxHolds", () => {
+    const screen = (...box: string[]) => [
+        "⏺ Working on it",
+        "",
+        "> fix the chip",
+        "",
+        rule,
+        ...box,
+        rule,
+        "  ⏵⏵ auto mode on",
+    ];
+    it("reads the rows between the last two rules", () => {
+        expect(inputBoxRows(screen("❯ first", "  second"))).toEqual(["❯ first", "  second"]);
+        expect(inputBoxRows(["no box here"])).toBeNull();
+    });
+    it("sees a taken-back text in the box, wrapped or not", () => {
+        expect(boxHolds(screen("❯ first", "  second"), ["first", "second"])).toBe(true);
+        expect(
+            boxHolds(screen("❯ a long message that the termi", "  nal wrapped"), [
+                "a long message that the terminal wrapped",
+            ])
+        ).toBe(true);
+        expect(boxHolds(screen("❯ [Pasted text #1 +12 lines]"), ["a\nlong\npaste"])).toBe(true);
+    });
+    it("does not take the conversation's copy of the message for the box", () => {
+        expect(boxHolds(screen("❯ "), ["fix the chip"])).toBe(false);
+        expect(boxHolds(["> fix the chip"], ["fix the chip"])).toBe(false);
+    });
+});
+
+describe("mergeTaken", () => {
+    it("puts the taken-back messages ahead of what the box holds, one per line, as Claude Code does", () => {
+        expect(mergeTaken(["first", "second"], "")).toBe("first\nsecond");
+        expect(mergeTaken(["first"], "draft")).toBe("first\ndraft");
+    });
+});

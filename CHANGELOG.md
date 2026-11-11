@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Take a message back in Chat: Esc while Claude works brings the messages that show Queued back into the box without
+  stopping the turn, or, with none queued, the message Claude has not answered yet (that turn stops). ↑ in an empty
+  box takes back queued messages too, as in Claude Code's own box. Edit them and send again.
 - Each agent in the Agent sidebar shows the RAM it and the commands it runs hold now, beside its tokens. Settings →
   Appearance → Agent sidebar → RAM turns it off.
 - In Chat, a `!` command you send shows at once with Running… until it finishes, instead of nothing until its output

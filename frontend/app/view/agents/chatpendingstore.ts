@@ -72,6 +72,25 @@ export function usePending(agentId: string): PendingMessage[] {
     return useAtomValue(pendingAtom).get(agentId) ?? NONE;
 }
 
+/** The agent's pending messages as they stand, for a key handler (`usePending` is the drawing's). */
+export function getPending(agentId: string): PendingMessage[] {
+    return globalStore.get(pendingAtom).get(agentId) ?? NONE;
+}
+
+/** Drops the agent's pending messages with these ids: messages taken back into the box (chattakeback.ts). */
+export function dropPendingIds(agentId: string, ids: string[]): void {
+    const list = globalStore.get(pendingAtom).get(agentId) ?? NONE;
+    if (ids.length === 0 || !list.some((p) => ids.includes(p.id))) {
+        return;
+    }
+    const m = new Map(globalStore.get(pendingAtom));
+    m.set(
+        agentId,
+        list.filter((p) => !ids.includes(p.id))
+    );
+    globalStore.set(pendingAtom, m);
+}
+
 /** What was sent from the agent's box, newest last (at most 20). */
 export function sentHistory(agentId: string): string[] {
     return sentByAgent.get(agentId) ?? NO_HISTORY;

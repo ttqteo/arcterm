@@ -51,9 +51,19 @@ import { localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
-import { holdLine, isSendNowKey, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
-import { addPending, dropPending, noteSent, sentHistory, setHeldSend, useHeldSend } from "./chatpendingstore";
+import { holdLine, isSendNowKey, pendingStill, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
+import {
+    addPending,
+    dropPending,
+    getPending,
+    noteSent,
+    sentHistory,
+    setHeldSend,
+    useHeldSend,
+} from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
+import { mergeTaken, takeBackPlan } from "./chattakeback";
+import { takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot, recentMentionPaths } from "./launchermention";
@@ -440,6 +450,10 @@ export function ChatComposer({
         ) {
             return false;
         }
+        // ↑ in an empty box takes back the messages queued in Claude Code first, as ↑ in its own box does
+        if (dir === "up" && text === "" && takeBackKey("ArrowUp")) {
+            return true;
+        }
         const r = recalled.current;
         const empty = text === "";
         const editing = r.at != null && text === r.shown;
@@ -462,6 +476,29 @@ export function ChatComposer({
         const next = recall(history, r.at, dir);
         recalled.current = { at: next.at, shown: next.text };
         setTextAt(next.text);
+        return true;
+    };
+    // Esc, or ↑ in an empty box: a message Claude has not taken or answered yet comes back into the box
+    // (chattakeback.ts), put ahead of what the box holds. False when there is none: the key keeps its old job
+    const takeBackKey = (key: "Escape" | "ArrowUp"): boolean => {
+        const blockid = agent.blockId;
+        if (blockid == null || asleep) {
+            return false;
+        }
+        const plan = takeBackPlan(
+            key,
+            pendingStill(getPending(agent.id), entries ?? [], Date.now()),
+            entries,
+            agent.state
+        );
+        if (plan == null) {
+            return false;
+        }
+        fireAndForget(async () => {
+            await takeBack(agent.id, blockid, plan, (texts) => {
+                latest.current.setText(mergeTaken(texts, latest.current.text), texts.join("\n").length);
+            });
+        });
         return true;
     };
     const stop = () => {
@@ -801,9 +838,12 @@ export function ChatComposer({
                                 e.preventDefault();
                                 submit();
                             } else if (e.key === "Escape") {
-                                // the box lets go of the keys; Stop is its own button, so a stray Esc never interrupts the agent
+                                // a message Claude has not taken or answered yet comes back into the box; else the box
+                                // lets go of the keys: Stop is its own button, so a stray Esc never stops a turn under way
                                 e.preventDefault();
-                                e.currentTarget.blur();
+                                if (!takeBackKey("Escape")) {
+                                    e.currentTarget.blur();
+                                }
                             }
                         }}
                     />
