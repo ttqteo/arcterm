@@ -106,6 +106,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   and the suite ran at once beside every other heavy job.
 - A build or test suite an agent runs behind `nice -n 10`, `time -p`, `/usr/bin/time -l`, `env -u X`, `nohup`,
   `caffeinate -i` or `gtimeout` waits its turn in the heavy-job queue too, where the wrapper's flags hid the command.
+- The heavy-job queue also holds a Final an agent runs by hand (`node scripts/cdp/final-verify.mjs`, which starts a dev
+  app and a browser), `node scripts/release-build.mjs`, `go build ./...`, `go vet ./...`, a command inside
+  `bash -c '…'` or `zsh -c '…'`, and npm with its flags anywhere (`npm --prefix web run build`, `npm -w web test`).
+  Another project's `npm run build` shows in Jobs as itself instead of `task tauri:build`.
 - Chat no longer shows "Could not read the transcript: … cannot find the path specified" for a run's lead or worker
   that has not written its first message yet
 - In Chat, the "Worked for …" line of what the agent is doing now folds when you click it; before, it stayed open

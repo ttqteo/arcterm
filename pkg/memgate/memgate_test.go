@@ -17,7 +17,7 @@ func TestClassify(t *testing.T) {
 		{"task build:app", true, "task tauri:build", 3584 * mib},
 		{"BUMP=patch task tauri:build", true, "task tauri:build", 3584 * mib},
 		{"cd /x && NODE_OPTIONS=--max-old-space-size=4096 task tauri:build > build.log 2>&1; echo EXIT=$?", true, "task tauri:build", 3584 * mib},
-		{"npm run build", true, "task tauri:build", 3584 * mib},
+		{"npm run build", true, "npm run build", 3584 * mib},
 		{"cargo tauri build", true, "cargo tauri build", 3 * gib},
 		{"task dev", true, "task dev", 3 * gib},
 		{"task tauri:dev", true, "task dev", 3 * gib},
@@ -91,6 +91,35 @@ func TestClassify(t *testing.T) {
 		{"command -v tsc", false, "", 0},
 		{"command -V tsc", false, "", 0},
 		{"command -p task check:ts", true, "task check:ts", 3 * gib},
+
+		// arcterm's own heavy scripts: Final starts a dev app and a browser; the release build is task tauri:build
+		{"node scripts/cdp/final-verify.mjs agent-chat", true, "scripts/cdp/final-verify.mjs", 3 * gib},
+		{"node scripts/cdp/final-verify.mjs", true, "scripts/cdp/final-verify.mjs", 3 * gib},
+		{"ARC_FINAL_OUT=/tmp/f node --experimental-websocket /w/arcterm/scripts/cdp/final-verify.mjs surface-smoke", true, "scripts/cdp/final-verify.mjs", 3 * gib},
+		{"node --experimental-websocket scripts/cdp/verify.mjs agent-chat", false, "", 0},
+		{"node scripts/release-build.mjs --bump none --from HEAD", true, "task tauri:build", 3584 * mib},
+		{"go build ./...", true, "go build ./...", 1536 * mib},
+		{"go vet ./...", true, "go vet ./...", 1536 * mib},
+		{"go vet ./pkg/memgate", false, "", 0},
+		{"go test -run=TestMerge ./pkg/orchestrate", false, "", 0},
+		{"go test -run=TestMerge ./...", true, "go test ./...", 2560 * mib},
+
+		// npm's flags before or after its command, and the ones that take a value
+		{"npm --prefix frontend run build", true, "npm run build", 3584 * mib},
+		{"npm -w web test", true, "vitest (all)", 2 * gib},
+		{"npm --silent test", true, "vitest (all)", 2 * gib},
+		{"npm test --prefix frontend", true, "vitest (all)", 2 * gib},
+		{"npm --prefix frontend test -- src/a.test.ts", false, "", 0},
+		{"npm exec tsc -- --noEmit", true, "task check:ts", 3 * gib},
+		{"npm exec -- vitest run src/a.test.ts", false, "", 0},
+
+		// a shell's -c string is a command line of its own
+		{"bash -c 'task check:ts'", true, "task check:ts", 3 * gib},
+		{"bash -lc 'task check:ts'", true, "task check:ts", 3 * gib},
+		{"bash -c -l 'task check:ts 2>&1 | tail'", true, "task check:ts", 3 * gib},
+		{`zsh -c "cd frontend && npx vitest run"`, true, "vitest (all)", 2 * gib},
+		{"sh -c 'echo task check:ts'", false, "", 0},
+		{"bash --norc scripts/e2e.sh", true, "e2e script", 4 * gib},
 
 		// not heavy at all
 		{"git status --short", false, "", 0},

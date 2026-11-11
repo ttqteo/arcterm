@@ -46,6 +46,13 @@ var (
 	jobGoTestAll     = Job{"go test ./...", 2560 * mib}
 	jobVerify        = Job{"scripts/verify.mjs", 2560 * mib}
 	jobGoOrchestrate = Job{"go test pkg/orchestrate", 2 * gib}
+	// compiling every package, as task build:backend compiles two
+	jobGoBuildAll = Job{"go build ./...", 1536 * mib}
+	jobGoVetAll   = Job{"go vet ./...", 1536 * mib}
+	// a Final run by hand: it starts its own dev app and drives a browser, the peak the engine's Final claims
+	jobFinalVerify = Job{"scripts/cdp/final-verify.mjs", DevBytes}
+	// any project's build script; in arcterm it is task tauri:build, so it claims that peak
+	jobNpmBuild = Job{"npm run build", 3584 * mib}
 	// other projects': an e2e script starts the app's servers, builds the frontend and drives Chromium
 	jobE2E = Job{"e2e script", 4 * gib}
 	// a browser check against an app already running: Chromium and its pages, not the servers
@@ -215,15 +222,19 @@ func classifyStep(words []string) (Job, bool) {
 			return pytest(args[i+2:])
 		}
 		return Job{}, false
-	case "sh", "bash":
-		// a -c string is not split here; a script run by name is
-		if has(args, "-c") {
+	case "sh", "bash", "zsh":
+		ops := operands(args)
+		if len(ops) == 0 {
 			return Job{}, false
 		}
-		if ops := operands(args); len(ops) > 0 {
-			return classifyTool(path.Base(ops[0]), nil)
+		// -c (alone or among short flags: -lc) makes the first operand a command line of its own
+		for _, a := range args {
+			if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.Contains(a[1:], "c") {
+				return Classify(ops[0])
+			}
 		}
-		return Job{}, false
+		// a script run by name
+		return classifyTool(path.Base(ops[0]), nil)
 	case "npx":
 		if len(args) == 0 {
 			return Job{}, false
@@ -266,28 +277,57 @@ func classifyTask(args []string) (Job, bool) {
 	return heaviest, heaviest.Bytes > 0
 }
 
+// npm's flags that take a value, wherever they sit: npm --prefix frontend test, npm test -w web
+var npmValueFlags = []string{"--prefix", "-w", "--workspace"}
+
 func classifyNpm(args []string) (Job, bool) {
-	ops := operands(args)
-	if len(ops) == 0 {
-		return Job{}, false
-	}
-	switch ops[0] {
+	args = dropValueFlags(args, npmValueFlags)
+	sub, rest := firstOperand(args)
+	switch sub {
 	case "install", "i", "ci":
 		return jobInstall, true
 	case "test", "t":
-		return vitest(args[1:])
+		return vitest(rest)
 	case "run", "run-script":
-		if len(ops) > 1 {
-			switch ops[1] {
-			case "build":
-				return jobAppBuild, true
-			case "test":
-				return vitest(args[2:])
-			}
-			return browserScript(ops[1])
+		script, rest := firstOperand(rest)
+		switch script {
+		case "":
+			return Job{}, false
+		case "build":
+			return jobNpmBuild, true
+		case "test":
+			return vitest(rest)
+		}
+		return browserScript(script)
+	case "exec":
+		if tool, rest := firstOperand(rest); tool != "" {
+			return classifyTool(path.Base(tool), rest)
 		}
 	}
 	return Job{}, false
+}
+
+// firstOperand is the first word that is not a flag, and the words after it
+func firstOperand(args []string) (string, []string) {
+	for i, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return a, args[i+1:]
+		}
+	}
+	return "", nil
+}
+
+// dropValueFlags takes each flag in valued out of args, with the value after it, wherever it sits
+func dropValueFlags(args []string, valued []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		if has(valued, args[i]) {
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
 }
 
 // a package.json script by name: one named e2e or smoke (test:e2e, e2e:ui, smoke) drives a browser
@@ -446,6 +486,10 @@ func classifyNode(args []string) (Job, bool) {
 			return jobTypecheck, true
 		case a == "scripts/verify.mjs", strings.HasSuffix(a, "/scripts/verify.mjs"):
 			return jobVerify, true
+		case a == "scripts/cdp/final-verify.mjs", strings.HasSuffix(a, "/scripts/cdp/final-verify.mjs"):
+			return jobFinalVerify, true
+		case a == "scripts/release-build.mjs", strings.HasSuffix(a, "/scripts/release-build.mjs"):
+			return jobAppBuild, true
 		case strings.HasSuffix(a, "vitest/vitest.mjs"):
 			return vitest(args[i+1:])
 		case strings.HasSuffix(a, "astro/bin/astro.mjs"):
@@ -489,16 +533,35 @@ func tauriCLI(args []string) (Job, bool) {
 
 func classifyGo(args []string) (Job, bool) {
 	ops := operands(args)
-	if len(ops) == 0 || ops[0] != "test" {
+	if len(ops) == 0 {
 		return Job{}, false
 	}
+	all := false
 	for _, op := range ops[1:] {
-		if strings.Contains(op, "...") {
-			return jobGoTestAll, true
-		}
+		all = all || strings.Contains(op, "...")
 	}
-	if has(args, "-run") {
+	switch ops[0] {
+	case "build":
+		if all {
+			return jobGoBuildAll, true
+		}
 		return Job{}, false
+	case "vet":
+		if all {
+			return jobGoVetAll, true
+		}
+		return Job{}, false
+	case "test":
+	default:
+		return Job{}, false
+	}
+	if all {
+		return jobGoTestAll, true
+	}
+	for _, a := range args {
+		if a == "-run" || strings.HasPrefix(a, "-run=") {
+			return Job{}, false
+		}
 	}
 	for _, op := range ops[1:] {
 		if strings.TrimSuffix(strings.TrimPrefix(op, "./"), "/") == "pkg/orchestrate" {
