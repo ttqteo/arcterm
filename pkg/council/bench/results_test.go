@@ -229,14 +229,14 @@ func TestAppendAfterTornLine(t *testing.T) {
 }
 
 func TestSummarizeByHarness(t *testing.T) {
-	done := func(h, variant string, recall, keys, kept, wrong int, tokens int64) CouncilBenchResult {
-		return CouncilBenchResult{Harness: h, Case: "c", Variant: variant, Run: 1, State: "done", Recall: recall, Keys: keys, Kept: kept, Wrong: wrong, Tokens: tokens}
+	done := func(h, variant string, recall, keys, wrong int, tokens int64) CouncilBenchResult {
+		return CouncilBenchResult{Harness: h, Case: "c", Variant: variant, Run: 1, State: "done", Recall: recall, Keys: keys, Wrong: wrong, Tokens: tokens}
 	}
 	results := []CouncilBenchResult{
-		done("2026-10-20.1", VariantCouncil, 1, 5, 0, 1, 1_000_000),
-		done("2026-10-22.1", VariantCouncil, 2, 5, 1, 0, 1_500_000),
-		done("2026-10-22.1", VariantSolo, 1, 5, 0, 0, 500_000),
-		done("2026-10-22.1", VariantCouncil, 3, 6, 1, 2, 1_500_000),
+		done("2026-10-20.1", VariantCouncil, 1, 5, 1, 1_000_000),
+		done("2026-10-22.1", VariantCouncil, 2, 5, 0, 1_500_000),
+		done("2026-10-22.1", VariantSolo, 1, 5, 0, 500_000),
+		done("2026-10-22.1", VariantCouncil, 3, 6, 2, 1_500_000),
 		// a council that failed: it spent tokens but scored nothing, and its denominator does not count either
 		{Harness: "2026-10-22.1", Case: "c", Variant: VariantCouncil, Run: 2, State: "failed", Tokens: 500_000},
 		{Harness: "2026-10-22.1", Case: "c", Variant: VariantCouncil, Run: 3, State: "stopped", Tokens: 100_000, Recall: 4, Keys: 5},
@@ -256,9 +256,9 @@ func TestSummarizeByHarness(t *testing.T) {
 	if council.Runs != 4 || council.Scored != 2 {
 		t.Errorf("council runs = %d, scored = %d, want 4 and 2", council.Runs, council.Scored)
 	}
-	if council.Recall != 5 || council.Keys != 11 || council.Kept != 2 || council.Wrong != 2 {
-		t.Errorf("council recall = %d/%d, kept = %d, wrong = %d, want 5/11, 2, 2 (failed and stopped rows add none)",
-			council.Recall, council.Keys, council.Kept, council.Wrong)
+	if council.Recall != 5 || council.Keys != 11 || council.Wrong != 2 {
+		t.Errorf("council recall = %d/%d, wrong = %d, want 5/11, 2 (failed and stopped rows add none)",
+			council.Recall, council.Keys, council.Wrong)
 	}
 	if council.Tokens != 3_600_000 {
 		t.Errorf("council tokens = %d, want 3,600,000 (every run's)", council.Tokens)

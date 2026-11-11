@@ -219,7 +219,6 @@ type CouncilBenchRow struct {
 	Scored     int     `json:"scored"`          // the runs that ended done
 	Recall     int     `json:"recall"`          // key lines matched in the items judged, summed over the scored runs
 	Keys       int     `json:"keys"`            // the key lines those runs were scored against
-	Kept       int     `json:"kept"`            // key lines matched among wild ideas kept aside: only runs of a harness before 2026-11-12.1 have any
 	Wrong      int     `json:"wrong"`
 	Tokens     int64   `json:"tokens"`     // of every run
 	RecallPerM float64 `json:"recallperm"` // Recall per million tokens
@@ -266,7 +265,6 @@ func Summarize(results []CouncilBenchResult, modes map[string]string) []CouncilB
 		row.Scored++
 		row.Recall += r.Recall
 		row.Keys += r.Keys
-		row.Kept += r.Kept
 		row.Recall3 += r.Recall3
 		row.Judged += r.Judged
 		row.Wrong += r.Wrong
