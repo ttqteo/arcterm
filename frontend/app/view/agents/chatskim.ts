@@ -9,7 +9,7 @@
 // (claude/skim-mod/hooks/highlight-core.ts hashText): `claude/` is outside the frontend's tsconfig, so it is copied, and
 // chatskim.test.ts pins vectors computed with the mod's own function, so a drift fails there.
 
-import { canFold, endsOnQuestion, folded, lineCount } from "../../../../claude/skim-mod/hooks/fold-core";
+import { canFold, endsOnQuestion, foldOf, lineCount } from "../../../../claude/skim-mod/hooks/fold-core";
 import { askOf } from "../../../../claude/skim-mod/hooks/highlight-core";
 import { VISUAL_LANG } from "./chatvisual";
 
@@ -214,6 +214,7 @@ export function chatFold(text: string, marks: readonly string[], on: boolean): {
     if (!on || askOf(marks) != null || endsOnQuestion(text) || VISUAL_FENCE.test(text) || !canFold(text)) {
         return null;
     }
-    const f = folded(text, marks);
-    return { short: withMarks(f.text, f.marks), lines: lineCount(text) };
+    // null too when the fold would be most of the reply: it saves no reading
+    const f = foldOf(text, marks);
+    return f === null ? null : { short: withMarks(f.text, f.marks), lines: lineCount(text) };
 }

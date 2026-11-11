@@ -1,0 +1,216 @@
+{
+    "commit": "fa9e19f2c",
+    "saved": "2026-11-11",
+    "cases": {
+        "g-code-long": {
+            "fold": "The hang comes from the worktree cleanup holding the store lock.",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.05555555555555555
+        },
+        "g-judgement-call": {
+            "fold": "The theme picker works; I made one call you may want to undo.\n\n- Themes switch without a reload.\n- The picker remembers the last theme per window.\n- Every color in the picker comes from the theme tokens.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.4166666666666667
+        },
+        "g-lead-long-sentence-vi": {
+            "fold": "Nên giữ bộ lọc ở phía server, vì ba lý do.\n\n- **Dữ liệu đã nằm sẵn ở đó:**\n- **Frontend nhẹ hơn:**\n- **Một nguồn sự thật:**",
+            "criteria": {
+                "1": false,
+                "2": true,
+                "3": true,
+                "4": true
+            },
+            "ratio": 0.45454545454545453
+        },
+        "g-lead-long-sentence": {
+            "fold": "Keep the agent cache in wavesrv, not in the frontend.\n\n- **What it holds:**\n- **Why wavesrv:**\n- **What it costs:**\n- **What breaks:**",
+            "criteria": {
+                "1": false,
+                "2": true,
+                "3": true,
+                "4": true
+            },
+            "ratio": 0.5
+        },
+        "g-lead-nested-label": {
+            "fold": "The release build is ready; two parts changed.\n\n- **Backend:**\n- wavesrv stops a stuck worktree cleanup after 10 seconds.\n- wsh prints the jobslot wait once instead of every second.\n- **Frontend:**\n- … 2 more",
+            "criteria": {
+                "1": false,
+                "2": true,
+                "3": true,
+                "4": true
+            },
+            "ratio": 0.5833333333333334
+        },
+        "g-long-prose": {
+            "fold": "The slow start is the WebView2 profile, not wavesrv.",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": true,
+                "4": true
+            },
+            "ratio": 0.09090909090909091
+        },
+        "g-many-sections-marked": {
+            "fold": "The jobs queue now holds a heavy command until its RAM fits.\n\n## Risk\n\nA command whose estimate is far too high waits forever on an 8 GB machine; the popover's Skip is the way out.",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.38461538461538464
+        },
+        "g-many-sections": {
+            "fold": "The council bench run finished: the team beat the solo lead on 7 of 10 cases.\n\n- Team: 7 wins, 2 losses, 1 tie.\n- Mean judge score 4.1 against 3.6.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.2857142857142857
+        },
+        "g-marked-colon-commands": {
+            "fold": "The build is done and the installer is in `releases/`.\n\nTo install it, type this; it closes arcterm and every agent in it:\n\n```\n! task install\n```",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": true,
+                "4": true
+            },
+            "ratio": 0.5384615384615384
+        },
+        "g-marked-colon-options": {
+            "fold": "The migration is written and tested on a copy of your store.\n\nThe decision is yours:\n\nI would pick (a): half a second once is cheaper than a stall the person sees.",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": false,
+                "4": true
+            },
+            "ratio": 0.4166666666666667
+        },
+        "g-marked-empty-heading": {
+            "fold": "One check failed; the rest is green.\n\n## The failure\n\n`surface-smoke` timed out waiting for the Radar surface.\n\nEverything else passed",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": false,
+                "4": false
+            },
+            "ratio": 0.5384615384615384
+        },
+        "g-marked-too-hard": {
+            "fold": "The Office floor plan ships behind the same toggle as before.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.08333333333333333
+        },
+        "g-marked-warning-unmarked": {
+            "fold": "Done: the service restarts after a crash, at most three times a minute.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.08333333333333333
+        },
+        "g-numbered-steps": {
+            "fold": "To move your vault to the new layout, run these steps in order.\n\n1. Quit arcterm.\n2. Copy `~/.arc/vault` to a backup folder.\n3. Run `wsh vault migrate`.\n4. Start arcterm and open Setup → Memory.\n- … 2 more",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.6363636363636364
+        },
+        "g-options-vi": {
+            "fold": "Mình đã đọc xong log của lần treo lúc 17:44.\n\nCó ba cách sửa, bạn chọn một:\n\nMình nghiêng về (b), vì nó sửa đúng nguyên nhân.",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": false,
+                "4": true
+            },
+            "ratio": 0.38461538461538464
+        },
+        "g-single-list": {
+            "fold": "Six small fixes landed on main.\n\n- The palette opens on Ctrl+K again.\n- `j` and `k` skip collapsed folders.\n- The diff surface scrolls to the first change.\n- A closed terminal leaves the split.\n- … 2 more",
+            "criteria": {
+                "1": true,
+                "2": true,
+                "3": true,
+                "4": true
+            },
+            "ratio": 0.5833333333333334
+        },
+        "g-table-and-code": {
+            "fold": "Two ways to bound the transcript cache; the benchmark picks the second.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.06666666666666667
+        },
+        "g-table-long": {
+            "fold": "Measured the RAM of the new long-lived features on a cold start.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.07142857142857142
+        },
+        "g-verdict-colon": {
+            "fold": "The badge was wrong for one reason:\n\nthe Jarvis count read the runs list before the land event updated it, so a just-landed run counted for one more render.\n\n- The count now reads the runs after the event.\n- A test pins the order.\n- The Cockpit badge had the same bug and the same fix.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.5833333333333334
+        },
+        "g-warning-after-list": {
+            "fold": "Merged the parser fix; one problem is still open.\n\n- Tabs in a plan's task headings parse now.\n- A Depends line with a trailing comma no longer fails submit.\n- The plan reviewer sees the spec path again.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.4166666666666667
+        },
+        "g-warning-label-vi": {
+            "fold": "Đã sửa xong lỗi badge của Jarvis.\n\n- Badge Jarvis không còn đếm run đã land.\n- Badge Cockpit chỉ đếm agent đang chờ bạn.\n- Thêm test cho cả hai bộ đếm trong `navrail.test.ts`.",
+            "criteria": {
+                "1": true,
+                "2": false,
+                "3": true,
+                "4": false
+            },
+            "ratio": 0.4166666666666667
+        }
+    }
+}

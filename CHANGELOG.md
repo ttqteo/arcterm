@@ -56,6 +56,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A folded long reply keeps its point: every heading keeps a line, a bold label keeps the sentence after it, the
+  options a "choose one:" sentence points at stay, and so do the warnings and what waits on you that the old fold cut
+  away. A fold that would be most of the reply shows the reply in full instead.
 - Chat no longer folds a long reply: the skim button only highlights the sentences that matter, and every reply draws
   in full. Turn folding back on in Settings → Appearance → Chat.
 - The Claude sessions arcterm's runs, verify checks and background passes leave behind move to
