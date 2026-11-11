@@ -69,6 +69,8 @@ var managedHooks = []managedHook{
 	{Event: "SessionStart", Matcher: "clear", Args: "agent-hook", Timeout: 10},
 	// a resume (--resume, /resume) is silent until its next prompt: report it at its prompt, with its title
 	{Event: "SessionStart", Matcher: "resume", Args: "agent-hook", Timeout: 10},
+	// a new session is silent until its first prompt too: report it at its prompt, so it does not read working
+	{Event: "SessionStart", Matcher: "startup", Args: "agent-hook", Timeout: 10},
 }
 
 func managedEventOrder() []string {
