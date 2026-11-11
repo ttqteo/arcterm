@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -2725,5 +2726,238 @@ func TestNetCommandsFailAsData(t *testing.T) {
 	}
 	if took := time.Since(start); took > 20*time.Second {
 		t.Fatalf("three refused network commands took %v", took)
+	}
+}
+
+// Ported from the kaeltran16 fork (8d51edfdb, 44e2c54b1), adapted to ours: FileContent has no Root or
+// Prefix here, and the stash is left in the history (TestHistoryLogExcludesStash is not ported).
+func TestFileInWorktree(t *testing.T) {
+	ctx := context.Background()
+	dir := repoWithChange(t) // a.txt is edited on disk, never committed
+	t.Run("text", func(t *testing.T) {
+		got, err := FileInWorktree(ctx, dir, "a.txt", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.IsRepo || got.Content != "one\ntwo\nthree\n" || got.Size != 14 {
+			t.Errorf("got %+v, want the on-disk text", got)
+		}
+	})
+	t.Run("absent", func(t *testing.T) {
+		got, err := FileInWorktree(ctx, dir, "nope.txt", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.IsRepo || !got.Missing || got.Content != "" {
+			t.Errorf("got %+v, want Missing", got)
+		}
+	})
+	t.Run("a directory", func(t *testing.T) {
+		writeAt(t, dir, "adir/x.txt", "x\n")
+		got, err := FileInWorktree(ctx, dir, "adir", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.IsRepo || !got.Missing {
+			t.Errorf("got %+v, want Missing for a directory", got)
+		}
+	})
+	t.Run("outside cwd", func(t *testing.T) {
+		// like a blob read, which git refuses outside the repo: absent, never the file next door
+		writeFile(t, filepath.Dir(dir), "outside.txt", "secret\n")
+		got, err := FileInWorktree(ctx, dir, "../outside.txt", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.IsRepo || !got.Missing || got.Content != "" {
+			t.Errorf("got %+v, want Missing for a path that leaves cwd", got)
+		}
+	})
+	t.Run("too large", func(t *testing.T) {
+		got, err := FileInWorktree(ctx, dir, "a.txt", 4)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.TooLarge || got.Content != "" || got.Size != 14 {
+			t.Errorf("got %+v, want TooLarge with Size 14 and no content", got)
+		}
+	})
+	t.Run("nul byte", func(t *testing.T) {
+		writeFile(t, dir, "nul.dat", "ab\x00cd")
+		got, err := FileInWorktree(ctx, dir, "nul.dat", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Binary || got.Content != "" {
+			t.Errorf("got %+v, want Binary", got)
+		}
+		if string(got.Data) != "ab\x00cd" {
+			t.Errorf("Data = %q, want the file's bytes for a Raw read", got.Data)
+		}
+	})
+	t.Run("invalid utf8", func(t *testing.T) {
+		writeFile(t, dir, "bad.dat", "\xff\xfe")
+		got, err := FileInWorktree(ctx, dir, "bad.dat", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Binary || got.Content != "" {
+			t.Errorf("got %+v, want Binary", got)
+		}
+	})
+	t.Run("subdirectory", func(t *testing.T) {
+		writeAt(t, dir, "sub/c.txt", "deep\n")
+		got, err := FileInWorktree(ctx, filepath.Join(dir, "sub"), "c.txt", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Content != "deep\n" {
+			t.Errorf("got %+v, want deep content", got)
+		}
+	})
+	t.Run("no commits", func(t *testing.T) {
+		unborn := initRepo(t)
+		writeFile(t, unborn, "x.txt", "fresh\n")
+		got, err := FileInWorktree(ctx, unborn, "x.txt", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.IsRepo || got.Content != "fresh\n" {
+			t.Errorf("got %+v, want the file read in a repo with no commits", got)
+		}
+	})
+	t.Run("not a repo", func(t *testing.T) {
+		got, err := FileInWorktree(ctx, t.TempDir(), "a.txt", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.IsRepo {
+			t.Error("IsRepo = true, want false")
+		}
+	})
+}
+
+func TestGetChangesTo(t *testing.T) {
+	dir := t.TempDir()
+	gitRun(t, dir, "init", "-q", "-b", "main")
+	writeFile(t, dir, "a.txt", "one\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "base")
+	base := gitRun(t, dir, "rev-parse", "HEAD")
+	writeFile(t, dir, "b.txt", "two\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "end")
+	end := gitRun(t, dir, "rev-parse", "HEAD")
+	// the checkout moves on after end: neither this commit, an uncommitted edit nor an untracked file belongs to base..end
+	writeFile(t, dir, "c.txt", "three\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "later")
+	head := gitRun(t, dir, "rev-parse", "HEAD")
+	writeFile(t, dir, "a.txt", "edited\n")
+	writeFile(t, dir, "untracked.txt", "u\n")
+
+	ch, err := GetChangesTo(context.Background(), dir, base, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ch.IsRepo || !strings.Contains(ch.StatusZ, "b.txt") {
+		t.Fatalf("StatusZ = %q, want only b.txt", ch.StatusZ)
+	}
+	for _, leak := range []string{"a.txt", "c.txt", "untracked.txt"} {
+		if strings.Contains(ch.StatusZ, leak) || strings.Contains(ch.Numstat, leak) {
+			t.Errorf("%s leaked into base..end: %q / %q", leak, ch.StatusZ, ch.Numstat)
+		}
+	}
+	if ch.Branch != "main" || ch.Head != head {
+		t.Errorf("Branch/Head = %q/%q, want main/%s", ch.Branch, ch.Head, head)
+	}
+}
+
+// Ours also carries HEAD's upstream on a read (the sync bar draws it); a bounded read is the checkout's
+// too, so it keeps them like Branch and Head.
+func TestGetChangesToKeepsTheCheckoutsUpstream(t *testing.T) {
+	dir, _ := repoWithUpstream(t)
+	base := gitRun(t, dir, "rev-parse", "HEAD")
+	git(t, dir, "commit", "-q", "--allow-empty", "-m", "local only")
+	end := gitRun(t, dir, "rev-parse", "HEAD")
+	ch, err := GetChangesTo(context.Background(), dir, base, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Upstream != "origin/main" || ch.UpstreamAhead != 1 || ch.UpstreamBehind != 0 {
+		t.Errorf("upstream = %q +%d -%d, want origin/main +1 -0", ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind)
+	}
+	if nr, err := GetChangesTo(context.Background(), t.TempDir(), base, end); err != nil || nr.IsRepo {
+		t.Errorf("outside a repo: %+v, %v; want IsRepo false", nr, err)
+	}
+}
+
+func TestHasRemote(t *testing.T) {
+	ctx := context.Background()
+	dir := repoWithChange(t)
+	if got, err := HasRemote(ctx, dir); err != nil || got {
+		t.Fatalf("HasRemote with no remote = %v, %v; want false, nil", got, err)
+	}
+	bare := t.TempDir()
+	gitRun(t, bare, "init", "-q", "--bare")
+	gitRun(t, dir, "remote", "add", "origin", bare)
+	if got, err := HasRemote(ctx, dir); err != nil || !got {
+		t.Fatalf("HasRemote with origin = %v, %v; want true, nil", got, err)
+	}
+}
+
+func TestHistoryLogUnbornHead(t *testing.T) {
+	dir := t.TempDir()
+	gitAuthored(t, dir, "init", "--initial-branch=main")
+	h, err := HistoryLog(context.Background(), dir, HistoryOpts{Ref: "HEAD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (&History{IsRepo: true}); !reflect.DeepEqual(h, want) {
+		t.Errorf("HistoryLog = %+v, want %+v", h, want)
+	}
+}
+
+// status only compares hashes, so it succeeds while `diff --numstat HEAD` cannot read the committed
+// blob of a modified file: the list must survive, with the numstat failure carried beside it rather
+// than read as "no line counts".
+func TestGetChangesLiveModeNumstatFailureKeepsList(t *testing.T) {
+	dir := repoWithChange(t) // a.txt modified over its committed content
+	blob := gitRun(t, dir, "rev-parse", "HEAD:a.txt")
+	obj := filepath.Join(dir, ".git", "objects", blob[:2], blob[2:])
+	if err := os.Chmod(obj, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(obj); err != nil {
+		t.Fatalf("removing the loose blob: %v", err)
+	}
+	ch, err := GetChanges(context.Background(), dir, "")
+	if err != nil {
+		t.Fatalf("GetChanges: %v, want the list with the numstat error beside it", err)
+	}
+	if !strings.Contains(ch.StatusZ, "a.txt") {
+		t.Fatalf("modified file missing from statusz %q", ch.StatusZ)
+	}
+	if !strings.Contains(ch.NumstatError, "diff --numstat") {
+		t.Fatalf("NumstatError %q does not name the failing command", ch.NumstatError)
+	}
+	if !strings.Contains(ch.Numstat, "1\t0\tb.txt") {
+		t.Fatalf("untracked synthetic row missing from numstat %q", ch.Numstat)
+	}
+}
+
+// A healthy read, and a repo with no commits (where `diff --numstat HEAD` fails by nature), report no
+// numstat error: it names a real failed read only.
+func TestGetChangesNumstatErrorIsEmptyWhenTheReadIsFine(t *testing.T) {
+	ctx := context.Background()
+	healthy, err := GetChanges(ctx, repoWithChange(t), "")
+	if err != nil || healthy.NumstatError != "" {
+		t.Errorf("healthy read: NumstatError %q, err %v; want none", healthy.NumstatError, err)
+	}
+	unborn := initRepo(t)
+	writeFile(t, unborn, "x.txt", "fresh\n")
+	nc, err := GetChanges(ctx, unborn, "")
+	if err != nil || nc.NumstatError != "" {
+		t.Errorf("no commits: NumstatError %q, err %v; want none", nc.NumstatError, err)
 	}
 }
