@@ -41,6 +41,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Claude sessions arcterm's runs, verify checks and background passes leave behind move to
+  `~/.arc/archive/claude-sessions` once their worktree is gone, so Claude Desktop no longer lists hundreds of worker
+  sessions as projects; arcterm's history, run usage and token stats still read them there.
 - A Claude agent that stays awake and idle is compacted by Claude Code's own idle compaction, which arcterm now
   starts at your Compact threshold (100k unless you changed it) instead of Claude's 200k; arcterm compacts only the
   agents it puts to sleep, so the two never compact the same agent. It applies to agents started after the update.
