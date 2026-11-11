@@ -23,6 +23,11 @@ Fork specs: `2026-10-28-code-surface-improvements-design.md`, `2026-11-05-code-r
 - `3016f8235` review list, persisted reviews and honest handoffs
 - Terminal Code peek: `8216f5927` pure model, `e7cae9a2c` store and loader, `6c717bf51` card, host and scenario,
   `9f979e412` Enter and Esc bindings, `8962d9efb` scenario steps, `294cde415` `~` paths, `19e16133d` binary MIME
+- The peek's gesture (decided 2026-11-12 at plan review): ours already gives Ctrl+click on a terminal path to opening
+  it (agent panel or Code), and that stays. The peek opens on Ctrl+Shift+click (Cmd+Shift+click on a Mac), which today
+  only repeats Ctrl+click; it hangs off our path link provider (`termpathlinks.ts`, `pathlinks.ts`), not the fork's
+  `termfilelinks.ts`. Inside the card, Enter opens the file in Code and Escape closes it, owned by the card
+  (`data-owns-keys`, as our background-task peek does), so no existing Agent binding changes.
 - `7f95de490` keyboard walk for the Changed pane
 - Fixes: `10dd2d3ca`, `c24d4be5a`, `660560fd6`, `4de5b24f8` (markdown preview), `a93db601c`, `3ac8d932b`, `4c026402d`,
   `5f16e421b`, `be83424f2`, `c3d985bb6`, `c50a510c0`, `f2b39e1a7`, `a857dd852`, `783bd000c` (scenario scaffold)
@@ -42,6 +47,9 @@ Fork specs: `2026-10-26-diff-comments-design.md`, `2026-11-05-diff-surface-revie
   `cda904c6f`
 - Already ported, skip: `d94ed8bb6` file-list order, `dc26b2004` n / p and r (take only its narrow Shift+D part if
   ours lacks it).
+- Skipped under "Our code wins" (decided 2026-11-12 at plan review): `8d51edfdb`'s HistoryLog dropping `refs/stash`,
+  and `0d1404f44`'s keeping rename/copy letters and source paths in gitinfo and `jarvis/evidence.go` (with the frontend
+  hunks that rely on them): both change what existing callers of ours get. Left to the owner.
 - `31ab859d1` and `bf04c90ff` change diff colours: colours only from `@theme` tokens, and keep ours if the fork's
   palette clashes with our themes.
 
