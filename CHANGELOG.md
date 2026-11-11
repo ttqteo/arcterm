@@ -85,6 +85,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Resuming a conversation from New agent shows its messages in Chat at once, while Claude Code is still loading, instead
+  of "No messages yet".
 - Opening a compaction's summary in Chat at the end of the conversation keeps the COMPACTED line in place and opens the
   summary below it, instead of scrolling to the summary's last line.
 - Switching between agents no longer shows Chat loading each time: an agent you come back to shows its conversation at

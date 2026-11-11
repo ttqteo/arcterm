@@ -1159,6 +1159,24 @@ describe("pendingToVM", () => {
         const p: PendingLaunch = { tabId: "t1", blockId: "b1", name: "n", project: "p", ts: 0, runtime: "pi" };
         expect(pendingToVM(p, 0).agent).toBe("pi");
     });
+
+    it("carries a resume's transcript, so Chat shows the conversation before the agent reports in", () => {
+        const p: PendingLaunch = {
+            tabId: "t1",
+            blockId: "b1",
+            name: "n",
+            project: "p",
+            ts: 0,
+            runtime: "claude",
+            transcriptPath: "C:/Users/u/.claude/projects/p/abc.jsonl",
+        };
+        expect(pendingToVM(p, 0).transcriptPath).toBe("C:/Users/u/.claude/projects/p/abc.jsonl");
+    });
+
+    it("leaves a fresh launch without a transcript", () => {
+        const p: PendingLaunch = { tabId: "t1", blockId: "b1", name: "n", project: "p", ts: 0 };
+        expect(pendingToVM(p, 0)).not.toHaveProperty("transcriptPath");
+    });
 });
 
 describe("withStartError", () => {

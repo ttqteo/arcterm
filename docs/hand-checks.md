@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Resume shows its chat while loading: New agent → a project → pick a past Claude session → Resume, with
+  the cell on Chat → the conversation's messages show at once, not "No messages yet", and stay when the agent reports
+  in (`agentsviewmodel.ts` pendingToVM transcriptPath, `cockpit-actions.ts` launchAgent; fix/resume-chat-transcript).
+
 - [ ] (arcterm) Chat folds no reply by default: in a Claude agent's Chat with the skim button on, a reply over 10
   lines draws in full with its highlighted sentences and no Show more; Settings → Appearance → Chat → Fold long replies
   on folds it again, off unfolds it (`chatskimstore.ts` chatFoldOnAtom, `chat.fold` in localStorage).
