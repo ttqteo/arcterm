@@ -11,23 +11,30 @@
 // person types goes into the PTY as the compact composer's does (chatcomposer.tsx). Under the last message: the working
 // line, the permission card for a prompt Claude Code is showing (its answer is typed into the TUI), and an
 // AskUserQuestion's choices.
+//
+// The message box floats over the conversation (the dock): 24px in from the pane's sides, 20px up from its bottom, as wide
+// as the conversation's column. The conversation scrolls under it, a fade under the box (data-chat-fade) lets its last
+// lines run out without a hard edge, and the scroller's bottom padding follows the dock's measured height so the last line
+// can always rise above the box. Chat's jump-to-latest button (data-chat-jump) rides the dock, centred above the box.
 
 import { KeyCap } from "@/app/element/keycap";
-import { layerFade } from "@/app/element/motiontokens";
+import { layerFade, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Highlighter } from "lucide-react";
+import { ArrowDown, Highlighter } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { canStop } from "./agentcomposer";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
+import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
 import { chatEmptyView } from "./chatempty";
@@ -52,7 +59,7 @@ import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
-import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
+import { useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
@@ -271,6 +278,44 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
     );
 }
 
+// the dock's place in the pane, and the room kept between the last line and the box (px)
+const DOCK_BOTTOM = 20;
+const DOCK_MARGIN = 16;
+
+// The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + a
+// 16px margin, so the last line scrolls to rest above the box whatever its height. It is written to the element, not kept
+// in state: the box's height spring is a new height every frame, and a re-render of the pane per frame would redraw the
+// conversation. The padding takes height from the scroller's content box, which useStickToBottom's observer sees and
+// re-pins a stuck tail on, so the tail rides the box as it grows; a reader scrolled up is left where they are. The
+// observer's writes wait a frame: a write inside its own callback would loop the observers.
+function useDockPadding(scrollRef: RefObject<HTMLDivElement | null>, dockRef: RefObject<HTMLDivElement | null>) {
+    useLayoutEffect(() => {
+        const scroller = scrollRef.current;
+        const dock = dockRef.current;
+        if (scroller == null || dock == null) {
+            return;
+        }
+        const apply = () => {
+            // a cell that is not on screen has no size: keep the padding it had, the observer writes the real one when
+            // the cell is shown again
+            if (dock.offsetHeight > 0) {
+                scroller.style.paddingBottom = `${dock.offsetHeight + DOCK_BOTTOM + DOCK_MARGIN}px`;
+            }
+        };
+        apply();
+        let frame = 0;
+        const ro = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(apply);
+        });
+        ro.observe(dock);
+        return () => {
+            ro.disconnect();
+            cancelAnimationFrame(frame);
+        };
+    }, []);
+}
+
 // Chat's skim toggle, in the pane's top-right corner over the scroller: whether the sentences the skim mod marked draw
 // highlighted (chatskimstore.ts); a long reply folds to them only when Settings → Appearance → Chat's fold switch is on
 // too. It is Chat's own and global; the terminal's /skim is a separate, per-session fold.
@@ -309,6 +354,13 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // sleeping agent has no process writing to its transcript, so there is no stream: one read as it falls asleep (or as
     // the pane is first seen asleep) puts its last turn in the log.
     const asleep = agent.sleeping != null;
+    // the box's state, as the box reports it (chatboxstate.ts); it words the empty box. Until the box has said, what the
+    // agent's state already tells.
+    const [boxNow, setBoxNow] = useState<BoxState>(() =>
+        asleep ? "asleep" : agent.blockId != null && canStop(agent.state, agent.sleeping) ? "running" : "idle"
+    );
+    const dockRef = useRef<HTMLDivElement>(null);
+    useDockPadding(scrollRef, dockRef);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";
@@ -410,7 +462,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 <div
                     ref={scrollRef}
                     onScroll={onScroll}
-                    className="flex h-full flex-col overflow-y-auto px-[22px] pb-[12px]"
+                    // the bottom padding is the dock's (useDockPadding)
+                    className="flex h-full flex-col overflow-y-auto px-[22px]"
                 >
                     {opening ? (
                         // the first message stands for the conversation: no skeleton or empty state over it
@@ -493,44 +546,78 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 </div>
                 {/* floats over the scroller (the pinned prompt bar leaves room for it); not on the loading or empty state */}
                 {!loading && !empty ? <SkimToggle /> : null}
-                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
-            </div>
-            {/* the conversation's own column (760px), so the box lines up under the last message; keyed by the agent
-                alone, so its text and its attachments belong to one agent and the box is never remounted when the agent
-                sleeps or wakes (its parts fold in place). Asleep its Enter wakes the agent, and it carries
-                data-sleeping-composer on its frame for the scenarios' `[data-sleeping-composer] [data-chat-input]`. */}
-            <div className="flex-none px-[22px] pb-4 pt-3">
-                <div className="mx-auto w-full max-w-[760px]">
-                    <ChatGoalStrip
-                        goal={goal}
-                        onClear={() => {
-                            if (agent.blockId != null) {
-                                fireAndForget(() => submitToAgent(agent.blockId!, "/goal clear"));
-                            }
-                        }}
-                        onOpenTerminal={() => setChatMode(agent.id, "terminal")}
-                    />
-                </div>
-                <ChatComposer
-                    key={agent.id}
-                    agent={agent}
-                    entries={entries}
-                    onSent={jumpToBottom}
-                    onSendNow={queuedShown ? sendNow : undefined}
-                    onLocal={(route) => {
-                        if ("open" in route) {
-                            openDiff(model, agentDiffScope(agent.id, agent.name));
-                        } else {
-                            showLocalCard(agent.id, route.panel, route.command);
-                        }
+                {/* the conversation runs out under the box: transparent at the top, the pane's background at the foot (a
+                    functional fade, DESIGN.md), clear of the scrollbar so that stays whole */}
+                <div
+                    data-chat-fade
+                    aria-hidden
+                    style={{
+                        background:
+                            "linear-gradient(to bottom, color-mix(in srgb, var(--color-background) 0%, transparent), var(--color-background) 62%)",
                     }}
-                    placeholder={
-                        asleep
-                            ? `message ${agent.name} to wake it… (Enter)`
-                            : `Reply to ${agent.name}, @ to mention, / for commands`
-                    }
-                    dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
+                    className="pointer-events-none absolute bottom-0 left-0 right-[10px] h-[190px]"
                 />
+                {/* The dock: the goal strip and the floating box, the conversation's column. It takes no pointer outside its
+                    column. The box is keyed by the agent alone, so its text and its attachments belong to one agent and it
+                    is never remounted when the agent sleeps or wakes (its parts fold in place). Asleep its Enter wakes the
+                    agent, and it carries data-sleeping-composer on its frame for the scenarios'
+                    `[data-sleeping-composer] [data-chat-input]`. */}
+                <div ref={dockRef} data-chat-dock className="pointer-events-none absolute inset-x-6 bottom-5 z-10">
+                    <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
+                        {/* Chat's own jump-to-latest: a round ↓ centred just above the box while the reader is scrolled
+                            up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the
+                            button's alone) */}
+                        <div className="absolute bottom-full left-1/2 z-10 mb-4 -translate-x-1/2">
+                            <AnimatePresence initial={false}>
+                                {!atBottom ? (
+                                    <motion.button
+                                        key="jump"
+                                        type="button"
+                                        data-chat-jump
+                                        variants={springPop}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        style={{ transformOrigin: "bottom" }}
+                                        onClick={jumpToBottom}
+                                        title="Jump to latest"
+                                        aria-label="Jump to latest"
+                                        className="flex size-[32px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                    >
+                                        <ArrowDown size={14} strokeWidth={2} aria-hidden />
+                                    </motion.button>
+                                ) : null}
+                            </AnimatePresence>
+                        </div>
+                        <ChatGoalStrip
+                            goal={goal}
+                            onClear={() => {
+                                if (agent.blockId != null) {
+                                    fireAndForget(() => submitToAgent(agent.blockId!, "/goal clear"));
+                                }
+                            }}
+                            onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                        />
+                        <ChatComposer
+                            key={agent.id}
+                            agent={agent}
+                            entries={entries}
+                            onSent={jumpToBottom}
+                            onBoxState={setBoxNow}
+                            onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
+                            onSendNow={queuedShown ? sendNow : undefined}
+                            onLocal={(route) => {
+                                if ("open" in route) {
+                                    openDiff(model, agentDiffScope(agent.id, agent.name));
+                                } else {
+                                    showLocalCard(agent.id, route.panel, route.command);
+                                }
+                            }}
+                            placeholder={boxPlaceholder(boxNow, agent.name)}
+                            dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
+                        />
+                    </div>
+                </div>
             </div>
         </div>
     );

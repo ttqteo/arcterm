@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The footer of the chat box, as chips: the agent's model (a menu of the three aliases; a pick types `/model <alias>`),
+// The footer of the chat box, as pill chips: the agent's model (a menu of the three aliases; a pick types `/model <alias>`),
 // Claude Code's permission mode (a menu of the modes; a pick presses Shift+Tab until Claude Code's footer names that
 // mode) and, at the right, how full the context is as a small ring with its percent. The mode is read off the terminal
 // that stays mounted under the chat (tuiscreen.ts). A dialog or a menu covers Claude Code's footer for a while: the
@@ -45,7 +45,7 @@ const RING_CIRC = 88;
 
 // The Framer props of one composer part entering or leaving a row. Reduced motion snaps it: opacity animations still
 // play under MotionConfig's "user" setting, so the part skips its variants instead (no initial, no exit).
-function usePartMotion(variants: Variants) {
+export function usePartMotion(variants: Variants) {
     const reduce = useReducedMotion();
     return reduce
         ? ({ variants, initial: false, animate: "animate" } as const)
@@ -160,10 +160,11 @@ function useChipMenu() {
 }
 type ChipMenuState = ReturnType<typeof useChipMenu>;
 
+// the board's pills: round, on the surface tone, a hairline edge that strengthens on hover and while the menu is open
 const CHIP =
-    "flex h-[28px] max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[8px] border px-[9px] text-[12px] text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none";
+    "flex h-[28px] max-w-[200px] cursor-pointer items-center gap-1.5 rounded-full border px-[10px] text-[12.5px] text-secondary transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none";
 const chipTone = (open: boolean) =>
-    open ? "border-edge-strong bg-surface-hover" : "border-edge-mid hover:border-edge-strong";
+    open ? "border-edge-strong bg-surface-hover text-primary" : "border-edge-mid bg-surface hover:border-edge-strong";
 const MENU =
     "absolute bottom-[calc(100%+8px)] left-0 z-10 rounded-[10px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover";
 const MENU_CAPTION = "px-2 pb-[6px] pt-1 text-[11.5px] text-muted";
@@ -233,6 +234,7 @@ function ModelChip({ agent }: { agent: AgentVM }) {
                     onClick={() => m.setOpen(!m.open)}
                     className={cn(CHIP, chipTone(m.open))}
                 >
+                    <span aria-hidden className="h-[8px] w-[8px] flex-none rounded-full bg-accent" />
                     <span className="min-w-0 truncate">{agent.model || "Model"}</span>
                     <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
                 </button>
@@ -434,7 +436,7 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
                                 {...swap}
                                 data-chat-model-label
                                 title="The model it ran on"
-                                className="col-start-1 row-start-1 flex h-[28px] max-w-[200px] items-center rounded-[8px] border border-border px-[9px] text-[12px] text-muted"
+                                className="col-start-1 row-start-1 flex h-[28px] max-w-[200px] items-center rounded-full border border-border px-[10px] text-[12.5px] text-muted"
                             >
                                 <span className="truncate">{agent.model}</span>
                             </motion.span>

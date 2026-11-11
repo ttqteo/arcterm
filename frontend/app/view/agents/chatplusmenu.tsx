@@ -143,7 +143,7 @@ export function ChatPlusMenu({
                 disabled={disabled}
                 onClick={toggle}
                 className={cn(
-                    "flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] text-ink-mid hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent",
+                    "flex h-[30px] w-[30px] flex-none cursor-pointer items-center justify-center rounded-full text-ink-mid hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent",
                     open && "bg-surface-hover"
                 )}
             >
