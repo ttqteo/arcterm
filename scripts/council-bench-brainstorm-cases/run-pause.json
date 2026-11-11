@@ -1,0 +1,63 @@
+{
+  "id": "run-pause",
+  "snapshot": "d04210830^",
+  "feature_commits": [
+    "d04210830",
+    "bff7a4876",
+    "af76d79ec",
+    "242b88e35",
+    "25ccab0ee",
+    "569fb6ff8",
+    "7b529557d",
+    "183e0ec56",
+    "67f6f9ed7",
+    "9b2112fa9",
+    "e09423ed9",
+    "f53a8a46f",
+    "f8aaa936f"
+  ],
+  "feature": "Pausing a run",
+  "question": "A run holds a lot of RAM while it works: its lead, its workers, Verify and Final commands, sometimes a dev app. On an 8 GB machine the only way to get that memory back today is Cancel, which ends the run. arcterm should let a run be paused and resumed later, and I want arcterm to do that by itself: when memory runs short it frees a run's memory without being asked, and it brings the run back when there is room again. Pausing and resuming by hand should stay as a fallback, for when I want to act sooner than arcterm would. How should that work?",
+  "files": [
+    "pkg/orchestrate/dag.go",
+    "pkg/orchestrate/interrupted.go",
+    "pkg/orchestrate/workerslots.go",
+    "pkg/runqueue/rules.go",
+    "pkg/jobqueue/jobqueue.go",
+    "pkg/jobqueue/pressure_windows.go",
+    "pkg/memusage/memusage.go",
+    "frontend/app/view/agents/runcards.tsx"
+  ],
+  "key": [
+    {
+      "text": "A paused run still counts against runs:maxactive: the run queue counts every top-level run that is not done or cancelled, and it starts the next entry whenever that count is under the cap, so a paused run has to keep counting or the queue fills the memory the pause just freed with another run.",
+      "at": "pkg/runqueue/rules.go:35",
+      "shows": "r.Status != statusDone && r.Status != statusCancelled"
+    },
+    {
+      "text": "A pause cannot be stored as a plain paused status on the dag: the dag's status is re-derived from its tasks by every tick and every mutation, and only a cancelled dag is exempt, so a stored paused is overwritten by the next write and the pause has to be its own record that the derivation checks.",
+      "at": "pkg/orchestrate/dag.go:349",
+      "shows": "g.Status == DagStatus_Cancelled"
+    },
+    {
+      "text": "Stopping a run's agents makes the engine read them as lost: the next tick marks a running task whose worker has no controller as stalled at once, and then the lead is woken to judge it or, with no live lead, the engine itself cancels the task's child run and retries the task in a fresh session, losing the agent's context; so the pause must be recorded before anything is stopped, and the tick, the stall handling and the automatic retry must leave a paused run alone.",
+      "at": "pkg/orchestrate/engine.go:514",
+      "shows": "workerControllerGone(ctx, runs[t.RunID])"
+    },
+    {
+      "text": "Ending an agent's process does not keep it down: the frontend resyncs a block's controller whenever the block renders, and a resync starts the command again, so a paused agent's block has to be disarmed, and armed again on resume, or opening its tab brings the agent back and takes the memory again; the existing stop disarms the block but abandons the worker for good, so pause needs a reversible form of it.",
+      "at": "pkg/jarvis/runworker.go:43",
+      "shows": "ResyncController - the frontend issues one whenever the block renders"
+    },
+    {
+      "text": "A merge under way has to finish before the run is stopped: cutting it off kills git mid-commit and leaves an index.lock that no later tick gets past, so a pause cannot stop everything at the instant it is asked for and has to wait out a landing in progress.",
+      "at": "pkg/orchestrate/engine.go:396",
+      "shows": "kills git mid-commit and leaves an index.lock no later tick gets past"
+    },
+    {
+      "text": "Resuming cannot wait for the memory pressure to read normal: on Windows the pressure reading returns unknown whenever memory is fine and never normal, so a resume rule keyed to normal never fires there, and where nothing can be read at all (Linux) arcterm cannot regulate by itself and only the manual Resume remains.",
+      "at": "pkg/jobqueue/jobqueue.go:106",
+      "shows": "return PressureUnknown"
+    }
+  ]
+}

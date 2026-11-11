@@ -723,7 +723,7 @@ func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.Co
 			modes[c.Id] = c.Mode
 		}
 	}
-	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs, modes), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
+	rtn := &wshrpc.CouncilBenchResultsRtnData{Harness: council.HarnessVersion, Runs: bench.Summarize(runs, modes), Results: runs, Ratings: bench.SummarizeRatings(ratings)}
 	if rtn.Runs == nil {
 		rtn.Runs = []bench.CouncilBenchRow{}
 	}

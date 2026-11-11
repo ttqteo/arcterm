@@ -1226,24 +1226,27 @@ func councilBenchSections(rows []bench.CouncilBenchRow) []councilBenchSection {
 	return sections
 }
 
-// councilBenchBrainstormNote is the line under the Brainstorm section: a council is read through its top items, a
-// brainstorm design through every decision, so their columns are not the same measure.
+// councilBenchBrainstormNote is the line under the Brainstorm section: from harness 2026-11-12.1 on a council and a
+// brainstorm design are both judged on their whole list, and a row before it was scored the old way, a council cut at 3
+// (it has no recall@3 and no wrong denominator, so those print a dash).
 func councilBenchBrainstormNote() string {
-	return fmt.Sprintf("note: council items are cut at %d, while brainstorm scores every decision", bench.TopBrainstorm)
+	return "note: council and brainstorm are both judged on their whole list; rows of a harness before 2026-11-12.1 were scored the old way (a council cut at 3)"
 }
 
-// writeCouncilBenchSection prints one section: its heading, then its table. The Brainstorm section adds the skill, the
-// recall at the done mark (before the builder check; the recall column is the final mark's), and the decisions and
-// questions of the designs, summed over the scored runs as the recall and wrong columns are, so wrong is read against
-// the decisions it is counted in. Only the brainstorm variant has them: every other row there has a dash. A note about
-// the two ways of scoring follows the table.
+// writeCouncilBenchSection prints one section: its heading, then its table. The Brainstorm section has recall@3 (the key
+// lines at rank 1 to 3 of the list judged) beside recall@all (every item: the row's Recall, which the last column is
+// per million tokens of), the skill, the recall at the done mark (before the builder check; recall@all is the final
+// mark's), and the decisions and questions of the designs, summed over the scored runs as the recall columns are. Wrong
+// is read against the items the judge was shown ("wrong/judged"); a row with no judged count, one of an earlier harness,
+// prints its wrong count alone and a dash for recall@3. Only the brainstorm variant has the skill, recall@done,
+// decisions and questions: every other row there has a dash. A note about the two ways of scoring follows the table.
 func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
 	fmt.Fprintln(b, s.heading)
 	w := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
 	if s.brainstorm {
-		fmt.Fprintln(w, "harness\tvariant\tskill\tscored/runs\trecall\trecall@done\tkept\twrong\tdecisions\tquestions\ttokens\trecall/M tokens")
+		fmt.Fprintln(w, "harness\tvariant\tskill\tscored/runs\trecall@3\trecall@all\trecall@done\twrong\tdecisions\tquestions\ttokens\trecall@all/M tokens")
 	} else {
-		fmt.Fprintln(w, "harness\tvariant\tscored/runs\trecall\tkept\twrong\ttokens\trecall/M tokens")
+		fmt.Fprintln(w, "harness\tvariant\tscored/runs\trecall\twrong\ttokens\trecall/M tokens")
 	}
 	for _, r := range s.rows {
 		perM := "-"
@@ -1251,9 +1254,14 @@ func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
 			perM = fmt.Sprintf("%.1f", r.RecallPerM)
 		}
 		if !s.brainstorm {
-			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%d/%d\t%d\t%d\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, r.Scored, r.Runs,
-				r.Recall, r.Keys, r.Kept, r.Wrong, council.FormatTokens(r.Tokens), perM)
+			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%d/%d\t%d\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, r.Scored, r.Runs,
+				r.Recall, r.Keys, r.Wrong, council.FormatTokens(r.Tokens), perM)
 			continue
+		}
+		recall3, wrong := "-", fmt.Sprint(r.Wrong)
+		if r.Judged > 0 {
+			recall3 = fmt.Sprintf("%d/%d", r.Recall3, r.Keys)
+			wrong = fmt.Sprintf("%d/%d", r.Wrong, r.Judged)
 		}
 		skill, atDone, decisions, questions := "-", "-", "-", "-"
 		if r.Variant == bench.VariantBrainstorm {
@@ -1263,8 +1271,8 @@ func writeCouncilBenchSection(b *strings.Builder, s councilBenchSection) {
 			atDone = fmt.Sprintf("%d/%d", r.RecallDone, r.Keys)
 			decisions, questions = fmt.Sprint(r.Decisions), fmt.Sprint(r.Questions)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d/%d\t%d/%d\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, skill, r.Scored, r.Runs,
-			r.Recall, r.Keys, atDone, r.Kept, r.Wrong, decisions, questions, council.FormatTokens(r.Tokens), perM)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d/%d\t%s\t%d/%d\t%s\t%s\t%s\t%s\t%s\t%s\n", councilBenchHarness(r.Harness), r.Variant, skill, r.Scored, r.Runs,
+			recall3, r.Recall, r.Keys, atDone, wrong, decisions, questions, council.FormatTokens(r.Tokens), perM)
 	}
 	w.Flush()
 	if s.brainstorm {

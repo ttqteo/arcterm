@@ -1,0 +1,51 @@
+{
+  "id": "goalpost-guard",
+  "snapshot": "90db6e666^",
+  "feature_commits": ["90db6e666", "de69f84d7", "8fea8e4d8"],
+  "feature": "Run workers lowering the checks that judge them",
+  "question": "arcterm's orchestrator runs a plan by giving each task to a worker agent. Each task's change is judged by the plan's Verify commands at the merge and, before it lands, by a task reviewer: another agent that reads the worker's change against the task. A worker can get a task through by lowering the checks that judge it: deleting, skipping or loosening tests, rewriting an expected value, adding a suppression, relaxing lint or type-check strictness, softening CI, lowering a coverage threshold, or skipping git hooks. A passing Verify and a passing review should still mean the work is right, and today the reviewer catches this only if it happens to notice. arcterm should make every such edit by a Claude Code worker reach that worker's task reviewer as an explicit item the reviewer must pass or fail. The reviewer should pass a lowering that the task or spec calls for, or that the worker explains, and fail the task over one that is unexplained. A worker must never wait on a person or on the lead because of this: the edit always goes through, so the guard costs something only when a review fails over a lowering that was in fact wrong. In a Claude Code session that is not part of a run, Claude should be told what it lowered as it does it, so it can say so in its reply. Pi workers and any screen or command of its own for the guard are out of scope. How should this work?",
+  "files": [
+    "pkg/orchestrate/review.go",
+    "pkg/orchestrate/engine.go",
+    "pkg/jarvis/runexec.go",
+    "pkg/waveobj/wtype.go",
+    "pkg/waveobj/runevent.go",
+    "cmd/wsh/cmd/wshcmd-jarvisdag.go",
+    "pkg/wshrpc/wshrpctypes_dag.go",
+    "pkg/wshrpc/wshserver/wshserver_dag.go",
+    "claude/arc-mod/hooks/register.ts",
+    "claude/arc-mod/hooks/guard-core.ts"
+  ],
+  "key": [
+    {
+      "text": "After a failed review the task goes back to a new worker in the same tree, yet every later reviewer still diffs the whole task from the base of its first attempt, so a check lowered in an earlier attempt is still in the change the next reviewer judges: what is recorded has to be kept for the task across its attempts, not only for the worker that is live when the review starts.",
+      "at": "pkg/orchestrate/dag.go:65",
+      "shows": "so every round diffs the whole task"
+    },
+    {
+      "text": "A task's reviewer is started on the same task id as the worker it judges, so a session's task id does not say whether it is the task's worker: the server has to place the caller from its run's own record (the run is flagged as a review, and a worker counts only while it is the run the task currently points at), and a report from a reviewer must never be stored against the task it is judging.",
+      "at": "pkg/orchestrate/review.go:126",
+      "shows": "TaskId: t.ID, Label: \"review \" + t.ID"
+    },
+    {
+      "text": "The reviewer judges one final diff of the task, from its review base to the worker's end commit, so a lowering the worker made and then undid before finishing is no longer in what the reviewer reads: an edit-time record of lowered checks has to let the reviewer pass such an item as undone and not fail the task over it.",
+      "at": "pkg/orchestrate/review.go:583",
+      "shows": "git diff %s..%s"
+    },
+    {
+      "text": "The reviewer already reads the worker's closing report beside the diff and checks that its Differs from plan names every departure the diff shows, so a worker's explanation of a lowered check has an existing place and reader there: it needs no separate justification channel to the reviewer, and the worker only has to be told to put it in that section.",
+      "at": "pkg/orchestrate/review.go:587",
+      "shows": "names every departure the diff shows"
+    },
+    {
+      "text": "The reviewer answers only through the note on the one verdict command it finishes with, and a note past its length limit is refused rather than clipped, so whatever the reviewer must account for item by item has to stay compact enough for one note: findings that repeat collapse to one line and the before and after samples are clipped.",
+      "at": "pkg/orchestrate/review.go:34",
+      "shows": "longer note is refused, not clipped."
+    },
+    {
+      "text": "Command inspection has to cover the PowerShell tool as well as Bash: the mod hooks the two as separate tools, and Windows workers run their commands through either, so a check lowered through a PowerShell command (a skipped git hook, a softened CI step) would otherwise reach nobody.",
+      "at": "claude/arc-mod/hooks/register.ts:486",
+      "shows": "{ tool: \"PowerShell\" }"
+    }
+  ]
+}
