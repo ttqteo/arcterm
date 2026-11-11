@@ -45312,6 +45312,10 @@ const chatScrollKeep = {
                 lines.push(AC.assistantText(para(i), o(i * 10 + 2)));
             }
             ctx.transcript = AC.writeTranscript(ctx.dir, "scroll-keep-main", lines);
+            // CSK_TRANSCRIPT=<a .jsonl> reads a copy of a real conversation instead: tool rows, code and long replies
+            if (process.env.CSK_TRANSCRIPT) {
+                copyFileSync(process.env.CSK_TRANSCRIPT, ctx.transcript);
+            }
             at = "resetting the grid";
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
@@ -45395,6 +45399,68 @@ const chatScrollKeep = {
                 after3.found && after3.marked && Math.abs(after3.top - placed) <= 2,
                 { placed, ...after3 }
             );
+
+            // 4. + New: the new agent takes the focus (launchAgent), then the person goes back to the one they were reading
+            await AC.setRoster(h, cskRoster(ctx, ["main", "second", "third"]));
+            await AC.focusAgent(h, ctx.tabs.third.tabId);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const away = await h.ev(cskRead(A));
+            await AC.focusAgent(h, A);
+            await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 10`, CSK_WAIT_MS);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const back = await h.ev(cskRead(A));
+            const firstShown = await h.ev(`(() => {
+                const s = document.querySelector('[data-agent-chat="${A}"] .overflow-y-auto');
+                const top = s?.getBoundingClientRect().top ?? 0;
+                const items = [...(s?.querySelectorAll("[data-chat-item]") ?? [])];
+                const at = items.find((x) => x.getBoundingClientRect().bottom > top);
+                return at?.textContent?.slice(0, 60) ?? null;
+            })()`);
+            rec(
+                "4. a new agent takes the focus as + New gives it; back on the first agent its chat is where it was read (within 40 px)",
+                back.found && Math.abs(back.top - placed) <= 40,
+                { placed, away: { found: away.found, top: away.top }, back: { top: back.top, height: back.height, marked: back.marked }, firstShown }
+            );
+
+            // 5. the real + New path: the New dialog opens (Ctrl+N) and closes, then launchAgent opens a terminal, which
+            // takes the focus with a live process; back on the first agent its chat is where it was read
+            await h.ev(`(() => { const s = document.querySelector('[data-agent-chat="${A}"] .overflow-y-auto'); s.setAttribute("data-csk-mark", ""); return true; })()`);
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            const key = (type, k, code, vk, modifiers = 0) =>
+                h.cdp("Input.dispatchKeyEvent", { type, key: k, code, windowsVirtualKeyCode: vk, modifiers });
+            await key("keyDown", "n", "KeyN", 78, 2);
+            await key("keyUp", "n", "KeyN", 78, 2);
+            await new Promise((r) => setTimeout(r, 800));
+            const dialogOpen = await h.ev(`!!document.querySelector('[role="dialog"]')`);
+            const inDialog = await h.ev(cskRead(A));
+            await key("keyDown", "Escape", "Escape", 27);
+            await key("keyUp", "Escape", "Escape", 27);
+            await new Promise((r) => setTimeout(r, 800));
+            const afterDialog = await h.ev(cskRead(A));
+            ctx.launched = await AC.agentPage(
+                h,
+                `const C = await mod("app/cockpit/cockpit-actions.ts");
+                return await C.launchAgent(agentsModel(), { runtime: "terminal", startupCommand: "", task: "", projectPath: ${JSON.stringify(ctx.dir)}, projectName: "scroll keep launch" });`
+            );
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS * 2));
+            const focusedNew = await AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+            await AC.focusAgent(h, A);
+            await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 10`, CSK_WAIT_MS);
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const back5 = await h.ev(cskRead(A));
+            rec(
+                "5. the New dialog opens and closes, a launch takes the focus, and back on the first agent its chat is where it was read (within 40 px)",
+                back5.found && Math.abs(back5.top - placed) <= 40 && Math.abs(afterDialog.top - placed) <= 2,
+                {
+                    placed,
+                    dialogOpen,
+                    inDialog: { top: inDialog.top, marked: inDialog.marked },
+                    afterDialog: { top: afterDialog.top, marked: afterDialog.marked, writes: afterDialog.writes?.length },
+                    launched: ctx.launched,
+                    focusedNew,
+                    back: { top: back5.top, marked: back5.marked, height: back5.height },
+                }
+            );
         } catch (e) {
             rec("the steps ran to the end", false, String(e?.message ?? e));
         }
@@ -45411,6 +45477,9 @@ const chatScrollKeep = {
         await step("remove the probe", () => h.ev(`(() => { window.__cskMo?.disconnect(); delete window.__cskMo; delete window.__cskProbe; return true; })()`));
         await step("restore the roster", () => AC.restoreRoster(h));
         await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        await step("close the launched terminal", () =>
+            ctx.launched == null ? null : waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.launched, false])
+        );
         await step("restore the grid and the chat modes", () =>
             h.ev(`(() => {
                 for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
