@@ -444,18 +444,28 @@ func (f scanFile) metaFile() scanFile {
 	return scanFile{path: f.metaPath, kind: kind, session: f.session, metaPath: f.metaPath}
 }
 
-// sessionStem returns the second path segment of path under root without its .jsonl, and the
-// transcript that segment names. Claude and Pi both keep a session at <slug>/<stem>.jsonl and its
-// subagents' files under <slug>/<stem>/, so every file of a session shares the stem.
-func sessionStem(root, path string) (stem, transcript string) {
+// sessionTranscript returns the session transcript that the second path segment of path under root
+// names. Claude and Pi both keep a session at <slug>/<stem>.jsonl and its subagents' files under
+// <slug>/<stem>/, so every file of a session shares the stem.
+func sessionTranscript(root, path string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
-		return "", path
+		return path
 	}
 	segs := strings.Split(filepath.ToSlash(rel), "/")
 	n := min(2, len(segs))
-	stem = strings.TrimSuffix(segs[n-1], ".jsonl")
-	return stem, filepath.Join(root, filepath.Join(segs[:n-1]...), stem+".jsonl")
+	stem := strings.TrimSuffix(segs[n-1], ".jsonl")
+	return filepath.Join(root, filepath.Join(segs[:n-1]...), stem+".jsonl")
+}
+
+// SessionIdOf is the session id the scan gives the transcript at path: its file stem, and for Pi, whose
+// session file is <timestamp>_<id>.jsonl, the part after the last "_".
+func SessionIdOf(harness, path string) string {
+	stem := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if harness == "pi" {
+		stem = stem[strings.LastIndex(stem, "_")+1:]
+	}
+	return stem
 }
 
 // walkClaudeFiles collects in-window Claude transcript files (recursively, so subagent dirs are
@@ -487,8 +497,8 @@ func walkClaudeRoot(root string, cutoff time.Time) []scanFile {
 			return nil
 		}
 		if inWindow(path, cutoff) {
-			session, transcript := sessionStem(root, path)
-			files = append(files, scanFile{path: path, kind: scanClaude, session: session, metaPath: transcript})
+			transcript := sessionTranscript(root, path)
+			files = append(files, scanFile{path: path, kind: scanClaude, session: SessionIdOf(scanClaude.harness(), transcript), metaPath: transcript})
 		}
 		return nil
 	})

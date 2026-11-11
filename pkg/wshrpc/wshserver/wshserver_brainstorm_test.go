@@ -179,6 +179,39 @@ func TestBrainstormCheckLaunchWritesReadingThenTheRun(t *testing.T) {
 	}
 }
 
+// the judge's run names the brainstorming agent's session, read off its tab; with no transcript yet it names
+// none, and the launch still goes ahead
+func TestBrainstormLaunchRecordsTheLead(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct{ name, transcript, want string }{
+		{"a pi agent", filepath.Join("sessions", "--repo--", "2026-11-05T01-02-03-000Z_lead-id.jsonl"), "pi:lead-id"},
+		{"no transcript yet", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			launched := stubLaunchBrainstormSession(t, "run-1", nil)
+			_, file := seedBrainstorm(t, testSpecRel, true)
+			tabId, blockId := seedAgentTab(t, ctx, waveobj.MetaMapType{waveobj.MetaKey_SessionAgent: "pi"})
+			if tc.transcript != "" {
+				oref := waveobj.MakeORef(waveobj.OType_Block, blockId)
+				if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{waveobj.MetaKey_AgentTranscriptPath: tc.transcript}, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			c, err := readBrainstormForCheck(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.TabId, c.BlockId = tabId, blockId
+			if err := launchSessionRun(ctx, &c); err != nil {
+				t.Fatalf("launchSessionRun: %v", err)
+			}
+			if got := (*launched)[0].Lead; got != tc.want {
+				t.Fatalf("lead = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuilderCheckRouteChain(t *testing.T) {
 	ctx := context.Background()
 	profileRoute := &waveobj.RoutePin{Runtime: "pi", Model: "anthropic/claude-sonnet-5-5"}

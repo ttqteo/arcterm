@@ -88,6 +88,30 @@ func TestLaunchJudgingSessionOutsideADag(t *testing.T) {
 	}
 }
 
+// a brainstorm's judge records the agent it was started for, so usage can fold its tokens into that session
+func TestLaunchJudgingSessionRecordsTheLead(t *testing.T) {
+	ctx := context.Background()
+	captureSpawns(t)
+	ch, err := wstore.CreateChannel(ctx, "judging-session-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, err := LaunchJudgingSession(ctx, JudgingSession{
+		ChannelId: ch.OID, WorkspaceId: "ws-1", Role: jarvis.UsageRole_BrainstormJudge, Tree: t.TempDir(), Prompt: "weigh it",
+		Route: waveobj.RoutePin{Runtime: "claude"}, Lead: "pi:lead-session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := wstore.GetRun(ctx, ch.OID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.BrainstormLead != "pi:lead-session" {
+		t.Fatalf("brainstorm lead = %q, want pi:lead-session", run.BrainstormLead)
+	}
+}
+
 func TestLaunchJudgingSessionNeedsARoute(t *testing.T) {
 	ctx := context.Background()
 	calls := captureSpawns(t)
