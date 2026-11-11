@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { chatFold, hashText, marksByHash, parseSkimOn, sameMarks, skimStoreFiles, withMarks } from "./chatskim";
+import {
+    chatFold,
+    hashText,
+    marksByHash,
+    parseFoldOn,
+    parseSkimOn,
+    sameMarks,
+    skimStoreFiles,
+    withMarks,
+} from "./chatskim";
 
 describe("hashText", () => {
     it("matches the skim mod's hash", () => {
@@ -94,6 +103,15 @@ describe("skimStoreFiles", () => {
                 { name: "skim_dir.json", size: 10, isdir: true },
             ])
         ).toEqual(["skim_inline-2e2b7f082d52.json", "skim_other.json"]);
+    });
+});
+
+describe("parseFoldOn", () => {
+    it("is off unless the stored value is true", () => {
+        expect(parseFoldOn(null)).toBe(false);
+        expect(parseFoldOn("false")).toBe(false);
+        expect(parseFoldOn("junk")).toBe(false);
+        expect(parseFoldOn("true")).toBe(true);
     });
 });
 

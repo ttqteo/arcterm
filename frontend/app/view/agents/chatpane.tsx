@@ -184,8 +184,8 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 }
 
 // Chat's skim toggle, in the pane's top-right corner over the scroller: whether the sentences the skim mod marked draw
-// highlighted and a long reply folds to them (chatskimstore.ts). It is Chat's own and global; the terminal's /skim is a
-// separate, per-session fold.
+// highlighted (chatskimstore.ts); a long reply folds to them only when Settings → Appearance → Chat's fold switch is on
+// too. It is Chat's own and global; the terminal's /skim is a separate, per-session fold.
 function SkimToggle() {
     const [on, setOn] = useAtom(chatSkimOnAtom);
     return (
@@ -194,7 +194,7 @@ function SkimToggle() {
             data-chat-skim-toggle
             aria-pressed={on}
             aria-label="Skim"
-            title={`Skim in Chat, highlights and long replies folded: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
+            title={`Skim highlights in Chat: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
             onClick={() => setOn(!on)}
             className={cn(
                 "absolute right-3 top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",

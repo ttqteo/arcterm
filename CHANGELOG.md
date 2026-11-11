@@ -54,6 +54,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat no longer folds a long reply: the skim button only highlights the sentences that matter, and every reply draws
+  in full. Turn folding back on in Settings → Appearance → Chat.
 - The Claude sessions arcterm's runs, verify checks and background passes leave behind move to
   `~/.arc/archive/claude-sessions` once their worktree is gone, so Claude Desktop no longer lists hundreds of worker
   sessions as projects; arcterm's history, run usage and token stats still read them there.

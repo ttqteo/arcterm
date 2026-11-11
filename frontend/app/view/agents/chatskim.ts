@@ -199,6 +199,11 @@ export function parseSkimOn(raw: string | null): boolean {
     return raw !== "false";
 }
 
+// Settings → Appearance → Chat's fold switch: off unless it says true, so a long reply draws in full with its highlights
+export function parseFoldOn(raw: string | null): boolean {
+    return raw === "true";
+}
+
 /** Pure: a long reply's folded form in Chat, as the skim mod folds it on Claude Code's own screen (its fold-core.ts,
  *  imported, not copied: the cut is the mod's): the verdict and the marked sentences, or the verdict and the lead of
  *  each top reason when nothing is marked, with the marks it kept put back as ==…==. Null when the reply draws in full:

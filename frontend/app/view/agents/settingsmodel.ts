@@ -223,7 +223,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "appearance",
             name: "Appearance",
-            blurb: "Theme, colors and fonts, and what an agent row in the sidebar shows.",
+            blurb: "Theme, colors and fonts, what an agent row in the sidebar shows, and whether Chat folds long replies.",
             cards: [
                 {
                     id: "theme",
@@ -302,6 +302,19 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         key: "agent.row.fields",
                         scope: "local" as const,
                     })),
+                },
+                {
+                    id: "chat",
+                    label: "Chat",
+                    rows: [
+                        {
+                            id: "chat.fold",
+                            title: "Fold long replies",
+                            desc: "A reply longer than 10 lines folds to its verdict and highlighted sentences, behind Show more, while Chat's skim highlights are on. Off draws every reply in full.",
+                            key: "chat.fold",
+                            scope: "local",
+                        },
+                    ],
                 },
             ],
         },

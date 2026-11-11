@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat folds no reply by default: in a Claude agent's Chat with the skim button on, a reply over 10
+  lines draws in full with its highlighted sentences and no Show more; Settings → Appearance → Chat → Fold long replies
+  on folds it again, off unfolds it (`chatskimstore.ts` chatFoldOnAtom, `chat.fold` in localStorage).
+
 - [ ] (arcterm) Chat keys and agent switching: in a Claude agent's Chat scroll up and click in the conversation, then
   Tab → the focus is in the chat box and typing goes there (Tab inside the terminal or a field still does what it did).
   While the agent works send a message so it shows Queued, then Ctrl+Enter (⌘+Enter on a Mac) in the empty box → it is

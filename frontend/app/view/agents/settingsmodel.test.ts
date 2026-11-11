@@ -330,7 +330,7 @@ describe("settings pages", () => {
         );
         expect(Object.keys(cards)).toEqual([
             "general/startup", "general/menubar", "general/notifications",
-            "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows",
+            "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows", "appearance/chat",
             "agents/claudeaccount", "agents/sleep", "agents/flags",
             "runs/runs", "runs/whilework", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
@@ -396,8 +396,8 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        // today's 60, the nine rows the reorganization added, the two compaction rows, and the pet's stay row
-        expect(ids).toHaveLength(72 + RUNTIME_FLAGS.claude.length);
+        // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, and Chat's fold
+        expect(ids).toHaveLength(73 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {
