@@ -29,12 +29,18 @@ import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/reac
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
+import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { procExited } from "./brainstormmodel";
+import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
+import { openQuestion } from "./chatbrainstorm";
+import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
+import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
 import { chatEmptyView } from "./chatempty";
@@ -354,6 +360,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // sleeping agent has no process writing to its transcript, so there is no stream: one read as it falls asleep (or as
     // the pane is first seen asleep) puts its last turn in the log.
     const asleep = agent.sleeping != null;
+    // The agent's brainstorm. The question it waits on draws as a card at the end of the conversation (chatbrainstormcard.tsx)
+    // and words the box's placeholder; what is sent from the box while it waits is kept as the answer (onBoxSent), which
+    // pairs with the message the transcript lands, so that draws as the question's ✓ row (chatbrainstorm.ts pairAnswers).
+    // A click on a card's option is recorded by sendBrainstorm itself. Chat never switches to the Brainstorm tab for any of
+    // it: the card's own button does.
+    const brainstormState = useAtomValue(brainstormAtom(agent.id));
+    const sentAnswers = useAtomValue(brainstormAnswersAtom(agent.id));
+    const procExit = useAtomValue(getProcExitAtom(agent.blockId ?? ""));
+    const exited = procExited(procExit, agent.sleeping);
+    const brainstormTopic = brainstormState?.topic ?? "";
+    const question = useMemo(
+        () => openQuestion(shownBrainstormFile(brainstormState), sentAnswers, exited, brainstormTopic),
+        [brainstormState, sentAnswers, exited, brainstormTopic]
+    );
     // the box's state, as the box reports it (chatboxstate.ts); it words the empty box. Until the box has said, what the
     // agent's state already tells.
     const [boxNow, setBoxNow] = useState<BoxState>(() =>
@@ -443,6 +463,17 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const startingView = opening && !asleep ? chatEmptyView(agent) : null;
     const startingTitle = startingView?.phase === "starting" ? startingView.title : undefined;
 
+    // a message taken from the box: the chat scrolls to the end so its bubble lands in view, and while a question waits the
+    // message is its answer, kept with how many same-text messages the transcript held before it (`entries` is what the
+    // pending bubble counts on too)
+    const onBoxSent = (text: string) => {
+        jumpToBottom();
+        const answer = boxAnswerRecord(question, brainstormTopic, text, entries, Date.now());
+        if (answer != null) {
+            recordBrainstormAnswer(agent.id, answer);
+        }
+    };
+
     return (
         <div
             data-agent-chat={agent.id}
@@ -483,6 +514,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     working={agent.state === "working"}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
+                                    brainstorm={{ agent, topic: brainstormTopic, answers: sentAnswers, question }}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>
@@ -602,7 +634,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             key={agent.id}
                             agent={agent}
                             entries={entries}
-                            onSent={jumpToBottom}
+                            onSent={onBoxSent}
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             onSendNow={queuedShown ? sendNow : undefined}
@@ -613,7 +645,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     showLocalCard(agent.id, route.panel, route.command);
                                 }
                             }}
-                            placeholder={boxPlaceholder(boxNow, agent.name)}
+                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(question))}
                             dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
                         />
                     </div>

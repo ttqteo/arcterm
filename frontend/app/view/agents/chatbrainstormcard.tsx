@@ -10,7 +10,7 @@
 import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { ArrowUpRight, Check, Lightbulb, PanelsTopLeft } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { useState, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -142,8 +142,9 @@ function OptionRow({
     );
 }
 
-// Send under the ticked rows, joining their labels with " + " as the Brainstorm pane does; it opens and closes on the
-// spring, so ticking the first row does not shove the feed
+// Send under the rows of a question that takes several, joining the ticked labels with " + " as the Brainstorm pane does.
+// It is always there, off until a row is ticked (then it names them: "Send A + C"), so ticking the first row shoves
+// nothing; Clear joins it once any is ticked.
 function SendTicked({
     picked,
     busy,
@@ -156,38 +157,27 @@ function SendTicked({
     onClear: () => void;
 }) {
     return (
-        <AnimatePresence initial={false}>
+        <div className="flex items-center gap-[10px] p-[2px]">
+            <button
+                type="button"
+                data-chat-bscard-send
+                disabled={busy || picked.length === 0}
+                onClick={onSend}
+                className={cn(PRIMARY_BTN, FOCUS_RING)}
+            >
+                {picked.length > 0 ? sendPickedLabel(picked) : "Send"}
+            </button>
             {picked.length > 0 ? (
-                <motion.div
-                    key="send"
-                    variants={springReveal}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    className="overflow-hidden"
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={onClear}
+                    className={cn(SMALL_BTN, FOCUS_RING, "disabled:opacity-50")}
                 >
-                    <div className="flex items-center gap-[10px] p-[2px]">
-                        <button
-                            type="button"
-                            data-chat-bscard-send
-                            disabled={busy}
-                            onClick={onSend}
-                            className={cn(PRIMARY_BTN, FOCUS_RING)}
-                        >
-                            {sendPickedLabel(picked)}
-                        </button>
-                        <button
-                            type="button"
-                            disabled={busy}
-                            onClick={onClear}
-                            className={cn(SMALL_BTN, FOCUS_RING, "disabled:opacity-50")}
-                        >
-                            Clear
-                        </button>
-                    </div>
-                </motion.div>
+                    Clear
+                </button>
             ) : null}
-        </AnimatePresence>
+        </div>
     );
 }
 

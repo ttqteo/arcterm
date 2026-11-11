@@ -211,7 +211,7 @@ Colours stay on tokens.
 Calls the spec left to the builder, made by the run's lead with nobody at the cockpit:
 
 - **Where the brainstorm send record lives: `localStorage`**, key `chat.brainstorm.sent`, a map from agent id to its
-  records `{ topic, n, text, sentAt, seen }`, at most 50 per agent (oldest dropped). Why: it survives a reload and a
+  records `{ topic, n, part, text, sentAt, seen }`, at most 50 per agent (oldest dropped). Why: it survives a reload and a
   sleeping agent (the agent id is kept across sleep: the box is keyed by it today), needs no Go, wire or migration
   change, and stays out of the agent's project folder. A read that throws (private storage) degrades to no ✓ rows,
   logged once, never an error in the pane. Records match by agent id and topic, so a later brainstorm in the same
@@ -230,10 +230,10 @@ Calls the spec left to the builder, made by the run's lead with nobody at the co
   → "idle" | "running" | "drop" | "suggest" | "bash" | "asleep"`, with a fixed precedence (drop > suggest > bash >
   asleep > running > idle), and `boxPlaceholder(state, name, override)`; a waiting brainstorm question is only the
   placeholder's override. The running placeholder is the board's `Reply to <agent>; it waits for the turn to end`
-  (no queued-send placeholder exists today).
-- **Open in Brainstorm** sets the agent's view to Brainstorm (`setBrainstormMode`) and shows `Alt+C`, the existing
-  `agent:view-cycle` chord, as its hint; no new binding. Why: the shape and the placeholder come from one place and are
+  (no queued-send placeholder exists today). Why: the shape and the placeholder come from one place and are
   unit-tested; the components only draw it.
+- **Open in Brainstorm** sets the agent's view to Brainstorm (`setBrainstormMode`) and shows `Alt+C`, the existing
+  `agent:view-cycle` chord, as its hint; no new binding.
 - **Suggested action chips while running are the two actions Chat already has:** "Show the diff" (the existing
   `openDiff` route `onLocal` takes) and "Open the terminal" (`setChatMode(agent.id, "terminal")`). No new command.
 - **The suggestion panel is opt-in on the shared pickers.** `useSlashMenu` and `useFileMention` are shared with the

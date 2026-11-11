@@ -56,6 +56,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat has a new look and moves more smoothly: the message box floats over the conversation as a rounded pill that
+  changes shape while the agent works or files are dragged onto it, a stretch of tools shows one compact line per step
+  and folds into "Worked for …" when the agent moves on, and a brainstorm question draws in the conversation as a card
+  you can answer from (a click, or the box), which folds into one ✓ row once answered. New rows and opened details
+  ease in instead of jumping.
 - A folded long reply keeps its point: every heading keeps a line, a bold label keeps the sentence after it, the
   options a "choose one:" sentence points at stay, and so do the warnings and what waits on you that the old fold cut
   away. A fold that would be most of the reply shows the reply in full instead.

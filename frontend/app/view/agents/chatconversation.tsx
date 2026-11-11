@@ -14,6 +14,10 @@
 // A row that arrives at the tail, or a part that lands in a row already there, opens its height on the spring instead of
 // shoving what is above it (Arriving, chatarrival.ts); what is drawn at once (the first load, Show earlier, a restored place)
 // never animates.
+// The agent's brainstorm shows here as well (chatbrainstormcard.tsx): the question it waits on is a card after the last row,
+// which opens and leaves on the spring, and each of your messages that answered a question draws as that question's ✓ row in
+// place of its bubble (chatbrainstorm.ts pairs them by the record of what Arc sent). Chat never switches to the Brainstorm
+// tab for it; the card's button does that.
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
@@ -26,11 +30,15 @@ import {
     conversationText,
     isNearBottom,
     type AgentEntry,
+    type AgentVM,
     type BtwAnswer,
     type EditFile,
     type ShellResult,
 } from "./agentsviewmodel";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
+import { pairAnswers, type OpenQuestion, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
+import { ChatBrainstormAnswered, ChatBrainstormCard } from "./chatbrainstormcard";
+import { answerMessages, answeredText } from "./chatbrainstormwire";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { sameChatItem } from "./chatitemeq";
@@ -440,6 +448,22 @@ function Arriving({
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
+const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
+
+/** The agent's brainstorm as the conversation draws it: `question` is what it waits on now (a card, or the one line that
+ *  points to the Brainstorm tab), `answers` and `topic` are what Arc sent to its questions, which pair with your messages
+ *  so each answered question draws as one ✓ row in place of your bubble. */
+export interface ChatBrainstorm {
+    agent: AgentVM;
+    topic: string;
+    answers: readonly SentAnswer[];
+    question: OpenQuestion | null;
+}
+
+// the one string an answered row is drawn from, for the item's kept element to be compared by
+function answerKey(a: PairedAnswer | undefined): string {
+    return a == null ? "" : `${a.n}\n${a.part}\n${a.text}`;
+}
 
 // an item's element as last drawn, and what it was drawn from (ChatConversation's drawnItems)
 interface DrawnItem {
@@ -449,6 +473,7 @@ interface DrawnItem {
     live: boolean;
     terminal: boolean;
     folds: string;
+    answer: string;
     element: ReactNode;
 }
 
@@ -548,6 +573,7 @@ export function ChatConversation({
     active,
     working,
     onOpenTerminal,
+    brainstorm,
     className,
 }: {
     entries: AgentEntry[];
@@ -565,10 +591,24 @@ export function ChatConversation({
     // shows the agent's terminal, for a command whose panel only Claude Code's own screen draws; left out where there is
     // no live terminal to show (an ended session)
     onOpenTerminal?: () => void;
+    // the agent's brainstorm: its open question as a card after the last row, and its answered questions as ✓ rows. Left
+    // out where there is none (a caller that has no agent to answer to)
+    brainstorm?: ChatBrainstorm;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
     const items = useMemo(() => chatItems(entries), [entries]);
+    // which of your messages answered a question, by row key: every answered question of the conversation, not only the
+    // latest. Nothing to pair, nothing computed
+    const sentAnswers = brainstorm?.answers;
+    const sentTopic = brainstorm?.topic;
+    const answers = useMemo(
+        () =>
+            sentAnswers == null || sentAnswers.length === 0 || sentTopic == null
+                ? NO_ANSWERS
+                : pairAnswers(sentAnswers, answerMessages(items), sentTopic),
+        [items, sentAnswers, sentTopic]
+    );
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
     const [win, setWin] = useState({ shown: CHAT_RENDER_STEP, len: items.length, head: entries[0], asked: false });
@@ -594,6 +634,8 @@ export function ChatConversation({
     // Your own message is drawn at once too: its pending twin (chatpane.tsx) stood in the tail until it landed, and a twin
     // swapped for a row that opens from nothing would dip. Under reduced motion nothing opens.
     const reduceMotion = useReducedMotion();
+    // the card row's margin is no height or transform, so MotionConfig's reduced motion would still glide it: it jumps here
+    const rowSpring = reduceMotion ? { duration: 0 } : MOTION.spring;
     const lastDrawn = useRef<{ items: string[]; parts: Set<string> }>({ items: [], parts: new Set() });
     const visibleKeys = visible.map((item) => item.key);
     const arrived = reduceMotion ? NO_KEYS : tailArrivals(lastDrawn.current.items, visibleKeys);
@@ -610,11 +652,13 @@ export function ChatConversation({
     const [opened, setOpened] = useState<Set<string>>(new Set());
     const rootRef = useRef<HTMLDivElement>(null);
     // your message pins to the top once it scrolls off it; `prompts` is the text of each data-user-prompt bubble, in
-    // document order (only YouBubble's prompt branch carries it, not the command bubble), which the bar shows for the
-    // pinned index
+    // document order (only YouBubble's prompt branch carries it, not the command bubble, nor the ✓ row a message that
+    // answered a brainstorm question draws in its place), which the bar shows for the pinned index
     const pinned = usePinnedPrompt(rootRef);
     const prompts = visible.flatMap((item) =>
-        item.kind === "you" && !("command" in item) ? [pinnedLabel(item.text, item.images?.length ?? 0)] : []
+        item.kind === "you" && !("command" in item) && !answers.has(item.key)
+            ? [pinnedLabel(item.text, item.images?.length ?? 0)]
+            : []
     );
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);
@@ -805,7 +849,17 @@ export function ChatConversation({
 
     const drawItem = (item: ChatItem, last: boolean): ReactNode => {
         switch (item.kind) {
-            case "you":
+            case "you": {
+                // a message that answered a brainstorm question: the question's ✓ row in place of its bubble, so the
+                // answer is shown once
+                const answer = "command" in item ? undefined : answers.get(item.key);
+                if (answer != null) {
+                    return (
+                        <div className="min-w-0 self-stretch">
+                            <ChatBrainstormAnswered n={answer.n} part={answer.part} text={answeredText(answer.text)} />
+                        </div>
+                    );
+                }
                 return (
                     <YouBubble
                         item={item}
@@ -813,6 +867,7 @@ export function ChatConversation({
                         onOpenTerminal={onOpenTerminal != null ? openTerminal : undefined}
                     />
                 );
+            }
             case "sent":
                 return <SentCard item={item} />;
             case "agent":
@@ -840,13 +895,15 @@ export function ChatConversation({
     // An item that is the same as the one drawn for its key last time keeps that element: React skips an element it has
     // already seen, so a block landing at the end of a long conversation renders the last item and not every one before it
     // (chat-redesign step 16 reads that cost as frame time). The keep is by what the item draws from: its content
-    // (sameChatItem), whether it is the last, whether the session is live, the folds opened inside it and whether there is
-    // a terminal to open. Everything else it draws from is state of its own components or read through a ref.
+    // (sameChatItem), whether it is the last, whether the session is live, the folds opened inside it, whether there is
+    // a terminal to open and the brainstorm answer it stands for, if any. Everything else it draws from is state of its
+    // own components or read through a ref.
     const drawnItems = useRef(new Map<string, DrawnItem>());
     const drawnNow = new Map<string, DrawnItem>();
     const rows = visible.map((item, i) => {
         const last = i === visible.length - 1;
         const folds = openedFor(opened, item.key);
+        const answer = answerKey(answers.get(item.key));
         const kept = drawnItems.current.get(item.key);
         const reuse =
             kept != null &&
@@ -855,6 +912,7 @@ export function ChatConversation({
             kept.live === toolsLive &&
             kept.terminal === (onOpenTerminal != null) &&
             kept.folds === folds &&
+            kept.answer === answer &&
             sameChatItem(kept.item, item);
         const drawn: DrawnItem = reuse
             ? kept
@@ -865,6 +923,7 @@ export function ChatConversation({
                   live: toolsLive,
                   terminal: onOpenTerminal != null,
                   folds,
+                  answer,
                   element: drawItem(item, last),
               };
         drawnNow.set(item.key, drawn);
@@ -911,6 +970,23 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
+            {/* The question the brainstorm waits on, after the last row: a row kind of its own, not an item (it is no
+                data-chat-item, so the place kept and restored never counts it). The card opens its height on the spring
+                and leaves on it (the card's own variants); this wrapper does the same with the column's gap, which a
+                closed row would otherwise hold open, so nothing above it shoves. The first render draws it at once. */}
+            <AnimatePresence initial={false}>
+                {brainstorm?.question != null ? (
+                    <motion.div
+                        key={brainstorm.question.state === "pointer" ? "pointer" : `question:${brainstorm.question.n}`}
+                        data-chat-brainstorm-row
+                        initial={{ marginTop: -ITEM_GAP }}
+                        animate={{ marginTop: 0, transition: rowSpring }}
+                        exit={{ marginTop: -ITEM_GAP, transition: rowSpring }}
+                    >
+                        <ChatBrainstormCard agent={brainstorm.agent} question={brainstorm.question} />
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 }
