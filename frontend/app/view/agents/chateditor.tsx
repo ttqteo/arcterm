@@ -612,6 +612,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                             role="textbox"
                             aria-multiline="true"
                             aria-label="Message"
+                            // the webview's English checker underlines every Vietnamese word, as the app's other boxes
+                            spellCheck={false}
                             className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
                             style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                         />

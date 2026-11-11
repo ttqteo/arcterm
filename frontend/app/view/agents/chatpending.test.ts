@@ -4,6 +4,7 @@ import {
     PASTE_OVER,
     PENDING_IDLE_MS,
     PENDING_MAX_MS,
+    PENDING_QUEUED_MAX_MS,
     btwQuestion,
     pastesBody,
     pendingKind,
@@ -37,6 +38,13 @@ describe("userTextCount", () => {
         expect(userTextCount(entries, "/config")).toBe(2);
         expect(userTextCount(entries, "/btw which  file\nnow?")).toBe(1);
         expect(userTextCount(entries, "/btw other")).toBe(0);
+    });
+
+    it("counts a message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in so)", () => {
+        const sent = "bash mode không đẹp lắm\n\nAttached images:\n- C:\\a\\image.png";
+        const entries = [user(`<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`)];
+        expect(userTextCount(entries, sent)).toBe(1);
+        expect(userTextCount(entries, "bash mode không đẹp lắm")).toBe(0);
     });
 });
 
@@ -74,9 +82,9 @@ describe("pendingStill", () => {
     it("drops it once the entries hold the text one more time", () => {
         expect(pendingStill([p()], [user("hello"), user("hello")], 2000)).toEqual([]);
     });
-    it("drops one older than PENDING_MAX_MS", () => {
-        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS - 1)).toHaveLength(1);
-        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS)).toEqual([]);
+    it("drops a message older than PENDING_QUEUED_MAX_MS", () => {
+        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_QUEUED_MAX_MS - 1)).toHaveLength(1);
+        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_QUEUED_MAX_MS)).toEqual([]);
     });
     it("drops one the agent has sat idle on for PENDING_IDLE_MS since it was sent", () => {
         // idle from 3000; sent at 1000 (queued before the turn ended, then cleared with Esc)
@@ -88,8 +96,10 @@ describe("pendingStill", () => {
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_IDLE_MS - 1, 500)).toHaveLength(1);
         expect(pendingStill([p()], [user("hello")], 1000 + PENDING_IDLE_MS, 500)).toEqual([]);
     });
-    it("keeps it while the agent works, however long", () => {
-        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS - 1, null)).toHaveLength(1);
+    it("keeps a queued message past two minutes while the agent works: a long tool call holds the queue that long", () => {
+        // queued 02:30:56, taken 02:34:17, while a 400 s typecheck ran
+        expect(pendingStill([p()], [user("hello")], 1000 + 201_000, null)).toHaveLength(1);
+        expect(pendingStill([p()], [user("hello")], 1000 + PENDING_MAX_MS, null)).toHaveLength(1);
     });
     it("keeps a side question or an open panel while the agent sits idle, up to PENDING_MAX_MS", () => {
         for (const kind of ["btw", "panel"] as const) {

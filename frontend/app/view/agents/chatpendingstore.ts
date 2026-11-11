@@ -7,7 +7,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, useAtomValue } from "jotai";
 import type { AgentEntry } from "./agentsviewmodel";
-import { pendingKind, pushSent, userTextCount, type PendingMessage } from "./chatpending";
+import { PENDING_QUEUED_MAX_MS, pendingKind, pushSent, userTextCount, type PendingMessage } from "./chatpending";
 
 const NONE: PendingMessage[] = [];
 const NO_HISTORY: string[] = [];
@@ -33,7 +33,7 @@ export function addPending(agentId: string, text: string, entries: AgentEntry[])
     };
     const m = new Map(globalStore.get(pendingAtom));
     // the ones the transcript has long since caught up with go too, so the list never grows over a long session
-    m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < 10 * 60_000), p]);
+    m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < PENDING_QUEUED_MAX_MS), p]);
     globalStore.set(pendingAtom, m);
 }
 

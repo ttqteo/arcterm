@@ -6,6 +6,7 @@
 // chatpendingstore.ts; the views in chatpane.tsx and chatcomposer.tsx.
 
 import type { AgentEntry } from "./agentsviewmodel";
+import { unwrapWholePaste } from "./chattagblocks";
 import { opensPanel } from "./slashcommands";
 
 /** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), or a panel
@@ -22,22 +23,29 @@ export interface PendingMessage {
     kind?: PendingKind;
 }
 
-/** A pending bubble goes after this long even when the transcript never showed the text (Claude Code dropped it, or the
- *  session was reset). */
+/** A side question's or a panel's pending card goes after this long even when the transcript never showed its row. */
 export const PENDING_MAX_MS = 120_000;
+
+/** A message's Queued bubble goes after this long even when the transcript never showed it (Claude Code dropped it, or
+ *  the session was reset). Claude Code takes a queued message only at the turn's next gap, so a long tool call holds it
+ *  for minutes: at two minutes the bubble went while the message still waited. An idle agent drops it sooner
+ *  (PENDING_IDLE_MS). */
+export const PENDING_QUEUED_MAX_MS = 30 * 60_000;
 
 const HISTORY_MAX = 20;
 
 // a command as it was typed, every run of whitespace one space: the transcript keeps a /btw's question on one line
 const flat = (s: string): string => s.replace(/\s+/g, " ").trim();
 
-/** How many of the entries are your messages with exactly this text (edge whitespace aside), or commands typed as it. */
+/** How many of the entries are your messages with exactly this text (edge whitespace aside), or commands typed as it.
+ *  A message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in as one) counts as its
+ *  body, or its Queued bubble never goes. */
 export function userTextCount(entries: AgentEntry[], text: string): number {
     const want = text.trim();
     const wantFlat = flat(text);
     let n = 0;
     for (const e of entries) {
-        if (e.kind === "user" && e.text.trim() === want) {
+        if (e.kind === "user" && unwrapWholePaste(e.text).trim() === want) {
             n++;
         } else if (e.kind === "command" && !e.isSkill && flat(e.args ? `${e.name} ${e.args}` : e.name) === wantFlat) {
             n++;
@@ -68,10 +76,11 @@ export function pendingKind(text: string): PendingKind | undefined {
  *  that never went in (Esc in the terminal put it back in Claude Code's own box, or it was never submitted). */
 export const PENDING_IDLE_MS = 5_000;
 
-/** The pending messages still to draw: the transcript holds the text no more often than when it was sent, the
- *  message is not older than PENDING_MAX_MS, and the agent has not sat idle on it for PENDING_IDLE_MS. `idleSince`
- *  is when the agent last went idle, null while it works. A side question or a panel waits on the agent while it sits
- *  idle (the answer comes from a fork, the panel's row once it closes), so only PENDING_MAX_MS ends those. */
+/** The pending messages still to draw: the transcript holds the text no more often than when it was sent, it is not
+ *  older than PENDING_QUEUED_MAX_MS (a side question or a panel: PENDING_MAX_MS), and the agent has not sat idle on it
+ *  for PENDING_IDLE_MS. `idleSince` is when the agent last went idle, null while it works. A side question or a panel
+ *  waits on the agent while it sits idle (the answer comes from a fork, the panel's row once it closes), so only
+ *  PENDING_MAX_MS ends those. */
 export function pendingStill(
     pending: PendingMessage[],
     entries: AgentEntry[],
@@ -80,7 +89,7 @@ export function pendingStill(
 ): PendingMessage[] {
     return pending.filter(
         (p) =>
-            now - p.sentAt < PENDING_MAX_MS &&
+            now - p.sentAt < (p.kind != null ? PENDING_MAX_MS : PENDING_QUEUED_MAX_MS) &&
             (p.kind != null || idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
             userTextCount(entries, p.text) <= p.seen
     );
