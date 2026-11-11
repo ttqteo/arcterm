@@ -336,6 +336,9 @@ type Run struct {
 	// ConsultSessions are sessions the run started outside its own agent (a one-shot model call), each with the
 	// usage role it played, so the usage linker can place their tokens on this run.
 	ConsultSessions []ConsultSession `json:"consultsessions,omitempty"`
+	// BrainstormLead is "<harness>:<session id>" of the agent a brainstorm builder check or judge was started
+	// for, so the usage linker can place that run's tokens under the brainstorming session.
+	BrainstormLead string `json:"brainstormlead,omitempty"`
 	// Pause is a top-level run's pause record, set only while the run is paused and nil after a resume. The run's
 	// Status reads paused while it is set (derived by jarvis's recomputeStatus), unless the run is done or cancelled.
 	Pause *RunPause `json:"pause,omitempty"`

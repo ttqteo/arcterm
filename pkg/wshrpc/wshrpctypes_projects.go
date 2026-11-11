@@ -52,6 +52,8 @@ type CommandListBranchesRtnData struct {
 	// command for its worktree-branch suggestions and ignores it.
 	// "" when the repo publishes no origin/HEAD and has neither main nor master.
 	Default string `json:"default,omitempty"`
+	// HasRemote is true when the repo has at least one remote.
+	HasRemote bool `json:"hasremote,omitempty"`
 }
 
 type CommandGitChangesData struct {
@@ -67,6 +69,8 @@ type CommandGitChangesData struct {
 	// precedence over SessionStartTs and Ref; the response echoes the base in Ref and names the
 	// default branch in BaseBranch. No resolvable default falls through to the live HEAD diff.
 	BranchBase bool `json:"branchbase,omitempty"`
+	// End, with Ref, lists only the commits in Ref..End. Branch and Head stay the checkout's.
+	End string `json:"end,omitempty"`
 }
 
 type CommandGitChangesRtnData struct {
@@ -89,4 +93,7 @@ type CommandGitChangesRtnData struct {
 	Upstream       string `json:"upstream,omitempty"`
 	UpstreamAhead  int    `json:"upstreamahead,omitempty"`
 	UpstreamBehind int    `json:"upstreambehind,omitempty"`
+	// NumstatError is set when the live read listed the files but `diff --numstat` failed (one
+	// unreadable file fails it for all): the list is valid, its line counts are not.
+	NumstatError string `json:"numstaterror,omitempty"`
 }
