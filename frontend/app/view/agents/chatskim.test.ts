@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { hashText, marksByHash, parseSkimOn, sameMarks, skimStoreFiles, withMarks } from "./chatskim";
+import { chatFold, hashText, marksByHash, parseSkimOn, sameMarks, skimStoreFiles, withMarks } from "./chatskim";
 
 describe("hashText", () => {
     it("matches the skim mod's hash", () => {
@@ -103,5 +103,43 @@ describe("parseSkimOn", () => {
         expect(parseSkimOn("true")).toBe(true);
         expect(parseSkimOn("false")).toBe(false);
         expect(parseSkimOn("garbage")).toBe(true);
+    });
+});
+
+describe("chatFold", () => {
+    const long = [
+        "The verdict comes first. It says what happened.",
+        "",
+        "- **One.** The first reason. More of it.",
+        "- **Two.** The second reason.",
+        "",
+        ...Array.from({ length: 12 }, (_, i) => `Detail line ${i}.`),
+    ].join("\n");
+
+    it("draws a short reply in full", () => {
+        expect(chatFold("Short.\n\nStill short.", [], true)).toBeNull();
+    });
+
+    it("draws everything in full while skim is off", () => {
+        expect(chatFold(long, [], false)).toBeNull();
+    });
+
+    it("folds a long unmarked reply to its verdict and reasons", () => {
+        const f = chatFold(long, [], true);
+        expect(f?.lines).toBe(17);
+        expect(f?.short).toContain("The verdict comes first.");
+        expect(f?.short).toContain("**One.**");
+        expect(f?.short).not.toContain("Detail line 5.");
+    });
+
+    it("folds a marked reply to its marks, drawn highlighted", () => {
+        const f = chatFold(long, ["Detail line 5."], true);
+        expect(f?.short).toContain("==Detail line 5.==");
+        expect(f?.short).not.toContain("Detail line 6.");
+    });
+
+    it("draws in full a reply that ends on a question, or whose last mark asks one", () => {
+        expect(chatFold(`${long}\nWhich one do you want?`, [], true)).toBeNull();
+        expect(chatFold(long, ["Which one do you want?"], true)).toBeNull();
     });
 });

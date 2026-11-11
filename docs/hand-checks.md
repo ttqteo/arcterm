@@ -19,6 +19,21 @@ does not, say what you saw and it becomes a bug row under Actionable.
   an ended Claude session>` → it prints `Opened "<title>" as agent:<tab>`, and a tab for that conversation shows asleep
   in the Agent tree; `wsh agents send <tab> continue` wakes it and the turn runs. The same id again goes to that tab
   instead of opening a second (`frontend/app/view/jarvis/openref.ts` openSession, feat/reveal-session).
+- [ ] (arcterm) Chat answers the panel commands itself: in a live Claude agent's Chat send `/usage`, `/cost`, `/context`, `/tasks`, `/stats`, `/skills`, `/help`, `/status` → each
+  shows a card under the conversation ("shown by arcterm · not sent"), nothing reaches the terminal, and the card's ×
+  or your next message closes it; sending one again moves it to the end. `/usage`: 5-hour and weekly bars with resets,
+  the session's cost; `/context`: percent and tokens, Compact now sends `/compact`; `/tasks` in an agent with a
+  background shell → the task with Stop, a click opens its output peek, a subagent row opens its conversation;
+  `/stats`: "Reading your sessions…" then today / 7 days / spend; `/skills` and `/help`: a pick puts `/<name> ` in the
+  box. Open in Terminal sends the real command and flips. On a sleeping agent the cards show and it stays asleep.
+  `/diff` → the Diff surface on that agent. `/theme` → the pane flips to Terminal (`chatlocal.ts`,
+  `chatlocalcards.tsx`, `chatpane.tsx`, 6ef37b31a).
+- [ ] (arcterm) Skim folds long replies in Chat: in a Claude agent's Chat with the Skim button on, a reply over 10 lines → its verdict and highlighted marks (or its top reasons
+  when unmarked), then "› Show more · N lines"; a click opens it in full with "Show less", and it stays open when you
+  switch agents and back. A reply ending on a question, or a short one, draws in full. Skim off → every reply in full,
+  no highlights. Compare one reply with the terminal's fold: the same sentences (`chatskim.ts` `chatFold`,
+  `chatconversation.tsx` `ProseText`, `claude/skim-mod/hooks/fold-core.ts`).
+
 - [ ] (arcterm) The dev app no longer piles up React's render measures: leave `task dev` up an hour while using the
   cockpit, then in its DevTools console `performance.getEntriesByType("measure").length` → a few thousand at most, not
   millions, and the renderer's working set stays flat instead of climbing toward GBs (`frontend/tauri/main.tsx`,

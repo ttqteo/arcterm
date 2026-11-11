@@ -32,7 +32,7 @@ import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
-import { useSkimMarks } from "./chatskimstore";
+import { useSkimFold } from "./chatskimstore";
 import { TaggedPromptText } from "./chattagblock";
 import { foldCommandParts, splitTagged, tagHeading, type TagPart } from "./chattagblocks";
 import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
@@ -80,11 +80,29 @@ function BubbleCopy({ text, align }: { text: string; align: "left" | "right" }) 
 
 // What the agent said, as Markdown, with the sentences the skim mod marked highlighted (the terminal's own highlight, found
 // by the hash of the stored text: chatskimstore.ts) while Chat's highlighter toggle is on. Its own component so the hook
-// runs per part. The copy button and the context menu keep the text as stored, without marks.
+// runs per part. The copy button and the context menu keep the text as stored, without marks. With the toggle on, a long
+// reply folds as the skim mod folds it in the terminal (chatFold): its verdict and marked sentences, then Show more.
 function ProseText({ text }: { text: string }) {
-    const marks = useSkimMarks(text);
-    const shown = useMemo(() => withMarks(text, marks), [text, marks]);
-    return <CouncilText text={shown} className="text-[14px] leading-[1.65] text-ink-hi" />;
+    const { marks, fold, open, toggle } = useSkimFold(text);
+    const full = useMemo(() => withMarks(text, marks), [text, marks]);
+    const folded = fold != null && !open;
+    return (
+        <>
+            <CouncilText text={folded ? fold.short : full} className="text-[14px] leading-[1.65] text-ink-hi" />
+            {fold != null ? (
+                <button
+                    type="button"
+                    data-chat-fold={folded ? "folded" : "open"}
+                    aria-expanded={!folded}
+                    onClick={toggle}
+                    className="mt-1 flex cursor-pointer items-center gap-1 text-[12px] text-muted hover:text-primary"
+                >
+                    <Caret open={!folded} />
+                    {folded ? `Show more · ${fold.lines} lines` : "Show less"}
+                </button>
+            ) : null}
+        </>
+    );
 }
 
 type CopyMenu = (text: string) => (e: React.MouseEvent) => void;
