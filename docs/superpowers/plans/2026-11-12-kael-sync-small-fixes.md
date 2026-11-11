@@ -80,7 +80,7 @@ as it does now.
 `frontend/app/view/agents` that covers the cockpit keyboard or the answer bar passes unchanged.
 
 ### Task 6: CHANGELOG and hand checks
-**Depends on:** Task 1, Task 2, Task 3, Task 4, Task 5
+**Depends on:** Task 1 (its line says whether it ported), Task 2 (same), Task 3 (same), Task 4 (same), Task 5 (same)
 
 **Files:** `CHANGELOG.md`, `docs/hand-checks.md`
 
