@@ -16,6 +16,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   box. Open in Terminal sends the real command and flips. On a sleeping agent the cards show and it stays asleep.
   `/diff` → the Diff surface on that agent. `/theme` → the pane flips to Terminal (`chatlocal.ts`,
   `chatlocalcards.tsx`, `chatpane.tsx`, 6ef37b31a).
+- [ ] (arcterm) Skim folds long replies in Chat: run `task check:ts` first (not run on this change). In a Claude
+  agent's Chat with the Skim button on, a reply over 10 lines → its verdict and highlighted marks (or its top reasons
+  when unmarked), then "› Show more · N lines"; a click opens it in full with "Show less", and it stays open when you
+  switch agents and back. A reply ending on a question, or a short one, draws in full. Skim off → every reply in full,
+  no highlights. Compare one reply with the terminal's fold: the same sentences (`chatskim.ts` `chatFold`,
+  `chatconversation.tsx` `ProseText`, `claude/skim-mod/hooks/fold-core.ts`).
 
 - [ ] (arcterm) The dev app no longer piles up React's render measures: leave `task dev` up an hour while using the
   cockpit, then in its DevTools console `performance.getEntriesByType("measure").length` → a few thousand at most, not

@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   background tasks and subagents (Stop, see the output, open a subagent), your token totals, the commands to pick from,
   and the agent's model, account and session. They work on a sleeping agent too, and each card offers the real panel
   in the Terminal. `/diff` opens the Diff surface on the agent. <!-- big -->
+- Skim in Chat folds a long reply as it does in the terminal: its verdict and the sentences Claude marked (or its top
+  reasons), then Show more with the reply's length to read it all. The Skim button turns it off with the highlights.
 - `wsh council bench` also measures Arc's brainstorm skill, and its results table is split into Review and Brainstorm.
 - A goal meter for Claude Code's `/goal`: above Chat's box and above the prompt in the terminal, the goal, a mark for
   each check Claude's evaluator made, how long it has run, and Goal met or stopped with its counts; the evaluator's

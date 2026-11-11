@@ -21,18 +21,18 @@ import { Highlighter } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
-import { agentDiffScope, openDiff } from "./agentdiffnav";
 import { ChatFileCards } from "./chatfilecards";
-import { ChatLocalCard } from "./chatlocalcards";
-import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
+import { ChatLocalCard } from "./chatlocalcards";
+import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
@@ -178,7 +178,8 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 }
 
 // Chat's skim toggle, in the pane's top-right corner over the scroller: whether the sentences the skim mod marked draw
-// highlighted (chatskimstore.ts). It is Chat's own and global; the terminal's /skim is a separate, per-session fold.
+// highlighted and a long reply folds to them (chatskimstore.ts). It is Chat's own and global; the terminal's /skim is a
+// separate, per-session fold.
 function SkimToggle() {
     const [on, setOn] = useAtom(chatSkimOnAtom);
     return (
@@ -186,8 +187,8 @@ function SkimToggle() {
             type="button"
             data-chat-skim-toggle
             aria-pressed={on}
-            aria-label="Skim highlights"
-            title={`Skim highlights in Chat: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
+            aria-label="Skim"
+            title={`Skim in Chat, highlights and long replies folded: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
             onClick={() => setOn(!on)}
             className={cn(
                 "absolute right-3 top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
