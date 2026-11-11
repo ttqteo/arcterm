@@ -10,6 +10,11 @@ import { isNearBottom } from "./agentsviewmodel";
 import { PROMPT_JUMP_EVENT } from "./pinnedprompt";
 import { transcriptPlace } from "./transcriptplace";
 
+// Dispatched (bubbling) from inside a stuck region by something the reader opened in place, such as a compaction's
+// summary: the region lets go of the tail as a scroll up does, so what opened grows down from where it was clicked
+// instead of the view following the tail to its end
+export const RELEASE_TAIL_EVENT = "sticktobottom:release";
+
 // a transcript its reader left above the end opens there (CompactTranscript's placeId restores it), not stuck
 const opensAtEnd = (placeId: string | undefined) => placeId == null || transcriptPlace(placeId) == null;
 
@@ -72,7 +77,11 @@ export function useStickToBottom(entries: unknown[], placeId?: string) {
             setAtBottom(false);
         };
         el.addEventListener(PROMPT_JUMP_EVENT, release);
-        return () => el.removeEventListener(PROMPT_JUMP_EVENT, release);
+        el.addEventListener(RELEASE_TAIL_EVENT, release);
+        return () => {
+            el.removeEventListener(PROMPT_JUMP_EVENT, release);
+            el.removeEventListener(RELEASE_TAIL_EVENT, release);
+        };
     });
 
     const onScroll = () => {

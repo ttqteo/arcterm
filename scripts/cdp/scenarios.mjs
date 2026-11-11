@@ -45132,6 +45132,44 @@ const agentChat = {
                     has79(dirs79, "frontend/app/view/agents/") && has79(cmds79, "echo") && has79(vars79, "PATH"),
                 { repo79, files79, dirs79, cmds79, vars79 }
             );
+
+            // 80. A compaction at the end of the conversation, its summary long. The chat is at its end (stuck to the tail); a click
+            // on the COMPACTED chip opens the summary, which grows down from the divider: the divider stays where it was, rather
+            // than the view following the opened summary to its last line
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            const at80 = { cwd: ctx.dir, ts: new Date().toISOString() };
+            const summaryLines80 = Array.from({ length: 60 }, (_, i) => `- Kept point ${i + 1}: what the session decided there.`);
+            const boundary80 = JSON.stringify({
+                type: "system",
+                subtype: "compact_boundary",
+                timestamp: at80.ts,
+                cwd: at80.cwd,
+                sessionId: AC_SESSION,
+                compactMetadata: { trigger: "manual", preTokens: 144000, postTokens: 11000 },
+            });
+            const summary80 = JSON.stringify({ ...JSON.parse(AC.userText(["1. Primary Request", ...summaryLines80].join("\n"), at80)), isCompactSummary: true });
+            acAppend(ctx.files.main, boundary80, summary80);
+            const divider80 = `${acLayer(A)}?.querySelector("[data-compaction-divider]")`;
+            const shown80 = await polishWaitFor(h, `!!${divider80}`, 15000);
+            // to the chat's end, where it sticks to the tail: the divider's nearest scrolling parent is the chat's scroller
+            await h.ev(`(() => {
+                let s = ${divider80}?.parentElement;
+                while (s && getComputedStyle(s).overflowY !== "auto") s = s.parentElement;
+                if (s) s.scrollTop = s.scrollHeight;
+            })()`);
+            await polishNap(400);
+            const top80 = await h.ev(`${divider80}?.getBoundingClientRect().top ?? null`);
+            await h.ev(`${divider80}?.querySelector("button")?.click()`);
+            const opened80 = await polishWaitFor(h, `(${divider80}?.textContent ?? "").includes("Kept point 60")`, 5000);
+            await polishNap(700);
+            const after80 = await h.ev(`${divider80}?.getBoundingClientRect().top ?? null`);
+            await h.shot("cdp-shots/agent-chat-80-compaction-open.png");
+            rec(
+                "80. with the chat at its end, opening a compaction's long summary grows it down from the divider: the divider stays where it was (within 4 px), not scrolled away as the view follows the summary to its end",
+                shown80 && top80 != null && opened80 && after80 != null && Math.abs(after80 - top80) <= 4,
+                { shown80, top80, opened80, after80 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }

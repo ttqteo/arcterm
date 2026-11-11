@@ -72,7 +72,9 @@ export function stubOf(section: Section): string | null {
         return `(table · ${Math.max(rows, 0)} ${rows === 1 ? "row" : "rows"})`;
     }
     const text = section.lines.join("\n");
-    const fences = text.match(FENCED) ?? [];
+    // typed: Chat imports this through fold-core, and under the frontend's es6 lib `RegExpMatchArray | never[]` has no
+    // usable reduce
+    const fences: string[] = text.match(FENCED) ?? [];
     const rest = text.replace(FENCED, "").trim();
     if (fences.length === 0 || rest !== "" || fences.some(isCommandFence)) {
         return null;

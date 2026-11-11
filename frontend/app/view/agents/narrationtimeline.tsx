@@ -39,6 +39,7 @@ import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import { PathLink } from "./pathlinkcontext";
 import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
+import { RELEASE_TAIL_EVENT } from "./sticktobottom";
 import { highlightLine } from "./highlight";
 import { formatDuration } from "./tooldetail";
 
@@ -616,9 +617,17 @@ export function CompactionDivider({
     const [open, setOpen] = useState(false);
     const stat = preTokens != null && postTokens != null ? `${formatTokens(preTokens)} → ${formatTokens(postTokens)} tokens` : null;
     const canExpand = !!summary;
+    // opening the summary lets go of a feed stuck to its end (sticktobottom.tsx), so the summary grows down from this
+    // divider instead of the view following it to its last line
+    const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+        if (!open) {
+            e.currentTarget.dispatchEvent(new Event(RELEASE_TAIL_EVENT, { bubbles: true }));
+        }
+        setOpen((v) => !v);
+    };
     return (
-        <div className="mt-3.5">
-            <button type="button" disabled={!canExpand} onClick={() => setOpen((v) => !v)} className={cn("flex w-full items-center gap-2.5", canExpand ? "cursor-pointer" : "cursor-default")}>
+        <div className="mt-3.5" data-compaction-divider>
+            <button type="button" disabled={!canExpand} onClick={toggle} className={cn("flex w-full items-center gap-2.5", canExpand ? "cursor-pointer" : "cursor-default")}>
                 <span className="h-px flex-1 bg-edge-mid" />
                 <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]">
                     <span className="font-semibold uppercase tracking-[0.1em] text-accent-soft">Compacted</span>
