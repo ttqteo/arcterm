@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -64,29 +65,6 @@ func TestJudgePrompt(t *testing.T) {
 		}
 	})
 
-	t.Run("brainstorm: the top 3 and the kept list apart", func(t *testing.T) {
-		p := judgePrompt(judgeCase(council.ModeBrainstorm), judgeReport(council.ModeBrainstorm, 5, "Wild one", "Wild two"))
-		if !strings.Contains(p, "3. Direction title 3") {
-			t.Errorf("prompt lacks the third item:\n%s", p)
-		}
-		if strings.Contains(p, "Direction title 4") || strings.Contains(p, "Direction title 5") {
-			t.Errorf("a Brainstorm report is cut to its top 3 items:\n%s", p)
-		}
-		kept := strings.Index(p, "kept aside")
-		if kept < 0 {
-			t.Fatalf("prompt has no Kept section:\n%s", p)
-		}
-		if !strings.Contains(p, "1. Wild one") || !strings.Contains(p, "2. Wild two") || !strings.Contains(p, "Why Wild one stays.") {
-			t.Errorf("prompt lacks the kept ideas, each by its rank in that list:\n%s", p)
-		}
-		if strings.Index(p, "Wild one") < strings.Index(p, "Direction title 3") || strings.Index(p, "Wild one") < kept {
-			t.Errorf("the Kept list must follow the items, apart from them:\n%s", p)
-		}
-		if !strings.Contains(p, `"kept"`) {
-			t.Errorf("a Brainstorm prompt asks for a kept answer:\n%s", p)
-		}
-	})
-
 	t.Run("review: Also raised fills the top 5 after the directions", func(t *testing.T) {
 		report := judgeReport(council.ModeReview, 3, "Also one", "Also two", "Also three")
 		p := judgePrompt(judgeCase(council.ModeReview), report)
@@ -108,6 +86,111 @@ func TestJudgePrompt(t *testing.T) {
 			t.Errorf("prompt should hold exactly the two items:\n%s", p)
 		}
 	})
+}
+
+func TestJudgeBrainstormCouncilJudgesDirectionsThenKeptAsOneList(t *testing.T) {
+	// the K1 match is a wild idea kept aside, item 6 of the one list: it counts, and nothing is cut at 3
+	f := &fakeClaude{reply: `{"matches":{"K1":6,"K2":2},"items":[{"rank":2,"verdict":"key:K2"},{"rank":6,"verdict":"key:K1"},{"rank":4,"verdict":"wrong"}]}`}
+	useFakeClaude(t, f)
+
+	v, err := Judge(context.Background(), judgeCase(council.ModeBrainstorm), judgeReport(council.ModeBrainstorm, 4, "Wild one", "Wild two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := f.prompt
+	for _, want := range []string{
+		"K1: Open a finished council on its report first.", phase0Rubric, "judge all 6 items",
+		"1. Direction title 1", "Reasoning for direction 1.", "4. Direction title 4",
+		"5. Wild one", "Why Wild one stays.", "6. Wild two",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "7. ") || strings.Contains(p, "first 3 items") {
+		t.Errorf("a Brainstorm report is not cut, but the prompt says it is:\n%s", p)
+	}
+	if strings.Contains(p, "Open the report first.") || strings.Contains(p, "The panel agrees the report leads.") {
+		t.Errorf("a Brainstorm report is judged on its items alone, as a design is, but the prompt holds the answer or the text:\n%s", p)
+	}
+	if strings.Contains(strings.ToLower(p), "kept") {
+		t.Errorf("the kept ideas are items of the one list, not a list apart, but the prompt mentions one:\n%s", p)
+	}
+	if strings.Index(p, "4. Direction title 4") > strings.Index(p, "5. Wild one") {
+		t.Errorf("the directions come first, then the kept ideas:\n%s", p)
+	}
+
+	if v.Judged != 6 {
+		t.Errorf("Judged = %d, want the 6 items shown", v.Judged)
+	}
+	if len(v.Matches) != 2 || v.Matches["K1"] != 6 || v.Matches["K2"] != 2 {
+		t.Errorf("Matches = %v, want K1 at rank 6 and K2 at rank 2", v.Matches)
+	}
+	if v.Recall() != 2 || v.RecallAt(3) != 1 || v.Wrong() != 1 {
+		t.Errorf("Recall/RecallAt(3)/Wrong = %d/%d/%d, want 2/1/1", v.Recall(), v.RecallAt(3), v.Wrong())
+	}
+}
+
+func TestVerdictRecallAtCutsAtRank(t *testing.T) {
+	v := Verdict{Matches: map[string]int{"K1": 1, "K2": 3, "K3": 5}}
+	if v.Recall() != 3 {
+		t.Errorf("Recall = %d, want 3: a match at rank 5 counts in recall@all", v.Recall())
+	}
+	for n, want := range map[int]int{0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 9: 3} {
+		if got := v.RecallAt(n); got != want {
+			t.Errorf("RecallAt(%d) = %d, want %d", n, got, want)
+		}
+	}
+	if (Verdict{}).RecallAt(3) != 0 {
+		t.Error("a verdict with no matches has no recall at any rank")
+	}
+}
+
+func TestReadVerdictTakesTheLowestRank(t *testing.T) {
+	c := judgeCase(council.ModeBrainstorm)
+	for name, tc := range map[string]struct {
+		reply string
+		want  map[string]int
+	}{
+		"the item list names an earlier item than the map": {
+			reply: `{"matches":{"K1":4},"items":[{"rank":2,"verdict":"Key:K1"},{"rank":4,"verdict":"key:K1"}]}`,
+			want:  map[string]int{"K1": 2},
+		},
+		"the map names an earlier item than the item list": {
+			reply: `{"matches":{"K1":1},"items":[{"rank":3,"verdict":"key:K1"}]}`,
+			want:  map[string]int{"K1": 1},
+		},
+		"a key line only the item list names": {
+			reply: `{"matches":{"K1":null},"items":[{"rank":5,"verdict":"key:K3"},{"rank":2,"verdict":"valid"}]}`,
+			want:  map[string]int{"K3": 5},
+		},
+		"a key line only the map names": {
+			reply: `{"matches":{"K2":3},"items":[{"rank":3,"verdict":"valid"}]}`,
+			want:  map[string]int{"K2": 3},
+		},
+		"out of range or not in the key is dropped from both": {
+			reply: `{"matches":{"K1":9,"K9":1},"items":[{"rank":7,"verdict":"key:K2"},{"rank":0,"verdict":"key:K2"},{"rank":2,"verdict":"key:K8"},{"rank":3,"verdict":"key:K3"}]}`,
+			want:  map[string]int{"K3": 3},
+		},
+		"the id in a verdict is read without regard to case": {
+			reply: `{"matches":{},"items":[{"rank":2,"verdict":" KEY:k2 "}]}`,
+			want:  map[string]int{"K2": 2},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v, err := readVerdict(tc.reply, c, 6)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(v.Matches, tc.want) {
+				t.Errorf("Matches = %v, want %v", v.Matches, tc.want)
+			}
+			if v.Judged != 6 {
+				t.Errorf("Judged = %d, want the 6 items shown", v.Judged)
+			}
+		})
+	}
 }
 
 // fakeClaude replaces the consult call for one test and records what it was asked.
@@ -133,6 +216,7 @@ func useFakeClaude(t *testing.T, f *fakeClaude) {
 }
 
 func TestJudgeParse(t *testing.T) {
+	// the reply of a judge that still answers a "kept" list, as one asked a round ago did: nothing reads it
 	const reply = `{"matches":{"K1":1,"K2":null},"kept":{"K3":1},"items":[{"rank":1,"verdict":"key:K1"},{"rank":2,"verdict":"valid"},{"rank":3,"verdict":"wrong"}]}`
 	f := &fakeClaude{reply: "Here is my verdict.\n```json\n" + reply + "\n```\n"}
 	useFakeClaude(t, f)
@@ -150,14 +234,11 @@ func TestJudgeParse(t *testing.T) {
 	if len(v.Matches) != 1 || v.Matches["K1"] != 1 {
 		t.Errorf("Matches = %v, want only K1 at rank 1 (K2's null is no match)", v.Matches)
 	}
-	if len(v.Kept) != 1 || v.Kept["K3"] != 1 {
-		t.Errorf("Kept = %v, want K3 at rank 1", v.Kept)
-	}
 	if len(v.Items) != 3 || v.Items[0] != (ItemVerdict{Rank: 1, Verdict: "key:K1"}) || v.Items[2].Verdict != "wrong" {
 		t.Errorf("Items = %+v", v.Items)
 	}
-	if v.Recall() != 1 || v.KeptMatched() != 1 || v.Wrong() != 1 {
-		t.Errorf("Recall/KeptMatched/Wrong = %d/%d/%d, want 1/1/1", v.Recall(), v.KeptMatched(), v.Wrong())
+	if v.Recall() != 1 || v.Wrong() != 1 || v.Judged != 5 {
+		t.Errorf("Recall/Wrong/Judged = %d/%d/%d, want 1/1/5 (4 directions and the kept idea)", v.Recall(), v.Wrong(), v.Judged)
 	}
 
 	// the bare object, with no fence and no prose, parses too
@@ -208,8 +289,8 @@ func TestJudgeParseErrors(t *testing.T) {
 }
 
 func TestJudgeDropsWhatTheReportCannotHold(t *testing.T) {
-	// K9 is not in the key; rank 5 is past the 3 items shown; the Review report has no Kept list; item 7 does not exist
-	useFakeClaude(t, &fakeClaude{reply: `{"matches":{"K1":2,"K2":5,"K9":1},"kept":{"K3":1},"items":[{"rank":1,"verdict":"wrong"},{"rank":7,"verdict":"wrong"},{"rank":2,"verdict":"Key:K1"}]}`})
+	// K9 is not in the key; rank 5 is past the 3 items shown; item 7 does not exist
+	useFakeClaude(t, &fakeClaude{reply: `{"matches":{"K1":2,"K2":5,"K9":1},"items":[{"rank":1,"verdict":"wrong"},{"rank":7,"verdict":"wrong"},{"rank":2,"verdict":"Key:K1"}]}`})
 	v, err := Judge(context.Background(), judgeCase(council.ModeReview), judgeReport(council.ModeReview, 3))
 	if err != nil {
 		t.Fatal(err)
@@ -217,11 +298,8 @@ func TestJudgeDropsWhatTheReportCannotHold(t *testing.T) {
 	if len(v.Matches) != 1 || v.Matches["K1"] != 2 {
 		t.Errorf("Matches = %v, want only K1 at rank 2", v.Matches)
 	}
-	if len(v.Kept) != 0 {
-		t.Errorf("Kept = %v, want none for a Review report", v.Kept)
-	}
-	if len(v.Items) != 2 || v.Wrong() != 1 {
-		t.Errorf("Items = %+v, Wrong = %d, want the two real ranks and one wrong", v.Items, v.Wrong())
+	if len(v.Items) != 2 || v.Wrong() != 1 || v.Judged != 3 {
+		t.Errorf("Items = %+v, Wrong = %d, Judged = %d, want the two real ranks, one wrong and the 3 items shown", v.Items, v.Wrong(), v.Judged)
 	}
 }
 
@@ -241,7 +319,7 @@ func TestJudgeDesign(t *testing.T) {
 	for _, mode := range []string{council.ModeBrainstorm, council.ModeReview} {
 		t.Run(mode, func(t *testing.T) {
 			// K1 at rank 6 is the last item and stays; K2 at rank 7 is past the 6 items shown and goes; K3 sits in a kept
-			// list the design does not have and goes; rank 7's verdict goes with it
+			// list the design does not have and is not read; rank 7's verdict goes with K2
 			f := &fakeClaude{reply: `{"matches":{"K1":6,"K2":7,"K9":1},"kept":{"K3":1},"items":[{"rank":6,"verdict":"key:K1"},{"rank":1,"verdict":"wrong"},{"rank":7,"verdict":"valid"}]}`}
 			useFakeClaude(t, f)
 
@@ -277,11 +355,8 @@ func TestJudgeDesign(t *testing.T) {
 			if len(v.Matches) != 1 || v.Matches["K1"] != 6 {
 				t.Errorf("Matches = %v, want only K1 at rank 6 (rank 7 is past the 6 items)", v.Matches)
 			}
-			if len(v.Kept) != 0 {
-				t.Errorf("Kept = %v, want none: a design has no kept list", v.Kept)
-			}
-			if len(v.Items) != 2 || v.Wrong() != 1 || v.Recall() != 1 {
-				t.Errorf("Items = %+v, Wrong = %d, Recall = %d, want the two real ranks, one wrong, one match", v.Items, v.Wrong(), v.Recall())
+			if len(v.Items) != 2 || v.Wrong() != 1 || v.Recall() != 1 || v.Judged != 6 {
+				t.Errorf("Items = %+v, Wrong = %d, Recall = %d, Judged = %d, want the two real ranks, one wrong, one match and 6 judged", v.Items, v.Wrong(), v.Recall(), v.Judged)
 			}
 			if v.Tokens != 1234 {
 				t.Errorf("Verdict.Tokens = %d, want the call's 1234", v.Tokens)
