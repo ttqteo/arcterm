@@ -6,6 +6,17 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat take-back and the Sending… caption, on a build from bd3a302a5: send a message to an idle Claude →
+  its bubble reads Sending… until it lands, never Queued with Send now (3c7de6e85). Send two while Claude works → both
+  read Queued; Esc (or ↑ in the empty box) → both come back into the box, one per line, the bubbles go, the turn runs
+  on and the terminal's own box is empty. Send one to an idle Claude and press Esc before it answers → the turn stops
+  and the text is back in the box. A pty probe saw the Esc half on Claude Code 2.1.322, never ↑ on a live queue
+  (`chattakeback.ts`, `chattakebackstore.ts`).
+
+- [ ] (arcterm) Heavy jobs in Auto on the 12-thread Windows PC, on a build from 921a1a485: with several agents running
+  `task check:ts`, the Jobs popover shows at most 2 running and the rest waiting with "CPU busy, 2 at a time"; a
+  council's experts still run side by side (`pkg/jobqueue` autoCap).
+
 - [ ] (arcterm) Jobslot never holds a command: after installing a build from 7835c75de, an agent's `ls` runs at once
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
   command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).
