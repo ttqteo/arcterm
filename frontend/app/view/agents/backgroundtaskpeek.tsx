@@ -4,6 +4,7 @@
 // A background task's events and output in a floating peek beside its Agent tree row: a Monitor has an Events tab (what
 // it has reported) and an Output tab, a background shell only its output. A running task's output is re-read on a timer
 // and followed at the tail; an ended one is read once. A running task of a live agent has a Stop in the header.
+// It opens at a set size (long lines wrap) and its right edge, bottom edge and corner drag it larger; it keeps that size.
 // The task is open while monitorPeekAtom names it (subagentsstore.ts); Esc and a press outside clear it. The root
 // is data-owns-keys, so while focus is in the peek the Agent surface's Escape (agent:back) stands down and Esc closes
 // only the peek. The task's words (state, footer, kind) are monitortasks.ts; this file is the view.
@@ -30,11 +31,12 @@ import {
     useCallback,
     useContext,
     useEffect,
-    useLayoutEffect,
     useMemo,
     useRef,
     useState,
+    type CSSProperties,
     type KeyboardEvent,
+    type PointerEvent,
     type ReactNode,
     type RefObject,
 } from "react";
@@ -44,14 +46,17 @@ import { parseAnsiLines, runCss } from "./ansitext";
 import {
     backgroundTaskKind,
     backgroundTaskState,
+    clampPeekSize,
     clockTime,
     monitorEventsFooter,
     monitorExpiresAt,
     OUTPUT_MAX_CHARS,
+    parsePeekSize,
+    PEEK_DEFAULT_BODY_PX,
+    PEEK_DEFAULT_SIZE,
     PEEK_MIN_WIDTH_PX,
-    peekWidthPx,
-    textColumns,
     type BackgroundTaskState,
+    type PeekSize,
 } from "./monitortasks";
 import { ServerStopButton } from "./railservers";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
@@ -79,6 +84,133 @@ const STATE_TONE: Record<BackgroundTaskState, string> = {
 };
 
 const close = () => globalStore.set(monitorPeekAtom, null);
+
+// the size the peek keeps between opens, per viewer: a convenience, so storage that fails leaves the default
+const SIZE_KEY = "bgtaskpeek.size";
+// what a peek of a dragged height leaves the window besides its body: header, command, tabs, footer and a margin
+const PEEK_CHROME_PX = 160;
+
+function readStoredSize(): PeekSize {
+    try {
+        return parsePeekSize(localStorage.getItem(SIZE_KEY));
+    } catch {
+        return PEEK_DEFAULT_SIZE;
+    }
+}
+
+function storeSize(size: PeekSize) {
+    try {
+        localStorage.setItem(SIZE_KEY, JSON.stringify(size));
+    } catch {
+        // per-viewer convenience only
+    }
+}
+
+type ResizeAxis = "x" | "y" | "xy";
+type ResizeDrag = {
+    id: number;
+    axis: ResizeAxis;
+    x: number;
+    y: number;
+    width: number;
+    body: number;
+    maxWidth: number;
+    maxBody: number;
+};
+
+// The peek's size and the handlers its edges drag it with: the right edge widens it, the bottom edge makes its body
+// taller, the corner both. It grows right and down from where it hangs; a double click on an edge puts the default back.
+function usePeekResize(root: RefObject<HTMLDivElement | null>) {
+    const [size, setSize] = useState(readStoredSize);
+    const drag = useRef<ResizeDrag | null>(null);
+    const live = useRef(size);
+    const set = (next: PeekSize) => {
+        live.current = next;
+        setSize(next);
+    };
+    const gripProps = (axis: ResizeAxis) => ({
+        onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+            const el = root.current;
+            if (el == null || e.button !== 0) {
+                return;
+            }
+            const rect = el.getBoundingClientRect();
+            const bodyPx = el.querySelector<HTMLElement>("[data-peek-body]")?.offsetHeight ?? PEEK_DEFAULT_BODY_PX;
+            drag.current = {
+                id: e.pointerId,
+                axis,
+                x: e.clientX,
+                y: e.clientY,
+                width: rect.width,
+                body: bodyPx,
+                maxWidth: window.innerWidth - rect.left - 8,
+                maxBody: window.innerHeight - 16 - (rect.height - bodyPx),
+            };
+            e.currentTarget.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            e.stopPropagation();
+        },
+        onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
+            const d = drag.current;
+            if (d == null || d.id !== e.pointerId) {
+                return;
+            }
+            const next: PeekSize = {
+                width: d.axis === "y" ? live.current.width : d.width + (e.clientX - d.x),
+                body: d.axis === "x" ? live.current.body : d.body + (e.clientY - d.y),
+            };
+            set(clampPeekSize(next, d.maxWidth, d.maxBody));
+        },
+        onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
+            if (drag.current?.id === e.pointerId) {
+                drag.current = null;
+                storeSize(live.current);
+            }
+        },
+        onLostPointerCapture: (e: PointerEvent<HTMLDivElement>) => {
+            if (drag.current?.id === e.pointerId) {
+                drag.current = null;
+                storeSize(live.current);
+            }
+        },
+        onDoubleClick: () => {
+            set(PEEK_DEFAULT_SIZE);
+            storeSize(PEEK_DEFAULT_SIZE);
+        },
+    });
+    // a size kept from a larger window still fits this one (the width is also capped by the root's max-width)
+    const shown = clampPeekSize(size, window.innerWidth, window.innerHeight - PEEK_CHROME_PX);
+    return { size: shown, gripProps };
+}
+
+const GRIP_CLASS: Record<ResizeAxis, string> = {
+    x: "inset-y-0 right-0 w-[4px] cursor-ew-resize",
+    y: "inset-x-0 bottom-0 h-[4px] cursor-ns-resize",
+    xy: "bottom-0 right-0 h-[12px] w-[12px] cursor-nwse-resize",
+};
+
+// an edge or the corner the peek is dragged by; it lights the edge on hover, as the rail's resize grip does
+function ResizeGrip({
+    axis,
+    props,
+}: {
+    axis: ResizeAxis;
+    props: ReturnType<ReturnType<typeof usePeekResize>["gripProps"]>;
+}) {
+    return (
+        <div
+            aria-hidden
+            data-testid={`background-task-peek-resize-${axis}`}
+            title="Drag to resize · double-click for the default size"
+            {...props}
+            className={cn(
+                "absolute z-10 transition-colors duration-150",
+                axis === "xy" ? "" : "hover:bg-accent",
+                GRIP_CLASS[axis]
+            )}
+        />
+    );
+}
 
 function sameLines(a: string[] | null, b: string[]): boolean {
     return a != null && a.length === b.length && a.every((line, i) => line === b[i]);
@@ -128,86 +260,49 @@ function AnsiLines({ lines }: { lines: string[] }) {
     ));
 }
 
-// A body of output lines asks the peek to widen to them; the peek keeps the widest any body asked for while it is open,
-// so it never shrinks under the reader as the output streams.
-const PeekWidthContext = createContext<(px: number) => void>(() => {});
+// The body's height: null fits its lines up to the default, a number is the height a drag gave it. A body marks its
+// scroller with data-peek-body, which a drag measures to start from.
+const PeekBodyContext = createContext<number | null>(null);
 
-// a run of the mono font's characters, measured to know one character's width in this view's font and size
-const PROBE = "0".repeat(40);
-// beside the text: the body's horizontal padding, its scrollbar and the peek's border
-const OUTPUT_CHROME_PX = 20 + 12 + 2;
-// an event also has its time column and the gap after it
-const EVENTS_CHROME_PX = OUTPUT_CHROME_PX + 62 + 10;
-
-// a sibling of the body, not inside it, so its text never reads as output; absolute against the peek's fixed root
-function CharProbe({ probeRef }: { probeRef: RefObject<HTMLSpanElement | null> }) {
-    return (
-        <span
-            ref={probeRef}
-            aria-hidden
-            className="pointer-events-none invisible absolute left-0 top-0 select-none whitespace-pre font-mono text-[11.5px]"
-        >
-            {PROBE}
-        </span>
-    );
-}
-
-// asks the peek for the width `lines` fit in (textColumns: most of them, ANSI escapes dropped); the probe it returns is
-// rendered with CharProbe inside the body
-function useWantWidth(lines: string[], chromePx: number): RefObject<HTMLSpanElement | null> {
-    const want = useContext(PeekWidthContext);
-    const probeRef = useRef<HTMLSpanElement>(null);
-    const columns = useMemo(
-        () => textColumns(parseAnsiLines(lines).map((runs) => runs.map((r) => r.text).join(""))),
-        [lines]
-    );
-    useLayoutEffect(() => {
-        // offsetWidth, not the bounding box: the view's fade-in must not skew the measure
-        const charPx = (probeRef.current?.offsetWidth ?? 0) / PROBE.length;
-        if (charPx > 0) {
-            want(peekWidthPx(columns, charPx, chromePx));
-        }
-    }, [columns, chromePx, want]);
-    return probeRef;
+// a scroller's style; an empty body (no lines yet) takes only a dragged height, so it does not stand 360px tall
+function useBodyStyle(): { scroll: CSSProperties; empty: CSSProperties | undefined } {
+    const bodyPx = useContext(PeekBodyContext);
+    return bodyPx != null
+        ? { scroll: { height: bodyPx }, empty: { height: bodyPx } }
+        : { scroll: { maxHeight: PEEK_DEFAULT_BODY_PX }, empty: undefined };
 }
 
 function OutputBody({ path, running }: { path: string | undefined; running: boolean }) {
     const lines = useTaskOutput(path, running);
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(lines ?? NO_LINES);
-    const probeRef = useWantWidth(lines ?? NO_LINES, OUTPUT_CHROME_PX);
+    const bodyStyle = useBodyStyle();
     return (
-        <>
-            <CharProbe probeRef={probeRef} />
+        <div data-testid="background-task-peek-output" className="relative border-t border-edge-mid bg-surface-code">
             <div
-                data-testid="background-task-peek-output"
-                className="relative border-t border-edge-mid bg-surface-code"
+                ref={scrollRef}
+                onScroll={onScroll}
+                data-peek-body
+                style={bodyStyle.scroll}
+                className="overflow-auto p-[10px] font-mono text-[11.5px] leading-[1.5]"
             >
-                <div
-                    ref={scrollRef}
-                    onScroll={onScroll}
-                    className="max-h-[360px] overflow-auto p-[10px] font-mono text-[11.5px] leading-[1.5]"
-                >
-                    {lines != null && lines.length === 0 ? (
-                        <div data-testid="background-task-peek-output-empty" className="text-muted">
-                            No output yet.
-                        </div>
-                    ) : (
-                        <AnsiLines lines={lines ?? NO_LINES} />
-                    )}
-                </div>
-                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
+                {lines != null && lines.length === 0 ? (
+                    <div data-testid="background-task-peek-output-empty" className="text-muted">
+                        No output yet.
+                    </div>
+                ) : (
+                    <AnsiLines lines={lines ?? NO_LINES} />
+                )}
             </div>
-        </>
+            <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
+        </div>
     );
 }
 
 function EventsBody({ events }: { events: MonitorEvent[] }) {
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(events);
-    const eventLines = useMemo(() => events.flatMap((e) => e.lines), [events]);
-    const probeRef = useWantWidth(eventLines, EVENTS_CHROME_PX);
+    const bodyStyle = useBodyStyle();
     return (
         <>
-            <CharProbe probeRef={probeRef} />
             <div
                 data-testid="background-task-peek-events"
                 className="relative border-t border-edge-mid bg-surface-code"
@@ -215,6 +310,8 @@ function EventsBody({ events }: { events: MonitorEvent[] }) {
                 {events.length === 0 ? (
                     <div
                         data-testid="background-task-peek-events-empty"
+                        data-peek-body
+                        style={bodyStyle.empty}
                         className="p-[10px] font-mono text-[11.5px] leading-[1.5] text-muted"
                     >
                         No events yet.
@@ -223,7 +320,9 @@ function EventsBody({ events }: { events: MonitorEvent[] }) {
                     <div
                         ref={scrollRef}
                         onScroll={onScroll}
-                        className="max-h-[360px] overflow-auto px-[10px] py-[4px] font-mono text-[11.5px] leading-[1.5]"
+                        data-peek-body
+                        style={bodyStyle.scroll}
+                        className="overflow-auto px-[10px] py-[4px] font-mono text-[11.5px] leading-[1.5]"
                     >
                         {events.map((e, i) => (
                             <div
@@ -393,8 +492,8 @@ export function BackgroundTaskPeek({
         middleware: [
             offset(PEEK_GAP_PX),
             shift({ padding: 8 }),
-            // as wide as its output wants, up to the screen's edge; a window too narrow for even the base width keeps
-            // that and lets shift slide it over the tree, as before
+            // as wide as it was dragged, up to the screen's edge; a window too narrow for even the least width keeps
+            // that and lets shift slide it over the tree
             size({
                 padding: 8,
                 apply({ availableWidth, elements }) {
@@ -404,9 +503,8 @@ export function BackgroundTaskPeek({
         ],
         whileElementsMounted: autoUpdate,
     });
-    // the widest its bodies asked for since it opened (a peek on another task is a new mount)
-    const [widthPx, setWidthPx] = useState(PEEK_MIN_WIDTH_PX);
-    const wantWidth = useCallback((px: number) => setWidthPx((w) => Math.max(w, px)), []);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const { size: peekSize, gripProps } = usePeekResize(rootRef);
     // the anchor row counts as inside, so pressing it again toggles the peek instead of closing and reopening it.
     // Esc is the root's own (below): left on, it would also reach agent:back
     const { getFloatingProps } = useInteractions([useDismiss(context, { escapeKey: false })]);
@@ -417,6 +515,7 @@ export function BackgroundTaskPeek({
     const setRoot = useCallback(
         (el: HTMLDivElement | null) => {
             refs.setFloating(el);
+            rootRef.current = el;
             if (el != null && !el.contains(document.activeElement)) {
                 el.focus({ preventScroll: true });
             }
@@ -468,7 +567,7 @@ export function BackgroundTaskPeek({
         <FloatingPortal>
             <div
                 ref={setRoot}
-                style={{ ...floatingStyles, width: widthPx }}
+                style={{ ...floatingStyles, width: peekSize.width }}
                 {...getFloatingProps()}
                 role="dialog"
                 aria-label={`${monitor ? "Monitor" : "Background shell"} ${current.label}`}
@@ -519,7 +618,7 @@ export function BackgroundTaskPeek({
                         {`$ ${current.command}`}
                     </div>
                 ) : null}
-                <PeekWidthContext.Provider value={wantWidth}>
+                <PeekBodyContext.Provider value={peekSize.body}>
                     {monitor ? (
                         <MonitorBody key={current.toolUseId} task={current} now={now} />
                     ) : (
@@ -532,7 +631,10 @@ export function BackgroundTaskPeek({
                             <OutputFooter path={current.outputFile} running={current.status === "running"} />
                         </>
                     )}
-                </PeekWidthContext.Provider>
+                </PeekBodyContext.Provider>
+                <ResizeGrip axis="x" props={gripProps("x")} />
+                <ResizeGrip axis="y" props={gripProps("y")} />
+                <ResizeGrip axis="xy" props={gripProps("xy")} />
             </div>
         </FloatingPortal>
     );

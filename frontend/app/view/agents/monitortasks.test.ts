@@ -8,6 +8,7 @@ import {
     backgroundTasksNoun,
     backgroundTaskState,
     backgroundTaskSubline,
+    clampPeekSize,
     clockTime,
     monitorEventsFooter,
     monitorEventsSummary,
@@ -16,39 +17,58 @@ import {
     monitorTimeLeft,
     OUTPUT_MAX_CHARS,
     outputTail,
+    parsePeekSize,
+    PEEK_DEFAULT_SIZE,
+    PEEK_DEFAULT_WIDTH_PX,
+    PEEK_MIN_BODY_PX,
     PEEK_MIN_WIDTH_PX,
     peekedTask,
-    peekWidthPx,
-    textColumns,
 } from "./monitortasks";
 import type { BackgroundTask } from "./transcriptprojection";
 
-describe("textColumns", () => {
-    it("is 0 with no lines", () => {
-        expect(textColumns([])).toBe(0);
+describe("clampPeekSize", () => {
+    it("keeps a size that fits", () => {
+        expect(clampPeekSize({ width: 700, body: 300 }, 1200, 600)).toEqual({ width: 700, body: 300 });
     });
 
-    it("is the widest line when every line counts", () => {
-        expect(textColumns(["ab", "abcdef", "abc"])).toBe(6);
+    it("holds it inside the room the window leaves", () => {
+        expect(clampPeekSize({ width: 2000, body: 900 }, 1200, 600)).toEqual({ width: 1200, body: 600 });
     });
 
-    it("counts a tab to the next multiple of 8", () => {
-        expect(textColumns(["ab\tc"])).toBe(9);
+    it("never drags it under the least size", () => {
+        expect(clampPeekSize({ width: 50, body: 10 }, 1200, 600)).toEqual({
+            width: PEEK_MIN_WIDTH_PX,
+            body: PEEK_MIN_BODY_PX,
+        });
     });
 
-    it("lets a few outlier lines past it: the width most lines fit", () => {
-        const lines = [...Array.from({ length: 19 }, () => "x".repeat(80)), "y".repeat(400)];
-        expect(textColumns(lines)).toBe(80);
+    it("keeps the least size in a window too small for it", () => {
+        expect(clampPeekSize({ width: 500, body: 300 }, 200, 50)).toEqual({
+            width: PEEK_MIN_WIDTH_PX,
+            body: PEEK_MIN_BODY_PX,
+        });
+    });
+
+    it("leaves an undragged body fitting its lines", () => {
+        expect(clampPeekSize({ width: 600, body: null }, 1200, 600).body).toBeNull();
     });
 });
 
-describe("peekWidthPx", () => {
-    it("never goes below the peek's own width", () => {
-        expect(peekWidthPx(10, 7, 32)).toBe(PEEK_MIN_WIDTH_PX);
+describe("parsePeekSize", () => {
+    it("is the default with nothing stored", () => {
+        expect(parsePeekSize(null)).toEqual(PEEK_DEFAULT_SIZE);
     });
 
-    it("fits the columns, the chrome around them, rounded up", () => {
-        expect(peekWidthPx(80, 6.9, 32)).toBe(Math.ceil(80 * 6.9 + 32));
+    it("reads a stored size back", () => {
+        expect(parsePeekSize(JSON.stringify({ width: 720, body: 240 }))).toEqual({ width: 720, body: 240 });
+    });
+
+    it("is the default for anything unreadable", () => {
+        expect(parsePeekSize("{not json")).toEqual(PEEK_DEFAULT_SIZE);
+        expect(parsePeekSize(JSON.stringify({ width: "wide", body: -4 }))).toEqual({
+            width: PEEK_DEFAULT_WIDTH_PX,
+            body: null,
+        });
     });
 });
 

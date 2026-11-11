@@ -157,8 +157,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A background command that left a server running is named in the Agent tree by the server and its port
   (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
-- The peek of a background command or Monitor widens to fit its output, up to the edge of the window, so a wide build
-  log no longer wraps every line.
+- The peek of a background command or Monitor opens at a set size and no longer stretches across the window to fit a
+  long line: drag its right edge, bottom edge or corner to make it larger, and it keeps that size the next time it
+  opens (double-click an edge for the default again).
 ### Changed
 
 - A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched
