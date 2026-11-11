@@ -155,6 +155,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
 - The peek of a background command or Monitor widens to fit its output, up to the edge of the window, so a wide build
   log no longer wraps every line.
+### Changed
+
+- A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched
+  with a task shows that task at once as your first message, captioned "Starting Claude Code…"; one launched without
+  a task shows the agent's logo, "Starting Claude Code…" and the project it starts in. Once it is ready, it shows
+  "New conversation" with the model, the project and how to begin (`@` for a file, `/` for a command). An agent that
+  failed to start says so, with why.
 
 ## 1.0.6 — 2026-11-10
 

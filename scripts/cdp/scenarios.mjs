@@ -43138,7 +43138,8 @@ const agentChat = {
                 { ask12, answer12 }
             );
 
-            // 13. a Claude agent with no transcript yet: an empty conversation and the box, no endless skeleton
+            // 13. a Claude agent with no transcript yet: a new conversation (its facts, how to begin) and the box, no
+            // endless skeleton
             await showAgent(E);
             const bare = await polishWaitFor(h, `!!${acLayer(E)}?.querySelector("[data-chat-empty]")`, AC_WAIT_MS);
             const bare13 = await h.ev(`(() => {
@@ -43153,8 +43154,50 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-13-empty.png");
             rec(
                 "13. a Claude agent with no transcript yet shows an empty conversation and the box, no skeleton",
-                bare && bare13.empty?.startsWith("No messages yet") && !bare13.conversation && bare13.box && !bare13.skeleton,
+                bare && bare13.empty?.startsWith("New conversation") && !bare13.conversation && bare13.box && !bare13.skeleton,
                 bare13
+            );
+
+            // 13b. the same agent while its harness starts: the empty conversation says so, and no separate working line
+            await AC.setRoster(h, acRoster(ctx, {}, { bare: { state: "working", idleSince: undefined, activeMs: 2_000 } }));
+            const starting = await polishWaitFor(h, `${acLayer(E)}?.querySelector("[data-chat-empty]")?.getAttribute("data-chat-empty") === "starting"`, AC_WAIT_MS);
+            const start13 = await h.ev(`(() => {
+                const l = ${acLayer(E)};
+                return {
+                    empty: l?.querySelector("[data-chat-empty]")?.textContent.trim() ?? null,
+                    working: !!l?.querySelector("[data-chat-working]"),
+                    box: !!l?.querySelector("[data-agent-chat-composer] textarea"),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-13b-starting.png");
+            rec(
+                "13b. a starting agent's empty conversation reads Starting Claude Code… in its project, with no separate working line",
+                starting && (start13.empty ?? "").startsWith("Starting Claude Code") && (start13.empty ?? "").includes("arcterm") &&
+                    !start13.working && start13.box,
+                start13
+            );
+
+            // 13c. its first message (a launch's task goes in the same pending store as a send from the box) takes the
+            // empty state's place: your bubble, captioned with what the harness is doing
+            const FIRST = "fix the flaky sync test";
+            await acClear(h, acBox(E));
+            await acType(h, acBox(E), FIRST);
+            const opening = await polishWaitFor(h, `!!${acLayer(E)}?.querySelector("[data-chat-opening]")`, 5000);
+            const open13 = await h.ev(`(() => {
+                const l = ${acLayer(E)};
+                const p = [...(l?.querySelectorAll("[data-chat-pending]") ?? [])].find((e) => e.firstElementChild?.textContent.trim() === ${JSON.stringify(FIRST)});
+                return {
+                    caption: p?.querySelector("[data-chat-pending-label]")?.textContent.trim() ?? null,
+                    empty: !!l?.querySelector("[data-chat-empty]"),
+                    working: !!l?.querySelector("[data-chat-working]"),
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-13c-first-message.png");
+            await AC.setRoster(h, acRoster(ctx));
+            rec(
+                "13c. a starting agent with its first message on the way shows that message as your bubble captioned Starting Claude Code…, not the empty state",
+                opening && open13.caption === "Starting Claude Code…" && !open13.empty && !open13.working,
+                open13
             );
 
             // 14. an asleep Claude agent is the same chat pane as an awake one (its root is the chat layer and the sleeping cover at

@@ -21,6 +21,8 @@ import { submitToAgent } from "@/app/view/agents/agentsubmit";
 import { backgroundAttachCommand, type AgentVM, type PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { backgroundAgentsAtom } from "@/app/view/agents/backgroundagentsstore";
 import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
+import { pendsAsBubble } from "@/app/view/agents/chatpending";
+import { addPending } from "@/app/view/agents/chatpendingstore";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
 import { archivedSession, nextToReopen, recentlyClosedAtom, sessionById } from "@/app/view/agents/recentlyclosed";
 import {
@@ -166,6 +168,12 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
             ...(resumedTranscript ? { transcriptPath: resumedTranscript } : {}),
         };
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
+        // the task it starts on is its first message: Chat shows it as yours while the harness starts, until the
+        // transcript holds it (a /command is a command row there, never a bubble)
+        const first = opts.task.trim();
+        if (first && pendsAsBubble(first)) {
+            addPending(tabId, first, []);
+        }
     }
     // A launch foregrounds into the Agent surface so its booting terminal mounts (which starts the process): an
     // agent, and a plain terminal too, a peer of the agents in its project's folder that takes the centre as they do.

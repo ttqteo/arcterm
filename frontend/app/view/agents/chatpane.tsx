@@ -12,6 +12,7 @@
 // line, the permission card for a prompt Claude Code is showing (its answer is typed into the TUI), and an
 // AskUserQuestion's choices.
 
+import { KeyCap } from "@/app/element/keycap";
 import { layerFade } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -29,6 +30,7 @@ import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
+import { chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
@@ -48,6 +50,8 @@ import { PromptImages, useNow } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
+import { runtimeLogo } from "./runtimelogo";
+import { runtimeMeta } from "./runtimemeta";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
@@ -68,7 +72,8 @@ function useIdleSince(idle: boolean): number | null {
 }
 
 // A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
-// takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill). It splits
+// takes it at the next gap) or "Sending…" otherwise; a session's first message, the task it was launched on, reads
+// "Starting Claude Code…" (`starting`) while the harness starts. It goes when the transcript holds the text (pendingStill). It splits
 // the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
 // under it), so nothing changes when the transcript's copy replaces it.
 // the turn's time and output tokens after the working line, as the TUI's "(1m 11s · ↓ 3.1k tokens)": its own component so
@@ -118,7 +123,17 @@ function PendingCommand({
     );
 }
 
-function PendingBubble({ text, queued, onSendNow }: { text: string; queued: boolean; onSendNow?: () => void }) {
+function PendingBubble({
+    text,
+    queued,
+    onSendNow,
+    starting,
+}: {
+    text: string;
+    queued: boolean;
+    onSendNow?: () => void;
+    starting?: string;
+}) {
     const said = splitAttachments(text);
     const body = said.text.trim();
     const chord = sendNowChord();
@@ -136,8 +151,13 @@ function PendingBubble({ text, queued, onSendNow }: { text: string; queued: bool
                 </div>
             ) : null}
             <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
-                {queued && onSendNow != null ? (
+                <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
+                    {starting != null ? (
+                        <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                    ) : null}
+                    {starting ?? (queued ? "Queued" : "Sending…")}
+                </span>
+                {starting == null && queued && onSendNow != null ? (
                     <button
                         type="button"
                         data-chat-send-now
@@ -150,6 +170,72 @@ function PendingBubble({ text, queued, onSendNow }: { text: string; queued: bool
                     </button>
                 ) : null}
             </div>
+        </div>
+    );
+}
+
+// The conversation before its first message (chatempty.ts): the harness's mark over its state. Starting, the mark
+// breathes and a flow bar runs under the line saying where it starts; at its prompt, the session's facts and how to
+// begin; failed, the controller's reason in the error tone.
+function ChatEmpty({ agent, error }: { agent: AgentVM; error: string | null }) {
+    const v = chatEmptyView(agent);
+    const logo = runtimeLogo(agent.agent);
+    const starting = v.phase === "starting";
+    return (
+        <div
+            data-chat-empty={v.phase}
+            className="flex min-h-[160px] flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
+        >
+            <div
+                className={cn(
+                    "flex h-[44px] w-[44px] items-center justify-center rounded-[12px] border border-edge-mid bg-surface-raised",
+                    starting && "pulse-dot"
+                )}
+                aria-hidden
+            >
+                {logo ? (
+                    <img src={logo} alt="" className="h-[22px] w-[22px]" draggable={false} />
+                ) : (
+                    <span className={cn("text-[18px]", runtimeMeta(agent.agent).text)}>
+                        {runtimeMeta(agent.agent).glyph}
+                    </span>
+                )}
+            </div>
+            <div className="flex max-w-[440px] flex-col items-center gap-1">
+                <span className="text-[14px] font-medium text-primary">{v.title}</span>
+                {v.detail ? (
+                    <span
+                        className={cn("text-[12px] leading-[1.5]", v.phase === "failed" ? "text-error" : "text-muted")}
+                    >
+                        {v.detail}
+                    </span>
+                ) : null}
+                {v.facts ? <span className="font-mono text-[11px] text-muted">{v.facts}</span> : null}
+            </div>
+            {starting ? (
+                <div className="h-[2px] w-[120px] overflow-hidden rounded-full bg-lane" aria-hidden>
+                    <div className="h-full w-[40%] animate-[flowBar_1.9s_linear_infinite] bg-gradient-to-r from-transparent via-accent to-transparent motion-reduce:animate-none" />
+                </div>
+            ) : null}
+            {v.phase === "ready" ? (
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
+                    <span>Type below to start</span>
+                    <span className="flex items-center gap-1">
+                        <KeyCap chord="@" variant="inline" /> mentions a file
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <KeyCap chord="/" variant="inline" /> runs a command
+                    </span>
+                </div>
+            ) : v.hint ? (
+                <span className="text-[11.5px] text-muted">{v.hint}</span>
+            ) : null}
+            {/* a transcript the harness has not written yet is the normal start, not an error to show */}
+            {error != null && !starting ? (
+                <span data-chat-error className="max-w-[420px] text-[11.5px] text-muted">
+                    Could not read the transcript: {error}
+                </span>
+            ) : null}
         </div>
     );
 }
@@ -299,6 +385,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         const t = setInterval(() => setNow(Date.now()), 1000);
         return () => clearInterval(t);
     }, [showsPending]);
+    // a conversation with no message yet but one on its way (the task a session was launched on, most often): that
+    // message is what the pane shows, under it what the harness is doing
+    const opening = (loading || empty) && showsPending;
+    const startingView = opening && !asleep ? chatEmptyView(agent) : null;
+    const startingTitle = startingView?.phase === "starting" ? startingView.title : undefined;
 
     return (
         <div
@@ -321,20 +412,13 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     onScroll={onScroll}
                     className="flex h-full flex-col overflow-y-auto px-[22px] pb-[12px]"
                 >
-                    {loading ? (
+                    {opening ? (
+                        // the first message stands for the conversation: no skeleton or empty state over it
+                        <div data-chat-opening className="flex-none pt-4" />
+                    ) : loading ? (
                         <TranscriptSkeleton />
                     ) : empty ? (
-                        <div
-                            data-chat-empty
-                            className="flex min-h-[120px] flex-1 flex-col items-center justify-center gap-1 text-[12px] text-muted"
-                        >
-                            <span>No messages yet</span>
-                            {error != null ? (
-                                <span data-chat-error className="max-w-[420px] text-center text-[11.5px]">
-                                    Could not read the transcript: {error}
-                                </span>
-                            ) : null}
-                        </div>
+                        <ChatEmpty agent={agent} error={error} />
                     ) : (
                         <ChatVisualHost agentId={agent.id}>
                             <AgentPathLinks agent={agent}>
@@ -369,6 +453,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         text={p.text}
                                         queued={agent.state !== "idle"}
                                         onSendNow={sendNow}
+                                        starting={startingTitle}
                                     />
                                 )
                             )}
@@ -387,7 +472,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 Could not read the transcript: {error}
                             </div>
                         ) : null}
-                        {working != null ? (
+                        {/* the empty conversation, or the first message's label, already says the harness is starting */}
+                        {working != null && !empty && !opening ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
                                 <span
                                     className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot"
