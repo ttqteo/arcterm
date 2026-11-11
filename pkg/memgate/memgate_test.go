@@ -68,6 +68,30 @@ func TestClassify(t *testing.T) {
 		{"npm test -- frontend/util/keyutil.test.ts > out.txt 2>&1", false, "", 0},
 		{`npx vitest run ">"`, false, "", 0},
 
+		// a wrapper that only runs the command, its own flags (and their values) skipped, by any path
+		{"nice -n 10 task check:ts", true, "task check:ts", 3 * gib},
+		{"nice -10 task check:ts", true, "task check:ts", 3 * gib},
+		{"nice --adjustment=5 npx vitest run", true, "vitest (all)", 2 * gib},
+		{"time -p task check:ts", true, "task check:ts", 3 * gib},
+		{"/usr/bin/time -l task check:ts", true, "task check:ts", 3 * gib},
+		{"/usr/bin/time -f %M -o mem.txt npx vitest run", true, "vitest (all)", 2 * gib},
+		{"env -u FOO task check:ts", true, "task check:ts", 3 * gib},
+		{"env -i PATH=/usr/bin:/bin task check:ts", true, "task check:ts", 3 * gib},
+		{"/usr/bin/env NODE_OPTIONS=--max-old-space-size=4096 task check:ts", true, "task check:ts", 3 * gib},
+		{"env -- task check:ts", true, "task check:ts", 3 * gib},
+		{"nohup task tauri:build > build.log 2>&1 &", true, "task tauri:build", 3584 * mib},
+		{"caffeinate -i task tauri:build", true, "task tauri:build", 3584 * mib},
+		{"caffeinate -t 3600 -s task tauri:build", true, "task tauri:build", 3584 * mib},
+		{"gtimeout 600 npx vitest run", true, "vitest (all)", 2 * gib},
+		{"/usr/bin/timeout -k 5 600 task check:ts", true, "task check:ts", 3 * gib},
+		{"nice -n 10 git status", false, "", 0},
+		{"time -p", false, "", 0},
+		{"nohup", false, "", 0},
+		// command -v / -V looks a program up, it does not run it
+		{"command -v tsc", false, "", 0},
+		{"command -V tsc", false, "", 0},
+		{"command -p task check:ts", true, "task check:ts", 3 * gib},
+
 		// not heavy at all
 		{"git status --short", false, "", 0},
 		{"ls dist/bin", false, "", 0},

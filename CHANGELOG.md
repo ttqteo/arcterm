@@ -104,6 +104,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A whole test suite an agent runs with its output sent to a file or a pipe (`npm test 2>&1 | tail`,
   `npx vitest run > out.txt`) waits its turn in the heavy-job queue; before, the redirection read as a test file name
   and the suite ran at once beside every other heavy job.
+- A build or test suite an agent runs behind `nice -n 10`, `time -p`, `/usr/bin/time -l`, `env -u X`, `nohup`,
+  `caffeinate -i` or `gtimeout` waits its turn in the heavy-job queue too, where the wrapper's flags hid the command.
 - Chat no longer shows "Could not read the transcript: … cannot find the path specified" for a run's lead or worker
   that has not written its first message yet
 - In Chat, the "Worked for …" line of what the agent is doing now folds when you click it; before, it stayed open

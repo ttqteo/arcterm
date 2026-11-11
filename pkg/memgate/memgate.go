@@ -86,20 +86,63 @@ func FormatGB(bytes uint64) string {
 	return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(bytes)/float64(gib)), ".0") + " GB"
 }
 
-// one step's words, past its env assignments and the wrappers that only run it
+// the wrappers that only run the command after them, by name, with their flags that take a value: `nice -n 10`,
+// `env -u FOO`, `/usr/bin/time -o mem.txt`, `caffeinate -t 3600`. timeout has a duration too (pastTimeout)
+var wrappers = map[string][]string{
+	"env":        {"-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-P"},
+	"time":       {"-f", "--format", "-o", "--output"},
+	"nice":       {"-n", "--adjustment"},
+	"nohup":      nil,
+	"caffeinate": {"-t", "-w"},
+	"command":    nil,
+	"exec":       {"-a"},
+}
+
+// one step's words, past its env assignments and the wrappers that only run it, each by any path and with its
+// own flags
 func program(words []string) []string {
 	for len(words) > 0 {
 		w := words[0]
-		switch {
-		case isAssignment(w), w == "env", w == "time", w == "nice", w == "command", w == "exec":
+		if isAssignment(w) {
 			words = words[1:]
-		case w == "timeout":
+			continue
+		}
+		name := path.Base(w)
+		if name == "timeout" || name == "gtimeout" {
 			words = pastTimeout(words[1:])
-		default:
+			continue
+		}
+		valued, ok := wrappers[name]
+		if !ok {
 			return words
+		}
+		var flags []string
+		words, flags = pastFlags(words[1:], valued)
+		// command -v / -V looks the program up, it does not run it
+		if name == "command" && has(flags, "-v", "-V") {
+			return nil
 		}
 	}
 	return nil
+}
+
+// pastFlags splits a wrapper's args into its leading flags and the command after them: a flag in valued takes the
+// next word as its value, and -- ends the flags.
+func pastFlags(args []string, valued []string) (rest []string, flags []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			return args[i+1:], flags
+		case !strings.HasPrefix(a, "-"):
+			return args[i:], flags
+		}
+		flags = append(flags, a)
+		if has(valued, a) {
+			i++
+		}
+	}
+	return nil, flags
 }
 
 // pastTimeout is timeout's command: past its flags (-s and -k take a value) and the duration
