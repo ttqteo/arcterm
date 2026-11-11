@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
     appendToChatBox,
+    replaceChatBox,
     chatBoxText,
     insertAt,
     insertIntoChatBox,
@@ -83,12 +84,22 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         text: vi.fn(() => "a draft"),
         submit: vi.fn(() => true),
         append: vi.fn(() => true),
+        replace: vi.fn(() => true),
         ...over,
     });
     it("reads an empty text and takes nothing when no box is mounted", () => {
         expect(chatBoxText("cb-none")).toBe("");
         expect(submitIntoChatBox("cb-none", "x")).toBe(false);
         expect(appendToChatBox("cb-none", "x")).toBe(false);
+        expect(replaceChatBox("cb-none", "x")).toBe(false);
+    });
+    it("replaces the text through the registered box and says what it answered", () => {
+        const b = box();
+        const off = registerChatBox("cb-6", b);
+        expect(replaceChatBox("cb-6", "/usage ")).toBe(true);
+        expect(b.replace).toHaveBeenCalledWith("/usage ");
+        expect(b.submit).not.toHaveBeenCalled();
+        off();
     });
     it("reads the text of the registered box", () => {
         const b = box();

@@ -43,6 +43,23 @@ function firstOfEachName(list: SlashCommand[]): SlashCommand[] {
     return list.filter((c) => !seen.has(c.name) && !!seen.add(c.name));
 }
 
+/** The commands of the agent's session: the live list the arc mod published, else the copied built-ins plus what
+ *  wavesrv reads off disk under `cwd`. `live` says which. Also read by Chat's /skills and /help cards. */
+export async function fetchSlashCommands(
+    blockId: string | undefined,
+    cwd: string
+): Promise<{ commands: SlashCommand[]; live: boolean }> {
+    const live =
+        blockId != null
+            ? await RpcApi.GetClaudeLiveCommandsCommand(TabRpcClient, { blockid: blockId }).catch(() => null)
+            : null;
+    if (live != null && live.length > 0) {
+        return { commands: firstOfEachName(fromLive(live)), live: true };
+    }
+    const found = await RpcApi.ListClaudeCommandsCommand(TabRpcClient, { cwd }).catch(() => null);
+    return { commands: mergeCommands(BUILTIN_COMMANDS, found ?? []), live: false };
+}
+
 // A query no command matches shows nothing, so a `/` meant as text never blocks Enter; a query that already names the
 // highlighted command lets Enter send it (Tab completes). `cwd` is where the agent works (project-level skills and
 // commands are read from there on the fallback), "" when unknown; `blockId` is the agent's terminal block, the key of its
@@ -79,23 +96,11 @@ export function useSlashMenu({
             return;
         }
         let stale = false;
-        (async () => {
-            const live =
-                blockId != null
-                    ? await RpcApi.GetClaudeLiveCommandsCommand(TabRpcClient, { blockid: blockId }).catch(() => null)
-                    : null;
-            if (stale) {
-                return;
-            }
-            if (live != null && live.length > 0) {
-                setKnown({ commands: firstOfEachName(fromLive(live)), live: true });
-                return;
-            }
-            const found = await RpcApi.ListClaudeCommandsCommand(TabRpcClient, { cwd }).catch(() => null);
+        fetchSlashCommands(blockId, cwd).then((got) => {
             if (!stale) {
-                setKnown({ commands: mergeCommands(BUILTIN_COMMANDS, found ?? []), live: false });
+                setKnown(got);
             }
-        })();
+        });
         return () => {
             stale = true;
         };

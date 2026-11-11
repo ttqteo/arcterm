@@ -27,7 +27,10 @@ import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
+import { agentDiffScope, openDiff } from "./agentdiffnav";
 import { ChatFileCards } from "./chatfilecards";
+import { ChatLocalCard } from "./chatlocalcards";
+import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { chatCapable } from "./chatmode";
@@ -262,6 +265,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
+    // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
+    const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
     // message at once
     const blockid = agent.blockId;
@@ -357,6 +362,15 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 )
                             )}
                         </AgentPathLinks>
+                        {localCards.map((c) => (
+                            <ChatLocalCard
+                                key={c.id}
+                                model={model}
+                                agent={agent}
+                                card={c}
+                                onClose={() => closeLocalCard(agent.id, c.id)}
+                            />
+                        ))}
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}
@@ -405,6 +419,13 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     agent={agent}
                     entries={entries}
                     onSent={jumpToBottom}
+                    onLocal={(route) => {
+                        if ("open" in route) {
+                            openDiff(model, agentDiffScope(agent.id, agent.name));
+                        } else {
+                            showLocalCard(agent.id, route.panel, route.command);
+                        }
+                    }}
                     placeholder={
                         asleep
                             ? `message ${agent.name} to wake it… (Enter)`
