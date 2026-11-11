@@ -367,7 +367,7 @@ export function ChatComposer({
                 // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
                 // pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
-                    addPending(agent.id, sent, entries);
+                    addPending(agent.id, sent, entries, agent.state !== "idle");
                 }
                 flipIfTui(sent);
                 for (const a of att.attachments) {

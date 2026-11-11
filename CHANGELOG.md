@@ -106,6 +106,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A message you send in Chat while Claude is idle reads Sending… until it lands, instead of flashing Queued with a Send
+  now button as the turn it starts gets going; one sent while Claude works still reads Queued.
 - An agent's shell commands no longer freeze while arcterm is busy: an ordinary command never waits on the heavy-job
   queue, and a build or test suite waits at most 5 seconds for the queue to answer before it runs anyway.
 - A whole test suite an agent runs with its output sent to a file or a pipe (`npm test 2>&1 | tail`,

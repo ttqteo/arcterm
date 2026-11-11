@@ -22,6 +22,41 @@ export interface PendingMessage {
     sentAt: number;
     seen: number;
     kind?: PendingKind;
+    /** Sent while the agent worked: Claude Code holds it for the turn's next gap, so it reads Queued and Send now can
+     *  push it. Decided at the send, not from the agent's state as it draws: a message sent to an idle agent starts the
+     *  turn that sets the agent working, and read live it flashed Queued before the transcript took it. */
+    queued?: boolean;
+}
+
+/** The pending message for `text` sent at `now`: how many of `entries` (the transcript as drawn then) already hold its
+ *  text, and whether the agent was `busy`, which makes it Queued. */
+export function pendingMessage(
+    id: string,
+    text: string,
+    entries: AgentEntry[],
+    now: number,
+    busy: boolean
+): PendingMessage {
+    const kind = pendingKind(text);
+    return {
+        id,
+        text,
+        sentAt: now,
+        seen: userTextCount(entries, text),
+        queued: busy,
+        ...(kind != null ? { kind } : {}),
+    };
+}
+
+/** The line under a pending message's bubble: the harness's starting line while a session starts, else Queued for one
+ *  sent while the agent worked and Sending… for one sent to an idle agent, for as long as either waits. */
+export function pendingCaption(p: PendingMessage, starting?: string): string {
+    return starting ?? (p.queued === true ? "Queued" : "Sending…");
+}
+
+/** Whether a message bubble captioned Queued is up, which Ctrl+Enter in the empty box sends now. */
+export function queuedBubbleUp(pending: PendingMessage[]): boolean {
+    return pending.some((p) => p.kind == null && p.queued === true);
 }
 
 /** A side question's or a panel's pending card goes after this long even when the transcript never showed its row. */
