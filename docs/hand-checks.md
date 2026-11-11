@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The skim fold keeps the point: after installing this build, in a Claude Code terminal with skim on, a
+  long reply with headings folds to each heading with a line under it, a "Lưu ý / didn't run" sentence stays in the
+  fold, and a reply whose fold would be most of it draws in full with no Show more (`claude/skim-mod/hooks/fold-core.ts`
+  foldOf; bench `node scripts/skim-bench.mjs`).
+
 - [ ] (arcterm) Chat's question card goes once answered, and Send queues behind it: in a real Claude agent's Chat
   (installed build, so wavesrv has `pkg/agentperm`'s change) have it call AskUserQuestion → the "Wants to use
   AskUserQuestion" card shows and the box says "Answer the permission prompt first · Send queues your message"; type a
