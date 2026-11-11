@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Which pieces of meta an agent row in the sidebar shows (Settings → Appearance → Agent sidebar): its model, a branch
-// other than the default, its tokens and its age. All on by default; turning one off only hides it from the row, the
-// rail still has it.
+// other than the default, the RAM its processes hold, its tokens and its age. All on by default; turning one off only
+// hides it from the row, the rail still has it.
 
-export const ROW_FIELDS = ["model", "branch", "tokens", "age"] as const;
+export const ROW_FIELDS = ["model", "branch", "ram", "tokens", "age"] as const;
 export type RowField = (typeof ROW_FIELDS)[number];
 export type RowFields = Record<RowField, boolean>;
 
-export const DEFAULT_ROW_FIELDS: RowFields = { model: true, branch: true, tokens: true, age: true };
+export const DEFAULT_ROW_FIELDS: RowFields = { model: true, branch: true, ram: true, tokens: true, age: true };
 
 /** Pure: a stored value read back; a field that is missing or not a boolean takes its default. */
 export function rowFieldsOf(raw: unknown): RowFields {
@@ -31,6 +31,12 @@ export const ROW_FIELD_ROWS: { field: RowField; id: string; title: string; desc:
         id: "appearance.rowbranch",
         title: "Branch",
         desc: "The git branch an agent works on, when it is not the default one.",
+    },
+    {
+        field: "ram",
+        id: "appearance.rowram",
+        title: "RAM",
+        desc: "The memory an agent and the commands it runs hold now.",
     },
     {
         field: "tokens",
