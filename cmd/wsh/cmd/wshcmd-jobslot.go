@@ -22,10 +22,18 @@ import (
 // as long as it runs.
 const jobslotTimeout = 24 * time.Hour
 
+// jobslotFirstWord is how long a heavy command waits for wavesrv's first line. A live server answers at once,
+// with a place in the queue or the verdict, so silence means a stuck one, and a stuck queue must never hold an
+// agent's command: on 2026-11-11 a hung wavesrv held every shell command of every agent, a stop sent to a
+// runaway bench included, for minutes.
+var jobslotFirstWord = 5 * time.Second
+
 // the Claude mod and the pi extension run this before every shell command an agent runs, and keep it alive
 // while the command runs: it waits for a slot in arcterm's heavy-job queue, prints one JSON line per state
 // ({"queued":2,"behind":…,"for":…} while queued, then {"run":true} or {"run":false,"reason":…}), and holds the
-// slot until it is killed. Any error exits non-zero with no verdict line, and the hooks run the command.
+// slot until it is killed. A command that takes no slot gets {"run":true} at once, with no connection. Any
+// error, or no word from wavesrv within jobslotFirstWord, exits non-zero with no verdict line, and the hooks
+// run the command.
 //
 // A background command outlives the hook's tool call, so the Claude mod puts this in front of it instead:
 // --hold-parent waits inside the command's own shell, then hands the slot to that shell (its parent), which
@@ -35,12 +43,7 @@ var jobslotCmd = &cobra.Command{
 	Short: "wait for and hold a slot in arcterm's heavy-job queue (agent hooks)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  jobslotRun,
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		if jobslotHeavy {
-			return nil // the table is local: no connection
-		}
-		return preRunSetupRpcClient(cmd, args)
-	},
+	// no PreRunE: only a heavy command connects, inside jobslotOpen's deadline
 	Hidden:                true,
 	DisableFlagsInUseLine: true,
 }
@@ -89,15 +92,39 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+	command := args[0]
+	out := json.NewEncoder(os.Stdout)
+	if !jobslotTakesSlot(command) {
+		// the server's own answer for it, without asking: a light command never waits on wavesrv
+		if jobslotHoldParent {
+			return nil
+		}
+		yes := true
+		return out.Encode(wshrpc.JobSlotUpdate{Run: &yes})
+	}
+	holdPid := int32(0)
 	if jobslotHoldParent {
-		data := jobslotData(args[0])
-		data.HoldPid = int32(os.Getppid())
-		msgs := wshclient.JobSlotCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: jobslotTimeout.Milliseconds()})
+		holdPid = int32(os.Getppid())
+	}
+	msgs := jobslotOpen(func() (chan jobslotMsg, error) {
+		if err := preRunSetupRpcClient(nil, nil); err != nil {
+			return nil, err
+		}
+		data := jobslotData(command)
+		data.HoldPid = holdPid
+		return wshclient.JobSlotCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: jobslotTimeout.Milliseconds()}), nil
+	}, jobslotFirstWord)
+	if jobslotHoldParent {
+		if msgs == nil {
+			fmt.Fprintln(os.Stderr, "arc: arcterm's job queue did not answer; running without a slot")
+			return nil
+		}
 		WshExitCode = jobslotHand(msgs, os.Stderr)
 		return nil
 	}
-	msgs := wshclient.JobSlotCommand(RpcClient, jobslotData(args[0]), &wshrpc.RpcOpts{Timeout: jobslotTimeout.Milliseconds()})
-	out := json.NewEncoder(os.Stdout)
+	if msgs == nil {
+		return errors.New("arcterm's job queue gave no answer; running without a slot")
+	}
 	for msg := range msgs {
 		if msg.Error != nil {
 			return msg.Error
@@ -107,6 +134,45 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+type jobslotMsg = wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]
+
+// jobslotOpen runs open (connect, then start the stream) and returns the stream once its first message is in,
+// that message replayed at its head. nil when open fails, the stream ends with no word, or nothing comes
+// within wait: the caller then runs the command without a slot. On a timeout the work is left behind; the
+// process exits soon after, which closes the link and frees anything the server held for it.
+func jobslotOpen(open func() (chan jobslotMsg, error), wait time.Duration) chan jobslotMsg {
+	got := make(chan chan jobslotMsg, 1)
+	go func() {
+		msgs, err := open()
+		if err != nil {
+			got <- nil
+			return
+		}
+		first, ok := <-msgs
+		if !ok {
+			got <- nil
+			return
+		}
+		replay := make(chan jobslotMsg, 1)
+		replay <- first
+		go func() {
+			defer close(replay)
+			for m := range msgs {
+				replay <- m
+			}
+		}()
+		got <- replay
+	}()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case msgs := <-got:
+		return msgs
+	case <-timer.C:
+		return nil
+	}
 }
 
 // jobslotTakesSlot is what the server decides first: a heavy command waits for a slot unless it runs on for good
