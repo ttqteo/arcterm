@@ -231,6 +231,12 @@ func AuthenticateTokenVerifyCommand(w *wshutil.WshRpc, data wshrpc.CommandAuthen
 	return resp, err
 }
 
+// command "bashhistory", wshserver.BashHistoryCommand
+func BashHistoryCommand(w *wshutil.WshRpc, data wshrpc.CommandBashHistoryData, opts *wshrpc.RpcOpts) ([]string, error) {
+	resp, err := sendRpcRequestCallHelper[[]string](w, "bashhistory", data, opts)
+	return resp, err
+}
+
 // command "blockslist", wshserver.BlocksListCommand
 func BlocksListCommand(w *wshutil.WshRpc, data wshrpc.BlocksListRequest, opts *wshrpc.RpcOpts) ([]wshrpc.BlocksListEntry, error) {
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.BlocksListEntry](w, "blockslist", data, opts)
@@ -1678,6 +1684,12 @@ func SetRunSettingsCommand(w *wshutil.WshRpc, data wshrpc.CommandSetRunSettingsD
 func SetSecretsCommand(w *wshutil.WshRpc, data map[string]*string, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setsecrets", data, opts)
 	return err
+}
+
+// command "shellcomplete", wshserver.ShellCompleteCommand
+func ShellCompleteCommand(w *wshutil.WshRpc, data wshrpc.CommandShellCompleteData, opts *wshrpc.RpcOpts) ([]string, error) {
+	resp, err := sendRpcRequestCallHelper[[]string](w, "shellcomplete", data, opts)
+	return resp, err
 }
 
 // command "startradarscan", wshserver.StartRadarScanCommand

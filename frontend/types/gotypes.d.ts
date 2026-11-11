@@ -681,6 +681,11 @@ declare global {
         token: string;
     };
 
+    // wshrpc.CommandBashHistoryData
+    type CommandBashHistoryData = {
+        cwd: string;
+    };
+
     // wshrpc.CommandBlockInputData
     type CommandBlockInputData = {
         blockid: string;
@@ -2360,6 +2365,13 @@ declare global {
         reviewerroute?: RoutePin;
         lightreviewerroute?: RoutePin;
         autonomous?: boolean;
+    };
+
+    // wshrpc.CommandShellCompleteData
+    type CommandShellCompleteData = {
+        cwd: string;
+        kind: string;
+        word: string;
     };
 
     // wshrpc.CommandStartRadarScanData

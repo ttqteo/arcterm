@@ -234,6 +234,12 @@ export class RpcApiType {
         return client.wshRpcCall("authenticatetokenverify", data, opts);
     }
 
+    // command "bashhistory" [call]
+    BashHistoryCommand(client: WshClient, data: CommandBashHistoryData, opts?: RpcOpts): Promise<string[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "bashhistory", data, opts);
+        return client.wshRpcCall("bashhistory", data, opts);
+    }
+
     // command "blockslist" [call]
     BlocksListCommand(client: WshClient, data: BlocksListRequest, opts?: RpcOpts): Promise<BlocksListEntry[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockslist", data, opts);
@@ -1684,6 +1690,12 @@ export class RpcApiType {
     SetSecretsCommand(client: WshClient, data: {[key: string]: string}, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setsecrets", data, opts);
         return client.wshRpcCall("setsecrets", data, opts);
+    }
+
+    // command "shellcomplete" [call]
+    ShellCompleteCommand(client: WshClient, data: CommandShellCompleteData, opts?: RpcOpts): Promise<string[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "shellcomplete", data, opts);
+        return client.wshRpcCall("shellcomplete", data, opts);
     }
 
     // command "startradarscan" [call]
