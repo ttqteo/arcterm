@@ -7,8 +7,13 @@ import {
     additionsChip,
     adoptCount,
     adoptKeep,
+    adoptResultText,
+    adoptSkip,
     copyDelta,
+    KEEP_LEAVE,
+    KEEP_VAULT,
     manageLabel,
+    piSkillsLine,
     skillCopyTargets,
     skillFilePath,
     skillFileSource,
@@ -361,5 +366,243 @@ describe("skillNameError", () => {
         }
         expect(skillNameError("a".repeat(65), [])).toMatch(/64/);
         expect(skillNameError("notes", ["notes"])).toBe("A skill named notes already exists.");
+    });
+});
+
+// ---- the fork's Skills additions (2026-11-12 sync): links, stray vault copies, leaving a skill alone ----
+
+describe("links", () => {
+    const link = (runtime: string, name: string, target: string): AgentSyncSkillLink => ({
+        runtime,
+        name,
+        path: `C:\\h\\${runtime}\\skills\\${name}`,
+        target,
+    });
+
+    it("lists a non-vault link in its own group, never counted toward Manage", () => {
+        const d = data({
+            unmanaged: [move("claude", "solo", { seed: true })],
+            linked: [link("codex", "shared-tool", "D:\\tools\\shared-tool")],
+        });
+        expect(groupsOf(d)).toEqual([
+            { title: "Only in Claude Code", names: ["solo"] },
+            { title: "Linked from another folder", names: ["shared-tool"] },
+        ]);
+        const row = skillRows(d, {}).find((r) => r.name === "shared-tool")!;
+        expect(row.kind).toBe("linked");
+        expect(row.cells[1]).toMatchObject({ label: "Link", title: "D:\\tools\\shared-tool" });
+        expect(row.cells[0].label).toBe("—");
+        expect(adoptCount(d, {})).toBe(1);
+        expect(adoptSkip(d, {})).toEqual([]);
+    });
+
+    it("puts the linked group ahead of the vault's own skills", () => {
+        const d = data({
+            skills: [{ name: "mine", states: {} }],
+            linked: [link("claude", "shared-tool", "D:\\tools\\shared-tool")],
+        });
+        expect(groupsOf(d).map((g) => g.title)).toEqual(["Linked from another folder", "Your skills"]);
+    });
+
+    it("drops a junction's \\??\\ prefix from the target it shows", () => {
+        const d = data({ linked: [link("claude", "j", "\\??\\D:\\tools\\j")] });
+        expect(skillRows(d, {})[0].cells[0].title).toBe("D:\\tools\\j");
+    });
+
+    it("shows a link beside a copy of the same name as that row's Link cell, not a second row", () => {
+        const d = data({
+            unmanaged: [move("claude", "dual", { seed: true })],
+            linked: [link("codex", "dual", "D:\\tools\\dual")],
+        });
+        const rows = skillRows(d, {});
+        expect(rows).toHaveLength(1);
+        expect(rows[0].cells.map((c) => c.label)).toEqual(["Only here", "Link", "—", "—"]);
+    });
+
+    it("reads a vault skill's linked harness entry as Link, in the warn tone", () => {
+        const d = data({ skills: [{ name: "vaulted", states: { claude: "synced", codex: "linked" } }] });
+        expect(skillRows(d, {})[0].cells[1]).toMatchObject({ label: "Link", tone: "warn" });
+    });
+
+    it("titles a vault skill's Link cell with its link's target, as no row of its own", () => {
+        const d = data({
+            skills: [{ name: "vaulted", states: { claude: "synced", codex: "linked" } }],
+            linked: [link("codex", "vaulted", "\\??\\D:\\tools\\vaulted")],
+        });
+        const rows = skillRows(d, {});
+        expect(rows).toHaveLength(1);
+        expect(rows[0].cells[1]).toEqual({
+            runtime: "codex",
+            label: "Link",
+            tone: "warn",
+            title: "D:\\tools\\vaulted",
+        });
+        expect(groupsOf(d).map((g) => g.title)).not.toContain("Linked from another folder");
+        expect(adoptCount(d, {})).toBe(0);
+    });
+
+    it("falls back to a fixed title when the backend lists no link for a vault skill", () => {
+        const d = data({ skills: [{ name: "vaulted", states: { claude: "synced", codex: "linked" } }] });
+        expect(skillRows(d, {})[0].cells[1].title).toBe(
+            "A link to another folder: arcterm leaves it alone and does not write this skill here"
+        );
+    });
+
+    it("treats a reply with no linked list as none", () => {
+        const { linked: _, ...bare } = data({ unmanaged: [move("claude", "solo", { seed: true })] });
+        expect(skillRows(bare, {}).map((r) => r.kind)).toEqual(["only"]);
+    });
+
+    it("says in the rail that arcterm leaves links alone, and previews the link's own folder", () => {
+        setPlatform("win32");
+        const d = data({ linked: [link("codex", "shared-tool", "D:\\tools\\shared-tool")] });
+        const row = skillRows(d, {})[0];
+        expect(skillNote(row)).toMatch(/leaves links alone/);
+        expect(skillNote(row)).toMatch(/never moves one into the vault/);
+        expect(skillFilePath(row, "C:\\vault\\skills", {})).toBe("C:\\h\\codex\\skills\\shared-tool\\SKILL.md");
+    });
+});
+
+describe("stray copies of a vault skill", () => {
+    function stray(): CommandAgentSyncSkillsRtnData {
+        return data({
+            skills: [{ name: "helper", states: { claude: "synced", codex: "unmanaged" } }],
+            unmanaged: [move("codex", "helper", { vault: true, bodydiff: true })],
+        });
+    }
+
+    it("keeps the vault skill in its own group and lists the stray copy on the row", () => {
+        expect(groupsOf(stray())).toEqual([{ title: "Your skills", names: ["helper"] }]);
+        const row = skillRows(stray(), {})[0];
+        expect(row.kind).toBe("managed");
+        expect(row.strays.map((c) => c.runtime)).toEqual(["codex"]);
+        expect(row.copies).toEqual([]);
+        expect(copyDelta(row.strays[0])).toBe("Body text differs");
+    });
+
+    it("says a stray copy with no difference is the same as the vault copy", () => {
+        const d = data({
+            skills: [{ name: "helper", states: { claude: "synced", codex: "unmanaged" } }],
+            unmanaged: [move("codex", "helper", { vault: true })],
+        });
+        expect(copyDelta(skillRows(d, {})[0].strays[0])).toBe("Same as the vault copy");
+    });
+
+    it("counts toward Manage only once Replace is chosen, then sends the vault keep", () => {
+        expect(adoptCount(stray(), {})).toBe(0);
+        expect(adoptKeep(stray(), {})).toEqual({});
+        const keep = { helper: KEEP_VAULT };
+        expect(adoptCount(stray(), keep)).toBe(1);
+        expect(adoptKeep(stray(), keep)).toEqual({ helper: "vault" });
+        const row = skillRows(stray(), keep)[0];
+        expect(row.replace).toBe(true);
+        expect(row.cells[1]).toMatchObject({ label: "Replaced", tone: "warn" });
+        expect(skillRows(stray(), {})[0].cells[1]).toMatchObject({ label: "Own copy", tone: "none" });
+    });
+
+    it("sends the vault keep for a vault skill with stray copies and for nothing else", () => {
+        expect(adoptKeep(sample(), { vaulted: KEEP_VAULT, commit: KEEP_VAULT })).toEqual({});
+    });
+
+    it("leaves a stray copy the backend did not mark as the vault's counted as before", () => {
+        // the existing sample: vaulted's copy carries no vault flag, so it still counts toward Manage
+        expect(skillRows(sample(), {}).find((r) => r.name === "vaulted")!.strays).toEqual([]);
+        expect(adoptCount(sample(), {})).toBe(6);
+    });
+});
+
+describe("leaving a skill alone", () => {
+    it("skips a left-alone row: Left alone cells, out of the count, sent in skip and never in keep", () => {
+        const keep = { commit: KEEP_LEAVE };
+        expect(adoptSkip(sample(), keep)).toEqual(["commit"]);
+        expect(adoptKeep(sample(), keep)).toEqual({});
+        expect(adoptCount(sample(), keep)).toBe(5);
+        const row = skillRows(sample(), keep).find((r) => r.name === "commit")!;
+        expect(row.left).toBe(true);
+        expect(row.cells.map((c) => c.label)).toEqual(["Left alone", "Left alone", "—", "—"]);
+    });
+
+    it("lets an undecided skill be left alone instead of waiting for a decision", () => {
+        const keep = { translate: KEEP_LEAVE };
+        expect(adoptSkip(sample(), keep)).toEqual(["translate"]);
+        expect(adoptKeep(sample(), keep)).toEqual({});
+        expect(groupsOf(sample(), keep).find((g) => g.title === "Needs a decision")).toBeUndefined();
+    });
+
+    it("skips nothing for a vault skill, a name with no copy, or no choice at all", () => {
+        expect(adoptSkip(sample(), { vaulted: KEEP_LEAVE, ghost: KEEP_LEAVE })).toEqual([]);
+        expect(adoptSkip(sample(), {})).toEqual([]);
+    });
+});
+
+describe("adoptResultText", () => {
+    const moves = ["a", "b", "c"].map((n) => move("claude", n, { seed: true }));
+
+    it("counts what the reply moved, what waits, and what was left alone", () => {
+        const rtn: CommandAgentSyncAdoptRtnData = {
+            moves: [
+                ...moves,
+                move("codex", "a"),
+                move("claude", "d", { seed: true }),
+                move("codex", "d", { bodydiff: true }),
+            ],
+            unresolved: ["d"],
+        };
+        expect(adoptResultText(rtn, { skip: ["x", "y"] })).toBe(
+            "Moved 3 skills into the vault · 1 wait for a decision · 2 left alone"
+        );
+    });
+
+    it("leaves out the zero parts and says one skill", () => {
+        expect(adoptResultText({ moves: [moves[0]] }, { skip: [] })).toBe("Moved 1 skill into the vault");
+    });
+
+    it("counts a vault skill's copy only when the vault copy was kept", () => {
+        const rtn = { moves: [move("codex", "helper", { vault: true })] };
+        expect(adoptResultText(rtn, { skip: [] })).toBe("Moved 0 skills into the vault");
+        expect(adoptResultText(rtn, { skip: [], keep: { helper: KEEP_VAULT } })).toBe("Moved 1 skill into the vault");
+    });
+
+    it("says a snapshot moved nothing", () => {
+        expect(adoptResultText({ moves, dryrun: true }, { skip: [] })).toBe("Snapshot: nothing moved (would move 3)");
+    });
+});
+
+describe("piSkillsLine", () => {
+    const status = (pi: Partial<AgentSyncHarness>): CommandAgentSyncStatusRtnData => ({
+        harnesses: [
+            {
+                runtime: "pi",
+                label: "Pi",
+                path: "",
+                present: true,
+                steering: "current",
+                skillsmanaged: 0,
+                skillsunmanaged: 0,
+                ...pi,
+            },
+        ],
+        steeringdoc: "",
+        skillsroot: "",
+    });
+
+    it("says Pi's note in the tone the backend gave it", () => {
+        expect(piSkillsLine(status({ note: "via the vault directly", notetone: "ok" }))).toEqual({
+            text: "Pi skills: via the vault directly",
+            tone: "ok",
+        });
+        expect(
+            piSkillsLine(status({ note: "pi settings do not point at the synced skills", notetone: "warn" }))?.tone
+        ).toBe("warn");
+    });
+
+    it("takes a note with no tone as ok, never by matching its text", () => {
+        expect(piSkillsLine(status({ note: "pi settings do not point at the synced skills" }))?.tone).toBe("ok");
+    });
+
+    it("draws nothing when Pi is not set up or has no note", () => {
+        expect(piSkillsLine(status({ present: false, note: "x", notetone: "warn" }))).toBeNull();
+        expect(piSkillsLine(status({}))).toBeNull();
+        expect(piSkillsLine(null)).toBeNull();
     });
 });
