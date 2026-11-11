@@ -28,6 +28,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
@@ -1634,7 +1635,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <DialogButton
                                 variant="secondary"
                                 tabIndex={-1}
-                                hint="alt+←"
+                                hint={formatChordString("Alt:ArrowLeft")}
                                 data-launcher-back
                                 title="Back to the columns to change the agent or project (Alt+←, or ← from the sessions)"
                                 onClick={() => leaveStep("project")}
@@ -1644,14 +1645,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 Back
                             </DialogButton>
                         ) : null}
-                        <DialogButton variant="secondary" hint="esc" onClick={close}>
+                        <DialogButton variant="secondary" hint={formatChordString("Escape")} onClick={close}>
                             Cancel
                         </DialogButton>
                         {/* the step reads the session beside the list, so only the columns offer its transcript */}
                         {resume != null && !stepShown ? (
                             <DialogButton
                                 variant="secondary"
-                                hint="shift+enter"
+                                hint={formatChordString("Shift:Enter")}
                                 data-launcher-transcript
                                 title="View transcript (Shift+Enter)"
                                 onClick={() => viewTranscript(resume)}
@@ -1662,7 +1663,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         {/* Enter launches from every zone, the Task box included, where Shift+Enter is the newline */}
                         <DialogButton
                             variant="primary"
-                            hint="enter"
+                            hint={formatChordString("Enter")}
                             title={isTool || isCouncil ? "Enter" : "Enter (Shift+Enter is a new line in the Task box)"}
                             disabled={primaryDisabled}
                             onClick={launch}

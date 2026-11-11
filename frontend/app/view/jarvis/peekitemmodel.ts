@@ -47,9 +47,9 @@ export type ItemHint = { keys: string[]; label: string };
 
 export function itemHints(kind: PeekKind): ItemHint[] {
     return [
-        ...(VIEW_ONLY.has(kind) ? [] : [{ keys: ["↵"], label: openLabel(kind).toLowerCase() }]),
-        { keys: ["⌫"], label: "back" },
-        { keys: ["esc"], label: "close" },
+        ...(VIEW_ONLY.has(kind) ? [] : [{ keys: ["Enter"], label: openLabel(kind).toLowerCase() }]),
+        { keys: ["Backspace"], label: "back" },
+        { keys: ["Escape"], label: "close" },
     ];
 }
 

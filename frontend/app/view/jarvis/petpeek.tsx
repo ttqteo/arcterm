@@ -22,6 +22,7 @@ import { activeChannelAtom, channelMessagesAtom } from "@/app/view/agents/channe
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { MarkdownMessage } from "@/app/view/agents/markdownmessage";
 import { projectListAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import {
     autoUpdate,
@@ -622,7 +623,7 @@ function KeyHints({ hints }: { hints: { keys: string[]; label: string }[] }) {
                             key={key}
                             className="rounded-[4px] border border-edge-mid bg-surface px-1 font-mono text-[10px] leading-[15px] text-ink-mid"
                         >
-                            {key}
+                            {formatChordString(key)}
                         </kbd>
                     ))}
                     {hint.label}
@@ -1158,14 +1159,14 @@ export function PetPeek({
                         ? [{ keys: [formOptions === 1 ? "1" : `1–${Math.min(formOptions, 9)}`], label: "pick" }]
                         : []),
                     ...(formQuestions.length > 1 ? [{ keys: ["←", "→"], label: "question" }] : []),
-                    { keys: ["↵"], label: "send" },
-                    { keys: ["esc"], label: "fold" },
+                    { keys: ["Enter"], label: "send" },
+                    { keys: ["Escape"], label: "fold" },
                 ]
               : [
                     ...(quiet ? [] : [{ keys: ["j", "k"], label: "move" }]),
-                    ...(spaceTarget != null ? [{ keys: ["space"], label: "peek" }] : []),
+                    ...(spaceTarget != null ? [{ keys: ["Space"], label: "peek" }] : []),
                     ...(!quiet || latestAct != null
-                        ? [{ keys: ["↵"], label: formAgent != null ? "answer" : enterHintLabel(enterAct) }]
+                        ? [{ keys: ["Enter"], label: formAgent != null ? "answer" : enterHintLabel(enterAct) }]
                         : []),
                     ...(focusedRow != null && focusedRow.answers.length > 0
                         ? [
@@ -1176,7 +1177,7 @@ export function PetPeek({
                           ]
                         : []),
                     ...(folded ? [] : [{ keys: ["/"], label: "ask" }]),
-                    { keys: ["esc"], label: "close" },
+                    { keys: ["Escape"], label: "close" },
                 ];
 
     // portaled, so a menu a control in here portals (the harness picker) nests in this portal node, which the focus

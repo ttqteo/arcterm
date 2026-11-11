@@ -52,6 +52,6 @@ describe("isPeekGesture on Windows", () => {
         expect(isPeekGesture({ ctrlKey: true })).toBe(true);
         expect(isPeekGesture({ ctrlKey: false, metaKey: true })).toBe(false);
         expect(isPeekGesture(undefined)).toBe(false);
-        expect(peekClickLabel()).toBe("ctrl+click");
+        expect(peekClickLabel()).toBe("Ctrl+click");
     });
 });

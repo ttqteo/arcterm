@@ -8,6 +8,7 @@
 // the blur and stray key that close it; the bindings (switcher:*) open and step it.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -245,10 +246,10 @@ export function TabSwitcher({ model }: { model: AgentsViewModel }) {
                         <Key>Tab</Key>next
                     </span>
                     <span className="flex items-center gap-1">
-                        <Key>⇧Tab</Key>back
+                        <Key>{formatChordString("Shift:Tab")}</Key>back
                     </span>
                     <span className="flex items-center gap-1">
-                        <Key>esc</Key>stay here
+                        <Key>{formatChordString("Escape")}</Key>stay here
                     </span>
                     <span className="flex items-center gap-1">
                         release<Key>{modGlyph(state.mod)}</Key>to switch

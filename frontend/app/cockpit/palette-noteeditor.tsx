@@ -4,6 +4,7 @@
 // The note editor: the whole palette while a draft is open. Presentational only: command-palette.tsx owns
 // the draft, the keys, saving and leaving. The title is the palette's own header field.
 
+import { formatChordString } from "@/util/keysym";
 import { Pencil } from "lucide-react";
 import type { KeyboardEvent, RefObject } from "react";
 import type { NoteDraft } from "./palette-notes";
@@ -73,16 +74,20 @@ export function PaletteNoteEditor(props: NoteEditorProps) {
             />
             <div className="flex shrink-0 flex-col gap-1 border-t border-border px-4 py-[9px]">
                 <div className="flex items-center gap-3">
-                    <span className="w-[60px] shrink-0 font-mono text-[11px] text-accent-soft">ctrl ⏎</span>
+                    <span className="w-[76px] shrink-0 font-mono text-[11px] text-accent-soft">
+                        {formatChordString("Ctrl:Enter")}
+                    </span>
                     <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">
                         {title === "" ? "Saves the note" : `Saves “${title}”`}
                     </span>
                     <span className="flex shrink-0 items-center gap-3 font-mono text-[10.5px] text-muted">
                         <span>Tab title / body</span>
-                        <span>esc back</span>
+                        <span>{formatChordString("Escape")} back</span>
                     </span>
                 </div>
-                {discardArmed ? <FooterKeyLine k="esc" text="esc again discards your changes" arm /> : null}
+                {discardArmed ? (
+                    <FooterKeyLine k="esc" text={`${formatChordString("Escape")} again discards your changes`} arm />
+                ) : null}
             </div>
         </div>
     );
