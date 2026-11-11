@@ -2186,14 +2186,3 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   box → each folds into a "Question N · … · You picked" row in place of your message, Chat stays on Chat the whole time
   (`chatconversation.tsx`, `chatpane.tsx`, `chatbrainstormcard.tsx`, `chatbrainstormwire.ts`; spec
   `docs/superpowers/specs/2026-11-11-chat-redesign-design.md`).
-- [ ] (arcterm) **Council bench, round 2 (Brainstorm).** After the land: `task tauri:build`, then `! task install` once
-  (the council side scores inside the installed wavesrv, so the new build must be the one running; install nothing
-  more until the report). Read the four cases' drafts with `node scripts/council-bench-brainstorm-cases.mjs --dry-run`
-  and install them by running it without `--dry-run`. Then start the driver detached,
-  `wsh detach -- node scripts/council-bench-all.mjs` (`--dry` first lists the cells still missing; it stops with
-  "install the new build first" when the running wavesrv's harness is not the checkout's; 16 runs, about 62M tokens,
-  about 2 hours, and you allow its Token burn cards). When it logs `ALL DONE`, read
-  `<data dir>/council-bench/work/bench-all.results.txt`: the Brainstorm section's `2026-11-12.1` rows for `council` and
-  `brainstorm` each show 8 scored, with recall@3, recall@all and wrong as `<wrong>/<judged>`. Only the pure planning in
-  `scripts/council-bench-all.mjs` is unit-tested; its spawning, waiting and pid file have never run a real round (spec
-  `docs/superpowers/specs/2026-11-11-brainstorm-bench-round2-design.md`).
