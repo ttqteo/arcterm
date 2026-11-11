@@ -52,6 +52,22 @@ func TestClassify(t *testing.T) {
 		{"go test ./pkg/memgate", false, "", 0},
 		{"go test ./pkg/orchestrate -run '^TestMerge$'", false, "", 0},
 
+		// a redirection and its target are not operands: the whole suite still runs
+		{"npm test 2>&1 | tail -50", true, "vitest (all)", 2 * gib},
+		{"npx vitest run 2>&1 | tail -40", true, "vitest (all)", 2 * gib},
+		{"npx vitest run > /tmp/out.txt", true, "vitest (all)", 2 * gib},
+		{"npx vitest run >/tmp/out.txt 2>&1", true, "vitest (all)", 2 * gib},
+		{"npx vitest run >> out.log 2> err.log", true, "vitest (all)", 2 * gib},
+		{"npx vitest run &> out.log", true, "vitest (all)", 2 * gib},
+		{"npx vitest run &>>out.log", true, "vitest (all)", 2 * gib},
+		{`npx vitest run > "out file.log" 2>/dev/null`, true, "vitest (all)", 2 * gib},
+		{"npx vitest run < /dev/null", true, "vitest (all)", 2 * gib},
+		{"npx vitest run >&2", true, "vitest (all)", 2 * gib},
+		{"npm run test 1>/dev/null", true, "vitest (all)", 2 * gib},
+		{"npx vitest run frontend/a.test.ts 2>&1 | tail -20", false, "", 0},
+		{"npm test -- frontend/util/keyutil.test.ts > out.txt 2>&1", false, "", 0},
+		{`npx vitest run ">"`, false, "", 0},
+
 		// not heavy at all
 		{"git status --short", false, "", 0},
 		{"ls dist/bin", false, "", 0},

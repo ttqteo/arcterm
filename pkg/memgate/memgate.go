@@ -467,7 +467,9 @@ func classifyGo(args []string) (Job, bool) {
 
 // steps splits a shell command line into its simple commands' words: on the unquoted separators
 // (&& || ; | & and newlines) and on unquoted whitespace, quotes removed. A quoted separator stays a word,
-// so `echo "a && task check:ts"` is one echo. Subshell parens are dropped. It does not expand anything.
+// so `echo "a && task check:ts"` is one echo. Subshell parens are dropped. A redirection (2>&1, > out.txt,
+// &>> log, < in) is no word at all, its target included: `npx vitest run 2>&1` names no test file. It does
+// not expand anything.
 func steps(command string) [][]string {
 	var (
 		out    [][]string
@@ -475,16 +477,23 @@ func steps(command string) [][]string {
 		word   strings.Builder
 		inWord bool
 		quote  byte
+		// the next word is a redirection's target
+		target bool
 	)
 	endWord := func() {
 		if inWord {
-			words = append(words, word.String())
+			if target {
+				target = false
+			} else {
+				words = append(words, word.String())
+			}
 			word.Reset()
 			inWord = false
 		}
 	}
 	endStep := func() {
 		endWord()
+		target = false
 		if len(words) > 0 {
 			out = append(out, words)
 			words = nil
@@ -509,13 +518,18 @@ func steps(command string) [][]string {
 			i++
 			word.WriteByte(command[i])
 			inWord = true
-		case c == ';' || c == '|' || c == '&' || c == '\n' || c == '(' || c == ')':
-			// a redirection's & (2>&1, &>) joins streams, it does not end the step
-			if c == '&' && (i > 0 && command[i-1] == '>' || i+1 < len(command) && command[i+1] == '>') {
-				word.WriteByte(c)
-				inWord = true
-				continue
+		case c == '>' || c == '<' || c == '&' && i+1 < len(command) && command[i+1] == '>':
+			// the stream number in front of it (the 2 of 2>&1) goes with it; a word up against it does not
+			if inWord && !isStreamNumber(word.String()) {
+				endWord()
 			}
+			word.Reset()
+			inWord = false
+			end, joined := redirection(command, i)
+			// a stream joined to another (2>&1, >&2, <&-) names no file; any other is followed by its target
+			target = !joined
+			i = end - 1
+		case c == ';' || c == '|' || c == '&' || c == '\n' || c == '(' || c == ')':
 			if c == '(' || c == ')' {
 				endWord()
 				continue
@@ -530,4 +544,45 @@ func steps(command string) [][]string {
 	}
 	endStep()
 	return out
+}
+
+// redirection reads the operator at command[i] (> >> < << <<< <> >| &> &>>, or a join such as >&2 or <&-): end is
+// just past it, and joined says it joins a stream to another rather than naming a file after it.
+func redirection(command string, i int) (end int, joined bool) {
+	if command[i] == '&' {
+		i++
+	}
+	op := command[i]
+	i++
+	for i < len(command) && (command[i] == '>' || command[i] == '<') {
+		i++
+	}
+	if op == '>' && i < len(command) && command[i] == '|' {
+		return i + 1, false
+	}
+	if i < len(command) && command[i] == '&' {
+		j := i + 1
+		for j < len(command) && (command[j] >= '0' && command[j] <= '9' || command[j] == '-') {
+			j++
+		}
+		if j > i+1 {
+			return j, true
+		}
+		// >& file sends both streams to it
+		return i + 1, false
+	}
+	return i, false
+}
+
+// isStreamNumber says a word is all digits: the stream a redirection right after it acts on (the 2 of 2>&1)
+func isStreamNumber(word string) bool {
+	if word == "" {
+		return false
+	}
+	for i := 0; i < len(word); i++ {
+		if word[i] < '0' || word[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
