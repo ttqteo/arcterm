@@ -23,14 +23,18 @@ const (
 // MaxItems caps one answer: the list over the box shows a screenful, and a bare Tab on Windows' PATH lists thousands.
 const MaxItems = 50
 
+// The scripts use bash builtins only, never `sort`, `head` or any other program: the shell inherits wavesrv's Windows
+// PATH, which can list System32 before Git's usr\bin, so `sort -u` there is Windows' sort.exe, which fails on -u and
+// leaves the pipe empty. Go dedups, sorts and caps the answer instead. The file loop stops after 1000 names so a huge
+// folder's `[ -d ]` checks stay well inside the timeout.
 var scripts = map[Kind]string{
-	KindCommand:  `compgen -c -- "$1" 2>/dev/null | sort -u | head -n 200`,
-	KindVariable: `compgen -v -- "$1" 2>/dev/null | head -n 200`,
-	KindFile:     `compgen -f -- "$1" 2>/dev/null | head -n 200 | while IFS= read -r f; do [ -d "$f" ] && echo "$f/" || echo "$f"; done`,
+	KindCommand:  `compgen -c -- "$1" 2>/dev/null`,
+	KindVariable: `compgen -v -- "$1" 2>/dev/null`,
+	KindFile:     `n=0; compgen -f -- "$1" 2>/dev/null | while IFS= read -r f; do [ -d "$f" ] && echo "$f/" || echo "$f"; n=$((n+1)); if [ "$n" -ge 1000 ]; then break; fi; done`,
 }
 
-// Complete is the shell's completions of `word` in `cwd`, sorted, at most MaxItems. The word is bash's $1, never part
-// of the script.
+// Complete is the shell's completions of `word` in `cwd`, sorted, at most MaxItems (the cap applies to the whole
+// answer, after Go's dedup and sort). The word is bash's $1, never part of the script.
 func Complete(ctx context.Context, cwd string, kind Kind, word string) ([]string, error) {
 	script, ok := scripts[kind]
 	if !ok {
