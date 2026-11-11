@@ -154,6 +154,8 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     await RpcApi.SetMetaCommand(TabRpcClient, { oref: WOS.makeORef("tab", tabId), meta: tabMeta });
     // an agent opened asleep is on the roster at once (sleepingStatus): it never reports in, so no pending row waits on it
     if (agentPanel && !opts.asleep) {
+        // a resume's conversation is on disk already: its booting row reads it, so Chat shows it while the harness loads
+        const resumedTranscript = opts.resumeOf || opts.resumePath;
         const pending: PendingLaunch = {
             tabId,
             blockId,
@@ -161,6 +163,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
             project: opts.projectName,
             ts: Date.now(),
             runtime: opts.runtime,
+            ...(resumedTranscript ? { transcriptPath: resumedTranscript } : {}),
         };
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
     }

@@ -1166,10 +1166,13 @@ export interface PendingLaunch {
     project: string;
     ts: number; // launch time (UnixMilli) — drives the booting row's age
     runtime?: string; // so the booting header names its runtime rather than Unknown
+    // a resume's transcript, which is on disk before the agent reports in: Chat reads the conversation from it while
+    // the harness loads (a resume can take a minute to report), instead of "No messages yet"
+    transcriptPath?: string;
 }
 
-/** Pure: a pending launch -> a "booting" working AgentVM. No transcriptPath (none exists yet); the
- *  Agent surface shows its live terminal until the real row arrives. */
+/** Pure: a pending launch -> a "booting" working AgentVM. A fresh launch has no transcriptPath (none exists yet); a
+ *  resume carries the one it resumes. The Agent surface shows its live terminal until the real row arrives. */
 export function pendingToVM(p: PendingLaunch, now: number): AgentVM {
     return {
         id: p.tabId,
@@ -1181,6 +1184,7 @@ export function pendingToVM(p: PendingLaunch, now: number): AgentVM {
         blockId: p.blockId,
         activeMs: Math.max(0, now - p.ts),
         stateSince: p.ts,
+        ...(p.transcriptPath ? { transcriptPath: p.transcriptPath } : {}),
     };
 }
 
