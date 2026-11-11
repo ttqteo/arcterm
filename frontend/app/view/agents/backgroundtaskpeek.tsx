@@ -17,6 +17,7 @@ import {
     FloatingPortal,
     offset,
     shift,
+    size,
     useDismiss,
     useFloating,
     useInteractions,
@@ -24,7 +25,19 @@ import {
 import { useAtomValue } from "jotai";
 import { Radio, Terminal, X } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type KeyboardEvent,
+    type ReactNode,
+    type RefObject,
+} from "react";
 import { bgTaskStoppable } from "./agentrailsections";
 import type { AgentsViewModel } from "./agents";
 import { parseAnsiLines, runCss } from "./ansitext";
@@ -35,6 +48,9 @@ import {
     monitorEventsFooter,
     monitorExpiresAt,
     OUTPUT_MAX_CHARS,
+    PEEK_MIN_WIDTH_PX,
+    peekWidthPx,
+    textColumns,
     type BackgroundTaskState,
 } from "./monitortasks";
 import { ServerStopButton } from "./railservers";
@@ -112,64 +128,122 @@ function AnsiLines({ lines }: { lines: string[] }) {
     ));
 }
 
+// A body of output lines asks the peek to widen to them; the peek keeps the widest any body asked for while it is open,
+// so it never shrinks under the reader as the output streams.
+const PeekWidthContext = createContext<(px: number) => void>(() => {});
+
+// a run of the mono font's characters, measured to know one character's width in this view's font and size
+const PROBE = "0".repeat(40);
+// beside the text: the body's horizontal padding, its scrollbar and the peek's border
+const OUTPUT_CHROME_PX = 20 + 12 + 2;
+// an event also has its time column and the gap after it
+const EVENTS_CHROME_PX = OUTPUT_CHROME_PX + 62 + 10;
+
+// a sibling of the body, not inside it, so its text never reads as output; absolute against the peek's fixed root
+function CharProbe({ probeRef }: { probeRef: RefObject<HTMLSpanElement | null> }) {
+    return (
+        <span
+            ref={probeRef}
+            aria-hidden
+            className="pointer-events-none invisible absolute left-0 top-0 select-none whitespace-pre font-mono text-[11.5px]"
+        >
+            {PROBE}
+        </span>
+    );
+}
+
+// asks the peek for the width `lines` fit in (textColumns: most of them, ANSI escapes dropped); the probe it returns is
+// rendered with CharProbe inside the body
+function useWantWidth(lines: string[], chromePx: number): RefObject<HTMLSpanElement | null> {
+    const want = useContext(PeekWidthContext);
+    const probeRef = useRef<HTMLSpanElement>(null);
+    const columns = useMemo(
+        () => textColumns(parseAnsiLines(lines).map((runs) => runs.map((r) => r.text).join(""))),
+        [lines]
+    );
+    useLayoutEffect(() => {
+        // offsetWidth, not the bounding box: the view's fade-in must not skew the measure
+        const charPx = (probeRef.current?.offsetWidth ?? 0) / PROBE.length;
+        if (charPx > 0) {
+            want(peekWidthPx(columns, charPx, chromePx));
+        }
+    }, [columns, chromePx, want]);
+    return probeRef;
+}
+
 function OutputBody({ path, running }: { path: string | undefined; running: boolean }) {
     const lines = useTaskOutput(path, running);
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(lines ?? NO_LINES);
+    const probeRef = useWantWidth(lines ?? NO_LINES, OUTPUT_CHROME_PX);
     return (
-        <div data-testid="background-task-peek-output" className="relative border-t border-edge-mid bg-surface-code">
+        <>
+            <CharProbe probeRef={probeRef} />
             <div
-                ref={scrollRef}
-                onScroll={onScroll}
-                className="max-h-[360px] overflow-auto p-[10px] font-mono text-[11.5px] leading-[1.5]"
+                data-testid="background-task-peek-output"
+                className="relative border-t border-edge-mid bg-surface-code"
             >
-                {lines != null && lines.length === 0 ? (
-                    <div data-testid="background-task-peek-output-empty" className="text-muted">
-                        No output yet.
-                    </div>
-                ) : (
-                    <AnsiLines lines={lines ?? NO_LINES} />
-                )}
+                <div
+                    ref={scrollRef}
+                    onScroll={onScroll}
+                    className="max-h-[360px] overflow-auto p-[10px] font-mono text-[11.5px] leading-[1.5]"
+                >
+                    {lines != null && lines.length === 0 ? (
+                        <div data-testid="background-task-peek-output-empty" className="text-muted">
+                            No output yet.
+                        </div>
+                    ) : (
+                        <AnsiLines lines={lines ?? NO_LINES} />
+                    )}
+                </div>
+                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
-            <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
-        </div>
+        </>
     );
 }
 
 function EventsBody({ events }: { events: MonitorEvent[] }) {
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(events);
+    const eventLines = useMemo(() => events.flatMap((e) => e.lines), [events]);
+    const probeRef = useWantWidth(eventLines, EVENTS_CHROME_PX);
     return (
-        <div data-testid="background-task-peek-events" className="relative border-t border-edge-mid bg-surface-code">
-            {events.length === 0 ? (
-                <div
-                    data-testid="background-task-peek-events-empty"
-                    className="p-[10px] font-mono text-[11.5px] leading-[1.5] text-muted"
-                >
-                    No events yet.
-                </div>
-            ) : (
-                <div
-                    ref={scrollRef}
-                    onScroll={onScroll}
-                    className="max-h-[360px] overflow-auto px-[10px] py-[4px] font-mono text-[11.5px] leading-[1.5]"
-                >
-                    {events.map((e, i) => (
-                        <div
-                            key={i}
-                            data-testid="background-task-peek-event"
-                            className={cn("flex gap-[10px] py-[6px]", i > 0 && "border-t border-edge-faint")}
-                        >
-                            <span className="w-[62px] flex-none pt-[1px] text-[10.5px] text-muted">
-                                {e.ts != null ? clockTime(e.ts) : ""}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                                <AnsiLines lines={e.lines} />
+        <>
+            <CharProbe probeRef={probeRef} />
+            <div
+                data-testid="background-task-peek-events"
+                className="relative border-t border-edge-mid bg-surface-code"
+            >
+                {events.length === 0 ? (
+                    <div
+                        data-testid="background-task-peek-events-empty"
+                        className="p-[10px] font-mono text-[11.5px] leading-[1.5] text-muted"
+                    >
+                        No events yet.
+                    </div>
+                ) : (
+                    <div
+                        ref={scrollRef}
+                        onScroll={onScroll}
+                        className="max-h-[360px] overflow-auto px-[10px] py-[4px] font-mono text-[11.5px] leading-[1.5]"
+                    >
+                        {events.map((e, i) => (
+                            <div
+                                key={i}
+                                data-testid="background-task-peek-event"
+                                className={cn("flex gap-[10px] py-[6px]", i > 0 && "border-t border-edge-faint")}
+                            >
+                                <span className="w-[62px] flex-none pt-[1px] text-[10.5px] text-muted">
+                                    {e.ts != null ? clockTime(e.ts) : ""}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <AnsiLines lines={e.lines} />
+                                </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-            <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
-        </div>
+                        ))}
+                    </div>
+                )}
+                <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
+            </div>
+        </>
     );
 }
 
@@ -316,9 +390,23 @@ export function BackgroundTaskPeek({
         elements: { reference: anchor },
         placement: "right-start",
         strategy: "fixed",
-        middleware: [offset(PEEK_GAP_PX), shift({ padding: 8 })],
+        middleware: [
+            offset(PEEK_GAP_PX),
+            shift({ padding: 8 }),
+            // as wide as its output wants, up to the screen's edge; a window too narrow for even the base width keeps
+            // that and lets shift slide it over the tree, as before
+            size({
+                padding: 8,
+                apply({ availableWidth, elements }) {
+                    elements.floating.style.maxWidth = `${Math.max(availableWidth, PEEK_MIN_WIDTH_PX)}px`;
+                },
+            }),
+        ],
         whileElementsMounted: autoUpdate,
     });
+    // the widest its bodies asked for since it opened (a peek on another task is a new mount)
+    const [widthPx, setWidthPx] = useState(PEEK_MIN_WIDTH_PX);
+    const wantWidth = useCallback((px: number) => setWidthPx((w) => Math.max(w, px)), []);
     // the anchor row counts as inside, so pressing it again toggles the peek instead of closing and reopening it.
     // Esc is the root's own (below): left on, it would also reach agent:back
     const { getFloatingProps } = useInteractions([useDismiss(context, { escapeKey: false })]);
@@ -380,7 +468,7 @@ export function BackgroundTaskPeek({
         <FloatingPortal>
             <div
                 ref={setRoot}
-                style={floatingStyles}
+                style={{ ...floatingStyles, width: widthPx }}
                 {...getFloatingProps()}
                 role="dialog"
                 aria-label={`${monitor ? "Monitor" : "Background shell"} ${current.label}`}
@@ -390,7 +478,7 @@ export function BackgroundTaskPeek({
                 data-task-kind={monitor ? "monitor" : "shell"}
                 data-task-state={state}
                 onKeyDown={onKeyDown}
-                className="z-[60] w-[560px] overflow-hidden rounded-[9px] border border-edge-strong bg-surface-raised shadow-popover-lg focus:outline-none"
+                className="z-[60] overflow-hidden rounded-[9px] border border-edge-strong bg-surface-raised shadow-popover-lg focus:outline-none"
             >
                 <div className="flex items-center gap-[8px] px-[10px] py-[8px]">
                     <Mark size={12} aria-hidden className="flex-none text-accent" />
@@ -431,18 +519,20 @@ export function BackgroundTaskPeek({
                         {`$ ${current.command}`}
                     </div>
                 ) : null}
-                {monitor ? (
-                    <MonitorBody key={current.toolUseId} task={current} now={now} />
-                ) : (
-                    <>
-                        <OutputBody
-                            key={current.toolUseId}
-                            path={current.outputFile}
-                            running={current.status === "running"}
-                        />
-                        <OutputFooter path={current.outputFile} running={current.status === "running"} />
-                    </>
-                )}
+                <PeekWidthContext.Provider value={wantWidth}>
+                    {monitor ? (
+                        <MonitorBody key={current.toolUseId} task={current} now={now} />
+                    ) : (
+                        <>
+                            <OutputBody
+                                key={current.toolUseId}
+                                path={current.outputFile}
+                                running={current.status === "running"}
+                            />
+                            <OutputFooter path={current.outputFile} running={current.status === "running"} />
+                        </>
+                    )}
+                </PeekWidthContext.Provider>
             </div>
         </FloatingPortal>
     );

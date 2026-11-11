@@ -103,6 +103,34 @@ export function serverLabel(row: DevServerRow): string {
     return label.length > LABEL_MAX ? label.slice(0, LABEL_MAX - 1) + "…" : label;
 }
 
+// directory names that say nothing on their own: the name puts their parent first (portal/web)
+const GENERIC_DIRS = new Set([
+    "web",
+    "app",
+    "apps",
+    "frontend",
+    "backend",
+    "client",
+    "server",
+    "site",
+    "www",
+    "ui",
+    "src",
+]);
+
+// What the server is, as a short name: the directory it runs in (`portal`), its parent first when that directory's
+// name is generic (`portal/web`). With no directory, the command's label.
+export function serverName(row: DevServerRow): string {
+    const segs = pathSegments(row.cwd ?? "");
+    if (segs.length === 0) {
+        return serverLabel(row);
+    }
+    const base = segs[segs.length - 1];
+    // a drive (`D:`) is no parent worth naming
+    const parent = segs.length > 1 && !/:$/.test(segs[segs.length - 2]) ? segs[segs.length - 2] : null;
+    return GENERIC_DIRS.has(base.toLowerCase()) && parent != null ? `${parent}/${base}` : base;
+}
+
 export function serverUrl(port: number): string {
     return `http://localhost:${port}`;
 }

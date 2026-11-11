@@ -23,8 +23,12 @@ const SHELL = {
     description: "serve the preview",
     command: "npm run preview",
     startedAgo: 14 * MIN,
-    output: ["preview on :4173", "ready in 312 ms"],
+    output: ["preview on :4173", "ready in 312 ms", "dist/assets/redux-selector-B5jgC3IP.svg                     1.51 kB │ gzip:     0.77 kB"],
 };
+// the build line wider than the peek's base 560px: the peek widens to it rather than wrapping it
+const WIDE_LINE = SHELL.output[2];
+// a line as the page's text() reads it: runs of spaces squashed to one
+const squash = (s) => s.replace(/\s+/g, " ").trim();
 const MONITORS = [
     {
         id: "bmtevents",
@@ -562,6 +566,25 @@ export default function (kit) {
                 // 7. a background shell has no tabs: its output, followed live; pressing its row again closes the peek
                 const shell = await openPeek(h, SHELL.id, `(tid(p, "background-task-peek-output")?.textContent ?? "").includes(${JSON.stringify(SHELL.output[0])})`);
                 await h.shot("cdp-shots/monitor-tasks-7.png");
+                // the peek is as wide as its output: the build line sits on one line instead of wrapping at 560px
+                const fit = await h.ev(`(() => {
+                    ${LIB}
+                    const p = peek();
+                    const body = tid(p, "background-task-peek-output");
+                    const line = [...(body?.querySelectorAll("div > div") ?? [])].find((d) => text(d) === ${JSON.stringify(squash(WIDE_LINE))});
+                    const lh = line ? parseFloat(getComputedStyle(line).lineHeight) : NaN;
+                    return {
+                        width: p ? Math.round(p.getBoundingClientRect().width) : null,
+                        lineHeight: line ? Math.round(line.getBoundingClientRect().height) : null,
+                        oneLine: line != null && line.getBoundingClientRect().height < lh * 1.5,
+                        inView: p != null && p.getBoundingClientRect().right <= window.innerWidth,
+                    };
+                })()`);
+                rec(
+                    "7b. Width: the shell's peek widens past 560px to its build line, which reads on one line, and the peek stays on screen",
+                    fit.width > 560 && fit.oneLine && fit.inView,
+                    JSON.stringify(fit)
+                );
                 await h.ev(`(() => { ${LIB} row(${JSON.stringify(SHELL.id)})?.click(); })()`);
                 const closedByRow = await closed(h);
                 rec(
@@ -575,7 +598,7 @@ export default function (kit) {
                         shell.tablist === null &&
                         shell.events === null &&
                         shell.output === null &&
-                        SHELL.output.every((l) => shell.outputBody?.includes(l)) &&
+                        SHELL.output.every((l) => shell.outputBody?.includes(squash(l))) &&
                         shell.footer[0]?.text === `${SHELL.id}.output` &&
                         shell.footer[1]?.text === "last 64 KB · live" &&
                         closedByRow,

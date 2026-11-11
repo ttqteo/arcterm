@@ -130,6 +130,35 @@ export function outputTail(lines: string[], maxChars = OUTPUT_MAX_CHARS): string
     return tail.split("\n");
 }
 
+/** The peek's width with nothing wider to fit. */
+export const PEEK_MIN_WIDTH_PX = 560;
+// the share of lines the width fits: a long stack frame or JSON blob past it wraps instead of widening the peek
+const FIT_SHARE = 0.9;
+
+function columnsOf(line: string): number {
+    let cols = 0;
+    for (const ch of line) {
+        cols = ch === "\t" ? (Math.floor(cols / 8) + 1) * 8 : cols + 1;
+    }
+    return cols;
+}
+
+/** Pure: how many columns the peek's output wants: the width FIT_SHARE of its lines (plain text, escapes already
+ *  dropped) fit in, so a few outliers do not stretch it. */
+export function textColumns(lines: string[]): number {
+    if (lines.length === 0) {
+        return 0;
+    }
+    const widths = lines.map(columnsOf).sort((a, b) => a - b);
+    return widths[Math.ceil(widths.length * FIT_SHARE) - 1];
+}
+
+/** Pure: the peek's width for `columns` of monospace text, `charPx` wide each, with `chromePx` of padding, gutter and
+ *  scrollbar around them; never under PEEK_MIN_WIDTH_PX. The screen's edge caps it where it is drawn. */
+export function peekWidthPx(columns: number, charPx: number, chromePx: number): number {
+    return Math.max(PEEK_MIN_WIDTH_PX, Math.ceil(columns * charPx + chromePx));
+}
+
 /** Pure: the task a peek names, by its agent and task id; undefined when the peek is closed or the agent no longer
  *  holds the task. An ended task is still found, so its peek can say how it ended. */
 export function peekedTask(

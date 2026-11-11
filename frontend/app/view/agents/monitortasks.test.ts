@@ -16,9 +16,41 @@ import {
     monitorTimeLeft,
     OUTPUT_MAX_CHARS,
     outputTail,
+    PEEK_MIN_WIDTH_PX,
     peekedTask,
+    peekWidthPx,
+    textColumns,
 } from "./monitortasks";
 import type { BackgroundTask } from "./transcriptprojection";
+
+describe("textColumns", () => {
+    it("is 0 with no lines", () => {
+        expect(textColumns([])).toBe(0);
+    });
+
+    it("is the widest line when every line counts", () => {
+        expect(textColumns(["ab", "abcdef", "abc"])).toBe(6);
+    });
+
+    it("counts a tab to the next multiple of 8", () => {
+        expect(textColumns(["ab\tc"])).toBe(9);
+    });
+
+    it("lets a few outlier lines past it: the width most lines fit", () => {
+        const lines = [...Array.from({ length: 19 }, () => "x".repeat(80)), "y".repeat(400)];
+        expect(textColumns(lines)).toBe(80);
+    });
+});
+
+describe("peekWidthPx", () => {
+    it("never goes below the peek's own width", () => {
+        expect(peekWidthPx(10, 7, 32)).toBe(PEEK_MIN_WIDTH_PX);
+    });
+
+    it("fits the columns, the chrome around them, rounded up", () => {
+        expect(peekWidthPx(80, 6.9, 32)).toBe(Math.ceil(80 * 6.9 + 32));
+    });
+});
 
 const NOW = Date.parse("2026-10-27T10:00:00.000Z");
 const MIN = 60_000;

@@ -149,6 +149,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A run holds far less RAM: a task's worker stops once it hands its commit to review, and its reviewer once its
   verdict is in, instead of both idling at their prompt (~1.5 GB each) until the lane landed. Pausing a run now stops
   those idle sessions too.
+### Changed
+
+- A background command that left a server running is named in the Agent tree by the server and its port
+  (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
+- The peek of a background command or Monitor widens to fit its output, up to the edge of the window, so a wide build
+  log no longer wraps every line.
 
 ## 1.0.6 — 2026-11-10
 
