@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's question card goes once answered, and Send queues behind it: in a real Claude agent's Chat
+  (installed build, so wavesrv has `pkg/agentperm`'s change) have it call AskUserQuestion → the "Wants to use
+  AskUserQuestion" card shows and the box says "Answer the permission prompt first · Send queues your message"; type a
+  message and Enter → "Queued · sends once you answer". Answer on the cockpit card (not in the terminal) → the card is
+  gone by the agent's next tool, and the queued message is typed in by itself (826c542d6).
+
 - [ ] (arcterm) Chat folds no reply by default: in a Claude agent's Chat with the skim button on, a reply over 10
   lines draws in full with its highlighted sentences and no Show more; Settings → Appearance → Chat → Fold long replies
   on folds it again, off unfolds it (`chatskimstore.ts` chatFoldOnAtom, `chat.fold` in localStorage).
