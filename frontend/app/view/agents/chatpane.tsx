@@ -53,7 +53,8 @@ import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 // Send now's key in the chat box (chatpending.ts isSendNowKey), as its button shows it
-const SEND_NOW_CHORD = isMacOS() ? "⌘↵" : "Ctrl+↵";
+// read per render: at module load setPlatform has not run yet, so the platform still reads as macOS (⌘↵ on Windows)
+const sendNowChord = () => (isMacOS() ? "⌘↵" : "Ctrl+↵");
 
 const NO_ENTRIES: AgentEntry[] = [];
 
@@ -120,6 +121,7 @@ function PendingCommand({
 function PendingBubble({ text, queued, onSendNow }: { text: string; queued: boolean; onSendNow?: () => void }) {
     const said = splitAttachments(text);
     const body = said.text.trim();
+    const chord = sendNowChord();
     return (
         <div data-chat-pending className="flex flex-col items-end gap-1">
             {body !== "" || said.images.length > 0 ? (
@@ -140,11 +142,11 @@ function PendingBubble({ text, queued, onSendNow }: { text: string; queued: bool
                         type="button"
                         data-chat-send-now
                         onClick={onSendNow}
-                        title={`Send it now (${SEND_NOW_CHORD} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
+                        title={`Send it now (${chord} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
                         className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-secondary hover:text-primary"
                     >
                         Send now
-                        <kbd className="font-sans text-[10.5px] text-muted">{SEND_NOW_CHORD}</kbd>
+                        <kbd className="font-sans text-[10.5px] text-muted">{chord}</kbd>
                     </button>
                 ) : null}
             </div>

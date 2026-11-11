@@ -12,8 +12,18 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 )
+
+// askTool is Claude Code's question tool, whose permission prompt is the question dialog. Nothing the queue usually
+// listens for retires it: the cockpit's ask card can answer it with no key typed into the terminal, the arc mod skips
+// the PostToolUse of a question that card raced, and the answers ride back in the tool's input, so a PostToolUse key
+// built from it would not match the raise. The transcript says when it is over (NoteStatus).
+const askTool = "AskUserQuestion"
+
+// askOpen is indirected so tests need no transcript on disk.
+var askOpen = agentobserve.AskOpen
 
 // ErrNotPending is the refusal of an answer whose request is not the head of the queue (or is gone): the TUI has
 // moved past the card the person clicked, so nothing is typed.
@@ -45,6 +55,10 @@ func Answerable(toolName string) bool {
 // re-marshalled, which sorts every object's keys, so key order and whitespace do not change the key; an input that
 // does not parse is hashed as it came. `wsh agent-hook` calls this for both events, so the two sides cannot drift.
 func ToolKey(toolName string, toolInput json.RawMessage) string {
+	if toolName == askTool {
+		// its PostToolUse input carries the answers its raise did not; an agent asks one question at a time
+		return askTool
+	}
 	canon := []byte(toolInput)
 	if len(bytes.TrimSpace(toolInput)) == 0 {
 		// no input at all is null once it has crossed the wire (a nil RawMessage marshals as null), so the raise
@@ -236,6 +250,36 @@ func (r *Registry) NoteToolDone(oref, key string) bool {
 	return false
 }
 
+// HasTool reports whether oref's queue holds a request for toolName.
+func (r *Registry) HasTool(oref, toolName string) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	for _, e := range r.queues[oref] {
+		if e.req.ToolName == toolName {
+			return true
+		}
+	}
+	return false
+}
+
+// DropTool drops every request for toolName from oref's queue, and reports whether any was waiting.
+func (r *Registry) DropTool(oref, toolName string) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	q := r.queues[oref]
+	rest := make([]entry, 0, len(q))
+	for _, e := range q {
+		if e.req.ToolName != toolName {
+			rest = append(rest, e)
+		}
+	}
+	if len(rest) == len(q) {
+		return false
+	}
+	r.setQueueLocked(oref, rest)
+	return true
+}
+
 func (r *Registry) setQueueLocked(oref string, q []entry) {
 	if len(q) == 0 {
 		delete(r.queues, oref)
@@ -245,8 +289,9 @@ func (r *Registry) setQueueLocked(oref string, q []entry) {
 }
 
 // NoteStatus applies one agent status report to the global queue: a Stop, UserPromptSubmit or SessionStart drops
-// everything (the turn the prompts belonged to is over or replaced), and a report carrying a tool key retires the
-// request of the tool that just ran. It reports whether the queue changed.
+// everything (the turn the prompts belonged to is over or replaced), a report carrying a tool key retires the
+// request of the tool that just ran, and a tool report while a question waits retires the question once the
+// transcript holds its answer. It reports whether the queue changed.
 func NoteStatus(data *baseds.AgentStatusData) bool {
 	if data == nil || data.ORef == "" {
 		return false
@@ -255,10 +300,28 @@ func NoteStatus(data *baseds.AgentStatusData) bool {
 	case baseds.AgentHook_Stop, baseds.AgentHook_UserPromptSubmit, baseds.AgentHook_SessionStart:
 		return GlobalRegistry.DropAll(data.ORef)
 	}
+	changed := false
 	if data.ToolKey != "" {
-		return GlobalRegistry.NoteToolDone(data.ORef, data.ToolKey)
+		changed = GlobalRegistry.NoteToolDone(data.ORef, data.ToolKey)
 	}
-	return false
+	if askAnswered(data) {
+		changed = GlobalRegistry.DropTool(data.ORef, askTool) || changed
+	}
+	return changed
+}
+
+// askAnswered reports whether a tool report shows the question oref's queue holds is over: the agent is running
+// tools again and its transcript has no question left without a result. Claude Code writes a call's tool_use before
+// any of its hooks run, so the question is in the transcript while its dialog is up.
+func askAnswered(data *baseds.AgentStatusData) bool {
+	if data.Hook != baseds.AgentHook_PreToolUse && data.Hook != baseds.AgentHook_PostToolUse {
+		return false
+	}
+	if data.TranscriptPath == "" || !GlobalRegistry.HasTool(data.ORef, askTool) {
+		return false
+	}
+	open, err := askOpen(data.TranscriptPath)
+	return err == nil && !open
 }
 
 // NoteKey applies one input typed into an agent's terminal to the global queue: a single 1-9 or Enter answers the

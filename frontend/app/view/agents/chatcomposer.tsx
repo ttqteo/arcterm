@@ -45,8 +45,8 @@ import { localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
-import { isSendNowKey, pendsAsBubble, recall, sendHold } from "./chatpending";
-import { addPending, dropPending, noteSent, sentHistory } from "./chatpendingstore";
+import { holdLine, isSendNowKey, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
+import { addPending, dropPending, noteSent, sentHistory, setHeldSend, useHeldSend } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
@@ -293,10 +293,15 @@ export function ChatComposer({
     );
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
     const blocker = asleep ? null : attachmentBlocker(att.attachments);
-    // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits
+    // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits. Send
+    // then queues the message (`held`, kept per agent while the box unmounts for the terminal), and it goes by itself
+    // once the prompt is answered.
     const permission = usePermission(agent.blockId != null ? `block:${agent.blockId}` : undefined);
     const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
-    const sendable = canSend && blocker == null && hold == null;
+    const held = useHeldSend(agent.id);
+    const ready = canSend && blocker == null;
+    const sendable = ready && hold == null;
+    const holdText = holdLine(hold, held);
     // a bare /model, /config… draws a menu on Claude Code's own screen: show that screen to answer it
     const flipIfTui = (sent: string) => {
         if (opensTui(sent, slash.commands)) {
@@ -313,6 +318,10 @@ export function ChatComposer({
             noteSent(agent.id, local.command);
             setTextAt("");
             onLocal(local);
+            return;
+        }
+        if (hold != null && ready) {
+            setHeldSend(agent.id, true);
             return;
         }
         if (!sendable) {
@@ -351,6 +360,15 @@ export function ChatComposer({
             submit();
         }
     }, [text]);
+    // the queued message goes as soon as its prompt is answered; a box emptied meanwhile has nothing left to queue
+    useEffect(() => {
+        if (releasesHeld(held, hold, sendable)) {
+            setHeldSend(agent.id, false);
+            submit();
+        } else if (held && !waking && text.trim() === "" && att.attachments.length === 0) {
+            setHeldSend(agent.id, false);
+        }
+    }, [held, hold, sendable, text, att.attachments.length]);
     // The + menu's MCP servers and Plugins rows: a one-line command typed into the terminal, as the send path types it
     // (useAgentSend), without touching the box's own text or its attachments. It waits behind a permission prompt or a
     // question as Send does.
@@ -489,6 +507,31 @@ export function ChatComposer({
             onDrop={onDrop}
             className="mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border border-edge-mid bg-surface-raised px-3 py-[10px] transition-colors duration-[140ms] focus-within:border-edge-strong motion-reduce:transition-none"
         >
+            {/* a prompt holds the send: says so in the box itself (a disabled Send said it only in its tooltip), and once
+                Send was pressed, that the message waits for the answer */}
+            {holdText != null ? (
+                <div
+                    data-chat-hold={held ? "queued" : "waiting"}
+                    role="status"
+                    className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted"
+                >
+                    <span
+                        aria-hidden
+                        className={cn("h-[6px] w-[6px] flex-none rounded-full bg-asking", held && "pulse-dot")}
+                    />
+                    <span className="min-w-0 truncate">{holdText}</span>
+                    {held ? (
+                        <button
+                            type="button"
+                            data-chat-hold-cancel
+                            onClick={() => setHeldSend(agent.id, false)}
+                            className="ml-auto flex-none cursor-pointer text-accent-soft hover:underline"
+                        >
+                            Cancel
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
             {asleep ? null : <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />}
             {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
             {bash ? (
@@ -693,10 +736,19 @@ export function ChatComposer({
                     <button
                         type="button"
                         data-chat-send
-                        title={hold ?? blocker ?? (bash ? "Run in the agent's shell" : "Send")}
-                        aria-label={hold ?? (showWord ? undefined : "Send")}
+                        title={
+                            blocker ??
+                            (hold != null
+                                ? held
+                                    ? "Queued: sends once you answer"
+                                    : `${hold}: Send queues your message until then`
+                                : bash
+                                  ? "Run in the agent's shell"
+                                  : "Send")
+                        }
+                        aria-label={hold != null ? "Queue" : showWord ? undefined : "Send"}
                         onClick={submit}
-                        disabled={!sendable}
+                        disabled={!ready || held}
                         style={turnTransition}
                         className={cn(
                             "relative flex h-[30px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-[8px] bg-accent text-background transition-[width] hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:cursor-default disabled:opacity-40 disabled:hover:opacity-40 motion-reduce:transition-none",
