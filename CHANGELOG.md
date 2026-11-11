@@ -28,6 +28,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - An agent can reopen a past conversation for you: `wsh ui reveal session:<id>` opens it in a tab, as Resume in
   Conversation History does, and `wsh agents send` then wakes it with a message.
+- Chat answers `/usage`, `/cost`, `/context`, `/tasks`, `/stats`, `/skills`, `/help` and `/status` itself: a card under
+  the conversation with your plan windows and the session's cost, how full the context is (with Compact now), the
+  background tasks and subagents (Stop, see the output, open a subagent), your token totals, the commands to pick from,
+  and the agent's model, account and session. They work on a sleeping agent too, and each card offers the real panel
+  in the Terminal. `/diff` opens the Diff surface on the agent. <!-- big -->
+- Skim in Chat folds a long reply as it does in the terminal: its verdict and the sentences Claude marked (or its top
+  reasons), then Show more with the reply's length to read it all. The Skim button turns it off with the highlights.
 - `wsh council bench` also measures Arc's brainstorm skill, and its results table is split into Review and Brainstorm.
 - A goal meter for Claude Code's `/goal`: above Chat's box and above the prompt in the terminal, the goal, a mark for
   each check Claude's evaluator made, how long it has run, and Goal met or stopped with its counts; the evaluator's
@@ -46,6 +53,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Claude sessions arcterm's runs, verify checks and background passes leave behind move to
   `~/.arc/archive/claude-sessions` once their worktree is gone, so Claude Desktop no longer lists hundreds of worker
   sessions as projects; arcterm's history, run usage and token stats still read them there.
+- A bare `/theme`, `/privacy-settings` or another command whose panel only Claude Code's own screen draws now flips
+  Chat to the Terminal, as `/model` does, instead of leaving a card waiting until you went there yourself.
 - A Claude agent that stays awake and idle is compacted by Claude Code's own idle compaction, which arcterm now
   starts at your Compact threshold (100k unless you changed it) instead of Claude's 200k; arcterm compacts only the
   agents it puts to sleep, so the two never compact the same agent. It applies to agents started after the update.

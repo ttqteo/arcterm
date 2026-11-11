@@ -193,14 +193,15 @@ export function insertSlash(text: string, caret: number, name: string): { text: 
     };
 }
 
-/** Pure: whether sending `text` makes Claude Code draw a menu to answer on its own screen: exactly one `/command`
- *  (no argument) that the list marks `tui`. */
+/** Pure: whether sending `text` makes Claude Code draw a menu or a panel on its own screen, which Chat cannot show:
+ *  exactly one `/command` (no argument) that the list marks `tui`, or a built-in panel (PANEL_NAMES). The panels Chat
+ *  answers itself (chatlocal.ts) never reach the send. */
 export function opensTui(text: string, all: SlashCommand[]): boolean {
     const found = /^\/([^\s]+)$/u.exec(text.trim());
     if (found == null) {
         return false;
     }
-    return all.some((c) => c.name === found[1] && c.tui === true);
+    return opensPanel(found[1]) || all.some((c) => c.name === found[1] && c.tui === true);
 }
 
 /** Pure: the built-ins, then the fetched skills and commands that no built-in already names. A source the list does

@@ -41,6 +41,8 @@ import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
+import { localCommand, type LocalRoute } from "./chatlocal";
+import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
@@ -96,6 +98,7 @@ export function ChatComposer({
     dataAttrs,
     entries,
     onSent,
+    onLocal,
 }: {
     agent: AgentVM;
     placeholder: string;
@@ -105,6 +108,9 @@ export function ChatComposer({
     /** called as soon as a message is taken (a wake send too), before its pending bubble is added: the chat scrolls to
      *  the end, so the bubble lands in view even when the reader had scrolled up */
     onSent?: () => void;
+    /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
+     *  every command is sent. */
+    onLocal?: (route: LocalRoute) => void;
     /** extra data attributes on the box: the sleeping overlay keeps `data-sleeping-composer` there */
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
@@ -259,6 +265,17 @@ export function ChatComposer({
                     latest.current.setText(cur.trim() ? cur.replace(/\s+$/, "") + "\n" + added : added);
                     return true;
                 },
+                replace: (t) => {
+                    const box = editorRef.current;
+                    if (box == null || box.readOnly) {
+                        return false;
+                    }
+                    recalled.current = { at: null, shown: "" };
+                    caretAfter.current = t.length;
+                    latest.current.setText(t, t.length);
+                    box.focus({ preventScroll: true });
+                    return true;
+                },
             }),
         [agent.id]
     );
@@ -275,6 +292,17 @@ export function ChatComposer({
         }
     };
     const submit = () => {
+        // a bare /usage, /tasks… is Chat's to answer (chatlocal.ts): nothing goes to the agent, so it needs no process
+        // and wakes no sleeping one, and the attachments stay for the next message
+        const local = onLocal != null && att.attachments.length === 0 ? localCommand(text) : null;
+        if (local != null && !waking) {
+            onSent?.();
+            recalled.current = { at: null, shown: "" };
+            noteSent(agent.id, local.command);
+            setTextAt("");
+            onLocal(local);
+            return;
+        }
         if (!sendable) {
             return;
         }
@@ -287,6 +315,8 @@ export function ChatComposer({
             if (bash) {
                 noteBashRun(cwd, text.slice(1).trim());
             }
+            // going on closes Chat's own cards, as a panel on Claude Code's screen closes
+            clearLocalCards(agent.id);
             if (!asleep) {
                 // a /command is no bubble of yours: the transcript draws it as a command row, which would leave the
                 // pending bubble up beside it for minutes. A /btw and a bare panel command are: nothing of them lands

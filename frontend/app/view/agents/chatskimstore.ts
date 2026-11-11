@@ -4,7 +4,8 @@
 // Skim highlights in Chat, the state half (chatskim.ts is the pure half). Two module-level atoms, as every surface but
 // Agent unmounts on a switch: the marks the skim mod keeps, read from its plugin store file with the file commands the
 // other stores here use (no wshrpc command of its own), and Chat's own highlight toggle, global and remembered in
-// localStorage `chat.skim` (on unless it says false). The toggle does not type /skim into the agent: that is the
+// localStorage `chat.skim` (on unless it says false), which also folds a long reply as the skim mod does in the terminal
+// (useSkimFold; which replies are opened is a third atom). The toggle does not type /skim into the agent: that is the
 // terminal's fold and dim, per session, and a command typed from a display toggle would add a row to the conversation.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -12,7 +13,8 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { base64ToString, makeConnRoute } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
-import { hashText, marksByHash, parseSkimOn, sameMarks, skimStoreFiles } from "./chatskim";
+import { useMemo } from "react";
+import { chatFold, hashText, marksByHash, parseSkimOn, sameMarks, skimStoreFiles } from "./chatskim";
 import { homeDir } from "./pathlinkroute";
 
 const STORAGE_KEY = "chat.skim";
@@ -51,6 +53,32 @@ export function useSkimMarks(text: string): string[] {
     const on = useAtomValue(chatSkimOnAtom);
     const all = useAtomValue(marksAtom);
     return on ? (all.get(hashText(text)) ?? NO_MARKS) : NO_MARKS;
+}
+
+// the long replies opened in full, by the hash of their text; session-only, and shared by every agent's Chat so a reply
+// stays open when its cell is switched away and back
+const openedAtom = atom<ReadonlySet<string>>(new Set<string>());
+
+/** A prose part as Chat draws it with skim on: folded (chatFold) until it is opened, with the marks to highlight. */
+export function useSkimFold(text: string): {
+    marks: string[];
+    fold: { short: string; lines: number } | null;
+    open: boolean;
+    toggle: () => void;
+} {
+    const on = useAtomValue(chatSkimOnAtom);
+    const marks = useSkimMarks(text);
+    const opened = useAtomValue(openedAtom);
+    const hash = hashText(text);
+    const fold = useMemo(() => chatFold(text, marks, on), [text, marks, on]);
+    const toggle = () => {
+        const next = new Set(globalStore.get(openedAtom));
+        if (!next.delete(hash)) {
+            next.add(hash);
+        }
+        globalStore.set(openedAtom, next);
+    };
+    return { marks, fold, open: opened.has(hash), toggle };
 }
 
 // a read that failed warns once per distinct message, so a machine with no skim mod does not log on every append

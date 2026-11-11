@@ -90,6 +90,10 @@ describe("opensTui", () => {
         expect(opensTui("/model", all)).toBe(true);
         expect(opensTui("/model\n", all)).toBe(true);
     });
+    it("is true for a bare panel command, even one no list carries", () => {
+        expect(opensTui("/theme", all)).toBe(true);
+        expect(opensTui("/privacy-settings", [])).toBe(true);
+    });
     it("is false with an argument, or for a command that prints", () => {
         expect(opensTui("/model opus", all)).toBe(false);
         expect(opensTui("/compact", all)).toBe(false);

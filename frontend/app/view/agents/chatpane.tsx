@@ -21,6 +21,7 @@ import { Highlighter } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
@@ -30,6 +31,8 @@ import { ChatConversation } from "./chatconversation";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
+import { ChatLocalCard } from "./chatlocalcards";
+import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
@@ -175,7 +178,8 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 }
 
 // Chat's skim toggle, in the pane's top-right corner over the scroller: whether the sentences the skim mod marked draw
-// highlighted (chatskimstore.ts). It is Chat's own and global; the terminal's /skim is a separate, per-session fold.
+// highlighted and a long reply folds to them (chatskimstore.ts). It is Chat's own and global; the terminal's /skim is a
+// separate, per-session fold.
 function SkimToggle() {
     const [on, setOn] = useAtom(chatSkimOnAtom);
     return (
@@ -183,8 +187,8 @@ function SkimToggle() {
             type="button"
             data-chat-skim-toggle
             aria-pressed={on}
-            aria-label="Skim highlights"
-            title={`Skim highlights in Chat: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
+            aria-label="Skim"
+            title={`Skim in Chat, highlights and long replies folded: ${on ? "on (click to turn off)" : "off (click to turn on)"}`}
             onClick={() => setOn(!on)}
             className={cn(
                 "absolute right-3 top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
@@ -262,6 +266,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
+    // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
+    const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
     // message at once
     const blockid = agent.blockId;
@@ -357,6 +363,15 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 )
                             )}
                         </AgentPathLinks>
+                        {localCards.map((c) => (
+                            <ChatLocalCard
+                                key={c.id}
+                                model={model}
+                                agent={agent}
+                                card={c}
+                                onClose={() => closeLocalCard(agent.id, c.id)}
+                            />
+                        ))}
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}
@@ -405,6 +420,13 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     agent={agent}
                     entries={entries}
                     onSent={jumpToBottom}
+                    onLocal={(route) => {
+                        if ("open" in route) {
+                            openDiff(model, agentDiffScope(agent.id, agent.name));
+                        } else {
+                            showLocalCard(agent.id, route.panel, route.command);
+                        }
+                    }}
                     placeholder={
                         asleep
                             ? `message ${agent.name} to wake it… (Enter)`

@@ -48,6 +48,8 @@ export interface ChatBox {
     text(): string;
     submit(text: string): boolean;
     append(text: string): boolean;
+    /** the box's whole text becomes `text`, the caret at its end, and the box takes the focus */
+    replace(text: string): boolean;
 }
 
 const boxes = new Map<string, ChatBox>();
@@ -70,6 +72,11 @@ export function chatBoxText(agentId: string): string {
 // false when the agent has no chat box mounted, or the box would not take it
 export function submitIntoChatBox(agentId: string, text: string): boolean {
     return boxes.get(agentId)?.submit(text) ?? false;
+}
+
+// false when the agent has no chat box mounted, or the box would not take it
+export function replaceChatBox(agentId: string, text: string): boolean {
+    return boxes.get(agentId)?.replace(text) ?? false;
 }
 
 // false when the agent has no chat box mounted, or the box would not take it
