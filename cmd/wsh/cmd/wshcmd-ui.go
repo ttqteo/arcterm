@@ -42,8 +42,14 @@ var uiActionsCmd = &cobra.Command{
 }
 
 var uiRevealCmd = &cobra.Command{
-	Use:     "reveal <address>",
-	Short:   "take the user to run:<id> channel:<id> agent:<tabid> task:<id> effort:<id> radarreport:<id> surface:<key> canvas:<topic>[/<board>] brainstorm:<topic>, or show memnote:<id> in the avatar popup",
+	Use:   "reveal <address>",
+	Short: "take the user to run:<id> channel:<id> agent:<tabid> task:<id> effort:<id> radarreport:<id> surface:<key> canvas:<topic>[/<board>] brainstorm:<topic>, reopen session:<id>, or show memnote:<id> in the avatar popup",
+	Long: `take the user to run:<id> channel:<id> agent:<tabid> task:<id> effort:<id> radarreport:<id> surface:<key>
+canvas:<topic>[/<board>] brainstorm:<topic>, or show memnote:<id> in the avatar popup.
+
+session:<id> reopens a past conversation (its session id, or a unique prefix of one) in a tab of its own, as its
+Resume in Conversation History does: asleep when its harness can sleep, or the tab that already holds it. It prints
+"Opened "<title>" as agent:<tabid>"; hand that tab a message with 'wsh agents send <tabid> <text>', which wakes it.`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    uiRevealRun,

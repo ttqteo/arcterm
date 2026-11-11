@@ -21,7 +21,10 @@ export type OpenTarget =
     // a workflow scan's run: its live agent, else the run's own sheet (openref.ts)
     | { kind: "workflowscan"; runId: string }
     // a council, opened on its Discussion (openref.ts)
-    | { kind: "council"; councilId: string };
+    | { kind: "council"; councilId: string }
+    // a past conversation, by its session id or a unique prefix of one: reopened in a tab of its own, as its
+    // Resume does (openref.ts). Not a transcript path: a Windows path holds ":"
+    | { kind: "session"; sessionId: string };
 
 export type Unsupported = { kind: "unsupported"; message: string };
 
@@ -76,6 +79,8 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
             return { kind: "council", councilId: id };
         case "workflowscan":
             return { kind: "workflowscan", runId: id };
+        case "session":
+            return { kind: "session", sessionId: id };
         default:
             return { kind: "unsupported", message: CANNOT_OPEN };
     }

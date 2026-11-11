@@ -22,7 +22,7 @@ import { backgroundAttachCommand, type AgentVM, type PendingLaunch } from "@/app
 import { backgroundAgentsAtom } from "@/app/view/agents/backgroundagentsstore";
 import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, type Runtime } from "@/app/view/agents/launch";
-import { archivedSession, nextToReopen, recentlyClosedAtom } from "@/app/view/agents/recentlyclosed";
+import { archivedSession, nextToReopen, recentlyClosedAtom, sessionById } from "@/app/view/agents/recentlyclosed";
 import {
     loadSessionsArchive,
     sessionHolder,
@@ -294,6 +294,27 @@ export async function reopenClosedAgent(model: AgentsViewModel): Promise<void> {
 // gone to (resumeOf). The resume command comes from the sessions archive, rescanned first so a conversation that just
 // ended is on it. `name` words the toast when it cannot (empty: the session's own title). Mod+Shift+T and a closed
 // council chat seat (its name, avatar or chip) both open a session this way.
+// Open the session with this id (or a unique prefix of it) again, as reopenSession does: asleep when its harness can
+// sleep, in the tab that already holds it when one does. Gives the tab, or why it could not, for `wsh ui reveal
+// session:<id>`, whose caller then hands the tab a message with `wsh agents send`, which wakes it.
+export async function reopenSessionById(
+    model: AgentsViewModel,
+    id: string
+): Promise<{ tabId: string; title: string } | { error: string }> {
+    await loadSessionsArchive();
+    const found = sessionById(globalStore.get(sessionsArchiveAtom), id);
+    if ("error" in found) {
+        return found;
+    }
+    const session = found.session;
+    const title = session.task?.trim() || session.id;
+    if (!session.resumecommand) {
+        return { error: `"${title}" can't be resumed` };
+    }
+    const tabId = await launchAgent(model, reopenLaunchOpts(session, SLEEPABLE_AGENTS.has(session.runtime)));
+    return { tabId, title };
+}
+
 export async function reopenSession(model: AgentsViewModel, transcriptPath: string, name = ""): Promise<void> {
     await loadSessionsArchive();
     const session = archivedSession(globalStore.get(sessionsArchiveAtom), transcriptPath);

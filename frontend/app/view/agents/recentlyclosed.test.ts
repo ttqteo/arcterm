@@ -8,6 +8,7 @@ import {
     nextToReopen,
     pushClosed,
     RECENTLY_CLOSED_MAX,
+    sessionById,
     type ClosedAgent,
 } from "./recentlyclosed";
 
@@ -74,5 +75,32 @@ describe("archivedSession", () => {
         const here = { id: "2", transcriptpath: "C:\\u\\.claude\\projects\\d--thesis\\953f.jsonl" } as SessionActivity;
         const other = { id: "3", transcriptpath: "C:\\u\\.claude\\projects\\d--thesis\\aaaa.jsonl" } as SessionActivity;
         expect(archivedSession([other, here], "/Users/me/.claude/projects/-Users-me-thesis/953f.jsonl")).toBe(here);
+    });
+});
+
+describe("sessionById", () => {
+    const a = { id: "c0781a87-db5e-4b73-8913-4ca9eb9a8f2c", runtime: "claude" } as SessionActivity;
+    const b = { id: "c0781b00-0000-0000-0000-000000000000", runtime: "claude" } as SessionActivity;
+    const p = { id: "4a6bddd7-0000-0000-0000-000000000000", runtime: "pi" } as SessionActivity;
+
+    it("finds a session by its full id, ignoring case", () => {
+        expect(sessionById([a, b, p], "C0781A87-DB5E-4B73-8913-4CA9EB9A8F2C")).toEqual({ session: a });
+    });
+
+    it("finds one by a unique prefix, as wsh agents takes a tab", () => {
+        expect(sessionById([a, b, p], "4a6b")).toEqual({ session: p });
+        expect(sessionById([a, b, p], "c0781a")).toEqual({ session: a });
+    });
+
+    it("says when a prefix names more than one, or none", () => {
+        expect(sessionById([a, b, p], "c078")).toEqual({ error: 'more than one conversation starts with "c078"' });
+        expect(sessionById([a, b, p], "ffff")).toEqual({ error: 'no conversation "ffff" in Conversation History' });
+        expect(sessionById(null, "c078")).toEqual({ error: 'no conversation "c078" in Conversation History' });
+    });
+
+    it("takes a full id over a longer id it prefixes", () => {
+        const short = { id: "abc", runtime: "pi" } as SessionActivity;
+        const long = { id: "abcd", runtime: "claude" } as SessionActivity;
+        expect(sessionById([long, short], "abc")).toEqual({ session: short });
     });
 });

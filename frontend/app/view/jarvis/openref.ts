@@ -9,6 +9,7 @@
 // that cannot open says why and leaves the user where they were — a silent no-op is the failure this module
 // exists to remove.
 
+import { reopenSessionById } from "@/app/cockpit/cockpit-actions";
 import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/global";
@@ -62,6 +63,7 @@ type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
 type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
 type WorkflowScanTarget = Extract<OpenTarget, { kind: "workflowscan" }>;
 type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
+type SessionTarget = Extract<OpenTarget, { kind: "session" }>;
 type Caller = AddressHint["caller"];
 
 const OK: OpenResult = { ok: true };
@@ -105,6 +107,8 @@ function targetName(target: OpenTarget): string {
             return `workflow scan ${target.runId}`;
         case "council":
             return `council ${target.councilId}`;
+        case "session":
+            return `conversation ${target.sessionId}`;
     }
 }
 
@@ -167,7 +171,8 @@ export function isPeekable(target: OpenTarget): boolean {
         target.kind !== "brainstorm" &&
         target.kind !== "memhygiene" &&
         target.kind !== "workflowscan" &&
-        target.kind !== "council"
+        target.kind !== "council" &&
+        target.kind !== "session"
     );
 }
 
@@ -189,7 +194,8 @@ export async function peekTarget(
         target.kind === "brainstorm" ||
         target.kind === "memhygiene" ||
         target.kind === "workflowscan" ||
-        target.kind === "council"
+        target.kind === "council" ||
+        target.kind === "session"
     ) {
         return openTarget(model, target, report);
     }
@@ -310,7 +316,22 @@ async function land(
         }
         case "council":
             return selectCouncil(model, target);
+        case "session":
+            return openSession(model, target, current);
     }
+}
+
+// A past conversation opens again in a tab of its own, as its Resume does (cockpit-actions reopenSessionById). The
+// notice names the tab as an address, so `wsh ui reveal session:<id>` can hand it a message next.
+async function openSession(model: AgentsViewModel, target: SessionTarget, current: () => boolean): Promise<OpenResult> {
+    const opened = await reopenSessionById(model, target.sessionId);
+    if (!current()) {
+        return SUPERSEDED;
+    }
+    if ("error" in opened) {
+        return unavailable(opened.error);
+    }
+    return { ok: true, notice: `Opened "${opened.title}" as agent:${opened.tabId}` };
 }
 
 async function select<T>(load: Loaded<T>, write: (facts: T) => OpenResult | Promise<OpenResult>): Promise<OpenResult> {
@@ -325,7 +346,7 @@ async function peek(
     model: AgentsViewModel,
     target: Exclude<
         OpenTarget,
-        CanvasTarget | BrainstormTarget | MemHygieneTarget | WorkflowScanTarget | CouncilTarget
+        CanvasTarget | BrainstormTarget | MemHygieneTarget | WorkflowScanTarget | CouncilTarget | SessionTarget
     >,
     current: () => boolean
 ): Promise<OpenResult> {
