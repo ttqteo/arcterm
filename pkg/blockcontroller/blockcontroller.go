@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
@@ -618,6 +619,10 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 		// claude starts fullscreen when its settings say so, which a Windows block kill otherwise trips off (claudetui.go)
 		cwd := wavebase.ExpandHomeDirSafe(blockMeta.GetString(waveobj.MetaKey_CmdCwd, ""))
 		maps.Copy(token.Env, claudeTuiEnv(os.LookupEnv, claudeConfigDir(), cwd))
+		// Claude Code's own idle compaction starts at the person's threshold: it compacts an awake agent before its
+		// cache goes cold, and arcterm compacts only the one it puts to sleep (agentsleep/config.go)
+		sleepSettings := agentsleep.FromConfig(wconfig.GetWatcher().GetFullConfig().Settings)
+		maps.Copy(token.Env, agentsleep.IdleCompactEnv(sleepSettings, os.LookupEnv))
 	}
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
 	if err != nil {

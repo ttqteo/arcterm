@@ -5,7 +5,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
-import { CHAT_RENDER_STEP, chatItems, shownItems, workingLine, workingText, type ChatItem } from "./chatmodel";
+import {
+    bashMode,
+    canSendNow,
+    CHAT_RENDER_STEP,
+    chatItems,
+    SEND_NOW_KEYS,
+    shownItems,
+    turnStatsLabel,
+    workingLine,
+    workingText,
+    type ChatItem,
+} from "./chatmodel";
 
 // the engine's own texts, written by pkg/orchestrate's TestViewModFixtures (the arc view mod reads them the same way)
 const TESTDATA = fileURLToPath(new URL("../../../../claude/arc-view-mod/testdata/", import.meta.url));
@@ -115,6 +126,60 @@ describe("chatItems", () => {
             { kind: "you", key: expect.any(String), command: "/review PR #402" },
             { kind: "you", key: expect.any(String), command: "/clear" },
             { kind: "you", key: expect.any(String), command: "/brainstorming design x" },
+        ]);
+    });
+
+    it("turns a bash-mode command you ran into a 'you' carrying the command and, once it lands, its output", () => {
+        const items = chatItems([
+            { kind: "command", name: "!", args: "task install", shell: { output: "done", error: "" } },
+            { kind: "command", name: "!", args: "sleep 60" },
+        ]);
+        expect(items).toEqual([
+            { kind: "you", key: expect.any(String), command: "! task install", shell: { output: "done", error: "" } },
+            { kind: "you", key: expect.any(String), command: "! sleep 60" },
+        ]);
+    });
+
+    it("carries a slash command's output, and says a panel that left nothing to show opened in the terminal", () => {
+        const items = chatItems([
+            {
+                kind: "command",
+                name: "/goal",
+                args: "tests pass",
+                shell: { output: "Goal set: tests pass", error: "" },
+            },
+            { kind: "command", name: "/config", shell: { output: "Config dialog dismissed", error: "" } },
+            { kind: "command", name: "/usage" },
+            { kind: "command", name: "/model", shell: { output: "Set model to Opus", error: "" } },
+            { kind: "command", name: "/clear" },
+        ]);
+        expect(items).toEqual([
+            {
+                kind: "you",
+                key: expect.any(String),
+                command: "/goal tests pass",
+                shell: { output: "Goal set: tests pass", error: "" },
+            },
+            { kind: "you", key: expect.any(String), command: "/config", terminal: true },
+            { kind: "you", key: expect.any(String), command: "/usage", terminal: true },
+            {
+                kind: "you",
+                key: expect.any(String),
+                command: "/model",
+                shell: { output: "Set model to Opus", error: "" },
+            },
+            { kind: "you", key: expect.any(String), command: "/clear" },
+        ]);
+    });
+
+    it("carries a /btw's side answer, or why there is none, on its command", () => {
+        const items = chatItems([
+            { kind: "command", name: "/btw", args: "which file?", btw: { answer: "`a.ts`" } },
+            { kind: "command", name: "/btw", args: "why?", btw: { failure: "the reply was empty" } },
+        ]);
+        expect(items).toEqual([
+            { kind: "you", key: expect.any(String), command: "/btw which file?", btw: { answer: "`a.ts`" } },
+            { kind: "you", key: expect.any(String), command: "/btw why?", btw: { failure: "the reply was empty" } },
         ]);
     });
 
@@ -279,6 +344,50 @@ describe("keys", () => {
         const first = chatItems([you("go"), action("read")]);
         const later = chatItems([you("go"), action("read"), says("found it")]);
         expect(first.map((i) => i.key)).toEqual(later.map((i) => i.key));
+    });
+});
+
+describe("turnStatsLabel", () => {
+    const at = Date.parse("2026-11-10T14:30:00.000Z");
+
+    it("reads as the TUI's: how long the turn has run, then its output tokens", () => {
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 860 }, at + 34_000)).toBe("34s · ↓ 860 tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 3_140 }, at + 71_000)).toBe("1m 11s · ↓ 3.1k tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 12_600 }, at + 3_725_000)).toBe("1h 2m · ↓ 13k tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 1_250_000 }, at + 5_000)).toBe("5s · ↓ 1.3M tokens");
+    });
+
+    it("leaves out tokens before the first reply lands, and a time it cannot know", () => {
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 0 }, at + 3_000)).toBe("3s");
+        expect(turnStatsLabel({ startedAt: NaN, outputTokens: 42 }, at)).toBe("↓ 42 tokens");
+        expect(turnStatsLabel({ startedAt: at, outputTokens: 1 }, at + 2_000)).toBe("2s · ↓ 1 token");
+    });
+});
+
+describe("bashMode", () => {
+    it("is on when the box starts with !, as Claude Code's own box reads it", () => {
+        expect(bashMode("!")).toBe(true);
+        expect(bashMode("! ls -la")).toBe(true);
+        expect(bashMode("!git status")).toBe(true);
+    });
+
+    it("is off for text that only holds a ! later on, or starts with a space", () => {
+        expect(bashMode("")).toBe(false);
+        expect(bashMode("fix it!")).toBe(false);
+        expect(bashMode(" !ls")).toBe(false);
+        expect(bashMode("/clear")).toBe(false);
+    });
+});
+
+describe("send now", () => {
+    it("is Claude Code's ctrl+x ctrl+s chord, which every terminal sends as itself", () => {
+        expect([...SEND_NOW_KEYS].map((c) => c.charCodeAt(0))).toEqual([0x18, 0x13]);
+    });
+
+    it("is offered only while Claude works, not while a prompt holds the keys or it waits", () => {
+        expect(canSendNow("working")).toBe(true);
+        expect(canSendNow("asking")).toBe(false);
+        expect(canSendNow("idle")).toBe(false);
     });
 });
 

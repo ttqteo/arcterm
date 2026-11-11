@@ -195,7 +195,7 @@ export function buildRunPeek(input: PeekRunInput): PeekRunView {
     const goal = run.goal?.trim() ?? "";
     return {
         title,
-        status: runStatusView(run.status, run.land, run.pause?.by),
+        status: runStatusView(run.status, run.land, run.pause?.by, run.pause?.noautoresumeuntil),
         meta: runMeta(input),
         goal: goal !== "" && goal !== title ? goal : null,
         phases: staged ? [planPhase(group), reviewPhase(group), tasksPhase(group), finalPhase(group)] : null,

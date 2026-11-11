@@ -46,7 +46,13 @@ const (
 	AgentHook_Stop             = "Stop"
 	AgentHook_Notification     = "Notification"
 	AgentHook_SessionStart     = "SessionStart"
+	// AgentHook_StopFailure ends a turn an API error cut off, in place of Stop: a usage limit, an auth failure
+	AgentHook_StopFailure = "StopFailure"
 )
+
+// StopFailureDetail_UsageLimit is the Detail of a StopFailure report whose error is the rate limit: the account hit
+// its usage limit. pkg/runpause pauses the run such a worker belongs to until the limit resets.
+const StopFailureDetail_UsageLimit = "Stopped at the usage limit"
 
 // AgentUsage is an optional usage snapshot carried on AgentStatusData, sourced from the Claude
 // Code statusLine JSON. Like the usage delta it rides a stateless (State-empty) Persist:0 event.

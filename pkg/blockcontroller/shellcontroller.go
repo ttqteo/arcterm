@@ -20,6 +20,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/progstatus"
 	"github.com/wavetermdev/waveterm/pkg/shellexec"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
@@ -477,6 +478,19 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 	liveToken := markAgentLive(bc.BlockId, blockMeta)
 	shellInputCh := make(chan *BlockInputUnion, 32)
 	bc.attachInputCh(shellInputCh, rc.TermSize)
+	// answers OSC 7501's probe on this process's input, as the first command is typed
+	prog := newProgWatch(bc.BlockId, func() {
+		bc.WithLock(func() {
+			if bc.ShellInputCh != shellInputCh {
+				return
+			}
+			select {
+			case shellInputCh <- &BlockInputUnion{InputData: []byte(progstatus.Reply)}:
+			default:
+				log.Printf("block %s: shell input buffer full, program status probe not answered\n", bc.BlockId)
+			}
+		})
+	})
 	var typer *firstCommandTyper
 	if bc.ControllerType == BlockController_Shell {
 		if firstCmd := takeFirstCommand(bc.BlockId, blockMeta); firstCmd != "" {
@@ -503,6 +517,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		}()
 		defer func() {
 			log.Printf("[shellproc] pty-read loop done\n")
+			prog.stop()
 			if typer != nil {
 				typer.stop()
 			}
@@ -530,6 +545,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 				if err != nil {
 					log.Printf("error appending to blockfile: %v\n", err)
 				}
+				prog.output(buf[:nr])
 				if typer != nil {
 					typer.output(buf[:nr])
 				}

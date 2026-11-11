@@ -242,6 +242,11 @@ func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.Command
 	if metaMillis(meta, waveobj.MetaKey_AgentSleeping) > 0 {
 		return nil, fmt.Errorf("agent %q is already asleep", row.Name)
 	}
+	// a service's block holds no agent of its own: a Claude its process ran reported into it before ARC_SERVICE marked
+	// that process, and sleeping it would stop the service (its supervisor sleeps and starts it)
+	if meta.GetBool(waveobj.MetaKey_ToolService, false) {
+		return nil, fmt.Errorf("%q is a service, not an agent; it cannot sleep", row.Name)
+	}
 	args, ok := blockcontroller.ResumeArgs(row.Harness, session, meta.GetStringList("agent:baseargs"))
 	if !ok {
 		return nil, fmt.Errorf("agent %q runs %s, which cannot resume a conversation; it cannot sleep", row.Name, row.Harness)

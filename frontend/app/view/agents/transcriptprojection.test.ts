@@ -1,12 +1,53 @@
 import { describe, expect, it } from "vitest";
 import {
+    bashNeverRan,
     compactSummaryText,
     extractAiTitle,
     extractBackgroundTasks,
     extractSubagentSpawns,
     extractTasks,
     projectTranscript,
+    turnStats,
 } from "./transcriptprojection";
+
+// the turn under way: Claude Code writes each block of a reply as its own record, repeating the reply's usage
+describe("turnStats", () => {
+    const L = (o: unknown) => JSON.stringify(o);
+    const reply = (id: string, out: number, ts: string, block = "text") =>
+        L({ type: "assistant", timestamp: ts, message: { id, usage: { output_tokens: out }, content: [{ type: block }] } });
+    const prompt = (text: string, ts: string) => L({ type: "user", timestamp: ts, message: { content: text } });
+    const result = (ts: string) => L({ type: "user", timestamp: ts, message: { content: [{ type: "tool_result", tool_use_id: "t" }] } });
+
+    it("counts each reply's output tokens once, from the last prompt you sent", () => {
+        const lines = [
+            prompt("first", "2026-11-10T14:00:00.000Z"),
+            reply("m0", 999, "2026-11-10T14:00:05.000Z"),
+            prompt("làm tiếp đi", "2026-11-10T14:30:00.000Z"),
+            reply("m1", 195, "2026-11-10T14:30:07.000Z", "thinking"),
+            reply("m1", 195, "2026-11-10T14:30:08.000Z", "tool_use"),
+            result("2026-11-10T14:30:08.500Z"),
+            reply("m2", 795, "2026-11-10T14:30:16.000Z", "thinking"),
+            reply("m2", 795, "2026-11-10T14:30:16.500Z", "text"),
+            L({ type: "api-request-blob", message: { id: "m2", usage: { output_tokens: 795 } } }),
+        ];
+        expect(turnStats(lines)).toEqual({ startedAt: Date.parse("2026-11-10T14:30:00.000Z"), outputTokens: 990 });
+    });
+
+    it("keeps counting through a message queued mid-turn and a meta record", () => {
+        const lines = [
+            prompt("go", "2026-11-10T14:30:00.000Z"),
+            reply("m1", 100, "2026-11-10T14:30:05.000Z"),
+            L({ type: "attachment", attachment: { type: "queued_command", prompt: "and this", commandMode: "prompt" } }),
+            L({ type: "user", isMeta: true, message: { content: "<system-reminder>x</system-reminder>" } }),
+            reply("m2", 50, "2026-11-10T14:30:09.000Z"),
+        ];
+        expect(turnStats(lines)).toEqual({ startedAt: Date.parse("2026-11-10T14:30:00.000Z"), outputTokens: 150 });
+    });
+
+    it("is null with no prompt in the lines read", () => {
+        expect(turnStats([reply("m1", 10, "2026-11-10T14:30:05.000Z"), result("2026-11-10T14:30:06.000Z")])).toBeNull();
+    });
+});
 
 const LINES: string[] = [
     JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "fix the race" }] } }), // human prompt -> user entry
@@ -58,6 +99,19 @@ describe("projectTranscript", () => {
             JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "missing", is_error: true }] } }),
         ]);
         expect(out).toEqual([{ kind: "action", verb: "ran", target: "go test ./..." }]);
+    });
+
+    it("reads a Bash call refused before it ran as blocked, with no exit code, and one that ran and failed as fail", () => {
+        const refusal =
+            "<tool_use_error>Refused by arcterm: Claude Code already saves a background command's output to its output file.</tool_use_error>";
+        const out = projectTranscript([
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "task build > log", description: "build" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b1", is_error: true, content: refusal }] } }),
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b2", name: "Bash", input: { command: "grep x f", description: "find x" } }] } }),
+            JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b2", is_error: true, content: "Exit code 1\n" }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ verb: "blocked", outcome: "blocked", detail: { kind: "bash", exit: null, output: refusal } });
+        expect(out[1]).toMatchObject({ verb: "ran", outcome: "fail", detail: { kind: "bash", exit: 1 } });
     });
 
     it("keeps the full path of a file tool beside its base name", () => {
@@ -116,6 +170,55 @@ describe("projectTranscript user turns", () => {
 describe("projectTranscript commands and isMeta", () => {
     const L = (o: unknown) => JSON.stringify(o);
 
+    // `! cmd` in Claude Code's box (bash mode) is written as two user records, as this session's transcript holds them
+    it("reads a bash-mode command you ran and its output as one shell command entry", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-input> task install</bash-input>" } }),
+            L({
+                type: "user",
+                message: {
+                    content:
+                        "<bash-stdout>task: [install:macos] node scripts/install-mac.mjs\n\x1b[32mreopens\x1b[0m in a few seconds.</bash-stdout><bash-stderr></bash-stderr>",
+                },
+            }),
+            L({ type: "user", message: { content: "<bash-input>ls nope</bash-input>" } }),
+            L({ type: "user", message: { content: "<bash-stdout></bash-stdout><bash-stderr>ls: nope: No such file or directory</bash-stderr>" } }),
+            L({ type: "user", message: { content: "<bash-input>sleep 60</bash-input>" } }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "!",
+                args: "task install",
+                shell: { output: "task: [install:macos] node scripts/install-mac.mjs\nreopens in a few seconds.", error: "" },
+            },
+            { kind: "command", name: "!", args: "ls nope", shell: { output: "", error: "ls: nope: No such file or directory" } },
+            // its output has not landed yet
+            { kind: "command", name: "!", args: "sleep 60" },
+        ]);
+    });
+
+    // Claude Code (2.1.322) writes this placeholder as the stdout of a command that printed nothing
+    it("reads Claude Code's no-output placeholder as a command that printed nothing", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-input> command</bash-input>" } }),
+            L({
+                type: "user",
+                message: {
+                    content: "<bash-stdout>(Bash completed with no output)</bash-stdout><bash-stderr></bash-stderr>",
+                },
+            }),
+        ]);
+        expect(out).toEqual([{ kind: "command", name: "!", args: "command", shell: { output: "", error: "" } }]);
+    });
+
+    it("drops a bash output whose command is not in the lines read, rather than drawing its tags", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "<bash-stdout>orphan</bash-stdout><bash-stderr></bash-stderr>" } }),
+        ]);
+        expect(out).toEqual([]);
+    });
+
     it("parses a <command-name> user string into a command entry (slash kept, message dropped, args when present)", () => {
         const withArgs = "<command-name>/review</command-name>\n  <command-message>review</command-message>\n  <command-args>PR #402</command-args>";
         const bare = "<command-name>/clear</command-name>\n  <command-message>clear</command-message>\n  <command-args></command-args>";
@@ -142,25 +245,29 @@ describe("projectTranscript commands and isMeta", () => {
         ]);
         expect(out).toEqual([{ kind: "user", text: "real prompt" }]);
     });
-    it("renders a user-invoked skill (caller.direct) as a skill command chip with the leaf name", () => {
+    // Claude Code writes caller {type: "direct"} on every tool call the model makes, so a Skill call is the agent's own
+    // step, never a command you ran: yours arrive as <command-name> user records
+    it("reads a Skill call the agent made as a skill action, not a command of yours", () => {
         const out = projectTranscript([
             L({
                 type: "assistant",
                 message: {
                     content: [
-                        { type: "tool_use", id: "s1", name: "Skill", input: { skill: "superpowers:brainstorming", args: "design the cache" }, caller: { type: "direct" } },
+                        { type: "tool_use", id: "s1", name: "Skill", input: { skill: "arc:design", args: "Chat header" }, caller: { type: "direct" } },
                     ],
                 },
             }),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "s1", content: "Launching skill: arc:design" }] } }),
         ]);
-        expect(out).toEqual([{ kind: "command", name: "brainstorming", isSkill: true, args: "design the cache" }]);
-    });
-
-    it("omits args for a skill chip with no args", () => {
-        const out = projectTranscript([
-            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "s2", name: "Skill", input: { skill: "commit" }, caller: { type: "direct" } }] } }),
+        expect(out).toEqual([
+            {
+                kind: "action",
+                verb: "skill",
+                target: "arc:design",
+                outcome: "ok",
+                detail: { kind: "skill", name: "arc:design", args: "Chat header" },
+            },
         ]);
-        expect(out).toEqual([{ kind: "command", name: "commit", isSkill: true }]);
     });
 });
 
@@ -243,7 +350,125 @@ describe("projectTranscript task-notification, stdout, and interrupts", () => {
         ]);
     });
 
-    it("skips a user-string <local-command-stdout> record (with ANSI) rather than leaking the raw tag", () => {
+    it("drops a <local-command-stdout> record whose command is not in the lines read, rather than leaking the raw tag", () => {
+        expect(
+            projectTranscript([
+                L({
+                    type: "system",
+                    subtype: "local_command",
+                    content: "<local-command-stderr>boom</local-command-stderr>",
+                }),
+            ])
+        ).toEqual([]);
+    });
+
+    // the shapes this machine's transcripts hold (Claude Code 2.1.322): a command's output follows it as a user string or
+    // a system local_command record, and a panel command (/login) writes both its name and its output as system records
+    const cmdRec = (name: string, args = "") =>
+        `<command-name>${name}</command-name>\n            <command-message>${name.slice(1)}</command-message>\n            <command-args>${args}</command-args>`;
+
+    it("puts a slash command's output, from a system local_command record, on the command before it", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: cmdRec("/goal", "tests pass") } }),
+            L({
+                type: "system",
+                subtype: "local_command",
+                content: "<local-command-stdout>Goal set: tests pass</local-command-stdout>",
+            }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "/goal",
+                args: "tests pass",
+                shell: { output: "Goal set: tests pass", error: "" },
+            },
+        ]);
+    });
+
+    it("reads a command written only as system records as a command entry with its output", () => {
+        const out = projectTranscript([
+            L({ type: "system", subtype: "local_command", content: cmdRec("/login") }),
+            L({
+                type: "system",
+                subtype: "local_command",
+                content: "<local-command-stdout>Login successful</local-command-stdout>",
+            }),
+        ]);
+        expect(out).toEqual([{ kind: "command", name: "/login", shell: { output: "Login successful", error: "" } }]);
+    });
+
+    it("puts a user-string output on its command, the ANSI codes dropped, and an error as the error", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: cmdRec("/compact", "Keep: the task") } }),
+            L({
+                type: "user",
+                message: {
+                    content:
+                        "<local-command-stdout>\x1b[2mCompacted (ctrl+o to see full summary)\x1b[22m\n\x1b[2mPreCompact hook completed successfully\x1b[22m</local-command-stdout>",
+                },
+            }),
+            L({ type: "user", message: { content: cmdRec("/compact") } }),
+            L({
+                type: "system",
+                subtype: "local_command",
+                content: "<local-command-stderr>Error during compaction: API Error (ENOTFOUND)</local-command-stderr>",
+            }),
+        ]);
+        expect(out).toEqual([
+            {
+                kind: "command",
+                name: "/compact",
+                args: "Keep: the task",
+                shell: {
+                    output: "Compacted (ctrl+o to see full summary)\nPreCompact hook completed successfully",
+                    error: "",
+                },
+            },
+            {
+                kind: "command",
+                name: "/compact",
+                shell: { output: "", error: "Error during compaction: API Error (ENOTFOUND)" },
+            },
+        ]);
+    });
+
+    it("leaves a command that printed nothing without output, and never puts a slash command's output on a bash one", () => {
+        const out = projectTranscript([
+            L({ type: "user", message: { content: cmdRec("/clear") } }),
+            L({ type: "user", message: { content: "<local-command-stdout></local-command-stdout>" } }),
+            L({ type: "user", message: { content: "<bash-input>ls</bash-input>" } }),
+            L({ type: "user", message: { content: "<local-command-stdout>stray</local-command-stdout>" } }),
+        ]);
+        expect(out).toEqual([
+            { kind: "command", name: "/clear" },
+            { kind: "command", name: "!", args: "ls" },
+        ]);
+    });
+
+    // the shape a mod's $.session.append({ type: "system" }) notice is stored in (Claude Code 2.1.322, probed)
+    it("reads the arc mod's /btw notice as a /btw command carrying its side answer", () => {
+        const notice = (content: string) =>
+            L({ type: "system", subtype: "informational", level: "info", isMeta: false, content });
+        const out = projectTranscript([
+            L({ type: "user", message: { content: "go on" } }),
+            notice("/btw which file holds the band?\n`goal-band.tsx`.\n\nIt draws the strip."),
+            notice("/btw why?\n(no side answer: the reply was empty)"),
+            notice("arc: read mid-turn: something else"),
+        ]);
+        expect(out).toEqual([
+            { kind: "user", text: "go on" },
+            {
+                kind: "command",
+                name: "/btw",
+                args: "which file holds the band?",
+                btw: { answer: "`goal-band.tsx`.\n\nIt draws the strip." },
+            },
+            { kind: "command", name: "/btw", args: "why?", btw: { failure: "the reply was empty" } },
+        ]);
+    });
+
+    it("drops an orphan user-string <local-command-stdout> record (with ANSI) rather than leaking the raw tag", () => {
         const content = "<local-command-stdout>[2mCompacted (ctrl+o to see full summary)[22m</local-command-stdout>";
         expect(projectTranscript([L({ type: "user", message: { content } })])).toEqual([]);
     });
@@ -1287,5 +1512,37 @@ describe("projectTranscript: a message queued while Claude worked", () => {
             JSON.stringify({ type: "attachment", attachment: { type: "hook_success" } }),
         ]);
         expect(entries).toEqual([]);
+    });
+});
+
+// the shapes of errored Bash results Claude Code writes, as seen in real transcripts
+describe("bashNeverRan", () => {
+    it("reads a refusal before the command started as never ran", () => {
+        for (const body of [
+            "<tool_use_error>Refused by arcterm: Claude Code already saves a background command's output…</tool_use_error>",
+            "<tool_use_error>Blocked: sleep 30 followed by: tail -20 out.log. To wait for a condition, use Monitor…</tool_use_error>",
+            "<tool_use_error>InputValidationError: Bash failed due to the following issue:\nThe required parameter `command` is missing</tool_use_error>",
+            "The server-side auto mode classifier gave no verdict for Bash: a hook changed this call's input…",
+            "Permission for this action was denied by the Claude Code auto mode classifier. Reason: …",
+            "The user doesn't want to proceed with this tool use. The tool use was rejected…",
+            "This command requires approval",
+            "This Bash command contains multiple operations. The following part requires approval: awk …",
+            "This session is isolated in the worktree /repo/.claude/worktrees/x, but this command changes directory…",
+        ]) {
+            expect(bashNeverRan(body), body).toBe(true);
+        }
+    });
+
+    it("reads a command that ran, or may have, as a failure", () => {
+        for (const body of [
+            "Exit code 1",
+            "Exit code 1\nTraceback (most recent call last):",
+            "Exit code 143\nCommand timed out after 2m 0s\n",
+            "Interrupted: the response that made this tool call was stopped by a safety classifier while the call was running; it may have partially or fully completed.",
+            "[Tool call interrupted: the session ended before this call's result was recorded, so its outcome is unknown.]",
+            "",
+        ]) {
+            expect(bashNeverRan(body), body).toBe(false);
+        }
     });
 });

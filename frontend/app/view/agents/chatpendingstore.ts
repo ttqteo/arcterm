@@ -7,7 +7,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, useAtomValue } from "jotai";
 import type { AgentEntry } from "./agentsviewmodel";
-import { pushSent, userTextCount, type PendingMessage } from "./chatpending";
+import { pendingKind, pushSent, userTextCount, type PendingMessage } from "./chatpending";
 
 const NONE: PendingMessage[] = [];
 const NO_HISTORY: string[] = [];
@@ -23,15 +23,30 @@ let nextId = 0;
 /** Records `text` as sent to the agent just now, with how many times the `entries` (the transcript as drawn at this
  *  moment) already hold it. */
 export function addPending(agentId: string, text: string, entries: AgentEntry[]): void {
+    const kind = pendingKind(text);
     const p: PendingMessage = {
         id: `pending-${++nextId}`,
         text,
         sentAt: Date.now(),
         seen: userTextCount(entries, text),
+        ...(kind != null ? { kind } : {}),
     };
     const m = new Map(globalStore.get(pendingAtom));
     // the ones the transcript has long since caught up with go too, so the list never grows over a long session
     m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < 10 * 60_000), p]);
+    globalStore.set(pendingAtom, m);
+}
+
+/** Drops the newest pending of the agent's with this text: a send that went another way than the one it was drawn for
+ *  (a /btw that no mod took, typed into the terminal instead, where no row of it lands). */
+export function dropPending(agentId: string, text: string): void {
+    const list = globalStore.get(pendingAtom).get(agentId) ?? NONE;
+    const at = list.map((p) => p.text).lastIndexOf(text);
+    if (at < 0) {
+        return;
+    }
+    const m = new Map(globalStore.get(pendingAtom));
+    m.set(agentId, [...list.slice(0, at), ...list.slice(at + 1)]);
     globalStore.set(pendingAtom, m);
 }
 

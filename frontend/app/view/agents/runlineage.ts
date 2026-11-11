@@ -42,8 +42,11 @@ export interface RunInfo {
     land?: RunLand;
     dag?: TaskGroup;
     digest?: DagStatusDigest;
-    // who paused the run, while it is paused: "manual" (the person), "auto" (the RAM regulator) or "boot"
+    // who paused the run, while it is paused: "manual" (the person), "auto" (the RAM regulator), "boot" or "limit"
+    // (an agent at the usage limit)
     pausedBy?: string;
+    // when Arc may resume it on its own (Unix ms): a limit pause's reset
+    pausedUntil?: number;
 }
 
 export interface Lineage {
@@ -82,6 +85,7 @@ export function runInfoOf(
         dag,
         digest,
         pausedBy: leadRun?.pause?.by || undefined,
+        pausedUntil: leadRun?.pause?.noautoresumeuntil || undefined,
     };
 }
 

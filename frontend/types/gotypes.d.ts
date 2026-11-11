@@ -55,6 +55,7 @@ declare global {
         text?: string;
         compact?: string;
         midturn?: boolean;
+        btw?: string;
     };
 
     // wshrpc.AgentInfo
@@ -431,6 +432,12 @@ declare global {
         report?: string;
         holdland?: boolean;
         forceland?: boolean;
+    };
+
+    // wshrpc.CommandAgentBtwData
+    type CommandAgentBtwData = {
+        blockid: string;
+        question: string;
     };
 
     // wshrpc.CommandAgentControlData
@@ -4551,6 +4558,7 @@ declare global {
         retryatms?: number;
         holder?: string;
         autostart: boolean;
+        off?: boolean;
     };
 
     // wshrpc.ServicesData

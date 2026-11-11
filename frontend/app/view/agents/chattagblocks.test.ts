@@ -5,6 +5,7 @@ import {
     splitTagged,
     tagHeading,
     tagLabel,
+    unwrapWholePaste,
     type TaggedPart,
     type TagPart,
 } from "./chattagblocks";
@@ -72,6 +73,18 @@ describe("splitTagged", () => {
         expect(splitTagged(msg)).toEqual([tag("a", "x\n<a>\ny\n</a>\nz"), { kind: "text", text: "tail" }]);
     });
 
+    it("closes a block whose close tag carries attributes, as Claude Code writes a paste's", () => {
+        const msg = 'see\n<pasted_content id="cdd1">\nline one\n</pasted_content id="cdd1">\nafter';
+        expect(splitTagged(msg)).toEqual([
+            { kind: "text", text: "see" },
+            tag("pasted_content", "line one", { id: "cdd1" }),
+            { kind: "text", text: "after" },
+        ]);
+        expect(splitTagged('<pasted_content id="x">one line</pasted_content id="x">')).toEqual([
+            tag("pasted_content", "one line", { id: "x" }),
+        ]);
+    });
+
     it("leaves an unclosed tag as text", () => {
         const msg = "<pasted_content>\nnever closed";
         expect(splitTagged(msg)).toEqual([{ kind: "text", text: msg }]);
@@ -120,6 +133,25 @@ describe("splitTagged", () => {
             tag("a", "x"),
             { kind: "text", text: "bye" },
         ]);
+    });
+});
+
+describe("unwrapWholePaste", () => {
+    it("reads a message that is one paste block as the paste", () => {
+        expect(unwrapWholePaste('<pasted_content id="cdd1">\nfix it\nplease\n</pasted_content id="cdd1">')).toBe(
+            "fix it\nplease"
+        );
+    });
+
+    it("leaves a paste beside text you typed, another tag, and plain text as they came", () => {
+        for (const msg of [
+            "look at this\n<pasted_content>\nlog\n</pasted_content>",
+            "<system-reminder>\nbe brief\n</system-reminder>",
+            "<pasted_content>\nnever closed",
+            "fix the bug",
+        ]) {
+            expect(unwrapWholePaste(msg)).toBe(msg);
+        }
     });
 });
 

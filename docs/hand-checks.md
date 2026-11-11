@@ -10,6 +10,86 @@ does not, say what you saw and it becomes a bug row under Actionable.
   cockpit, then in its DevTools console `performance.getEntriesByType("measure").length` → a few thousand at most, not
   millions, and the renderer's working set stays flat instead of climbing toward GBs (`frontend/tauri/main.tsx`,
   933a2b8ce).
+- [ ] (arcterm) `/btw` from Chat: in a live Claude agent that has finished at least one turn, send `/btw what file did
+  you last edit?` from Chat (while it works, and once idle) → a dimmed `/btw …` card with "Asking on the side…" until a
+  card lands on your side: the question, then "side answer · not in the conversation" and the answer as Markdown; the
+  terminal shows the same as one dim line, and Claude's next turn never mentions it. Right after a wake (a resumed
+  session, no turn yet) → "No side answer: this session has not finished a turn…". In a pi agent → the command is typed
+  and the pane flips to Terminal. The fork and the notice's record were probed headless (`claude -p` stream-json, a
+  scratch mod: `$.model.fork` answered, the notice stored as `system`/`informational`); the cockpit stream end to end
+  and every card were never drawn (`claude/arc-mod/hooks/btw-core.ts`, `register.ts` `answerBtw`, `chatpane.tsx`
+  `PendingCommand`, `chatconversation.tsx` `BtwCard`).
+- [ ] (arcterm) A slash command's output in Chat: in a live Claude agent's Chat send `/goal every test passes` → under
+  the `/goal …` card a rule and "Goal set: …"; `/compact` with the network off → its error in red; `/login` from the
+  terminal → a `/login` card with "Login successful". Send `/usage` (or `/config`) from Chat → a dimmed `/usage` card with
+  "Open in Terminal" and Show Terminal while the panel is open; close it in the terminal → the card turns into `/usage`
+  with "Opens in Terminal" and Show Terminal (no "dialog dismissed" line). The `! command` card is now drawn by the
+  same `CommandCard`: `! ls` still lands as one card, its long output scrolling inside it, `! cmd`'s error in red (both
+  held on the build before this change, 2026-11-11), a command that prints nothing → "No output", and Copy takes the
+  command and its output. Unit tests only; nothing was drawn (`transcriptprojection.ts` `attachLocalOutput`,
+  `chatmodel.ts` `commandItem`, `chatconversation.tsx` `CommandCard`, 21b328d69).
+- [ ] (arcterm) Send now on a queued Chat message: while a Claude agent works on a long turn (a build, a `sleep 60`),
+  send it a message from Chat → its bubble reads Queued with Send now beside it; click Send now → the running command
+  moves to the background (Terminal shows it as a background task, not cancelled) and Claude answers the message at
+  once; while it asks for a permission no Send now shows (`chatpane.tsx` `PendingBubble`, `chatmodel.ts`
+  `SEND_NOW_KEYS`, 07b55af84).
+- [ ] (arcterm) Claude Code compacts an awake agent at arcterm's threshold: after this build start a Claude agent and
+  run `echo $CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` in its terminal (or a terminal beside it) → `100000` (your Compact
+  threshold); take one past 100k of context and leave it on screen and idle ~55 minutes → one compaction lands
+  (Transcript → Compactions), not two; Sleep on such an agent still compacts it first (`agentsleep/config.go`
+  `IdleCompactEnv`, b0b7b1f8a).
+- [ ] (arcterm) Goal meter: in a Claude agent send `/goal every test in <a folder> passes` (a goal it cannot meet at
+  once) → in Chat a strip above the box reads `Goal · <condition>` with a mark per check and the time running, "not yet"
+  opens the evaluator's reason, ✕ sends `/goal clear` and the strip goes; in Terminal the band above the prompt reads
+  `◎ goal <condition> ▮▮▯ check 2 · 1m 4s`, its clock ticking; once met both read Goal met with the checks, time and
+  tokens, and go after your next prompt. Ask Claude for work it may propose a goal for → "Claude proposes a goal" and
+  Answer in Terminal. Unit tests (`goal-core.ts`, real `/goal` records) and an engine test of the band on a copy of the
+  mod; neither surface was drawn in a live session (`chatgoal.tsx`, `goal-band.tsx`).
+- [ ] (arcterm) An agent's dot follows Claude Code's OSC 7501 reports when its hooks are silent: after this build start
+  a Claude agent, then make `~/.arc/bin/wsh` fail (rename it away for a minute) and send the agent a prompt → its dot
+  goes working and, ~10 s after the turn ends, idle, with `taking its OSC 7501 report` lines in waveapp.log; put wsh
+  back → with the hooks working no such line appears, and an agent whose turn ends with background work still
+  running stays working (`blockcontroller/progwatch.go`, `pkg/progstatus`).
+- [ ] (arcterm) A run pauses at the usage limit: after this build (the next launch writes the StopFailure hook into
+  `~/.claude/settings.json`), run an engine run when the 5-hour window is nearly used up → the worker that hits the
+  limit reads idle, the run reads "Paused · usage limit, resumes HH:MM" (the window's reset plus 2 minutes) and its
+  agents close; after that time, with RAM to spare, it resumes and the workers carry on; `run limit: paused run`
+  in waveapp.log (`pkg/runpause/limit.go`, `pkg/wshrpc/wshserver/wshserver_runlimit.go`).
+- [ ] (arcterm) Fork a conversation: Agent → Conversations → right-click an ended Claude conversation → Fork → a new
+  tab named "<title> (fork)" opens on the same conversation, and a message there leaves the original's transcript as
+  it was (Conversation History lists both); open a conversation in the centre → Fork sits beside Resume and does the
+  same; a Codex or pi conversation offers no Fork (`sessionsruns.ts` `forkLaunchOpts`, `claude --resume --fork-session`).
+- [ ] (arcterm) Every send is submitted: from a Claude agent's Chat send ten short one-line messages in a row, idle and
+  while it works, and one of ~165 characters with Vietnamese in it → each reaches Claude as a prompt (Terminal shows
+  none left in the box with a line break after it); `/compact` and a model pick from the footer run; Resume's
+  "continue" nudge and Clear from the rail run (`agentsubmit.ts` `submitToAgent`, `chatpending.ts` `submitSteps`).
+- [ ] (arcterm) Chat's Working line counts the turn: send a Claude agent in Chat a prompt that takes a minute → the line
+  reads `Working · … (34s · ↓ 860 tokens)`, the seconds ticking and the tokens rising as each reply lands (in steps, not
+  token by token as the TUI streams); compare with the TUI's own counter in Terminal (`chatpane.tsx` `TurnStatsText`,
+  `transcriptprojection.ts` `turnStats`).
+- [ ] (arcterm) A stopped service stays stopped: Setup → Tools → portfolio → Stop, then quit and reopen arcterm (or
+  `task install`) → it does not run (no `node live/server.mjs` in Activity Monitor, :8386 refuses); open it from the rail
+  → the card "portfolio is stopped" with Start, and Start brings the page up; after that a restart starts it as before.
+  The portfolio tab no longer shows as a sleeping agent in the Agent tree. A dashboard request that runs Claude leaves
+  the service block with no `agent:*` meta (`wsh getmeta -b block:<its id>`). Go unit tests only (`pkg/services`,
+  `reportsToBlock`); the boot order that showed the service pane was not reproduced.
+- [ ] (arcterm) Bash mode in Chat's box: type `!` at the start of a Claude agent's Chat box → the border turns accent and
+  "! Bash mode" shows beside +; delete the `!` → both go; send `! ls` → no Queued bubble, and the `! ls` card with its
+  output lands; a `!` later in a message changes nothing (`chatcomposer.tsx` `bash`, `chatmodel.ts` `bashMode`).
+- [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
+  (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
+  or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent
+  with no initiative: … → "Link to initiative…" opens the picker under the … button, and `i` opens it too, in Chat and
+  in Terminal (`agentheader.tsx` `lean`; the `initiative-link` scenario was moved to the menu but not run).
+- [ ] (arcterm) A Chat message queued mid-turn reads as you wrote it: while a Claude agent works, send from its Chat a
+  message of two lines with a pasted screenshot → once Claude takes it in, your bubble shows the two lines and the
+  picture as a thumbnail, with no `<pasted_content id="…">` tags and no `Attached images:` list; a paste inside a
+  message you typed around it still folds into a `Pasted · N lines` card (`chattagblocks.ts` `unwrapWholePaste`).
+- [ ] (arcterm) A refused command reads as Blocked in Chat: in a live Claude agent's Chat, have it run a background
+  command with a `> file` redirect (arcterm's hook refuses it), or deny a Bash prompt → its tool row shows a grey ⊘
+  square and `BLOCKED`, no duration, and its open panel says `NOT RUN` instead of an exit code; the work fold's
+  `· N failed` leaves it out, while a command that ran and exited non-zero (`grep` with no match) still counts red.
+  Unit tests cover the projection (`transcriptprojection.ts` `bashNeverRan`); the row was never drawn (ea97fa2ea).
 - [ ] (arcterm) Chat's box takes Vietnamese typing (Telex) with pills and menus around it: in a live Claude agent's Chat
   type a Vietnamese sentence in Telex (e.g. "chào bạn, xem giúp mình file này") with no menu open, again before and
   after an `@` pill, and with the `/` list and the `@` list open → no letter is lost or doubled, a syllable being

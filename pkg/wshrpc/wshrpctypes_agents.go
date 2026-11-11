@@ -37,6 +37,7 @@ type AgentCommands interface {
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
 	AgentsReadCommand(ctx context.Context, data CommandAgentsReadData) (*CommandAgentsReadRtnData, error)                                 // a live agent's state and last answer
 	AgentPromptCommand(ctx context.Context, data CommandAgentPromptData) error                                                            // the cockpit's own prompt to a block's agent session: its mod runs it, or it is typed
+	AgentBtwCommand(ctx context.Context, data CommandAgentBtwData) error                                                                  // a side question to a block's Claude session, answered by its mod as a notice; an error when no mod holds a stream
 	BrainstormCheckCommand(ctx context.Context, data CommandBrainstormCheckData) error                                                    // run the builder check on a brainstorm.json as a one-shot judging session
 	BrainstormJudgeCommand(ctx context.Context, data CommandBrainstormJudgeData) error                                                    // weigh a brainstorm.json's approach question with a one-shot blind judge
 	BrainstormJudgeStopCommand(ctx context.Context, data CommandBrainstormJudgeStopData) error                                            // stop a reading judge: its run, and its record turns stopped
@@ -499,11 +500,19 @@ type CommandAgentControlData struct {
 
 // AgentControlMsg is one thing for the session to do. Text is a prompt as it would be typed: a leading
 // slash is a command. Compact asks for a compaction instead, with these instructions, and wins over Text.
-// MidTurn asks for Text to join the turn the session is running instead of waiting for it to end.
+// MidTurn asks for Text to join the turn the session is running instead of waiting for it to end. Btw is a
+// side question, which wins over both: answered from the session's context, never part of the conversation.
 type AgentControlMsg struct {
 	Text    string `json:"text,omitempty"`
 	Compact string `json:"compact,omitempty"`
 	MidTurn bool   `json:"midturn,omitempty"`
+	Btw     string `json:"btw,omitempty"`
+}
+
+// CommandAgentBtwData is a side question (Chat's /btw) for a block's Claude session.
+type CommandAgentBtwData struct {
+	BlockId  string `json:"blockid"`
+	Question string `json:"question"`
 }
 
 type CommandScanClaudeProjectsRtnData struct {

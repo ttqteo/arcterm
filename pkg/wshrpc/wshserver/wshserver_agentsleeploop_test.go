@@ -16,7 +16,6 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -316,30 +315,6 @@ func TestSleepTickSurvivesARosterError(t *testing.T) {
 	}
 }
 
-func TestSleepSettingsFromConfig(t *testing.T) {
-	yes, no := true, false
-	ten, one, zero, k250 := int64(10), int64(1), int64(0), int64(250)
-	cases := []struct {
-		name string
-		in   wconfig.SettingsType
-		want agentsleep.Settings
-	}{
-		{"unset is on at 30 minutes", wconfig.SettingsType{}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}},
-		{"off", wconfig.SettingsType{AgentsSleepIdle: &no}, agentsleep.Settings{Enabled: false, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}},
-		{"on at ten minutes", wconfig.SettingsType{AgentsSleepIdle: &yes, AgentsSleepAfterMin: &ten}, agentsleep.Settings{Enabled: true, After: 10 * time.Minute, Compact: true, CompactAt: 100_000}},
-		{"one minute is raised to the floor of five", wconfig.SettingsType{AgentsSleepAfterMin: &one}, agentsleep.Settings{Enabled: true, After: 5 * time.Minute, Compact: true, CompactAt: 100_000}},
-		{"zero is raised to the floor too", wconfig.SettingsType{AgentsSleepAfterMin: &zero}, agentsleep.Settings{Enabled: true, After: 5 * time.Minute, Compact: true, CompactAt: 100_000}},
-		{"compaction off", wconfig.SettingsType{AgentsCompactIdle: &no}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, CompactAt: 100_000}},
-		{"compaction at 250k", wconfig.SettingsType{AgentsCompactAtK: &k250}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 250_000}},
-		{"ten thousand is raised to the floor of 25k", wconfig.SettingsType{AgentsCompactAtK: &ten}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 25_000}},
-	}
-	for _, tc := range cases {
-		if got := sleepSettings(tc.in); got != tc.want {
-			t.Errorf("%s: sleepSettings = %+v, want %+v", tc.name, got, tc.want)
-		}
-	}
-}
-
 // usageLine is a main-thread request at ts that carried tokens of context and wrote an hour-long cache.
 func usageLine(ts time.Time, tokens int) string {
 	return fmt.Sprintf(`{"type":"assistant","isSidechain":false,"timestamp":%q,"message":{"usage":{"input_tokens":1,"cache_read_input_tokens":%d,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":1000}}}}`,
@@ -400,33 +375,21 @@ func TestSleepTickCompactsThenSleeps(t *testing.T) {
 	}
 }
 
-func TestSleepTickCompactsAViewedAgentAsItsCacheRunsOut(t *testing.T) {
+func TestSleepTickLeavesAViewedAgentsCacheToClaudeCode(t *testing.T) {
 	w, sent := compactWorld(t)
 	swap(t, &viewing, viewingPush{tabs: []string{agentsTabA}, at: w.start.Add(2 * time.Hour)}) // on screen all along
-	w.tickTo(54)
-	if len(*sent) != 0 {
-		t.Fatalf("sent %v with 6 min of cache left, want nothing yet", *sent)
-	}
-	w.tickTo(56)
-	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
-		t.Fatalf("with 5 min of cache left sent %v, slept %v; want one compaction and no sleep", *sent, w.slept)
-	}
-	appendLine(t, w.facts.Tabs[0].Status.TranscriptPath, compactBoundaryLine)
 	w.tickTo(70)
-	if len(*sent) != 1 || len(w.slept) != 0 {
-		t.Fatalf("after it landed sent %v, slept %v; want nothing more", *sent, w.slept)
-	}
-	if compactsWaiting() {
-		t.Errorf("a landed compaction still waits: %v", compacts)
+	if len(*sent) != 0 || len(w.slept) != 0 {
+		t.Fatalf("an awake agent past its cache: sent %v, slept %v; want nothing (Claude Code compacts it itself)", *sent, w.slept)
 	}
 }
 
-func TestSleepTickCompactsWithSleepOff(t *testing.T) {
+func TestSleepTickSendsNothingWithSleepOff(t *testing.T) {
 	w, sent := compactWorld(t)
 	w.enabled = false
-	w.tickTo(56)
-	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
-		t.Fatalf("sleep off: sent %v, slept %v; want one compaction at 5 min of cache left and no sleep", *sent, w.slept)
+	w.tickTo(70)
+	if len(*sent) != 0 || len(w.slept) != 0 {
+		t.Fatalf("sleep off: sent %v, slept %v; want nothing", *sent, w.slept)
 	}
 }
 

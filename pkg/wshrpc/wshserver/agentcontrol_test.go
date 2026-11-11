@@ -43,6 +43,35 @@ func TestAgentControlStreamsWhatIsSentUntilTheCallerLeaves(t *testing.T) {
 	}
 }
 
+func TestAgentBtwGoesToTheSessionsModAsASideQuestion(t *testing.T) {
+	const blockId = "8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	oref := waveobj.MakeORef(waveobj.OType_Block, blockId).String()
+	ch := (&WshServer{}).AgentControlCommand(ctx, wshrpc.CommandAgentControlData{ORef: oref})
+	if err := (&WshServer{}).AgentBtwCommand(ctx, wshrpc.CommandAgentBtwData{BlockId: blockId, Question: "  which file?  "}); err != nil {
+		t.Fatalf("the open stream did not take the question: %v", err)
+	}
+	select {
+	case msg := <-ch:
+		if msg.Error != nil || msg.Response.Btw != "which file?" || msg.Response.Text != "" {
+			t.Fatalf("got %+v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("nothing streamed")
+	}
+}
+
+func TestAgentBtwWithNoModStreamIsRefused(t *testing.T) {
+	err := (&WshServer{}).AgentBtwCommand(context.Background(), wshrpc.CommandAgentBtwData{BlockId: "no-such-block", Question: "q"})
+	if err == nil {
+		t.Fatalf("a block with no stream took the question")
+	}
+	if err := (&WshServer{}).AgentBtwCommand(context.Background(), wshrpc.CommandAgentBtwData{BlockId: "b", Question: " "}); err == nil {
+		t.Fatalf("an empty question was taken")
+	}
+}
+
 func TestAgentControlRefusesAnORefThatIsNoBlock(t *testing.T) {
 	ch := (&WshServer{}).AgentControlCommand(context.Background(), wshrpc.CommandAgentControlData{ORef: "tab:abc"})
 	if msg := <-ch; msg.Error == nil {

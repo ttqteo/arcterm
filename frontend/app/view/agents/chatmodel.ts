@@ -18,8 +18,10 @@ import {
     type Card,
 } from "../../../../claude/arc-view-mod/hooks/prompt-core";
 import { parseWake, recapLine, wakeSummary, type Wake } from "../../../../claude/arc-view-mod/hooks/wake-core";
-import type { AgentEntry, AgentState, EditFile } from "./agentsviewmodel";
+import type { AgentEntry, AgentState, BtwAnswer, EditFile, ShellResult } from "./agentsviewmodel";
 import { groupCompact, type CompactItem, type WorkItem } from "./compacttimeline";
+import { opensPanel } from "./slashcommands";
+import type { TurnStats } from "./transcriptprojection";
 
 /** One piece of what the agent did between two of your messages. */
 export type AgentPart =
@@ -37,8 +39,10 @@ export type ChatMarker = Extract<CompactItem, { kind: "compaction" | "interrupte
 export type ChatItem =
     // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none
     | { kind: "you"; key: string; text: string; images?: string[] }
-    // a slash command or skill you typed, as "/name args" (check with `"command" in item`)
-    | { kind: "you"; key: string; command: string }
+    // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
+    // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
+    // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
+    | { kind: "you"; key: string; command: string; shell?: ShellResult; terminal?: true; btw?: BtwAnswer }
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES)
     | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[] }
     // everything the agent said and did between two of the items around it
@@ -101,6 +105,22 @@ function commandText(c: { name: string; args?: string; isSkill?: boolean }): str
     return c.args ? `${name} ${c.args}` : name;
 }
 
+// a panel's closing line ("Config dialog dismissed", "Theme picker dismissed"): it says nothing a reader needs
+const DISMISSED = /^[^\n]* dismissed$/;
+
+// a command as your side of chat: what it printed under it, or, for a panel that printed nothing but its closing line,
+// a mark that it opened on Claude Code's own screen
+function commandItem(c: Extract<CompactItem, { kind: "command" }>): Extract<ChatItem, { kind: "you" }> {
+    const key = keyOf("you", c.index);
+    const command = commandText(c);
+    const shell = c.shell;
+    const said = shell != null && (shell.error !== "" || !DISMISSED.test(shell.output));
+    if (!c.isSkill && c.name.startsWith("/") && !said && opensPanel(c.name.slice(1))) {
+        return { kind: "you", key, command, terminal: true };
+    }
+    return { kind: "you", key, command, ...(shell != null ? { shell } : {}), ...(c.btw != null ? { btw: c.btw } : {}) };
+}
+
 /**
  * Pure: the transcript as chat items. Every agent-side item (a message, a stretch of tools) between two of your
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
@@ -133,7 +153,7 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
             }
             case "command":
                 group = null;
-                out.push({ kind: "you", key: keyOf("you", item.index), command: commandText(item) });
+                out.push(commandItem(item));
                 break;
             case "message":
                 agentParts(item.index).push({ kind: "prose", text: item.text });
@@ -155,6 +175,65 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
         }
     }
     return out;
+}
+
+// "860", "3.1k", "13k", "1.3M": one decimal while the number is short, as the TUI's counter reads
+function shortCount(n: number): string {
+    if (n >= 1_000_000) {
+        return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+    }
+    if (n >= 10_000) {
+        return `${Math.round(n / 1_000)}k`;
+    }
+    if (n >= 1_000) {
+        return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+    }
+    return String(n);
+}
+
+// "34s", "1m 11s", "1h 2m"
+function shortDuration(ms: number): string {
+    const secs = Math.max(0, Math.floor(ms / 1000));
+    if (secs < 60) {
+        return `${secs}s`;
+    }
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) {
+        return `${mins}m ${secs % 60}s`;
+    }
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+/** Pure: what the working line adds of the turn under way, as the TUI's "(1m 11s · ↓ 3.1k tokens)": how long it has
+ *  run and the output tokens of its replies so far (transcriptprojection.ts turnStats). The tokens are left out before
+ *  the first reply lands, and the time when the prompt carried none. */
+export function turnStatsLabel(stats: TurnStats, now: number): string {
+    const parts: string[] = [];
+    if (Number.isFinite(stats.startedAt)) {
+        parts.push(shortDuration(now - stats.startedAt));
+    }
+    if (stats.outputTokens > 0) {
+        parts.push(`↓ ${shortCount(stats.outputTokens)} ${stats.outputTokens === 1 ? "token" : "tokens"}`);
+    }
+    return parts.join(" · ");
+}
+
+/** Pure: whether the box's text runs as a bash command: it starts with `!`, which Claude Code's own box reads as bash
+ *  mode when the text is typed into it, so the command runs in the agent's shell and its output joins the
+ *  conversation. A `!` after a leading space is plain text there too. */
+export function bashMode(text: string): boolean {
+    return text.startsWith("!");
+}
+
+/** Claude Code's send-now chord, ctrl+x ctrl+s (its other key, ctrl+enter, reaches it as a plain Enter from some
+ *  terminals): it sends every queued message at once, moving the running tools to the background instead of ending
+ *  the turn (v2.1.281 on). */
+export const SEND_NOW_KEYS = "\x18\x13";
+
+/** Pure: whether a queued message offers Send now: only while Claude works. While it asks, a permission or question
+ *  prompt holds the keys, and the chord would land in the prompt instead. */
+export function canSendNow(state: AgentState): boolean {
+    return state === "working";
 }
 
 /** Pure: the agent side's "working" line while the agent works, null otherwise. */

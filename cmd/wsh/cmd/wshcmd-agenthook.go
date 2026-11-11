@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -56,7 +58,12 @@ type ccHookEvent struct {
 	NotificationType string          `json:"notification_type"`
 	PermissionMode   string          `json:"permission_mode"`
 	Trigger          string          `json:"trigger"`
+	// Error is the kind of API error a StopFailure turn ended on: rate_limit, authentication_failed, server_error …
+	Error string `json:"error"`
 }
+
+// stopFailureRateLimit is the StopFailure error of a turn that hit the usage limit
+const stopFailureRateLimit = "rate_limit"
 
 // agentEmission describes what to publish for one hook event. State=="" means no
 // parent-state event (a clean no-op).
@@ -72,6 +79,12 @@ func planEmission(ev ccHookEvent) agentEmission {
 		return agentEmission{State: baseds.AgentState_Working, AttachModelTitle: true}
 	case "Stop":
 		return agentEmission{State: baseds.AgentState_Idle, AttachModelTitle: true}
+	case baseds.AgentHook_StopFailure:
+		// an API error ended the turn, where no Stop fires: without this the agent read working until the stall check
+		if ev.Error == stopFailureRateLimit {
+			return agentEmission{State: baseds.AgentState_Idle, Detail: baseds.StopFailureDetail_UsageLimit}
+		}
+		return agentEmission{State: baseds.AgentState_Idle}
 	case "Notification":
 		switch ev.NotificationType {
 		case "idle_prompt":
@@ -713,9 +726,16 @@ func hookDebugLine(msg string) {
 }
 
 // agentHookRun always returns nil: a hook must never break the agent's turn.
+// reportsToBlock says whether an agent hook has a block to report into: it runs inside an arcterm block, and not in a
+// service's process tree (ARC_SERVICE), where a Claude the service runs (its page asking Claude, a script) inherits the
+// service block's id and would make that block read as an agent, one the sleep regulator then stops. Pure.
+func reportsToBlock(blockId, service string) bool {
+	return blockId != "" && service == ""
+}
+
 func agentHookRun(cmd *cobra.Command, args []string) error {
-	if os.Getenv("WAVETERM_BLOCKID") == "" {
-		return nil // not inside an arcterm block; near-instant no-op (not logged: not an error)
+	if !reportsToBlock(os.Getenv("WAVETERM_BLOCKID"), os.Getenv(wavebase.ArcServiceVarName)) {
+		return nil // not inside an arcterm block, or inside a service; near-instant no-op (not logged: not an error)
 	}
 	// stamped before any rpc: the per-tool hooks run in the background, and wavesrv orders their reports
 	// by when the hook started, not by when a slow one got through
@@ -750,6 +770,12 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		if out := skillContextOutput(ev, os.Getenv(jarvis.RunAgentEnv) != ""); out != "" {
 			_, _ = os.Stdout.WriteString(out + "\n")
 		}
+		return nil
+	}
+	// a claude nested in the block's agent (a `claude -p` its Bash tool ran) inherits the block's WAVETERM_BLOCKID:
+	// its state, transcript path and login are not the agent's
+	if agentHookShadow == "" && agentobserve.NestedSession() {
+		hookDebugLine("skip: a claude session nested in another event=" + ev.HookEventName)
 		return nil
 	}
 	em := planEmission(ev)

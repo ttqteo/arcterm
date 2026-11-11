@@ -38,6 +38,7 @@ import {
     Columns2,
     Ellipsis,
     GitCommitHorizontal,
+    Link2,
     Maximize2,
     Minimize2,
     PanelRight,
@@ -68,7 +69,7 @@ import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
-import { InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
+import { initiativeLinkPickerAtom, InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { machineServersReadingAtom } from "./machineserversstore";
@@ -200,10 +201,30 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
 
 // An agent with no initiative: "+ Link to initiative" opens the picker. A pick writes the tab's session:effort, and
 // attaches the agent to the initiative's active chunk (else its first pending one) so the chunk reads as its work; a new
-// initiative made from the session is an idea with no chunk, so nothing is attached.
-function LinkToInitiative({ agent, project }: { agent: AgentVM; project: string }) {
-    const [open, setOpen] = useState(false);
-    const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+// initiative made from the session is an idea with no chunk, so nothing is attached. `menuAnchor` given (the Chat view,
+// whose header has no chip): only the picker, opened from the "…" menu or `i` and hung under the "…" button.
+function LinkToInitiative({
+    agent,
+    project,
+    menuAnchor,
+}: {
+    agent: AgentVM;
+    project: string;
+    menuAnchor?: HTMLElement | null;
+}) {
+    const open = useAtomValue(initiativeLinkPickerAtom) === agent.id;
+    const setOpen = (v: boolean) => globalStore.set(initiativeLinkPickerAtom, v ? agent.id : null);
+    const [chip, setChip] = useState<HTMLButtonElement | null>(null);
+    const anchor = menuAnchor !== undefined ? menuAnchor : chip;
+    // a picker left open when its header goes (Chat ↔ Terminal, another agent picked) does not reopen later
+    useEffect(
+        () => () => {
+            if (globalStore.get(initiativeLinkPickerAtom) === agent.id) {
+                globalStore.set(initiativeLinkPickerAtom, null);
+            }
+        },
+        [agent.id]
+    );
     const link = (pick: string) => {
         setOpen(false);
         fireAndForget(async () => {
@@ -233,22 +254,26 @@ function LinkToInitiative({ agent, project }: { agent: AgentVM; project: string 
     };
     return (
         <>
-            {" · "}
-            <button
-                ref={setAnchor}
-                type="button"
-                data-initiative-link
-                aria-haspopup="dialog"
-                aria-expanded={open}
-                onClick={() => setOpen((v) => !v)}
-                title="Link this agent to an initiative (i)"
-                className={cn(
-                    "inline-flex h-[20px] cursor-pointer items-center rounded-[5px] border border-dashed border-edge-strong px-[7px] align-middle text-[11px] text-ink-mid hover:text-primary",
-                    open && "bg-surface-selected"
-                )}
-            >
-                + Link to initiative
-            </button>
+            {menuAnchor !== undefined ? null : (
+                <>
+                    {" · "}
+                    <button
+                        ref={setChip}
+                        type="button"
+                        data-initiative-link
+                        aria-haspopup="dialog"
+                        aria-expanded={open}
+                        onClick={() => setOpen(!open)}
+                        title="Link this agent to an initiative (i)"
+                        className={cn(
+                            "inline-flex h-[20px] cursor-pointer items-center rounded-[5px] border border-dashed border-edge-strong px-[7px] align-middle text-[11px] text-ink-mid hover:text-primary",
+                            open && "bg-surface-selected"
+                        )}
+                    >
+                        + Link to initiative
+                    </button>
+                </>
+            )}
             <InitiativePicker
                 open={open}
                 anchor={anchor}
@@ -423,6 +448,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const chatShown = chatCapable(agent);
     const chatAsleep = chatShown && agent.sleeping != null;
     const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
+    // Chat shows the model and the context in its box and the agent's work as it goes, so its header keeps the name and
+    // where it works: no runtime mark, state word, model, context or Alt+C (the box holds the focus, not the TUI), and
+    // Link to initiative moves into the "…" menu. The dot keeps the state, its word in its title.
+    const lean = chatShown && shownView === "chat";
+    const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
+    const linkFromMenu = lean && canLink && agent.effortId == null;
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
     // what Alt+C walks: asleep it skips the disabled Chat and Terminal (agent:view-cycle passes the same asleep flag)
@@ -557,6 +588,14 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             });
             items.push({ type: "separator" });
         }
+        if (linkFromMenu) {
+            items.push({
+                label: "Link to initiative…",
+                icon: <Link2 size={15} />,
+                accel: "i",
+                click: () => globalStore.set(initiativeLinkPickerAtom, agent.id),
+            });
+        }
         if (canSplit) {
             // the header is the focused agent's, which is whose folder the picker opens a tool in
             items.push({
@@ -613,7 +652,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             {stage ? null : ended || failed ? (
                 <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
-                <StatusDot state={shown} pulse={shown !== "idle"} className="!h-[8px] !w-[8px]" />
+                // in Chat the state word is left out, so the dot carries it as its title
+                <span title={lean ? stateText : undefined} className="flex shrink-0">
+                    <StatusDot state={shown} pulse={shown !== "idle"} className="!h-[8px] !w-[8px]" />
+                </span>
             )}
             {/* one row: the name first (it is the header's first line of text), then what it is and where it works,
                 the project and its lineage truncating first when the pane is narrow */}
@@ -630,12 +672,14 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 </span>
                 {stage ? null : (
                     <>
-                        <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
-                            <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
-                        </span>
+                        {lean ? null : (
+                            <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
+                                <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
+                            </span>
+                        )}
                         {queued ? (
                             <QueuedJobTag job={queued} />
-                        ) : (
+                        ) : lean && !ended && !failed ? null : (
                             <span
                                 data-agent-state-pill
                                 className={cn(
@@ -663,8 +707,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         </span>
                     </>
                 )}
-                {agent.model ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
-                {agent.usage?.contextpct != null ? (
+                {agent.model && !lean ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
+                {agent.usage?.contextpct != null && !lean ? (
                     <span
                         title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
                         className={cn(
@@ -683,7 +727,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     {project || "—"}
                     {agent.effortId != null ? (
                         <InitiativeLink model={model} agent={agent} />
-                    ) : canLink ? (
+                    ) : canLink && !lean ? (
                         <LinkToInitiative agent={agent} project={project} />
                     ) : null}
                     {lineage?.kind === "lead" ? (
@@ -731,9 +775,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
                     </button>
                 ) : null}
-                {viewControl ? (
+                {viewControl && !lean ? (
                     // the bare b, c and r are typed into the TUI while it holds focus, so the chord that switches from
-                    // inside it sits on screen beside the control
+                    // inside it sits on screen beside the control (Chat's box holds the focus instead, and leaves it out)
                     <KeyCap
                         chord="Alt:c"
                         variant="inline"
@@ -851,8 +895,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 ) : null}
                 {blockId != null ? (
                     <button
+                        ref={setMoreButton}
                         type="button"
                         data-agent-header-more
+                        data-initiative-link-menu={linkFromMenu ? "" : undefined}
                         aria-haspopup="menu"
                         aria-label="More"
                         onClick={openHeaderMenu}
@@ -863,6 +909,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                     </button>
                 ) : null}
+                {linkFromMenu ? <LinkToInitiative agent={agent} project={project} menuAnchor={moreButton} /> : null}
                 {canSplit ? (
                     <button
                         type="button"

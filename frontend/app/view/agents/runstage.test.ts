@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { RunInfo } from "./runlineage";
-import { PAUSED_BY_YOU_LABEL, PAUSED_LABEL, runStage } from "./runstage";
+import {
+    PAUSED_AT_LIMIT_LABEL,
+    PAUSED_BY_YOU_LABEL,
+    PAUSED_LABEL,
+    pausedLabel,
+    resumeClock,
+    runStage,
+} from "./runstage";
 
 type R = Pick<RunInfo, "status" | "land" | "dag">;
 const dag = (status: string, final?: Partial<FinalStage>): TaskGroup =>
@@ -170,6 +177,17 @@ describe("runStage", () => {
         expect(runStage({ status: "paused", pausedBy: "manual" }).label).toBe(PAUSED_BY_YOU_LABEL);
         expect(PAUSED_BY_YOU_LABEL).toBe("Paused · until you resume");
         expect(runStage({ status: "paused", pausedBy: "auto" }).label).toBe(PAUSED_LABEL);
+    });
+
+    it("says when a run paused at the usage limit resumes", () => {
+        const now = new Date(2026, 10, 11, 1, 30).getTime();
+        const today = new Date(2026, 10, 11, 5, 2).getTime();
+        const thursday = new Date(2026, 10, 12, 5, 2).getTime(); // the 12th of November 2026 is a Thursday
+        expect(pausedLabel("limit", today, now)).toBe("Paused · usage limit, resumes 05:02");
+        expect(pausedLabel("limit", thursday, now)).toBe("Paused · usage limit, resumes Thu 05:02");
+        expect(pausedLabel("limit", undefined, now)).toBe(PAUSED_AT_LIMIT_LABEL);
+        expect(resumeClock(new Date(2026, 10, 11, 23, 9).getTime(), now)).toBe("23:09");
+        expect(runStage({ status: "paused", pausedBy: "limit" }).label).toBe(PAUSED_AT_LIMIT_LABEL);
     });
 
     it("keeps the stage a paused run stopped in, and its tail, under the paused words", () => {

@@ -6,6 +6,7 @@ import type { LiveSession } from "./sessionsarchivestore";
 import {
     canOpenAsleep,
     defaultMember,
+    forkLaunchOpts,
     groupRunSessions,
     LEAD_MEMBER,
     memberOfSession,
@@ -654,6 +655,35 @@ describe("resumeLaunchOpts launch shape", () => {
     it("names a project-less session's agent 'agent', and keeps a named project's name", () => {
         expect(resumeLaunchOpts(mk({ ...base, projectname: "" })).projectName).toBe("agent");
         expect(resumeLaunchOpts(mk({ ...base })).projectName).toBe("proj");
+    });
+});
+
+describe("forkLaunchOpts", () => {
+    it("resumes a Claude session as a new one (--fork-session) in a tab of its own, named as a fork", () => {
+        const opts = forkLaunchOpts(
+            mk({ task: "Pull và build", resumecommand: "claude --resume ade04375", transcriptpath: "/t.jsonl" })
+        );
+        expect(opts).toMatchObject({
+            runtime: "claude",
+            startupCommand: "claude --resume ade04375 --fork-session",
+            task: "",
+            projectPath: "/p",
+            label: "Pull và build (fork)",
+        });
+        // not resumeOf: the tab that holds the session it forks is not gone to, the fork is a session of its own
+        expect(opts?.resumeOf).toBeUndefined();
+    });
+
+    it("keeps the arguments the resume carries, a home session's ask-only settings included", () => {
+        const opts = forkLaunchOpts(mk({ resumecommand: "claude --resume x --settings .arc/claude-ask.json" }));
+        expect(opts?.startupCommand).toBe("claude --resume x --settings .arc/claude-ask.json --fork-session");
+    });
+
+    it("names an untitled fork Fork, and offers none for a session that cannot resume or is not Claude's", () => {
+        expect(forkLaunchOpts(mk({ task: " ", resumecommand: "claude --resume x" }))?.label).toBe("Fork");
+        expect(forkLaunchOpts(mk({ resumecommand: "" }))).toBeNull();
+        expect(forkLaunchOpts(mk({ runtime: "codex", resumecommand: "codex resume x" }))).toBeNull();
+        expect(forkLaunchOpts(mk({ runtime: "pi", resumecommand: "pi", resumeargs: ["--session", "/t"] }))).toBeNull();
     });
 });
 

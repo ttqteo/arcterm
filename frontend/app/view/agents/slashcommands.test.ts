@@ -5,6 +5,7 @@ import {
     groupOf,
     insertSlash,
     mergeCommands,
+    opensPanel,
     opensTui,
     slashGroups,
     slashMatches,
@@ -94,6 +95,29 @@ describe("opensTui", () => {
         expect(opensTui("/compact", all)).toBe(false);
         expect(opensTui("/nosuch", all)).toBe(false);
         expect(opensTui("model", all)).toBe(false);
+    });
+});
+
+describe("opensPanel", () => {
+    it("is true for a command whose screen is a panel of Claude Code's own", () => {
+        for (const name of [
+            "config",
+            "permissions",
+            "hooks",
+            "resume",
+            "memory",
+            "status",
+            "usage",
+            "model",
+            "login",
+        ]) {
+            expect(opensPanel(name)).toBe(true);
+        }
+    });
+    it("is false for one that prints or runs a prompt", () => {
+        for (const name of ["compact", "clear", "goal", "init", "superpowers:brainstorming"]) {
+            expect(opensPanel(name)).toBe(false);
+        }
     });
 });
 

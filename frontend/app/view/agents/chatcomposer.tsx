@@ -29,14 +29,16 @@ import { ArrowUp, Moon, Square } from "lucide-react";
 import { AnimatePresence, MotionConfig } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
+import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachmentTray } from "./attachmenttray";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
+import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
 import { pendsAsBubble, recall, sendHold } from "./chatpending";
-import { addPending, noteSent, sentHistory } from "./chatpendingstore";
+import { addPending, dropPending, noteSent, sentHistory } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
@@ -102,13 +104,30 @@ export function ChatComposer({
     // the text and the chips are kept per agent outside the box, so switching to another agent or surface (which
     // unmounts it) and back finds what you were writing
     const att = useComposerAttachments({ keep: true, draftKey: agent.id });
+    // flips the pane to the agent's terminal with the keyboard in it
+    const showTerminal = () => {
+        setChatMode(agent.id, "terminal");
+        const blockId = agent.blockId;
+        if (blockId != null) {
+            requestAnimationFrame(() => focusTerm(blockId));
+        }
+    };
     // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
     const { text, setText, message, canSend, waking, send } = useAgentSend(
         agent.blockId,
         agent,
         asleep ? undefined : att.attachments,
-        { keepDraft: true }
+        {
+            keepDraft: true,
+            // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
+            onBtwTyped: (sent) => {
+                dropPending(agent.id, sent);
+                showTerminal();
+            },
+        }
     );
+    // `!` first: Claude Code runs the text as a bash command, so the box says so as its own box does (chatmodel.ts)
+    const bash = bashMode(text);
     const editorRef = useRef<EditorLike>(null);
     // The text the box was last given or said (every edit goes out through `onChange`, which skips a call that changes
     // nothing: a click that only moves the caret says the same text again), and the caret an outside change asks for
@@ -227,11 +246,7 @@ export function ChatComposer({
     // a bare /model, /config… draws a menu on Claude Code's own screen: show that screen to answer it
     const flipIfTui = (sent: string) => {
         if (opensTui(sent, slash.commands)) {
-            setChatMode(agent.id, "terminal");
-            const blockId = agent.blockId;
-            if (blockId != null) {
-                requestAnimationFrame(() => focusTerm(blockId));
-            }
+            showTerminal();
         }
     };
     const submit = () => {
@@ -245,7 +260,8 @@ export function ChatComposer({
             noteSent(agent.id, sent);
             if (!asleep) {
                 // a /command is no bubble of yours: the transcript draws it as a command row, which would leave the
-                // pending bubble up beside it for minutes
+                // pending bubble up beside it for minutes. A /btw and a bare panel command are: nothing of them lands
+                // until the side answer comes or the panel closes (chatpending.ts pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
                     addPending(agent.id, sent, entries);
                 }
@@ -275,9 +291,7 @@ export function ChatComposer({
             pushToast({ title: "Not sent", message: hold, level: "info" });
             return;
         }
-        fireAndForget(() =>
-            RpcApi.ControllerInputCommand(TabRpcClient, { blockid, inputdata64: stringToBase64(command + "\r") })
-        );
+        fireAndForget(() => submitToAgent(blockid, command));
         onSent?.();
         noteSent(agent.id, command);
         flipIfTui(command);
@@ -397,9 +411,13 @@ export function ChatComposer({
         <div
             {...dataAttrs}
             data-agent-chat-composer={agent.id}
+            data-chat-bash-mode={bash ? "" : undefined}
             onDragOver={onDragOver}
             onDrop={onDrop}
-            className="mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border border-edge-mid bg-surface-raised px-3 py-[10px] focus-within:border-edge-strong"
+            className={cn(
+                "mx-auto flex w-full max-w-[760px] flex-col gap-2 rounded-[12px] border bg-surface-raised px-3 py-[10px] transition-colors duration-[140ms] motion-reduce:transition-none",
+                bash ? "border-accent/60" : "border-edge-mid focus-within:border-edge-strong"
+            )}
         >
             {asleep ? null : <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />}
             <ChatEditor
@@ -497,6 +515,22 @@ export function ChatComposer({
                         )}
                     </AnimatePresence>
                     <AnimatePresence initial={false}>
+                        {bash ? (
+                            <Fold key="bash">
+                                <div
+                                    data-chat-bash
+                                    title="Bash mode: runs in the agent's shell, and what it prints joins the conversation"
+                                    className="flex h-[28px] items-center gap-1.5 whitespace-nowrap pl-1 pr-1 text-[12px] text-accent"
+                                >
+                                    <span aria-hidden className="font-mono font-semibold">
+                                        !
+                                    </span>
+                                    Bash mode
+                                </div>
+                            </Fold>
+                        ) : null}
+                    </AnimatePresence>
+                    <AnimatePresence initial={false}>
                         {asleep ? (
                             <Fold key="asleep">
                                 <div
@@ -529,7 +563,7 @@ export function ChatComposer({
                     <button
                         type="button"
                         data-chat-send
-                        title={hold ?? blocker ?? "Send"}
+                        title={hold ?? blocker ?? (bash ? "Run in the agent's shell" : "Send")}
                         aria-label={hold ?? (showWord ? undefined : "Send")}
                         onClick={submit}
                         disabled={!sendable}

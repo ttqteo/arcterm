@@ -82,7 +82,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
-import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
+import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
@@ -1743,7 +1743,12 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 if (agent.effortId == null) {
-                    return clickThrough("[data-initiative-link]");
+                    // the header offers a link (its chip, or in Chat its "…" menu): open the one picker both share
+                    if (document.querySelector("[data-initiative-link], [data-initiative-link-menu]") == null) {
+                        return false;
+                    }
+                    globalStore.set(initiativeLinkPickerAtom, agent.id);
+                    return;
                 }
                 globalStore.set(initiativePopoverAtom, agent.id);
             },

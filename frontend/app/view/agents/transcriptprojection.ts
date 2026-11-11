@@ -4,7 +4,9 @@
 // Pure projection of a Claude Code transcript (JSONL lines) into AgentEntry[].
 // No React, no Wave runtime imports. Deterministic; no LLM (spec §5.3).
 
+import { parseBtwNotice } from "../../../../claude/arc-mod/hooks/btw-core";
 import type { AgentEntry, CardTask } from "./agentsviewmodel";
+import { parseAnsiLines } from "./ansitext";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
 const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline uses the per-kind budget
@@ -27,6 +29,15 @@ const VERB_BY_TOOL: Record<string, string> = {
     Skill: "skill",
     AskUserQuestion: "asked",
 };
+
+/** Pure: did an errored Bash result come back without the command ever running? One that ran and failed starts with its
+ *  exit code (`Exit code 1`; a timeout is `Exit code 143`), and one stopped mid-run says it was interrupted, so it may have
+ *  run. Every other error is Claude Code refusing the call before it started: a hook (`Refused by arcterm: …`), a
+ *  permission rule or the auto mode classifier, the person declining it, a malformed call. An empty body stays a failure. */
+export function bashNeverRan(body: string): boolean {
+    const t = body.trimStart();
+    return t !== "" && !/^Exit code \d+/.test(t) && !/^(Interrupted\b|\[Tool call interrupted)/.test(t);
+}
 
 function verbFor(name: string): string {
     return VERB_BY_TOOL[name] ?? name.toLowerCase();
@@ -80,9 +91,51 @@ function parseCommand(content: string): { name: string; args?: string } | null {
     return args !== "" ? { name, args } : { name };
 }
 
-function skillLeaf(skill: string): string {
-    const parts = skill.split(":");
-    return parts[parts.length - 1] || skill;
+// `! cmd` typed in Claude Code's box (bash mode) is written as a user record holding <bash-input>, then one holding
+// <bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr> once it finishes
+const BASH_INPUT = /^\s*<bash-input>([^]*)<\/bash-input>\s*$/;
+const BASH_STDOUT = /<bash-stdout>([^]*?)<\/bash-stdout>/;
+const BASH_STDERR = /<bash-stderr>([^]*?)<\/bash-stderr>/;
+// what Claude Code writes as the stdout of a command that printed nothing: no output of the command's own
+const BASH_NO_OUTPUT = "(Bash completed with no output)";
+
+// captured output as plain text: the colours and cursor moves a terminal would draw, dropped
+function plainOutput(text: string): string {
+    return parseAnsiLines(text.split("\n"))
+        .map((runs) => runs.map((r) => r.text).join(""))
+        .join("\n")
+        .trim();
+}
+
+// What a slash command printed comes after its command as a record of its own: a user string, or a system record of
+// subtype local_command (a panel command such as /login writes its name that way too, and only once it closes)
+const LOCAL_STDOUT = /<local-command-stdout>([^]*?)<\/local-command-stdout>/;
+const LOCAL_STDERR = /<local-command-stderr>([^]*?)<\/local-command-stderr>/;
+
+function isLocalOutput(content: string): boolean {
+    return content.includes("<local-command-stdout>") || content.includes("<local-command-stderr>");
+}
+
+function joinOutput(a: string, b: string): string {
+    return a === "" ? b : b === "" ? a : `${a}\n${b}`;
+}
+
+// puts a slash command's output on the command right before it, as bash mode's goes on its `!` command. One whose
+// command is not in the lines read, follows a bash command, or printed nothing is dropped, never a bubble.
+function attachLocalOutput(entries: AgentEntry[], content: string): void {
+    const last = entries[entries.length - 1];
+    if (last?.kind !== "command" || last.name === "!" || last.isSkill) {
+        return;
+    }
+    const output = plainOutput(LOCAL_STDOUT.exec(content)?.[1] ?? "");
+    const error = plainOutput(LOCAL_STDERR.exec(content)?.[1] ?? "");
+    if (output === "" && error === "") {
+        return;
+    }
+    last.shell =
+        last.shell == null
+            ? { output, error }
+            : { output: joinOutput(last.shell.output, output), error: joinOutput(last.shell.error, error) };
 }
 
 // Claude interruption marker, both "[Request interrupted by user]" and the "...for tool use]" variant.
@@ -139,9 +192,58 @@ function mergeCompaction(entries: AgentEntry[], patch: Partial<Extract<AgentEntr
     entries.push({ kind: "compaction", ...patch });
 }
 
+/** The turn under way: when its prompt was sent (NaN when the record has no time) and the output tokens of the model's
+ *  replies since, as the TUI's "(1m 11s · ↓ 3.1k tokens)" counts them. */
+export interface TurnStats {
+    startedAt: number;
+    outputTokens: number;
+}
+
+// a prompt you sent: a user record of your text, not a tool's result, a meta record or a compaction's summary (a
+// message queued mid-turn is an attachment record, which joins the turn under way as the TUI's counter does)
+function isPrompt(rec: any): boolean {
+    if (rec?.type !== "user" || rec.isMeta === true || rec.isCompactSummary === true) {
+        return false;
+    }
+    const content = rec.message?.content;
+    if (typeof content === "string") {
+        return content.trim() !== "";
+    }
+    return Array.isArray(content) && content.some((b: any) => b?.type === "text" && typeof b.text === "string");
+}
+
+/** Pure: the turn at the end of a Claude transcript, read back from its last line to its prompt: each reply's output
+ *  tokens once (Claude Code writes every block of a reply as its own record, repeating the reply's usage; a request's
+ *  copy is skipped). Null when the lines hold no prompt. */
+export function turnStats(lines: string[]): TurnStats | null {
+    const byReply = new Map<string, number>();
+    for (let i = lines.length - 1; i >= 0; i--) {
+        let rec: any;
+        try {
+            rec = JSON.parse(lines[i]);
+        } catch {
+            continue;
+        }
+        if (isPrompt(rec)) {
+            const startedAt = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
+            let outputTokens = 0;
+            for (const n of byReply.values()) {
+                outputTokens += n;
+            }
+            return { startedAt, outputTokens };
+        }
+        const out = rec?.message?.usage?.output_tokens;
+        if (rec?.type === "assistant" && !isRequestCopy(rec) && typeof out === "number") {
+            const id = typeof rec.message.id === "string" ? rec.message.id : `line:${i}`;
+            byReply.set(id, Math.max(byReply.get(id) ?? 0, out));
+        }
+    }
+    return null;
+}
+
 /** Pure: project transcript JSONL lines into ordered previous-info entries.
  *  assistant text -> message; tool_use -> action; tool_result -> outcome on the matching
- *  action (fail on error; ok only for "ran", to avoid a checkmark on every read/edit).
+ *  action (ok, fail on error, or blocked for a Bash refused before it ran; see bashNeverRan).
  *  Unparseable lines and unknown record types are skipped. */
 export function projectTranscript(lines: string[]): AgentEntry[] {
     const entries: AgentEntry[] = [];
@@ -178,16 +280,8 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     if (block.name === HANDBACK_TOOL) {
                         continue;
                     }
-                    if (block.name === "Skill" && block?.caller?.type === "direct" && typeof block.input?.skill === "string") {
-                        const args = typeof block.input.args === "string" ? block.input.args.trim() : "";
-                        entries.push({
-                            kind: "command",
-                            name: skillLeaf(block.input.skill),
-                            isSkill: true,
-                            ...(args !== "" ? { args } : {}),
-                        });
-                        continue;
-                    }
+                    // a Skill call is the agent's own step, drawn as a skill action: Claude Code writes caller "direct" on
+                    // every tool call the model makes, and a skill you run arrives as a <command-name> user record
                     const action: ActionEntry = { kind: "action", verb: verbFor(block.name), target: targetFor(block.input) };
                     if (typeof block.input?.file_path === "string" && block.input.file_path !== "") {
                         action.path = block.input.file_path;
@@ -252,9 +346,21 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 const note = parseTaskNotification(content);
                 if (note != null) {
                     entries.push(note);
-                } else if (content.includes("<local-command-stdout>")) {
-                    // slash-command stdout (e.g. "Compacted …", with raw ANSI) — not shown, matching the
-                    // system/local_command record that is already skipped. Never a user bubble.
+                } else if (isLocalOutput(content)) {
+                    // a slash command's output ("Compacted …", with raw ANSI): it goes on its command, never a bubble
+                    attachLocalOutput(entries, content);
+                } else if (BASH_INPUT.test(content)) {
+                    entries.push({ kind: "command", name: "!", args: BASH_INPUT.exec(content)![1].trim() });
+                } else if (BASH_STDOUT.test(content) || BASH_STDERR.test(content)) {
+                    // it goes on its command; one whose command is not in the lines read is dropped, never a bubble
+                    const last = entries[entries.length - 1];
+                    if (last?.kind === "command" && last.name === "!" && last.shell == null) {
+                        const output = plainOutput(BASH_STDOUT.exec(content)?.[1] ?? "");
+                        last.shell = {
+                            output: output === BASH_NO_OUTPUT ? "" : output,
+                            error: plainOutput(BASH_STDERR.exec(content)?.[1] ?? ""),
+                        };
+                    }
                 } else if (isInterrupted(content)) {
                     entries.push({ kind: "interrupted" });
                 } else {
@@ -296,6 +402,11 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                 }
                 const body = toolResultText(block.content);
                 const tool = (action as any)._tool as string | undefined;
+                // a refused command reads as blocked, not ran: it never started, and it is no failure of the work
+                const blocked = tool === "Bash" && block.is_error === true && bashNeverRan(body);
+                if (blocked) {
+                    action.verb = "blocked";
+                }
                 if (tool === "Grep" && body) {
                     const matches = parseGrep(body);
                     action.detail = { kind: "grep", matches };
@@ -309,7 +420,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         kind: "bash",
                         command: (action as any)._command,
                         output: body,
-                        exit: block.is_error === true ? 1 : 0,
+                        exit: blocked ? null : block.is_error === true ? 1 : 0,
                     };
                 } else if (action.detail?.kind === "ask" && typeof rec.toolUseResult?.answers === "object") {
                     // the answers ride on the record, keyed by question text; a rejected call carries a string there
@@ -321,13 +432,32 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     action.durationMs = resTs - useTs;
                 }
                 // a result that landed is an outcome, whatever the tool: a tool with none is still running (inFlight)
-                action.outcome = block.is_error === true ? "fail" : "ok";
+                action.outcome = blocked ? "blocked" : block.is_error === true ? "fail" : "ok";
             }
             if (images.length > 0) {
                 if (prompt != null) {
                     prompt.images = images;
                 } else if (!content.some((b: any) => b?.type === "tool_result")) {
                     entries.push({ kind: "user", text: "", images });
+                }
+            }
+            continue;
+        }
+        // a /btw sent from Chat, which the arc mod answered with a fork of the session and wrote as a notice the model
+        // never reads (stored as a system record of subtype informational): a /btw of yours, carrying its side answer
+        const btw = rec.type === "system" && typeof rec.content === "string" ? parseBtwNotice(rec.content) : null;
+        if (btw != null) {
+            const { question, ...answer } = btw;
+            entries.push({ kind: "command", name: "/btw", args: question, btw: answer });
+            continue;
+        }
+        if (rec.type === "system" && rec.subtype === "local_command" && typeof rec.content === "string") {
+            if (isLocalOutput(rec.content)) {
+                attachLocalOutput(entries, rec.content);
+            } else {
+                const cmd = parseCommand(rec.content);
+                if (cmd != null) {
+                    entries.push({ kind: "command", ...cmd });
                 }
             }
             continue;

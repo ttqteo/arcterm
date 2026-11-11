@@ -36,6 +36,13 @@ function parseAttrs(source: string): Record<string, string> {
     return attrs;
 }
 
+// a line that ends with </name>, or with a close carrying attributes as Claude Code writes a paste's (`</pasted_content
+// id="cdd1">`): what comes before the close, or null when the line does not end with one
+function beforeClose(line: string, name: string): string | null {
+    const m = new RegExp(String.raw`</${name}(?:${ATTR})*\s*>$`).exec(line.trimEnd());
+    return m == null ? null : line.trimEnd().slice(0, m.index);
+}
+
 // the block that opens on lines[at], or null: where its close line is and the lines of its body
 function readBlock(lines: string[], at: number): { end: number; part: TagPart } | null {
     const open = OPEN_TAG.exec(lines[at]);
@@ -43,7 +50,6 @@ function readBlock(lines: string[], at: number): { end: number; part: TagPart } 
         return null;
     }
     const name = open[1];
-    const close = `</${name}>`;
     const rest = open[3];
     const body: string[] = [];
     const part = (end: number): { end: number; part: TagPart } => ({
@@ -51,10 +57,10 @@ function readBlock(lines: string[], at: number): { end: number; part: TagPart } 
         part: { kind: "tag", tag: name, attrs: parseAttrs(open[2]), body: body.join("\n") },
     });
     // the whole block on one line
-    if (rest.trimEnd().endsWith(close)) {
-        const inner = rest.trimEnd().slice(0, -close.length);
-        if (inner.trim() !== "") {
-            body.push(inner);
+    const oneLine = beforeClose(rest, name);
+    if (oneLine != null) {
+        if (oneLine.trim() !== "") {
+            body.push(oneLine);
         }
         return part(at);
     }
@@ -65,20 +71,29 @@ function readBlock(lines: string[], at: number): { end: number; part: TagPart } 
     let depth = 1;
     for (let i = at + 1; i < lines.length; i++) {
         const line = lines[i];
-        const closes = line.trimEnd().endsWith(close);
+        const inner = beforeClose(line, name);
         const opens = OPEN_TAG.exec(line)?.[1] === name;
-        depth += (opens ? 1 : 0) - (closes ? 1 : 0);
+        depth += (opens ? 1 : 0) - (inner != null ? 1 : 0);
         if (depth > 0) {
             body.push(line);
             continue;
         }
-        const inner = line.trimEnd().slice(0, -close.length);
-        if (inner.trim() !== "") {
+        if (inner != null && inner.trim() !== "") {
             body.push(inner);
         }
         return part(i);
     }
     return null;
+}
+
+/** Pure: a message that is nothing but one paste block the harness wrapped, read as the paste itself. Claude Code wraps
+ *  a whole multi-line message it is handed as one paste (a Chat message queued while the agent worked arrives so): that
+ *  is the message you wrote, not a paste inside it, and its attachment lists sit at the end of the body. Any other
+ *  message comes back as it was. */
+export function unwrapWholePaste(text: string): string {
+    const parts = splitTagged(text.trim());
+    const only = parts.length === 1 ? parts[0] : null;
+    return only?.kind === "tag" && only.tag === "pasted_content" ? only.body : text;
 }
 
 /** Pure: a message cut into its text and its tagged blocks, in order. A message with no block is one text part, as it

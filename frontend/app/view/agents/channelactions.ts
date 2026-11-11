@@ -12,8 +12,8 @@ import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { stringToBase64 } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
+import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import { planMessage, type RosterEntry } from "./channelmessages";
 import { consultStreamKey, consultStreamsAtom, setConsultStream } from "./channelsstore";
@@ -107,10 +107,7 @@ export async function sendChannelMessage(args: {
     }
     if (plan.kind === "steer") {
         if (plan.blockId) {
-            await RpcApi.ControllerInputCommand(TabRpcClient, {
-                blockid: plan.blockId,
-                inputdata64: stringToBase64(plan.text + "\r"),
-            });
+            await submitToAgent(plan.blockId, plan.text);
         }
         await post(channelId, "directive", "you", plan.text, `tab:${plan.targetId}`);
         return;
@@ -135,10 +132,7 @@ export async function steerWorker(args: {
     if (!worker?.blockId) {
         return false;
     }
-    await RpcApi.ControllerInputCommand(TabRpcClient, {
-        blockid: worker.blockId,
-        inputdata64: stringToBase64(text + "\r"),
-    });
+    await submitToAgent(worker.blockId, text);
     await post(channelId, "directive", "you", text, workerORef);
     return true;
 }

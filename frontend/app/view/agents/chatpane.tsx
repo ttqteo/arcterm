@@ -13,33 +13,39 @@
 // AskUserQuestion's choices.
 
 import { layerFade } from "@/app/element/motiontokens";
-import { cn } from "@/util/util";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Highlighter } from "lucide-react";
-import { AnimatePresence, MotionConfig, motion, useIsPresent } from "motion/react";
-import { useEffect, useState } from "react";
+import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
+import { useEffect, useMemo, useState } from "react";
+import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import type { AgentsViewModel } from "./agents";
+import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 import { ChatComposer } from "./chatcomposer";
 import { ChatConversation } from "./chatconversation";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
+import { ChatGoalStrip } from "./chatgoal";
 import { chatCapable } from "./chatmode";
-import { workingText } from "./chatmodel";
+import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
-import { pendingStill } from "./chatpending";
+import { pendingStill, type PendingKind } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
-import { PromptImages } from "./narrationtimeline";
+import { PromptImages, useNow } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
+import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const NO_ENTRIES: AgentEntry[] = [];
@@ -57,7 +63,53 @@ function useIdleSince(idle: boolean): number | null {
 // takes it at the next gap) or "Sending…" otherwise. It goes when the transcript holds the text (pendingStill). It splits
 // the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
 // under it), so nothing changes when the transcript's copy replaces it.
-function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
+// the turn's time and output tokens after the working line, as the TUI's "(1m 11s · ↓ 3.1k tokens)": its own component so
+// the second's tick redraws this alone
+function TurnStatsText({ stats }: { stats: TurnStats }) {
+    const label = turnStatsLabel(stats, useNow(true));
+    return label === "" ? null : (
+        <span data-chat-turn-stats className="flex-none tabular-nums text-ink-faint">
+            ({label})
+        </span>
+    );
+}
+
+// a /btw or a bare panel command sent and not in the transcript yet: the command, dimmed, as its card will draw it, and
+// under it what it waits on: the side answer the arc mod is asking a fork of the session for, or the panel open on Claude
+// Code's own screen (its row lands only once it closes), with a way there
+function PendingCommand({
+    text,
+    kind,
+    onOpenTerminal,
+}: {
+    text: string;
+    kind: PendingKind;
+    onOpenTerminal?: () => void;
+}) {
+    return (
+        <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col items-end gap-1">
+            <div className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]">
+                {text.trim()}
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted">
+                    {kind === "btw" ? "Asking on the side…" : "Open in Terminal"}
+                </span>
+                {kind === "panel" && onOpenTerminal != null ? (
+                    <button
+                        type="button"
+                        onClick={onOpenTerminal}
+                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                    >
+                        Show Terminal
+                    </button>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function PendingBubble({ text, queued, onSendNow }: { text: string; queued: boolean; onSendNow?: () => void }) {
     const said = splitAttachments(text);
     const body = said.text.trim();
     return (
@@ -73,7 +125,20 @@ function PendingBubble({ text, queued }: { text: string; queued: boolean }) {
                     <ChatFileCards paths={said.files} />
                 </div>
             ) : null}
-            <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
+            <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted">{queued ? "Queued" : "Sending…"}</span>
+                {queued && onSendNow != null ? (
+                    <button
+                        type="button"
+                        data-chat-send-now
+                        onClick={onSendNow}
+                        title="Send it now: Claude moves its running tools to the background and reads your queued messages at once"
+                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                    >
+                        Send now
+                    </button>
+                ) : null}
+            </div>
         </div>
     );
 }
@@ -176,6 +241,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     }, [entries]);
 
     const working = workingText(agent.state, agent.activity, entries);
+    // the turn's time and output tokens, read back from the loaded lines to its prompt; only while it works
+    const lines = view?.win.lines;
+    const isWorking = working != null;
+    const turn = useMemo(() => (isWorking && lines != null ? turnStats(lines) : null), [isWorking, lines]);
+    // the session's /goal, read from the same lines (goal-core.ts, shared with the arc mod's band in the TUI)
+    const goal = useMemo(() => (lines != null ? goalFromLines(lines) : null), [lines]);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
     const asking = agent.ask != null && !agent.ask.hold;
     // a read that has not landed yet shows a skeleton; one that failed (a transcript file that is not written yet, most
@@ -191,6 +262,19 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
+    // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
+    // message at once
+    const blockid = agent.blockId;
+    const sendNow =
+        blockid != null && canSendNow(agent.state)
+            ? () =>
+                  fireAndForget(() =>
+                      RpcApi.ControllerInputCommand(TabRpcClient, {
+                          blockid,
+                          inputdata64: stringToBase64(SEND_NOW_KEYS),
+                      })
+                  )
+            : undefined;
     useEffect(() => {
         if (!showsPending) {
             return;
@@ -245,6 +329,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     active={agent.state !== "idle"}
                                     working={agent.state === "working"}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
+                                    onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>
@@ -254,9 +339,23 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     <div data-chat-tail className="mx-auto flex w-full max-w-[760px] flex-none flex-col gap-3 pb-2">
                         {/* its own provider: a pill or card in a pending bubble opens as it will in the transcript's copy */}
                         <AgentPathLinks agent={agent}>
-                            {pending.map((p) => (
-                                <PendingBubble key={p.id} text={p.text} queued={agent.state !== "idle"} />
-                            ))}
+                            {pending.map((p) =>
+                                p.kind != null ? (
+                                    <PendingCommand
+                                        key={p.id}
+                                        text={p.text}
+                                        kind={p.kind}
+                                        onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
+                                    />
+                                ) : (
+                                    <PendingBubble
+                                        key={p.id}
+                                        text={p.text}
+                                        queued={agent.state !== "idle"}
+                                        onSendNow={sendNow}
+                                    />
+                                )
+                            )}
                         </AgentPathLinks>
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
@@ -270,6 +369,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     aria-hidden
                                 />
                                 <span className="min-w-0 truncate">{working}</span>
+                                {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}
                         <PermissionCard agent={agent} onOpenTerminal={() => setChatMode(agent.id, "terminal")} />
@@ -289,6 +389,17 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 sleeps or wakes (its parts fold in place). Asleep its Enter wakes the agent, and it carries
                 data-sleeping-composer on its frame for the scenarios' `[data-sleeping-composer] [data-chat-input]`. */}
             <div className="flex-none px-[22px] pb-4 pt-3">
+                <div className="mx-auto w-full max-w-[760px]">
+                    <ChatGoalStrip
+                        goal={goal}
+                        onClear={() => {
+                            if (agent.blockId != null) {
+                                fireAndForget(() => submitToAgent(agent.blockId!, "/goal clear"));
+                            }
+                        }}
+                        onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                    />
+                </div>
                 <ChatComposer
                     key={agent.id}
                     agent={agent}

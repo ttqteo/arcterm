@@ -55,6 +55,8 @@ var managedHooks = []managedHook{
 	// the permission prompt, with its tool and input: waiting, and a request for the chat view's Allow / Deny card
 	{Event: "PermissionRequest", Args: "agent-hook", Timeout: 10, Async: true},
 	{Event: "Stop", Args: "agent-hook", Timeout: 10},
+	// a turn an API error ended (a usage limit, above all): idle, and for the rate limit the pause of its run
+	{Event: "StopFailure", Args: "agent-hook", Timeout: 10},
 	{Event: "SubagentStop", Args: "agent-hook", Timeout: 10},
 	{Event: "UserPromptSubmit", Args: "agent-hook", Timeout: 10},
 	// a compaction reports working and its end reports idle: the wake adapter types a lead's handoff

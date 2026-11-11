@@ -476,7 +476,7 @@ func (ws *WshServer) AgentControlCommand(ctx context.Context, data wshrpc.Comman
 				return
 			case msg := <-msgs:
 				select {
-				case ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg]{Response: wshrpc.AgentControlMsg{Text: msg.Text, Compact: msg.Compact, MidTurn: msg.MidTurn}}:
+				case ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg]{Response: wshrpc.AgentControlMsg{Text: msg.Text, Compact: msg.Compact, MidTurn: msg.MidTurn, Btw: msg.Btw}}:
 				case <-ctx.Done():
 					return
 				}
@@ -484,6 +484,20 @@ func (ws *WshServer) AgentControlCommand(ctx context.Context, data wshrpc.Comman
 		}
 	}()
 	return ch
+}
+
+// AgentBtwCommand hands Chat's /btw to the block's session mod, which answers it with a fork of the session and
+// writes the answer as a notice. With no mod stream (pi, a mod that is not running) it errors, and Chat types
+// the command into the terminal instead, where Claude Code answers it on its own screen.
+func (ws *WshServer) AgentBtwCommand(ctx context.Context, data wshrpc.CommandAgentBtwData) error {
+	question := strings.TrimSpace(data.Question)
+	if data.BlockId == "" || question == "" {
+		return fmt.Errorf("a block id and a question are required")
+	}
+	if !agentctl.Send(data.BlockId, agentctl.Msg{Btw: question}) {
+		return fmt.Errorf("block %s has no session mod to answer a side question", data.BlockId)
+	}
+	return nil
 }
 
 func (ws *WshServer) StreamAgentTranscriptCommand(ctx context.Context, data wshrpc.CommandStreamAgentTranscriptData) chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate] {

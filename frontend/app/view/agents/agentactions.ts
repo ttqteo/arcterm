@@ -4,11 +4,10 @@
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
-import { RpcApi } from "@/app/store/wshclientapi";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { fireAndForget, stringToBase64 } from "@/util/util";
+import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
 import { projectCloseMessage, type ProjectClose } from "./agentsidebarmodel";
+import { sendToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import type { ConfirmHow } from "./closelog";
 import { closeTabLogged, logClose } from "./closetab";
@@ -150,14 +149,13 @@ export function closeSessions(vms: ClosingVM[], why: string): void {
 // NUDGE_INPUT is what the rail's Resume types: a quiet agent picks it up as a new turn
 export const NUDGE_INPUT = "continue\r";
 
-// driveAgent types into an agent's terminal; a card without a terminal block has nothing to drive
+// driveAgent types into an agent's terminal; a card without a terminal block has nothing to drive. A line ending in "\r"
+// (NUDGE_INPUT, "/compact\r") is submitted with its Enter as a write of its own (agentsubmit.ts sendToAgent)
 export function driveAgent(blockId: string | undefined, data: string): void {
     if (!blockId) {
         return;
     }
-    fireAndForget(() =>
-        RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(data) })
-    );
+    fireAndForget(() => sendToAgent(blockId, data));
 }
 
 // interruptAgent cancels the current turn: Esc typed into the terminal, as the composer would

@@ -35,6 +35,7 @@ type ServiceStatus struct {
 	RetryAtMs int64  `json:"retryatms,omitempty"`
 	Holder    string `json:"holder,omitempty"`
 	Autostart bool   `json:"autostart"`
+	Off       bool   `json:"off,omitempty"` // the person stopped it: it starts only when they start it, not when shown
 }
 
 type ServicesData struct {

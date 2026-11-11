@@ -152,7 +152,7 @@ export function buildRecordPeek(input: RecordPeekInput): RecordPeek {
         fleetMeta: fleetCountsLine(counts, 0, fleet),
         runs: (runs ?? []).map((r) => {
             const row = runRow(r, objective, now, harnesses);
-            const view = runStatusView(r.status, undefined, r.pause?.by);
+            const view = runStatusView(r.status, undefined, r.pause?.by, r.pause?.noautoresumeuntil);
             return {
                 runId: r.id,
                 shortId: row.shortId,

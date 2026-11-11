@@ -336,7 +336,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "agents.compactidle",
                             title: "Compact before the cache goes cold",
-                            desc: "Compact a Claude agent just before it sleeps, or when it sits idle with 5 minutes of prompt cache left, so the turn that wakes it reads a summary instead of the whole conversation.",
+                            desc: "Compact a Claude agent just before it sleeps, so the turn that wakes it reads a summary instead of the whole conversation. One that stays awake is compacted by Claude Code itself before its prompt cache runs out, from the same threshold, for agents started after a change.",
                             key: "agents:compactidle",
                             scope: "synced",
                             config: true,

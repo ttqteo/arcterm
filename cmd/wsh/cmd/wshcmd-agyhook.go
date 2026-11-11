@@ -14,6 +14,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agyhook"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/harness"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -67,8 +68,9 @@ func runAgyHook(event string, stdin io.Reader, stdout io.Writer) error {
 
 // decideAgyHook does the event's work and returns the bytes to print, nil meaning the event's neutral output.
 func decideAgyHook(event string, raw []byte) []byte {
-	// outside an arcterm block (the Antigravity desktop app, a plain terminal) there is nothing to report to
-	if os.Getenv("WAVETERM_BLOCKID") == "" {
+	// outside an arcterm block (the Antigravity desktop app, a plain terminal) there is nothing to report to, and inside a
+	// service's process tree the block is the service's (reportsToBlock)
+	if !reportsToBlock(os.Getenv("WAVETERM_BLOCKID"), os.Getenv(wavebase.ArcServiceVarName)) {
 		return nil
 	}
 	// stamped before any rpc: wavesrv orders reports by when the hook started, not by when a slow one got through

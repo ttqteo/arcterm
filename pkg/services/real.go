@@ -192,9 +192,25 @@ func serviceBlocks(ctx context.Context) ([]BlockRef, error) {
 			log.Printf("[services] block %s has no tab: %v\n", b.OID, err)
 			continue
 		}
+		clearStaleAgentMeta(ctx, b)
 		out = append(out, BlockRef{ToolId: b.Meta.GetString(waveobj.MetaKey_ToolId, ""), TabId: tabId, BlockId: b.OID})
 	}
 	return out, nil
+}
+
+// clearStaleAgentMeta takes off a service's block, at boot, the agent meta a Claude run inside it left there before its
+// process was marked: with it the cockpit reads the service as a sleeping agent, shows it, and so starts it.
+func clearStaleAgentMeta(ctx context.Context, b *waveobj.Block) {
+	stale := StaleAgentMeta(b.Meta)
+	if stale == nil {
+		return
+	}
+	ctx = waveobj.ContextWithUpdates(ctx)
+	if _, err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, b.OID), stale, false); err != nil {
+		log.Printf("[services] block %s: clearing its agent meta: %v\n", b.OID, err)
+		return
+	}
+	wps.Broker.SendUpdateEvents(waveobj.ContextGetUpdatesRtn(ctx))
 }
 
 // ensure gives the service its tab and block: the ones it has while the block still exists, else new ones in the
@@ -210,7 +226,11 @@ func ensure(ctx context.Context, d Def) (tabId, blockId string, rtnErr error) {
 			return "", "", fmt.Errorf("reading the service's block: %w", err)
 		}
 		if blk != nil {
-			if _, err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, d.BlockId), BlockMeta(d), false); err != nil {
+			meta := BlockMeta(d)
+			for k, v := range StaleAgentMeta(blk.Meta) {
+				meta[k] = v
+			}
+			if _, err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, d.BlockId), meta, false); err != nil {
 				return "", "", fmt.Errorf("updating the service's block: %w", err)
 			}
 			if _, err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Tab, d.TabId), TabMeta(d), false); err != nil {

@@ -55,6 +55,10 @@ import { SectionLabel } from "./sectionlabel";
 // the popover owns the keys.
 export const initiativePopoverAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
+// The agent whose Link to initiative picker is open, else null: its header's "+ Link to initiative" chip, the "…" menu's
+// row in the Chat view (which has no chip) and the `i` key all open the one picker.
+export const initiativeLinkPickerAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
 const STATUS_TEXT: Record<PopoverStatusTone, string> = {
     success: "text-success",
     working: "text-working",

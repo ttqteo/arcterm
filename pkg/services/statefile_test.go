@@ -6,6 +6,7 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,19 +35,33 @@ func TestStateFileRoundTrip(t *testing.T) {
 	}
 }
 
-// an entry written when a Stop was remembered still reads: the flag is ignored, the port kept
+// an entry an older build wrote when the person stopped the service still reads as that Stop (Off), the port kept, and
+// a write after it carries Off, not the older key
 func TestStateFileReadsAnOldStoppedEntry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
-	old := `{"portfolio": {"port": 8386, "stopped": true}, "dev": {"stopped": true}}`
+	old := `{"portfolio": {"port": 8386, "stopped": true}, "dev": {"stopped": true}, "web": {"port": 41207}}`
 	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s := NewFileStore(path)
-	if got := s.Get("portfolio"); got != (Remembered{Port: 8386}) {
-		t.Errorf("portfolio = %+v, want the port only", got)
+	if got := s.Get("portfolio"); got != (Remembered{Port: 8386, Off: true}) {
+		t.Errorf("portfolio = %+v, want the port and Off", got)
 	}
-	if got := s.Get("dev"); got != (Remembered{}) {
-		t.Errorf("dev = %+v, want nothing remembered", got)
+	if got := s.Get("dev"); got != (Remembered{Off: true}) {
+		t.Errorf("dev = %+v, want Off", got)
+	}
+	if got := s.Get("web"); got != (Remembered{Port: 41207}) {
+		t.Errorf("web = %+v, want the port only", got)
+	}
+	if err := s.Set("web", Remembered{Port: 41208}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "stopped") {
+		t.Errorf("the file still holds the older key:\n%s", raw)
 	}
 }
 

@@ -194,6 +194,18 @@ Harnesses:
 
 Cockpit and surfaces:
 
+- **(arcterm) A wake that meets Claude Code's cold-resume quota dialog** (2026-11-11) — on `--resume` of a conversation
+  whose cache is cold, Claude Code 2.1.304+ may ask "Resume this conversation? … Resuming it will use about P% of
+  your 5-hour usage limit" (Resume / Start a new conversation / Resume from summary) when P reaches `minPercent` of
+  the `tengu_amber_tally` flag (5); arcterm's wake (`runWake`) would send its message into it. Held: it cannot show
+  on this account. The flag prices only `default_claude_max_5x` and `default_claude_max_20x`, Claude Code learns the
+  served tier from a `quota_check` request at start, and a Team seat (`default_raven`) is suppressed; even on Max 5x,
+  Opus 5.5 at its 1M cap is 3.7%, so only Fable 5.1 or 5 over ~300k tokens reaches 5%. Checked 2026-11-11: a 3-hour-old
+  416k-token Fable 5.1 session resumed with no dialog, and a typed wake (paste, pause, Enter) ran. The stale-resume
+  dialog (`tengu_gleaming_fair_reuse`, 70 min / 100k) shows only with a precomputed summary. Revive when an agent runs
+  on a Max account (`ARC_CLAUDE_ACCOUNT`) or the flag prices Team: reproduce by aging a throwaway session's transcript
+  (timestamps back past an hour, the last usage inflated) and resuming it in a PTY with the `WAVETERM_*` env removed;
+  source: Claude Code 2.1.322 bundle `_promptStaleResume`, `Q$o`, `Z$o`, `TQs`.
 - **(arcterm) Council: session resume across rounds** (2026-11-03) — each expert turn is still a fresh `claude -p`
   with no session resume (`pkg/consult/consult.go`), so every round re-reads the context. Deferred because the verify
   step now sits between round 1 and round 2 and changes the time between an expert's turns, while the prompt cache

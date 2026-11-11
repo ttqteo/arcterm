@@ -1,14 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { RpcApi } from "@/app/store/wshclientapi";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { pasteIntoTerm } from "@/app/view/term/termpaste";
-import { cn, fireAndForget, stringToBase64 } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
+import { askBtw, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
-import { pastesBody, submitDelayMs } from "./chatpending";
+import { btwQuestion } from "./chatpending";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
@@ -48,25 +46,6 @@ export function useGrowingTextarea(
     }, [text]);
 }
 
-/** Types a message into an agent's terminal and presses Enter. A message with a line break (Shift+Enter, or an
- *  attachment's block) or a long one goes in first (a paste when the terminal is mounted, typed otherwise), then
- *  Enter on its own after Claude Code has taken it (submitDelayMs): sent in one chunk, Claude Code reads a big or
- *  multi-line chunk as a paste and takes the "\r" at its end for one more line, so the message sat in its box unsent
- *  while Chat showed it Queued. A short line is typed with its Enter. */
-async function typeIntoAgent(blockId: string, message: string): Promise<void> {
-    const type = (data: string) =>
-        RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(data) });
-    if (!pastesBody(message)) {
-        return type(message + "\r");
-    }
-    if (!pasteIntoTerm(blockId, message)) {
-        // no mounted terminal to paste into: bracket it ourselves, as the backend's typeWake does
-        await type("\x1b[200~" + message + "\x1b[201~");
-    }
-    await new Promise((resolve) => setTimeout(resolve, submitDelayMs(message.length)));
-    await type("\r");
-}
-
 export interface AgentComposerHandle {
     fill: (text: string) => void;
 }
@@ -93,7 +72,7 @@ export interface AgentSend {
     send: () => boolean;
 }
 
-// Sends free text to an agent's terminal block (typeIntoAgent: "\r" submits, the PTY treats CR as Enter). A sleeping agent has no process to type into: given
+// Sends free text to an agent's terminal block (submitToAgent: the text, then Enter on its own). A sleeping agent has no process to type into: given
 // its agent, the message goes through Wake instead, which delivers it once the agent is back, and the text stays in
 // the box until then (and for good when the wake fails). A sleeping agent's text is its wake draft (wakingstore), so
 // it outlives the box: picking another agent mid-wake and coming back still shows what is being sent.
@@ -105,8 +84,10 @@ export function useAgentSend(
     agent: AgentSendTarget | undefined,
     attachments?: Attachment[],
     // keepDraft: the text lives in the drafts store under the agent's id awake too (the chat box), so switching to
-    // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft)
-    { keepDraft = false }: { keepDraft?: boolean } = {}
+    // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft).
+    // onBtwTyped: a /btw goes to the session's mod to answer on the side (askBtw); this runs, with the text sent, when
+    // no mod took it and it was typed into the terminal instead
+    { keepDraft = false, onBtwTyped }: { keepDraft?: boolean; onBtwTyped?: (sent: string) => void } = {}
 ): AgentSend {
     const draftId = agent != null && (agent.sleeping || keepDraft) ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
@@ -137,7 +118,17 @@ export function useAgentSend(
             });
             return true;
         }
-        fireAndForget(() => typeIntoAgent(blockId!, message));
+        const target = blockId!;
+        const question = btwQuestion(message);
+        if (question != null) {
+            fireAndForget(async () => {
+                if (!(await askBtw(target, question))) {
+                    onBtwTyped?.(message);
+                }
+            });
+        } else {
+            fireAndForget(() => submitToAgent(target, message));
+        }
         setText("");
         return true;
     };

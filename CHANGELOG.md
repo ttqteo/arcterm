@@ -27,9 +27,24 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - `wsh council bench` also measures Arc's brainstorm skill, and its results table is split into Review and Brainstorm.
+- A goal meter for Claude Code's `/goal`: above Chat's box and above the prompt in the terminal, the goal, a mark for
+  each check Claude's evaluator made, how long it has run, and Goal met or stopped with its counts; the evaluator's
+  reason is a click away, ✕ clears the goal, and a goal Claude proposes shows while it waits on your answer. <!-- big -->
+- Fork a Claude conversation: a new session that starts from where it is, in a tab of its own, while the original
+  stays as it was. It is in a conversation's right-click menu and beside Resume when you read one.
+- A message queued in Chat while Claude works has a Send now beside Queued: Claude moves what it is running to the
+  background and reads your queued messages at once, as Claude Code's own send-now key does.
+- `/btw <question>` from Chat gets its answer in Chat: a card under your question, the answer from the conversation so
+  far, marked as a side answer that Claude's conversation never sees; the agent's work goes on meanwhile.
 
 ### Changed
 
+- A Claude agent that stays awake and idle is compacted by Claude Code's own idle compaction, which arcterm now
+  starts at your Compact threshold (100k unless you changed it) instead of Claude's 200k; arcterm compacts only the
+  agents it puts to sleep, so the two never compact the same agent. It applies to agents started after the update.
+- An agent's status keeps up when its hooks fall silent (a killed `wsh`, a hook another plugin skips): arcterm's
+  terminals now answer the program-status protocol (OSC 7501) that Claude Code reports through, and when no hook
+  has said anything for 10 seconds around a change, the agent's dot takes what Claude Code reported.
 - The / menu in Chat lists every command Claude Code offers in that session (built-ins, its own skills, plugins, MCP),
   grouped and scrolling, and the + button opens a menu: add files or a folder, slash commands, MCP servers, plugins.
 - In Chat, the files you send show as cards under your message (type, name, folder and size; click to open), the files
@@ -40,9 +55,41 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's `@` file list opens above the box, puts the files the agent just read or wrote first, and marks the
   letters you typed in each name.
 - Every button eases its hover and focus colours in instead of snapping, and sinks a little when you press it.
+- Chat's Working line counts the turn as the terminal does: how long it has run and the tokens Claude has written,
+  as in "(1m 11s · ↓ 3.1k tokens)".
+- In Chat, the agent's header keeps only its name and project: the model and the context are in the message box, and
+  what it is doing in the chat. Link to initiative moved into the … menu (`i` still opens it); the Terminal view keeps
+  the full header.
 
 ### Fixed
 
+- A run whose agent hits your Claude usage limit pauses until the limit resets, reading "Paused · usage limit,
+  resumes 05:02", and carries on by itself after it, instead of retrying the worker into the same limit every 15
+  minutes until the retries ran out. An agent stopped by any API error now reads idle instead of working.
+- What a slash command prints shows in Chat under the command, as a `! command`'s output does (`/goal`'s "Goal set",
+  a failed `/compact`'s error, `/login`'s "Login successful"), where it used to be dropped, along with a command such as
+  `/login` itself; a command whose panel only Claude Code's own screen draws (`/config`, `/usage`…) says it opens in the
+  Terminal, with a button to show it.
+- A `claude -p` (or any claude) an agent starts from its own terminal no longer takes the agent over: its state, its
+  conversation in Chat and the agent's control stream stay the agent's, where they used to switch to the nested
+  session and, once it ended, leave the agent without its stream until it restarted.
+- A message sent from Chat (or the cockpit, a slash command, Compact, Clear, a model pick, a nudge) is submitted every
+  time, instead of now and then landing in Claude Code's box with a line break after it and waiting there unsent.
+- A service you stop stays stopped, through a restart of arcterm and when it shows on screen: its card says it is
+  stopped and offers Start, instead of it starting again by itself (a reinstall used to bring a stopped app back up).
+- A service whose page runs Claude (a dashboard asking Claude for an analysis) is no longer taken for an agent: it no
+  longer shows as a sleeping agent, and the memory regulator no longer stops it to free RAM.
+- A `! command` you run in the agent's box shows in Chat as one card: the command, then what it printed (errors in red,
+  "No output" for one that printed nothing), instead of an empty "Bash input" card and a bubble of raw `<bash-stdout>`
+  tags.
+- Chat's message box goes into bash mode when it starts with `!`, as Claude Code's own box does: its border and a
+  "! Bash mode" chip say the text runs in the agent's shell.
+- A skill the agent runs by itself shows as a Skill step in its work, instead of a bubble on your side that looked like
+  you had typed the slash command.
+- A Chat message you send while the agent is working shows as you wrote it, its pictures as thumbnails, instead of
+  raw `<pasted_content id="…">` tags around the text and a list of image paths.
+- A command Claude Code refused before it ran (a hook, a permission rule, you declining it) shows as Blocked in grey
+  in the agent's transcript, instead of a red failure in the "N failed" count of the tools it worked through.
 - A run you pause stays paused until you resume it: Arc's memory regulator no longer resumes it a moment later, and
   a restart no longer resumes it either. It reads "Paused · until you resume".
 - A long message sent from Chat is submitted instead of sitting in Claude Code's box as a new line while Chat showed

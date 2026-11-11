@@ -6,8 +6,9 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { arrayToBase64, makeConnRoute, stringToBase64 } from "@/util/util";
+import { arrayToBase64, makeConnRoute } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
+import { sendToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     canvasHandoffLine,
@@ -88,8 +89,9 @@ export const tauriSendIO: SendIO = {
     async write(path, bytes) {
         await RpcApi.FileWriteCommand(TabRpcClient, { info: { path }, data64: arrayToBase64(bytes) });
     },
+    // a line ending in "\r" goes with its Enter as a write of its own (agentsubmit.ts)
     async type(blockId, text) {
-        await RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(text) });
+        await sendToAgent(blockId, text);
     },
 };
 

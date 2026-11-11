@@ -5,7 +5,10 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, Timer } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply, settleAsk } from "./ask-core";
+import { btwNotice, btwPrompt, forkFailure, type BtwReply } from "./btw-core";
 import { drawCacheMiss } from "./cache-band";
+import { drawGoal } from "./goal-band";
+import { goalState, type GoalEntry, type GoalState } from "./goal-core";
 import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { claudecmdsArgs, commandsPayload } from "./commands-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
@@ -56,18 +59,59 @@ let isAskInDialog = false;
 // the last turn's cache miss, shown above the prompt until the next turn starts; null when none is
 const cacheMiss = atom({ plugin: "arc", key: "cacheMiss" } as const, null);
 
+// the session's /goal (goal-core.ts), read from its transcript; null when it has none
+const goal = atom({ plugin: "arc", key: "goal" } as const, null);
+// the band's clock: now, moved on each second while a goal is active, so its elapsed time runs
+const goalNow = atom({ plugin: "arc", key: "goalNow" } as const, 0);
+let goalTick: Timer | null = null;
+
+// the session's transcript, its last 3 MiB, through wsh: the hook events that carry its path never reach this mod, and
+// the mod's own file read rejects a file over 4 MiB. null when it cannot be read (a session can end a turn before its
+// transcript is first written)
+async function readTranscript($: EngineInterface): Promise<ReturnType<typeof transcriptEntries> | null> {
+    const tail = await $.process.run([WSH, "transcript-tail", await $.session.id()]);
+    if (tail.exitCode !== 0) {
+        $.ui.log(`arc: wsh transcript-tail exited ${tail.exitCode}: ${tail.stderr.trim()}`, { to: "debug" });
+        return null;
+    }
+    return transcriptEntries(tail.stdout);
+}
+
+// puts the goal the transcript holds in the band, and runs the band's clock while one is active
+async function showGoal($: EngineInterface, entries: GoalEntry[]): Promise<void> {
+    const next = goalState(entries);
+    await update($, goal, () => next);
+    await update($, goalNow, () => Date.now());
+    const ticking = next?.phase === "active";
+    if (ticking && goalTick == null) {
+        goalTick = $.clock.every(1000, () => void update($, goalNow, () => Date.now()));
+    } else if (!ticking && goalTick != null) {
+        goalTick.cancel();
+        goalTick = null;
+    }
+}
+
+async function refreshGoal($: EngineInterface): Promise<void> {
+    try {
+        const entries = await readTranscript($);
+        if (entries) {
+            await showGoal($, entries as GoalEntry[]);
+        }
+    } catch (err) {
+        $.ui.log(`arc: reading the goal failed: ${String(err)}`, { to: "debug" });
+    }
+}
+
 // tells the person, and inside arcterm the cockpit, what the turn that just ended re-billed for a missed
-// prompt cache. the transcript comes through wsh, found by the session's id: the hook events that carry its
-// path never reach this mod, and the mod's own file read rejects a file over 4 MiB
+// prompt cache; the same read puts the session's goal in the band
 async function reportCacheMiss($: EngineInterface) {
     try {
-        const tail = await $.process.run([WSH, "transcript-tail", await $.session.id()]);
-        if (tail.exitCode !== 0) {
-            // a session can end a turn before its transcript is first written
-            $.ui.log(`arc: wsh transcript-tail exited ${tail.exitCode}: ${tail.stderr.trim()}`, { to: "debug" });
+        const entries = await readTranscript($);
+        if (!entries) {
             return;
         }
-        const notice = cacheMissNotice(transcriptEntries(tail.stdout));
+        await showGoal($, entries as GoalEntry[]);
+        const notice = cacheMissNotice(entries);
         if (!notice) {
             return;
         }
@@ -149,6 +193,7 @@ async function listenToCockpit($: EngineInterface) {
         steer: (text: string) => steerTurn($, text),
         command: (name: string, args: string) => $.command.run({ command: name, args }),
         compact: (instructions: string) => $.session.compact({ instructions }),
+        btw: (question: string) => answerBtw($, question),
     };
     let buffered = "";
     try {
@@ -173,6 +218,25 @@ async function listenToCockpit($: EngineInterface) {
         $.ui.log(`arc: wsh agentctl failed: ${String(err)}`, { to: "debug" });
     } finally {
         listening = false;
+    }
+}
+
+// answers Chat's /btw as Claude Code's own /btw does: one tool-less fork of the session's own conversation, which reads
+// it from the cache, and the main turn runs on unaware. the answer, or why there is none, is written as a notice the
+// model never reads, which the TUI draws as a dim line and Chat as a card under your /btw (btw-core.ts)
+async function answerBtw($: EngineInterface, question: string) {
+    let reply: BtwReply;
+    try {
+        const r = await $.model.fork({ prompt: btwPrompt(question) });
+        reply = r.isAnswered ? { answer: r.text } : { failure: forkFailure(r) };
+    } catch (err) {
+        reply = { failure: String(err) };
+    }
+    const kept = await $.session.append({
+        message: { type: "system", content: [{ type: "text", text: btwNotice(question, reply) }] },
+    });
+    if (kept.deny !== undefined) {
+        throw new Error(kept.deny);
     }
 }
 
@@ -577,6 +641,8 @@ export const register: Register = (on) => {
             void listenToCockpit($);
         }
         publishCommandsAtStart($);
+        // a resumed session's goal, in the band from the start (not awaited: reading a long transcript)
+        void refreshGoal($);
         return started;
     });
 
@@ -637,9 +703,45 @@ export const register: Register = (on) => {
         return next(e);
     });
 
+    // the goal's row, then a cache miss, in the one band; a met or stopped goal goes once you send a prompt after it
     on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
         const notice = await read($, cacheMiss);
-        return notice && !e.props.hasSurvey ? drawCacheMiss($.ui.resolve(e), notice) : next(e);
+        const g = await read($, goal);
+        const shown = g != null && !g.settledBeforePrompt ? g : null;
+        if (e.props.hasSurvey || (!notice && !shown)) {
+            return next(e);
+        }
+        const els = $.ui.resolve(e);
+        return shown ? drawGoal(els, shown, (await read($, goalNow)) || Date.now(), notice) : drawCacheMiss(els, notice!);
+    });
+
+    // an evaluator's verdict lands mid-turn (the goal not met yet sends Claude on): read the goal again then
+    on("session.append", { door: "attachment" }, async ($, e, next) => {
+        const kept = await next(e);
+        if (!e.agentId && e.message.name === "goal_status") {
+            void refreshGoal($);
+        }
+        return kept;
+    });
+
+    // a goal the model proposes shows while the person answers its dialog, and its answer is read back after. the band
+    // is a nicety: a failed write of it never holds the call
+    on("tool.call", { tool: "ProposeGoal" }, async ($, e, next) => {
+        if (!e.agentId && typeof e.condition === "string") {
+            const proposed: GoalState = {
+                phase: "proposed",
+                condition: e.condition,
+                setAt: Date.now(),
+                checks: [],
+                settledBeforePrompt: false,
+            };
+            await update($, goal, (g) => (g?.phase === "active" ? g : proposed)).catch((err) =>
+                $.ui.log(`arc: showing a proposed goal failed: ${String(err)}`, { to: "debug" })
+            );
+        }
+        const result = await next(e);
+        void refreshGoal($);
+        return result;
     });
 
     // a tool's result means another request follows, and it carries every row joined so far.

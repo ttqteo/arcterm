@@ -19,7 +19,15 @@ import { cn } from "@/util/util";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
+import {
+    burstRenderMode,
+    conversationText,
+    isNearBottom,
+    type AgentEntry,
+    type BtwAnswer,
+    type EditFile,
+    type ShellResult,
+} from "./agentsviewmodel";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
@@ -81,8 +89,145 @@ function ProseText({ text }: { text: string }) {
 
 type CopyMenu = (text: string) => (e: React.MouseEvent) => void;
 
+// a command you ran, as one card: the command as you typed it, then what it printed under a rule, stderr in red, scrolling
+// past 200 px, as the TUI draws it under its line. A bash-mode one (`! cmd`, `bash`) leads with the `!` in the accent and,
+// before its output lands, is the command alone; a slash command has a card only once it printed something, or (`terminal`)
+// when its panel showed on Claude Code's own screen, which the card says with a way there (`onOpenTerminal`, when the
+// agent is live).
+function CommandCard({
+    command,
+    bash,
+    shell,
+    terminal,
+    onOpenTerminal,
+    onContextMenu,
+}: {
+    command: string;
+    bash?: boolean;
+    shell?: ShellResult;
+    terminal?: boolean;
+    onOpenTerminal?: () => void;
+    onContextMenu: CopyMenu;
+}) {
+    const printed = shell != null && (shell.output !== "" || shell.error !== "");
+    // what Copy takes: the command and what it printed, as the terminal shows them
+    const copyText = [bash ? `! ${command}` : command, shell?.output ?? "", shell?.error ?? ""]
+        .filter((s) => s !== "")
+        .join("\n");
+    return (
+        <div
+            data-chat-you
+            data-chat-command
+            data-chat-shell={bash ? "" : undefined}
+            onContextMenu={onContextMenu(copyText)}
+            className="group relative mb-1 max-w-[75%] min-w-[220px] self-end"
+        >
+            <div className="flex flex-col overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised">
+                <div className="flex items-baseline gap-2 px-[14px] py-[8px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]">
+                    {bash ? (
+                        <span aria-label="bash" className="flex-none select-none font-semibold text-accent">
+                            !
+                        </span>
+                    ) : null}
+                    <span className="min-w-0">{command}</span>
+                </div>
+                {terminal ? (
+                    <div
+                        data-chat-command-terminal
+                        className="flex items-center justify-between gap-3 border-t border-edge-faint px-[14px] py-[7px] text-[11.5px] text-muted"
+                    >
+                        <span>Opens in Terminal</span>
+                        {onOpenTerminal != null ? (
+                            <button
+                                type="button"
+                                onClick={onOpenTerminal}
+                                className="cursor-pointer text-secondary hover:text-primary"
+                            >
+                                Show Terminal
+                            </button>
+                        ) : null}
+                    </div>
+                ) : null}
+                {shell != null ? (
+                    <div
+                        data-chat-shell-output
+                        className="max-h-[200px] overflow-auto border-t border-edge-faint bg-surface-code px-[14px] py-[8px] font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]"
+                    >
+                        {printed ? (
+                            <>
+                                {shell.output !== "" ? <div className="text-ink-mid">{shell.output}</div> : null}
+                                {shell.error !== "" ? <div className="text-error-soft">{shell.error}</div> : null}
+                            </>
+                        ) : (
+                            <span className="font-sans text-muted">No output</span>
+                        )}
+                    </div>
+                ) : null}
+            </div>
+            <BubbleCopy text={copyText} align="right" />
+        </div>
+    );
+}
+
+// a /btw you asked from Chat: the question, then the side answer the arc mod's fork of the session gave, as Markdown, under
+// a label saying it is no part of the conversation (Claude never reads it), or why there is none. Copy takes the answer.
+function BtwCard({ command, btw, onContextMenu }: { command: string; btw: BtwAnswer; onContextMenu: CopyMenu }) {
+    const copyText = "answer" in btw ? btw.answer : btw.failure;
+    return (
+        <div
+            data-chat-you
+            data-chat-command
+            data-chat-btw
+            onContextMenu={onContextMenu(copyText)}
+            className="group relative mb-1 max-w-[75%] min-w-[220px] self-end"
+        >
+            <div className="flex flex-col overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised">
+                <div className="px-[14px] py-[8px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]">
+                    {command}
+                </div>
+                <div className="flex flex-col gap-1 border-t border-edge-faint px-[14px] py-[9px]">
+                    <span className="text-[11px] text-muted">side answer · not in the conversation</span>
+                    {"answer" in btw ? (
+                        <CouncilText text={btw.answer} className="text-[13.5px] leading-[1.6] text-ink-hi" />
+                    ) : (
+                        <span data-chat-btw-failure className="text-[12.5px] text-muted">
+                            No side answer: {btw.failure}
+                        </span>
+                    )}
+                </div>
+            </div>
+            <BubbleCopy text={copyText} align="right" />
+        </div>
+    );
+}
+
 // your message: a bubble on the right, long ones clamped (PromptText, as userNeedsClamp says), what you pasted under it
-function YouBubble({ item, onContextMenu }: { item: Extract<ChatItem, { kind: "you" }>; onContextMenu: CopyMenu }) {
+function YouBubble({
+    item,
+    onContextMenu,
+    onOpenTerminal,
+}: {
+    item: Extract<ChatItem, { kind: "you" }>;
+    onContextMenu: CopyMenu;
+    onOpenTerminal?: () => void;
+}) {
+    if ("command" in item && item.command.startsWith("! ")) {
+        return <CommandCard command={item.command.slice(2)} bash shell={item.shell} onContextMenu={onContextMenu} />;
+    }
+    if ("command" in item && item.btw != null) {
+        return <BtwCard command={item.command} btw={item.btw} onContextMenu={onContextMenu} />;
+    }
+    if ("command" in item && (item.shell != null || item.terminal)) {
+        return (
+            <CommandCard
+                command={item.command}
+                shell={item.shell}
+                terminal={item.terminal}
+                onOpenTerminal={onOpenTerminal}
+                onContextMenu={onContextMenu}
+            />
+        );
+    }
     if ("command" in item) {
         return (
             <div
@@ -330,6 +475,7 @@ export function ChatConversation({
     onLoadEarlier,
     active,
     working,
+    onOpenTerminal,
     className,
 }: {
     entries: AgentEntry[];
@@ -344,6 +490,9 @@ export function ChatConversation({
     // that stopped left without a result is drawn neutral. Defaults to `active`; a session waiting on an answer is
     // `active` but not working
     working?: boolean;
+    // shows the agent's terminal, for a command whose panel only Claude Code's own screen draws; left out where there is
+    // no live terminal to show (an ended session)
+    onOpenTerminal?: () => void;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -557,7 +706,7 @@ export function ChatConversation({
     const drawItem = (item: ChatItem, last: boolean): ReactNode => {
         switch (item.kind) {
             case "you":
-                return <YouBubble item={item} onContextMenu={copyMenu} />;
+                return <YouBubble item={item} onContextMenu={copyMenu} onOpenTerminal={onOpenTerminal} />;
             case "sent":
                 return <SentCard item={item} />;
             case "agent":

@@ -41,7 +41,10 @@ export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">):
 /** Pure: a dag run's line in the Agents tree, the stage first so a cut line keeps it, and its tooltip. Every task
  *  done is not the run done: the final stage, the lead's wrap-up and the land still follow. */
 export function dagProgressLabel(
-    run: Pick<RunInfo, "runId" | "title" | "projectPath" | "dag" | "status" | "land" | "leadStarted" | "pausedBy">,
+    run: Pick<
+        RunInfo,
+        "runId" | "title" | "projectPath" | "dag" | "status" | "land" | "leadStarted" | "pausedBy" | "pausedUntil"
+    >,
     leadless: boolean,
     // the runs of the run's project, which a land in line is placed among
     projectRuns?: LandSlot[]
@@ -90,7 +93,9 @@ export function runComplete(run: Pick<RunInfo, "dag" | "status" | "land">): bool
 export function runStatusView(
     status: string,
     land?: RunLand,
-    pausedBy?: string
+    pausedBy?: string,
+    // a limit pause's reset (Pause.noautoresumeuntil, Unix ms)
+    pausedUntil?: number
 ): { label: string; tone: RunStatusTone } {
     const landed = status === "done" && land != null ? landView(land) : undefined;
     if (landed) {
@@ -116,7 +121,7 @@ export function runStatusView(
         case "cancelled":
             return { label: "cancelled", tone: "cancelled" };
         case "paused":
-            return { label: pausedLabel(pausedBy), tone: "paused" };
+            return { label: pausedLabel(pausedBy, pausedUntil), tone: "paused" };
         default:
             return { label: status, tone: "planning" };
     }
