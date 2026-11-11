@@ -68,6 +68,13 @@ interface View {
 // what was written since (transcriptcache.ts). Kept without a pending scroll, which belonged to the press that asked it
 const viewCache = new TranscriptCache<View>(8);
 
+/** The entries of the window most recently loaded for a transcript (the Chat pane and the rail read the same one), or
+ *  null when none is kept. A caller that holds no entries of its own reads them here, such as a Brainstorm action
+ *  counting the user messages that already hold the text it sends (chatpending.ts userTextCount). */
+export function cachedTranscriptEntries(path: string | undefined, runtime: string | undefined): AgentEntry[] | null {
+    return path ? (viewCache.get(path, runtime)?.entries ?? null) : null;
+}
+
 // epochs count across every reader, so a kept window's epoch never matches a fresh read's in another one
 let nextEpoch = 0;
 
