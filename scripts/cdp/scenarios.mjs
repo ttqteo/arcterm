@@ -42156,8 +42156,10 @@ const acLayer = (id) => `document.querySelector('[data-agent-chat="${id}"]')`;
 const acBox = (id) => `document.querySelector('[data-agent-chat="${id}"] [data-agent-chat-composer] [data-chat-input]')`;
 // What the box holds, read from an expression that finds it: its innerText, null when the box is not there. A contenteditable
 // has no .value, and an empty one reads "\n" (its <br>), so one trailing newline is dropped. A pill reads its short name
-// here, so a step that holds a pill asserts on [data-chat-pill] and on what the mock recorded.
-const acVal = (boxExpr) => `((e) => (e ? e.innerText.replace(/\\n$/, "") : null))(${boxExpr})`;
+// here, so a step that holds a pill asserts on [data-chat-pill] and on what the mock recorded. A bash command's `!` is drawn
+// beside the editor ([data-chat-bang]), not in it, so it is put back in front.
+const acVal = (boxExpr) =>
+    `((e) => (e ? (e.closest("[data-agent-chat-composer]")?.querySelector("[data-chat-bang]")?.textContent ?? "") + e.innerText.replace(/\\n$/, "") : null))(${boxExpr})`;
 // the box's placeholder: the sibling the editor draws while the box is empty
 const acPlaceholder = (wrapExpr) =>
     `((w) => w?.querySelector("[data-chat-input]")?.parentElement?.querySelector(":scope > [aria-hidden]")?.textContent ?? null)(${wrapExpr})`;
@@ -42538,6 +42540,10 @@ async function acClear(h, boxExpr) {
     if (!there) return false;
     await acKey(h, { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, mod: true, commands: ["selectAll"] });
     await acKey(h, acKeys.backspace);
+    // a bash command's `!` is beside the editor, out of the select-all: one more Backspace at the start takes it
+    if (await h.ev(`!!(${boxExpr})?.closest("[data-agent-chat-composer]")?.querySelector("[data-chat-bang]")`)) {
+        await acKey(h, acKeys.backspace);
+    }
     return polishWaitFor(h, `${acVal(boxExpr)} === ""`, 2000);
 }
 
@@ -44880,7 +44886,7 @@ const agentChat = {
                     const bang = c?.querySelector("[data-chat-bang]");
                     const ghost = c?.querySelector("[data-chat-ghost]");
                     const icon = cap?.querySelector("svg");
-                    const well = box?.parentElement?.parentElement;
+                    const well = c?.querySelector("[data-chat-well]");
                     const ws = well ? getComputedStyle(well) : null;
                     // where the editor's own text ends, against where the ghost starts
                     let textRight = null;
@@ -44907,6 +44913,10 @@ const agentChat = {
                         accent: icon ? getComputedStyle(icon).color : null,
                         ghost: ghost?.textContent ?? null,
                         ghostGap: gr && textRight != null ? Math.abs(gr.left - textRight) : null,
+                        // the \`!\` sits beside the editor, out of its text, a gap before the command
+                        bangOut: bang && box ? !box.contains(bang) : null,
+                        bangGap: bang && box ? Math.round(box.getBoundingClientRect().left - bang.getBoundingClientRect().right) : null,
+                        placeholder: ${acPlaceholder(composer76)},
                         mentions: !!document.querySelector("[data-chat-mentions]"),
                     };
                 })()`);
@@ -44928,6 +44938,15 @@ const agentChat = {
             await polishNap(250);
             const bare76 = await read76();
             await h.shot("cdp-shots/agent-chat-76-bash-well.png");
+            // Backspace at the start of a command takes the `!` and leaves bash mode, the command kept as plain text
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await acType(h, acBox(A), "!ls", false);
+            await polishWaitFor(h, `${acVal(acBox(A))} === "!ls"`, 3000);
+            await acKey(h, acKeys.left);
+            await acKey(h, acKeys.left);
+            await acKey(h, acKeys.backspace);
+            const unbanged76 = await polishWaitFor(h, `${acVal(acBox(A))} === "ls" && !${composer76}?.hasAttribute("data-chat-bash-mode")`, 3000);
             // the `@` picker stays shut in bash mode
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
@@ -44957,20 +44976,22 @@ const agentChat = {
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             const gone76 = await read76();
             rec(
-                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list; an empty box has no caption, well or bang",
+                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list; an empty box has no caption, well or bang",
                 ghosted76 && asked76.length >= 1 && asked76[0].data.cwd === ctx.dir.replace(/\\/g, "/") &&
                     typed76.mode === true && typed76.text === "!git l" && typed76.caption === "Bash" && typed76.chip === false &&
                     typed76.well != null && typed76.well.radius === "8px" && typed76.well.bg !== "rgba(0, 0, 0, 0)" &&
                     /JetBrains Mono/.test(typed76.font ?? "") && !/JetBrains Mono/.test(plainFont76 ?? "") &&
                     typed76.bang?.text === "!" && typed76.accent != null && typed76.bang.color === typed76.accent && typed76.bang.weight === "600" &&
+                    typed76.bangOut === true && typed76.bangGap != null && typed76.bangGap >= 6 &&
                     typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ accept" &&
                     taken76 && after76.ghost === null && after76.accept === null && after76.mode === true &&
                     bare76.mode === true && bare76.text === "!" && bare76.caption === "Bash" && bare76.bang?.text === "!" &&
-                    bare76.ghost === null && bare76.accept === null &&
+                    bare76.ghost === null && bare76.accept === null && /agent's shell; Backspace leaves bash mode/.test(bare76.placeholder ?? "") &&
+                    unbanged76 &&
                     mentions76 === 0 &&
                     sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" &&
                     gone76.mode === false && gone76.caption === null && gone76.well?.bg === "rgba(0, 0, 0, 0)" && gone76.bang === null,
-                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, mentions76, sent76, front76, ghostAfterSend76, gone76 }
+                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, unbanged76, mentions76, sent76, front76, ghostAfterSend76, gone76 }
             );
 
             // 76b. The !git stash list step 76 sent runs with nothing of it in the transcript: Claude Code writes its <bash-input> row

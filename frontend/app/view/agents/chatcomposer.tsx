@@ -673,7 +673,7 @@ export function ChatComposer({
                     </div>
                 ) : null}
                 {/* always this wrapper, so the editor is not remounted when the well comes and goes */}
-                <div className={cn("min-w-0", bash && "rounded-[8px] bg-surface-code px-2.5 py-2")}>
+                <div data-chat-well="" className={cn("min-w-0", bash && "rounded-[8px] bg-surface-code px-2.5 py-2")}>
                     <ChatEditor
                         ref={editorRef}
                         value={text}
@@ -729,7 +729,7 @@ export function ChatComposer({
                             if (e.defaultPrevented) {
                                 return;
                             }
-                            // a Tab the Tab list had nothing to do with (the caret before the `!`) stays in the box: in bash mode
+                            // a Tab the Tab list had nothing to do with stays in the box: in bash mode
                             // Tab is for completing, never for moving the focus out
                             if (
                                 bash &&
