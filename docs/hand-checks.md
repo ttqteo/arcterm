@@ -6,8 +6,7 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) Chat answers the panel commands itself: run `task check:ts` first (not run on this change). In a live
-  Claude agent's Chat send `/usage`, `/cost`, `/context`, `/tasks`, `/stats`, `/skills`, `/help`, `/status` → each
+- [ ] (arcterm) Chat answers the panel commands itself: in a live Claude agent's Chat send `/usage`, `/cost`, `/context`, `/tasks`, `/stats`, `/skills`, `/help`, `/status` → each
   shows a card under the conversation ("shown by arcterm · not sent"), nothing reaches the terminal, and the card's ×
   or your next message closes it; sending one again moves it to the end. `/usage`: 5-hour and weekly bars with resets,
   the session's cost; `/context`: percent and tokens, Compact now sends `/compact`; `/tasks` in an agent with a
@@ -16,8 +15,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   box. Open in Terminal sends the real command and flips. On a sleeping agent the cards show and it stays asleep.
   `/diff` → the Diff surface on that agent. `/theme` → the pane flips to Terminal (`chatlocal.ts`,
   `chatlocalcards.tsx`, `chatpane.tsx`, 6ef37b31a).
-- [ ] (arcterm) Skim folds long replies in Chat: run `task check:ts` first (not run on this change). In a Claude
-  agent's Chat with the Skim button on, a reply over 10 lines → its verdict and highlighted marks (or its top reasons
+- [ ] (arcterm) Skim folds long replies in Chat: in a Claude agent's Chat with the Skim button on, a reply over 10 lines → its verdict and highlighted marks (or its top reasons
   when unmarked), then "› Show more · N lines"; a click opens it in full with "Show less", and it stays open when you
   switch agents and back. A reply ending on a question, or a short one, draws in full. Skim off → every reply in full,
   no highlights. Compare one reply with the terminal's fold: the same sentences (`chatskim.ts` `chatFold`,
