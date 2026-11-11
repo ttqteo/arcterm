@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The subagent card in Chat, on a build from 8c4050322: in a Claude agent's Chat (not bypassPermissions)
+  ask for a subagent → the card reads "Wants to start a subagent" with the call's description, type and model, the
+  agent reads waiting; Allow starts it and the agent reads working at once; Deny ends the turn. The terminal's own
+  dialog goes with either (`wshcmd-agenthook.go` permissionRaiseFor, `pkg/agentperm`).
+
 - [ ] (arcterm) Chat take-back and the Sending… caption, on a build from bd3a302a5: send a message to an idle Claude →
   its bubble reads Sending… until it lands, never Queued with Send now (3c7de6e85). Send two while Claude works → both
   read Queued; Esc (or ↑ in the empty box) → both come back into the box, one per line, the bubbles go, the turn runs
