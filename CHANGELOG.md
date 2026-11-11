@@ -65,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A new Claude Code session you have sent nothing to reads as waiting at its prompt, not "Working…" with a Stop
+  button.
 - A question card with several questions in Chat, a run's card or a held command's dialog switches between its tabs
   again, and picking an answer moves on to the next question.
 - A Chat message with a picture or several lines, sent while Claude works, no longer shows twice, once still marked

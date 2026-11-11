@@ -62,7 +62,7 @@ func TestPlanEmission(t *testing.T) {
 		{"pre compact auto reports nothing", ccHookEvent{HookEventName: "PreCompact", Trigger: "auto"}, "", false},
 		{"session start after a compaction is idle", ccHookEvent{HookEventName: "SessionStart", Source: "compact"}, baseds.AgentState_Idle, false},
 		{"session start after a clear is idle", ccHookEvent{HookEventName: "SessionStart", Source: "clear"}, baseds.AgentState_Idle, false},
-		{"session start on startup reports nothing", ccHookEvent{HookEventName: "SessionStart", Source: "startup"}, "", false},
+		{"session start on startup is idle at its prompt", ccHookEvent{HookEventName: "SessionStart", Source: "startup"}, baseds.AgentState_Idle, false},
 		{"session start on a resume is idle with its title", ccHookEvent{HookEventName: "SessionStart", Source: "resume"}, baseds.AgentState_Idle, true},
 		// Task now only keeps the parent "working"; the disk store (not a hook delta) tracks subagents.
 		{"pre task -> working", ccHookEvent{HookEventName: "PreToolUse", ToolName: "Task", ToolUseID: "t1", ToolInput: json.RawMessage(`{"subagent_type":"Explore"}`)}, baseds.AgentState_Working, true},
