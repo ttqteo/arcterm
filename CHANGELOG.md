@@ -56,6 +56,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Auto in the heavy-job queue watches the CPU as well as the RAM: one heavy job per 6 CPU threads runs at once (2 on a
+  12-thread PC, 1 on an 8-core Mac), so several agents' typechecks and builds no longer run side by side and lag the
+  machine while the RAM still fits. A council's experts don't count, and the next job waits with "CPU busy".
 - Chat is calmer: your pinned message at the top is a plain card like your message bubble instead of an orange one,
   Show the diff and Open the terminal are two small icons beside Stop instead of a row of chips, and a folded "Worked
   for …" line no longer shows a red failed count (a failed step stays red when you open it). Click a pasted image in

@@ -50938,11 +50938,11 @@ const jobqueueChip = {
         const off = await pickPace("off");
         await h.shot("cdp-shots/jobqueue-chip-pace-off.png");
         rec(
-            "6b. Auto and Off are saved to jobs:mode, stay picked, and the chip's tooltip says as RAM allows / queue off",
+            "6b. Auto and Off are saved to jobs:mode, stay picked, and the chip's tooltip says as RAM and CPU allow / queue off",
             auto.picked &&
                 auto.mode === "auto" &&
                 auto.shown &&
-                String(auto.title).includes("as RAM allows") &&
+                String(auto.title).includes("as RAM and CPU allow") &&
                 off.picked &&
                 off.mode === "off" &&
                 off.shown &&
