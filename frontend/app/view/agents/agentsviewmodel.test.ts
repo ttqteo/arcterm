@@ -134,6 +134,13 @@ describe("burstRenderMode", () => {
     it("keeps the streaming path un-animated even if the burst was also user-opened (anti-strobe)", () => {
         expect(burstRenderMode({ userOpened: true, autoOpen: true })).toBe("open");
     });
+    it("folds the auto-open trailing burst the user closed", () => {
+        expect(burstRenderMode({ userOpened: false, autoOpen: true, userClosed: true })).toBe("collapsed");
+    });
+    it("ignores a close once the burst is no longer the live one", () => {
+        expect(burstRenderMode({ userOpened: false, autoOpen: false, userClosed: true })).toBe("collapsed");
+        expect(burstRenderMode({ userOpened: true, autoOpen: false, userClosed: true })).toBe("reveal");
+    });
 });
 
 describe("askingCount", () => {
