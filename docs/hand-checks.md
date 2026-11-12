@@ -6,7 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) Jarvis's hologram form: Settings → Jarvis & Office → Form → Hologram replaces Sprout with blue rings in
+- [ ] (arcterm) Settings → Jarvis & Office shows three short cards before Folding: Jarvis (Character, Vietnam's
+  colours), Form (Shows as, Hologram size) and Behaviour (Roams, Quotes), each row's text on one or two lines; searching
+  "quotes" or "hologram" still finds its row. Only unit-tested (89dc8e4ef: `settingsmodel.ts`, `settingspages/jarvis.tsx`).
+- [ ] (arcterm) Jarvis's hologram form: Settings → Jarvis & Office → Form → Shows as → Hologram replaces Sprout with blue rings in
   the bottom-right corner, faint when calm and solid on hover; clicking it opens the peek and the bubble sits beside
   it. Start an agent and the core beats; once something waits on you it fades into the amber neural sphere, and back
   when it is answered. Float and the fold still show Sprout. No milky disc or square around it, and Hologram size S / M
