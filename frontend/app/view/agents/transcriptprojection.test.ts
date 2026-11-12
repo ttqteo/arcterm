@@ -1530,6 +1530,137 @@ describe("projectTranscript: a message queued while Claude worked", () => {
     });
 });
 
+// A subagent's hand-back report (or another session's message) is queued the way your message is, wrapped in
+// <agent-message>, with origin.kind "peer": it is the agent's, drawn as a report row, never your bubble
+describe("projectTranscript: a message from another agent", () => {
+    const peer = (origin: Record<string, unknown>, prompt = '<agent-message from="a2b4">\nhello\n</agent-message>') =>
+        JSON.stringify({
+            type: "attachment",
+            uuid: "p1",
+            attachment: { type: "queued_command", commandMode: "prompt", prompt, origin: { kind: "peer", ...origin } },
+        });
+
+    it("draws a subagent's hand-back as its report, not your message", () => {
+        const entries = projectTranscript([
+            peer({
+                from: "a2b4",
+                name: "web-fetch",
+                handback: true,
+                body: "[Subagent hand-back] frame…\n  Source: x",
+                handbackReportText: "Source: x\n\n1. DEFINITION",
+            }),
+        ]);
+        expect(entries).toEqual([
+            { kind: "notification", summary: "web-fetch reported back", result: "Source: x\n\n1. DEFINITION" },
+        ]);
+    });
+
+    it("draws another session's message as a message from it", () => {
+        const entries = projectTranscript([peer({ from: "s9", name: "lead", body: "rebase onto main first" })]);
+        expect(entries).toEqual([
+            { kind: "notification", summary: "Message from lead", result: "rebase onto main first" },
+        ]);
+    });
+
+    it("reads the text inside the wrapper when the origin carries none, and names an unnamed sender", () => {
+        expect(projectTranscript([peer({ from: "a2b4", handback: true })])).toEqual([
+            { kind: "notification", summary: "A subagent reported back", result: "hello" },
+        ]);
+        expect(projectTranscript([peer({ from: "s9" })])).toEqual([
+            { kind: "notification", summary: "Message from another agent", result: "hello" },
+        ]);
+    });
+});
+
+// Esc before any reply takes your message back into Claude Code's box, and the one you send next is written with the
+// parent the taken-back one had; the TUI then draws only the live branch, and so does Chat
+describe("projectTranscript: a message taken back and sent again", () => {
+    const user = (uuid: string, parentUuid: string | null, text: string) =>
+        JSON.stringify({ type: "user", uuid, parentUuid, message: { content: text } });
+    const hook = (uuid: string, parentUuid: string) =>
+        JSON.stringify({ type: "attachment", uuid, parentUuid, attachment: { type: "hook_success" } });
+    const reply = (uuid: string, parentUuid: string, text: string) =>
+        JSON.stringify({ type: "assistant", uuid, parentUuid, message: { content: [{ type: "text", text }] } });
+
+    it("drops the taken-back message and keeps the one sent in its place", () => {
+        const entries = projectTranscript([
+            user("u0", null, "first"),
+            reply("a0", "u0", "done"),
+            user("u1", "a0", "vẽ html, không vẽ artifact"),
+            hook("h1", "u1"),
+            hook("h2", "h1"),
+            user("u2", "a0", "vẽ html, vẽ artifact"),
+            reply("a2", "u2", "ok"),
+        ]);
+        expect(entries.map((e) => (e.kind === "user" || e.kind === "message" ? e.text : e.kind))).toEqual([
+            "first",
+            "done",
+            "vẽ html, vẽ artifact",
+            "ok",
+        ]);
+    });
+
+    it("drops a whole rewound branch, replies and later messages included", () => {
+        const entries = projectTranscript([
+            user("u0", null, "first"),
+            reply("a0", "u0", "done"),
+            user("u1", "a0", "old ask"),
+            reply("a1", "u1", "old answer"),
+            user("u2", "a1", "old follow-up"),
+            JSON.stringify({
+                type: "system",
+                subtype: "compact_boundary",
+                uuid: "c1",
+                parentUuid: null,
+                logicalParentUuid: "u2",
+            }),
+            user("u3", "c1", "after the old compaction"),
+            user("u4", "a0", "new ask"),
+        ]);
+        expect(entries.map((e) => (e.kind === "user" || e.kind === "message" ? e.text : e.kind))).toEqual([
+            "first",
+            "done",
+            "new ask",
+        ]);
+    });
+
+    it("keeps records that share a parent when they are not two messages of yours", () => {
+        const lines = [
+            user("u0", null, "go"),
+            JSON.stringify({
+                type: "assistant",
+                uuid: "a1",
+                parentUuid: "u0",
+                message: { content: [{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "/a.ts" } }] },
+            }),
+            JSON.stringify({
+                type: "assistant",
+                uuid: "a2",
+                parentUuid: "a1",
+                message: { content: [{ type: "tool_use", id: "t2", name: "Read", input: { file_path: "/b.ts" } }] },
+            }),
+            JSON.stringify({
+                type: "user",
+                uuid: "r1",
+                parentUuid: "a1",
+                message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "x" }] },
+            }),
+            JSON.stringify({
+                type: "user",
+                uuid: "r2",
+                parentUuid: "a1",
+                message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "y" }] },
+            }),
+            hook("h1", "r2"),
+            user("u1", "r2", "and then"),
+        ];
+        const entries = projectTranscript(lines);
+        expect(entries.map((e) => e.kind)).toEqual(["user", "action", "action", "user"]);
+        const actions = entries.filter((e) => e.kind === "action");
+        expect(actions.every((e) => e.kind === "action" && e.outcome === "ok")).toBe(true);
+    });
+});
+
 // Fork from here cuts the transcript at a record, and Chat reads only a window of it: an entry names its record by uuid
 describe("projectTranscript: the record uuid", () => {
     it("tags your messages and the agent's replies with their record uuid", () => {
