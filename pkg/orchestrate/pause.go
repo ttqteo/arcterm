@@ -364,7 +364,11 @@ func ReopenSession(ctx context.Context, s waveobj.PausedSession, nudge string) e
 		return fmt.Errorf("reopening session of run %s: it recorded no tab or no session", s.RunId)
 	}
 	if !workerTabGone(ctx, s.WorkerORef) {
-		return jarvis.ResumeRunWorker(ctx, s.WorkerORef, s.Runtime, s.SessionId, nudge)
+		if err := jarvis.ResumeRunWorker(ctx, s.WorkerORef, s.Runtime, s.SessionId, nudge); err != nil {
+			return err
+		}
+		noteLeadReopened(ctx, s.RunId)
+		return nil
 	}
 	run, err := wstore.DBGet[*waveobj.Run](ctx, s.RunId)
 	if err != nil {
@@ -381,6 +385,18 @@ func ReopenSession(ctx context.Context, s waveobj.PausedSession, nudge string) e
 	if err := resumeInNewTab(ctx, run, phaseIdx, s.WorkerORef, nudge); err != nil {
 		return fmt.Errorf("reopening %s of run %s in a new tab: %w", s.WorkerORef, s.RunId, err)
 	}
+	noteLeadReopened(ctx, s.RunId)
 	sendRunUpdates(run.ChannelOID, run.ID)
 	return nil
+}
+
+// noteLeadReopened tells the waker that runId's lead, if that is what was reopened, was just restarted: the restart
+// returns before the process runs, so the lead gets the wake-confirm timeout to come up, as the boot-time restart of a
+// lead gives it (ResumeInterruptedLeads). A task's worker has no wake record to stamp.
+func noteLeadReopened(ctx context.Context, runId string) {
+	run, err := wstore.DBGet[*waveobj.Run](ctx, runId)
+	if err != nil || run == nil || run.Mode != jarvis.RunMode_Orchestrator || run.DagORef == "" {
+		return
+	}
+	wakes.leadRestarted(run.ChannelOID, run.ID)
 }

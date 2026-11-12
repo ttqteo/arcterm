@@ -164,6 +164,17 @@ func (rw *runWake) clearHoldClock() {
 	rw.heldSince, rw.heldCPUMs = 0, 0
 }
 
+// requeueSent takes back the unconfirmed wake: its text is held again, whole, for the next flush, and the handoff
+// compaction is queued again as such.
+func (rw *runWake) requeueSent() {
+	if rw.sent == HandoffCompact {
+		rw.handoff = true
+	} else if rw.sent != "" {
+		rw.lines = append([]string{rw.sent}, rw.lines...)
+	}
+	rw.sentAt, rw.sent, rw.retried = 0, "", false
+}
+
 // startHoldClock times a hold from now, with the lead's CPU as the baseline. No reading, no clock: the next flush
 // tries again, and a lead whose process is gone takes the not-alive path instead.
 func (rw *runWake) startHoldClock(blockId string) {
@@ -262,6 +273,10 @@ func PokeWake(ctx context.Context, channelId, runId string) {
 	defer wakes.lock.Unlock()
 	rw := wakes.runLocked(channelId, runId)
 	if rw.dead {
+		// a pause relaunches nothing; the resume ends it, and the lead's own status revives or replaces it from there
+		if leadPaused(ctx, channelId, runId) {
+			return
+		}
 		if wakes.autoRelaunchLocked(ctx, runId, rw) {
 			return
 		}
@@ -335,6 +350,12 @@ func tickWakes(ctx context.Context) {
 			wakes.checkHungLocked(ctx, runId, rw, now)
 			continue
 		}
+		// the process the wake was typed to is the one the pause ended: it is to be sent again to the reopened lead, not
+		// retried as a bare Enter and then counted as a lead that did not answer
+		if leadPaused(ctx, rw.channelId, runId) {
+			rw.requeueSent()
+			continue
+		}
 		if now-rw.sentAt < WakeConfirmTimeout.Milliseconds() {
 			continue
 		}
@@ -383,6 +404,14 @@ func leadAsking(blockId string) bool {
 	return asking || agentask.GlobalRegistry.AnswerInFlight(oref)
 }
 
+// leadPaused reports a run under a pause: its own, a parent's, or its dag's (runUnderPause). A pause ends the lead's
+// process on purpose (jarvis.SuspendRunWorker) and the resume reopens it in the same session, so a lead that is not
+// running then is not dead, and wakes wait for it. An unreadable run reads as not paused, as runUnderPause reads a dag.
+func leadPaused(ctx context.Context, channelId, runId string) bool {
+	run, err := wstore.GetRun(ctx, channelId, runId)
+	return err == nil && run != nil && runUnderPause(ctx, run)
+}
+
 func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 	if rw.sentAt != 0 || rw.dead || rw.launching || rw.hangStopping {
 		return
@@ -395,6 +424,12 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		}
 	}
 	if len(rw.lines) == 0 && !untold && !rw.handoff {
+		rw.clearHoldClock()
+		return
+	}
+	// held, not judged: the lead the pause stopped is reopened by the resume, and a replacement started now would take
+	// the run's lead tab from it (run 1cad2fd0: the reopened lead had no run context)
+	if leadPaused(ctx, rw.channelId, runId) {
 		rw.clearHoldClock()
 		return
 	}

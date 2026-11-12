@@ -1411,3 +1411,100 @@ func TestHungLeadStopThatNeverReturnsHandsQuestionsToThePerson(t *testing.T) {
 		t.Fatalf("the clock is cleared so the next flush restarts it, got %d", since)
 	}
 }
+
+// setRunPaused marks the dag's owner run paused, as a pause leaves the top-level run, or clears the mark as the resume does.
+func setRunPaused(t *testing.T, ctx context.Context, dag *waveobj.TaskGroup, paused bool) {
+	t.Helper()
+	if err := wstore.UpdateRun(ctx, dag.ChannelId, dag.RunID, func(r *waveobj.Run) error {
+		if paused {
+			jarvis.SetRunPause(r, &waveobj.RunPause{PausedTs: 1, By: "manual"})
+		} else {
+			jarvis.ClearRunPause(r, 2)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A pause ends the lead's process by design (jarvis.SuspendRunWorker). Judging that lead dead started a replacement lead
+// two seconds after the pause of run 1cad2fd0, and the replacement took the run's lead tab: the lead the resume then
+// reopened, in the old tab, had no run context.
+func TestAPausedRunsLeadIsNotDeclaredDeadOrReplaced(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	calls := stubRelaunch(t, func() error { return nil })
+	setRunPaused(t, ctx, dag, true)
+
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+	waitStages(t)
+
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a lead its own pause stopped is not replaced: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("a paused lead is not handed over as dead, got %d lead-wake-failed rows", n)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead through the pause, got %+v", p)
+	}
+
+	// the resume reopens the lead; the next tick hands it what was held while it was away
+	setRunPaused(t, ctx, dag, false)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	tickWakes(ctx)
+	if len(f.sends) != 1 || !strings.Contains(f.sends[0], failedLine) {
+		t.Fatalf("the wake held through the pause is typed once the lead is back at its prompt, got %q", f.sends)
+	}
+}
+
+func TestAPausedRunsDeadLeadIsNotReplacedByAQuestion(t *testing.T) {
+	_, ctx, dag := seedDeadLeadRun(t, true)
+	calls := stubRelaunch(t, func() error { return nil })
+	wakes.lock.Lock()
+	wakes.runLocked(dag.ChannelId, dag.RunID).dead = true
+	wakes.lock.Unlock()
+	setRunPaused(t, ctx, dag, true)
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	waitStages(t)
+
+	if *calls != 0 {
+		t.Fatalf("a question raised during a pause relaunches no lead, got %d relaunches", *calls)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("the question stays where it is, got %+v", p)
+	}
+}
+
+// a wake typed just before the pause went to a process the pause ended: it is neither retried into the reopened lead as
+// a bare Enter nor held against that lead as unconfirmed, it is simply to be sent again
+func TestAWakeTypedBeforeAPauseIsSentAgainAfterTheResume(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PostWake(ctx, dag.ChannelId, dag.RunID, finishedLine)
+	if len(f.sends) != 1 {
+		t.Fatalf("the idle lead takes the wake at once, got %q", f.sends)
+	}
+	setRunPaused(t, ctx, dag, true)
+	f.state.Alive = false
+	for range 3 {
+		f.now += WakeConfirmTimeout.Milliseconds()
+		tickWakes(ctx)
+	}
+	waitStages(t)
+	if *calls != 0 || LeadDead(dag.RunID) || len(f.sends) != 1 {
+		t.Fatalf("an unconfirmed wake does not count against a paused lead: %d relaunches, dead %v, sends %q", *calls, LeadDead(dag.RunID), f.sends)
+	}
+
+	setRunPaused(t, ctx, dag, false)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	tickWakes(ctx)
+	if len(f.sends) != 2 || !strings.Contains(f.sends[1], finishedLine) {
+		t.Fatalf("the reopened lead is sent the wake again, whole, got %q", f.sends)
+	}
+}
