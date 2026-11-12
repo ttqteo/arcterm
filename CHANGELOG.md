@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat no longer drops what Claude says between tool calls when Claude Code keeps only a summary of it (the lines the
+  terminal marks "· summary"): the summary shows as Claude's reply.
 - A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
   (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
 - Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then

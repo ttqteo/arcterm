@@ -18,6 +18,19 @@ function isRequestCopy(rec: any): boolean {
     return rec?.type === "api-request-blob";
 }
 
+// With thinkingDisplay "updates", what the model writes to the person between tool calls can reach the transcript as a
+// thinking block holding a summary of it (a "narration" block; the TUI draws it with "· summary"), not as a text block,
+// and the full text is not written anywhere. Its thinking text is never empty, while a real thinking block's always is
+// in that mode (260 of 260 in the last 40 sessions on 2026-11-12), so it is drawn as what the agent said.
+function isNarration(rec: any, block: any): block is { thinking: string } {
+    return (
+        rec?.thinkingDisplay === "updates" &&
+        block?.type === "thinking" &&
+        typeof block.thinking === "string" &&
+        block.thinking.trim() !== ""
+    );
+}
+
 const VERB_BY_TOOL: Record<string, string> = {
     Read: "read",
     Edit: "edited",
@@ -276,6 +289,10 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             for (const block of content) {
                 if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
                     entries.push({ kind: "message", text: block.text, ...tag });
+                    continue;
+                }
+                if (isNarration(rec, block)) {
+                    entries.push({ kind: "message", text: block.thinking, ...tag });
                     continue;
                 }
                 if (block?.type === "tool_use" && typeof block.name === "string") {

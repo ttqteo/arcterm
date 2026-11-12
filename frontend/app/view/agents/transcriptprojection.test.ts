@@ -81,6 +81,21 @@ describe("projectTranscript", () => {
         ]);
     });
 
+    it("reads a narration block (thinkingDisplay updates) as a message and skips real thinking", () => {
+        const L = (o: unknown) => JSON.stringify(o);
+        const think = (display: string, thinking: string, uuid: string) =>
+            L({ type: "assistant", uuid, thinkingDisplay: display, message: { content: [{ type: "thinking", thinking, signature: "s" }] } });
+        expect(
+            projectTranscript([
+                think("updates", "", "a"),
+                think("updates", "Almost no RAM; the cost is CPU.\n\n", "b"),
+                think("updates", "   ", "c"),
+                think("summarized", "I should check the watcher first.", "d"),
+                L({ type: "api-request-blob", thinkingDisplay: "updates", message: { content: [{ type: "thinking", thinking: "copy" }] } }),
+            ])
+        ).toEqual([{ kind: "message", text: "Almost no RAM; the cost is CPU.\n\n", uuid: "b" }]);
+    });
+
     it("returns [] for empty input and skips unparseable lines", () => {
         expect(projectTranscript([])).toEqual([]);
         expect(projectTranscript(["garbage", "{bad"])).toEqual([]);
