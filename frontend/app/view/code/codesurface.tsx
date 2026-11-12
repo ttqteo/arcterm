@@ -130,7 +130,7 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
     const decision = subjectDecision(project?.name ?? null, filter === "all" ? null : filter);
 
     // stable array: every run() reads live atoms, so it never needs rebuilding
-    const codeBindings = useMemo(() => buildCodeBindings(), []);
+    const codeBindings = useMemo(() => buildCodeBindings(model), [model]);
     useKeybindings(codeBindings);
     useSyncMonacoTheme();
 

@@ -53,6 +53,42 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   far, marked as a side answer that Claude's conversation never sees; the agent's work goes on meanwhile.
 - Chat's bash mode (a message that starts with !) shows the command in a shell well, suggests the last matching !
   command you ran (→ takes it), and completes commands, $variables and files with Tab.
+- **Review comments in Code, sent to an agent** (from the kaeltran16 fork): `Alt`+`M` on the selected lines (or the
+  caret's line), or Add review comment in the editor's right-click menu, leaves a note on them, drawn as a bar in the
+  gutter that follows its line when the file shifts. The toolbar counts the project's comments, lists them (a click
+  jumps to one) and has Send review (`Alt`+`Shift`+`M`): the whole review goes to the agent you pick as one message, or
+  is copied when none runs in the project. Comments stay per project across restarts, and a send that fails keeps
+  them. <!-- try: go:code --> <!-- big -->
+- **Symbols, go to definition and find references in Code** (from the kaeltran16 fork): the sidebar's fourth tab lists
+  the open file's outline, and `@` first in the finder (`Mod`+`P`) lists the same symbols; `Alt`+`O` opens it. `F12` on
+  a word jumps to where it is declared (several candidates are listed in Search), `Shift`+`F12` lists the places that
+  use it; the editor's right-click menu has both. <!-- try: go:code -->
+- **Peek at a file from an agent's terminal** (from the kaeltran16 fork): `Ctrl`+`Shift`+click (`Cmd`+`Shift`+click on
+  a Mac) on a file path in an agent's terminal unfolds a read-only card under the line: Preview for markdown, Source,
+  Diff against HEAD for a changed file, and Open in Code. `Enter` opens the file in Code and `Esc` closes the card; a
+  plain `Ctrl`+click on the path opens it as before. <!-- try: go:agent --> <!-- big -->
+- **Comments on a diff's lines** (from the kaeltran16 fork): hover a line in Diff and click the + in its gutter, or
+  select lines and press `m`, to write a note that stays under those lines as a pending card. The bar under the diff
+  counts the batch, names who gets it (the agent that made the changes, a run by its landing rule, or a new agent in
+  the project's folder) and `Shift`+`Enter` sends it as one message; the changed-file list badges each file's count.
+  <!-- try: go:files --> <!-- big -->
+- **Usage → By work** (from the kaeltran16 fork): a lens beside By provider that shows what the usage paid for: All
+  usage, each project and each initiative as cards, and under them the runs and sessions behind it, eight rows first and
+  25 more per Show more. A session carries its role, task, chunk and initiative, and a row with no price shows an
+  estimate and how much of the usage it covers. `j` / `k` walk the cards and rows, and `Esc` steps back from an item to
+  its scope. <!-- try: go:usage -->
+- **Usage → Workflow** (from the kaeltran16 fork): a second lens that follows the newest workflow scan: its four stages
+  as they finish, the findings it made, and Open agent, Open run, Open in Diff and Copy. Scan workflow starts one for
+  the project you pick without leaving Usage. <!-- try: go:usage -->
+- **Setup → Instructions has Sync now** (from the kaeltran16 fork): when a harness file is out of date or not written, a
+  button beside the header's status writes the shared doc into it. It checks first and shows the plan's counts
+  ("Writing the doc into 2 harness files · 3 skill copies updated · 1 left alone"), then syncs and reads the files
+  again. A harness row is a button that previews its file, a blank shared doc reads "The shared doc is empty", a
+  harness's note shows in its own tone, and `Ctrl`+`S` in the shared editor saves. <!-- try: go:setup -->
+- **Setup → Skills handles links and stray copies** (from the kaeltran16 fork): a skills-folder entry that is a link
+  (a broken one too) is listed under "Linked from another folder" and never written through. A copy of a vault skill in
+  a harness's folder stays where it is unless you pick Replace it with the vault copy, and any unmanaged skill can be
+  left alone; Manage says what it did. <!-- try: go:setup -->
 
 ### Changed
 
@@ -98,6 +134,31 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the full header.
 - While Claude waits on a permission prompt or a question, Chat's message box says so above your text, and Send
   queues the message instead of doing nothing: it goes by itself once you answer (Cancel takes it back).
+- **Diff says why it cannot show a file** (from the kaeltran16 fork): a file over 2 MB, a binary one, a new or deleted
+  empty file, and a file whose read failed (with Retry) each say so instead of an endless skeleton or a blank pane. A
+  new file draws every line as added, with no band on the old side. When git cannot count the lines, the file list
+  stays and says "Line counts unavailable" instead of showing +0 −0. <!-- try: go:files -->
+- **A landed run's Diff stops at its own tip** (from the kaeltran16 fork): a run that landed shows what it changed, not
+  what the checkout gained since. An ended agent's Diff says so, with Open its folder, and a failed refresh keeps the
+  last list under a notice. A failed history read stays in the Log tab with Retry while the working tree, its list and
+  the diff stay. Compare opens on the most recent other local branch against the default branch, `r` re-reads it, and
+  Fetch hides in a repository with no remote. `Shift`+`D` does nothing while the pane is too narrow to draw split.
+- **Code keeps your place** (from the kaeltran16 fork): Refresh index no longer closes the open file or the folders you
+  expanded, picking the project already shown only closes the picker, a folder you made stays in the tree until a file
+  lands in it, and a failed delete keeps the open file. `Esc` closes the project picker or the unsaved list before it
+  leaves Code, and the header counts the files with unsaved edits.
+- **Code's Preview follows links and jumps** (from the kaeltran16 fork): a `doc.md#heading` link, a Symbols heading
+  row, an `@` pick and an in-page `#anchor` scroll the Preview to that heading, a link to a folder reveals it in the
+  tree, and a jump into another file lands in that file (one whose file turns out binary, missing or unreadable is
+  dropped). Opening a large markdown file no longer flashes "Opening…".
+- **Code's Diff view** (from the kaeltran16 fork): says when a file is deleted in the working tree, unchanged, or new
+  (every line drawn as added); the header picks HEAD or the branch base, and the stale bar over an unsaved draft offers
+  Compare with disk. The Changed pane's rows are buttons you walk with `↑` / `↓`. The editor's right-click menu has Copy
+  path, `Alt`+`←` / `→` go back and forward from the editor too, and `d` does nothing in a folder that is not a git
+  repository.
+- **Usage keeps what it measured** (from the kaeltran16 fork): the daily chart of one project or initiative spans the
+  whole held window, empty days included, and a failed switch of the range shows a panel with Retry over the held
+  figures.
 
 ### Fixed
 
@@ -162,6 +223,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A run holds far less RAM: a task's worker stops once it hands its commit to review, and its reviewer once its
   verdict is in, instead of both idling at their prompt (~1.5 GB each) until the lane landed. Pausing a run now stops
   those idle sessions too.
+- **A closed tab's session stays under its initiative** (from the kaeltran16 fork): Usage counted a session under the
+  initiative its tab carried only while the tab was open; it keeps it after the tab closes. A brainstorm judge's or
+  check's session shows its role instead of reading as a plain session.
 ### Changed
 
 - A background command that left a server running is named in the Agent tree by the server and its port

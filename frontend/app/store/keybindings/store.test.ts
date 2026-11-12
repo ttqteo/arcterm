@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
@@ -28,6 +29,7 @@ import { docReviewStateAtom, setGeneralNote, syncDocReview } from "@/app/view/ag
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
+import { usageLensAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view/agents/usagestore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { initiativeSheetAtom, initiativeSheetOpenAtom } from "@/app/view/jarvis/initiativesheetstore";
@@ -861,5 +863,91 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
         const unused = PREDICATE_ATOMS.filter((a) => !seen.has(a));
         expect(missing).toEqual([]); // a when() predicate reads an atom whenstate.ts doesn't watch
         expect(unused).toEqual([]); // whenstate.ts watches an atom no when() predicate reads
+    });
+});
+
+// The Kael sync's keys: Code's symbols, review and Alt+arrows from the editor, Diff's comment keys, and Usage's By work
+// Escape. Escape is the key two global bindings could share, so it is checked with By work drilled and with a menu open.
+describe("Kael sync keys do not conflict", () => {
+    const codeModel = () => ({
+        ...stubModel(),
+        paletteOpenAtom: atom(false),
+        paletteSeedAtom: atom<string | null>(null) as PrimitiveAtom<string | null>,
+    });
+
+    it("global + list-nav + agent + files + code (with its model) + usage keys, By work drilled or not", () => {
+        const model = codeModel();
+        globalStore.set(listNavAtom, { surface: "usage", navigableIds: [], cursorId: undefined, setCursor() {} });
+        const build = () => [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildAgentBindings(model),
+            ...buildFilesBindings(),
+            ...buildCodeBindings(model as any),
+            ...buildUsageBindings({ prevTab() {}, nextTab() {}, analyze() {} }),
+        ];
+        try {
+            expect(() => assertNoConflicts(build())).not.toThrow();
+            globalStore.set(usageLensAtom, "work");
+            expect(() => assertNoConflicts(build())).not.toThrow();
+            globalStore.set(usageWorkScopeAtom, "effort:e1");
+            expect(() => assertNoConflicts(build())).not.toThrow();
+            globalStore.set(usageWorkItemAtom, { key: "run:r1", back: "all" } as any);
+            expect(() => assertNoConflicts(build())).not.toThrow();
+            globalStore.set(escapeMenusOpenAtom, 1);
+            expect(() => assertNoConflicts(build())).not.toThrow();
+        } finally {
+            globalStore.set(listNavAtom, null);
+            globalStore.set(usageLensAtom, "provider");
+            globalStore.set(usageWorkScopeAtom, "all");
+            globalStore.set(usageWorkItemAtom, null);
+            globalStore.set(escapeMenusOpenAtom, 0);
+        }
+    });
+
+    it("the Code tree keys and the Kael Code keys do not conflict with the tree focused", () => {
+        const model = codeModel();
+        globalStore.set(codeTreeFocusedAtom, true);
+        try {
+            expect(() =>
+                assertNoConflicts([
+                    ...buildGlobalBindings(model),
+                    ...buildListNavBindings(model),
+                    ...buildCodeBindings(model as any),
+                ])
+            ).not.toThrow();
+        } finally {
+            globalStore.set(codeTreeFocusedAtom, false);
+        }
+    });
+
+    // evaluates every predicate of the keys above with globalStore.get watched: each atom they read is one PREDICATE_ATOMS
+    // lists (the full sweep above runs buildCodeBindings with no model; this one runs the keys that need it)
+    it("every atom the new predicates read is one whenstate.ts watches", () => {
+        const model = codeModel();
+        const all: Binding[] = [
+            ...buildGlobalBindings(model),
+            ...buildFilesBindings(),
+            ...buildCodeBindings(model as any),
+        ];
+        const seen = new Set<unknown>();
+        const realGet = globalStore.get;
+        (globalStore as { get: typeof globalStore.get }).get = ((a: unknown) => {
+            seen.add(a);
+            return (realGet as (a: unknown) => unknown)(a);
+        }) as typeof globalStore.get;
+        try {
+            for (const ctx of contexts()) {
+                for (const binding of all) {
+                    binding.when?.(ctx);
+                }
+            }
+        } finally {
+            (globalStore as { get: typeof globalStore.get }).get = realGet;
+        }
+        for (const watched of [escapeMenusOpenAtom, usageLensAtom, usageWorkScopeAtom, usageWorkItemAtom]) {
+            expect(seen.has(watched)).toBe(true);
+            expect(PREDICATE_ATOMS).toContain(watched);
+        }
     });
 });

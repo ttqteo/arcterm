@@ -88,6 +88,20 @@ import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
+import { registerCommentSend } from "@/app/view/agents/commentsend";
+import { commentOnSelection } from "@/app/view/agents/diffcommentlayer";
+import { splitAvailableAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
+import { LIST_COLLAPSED_ROWS } from "@/app/view/agents/usageattribution";
+import { usageLensAtom, usageListShownAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view/agents/usagestore";
+import { codeReviewsAtom, codeReviewSendOpenAtom, startComment } from "@/app/view/code/codereviewstore";
+import {
+    caretWord,
+    codeIndexAtom,
+    codeProjectAtom,
+    findReferences,
+    goToDefinition,
+} from "@/app/view/code/codestore";
 import {
     buildAgentBindings,
     buildChannelsAskBindings,
@@ -132,6 +146,26 @@ vi.mock("@/app/view/agents/filesstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/filesstore")>()),
     reloadChanges: vi.fn(async () => {}),
 }));
+// The Kael-sync keys call into Code and the Diff comment layer. Each is the real function, watched: with no editor
+// mounted they decline on their own, and a case that needs another answer sets it for that case alone.
+vi.mock("@/app/view/code/codestore", async (orig) => {
+    const mod = await orig<typeof import("@/app/view/code/codestore")>();
+    return {
+        ...mod,
+        caretWord: vi.fn(mod.caretWord),
+        goToDefinition: vi.fn(mod.goToDefinition),
+        findReferences: vi.fn(mod.findReferences),
+    };
+});
+vi.mock("@/app/view/code/codereviewstore", async (orig) => {
+    const mod = await orig<typeof import("@/app/view/code/codereviewstore")>();
+    return { ...mod, startComment: vi.fn(mod.startComment) };
+});
+vi.mock("@/app/view/agents/diffcommentlayer", async (orig) => {
+    const mod = await orig<typeof import("@/app/view/agents/diffcommentlayer")>();
+    return { ...mod, commentOnSelection: vi.fn(mod.commentOnSelection) };
+});
+
 // it reads the project list from the app's global atoms, which this node suite does not set up
 vi.mock("@/app/view/agents/worktreesidebarstore", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/worktreesidebarstore")>()),
@@ -3671,5 +3705,387 @@ describe("the Brief's initiative keys", () => {
         expect(claim("j")).toBeNull();
         expect(claim("k")).toBeNull();
         expect(claim("Enter")).toBeNull();
+    });
+});
+
+// ---- Kael sync (2026-11-12): the keys of the Code review and symbols, the Diff comments and Usage's By work ----
+
+describe("Kael sync: Code keys", () => {
+    const code = ctx("code");
+    const model = () =>
+        ({
+            ...stubModel(),
+            paletteOpenAtom: atom(false),
+            paletteSeedAtom: atom<string | null>(null) as PrimitiveAtom<string | null>,
+        }) as any;
+    const find = (id: string, m: any = model()) => {
+        const b = buildCodeBindings(m).find((x) => x.id === id);
+        if (b == null) {
+            throw new Error(`no binding ${id}`);
+        }
+        return b;
+    };
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.mocked(caretWord).mockReset();
+        vi.mocked(goToDefinition).mockReset();
+        vi.mocked(findReferences).mockReset();
+        vi.mocked(startComment).mockReset();
+        globalStore.set(codeProjectAtom, null);
+        globalStore.set(codeReviewsAtom, new Map());
+        globalStore.set(codeReviewSendOpenAtom, false);
+        globalStore.set(codeIndexAtom, null);
+    });
+
+    it.each([
+        ["code:definition", "F12"],
+        ["code:references", "Shift:F12"],
+        ["code:symbols", "Alt:o"],
+        ["code:comment", "Alt:m"],
+        ["code:send-review", "Alt:Shift:m"],
+    ])("%s is %s, live on Code from the editor too, and not under a modal or on another surface", (id, keys) => {
+        const b = find(id);
+        expect(b.keys).toBe(keys);
+        expect(b.group).toBe("Code");
+        expect(b.when!(code)).toBe(true);
+        expect(b.when!({ ...code, editable: true })).toBe(true);
+        expect(b.when!({ ...code, modalOpen: true })).toBe(false);
+        expect(b.when!(ctx("cockpit"))).toBe(false);
+    });
+
+    it("uses no [ or ] as a key of its own (Telex turns them into ơ and ư)", () => {
+        for (const b of buildCodeBindings(model())) {
+            expect(b.keys, b.id).not.toMatch(/[[\]]/);
+        }
+    });
+
+    it("F12 and Shift+F12 let the key pass with no word at the caret", () => {
+        vi.mocked(caretWord).mockReturnValue(null);
+        expect(find("code:definition").run(code)).toBe(false);
+        expect(find("code:references").run(code)).toBe(false);
+        expect(goToDefinition).not.toHaveBeenCalled();
+        expect(findReferences).not.toHaveBeenCalled();
+    });
+
+    it("F12 looks up the caret word's definition, and Shift+F12 its references", () => {
+        vi.mocked(caretWord).mockReturnValue({ word: "openPath", lang: "ts" });
+        vi.mocked(goToDefinition).mockResolvedValue(false);
+        vi.mocked(findReferences).mockResolvedValue(undefined);
+        // the sidebar opener is looked up in the DOM; there is none here
+        vi.stubGlobal("document", { querySelector: () => null });
+        const m = model();
+        expect(find("code:definition", m).run(code)).toBeUndefined();
+        expect(goToDefinition).toHaveBeenLastCalledWith(m, "openPath", "ts");
+        expect(find("code:references", m).run(code)).toBeUndefined();
+        expect(findReferences).toHaveBeenLastCalledWith("openPath");
+    });
+
+    it("F12 opens a collapsed sidebar once the candidates are listed, and not for a jump", async () => {
+        vi.mocked(caretWord).mockReturnValue({ word: "openPath", lang: "ts" });
+        const click = vi.fn();
+        const opener = { classList: { contains: () => false }, click, focus: vi.fn() };
+        vi.stubGlobal("document", { querySelector: () => opener });
+        vi.mocked(goToDefinition).mockResolvedValueOnce(false);
+        find("code:definition").run(code);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(click).not.toHaveBeenCalled();
+        vi.mocked(goToDefinition).mockResolvedValueOnce(true);
+        find("code:definition").run(code);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(click).toHaveBeenCalledOnce();
+    });
+
+    it("Alt+O opens the search palette seeded with @", () => {
+        const m = model();
+        find("code:symbols", m).run(code);
+        expect(globalStore.get(m.paletteSeedAtom)).toBe("@");
+        expect(globalStore.get(m.paletteOpenAtom)).toBe(true);
+    });
+
+    it("builds with no model for the tests that only read the guards, and then lets the model keys pass", () => {
+        const bare = buildCodeBindings();
+        vi.mocked(caretWord).mockReturnValue({ word: "openPath", lang: "ts" });
+        expect(bare.find((b) => b.id === "code:symbols")!.run(code)).toBe(false);
+        expect(bare.find((b) => b.id === "code:definition")!.run(code)).toBe(false);
+        expect(goToDefinition).not.toHaveBeenCalled();
+    });
+
+    it("leaves Mod+Shift+O to the global Open a tool, the VS Code symbol chord this key does not take", () => {
+        const global = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("code") } as any);
+        expect(global.find((b) => b.id === "open-tool")!.keys).toBe("Mod:Shift:o");
+        expect(buildCodeBindings(model()).some((b) => b.keys === "Mod:Shift:o" || b.keys === "Ctrl:Shift:o")).toBe(
+            false
+        );
+    });
+
+    it("Alt+M starts a comment, from the editor and with nothing to comment on alike", () => {
+        vi.mocked(startComment).mockImplementation(() => {});
+        const b = find("code:comment");
+        expect(b.run(code)).toBeUndefined();
+        expect(startComment).toHaveBeenCalledOnce();
+    });
+
+    it("Alt+Shift+M opens the send bar only with a review to send, else lets the key pass", () => {
+        const b = find("code:send-review");
+        expect(b.run(code)).toBe(false); // no project
+        globalStore.set(codeProjectAtom, { name: "arc", path: "/work/arc" });
+        expect(b.run(code)).toBe(false); // a project, no comments
+        expect(globalStore.get(codeReviewSendOpenAtom)).toBe(false);
+        globalStore.set(
+            codeReviewsAtom,
+            new Map([["/other", [{ id: "c0", path: "a.go", startLine: 1, endLine: 1, anchor: "x", note: "n" }]]])
+        );
+        expect(b.run(code)).toBe(false); // another project's comments are not this one's
+        globalStore.set(
+            codeReviewsAtom,
+            new Map([["/work/arc", [{ id: "c1", path: "a.go", startLine: 1, endLine: 2, anchor: "x", note: "n" }]]])
+        );
+        expect(b.run(code)).toBeUndefined();
+        expect(globalStore.get(codeReviewSendOpenAtom)).toBe(true);
+    });
+
+    // 4c026402d: Alt+arrows are not editing keys, and the editor is where a jump starts. code:back / code:forward keep
+    // their bare-surface guard (an existing case pins it); a twin takes the same keys from a field.
+    it("Alt+←/→ are live from the editor too, as two bindings that are never live together", () => {
+        const typing = { ...code, editable: true };
+        for (const [id, twin, keys] of [
+            ["code:back", "code:back-from-field", "Alt:ArrowLeft"],
+            ["code:forward", "code:forward-from-field", "Alt:ArrowRight"],
+        ] as const) {
+            expect(find(id).keys).toBe(keys);
+            expect(find(twin).keys).toBe(keys);
+            expect(find(id).when!(code)).toBe(true);
+            expect(find(twin).when!(code)).toBe(false);
+            expect(find(id).when!(typing)).toBe(false);
+            expect(find(twin).when!(typing)).toBe(true);
+            expect(find(twin).when!({ ...typing, modalOpen: true })).toBe(false);
+            expect(find(twin).when!({ ...typing, surface: "cockpit" })).toBe(false);
+            expect(find(twin).paletteHidden).toBe(true);
+        }
+    });
+
+    it("d lets the key pass in a plain folder, which has no history to diff against", () => {
+        globalStore.set(codeIndexAtom, { paths: [], ignored: [], isRepo: false, truncated: false } as any);
+        expect(find("code:diff").run(code)).toBe(false);
+    });
+
+    it("the Code keys share no key with the global set or each other, in any posture", () => {
+        const global = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("code") } as any);
+        const all = [...global, ...buildCodeBindings(model())];
+        for (const editable of [false, true]) {
+            for (const modalOpen of [false, true]) {
+                for (const leader of [null, "g"] as const) {
+                    const c = { surface: "code", editable, modalOpen, leader } as KeyContext;
+                    const seen = new Map<string, string>();
+                    for (const b of all.filter((x) => (x.when ? x.when(c) : true))) {
+                        expect(seen.get(b.keys), `${b.keys}: ${seen.get(b.keys)} and ${b.id}`).toBeUndefined();
+                        seen.set(b.keys, b.id);
+                    }
+                }
+            }
+        }
+    });
+});
+
+describe("Kael sync: Diff keys", () => {
+    const on = { surface: "files", editable: false, modalOpen: false, leader: null } as KeyContext;
+    const find = (id: string) => buildFilesBindings().find((b) => b.id === id)!;
+
+    afterEach(() => {
+        globalStore.set(splitAvailableAtom, false);
+        globalStore.set(splitViewAtom, false);
+    });
+
+    it("m declines with no editor mounted, and comments through the mounted layer", () => {
+        vi.mocked(commentOnSelection).mockClear();
+        const b = find("files:comment");
+        expect(b.keys).toBe("m");
+        expect(b.group).toBe("Diff");
+        expect(b.when?.(on)).toBe(true);
+        expect(b.when?.({ ...on, editable: true })).toBe(false);
+        expect(b.when?.({ ...on, modalOpen: true })).toBe(false);
+        expect(b.run(on)).toBe(false);
+        vi.mocked(commentOnSelection).mockReturnValueOnce(true);
+        expect(b.run(on)).toBe(true);
+        expect(commentOnSelection).toHaveBeenCalledTimes(2);
+    });
+
+    it("Shift+Enter declines with no send bar or nothing to send, and sends through the registered bar", () => {
+        const b = find("files:send-comments");
+        expect(b.keys).toBe("Shift:Enter");
+        expect(b.when?.(on)).toBe(true);
+        expect(b.when?.({ ...on, editable: true })).toBe(false);
+        expect(b.when?.({ ...on, modalOpen: true })).toBe(false);
+        expect(b.run(on)).toBe(false);
+        const send = vi.fn(() => false);
+        const unregister = registerCommentSend(send);
+        expect(b.run(on)).toBe(false);
+        send.mockReturnValue(true);
+        expect(b.run(on)).toBe(true);
+        expect(send).toHaveBeenCalledTimes(2);
+        unregister();
+        expect(b.run(on)).toBe(false);
+        expect(send).toHaveBeenCalledTimes(2);
+    });
+
+    it("an old send bar's teardown leaves the bar that replaced it registered", () => {
+        const first = vi.fn(() => true);
+        const second = vi.fn(() => true);
+        const dropFirst = registerCommentSend(first);
+        const dropSecond = registerCommentSend(second);
+        dropFirst();
+        expect(find("files:send-comments").run(on)).toBe(true);
+        expect(second).toHaveBeenCalledOnce();
+        expect(first).not.toHaveBeenCalled();
+        dropSecond();
+    });
+
+    it("Shift+D flips split and unified while the pane is wide enough to split", () => {
+        globalStore.set(splitAvailableAtom, true);
+        globalStore.set(splitViewAtom, false);
+        expect(find("files:toggle-split").run(on)).toBeUndefined();
+        expect(globalStore.get(splitViewAtom)).toBe(true);
+        find("files:toggle-split").run(on);
+        expect(globalStore.get(splitViewAtom)).toBe(false);
+    });
+
+    it("Shift+D declines and leaves the view unified while the pane is too narrow for split", () => {
+        globalStore.set(splitAvailableAtom, false);
+        globalStore.set(splitViewAtom, false);
+        expect(find("files:toggle-split").run(on)).toBe(false);
+        expect(globalStore.get(splitViewAtom)).toBe(false);
+    });
+
+    it("m and Shift+Enter take no key of another Files binding in any posture", () => {
+        const model = { ...stubModel(), surfaceAtom: {}, paletteOpenAtom: {}, launcherAtom: {} };
+        globalStore.set(listNavAtom, null);
+        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildFilesBindings()];
+        for (const editable of [false, true]) {
+            for (const modalOpen of [false, true]) {
+                for (const leader of [null, "g"] as const) {
+                    const c = { surface: "files", editable, modalOpen, leader } as KeyContext;
+                    const seen = new Map<string, string>();
+                    for (const b of all.filter((x) => (x.when ? x.when(c) : true))) {
+                        expect(seen.get(b.keys), `${b.keys}: ${seen.get(b.keys)} and ${b.id}`).toBeUndefined();
+                        seen.set(b.keys, b.id);
+                    }
+                }
+            }
+        }
+    });
+});
+
+describe("Kael sync: Escape on Usage's By work goes Back before it leaves", () => {
+    const model = { surfaceAtom: atom<SurfaceKey>("usage") } as any;
+    const find = (id: string) => buildGlobalBindings(model).find((b) => b.id === id)!;
+    const usage = ctx("usage");
+    const drill = (scope: string, item: { key: string; back: string } | null) => {
+        globalStore.set(usageLensAtom, "work");
+        globalStore.set(usageWorkScopeAtom, scope);
+        globalStore.set(usageWorkItemAtom, item as any);
+    };
+    // the Escapes the global set holds live in a context; a conflict is two of them at once
+    const liveEscapes = (c: KeyContext) =>
+        buildGlobalBindings(model)
+            .filter((b) => b.keys === "Escape" && (b.when ? b.when(c) : true))
+            .map((b) => b.id);
+
+    beforeEach(() => {
+        globalStore.set(autonomyPanelOpenAtom, false);
+        globalStore.set(petPeekOpenAtom, false);
+    });
+    afterEach(() => {
+        globalStore.set(usageLensAtom, "provider");
+        globalStore.set(usageWorkScopeAtom, "all");
+        globalStore.set(usageWorkItemAtom, null);
+        globalStore.set(usageListShownAtom, LIST_COLLAPSED_ROWS);
+        globalStore.set(escapeMenusOpenAtom, 0);
+    });
+
+    it("is labelled for the cheat sheet under Navigation", () => {
+        const b = find("usage:back");
+        expect(b.keys).toBe("Escape");
+        expect(b.group).toBe("Navigation");
+        expect(b.label).toBe("Back to the scope, else All usage");
+    });
+
+    it("takes Escape from an item, and back-home stands down", () => {
+        drill("C:/work/arc", { key: "run:r1", back: "all" });
+        expect(liveEscapes(usage)).toEqual(["usage:back"]);
+    });
+
+    it("takes Escape from a project or initiative scope", () => {
+        drill("C:/work/arc", null);
+        expect(liveEscapes(usage)).toEqual(["usage:back"]);
+        drill("effort:e1", null);
+        expect(liveEscapes(usage)).toEqual(["usage:back"]);
+    });
+
+    it("leaves Escape to back-home on All usage, on another lens, and on another surface", () => {
+        drill("all", null);
+        expect(liveEscapes(usage)).toEqual(["surface:back-home"]);
+        drill("C:/work/arc", { key: "run:r1", back: "all" });
+        globalStore.set(usageLensAtom, "provider");
+        expect(liveEscapes(usage)).toEqual(["surface:back-home"]);
+        globalStore.set(usageLensAtom, "work");
+        expect(liveEscapes(ctx("files"))).toEqual(["surface:back-home"]);
+    });
+
+    it("stands down under the same guards as back-home", () => {
+        drill("C:/work/arc", null);
+        globalStore.set(escapeMenusOpenAtom, 1);
+        expect(liveEscapes(usage)).toEqual([]);
+        globalStore.set(escapeMenusOpenAtom, 0);
+        expect(liveEscapes({ ...usage, editable: true })).toEqual([]);
+        globalStore.set(petPeekOpenAtom, true);
+        expect(liveEscapes(usage)).toEqual([]);
+    });
+
+    it("goes from an item Back to the scope it was opened from, with the list collapsed", () => {
+        drill("C:/work/arc", { key: "session:claude:s1", back: "all" });
+        globalStore.set(usageListShownAtom, 33);
+        find("usage:back").run(usage);
+        expect(globalStore.get(usageWorkScopeAtom)).toBe("all");
+        expect(globalStore.get(usageWorkItemAtom)).toBeNull();
+        expect(globalStore.get(usageListShownAtom)).toBe(LIST_COLLAPSED_ROWS);
+    });
+
+    it("goes from a project to All usage, then hands the next Escape to back-home", () => {
+        drill("C:/work/arc", null);
+        find("usage:back").run(usage);
+        expect(globalStore.get(usageWorkScopeAtom)).toBe("all");
+        expect(liveEscapes(usage)).toEqual(["surface:back-home"]);
+    });
+
+    it("lets the key pass when there is no step Back to", () => {
+        drill("all", null);
+        expect(find("usage:back").run(usage)).toBe(false);
+    });
+});
+
+describe("Kael sync: an open dropdown owns Escape on Code", () => {
+    const backHome = () =>
+        buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("code") } as any).find(
+            (b) => b.id === "surface:back-home"
+        )!;
+
+    afterEach(() => {
+        globalStore.set(escapeMenusOpenAtom, 0);
+    });
+
+    it("surface:back-home stands down while a useEscapeClose menu is open, and takes Escape again once it shuts", () => {
+        const b = backHome();
+        globalStore.set(autonomyPanelOpenAtom, false);
+        globalStore.set(petPeekOpenAtom, false);
+        expect(b.when!(ctx("code"))).toBe(true);
+        globalStore.set(escapeMenusOpenAtom, 1);
+        expect(b.when!(ctx("code"))).toBe(false);
+        globalStore.set(escapeMenusOpenAtom, 2);
+        expect(b.when!(ctx("code"))).toBe(false);
+        globalStore.set(escapeMenusOpenAtom, 0);
+        expect(b.when!(ctx("code"))).toBe(true);
     });
 });

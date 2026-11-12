@@ -2186,3 +2186,42 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   box → each folds into a "Question N · … · You picked" row in place of your message, Chat stays on Chat the whole time
   (`chatconversation.tsx`, `chatpane.tsx`, `chatbrainstormcard.tsx`, `chatbrainstormwire.ts`; spec
   `docs/superpowers/specs/2026-11-11-chat-redesign-design.md`).
+- [ ] (arcterm) **Kael sync 2026-11-12: the keys on a Mac.** On a Mac build (the scenarios ran on Windows or headless
+  Chrome): in Code, ⌥M on a selection starts a review comment, ⌥⇧M with a comment present opens Send review, ⌥O opens the
+  finder seeded with `@`, F12 / ⇧F12 on a word list its definition / references, and ⌥← / ⌥→ go back and forward from
+  inside the editor (⌥ types ∂ / µ / ø on a Mac, so each is matched by its physical key: `optionLetterMatches`,
+  `keyutil.ts`); in a terminal path ⌘⇧-click peeks at the file and ⌘-click still opens it; ⌘S in Setup → Instructions
+  saves the shared doc (`bindings.ts` buildCodeBindings, `termpathlinks.ts` linkGesture, `setupinstructionsync.tsx`
+  isSaveKey; `kael-keys` and `code-peek` cover Windows).
+- [ ] (arcterm) **Review comments reach a real agent.** In Code, comment on two lines of a file in a project with a live
+  Claude agent, then Alt+Shift+M → Send review → pick the agent: its prompt receives one message led by a one-line
+  instruction with `path:lines`, the quoted line and your note for each comment, the comments leave the file's gutter,
+  and a send with the agent gone says why and keeps them. In Diff, `m` on a line of an agent's working tree, Ctrl+Enter,
+  then Shift+Enter: the agent gets the batch as its next prompt (joins a turn in progress, at its prompt when idle);
+  with the agent asking a question the bar says Send waits. The scenarios send to a fixture agent through the DEV sink
+  (`codereviewbar.tsx`, `commentsendbar.tsx`, `commentsend.ts`; commits b53e46f17 and c40d7d075).
+- [ ] (arcterm) **The terminal Code peek on real output.** In a live agent's terminal that has printed a path to a
+  markdown file, a changed source file, a file not tracked yet, an image and a binary: Ctrl+Shift+click on each → a card
+  under the line (Preview, Source and Diff against HEAD for the first three; the image hinted; the binary named), Enter
+  opens it in Code, Esc closes it, and a path Claude Code shortened with "…" is not underlined. Ctrl+Shift+click a
+  second path with the card open: one card at a time, and the agent's session is never redrawn
+  (`codepeekcard.tsx`, `codepeekhost.tsx`, `termpathlinks.ts`; commit 7b29fb067).
+- [ ] (arcterm) **Setup sync on your own files.** Setup → Instructions with your real `~/.claude`, `~/.pi` and shared doc:
+  a harness file you edited by hand reads out of date, Sync now shows the counts and writes it, and every file reads
+  current afterwards; blank the shared doc → every row reads blank and Sync now is gone. In Setup → Skills, make a link
+  (`mklink /J` on Windows, `ln -s`) in a harness's skills folder and copy a vault skill into it: the link lists under
+  "Linked from another folder" and survives Manage; the copy offers Leave it and Replace it with the vault copy
+  (`setupinstructionsync.tsx`, `setupskillsync.tsx`, `pkg/agentsync`; commits 26b69eee5 and cd2281893; the scenario
+  runs against a page-side mock).
+- [ ] (arcterm) **Usage By work and Workflow on real data.** Usage → By work after a day of real runs and a few brainstorm
+  sessions: the project and initiative cards add up to All usage, a session's role / task / initiative reads right, a
+  session whose tab you closed stays under its initiative, an unpriced model shows an estimate with its coverage, and
+  Show more pages the list; Esc steps back from an item to its scope and then to All usage. Usage → Workflow → Scan
+  workflow on a project with runs starts a real scan (it spends tokens) and the lens follows its four stages to
+  Done (`usageworkview.tsx`, `workflowlensview.tsx`, `pkg/wshrpc/wshserver/usagesessions.go`; commits 4b3918a61,
+  68d08dc32 and 29d5574ad; the scenarios use seeded data).
+- [ ] (arcterm) **Diff on a landed run and an ended agent.** Open Diff on a run that has landed while the checkout has
+  moved on since: the working-tree row reads base to the run's own tip, not the checkout's; close the agent that made
+  the changes → Diff says "This agent has ended" with Open its folder; compare in a repository with no remote shows no
+  Fetch, and in one with a remote Fetch is there (`diffsource.ts` subjectState, `landedRunTip`, `ListBranches`
+  hasremote; commit c40d7d075; the scenarios break the reads at the RPC client).
