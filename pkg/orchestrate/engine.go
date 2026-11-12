@@ -468,6 +468,11 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 		return nil
 	}
 	defer taskActions.Unlock(dagID)
+	// each block below is timed for the slow-lock log (logSlowDagLock), which names the longest three of a hold that ran
+	// past the rpc budget; the defer counts the block an early return cut short
+	clock := &phaseClock{dagID: dagID}
+	defer clock.end()
+	clock.enter("load")
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
 		return fmt.Errorf("loading dag: %w", err)
@@ -491,12 +496,14 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 	}
 	// before any session spawns, so a tick that cannot read the head returns having started nothing
 	spawnBase := owner.BaseCommit
+	clock.enter("head")
 	if g.MergeRequired {
 		spawnBase, err = landingHead(budget.next(), owner)
 		if err != nil {
 			return fmt.Errorf("resolving project head for dag %s: %w", g.ID, err)
 		}
 	}
+	clock.enter("runs")
 	spawnCtx := budget.next()
 	runs := map[string]*waveobj.Run{}
 	prevStates := map[string]string{}
@@ -516,6 +523,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 	// transcript writes; a running task silent past StallThreshold is flagged stalled (nothing else ever
 	// notices a headless child that stopped progressing). A stalled task whose worker works again goes back to
 	// running (revived); one whose child later completes still derives done (DeriveTaskStates).
+	clock.enter("liveness")
 	now := time.Now().UnixMilli()
 	for i := range g.Tasks {
 		t := &g.Tasks[i]
@@ -661,11 +669,15 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 	}
 	// review: apply verdicts, replace a reviewer that ended without one, spawn the missing ones. Before the
 	// task-done accounting below, so a pass is counted done in the tick that applied it.
+	clock.enter("review")
 	advanceReviews(ctx, spawnCtx, g, owner, runs, now, &afterCommit)
 	// the plan reviewer, before dispatch: NextToSpawn holds every task until its review clears
+	clock.enter("plan review")
 	advancePlanReview(ctx, spawnCtx, g, owner, now, &afterCommit)
 	// the plan's Check on the base, beside the plan review, so a broken base is named once before any worker
+	clock.enter("base check")
 	advanceBaseCheck(ctx, g, owner, &afterCommit)
+	clock.enter("accounting")
 	// child-done: record the task-done lifecycle boundary (task id + child run id). A done child is not
 	// judgment, so the lead is not woken; the merge that follows wakes it only on a conflict.
 	for i := range g.Tasks {
@@ -758,6 +770,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 			})
 		}
 	}
+	clock.enter("dispatch")
 	var spawned []spawnedWorkerInfo
 	// what the cap holds back stays pending, and a later tick dispatches it once a worker or memory frees up
 	next := NextToSpawn(g)
@@ -916,10 +929,12 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 			appendRunEventAt(ctx, spawnedAt, g.ChannelId, g.RunID, waveobj.RunEventKindTaskSpawned, nil, map[string]any{"taskid": spawnedTaskID, "worktreems": worktreeMs, "setupms": setupMs, "spawnms": spawnMs})
 		})
 	}
+	clock.enter("final")
 	spawnCtx = budget.next()
 	RecomputeDagStatus(g)
 	// every task landed: the final stage judges the merged result before the dag is done
 	advanceFinal(ctx, spawnCtx, g, owner, now, &afterCommit)
+	clock.enter("status")
 	// status notifications: gate-open / blocked / complete, once per condition. The watchdog and every
 	// dag mutation re-enter Schedule, so emitting the standing status would refill the lifecycle log with
 	// identical rows and re-wake the lead about what it was already told. The gate cannot be compared
@@ -954,6 +969,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 			PostWake(ctx, g.ChannelId, g.RunID, finished+landBlockerLines(ctx, owner))
 		})
 	}
+	clock.enter("commit")
 	g.UpdatedTs = time.Now().UnixMilli()
 	// whole-object replace: the snapshot was loaded under the dag mutation lock, so it cannot have
 	// gone stale. This is only sound while EVERY dag writer holds that lock — a write made outside it
@@ -968,9 +984,11 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, g.OID))
 	publishSpawnedRunUpdates(g.ChannelId, spawned)
+	clock.enter("events")
 	for _, publish := range afterCommit {
 		publish()
 	}
+	clock.enter("lead close")
 	// the one place a dag goes terminal regardless of what triggered the tick, so both closures hang
 	// here: complete a run that has no lead to report its own completion, then close a lead tab whose
 	// process may already be idle (keeponexit kept it), which the shell layer will not delete. The first
