@@ -23,23 +23,32 @@ type SessionEffort struct {
 
 // RecordTabSessionEffort keeps the initiative tab is tagged with for the session of the agent in it, so the link
 // survives the tab closing. A tab with no tag, agent or transcript yet has nothing to keep and records nothing.
-// A session re-tagged and closed again keeps the latest.
+// A session re-tagged and closed again keeps the latest. The agent's block is the first that names a transcript,
+// not the first block: once the agent's own block is gone the dock terminal can be first, and it names none.
 func RecordTabSessionEffort(ctx context.Context, tab *waveobj.Tab) error {
-	// the bare oid, as effortstore.BareOID gives it: effortstore imports wstore, so it can't be called here
-	effortOID := strings.TrimPrefix(tab.Meta.GetString(waveobj.MetaKey_SessionEffort, ""), waveobj.OType_Effort+":")
+	if tabSessionEffortOID(tab) == "" {
+		return nil
+	}
+	for _, blockId := range tab.BlockIds {
+		block, err := DBGet[*waveobj.Block](ctx, blockId)
+		if err != nil {
+			return fmt.Errorf("loading agent block %s: %w", blockId, err)
+		}
+		if block != nil && block.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, "") != "" {
+			return RecordBlockSessionEffort(ctx, tab, block)
+		}
+	}
+	return nil
+}
+
+// RecordBlockSessionEffort keeps tab's initiative for the session block runs, read while the block is still there:
+// a tab that closes with its last block (DeleteBlock's recursive close) is empty by the time DeleteTab reads it, and
+// an agent block closed under its dock terminal leaves a tab whose blocks name no transcript.
+func RecordBlockSessionEffort(ctx context.Context, tab *waveobj.Tab, block *waveobj.Block) error {
+	effortOID := tabSessionEffortOID(tab)
 	harness := tab.Meta.GetString(waveobj.MetaKey_SessionAgent, "")
-	if effortOID == "" || harness == "" || len(tab.BlockIds) == 0 {
-		return nil
-	}
-	block, err := DBGet[*waveobj.Block](ctx, tab.BlockIds[0])
-	if err != nil {
-		return fmt.Errorf("loading agent block %s: %w", tab.BlockIds[0], err)
-	}
-	if block == nil {
-		return nil
-	}
 	transcript := block.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, "")
-	if transcript == "" {
+	if effortOID == "" || harness == "" || transcript == "" {
 		return nil
 	}
 	return WithTx(ctx, func(tx *TxWrap) error {
@@ -48,6 +57,12 @@ func RecordTabSessionEffort(ctx context.Context, tab *waveobj.Tab) error {
 			harness, transcript, effortOID, time.Now().UnixMilli())
 		return tx.Err
 	})
+}
+
+// tabSessionEffortOID is the bare oid of the initiative tab is tagged with, as effortstore.BareOID gives it:
+// effortstore imports wstore, so it can't be called here
+func tabSessionEffortOID(tab *waveobj.Tab) string {
+	return strings.TrimPrefix(tab.Meta.GetString(waveobj.MetaKey_SessionEffort, ""), waveobj.OType_Effort+":")
 }
 
 // GetSessionEfforts returns every recorded session-to-initiative link.
