@@ -88,7 +88,7 @@ cost the builder measures.
   light (`go`, `npx vitest`, `pytest`, `cargo`…), keeps the table's verdict. A `go test -run X` stays light, as
   AGENTS.md promises. (Agent's call, builder question 1.)
 - **Compound commands.** Steps that do no work are dropped before picking a pattern:
-  - `cd`, `pushd`, `export`, `set`, `source`, `.` and `echo`;
+  - `cd`, `pushd`, `popd`, `export`, `set`, `source`, `.` and `echo`;
   - pipeline tails: `tail`, `head`, `grep`, `tee`, `wc`, `sort`, `less`.
 
   When exactly one step is left, it is the pattern. When more than one is left (`make build && pnpm test`), the run is

@@ -213,7 +213,7 @@ Khi lệnh nặng của một agent đang chờ, hàng của agent đó trong c�
 
 Chip **Jobs** nằm trên app bar, bên trái chip RAM. Nó chỉ hiện khi có lệnh đang chạy hoặc đang chờ (`1 running`, hoặc `1 · 2 queued`), hoặc khi hàng đợi đang pause (`paused 58m`, kèm ⏸). Khi có lệnh đã chờ quá 5 phút, chip chuyển vàng kèm ⚠: thường là thứ đang giữ chỗ bị kẹt. Bấm chip mở popover **Heavy jobs**; `Esc` hoặc bấm ra ngoài để đóng.
 
-<!-- shot: usage-job-queue.png | Popover Heavy jobs mở từ chip Jobs: bộ chọn Slots ở đầu, một lệnh đang chạy (`task check:ts`, chấm accent) và ba lệnh đang chờ (`npm install`, `go test ./...`, `cargo build`) đánh số 2–4, mỗi hàng có RAM đỉnh, thời gian chờ, nguồn và lý do `slot busy`, nút Run now / Skip | Scenario CDP `jobqueue-chip` (`task verify:ui -- jobqueue-chip`); ảnh `cdp-shots/jobqueue-chip-panel.png`, chip là `[data-job-queue-chip]`, popover là `[data-job-queue-panel]` -->
+<!-- shot: usage-job-queue.png | Popover Heavy jobs mở từ chip Jobs: bộ chọn Slots ở đầu, một lệnh đang chạy (`task check:ts`, chấm accent) và ba lệnh đang chờ (`npm install`, `go test ./...`, `cargo build`) đánh số 2–4, mỗi hàng có RAM đỉnh kèm `est.` (các job tiêm vào chưa có số đo), thời gian chờ, nguồn và lý do `slot busy`, nút Run now / Skip | Scenario CDP `jobqueue-chip` (`task verify:ui -- jobqueue-chip`); ảnh `cdp-shots/jobqueue-chip-panel.png`, chip là `[data-job-queue-chip]`, popover là `[data-job-queue-panel]` -->
 
 Popover xếp lệnh đang chạy lên trước (lệnh chạy lâu nhất ở trên cùng), rồi hàng đợi theo thứ tự sẽ được phục vụ. Mỗi hàng có hai dòng:
 
