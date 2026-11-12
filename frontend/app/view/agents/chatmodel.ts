@@ -25,7 +25,8 @@ import type { TurnStats } from "./transcriptprojection";
 
 /** One piece of what the agent did between two of your messages. */
 export type AgentPart =
-    | { kind: "prose"; text: string }
+    // `uuid`: the transcript record the prose came from, which Fork from here cuts at
+    | { kind: "prose"; text: string; uuid?: string }
     | { kind: "work"; work: WorkItem }
     // the files that work edited, once per path with the summed counts; follows its work part
     | { kind: "files"; files: EditFile[]; adds: number; dels: number };
@@ -37,8 +38,9 @@ export type SentFrom = "run" | "cockpit";
 export type ChatMarker = Extract<CompactItem, { kind: "compaction" | "interrupted" | "notification" }>;
 
 export type ChatItem =
-    // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none
-    | { kind: "you"; key: string; text: string; images?: string[] }
+    // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none; `uuid` the
+    // transcript record it came from, which Fork from here cuts at
+    | { kind: "you"; key: string; text: string; images?: string[]; uuid?: string }
     // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
     // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
@@ -121,6 +123,11 @@ function commandItem(c: Extract<CompactItem, { kind: "command" }>): Extract<Chat
     return { kind: "you", key, command, ...(shell != null ? { shell } : {}), ...(c.btw != null ? { btw: c.btw } : {}) };
 }
 
+// the transcript record a message of yours or a reply came from: a timeline item holds its entry's index, not its uuid
+function recordUuid(entry: AgentEntry | undefined): string | undefined {
+    return entry != null && (entry.kind === "user" || entry.kind === "message") ? entry.uuid : undefined;
+}
+
 /**
  * Pure: the transcript as chat items. Every agent-side item (a message, a stretch of tools) between two of your
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
@@ -144,10 +151,15 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 const sent = readSent(item.text);
                 if (sent != null) {
                     out.push({ kind: "sent", key: keyOf("sent", item.index), ...sent });
-                } else if (item.images != null) {
-                    out.push({ kind: "you", key: keyOf("you", item.index), text: item.text, images: item.images });
                 } else {
-                    out.push({ kind: "you", key: keyOf("you", item.index), text: item.text });
+                    const uuid = recordUuid(entries[item.index]);
+                    out.push({
+                        kind: "you",
+                        key: keyOf("you", item.index),
+                        text: item.text,
+                        ...(item.images != null ? { images: item.images } : {}),
+                        ...(uuid != null ? { uuid } : {}),
+                    });
                 }
                 break;
             }
@@ -155,9 +167,11 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 group = null;
                 out.push(commandItem(item));
                 break;
-            case "message":
-                agentParts(item.index).push({ kind: "prose", text: item.text });
+            case "message": {
+                const uuid = recordUuid(entries[item.index]);
+                agentParts(item.index).push({ kind: "prose", text: item.text, ...(uuid != null ? { uuid } : {}) });
                 break;
+            }
             case "work": {
                 const parts = agentParts(item.startIndex);
                 parts.push({ kind: "work", work: item });

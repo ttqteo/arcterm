@@ -57,6 +57,21 @@ function agentOf(items: ChatItem[], at: number) {
 }
 
 describe("chatItems", () => {
+    it("carries the record uuid onto your bubble and the agent's prose", () => {
+        const items = chatItems([
+            { kind: "user", text: "hello", uuid: "u1" },
+            { kind: "message", text: "hi", uuid: "a1" },
+        ]);
+        expect(items[0]).toMatchObject({ kind: "you", text: "hello", uuid: "u1" });
+        expect(items[1]).toMatchObject({ kind: "agent", parts: [{ kind: "prose", text: "hi", uuid: "a1" }] });
+    });
+
+    it("leaves the uuid off an item whose entry has none", () => {
+        const items = chatItems([you("hello"), says("hi")]);
+        expect(items[0]).not.toHaveProperty("uuid");
+        expect(agentOf(items, 1).parts[0]).not.toHaveProperty("uuid");
+    });
+
     it("turns an empty transcript into no items", () => {
         expect(chatItems([])).toEqual([]);
     });
