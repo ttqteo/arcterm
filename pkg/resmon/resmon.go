@@ -44,7 +44,7 @@ type procStat struct {
 	ok       bool
 	createTs int64  // epoch ms
 	cpuTime  uint64 // kernel + user, 100ns units
-	mem      int64  // working set bytes; -1 if unavailable
+	mem      int64  // bytes held in RAM (the private working set on Windows); -1 if unavailable
 }
 
 // procId names a process across pid reuse.

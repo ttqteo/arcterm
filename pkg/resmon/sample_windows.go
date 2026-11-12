@@ -37,7 +37,7 @@ func readTable() (map[int]proc, error) {
 	return table, nil
 }
 
-// mirrors PROCESS_MEMORY_COUNTERS
+// mirrors PROCESS_MEMORY_COUNTERS_EX2 (psapi.h)
 type processMemoryCounters struct {
 	cb                         uint32
 	pageFaultCount             uint32
@@ -49,6 +49,9 @@ type processMemoryCounters struct {
 	quotaNonPagedPoolUsage     uintptr
 	pagefileUsage              uintptr
 	peakPagefileUsage          uintptr
+	privateUsage               uintptr
+	privateWorkingSetSize      uintptr
+	sharedCommitUsage          uint64
 }
 
 var procGetProcessMemoryInfo = windows.NewLazySystemDLL("kernel32.dll").NewProc("K32GetProcessMemoryInfo")
@@ -70,11 +73,30 @@ func readStat(pid int) procStat {
 		return procStat{}
 	}
 	s := procStat{ok: true, createTs: created.Nanoseconds() / 1e6, cpuTime: filetime100ns(kernel) + filetime100ns(user), mem: -1}
-	pmc := processMemoryCounters{cb: uint32(unsafe.Sizeof(processMemoryCounters{}))}
-	if r, _, _ := procGetProcessMemoryInfo.Call(uintptr(h), uintptr(unsafe.Pointer(&pmc)), uintptr(pmc.cb)); r != 0 {
-		s.mem = int64(pmc.workingSetSize)
-	}
+	s.mem = privateWorkingSet(h)
 	return s
+}
+
+// privateWorkingSet is the RAM a process holds of its own: the Consumers panel's figure (pkg/memusage) and Task
+// Manager's Memory column. The whole working set also counts the DLL pages every node, shell and WebView2 process
+// shares, which put an agent's row ~170 MB over the same agent in Consumers. A Windows that refuses the EX2 size
+// is asked for PROCESS_MEMORY_COUNTERS_EX's, which ends before the field, and then gets the whole working set;
+// -1 when neither can be read.
+func privateWorkingSet(h windows.Handle) int64 {
+	var m processMemoryCounters
+	if !memoryInfo(h, &m, unsafe.Sizeof(m)) && !memoryInfo(h, &m, unsafe.Offsetof(m.privateWorkingSetSize)) {
+		return -1
+	}
+	if m.privateWorkingSetSize == 0 {
+		return int64(m.workingSetSize)
+	}
+	return int64(m.privateWorkingSetSize)
+}
+
+func memoryInfo(h windows.Handle, m *processMemoryCounters, cb uintptr) bool {
+	*m = processMemoryCounters{cb: uint32(cb)}
+	r, _, _ := procGetProcessMemoryInfo.Call(uintptr(h), uintptr(unsafe.Pointer(m)), cb)
+	return r != 0
 }
 
 const cmdlineBufLen = 4096
