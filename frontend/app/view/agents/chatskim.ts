@@ -11,6 +11,7 @@
 
 import { canFold, endsOnQuestion, foldOf, lineCount } from "../../../../claude/skim-mod/hooks/fold-core";
 import { askOf } from "../../../../claude/skim-mod/hooks/highlight-core";
+import { hasInitiativeBlock } from "./chatinitiative";
 import { VISUAL_LANG } from "./chatvisual";
 
 // a fenced block an agent drew a visual in (chatvisual.ts): ```arc-visual at the start of a line
@@ -203,9 +204,17 @@ export function parseFoldOn(raw: string | null): boolean {
  *  each top reason when nothing is marked, with the marks it kept put back as ==…==. Null when the reply draws in full:
  *  skim is off, it is short, it ends on a question, its last mark is one (a question waiting on you, whose options
  *  are to be read), or it holds an arc-visual block (the visual an agent drew is its point, and a fold keeps prose
- *  only). `lines` is the full reply's, for the "Show more · N lines" button. */
+ *  only) or an arc-initiative block (a card waiting on you is always in view). `lines` is the full reply's, for the
+ *  "Show more · N lines" button. */
 export function chatFold(text: string, marks: readonly string[], on: boolean): { short: string; lines: number } | null {
-    if (!on || askOf(marks) != null || endsOnQuestion(text) || VISUAL_FENCE.test(text) || !canFold(text)) {
+    if (
+        !on ||
+        askOf(marks) != null ||
+        endsOnQuestion(text) ||
+        VISUAL_FENCE.test(text) ||
+        hasInitiativeBlock(text) ||
+        !canFold(text)
+    ) {
         return null;
     }
     // null too when the fold would be most of the reply: it saves no reading

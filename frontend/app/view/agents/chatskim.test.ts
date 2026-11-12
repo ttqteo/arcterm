@@ -166,4 +166,13 @@ describe("chatFold", () => {
         expect(chatFold(`${long}\n\n\`\`\`arc-visual\n~/.arc/visuals/chart.html\n\`\`\``, [], true)).toBeNull();
         expect(chatFold(`${long}\n\n\`\`\`ts\nconst a = 1;\n\`\`\``, [], true)).not.toBeNull();
     });
+
+    // a waiting initiative card must be in view, not behind Show more
+    it("draws in full a reply that holds an arc-initiative block", () => {
+        const block = '```arc-initiative\n{"kind":"note","text":"a note"}\n```';
+        expect(chatFold(`${long}\n\n${block}`, [], true)).toBeNull();
+        expect(chatFold(`${block}\n\n${long}`, [], true)).toBeNull();
+        // only a fence at the start of a line counts, and only that language
+        expect(chatFold(`${long}\n\n\`\`\`arc-initiative-two\n{}\n\`\`\``, [], true)).not.toBeNull();
+    });
 });
