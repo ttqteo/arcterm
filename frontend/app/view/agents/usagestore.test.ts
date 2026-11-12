@@ -225,13 +225,15 @@ describe("held window", () => {
         expect(globalStore.get(usageErrorAtom)).toBe(false);
     });
 
-    it("starts the all-usage chart at the held window's first day", async () => {
+    // ours: By provider's chart starts at the oldest bucket, not padded back to the window's first day (By work pads
+    // its own, usageworkview.tsx; the fork's padding for By provider was reverted, initiative "Kael sync: reverted")
+    it("starts the all-usage chart at the oldest bucket, not the held window's first day", async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date(2026, 5, 26, 12));
         try {
             getStats.mockResolvedValueOnce(response);
             await loadUsage(7);
-            expect(globalStore.get(allUsageStatsAtom).daily.map((d) => d.day)[0]).toBe("2026-06-20");
+            expect(globalStore.get(allUsageStatsAtom).daily.map((d) => d.day)[0]).toBe("2026-06-26");
         } finally {
             vi.useRealTimers();
         }

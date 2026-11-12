@@ -611,13 +611,13 @@ export function WorkLens({ model, lensSwitch }: { model: AgentsViewModel; lensSw
 
     const attr = useMemo(() => buildAttribution(buckets, sessions, efforts), [buckets, sessions, efforts]);
     const scope = useMemo(() => resolveScope(attr, workScope, workItem?.key ?? null), [attr, workScope, workItem]);
+    // By work's chart spans the held window from its first day, a narrow scope's included; By provider's starts at
+    // the oldest bucket (allUsageStatsAtom), as ours always did
     const stats = useMemo(() => {
-        if (scope.kind === "all") {
-            return allStats;
-        }
         const at = Date.now();
-        return aggregateBuckets(scopeBuckets(buckets, attr, scope), at, "all", windowStartDay(heldWindow, at));
-    }, [allStats, buckets, attr, scope, heldWindow]);
+        const scoped = scope.kind === "all" ? buckets : scopeBuckets(buckets, attr, scope);
+        return aggregateBuckets(scoped, at, "all", windowStartDay(heldWindow, at));
+    }, [buckets, attr, scope, heldWindow]);
 
     const selectWork = useCallback(
         (scopeKey: string) => {
