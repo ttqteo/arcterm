@@ -12,7 +12,16 @@ import { getWebServerEndpoint } from "@/util/endpoints";
 import { Maximize2, Minimize2, Shapes } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { appendToChatBox, chatBoxText, submitIntoChatBox } from "./chatinsert";
-import { FRAME_MAX, VISUAL_LANG, frameHeight, promptAction, themeVars, visualPathOf, visualsDirOf } from "./chatvisual";
+import {
+    FRAME_MAX,
+    VISUAL_LANG,
+    frameHeight,
+    promptAction,
+    themeVars,
+    themeVarsChanged,
+    visualPathOf,
+    visualsDirOf,
+} from "./chatvisual";
 import { CodeBlock } from "./codeblock";
 import { servedPath } from "./htmlframe";
 import { PathLink } from "./pathlinkcontext";
@@ -68,6 +77,11 @@ function fileNameOf(path: string): string {
     return path.slice(path.lastIndexOf("/") + 1);
 }
 
+// the app's colours as the page is handed them: read from the root element, where the theme writes its --color-* overrides
+function appThemeVars(): Record<string, string> {
+    return themeVars((v) => getComputedStyle(document.documentElement).getPropertyValue(v));
+}
+
 function LoadingBox({ height }: { height: number }) {
     return (
         <div
@@ -120,6 +134,8 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
     const [expanded, setExpanded] = useState(false);
     // when this frame's last prompt was taken (a send or a fill), for promptAction's gap
     const lastPromptAt = useRef<number | null>(null);
+    // the colours last posted to this frame; null until the page has said arc-html-ready, so the theme observer waits for it
+    const postedTheme = useRef<Record<string, string> | null>(null);
 
     useEffect(() => {
         let live = true;
@@ -175,13 +191,10 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
                 }
             } else if (data.type === "arc-html-ready") {
                 // the page is at wavesrv's origin, not the app's: it cannot read the app's colours, so they are handed over
-                win.postMessage(
-                    {
-                        type: "arc-visual-theme",
-                        vars: themeVars((v) => getComputedStyle(document.documentElement).getPropertyValue(v)),
-                    },
-                    "*"
-                );
+                // (every time it says ready, also when the page loads again: a new document has none)
+                const vars = appThemeVars();
+                postedTheme.current = vars;
+                win.postMessage({ type: "arc-visual-theme", vars }, "*");
             } else if (data.type === "arc-visual-prompt") {
                 const action = promptAction({
                     fromFrame: true,
@@ -203,6 +216,27 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
     }, [agentId, path]);
+
+    // A theme switch (a preset, an override, light or dark) rewrites the style or class of the root element, which is the
+    // one place every way of changing the colours ends up; the atoms change before that write, so reading the colours
+    // on them would read the old theme. Once the page is ready, it is handed the colours again when they differ from
+    // those it last got.
+    useEffect(() => {
+        const observer = new MutationObserver(() => {
+            const win = frameRef.current?.contentWindow;
+            if (win == null || postedTheme.current == null) {
+                return;
+            }
+            const vars = appThemeVars();
+            if (!themeVarsChanged(postedTheme.current, vars)) {
+                return;
+            }
+            postedTheme.current = vars;
+            win.postMessage({ type: "arc-visual-theme", vars }, "*");
+        });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+        return () => observer.disconnect();
+    }, []);
 
     const height = frameHeight(reported, expanded);
     const tall = reported !== undefined && reported > FRAME_MAX;

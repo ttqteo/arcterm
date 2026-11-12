@@ -776,6 +776,8 @@ export function ChatComposer({
                                 bashList.onCaret(box);
                             }
                         }}
+                        // a click outside the box closes bash mode's Tab list (a click on a row keeps the focus here)
+                        onBlur={bashList.onBlur}
                         onPasteFiles={(e) => {
                             // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
                             att.onPaste(e as never);

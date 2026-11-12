@@ -42288,6 +42288,135 @@ const agentSleep = {
                 /^\d+$/.test(settings.minutes ?? "") && settings.decrease && settings.increase,
             JSON.stringify(settings)
         );
+
+        // 9. what types into an agent's terminal is not offered to a sleeping agent: its process is gone, so its PTY is
+        // dead. The fixture agent is awake first, at a context level that offers Compact and Clear (usage.contextpct 90):
+        // the palette's agent actions offer Interrupt, Compact, Clear, Nudge and Open in split, the header's More menu
+        // Redraw terminal and Interrupt turn, and the details rail Resume, Compact and Clear. Then the same roster puts it
+        // to sleep (the page's roster fixture: the file one is not touched): the four, Redraw and the rail's buttons are
+        // gone, Open in split stays, and the sidebar row's menu offers Wake.
+        const AS_TYPING = ["Interrupt", "Compact", "Clear", "Nudge"];
+        const asNow = Date.now();
+        const asRosterWith = (asleep) =>
+            agentSleepRoster(asNow).map((a) =>
+                a.id !== AS_AWAKE_ID
+                    ? a
+                    : {
+                          ...a,
+                          usage: { contextpct: 90 },
+                          ...(asleep ? { sleeping: { since: asNow - 5 * 60_000, freedBytes: AS_FREED } } : {}),
+                      }
+            );
+        const offers = (labels, label) => labels.some((l) => l.startsWith(label));
+        // the palette's rows once an agent's actions are open
+        const paletteActionLabels = async (name) => {
+            const found = await gridPaletteFind(h, name, true);
+            if (!found.ok) return { ok: false, why: found.why, labels: [] };
+            await h.ev(paletteKey("ArrowRight"));
+            const state = await paletteStateWhen(h, (s) => s.drill != null && s.groups.length > 0, 3000);
+            return { ok: state?.drill != null, why: null, drill: state?.drill ?? null, labels: (state?.groups ?? []).flatMap((g) => g.rows) };
+        };
+        const closePalette = async () => {
+            for (let i = 0; i < 3 && (await h.ev(`!!${PALETTE_INPUT}`)); i++) {
+                await h.ev(PEEKS_ESC);
+                await polishNap(250);
+            }
+        };
+        // the buttons of the details rail's session block: Resume or Stop by the state line, Compact and Clear under it
+        const railButtons = () =>
+            h.ev(`(() => {
+                const sess = document.querySelector('aside[aria-label="Agent details"] [data-rail-session]');
+                return sess ? [...sess.querySelectorAll("button")].map((b) => b.textContent.trim()).filter(Boolean) : null;
+            })()`);
+        // the menu closes on an Escape at the document (floating-ui's dismiss), which the window-level asEscape does not
+        // reach: closed until its panel is gone, so a panel left open cannot answer for the next menu
+        const closeMenu = async () => {
+            for (let i = 0; i < 3 && (await h.ev(`!!${CA_MENU_PANEL}`)); i++) {
+                await h.ev(PEEKS_ESC);
+                await polishNap(250);
+            }
+            return !(await h.ev(`!!${CA_MENU_PANEL}`));
+        };
+        // a menu on the agent's header or its sidebar row: every label in it
+        const menuOn = async (target) => {
+            await closeMenu();
+            await h.ev(`(() => {
+                const el = ${target};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+            const up = await polishWaitFor(h, `!!${CA_MENU_PANEL}`, 3000);
+            const labels = up
+                ? await h.ev(`[...${CA_MENU_PANEL}.querySelectorAll("span.flex-1")].map((s) => s.textContent.trim())`)
+                : [];
+            return { up, labels };
+        };
+        // close the menu, and show the Agent surface and the agent again
+        const backToAgent = async (id) => {
+            await closeMenu();
+            await h.goto("agent");
+            await polishWaitFor(h, `!!${asRow(id)}`, 5000);
+            await h.ev(`${asRow(id)}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-agent-header]")`, 5000);
+        };
+        const HEADER = `document.querySelector("[data-agent-header]")`;
+
+        // step 6c's Sleep in the panel left the awake agent marked as falling asleep (the fixture roster never reads it
+        // asleep), and the header opens no menu while it is: drop the mark, as 5b does
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
+        await agentPageFixtures.setRoster(h, asRosterWith(false));
+        await agentPageFixtures.agentPage(h, `const R = await mod("app/view/agents/railstore.ts"); globalStore.set(R.railVisibleAtom, true); return true;`);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!${asRow(AS_AWAKE_ID)}`, 5000);
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        await polishWaitFor(h, `!!${HEADER} && !!document.querySelector('aside[aria-label="Agent details"] [data-rail-session]')`, 5000);
+        const railAwake = await railButtons();
+        const palAwake = await paletteActionLabels(AS_AWAKE_NAME);
+        await h.shot("cdp-shots/agent-sleep-actions-awake.png");
+        await closePalette();
+        const headAwake = await menuOn(HEADER);
+        await backToAgent(AS_AWAKE_ID);
+        rec(
+            "9a. awake, at a context level that offers a reset: the palette offers Interrupt, Compact, Clear, Nudge and Open in split, the header's More menu Redraw terminal and Interrupt turn, the details rail Resume, Compact and Clear",
+            palAwake.ok && AS_TYPING.every((l) => offers(palAwake.labels, l)) && offers(palAwake.labels, "Open in split") &&
+                headAwake.up && headAwake.labels.includes("Redraw terminal") && headAwake.labels.includes("Interrupt turn") &&
+                railAwake != null && ["Resume", "Compact", "Clear"].every((b) => railAwake.includes(b)),
+            JSON.stringify({ palAwake, headAwake, railAwake })
+        );
+
+        // put it to sleep: the row reads asleep
+        await agentPageFixtures.setRoster(h, asRosterWith(true));
+        const nowAsleep = await polishWaitFor(h, `!!${asRow(AS_AWAKE_ID)}?.querySelector("[data-agent-sleeping]")`, 5000);
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        await polishWaitFor(h, `!!${HEADER} && !!document.querySelector('aside[aria-label="Agent details"] [data-rail-session]')`, 5000);
+        const railAsleep = await railButtons();
+        const palAsleep = await paletteActionLabels(AS_AWAKE_NAME);
+        await h.shot("cdp-shots/agent-sleep-actions-asleep.png");
+        await closePalette();
+        rec(
+            "9b. asleep, the same palette offers none of Interrupt, Compact, Clear and Nudge, and still Open in split",
+            nowAsleep && palAsleep.ok && palAsleep.labels.length > 0 && !AS_TYPING.some((l) => offers(palAsleep.labels, l)) &&
+                offers(palAsleep.labels, "Open in split"),
+            JSON.stringify({ nowAsleep, palAsleep })
+        );
+        const headAsleep = await menuOn(HEADER);
+        await h.shot("cdp-shots/agent-sleep-actions-header-menu.png");
+        await backToAgent(AS_AWAKE_ID);
+        rec(
+            "9c. asleep, the header's More menu (which still opens) has no Redraw terminal or Interrupt turn, and the details rail no Resume, Stop, Compact or Clear",
+            headAsleep.up && headAsleep.labels.length > 0 && !headAsleep.labels.includes("Redraw terminal") &&
+                !headAsleep.labels.includes("Interrupt turn") && (headAsleep.labels.includes("Hide details") || headAsleep.labels.includes("Show details")) &&
+                railAsleep != null && !["Resume", "Stop", "Compact", "Clear"].some((b) => railAsleep.includes(b)),
+            JSON.stringify({ headAsleep, railAsleep })
+        );
+        const rowAsleep = await menuOn(asRow(AS_AWAKE_ID));
+        const rowClosed = await closeMenu();
+        rec(
+            "9d. asleep, its sidebar row's menu offers Wake and no Sleep",
+            rowAsleep.up && rowAsleep.labels.includes("Wake") && !rowAsleep.labels.includes("Sleep") && rowClosed,
+            JSON.stringify({ ...rowAsleep, rowClosed })
+        );
+        await agentPageFixtures.restoreRoster(h);
         return steps;
     },
     async teardown(h, ctx) {
@@ -45515,6 +45644,303 @@ const agentChat = {
                 shown80 && top80 != null && opened80 && after80 != null && Math.abs(after80 - top80) <= 4,
                 { shown80, top80, opened80, after80 }
             );
+
+            // 81. Tab in bash mode puts a file whose name holds a space or a shell metacharacter in the box with a backslash before each of
+            // them, as a shell does when it completes, so the command the box sends is one word per file. The mocked ShellCompleteCommand
+            // answers `my file.txt` for `!cat my`: the one answer goes in at once as `!cat my\ file.txt `. `my\ fi` is one word for the next
+            // Tab (it asks for the word unescaped, `my fi`), and the pick takes the whole escaped word's place, nothing doubled. A folder
+            // `a b/` is `!cd a\ b/` with no space after it (its / stays bare, so the next Tab goes on into it); `$`, `&`, `;`, `'` and `(`
+            // are escaped too
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            const case81 = async (shell, typed, want) => {
+                await acSetShell(h, shell);
+                const n = (await acCalls(h, "shellcomplete")).length;
+                await tabOn77(typed);
+                let text = "";
+                for (let i = 0; i < 20 && text !== want; i++) {
+                    await polishNap(150);
+                    text = await boxText77();
+                }
+                return {
+                    typed,
+                    want,
+                    text,
+                    list: await h.ev(`!!document.querySelector("[data-chat-bash-list]")`),
+                    asked: (await acCalls(h, "shellcomplete")).slice(n).map((a) => a.data),
+                };
+            };
+            const res81 = [
+                await case81(["my file.txt"], "!cat my", "!cat my\\ file.txt "),
+                await case81(["my file.txt"], "!cat my\\ fi", "!cat my\\ file.txt "),
+                await case81(["a b/"], "!cd a", "!cd a\\ b/"),
+                await case81(["it's $x & (y);.txt"], "!rm it", "!rm it\\'s\\ \\$x\\ \\&\\ \\(y\\)\\;.txt "),
+            ];
+            await h.shot("cdp-shots/agent-chat-81-bash-escaped-pick.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "81. Tab in bash mode escapes a file's name: `!cat my` + Tab, the one answer `my file.txt` -> `!cat my\\ file.txt `; `!cat my\\ fi` + Tab asks for the word unescaped (`my fi`) and the pick replaces all of `my\\ fi` -> `!cat my\\ file.txt `; the folder `a b/` -> `!cd a\\ b/` with no space after it; `it's $x & (y);.txt` -> `!rm it\\'s\\ \\$x\\ \\&\\ \\(y\\)\\;.txt `; each asked once for kind file in the box's folder and opened no list",
+                res81.every((r) => r.text === r.want && r.list === false && r.asked.length === 1 && r.asked[0].kind === "file" && r.asked[0].cwd === cwd77) &&
+                    res81.map((r) => r.asked[0]?.word).join("|") === ["my", "my fi", "a", "it"].join("|"),
+                { res81 }
+            );
+
+            // 82. The Tab list closes when the box loses the focus to a click outside it, instead of staying over the chat until a key is
+            // pressed. With the list of step 77 open (three answers), a real click on an empty spot of the chat, which is neither the box nor
+            // the list, closes `[data-chat-bash-list]` and leaves the text as it was. A click on a row still picks it (its mousedown keeps
+            // the focus in the box, so nothing closes before the pick): the third row puts chatpending.ts and a space in place of the word
+            await acSetShell(h, AC_SHELL_FILES);
+            await tabOn77(cmd77);
+            const opened82 = await listUp77(5000);
+            await polishNap(250);
+            // an empty spot of the chat layer: not the box, not the list, and under no button, link or field (which would take the focus)
+            const spot82 = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.getBoundingClientRect();
+                if (!r) return null;
+                for (let fy = 0.05; fy < 0.9; fy += 0.05) {
+                    for (let fx = 0.04; fx < 0.96; fx += 0.04) {
+                        const x = Math.round(r.left + r.width * fx);
+                        const y = Math.round(r.top + r.height * fy);
+                        const el = document.elementFromPoint(x, y);
+                        if (el && !el.closest('button, a, input, textarea, select, [contenteditable], [role="button"], [role="option"], [role="listbox"], [data-chat-bash-list], [data-agent-chat-composer]')) {
+                            return { x, y, tag: el.tagName };
+                        }
+                    }
+                }
+                return null;
+            })()`);
+            const mouse82 = async (pt) => {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await h.cdp("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+                }
+            };
+            if (spot82 != null) await mouse82(spot82);
+            const shut82 = await listGone77(3000);
+            await polishNap(250);
+            const away82 = { text: await boxText77(), focus: await acFocusIn(h, A) };
+            await h.shot("cdp-shots/agent-chat-82-bash-list-click-away.png");
+            // the control: a click on a row picks it
+            await tabOn77(cmd77);
+            const reopened82 = await listUp77(5000);
+            const row82 = await h.ev(`(() => {
+                const r = document.querySelector('[data-chat-bash-item="${AC_SHELL_FILES[2]}"]')?.getBoundingClientRect();
+                return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null;
+            })()`);
+            if (row82 != null) await mouse82(row82);
+            const want82 = `!npx vitest run ${AC_SHELL_FILES[2]} `;
+            const picked82 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want82)}`, 3000);
+            const shutPick82 = await listGone77(3000);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "82. with the Tab list of three answers open over `!npx vitest run frontend/app/view/agents/chatp`, a real click on an empty spot of the chat (outside the box and the list) closes `[data-chat-bash-list]` and the box's text is as typed; a click on the third row still picks it (chatpending.ts and a space in place of the word) and closes the list",
+                opened82 && spot82 != null && shut82 && away82.text === cmd77 &&
+                    reopened82 && row82 != null && picked82 && shutPick82,
+                { opened82, spot82, shut82, away82, reopened82, row82, picked82, shutPick82 }
+            );
+
+            // 83. The ghost text follows the editor's scroll. A `!` command of ten lines (one of them long enough to wrap), past the box's
+            // max height, is scrolled to its end: the editor scrolls, and the layer that draws the ghost scrolls with it (its scrollTop is
+            // the editor's), so the ghost text, a history command's rest, stands right after the text's last line (within 2 px, on the
+            // same line) and not at the top of the layer. Scrolling the editor moves the layer with it. The command is put at the front of
+            // the folder's history (the store the box's ghost text reads) with a rest after it
+            const lines83 = [
+                "echo one",
+                "echo two",
+                "echo three",
+                `echo ${"wrap ".repeat(40).trim()}`,
+                "echo five",
+                "echo six",
+                "echo seven",
+                "echo eight",
+                "echo nine",
+                "echo ten",
+            ];
+            const typed83 = lines83.join("\n");
+            const tail83 = " and the tail";
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/chatbashstore.ts"); S.noteBashRun(${JSON.stringify(cwd77)}, ${JSON.stringify(typed83 + tail83)}); return true;`
+            );
+            // where the editor's last line ends and where the ghost starts, and the scroll of both
+            const align83 = () =>
+                h.ev(`(() => {
+                    const c = ${composer76};
+                    const box = c?.querySelector("[data-chat-input]");
+                    const layer = c?.querySelector("[data-chat-ghost-layer]");
+                    const ghost = c?.querySelector("[data-chat-ghost]");
+                    if (!box || !ghost) return null;
+                    let last = null;
+                    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+                    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\\S/.test(n.data)) last = n;
+                    let tr = null;
+                    if (last) {
+                        const r = document.createRange();
+                        r.selectNodeContents(last);
+                        const rects = r.getClientRects();
+                        tr = rects.length ? rects[rects.length - 1] : null;
+                    }
+                    const gr = ghost.getClientRects()[0];
+                    const br = box.getBoundingClientRect();
+                    return {
+                        scrollTop: box.scrollTop,
+                        max: box.scrollHeight - box.clientHeight,
+                        height: box.clientHeight,
+                        layerTop: layer ? layer.scrollTop : null,
+                        textRight: tr ? tr.right : null,
+                        textTop: tr ? tr.top : null,
+                        ghostLeft: gr ? gr.left : null,
+                        ghostTop: gr ? gr.top : null,
+                        ghostText: ghost.textContent,
+                        inView: gr ? gr.top >= br.top - 1 && gr.bottom <= br.bottom + 1 : null,
+                    };
+                })()`);
+            const lined = (a) =>
+                a != null && a.textRight != null && a.ghostLeft != null && Math.abs(a.ghostLeft - a.textRight) <= 2 && Math.abs(a.ghostTop - a.textTop) <= 2;
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await h.ev(`(${acBox(A)})?.focus()`);
+            for (let i = 0; i < lines83.length; i++) {
+                if (i > 0) await acKey(h, { ...acKeys.enter, modifiers: 8 });
+                await h.cdp("Input.insertText", { text: (i === 0 ? "!" : "") + lines83[i] });
+            }
+            const typed83ok = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify("!" + typed83)}`, 5000);
+            const ghosted83 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === ${JSON.stringify(tail83)}`, 5000);
+            // to the end of the text, the way the caret scrolls it (and the layer is told by the editor's scroll event)
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = b.scrollHeight; return true; })()`);
+            await polishNap(400);
+            const end83 = await align83();
+            await h.shot("cdp-shots/agent-chat-83-bash-ghost-scrolled.png");
+            // scrolled up and back: the layer follows each time
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = 40; return true; })()`);
+            await polishNap(300);
+            const up83 = await align83();
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = b.scrollHeight; return true; })()`);
+            await polishNap(300);
+            const back83 = await align83();
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "83. ten lines of `!echo …` (one wrapping) past the box's max height, with the history's rest ` and the tail` as the ghost: the editor is scrolled to its end (scrollTop above 0 and at its max), the ghost layer's scrollTop is the editor's (within 1 px), and `[data-chat-ghost]` starts within 2 px of the end of the text's last line, on its line, in view; scrolled to 40 px the layer is at 40 and back to the end it is at the end again, the ghost aligned again",
+                typed83ok && ghosted83 && end83 != null && end83.scrollTop > 0 && Math.abs(end83.scrollTop - end83.max) <= 1 && end83.ghostText === tail83 &&
+                    end83.layerTop != null && Math.abs(end83.layerTop - end83.scrollTop) <= 1 && lined(end83) && end83.inView === true &&
+                    up83 != null && Math.abs(up83.scrollTop - 40) <= 1 && up83.layerTop != null && Math.abs(up83.layerTop - up83.scrollTop) <= 1 &&
+                    back83 != null && Math.abs(back83.layerTop - back83.scrollTop) <= 1 && lined(back83),
+                { typed83ok, ghosted83, end83, up83, back83 }
+            );
+
+            // 84. No pill in a bash command. The history holds `ls @src/a.ts now` and `ls @src/a.ts now then more` (the first one newest).
+            // `!ls @src/a.ts` shows the ghost ` now`; → takes it, and the box redraws its text from outside. Before, the mention in the
+            // middle of the command, complete now, came back as a file pill, a different width from the plain text the ghost's layer mirrors
+            // (and a path in the command that is not the path of a file). Now the box holds no pill, its text is the command as it was
+            // (`!ls @src/a.ts now`), and the ghost that follows (` then more`) starts within 2 px of the end of the text's last line
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/chatbashstore.ts"); S.noteBashRun(${JSON.stringify(cwd77)}, "ls @src/a.ts now then more"); S.noteBashRun(${JSON.stringify(cwd77)}, "ls @src/a.ts now"); return true;`
+            );
+            await acType(h, acBox(A), "!ls @src/a.ts", false);
+            const first84 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === " now"`, 5000);
+            const pillsBefore84 = await acPills(h, acBox(A));
+            await acKey(h, acKeys.right);
+            const want84 = "!ls @src/a.ts now";
+            const taken84 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want84)}`, 3000);
+            const second84 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === " then more"`, 5000);
+            await polishNap(300);
+            const pills84 = await acPills(h, acBox(A));
+            const pillEls84 = await h.ev(`${composer76}?.querySelectorAll("[data-chat-pill]").length ?? null`);
+            const text84 = await boxText77();
+            const align84 = await align83();
+            await h.shot("cdp-shots/agent-chat-84-bash-no-pill.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "84. `!ls @src/a.ts` shows the ghost ` now`; → takes it: the box holds no file pill (none in it, none in the composer), its text is `!ls @src/a.ts now` as it was, and the next ghost ` then more` starts within 2 px of the end of the text's last line, on its line",
+                first84 && pillsBefore84.length === 0 && taken84 && second84 && pills84.length === 0 && pillEls84 === 0 && text84 === want84 &&
+                    align84 != null && align84.ghostText === " then more" && lined(align84),
+                { first84, pillsBefore84, taken84, second84, pills84, pillEls84, text84, align84 }
+            );
+
+            // 85. A drawn visual takes the new colours when the theme changes (docs/superpowers/specs/2026-11-12-chat-follow-ups-design.md,
+            // Inline visuals). chart.html is drawn and ready, so it holds the colours it was handed when it loaded. The page is at wavesrv's
+            // origin, which the app cannot read, so its colours are read as step 41 does: a click on #theme sends "theme:" and the page's
+            // --arc-background through the box. The cockpit's theme preset is switched to one with another background and the click is made
+            // again: it must carry the new --color-background. The preset is then put back, and the click carries the first value again,
+            // so the colours the frame was last handed moved with each change (the way back is a change too)
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            // the page of steps 40-42 is in the chat unless it was rewritten since; a reply naming it draws it again
+            const drawn85 = await h.ev(`!!${acVisual(A, "chart.html")}`);
+            if (!drawn85) acAppend(ctx.files.main, AC.assistantText(fence(`${vd}/chart.html`), stamp40()));
+            const figure85 = await polishWaitFor(h, `!!${acVisual(A, "chart.html")}`, 15000);
+            await acShowVisual(h, A, "chart.html");
+            const sized85 = await polishWaitFor(h, acFrameBetween(A, "chart.html", 290, 320), 8000);
+            const appBg85 = () => h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
+            let lastClick85 = null;
+            // What the page holds as --arc-background, as the text it sends. Two prompts from one frame inside the 1.5 s gap would put
+            // the second into the box, so each click waits the gap out. A click that sent nothing is made again, as step 44 does for
+            // its click (a run on a loaded machine lost the one made after the theme switch, with the box empty and the click on the
+            // button); `tries` keeps what each lost click left (the box, whether the frame had the focus), so a retry that hides
+            // something shows in the detail. A page that sent a value, even the old one, is not retried: that value is the answer
+            const pageBg85 = async () => {
+                const tries = [];
+                const end = Date.now() + 20_000;
+                for (;;) {
+                    const wait = 1650 - (Date.now() - (lastClick85?.at ?? 0));
+                    if (wait > 0) await polishNap(wait);
+                    await acClear(h, acBox(A));
+                    const n = (await acInputs(h, blockA)).length;
+                    lastClick85 = await acClickFrame(h, A, "chart.html", 76, 82);
+                    const typed =
+                        lastClick85 == null
+                            ? null
+                            : await acUntil(async () => {
+                                  const t = (await typedSince(blockA, n)).join("");
+                                  return t.endsWith("\r") ? t : null;
+                              }, 4000);
+                    if (typed != null) return { typed, tries };
+                    tries.push(
+                        await h.ev(`(() => ({
+                            clicked: ${lastClick85 != null},
+                            box: ${acVal(acBox(A))},
+                            frameFocused: document.activeElement === ${acVisualFrame(A, "chart.html")},
+                        }))()`)
+                    );
+                    if (lastClick85 == null) await polishNap(300);
+                    if (Date.now() >= end) return { typed: null, tries };
+                }
+            };
+            const setPreset85 = (id) =>
+                AC.agentPage(
+                    h,
+                    `const T = await mod("app/view/agents/themestore.ts"); globalStore.set(T.themePresetAtom, ${JSON.stringify(id)}); return true;`
+                );
+            // what the preset is now, and the raw stored value, which teardown puts back as it was
+            ctx.prevPreset = await AC.agentPage(
+                h,
+                `const T = await mod("app/view/agents/themestore.ts");
+                return { atom: globalStore.get(T.themePresetAtom), stored: localStorage.getItem("cockpit.theme.preset") };`
+            );
+            const next85 = ctx.prevPreset?.atom === "monokai" ? "graphite" : "monokai";
+            const bgBefore85 = await appBg85();
+            const before85 = figure85 && sized85 ? await pageBg85() : null;
+            await setPreset85(next85);
+            const switched85 = await polishWaitFor(h, `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim() !== ${JSON.stringify(bgBefore85)}`, 5000);
+            const bgNext85 = await appBg85();
+            const after85 = switched85 ? await pageBg85() : null;
+            await h.shot("cdp-shots/agent-chat-85-visual-theme-switch.png");
+            await setPreset85(ctx.prevPreset?.atom ?? "claude");
+            const restored85 = await polishWaitFor(h, `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim() === ${JSON.stringify(bgBefore85)}`, 5000);
+            const back85 = restored85 ? await pageBg85() : null;
+            rec(
+                "85. chart.html's #theme sends the page's --arc-background: before the switch it is the app's --color-background; after the cockpit's theme preset is switched (to one with another background) it is the new --color-background, and after the preset is put back it is the first one again",
+                figure85 && sized85 && bgBefore85 !== "" && before85?.typed === `theme:${bgBefore85}\r` &&
+                    switched85 && bgNext85 !== bgBefore85 && after85?.typed === `theme:${bgNext85}\r` &&
+                    restored85 && back85?.typed === `theme:${bgBefore85}\r`,
+                { figure85, sized85, drawn85, prevPreset: ctx.prevPreset, next85, bgBefore85, before85, switched85, bgNext85, after85, restored85, back85 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -45568,6 +45994,21 @@ const agentChat = {
             }
         });
         await step("forget the visuals folder", () => h.ev(`delete window.__chatVisualsDir`));
+        // step 85 switches the cockpit's theme preset and puts it back; a throw between left it switched. The atom is set first
+        // (it writes localStorage), then the stored value is put back as it was, the key removed only if it was absent
+        await step("restore the theme preset", () =>
+            ctx.prevPreset == null
+                ? null
+                : AC.agentPage(
+                      h,
+                      `const T = await mod("app/view/agents/themestore.ts");
+                      const prev = ${JSON.stringify(ctx.prevPreset)};
+                      globalStore.set(T.themePresetAtom, prev.atom);
+                      if (prev.stored == null) localStorage.removeItem("cockpit.theme.preset");
+                      else localStorage.setItem("cockpit.theme.preset", prev.stored);
+                      return true;`
+                  )
+        );
         await step("remove the mock", () => removeAgentChatMock(h));
         await step("restore the roster", () => AC.restoreRoster(h));
         await step("clear the permission queue", () =>

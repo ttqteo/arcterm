@@ -13,6 +13,7 @@ import {
     frameHeight,
     promptAction,
     themeVars,
+    themeVarsChanged,
     visualPathOf,
     visualsDirOf,
 } from "./chatvisual";
@@ -261,5 +262,36 @@ describe("themeVars", () => {
             background: "#101010",
             "font-sans": "Inter, sans-serif",
         });
+    });
+});
+
+describe("themeVarsChanged", () => {
+    const last = { background: "#101010", accent: "#d97757", "font-sans": "Inter, sans-serif" };
+
+    it("is no change for the same vars, a fresh object with the same entries included", () => {
+        expect(themeVarsChanged(last, last)).toBe(false);
+        expect(themeVarsChanged(last, { ...last })).toBe(false);
+        expect(themeVarsChanged({}, {})).toBe(false);
+    });
+    it("is no change when only the order of the keys differs", () => {
+        expect(
+            themeVarsChanged(last, { "font-sans": "Inter, sans-serif", accent: "#d97757", background: "#101010" })
+        ).toBe(false);
+    });
+    it("is a change when one var's value is different", () => {
+        expect(themeVarsChanged(last, { ...last, background: "#ffffff" })).toBe(true);
+        expect(themeVarsChanged(last, { ...last, "font-sans": "Inter" })).toBe(true);
+    });
+    it("is a change when a var appears or goes", () => {
+        expect(themeVarsChanged(last, { ...last, error: "#ff0000" })).toBe(true);
+        expect(themeVarsChanged(last, { background: "#101010", accent: "#d97757" })).toBe(true);
+        expect(themeVarsChanged(last, {})).toBe(true);
+    });
+    it("is a change when a var swaps for another of the same count", () => {
+        expect(themeVarsChanged({ background: "#101010" }, { surface: "#101010" })).toBe(true);
+    });
+    it("is a change when nothing was posted yet", () => {
+        expect(themeVarsChanged(null, last)).toBe(true);
+        expect(themeVarsChanged(null, {})).toBe(true);
     });
 });

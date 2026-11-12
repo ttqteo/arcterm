@@ -212,7 +212,7 @@ import {
 } from "./sessionsdetail";
 import { defaultMember, forkLaunchOpts, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { SLEEPABLE_AGENTS, sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
+import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
     askingCount,
     askingLabel,
@@ -265,6 +265,7 @@ import {
     useRunInfo,
 } from "./runlineagestore";
 import { useChristmasDecor } from "./christmasstore";
+import { canSleep } from "./consumers";
 import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
@@ -492,12 +493,7 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
     if (falling != null) {
         return [{ label: fallAsleepLabel(falling), icon: <Moon size={15} />, enabled: false }];
     }
-    const sleepable =
-        agent.state === "idle" &&
-        (agent.kind == null || agent.kind === "agent") &&
-        agent.runId == null &&
-        SLEEPABLE_AGENTS.has(agent.agent ?? "");
-    if (!sleepable) {
+    if (!canSleep(agent)) {
         return [];
     }
     return [{ label: "Sleep", icon: <Moon size={15} />, click: () => fireAndForget(() => sleepWithConfirm(agent)) }];

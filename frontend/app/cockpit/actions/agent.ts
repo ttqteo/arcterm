@@ -12,6 +12,7 @@ import { contextLevel, offersContextReset, railAction } from "@/app/view/agents/
 import { muteMode } from "@/app/view/agents/agentrowmodel";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { diffStatsByIdAtom } from "@/app/view/agents/cardgitstore";
+import { canDrive } from "@/app/view/agents/consumers";
 import { openInSplit } from "@/app/view/agents/gridstore";
 import { rosterSeededAtom } from "@/app/view/agents/liveagents";
 import { isEndedWorkerId } from "@/app/view/agents/runlineage";
@@ -28,12 +29,19 @@ export interface AgentThing {
     hasDiff: boolean; // the card's Review changes button shows only when it has diff stats
 }
 
-// the rail's notion of a drivable agent: a terminal block, and not a finished worker's record
+// the rail's notion of a live agent: a terminal block, and not a finished worker's record. It also gates Open in split,
+// which a sleeping agent keeps; what types into the terminal adds canDrive (awake) on top of it.
 const live = (a: AgentVM) => a.blockId != null && !isEndedWorkerId(a.id);
 
+// Compact and Clear type /compact and /clear into the terminal: not offered while the agent sleeps
 const offersReset = ({ agent: a, contextLevel: level }: AgentThing) =>
     level != null &&
-    offersContextReset({ isClaude: (a.agent || "claude") === "claude", state: a.state, level, live: live(a) });
+    offersContextReset({
+        isClaude: (a.agent || "claude") === "claude",
+        state: a.state,
+        level,
+        live: canDrive(a) && !isEndedWorkerId(a.id),
+    });
 
 const actions: ThingAction<AgentThing>[] = [
     {
@@ -81,14 +89,15 @@ const actions: ThingAction<AgentThing>[] = [
         label: "Nudge (continue)",
         group: "steer",
         // asked for by name, so offered to any idle agent, even one the rail leaves alone while its Monitor runs
-        applies: ({ agent }) => railAction(agent.state, null, live(agent))?.kind === "resume",
+        // not while it sleeps: the nudge would type into a dead PTY (Wake, or a message, is the way in)
+        applies: ({ agent }) => canDrive(agent) && railAction(agent.state, null, live(agent))?.kind === "resume",
         run: ({ agent }) => driveAgent(agent.blockId, NUDGE_INPUT),
     },
     {
         id: "agent:interrupt",
         label: "Interrupt",
         group: "steer",
-        applies: ({ agent }) => agent.blockId != null,
+        applies: ({ agent }) => canDrive(agent),
         run: ({ agent }) => interruptAgent(agent.blockId),
     },
     {

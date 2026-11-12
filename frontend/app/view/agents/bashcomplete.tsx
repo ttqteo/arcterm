@@ -22,6 +22,8 @@ export interface BashCompleteState {
     shown: boolean;
     onKeyDown: (e: KeyLike) => void;
     onCaret: (el: EditorLike) => void;
+    // the box lost the focus: the list closes unless the focus moved into the list itself
+    onBlur: (e: { readonly relatedTarget: EventTarget | null }) => void;
 }
 
 const GROUP_TITLE: Record<BashWordKind, string> = { command: "Commands", variable: "Variables", file: "Files" };
@@ -203,6 +205,18 @@ export function useBashComplete({
         }
     };
 
+    // a click outside the box (the list is not clicked away by anything else) closes the list; so does the window losing the
+    // focus. A click on a row keeps the focus in the box (PickerList), so it never gets here; the focus moving into the list
+    // is the one move that keeps it open. A Tab still asking is cancelled too: its answer must not put the text in, and the
+    // focus back in the box, after the reader has gone elsewhere.
+    const onBlur = (e: { readonly relatedTarget: EventTarget | null }) => {
+        const to = e.relatedTarget;
+        if (to instanceof Element && to.closest("[data-chat-bash-list]") != null) {
+            return;
+        }
+        close();
+    };
+
     const anchor = useRef<EditorLike | null>(null);
     const editor = inputRef.current;
     const box = boxRef?.current;
@@ -253,5 +267,5 @@ export function useBashComplete({
             renderItem={(item) => <BashRow item={item} kind={kind} />}
         />
     );
-    return { list, shown: live != null, onKeyDown, onCaret };
+    return { list, shown: live != null, onKeyDown, onCaret, onBlur };
 }
