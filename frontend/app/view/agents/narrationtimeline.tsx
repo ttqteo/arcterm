@@ -28,6 +28,7 @@ import {
     detailExceedsInline,
     formatTokens,
     groupTimeline,
+    revealScrollTop,
     summarizeActions,
     type ActionDetail,
     type AgentActionEntry,
@@ -38,7 +39,7 @@ import { userNeedsClamp } from "./compacttimeline";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import { PathLink } from "./pathlinkcontext";
-import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
+import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { RELEASE_TAIL_EVENT } from "./sticktobottom";
 import { highlightLine } from "./highlight";
 import { formatDuration } from "./tooldetail";
@@ -605,6 +606,9 @@ export function CommandChip({ name, args, isSkill }: { name: string; args?: stri
     );
 }
 
+// how far below the feed's top an opened compaction summary's divider comes to rest: clear of the pinned prompt bar
+const REVEAL_MARGIN_PX = 56;
+
 export function CompactionDivider({
     trigger,
     preTokens,
@@ -619,19 +623,38 @@ export function CompactionDivider({
     const [open, setOpen] = useState(false);
     const stat = preTokens != null && postTokens != null ? `${formatTokens(preTokens)} → ${formatTokens(postTokens)} tokens` : null;
     const canExpand = !!summary;
+    const rootRef = useRef<HTMLDivElement>(null);
+    // A divider low in the view (as it is right after a compaction, at the end of the conversation) would open its
+    // summary below the fold: while the summary springs open, the feed rises with it until the divider sits just under
+    // the pinned prompt bar, so the summary shows. Each frame, because the feed cannot scroll past height the summary
+    // has not grown yet. A divider already near the top stays where it is.
+    const revealingRef = useRef(false);
     // opening the summary lets go of a feed stuck to its end (sticktobottom.tsx), so the summary grows down from this
     // divider instead of the view following it to its last line
     const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
         if (!open) {
             e.currentTarget.dispatchEvent(new Event(RELEASE_TAIL_EVENT, { bubbles: true }));
         }
+        revealingRef.current = !open;
         setOpen((v) => !v);
     };
+    const reveal = () => {
+        const root = rootRef.current;
+        const scroller = scrollParent(root);
+        if (!revealingRef.current || root == null || scroller == null) {
+            return;
+        }
+        const offset = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        const top = revealScrollTop(scroller, offset, REVEAL_MARGIN_PX);
+        if (top != null) {
+            scroller.scrollTop = top;
+        }
+    };
     // a long summary ends far below the divider: closing it from its foot brings the divider back on screen, so the
-    // reader is not left wherever the feed lands once the summary's height is gone
-    const rootRef = useRef<HTMLDivElement>(null);
-    // the scroll is smooth so it rides along with the summary's closing height rather than jumping ahead of it
+    // reader is not left wherever the feed lands once the summary's height is gone; the scroll is smooth so it rides
+    // along with the summary's closing height rather than jumping ahead of it
     const collapse = (fromFoot: boolean) => {
+        revealingRef.current = false;
         setOpen(false);
         if (fromFoot) {
             rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -688,6 +711,11 @@ export function CompactionDivider({
                         initial="initial"
                         animate="animate"
                         exit="exit"
+                        onUpdate={reveal}
+                        onAnimationComplete={() => {
+                            reveal();
+                            revealingRef.current = false;
+                        }}
                         className="overflow-hidden"
                     >
                         <div className="my-2 rounded-[8px] border border-edge-mid bg-surface-code px-3.5 py-3">

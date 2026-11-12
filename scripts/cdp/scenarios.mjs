@@ -45346,8 +45346,9 @@ const agentChat = {
             );
 
             // 80. A compaction at the end of the conversation, its summary long. The chat is at its end (stuck to the tail); a click
-            // on the COMPACTED chip opens the summary, which grows down from the divider: the divider stays where it was, rather
-            // than the view following the opened summary to its last line
+            // on the COMPACTED chip opens the summary, and the feed rises with it until the divider rests 56 px under the chat's
+            // top (narrationtimeline.tsx REVEAL_MARGIN_PX), so the summary shows: not left below the fold, and not the view
+            // following the opened summary to its last line
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             const at80 = { cwd: ctx.dir, ts: new Date().toISOString() };
@@ -45376,11 +45377,17 @@ const agentChat = {
             const opened80 = await polishWaitFor(h, `(${divider80}?.textContent ?? "").includes("Kept point 60")`, 5000);
             await polishNap(700);
             const after80 = await h.ev(`${divider80}?.getBoundingClientRect().top ?? null`);
+            const scrollerTop80 = await h.ev(`(() => {
+                let s = ${divider80}?.parentElement;
+                while (s && getComputedStyle(s).overflowY !== "auto") s = s.parentElement;
+                return s ? s.getBoundingClientRect().top : null;
+            })()`);
             await h.shot("cdp-shots/agent-chat-80-compaction-open.png");
             rec(
-                "80. with the chat at its end, opening a compaction's long summary grows it down from the divider: the divider stays where it was (within 4 px), not scrolled away as the view follows the summary to its end",
-                shown80 && top80 != null && opened80 && after80 != null && Math.abs(after80 - top80) <= 4,
-                { shown80, top80, opened80, after80 }
+                "80. with the chat at its end, opening a compaction's long summary brings the divider up to rest 56 px under the chat's top (within 4 px), so the summary shows below it, not left below the fold or scrolled to its end",
+                shown80 && top80 != null && opened80 && after80 != null && scrollerTop80 != null && top80 - scrollerTop80 > 120 &&
+                    Math.abs(after80 - scrollerTop80 - 56) <= 4,
+                { shown80, top80, opened80, after80, scrollerTop80 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));

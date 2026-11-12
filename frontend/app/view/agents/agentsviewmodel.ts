@@ -184,6 +184,18 @@ export function isNearBottom(
     return m.scrollHeight - m.scrollTop - m.clientHeight < threshold;
 }
 
+/** Pure: the scrollTop that brings a fold's head, `offset` px below the region's visible top, up to `margin` px from
+ *  that top, never past the end; null when the head is already there or above, or the region is at its end. It only
+ *  ever scrolls down: a fold opened low in the view rises so what opened shows, one opened higher stays put. */
+export function revealScrollTop(
+    m: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    offset: number,
+    margin: number
+): number | null {
+    const top = Math.min(m.scrollTop + offset - margin, m.scrollHeight - m.clientHeight);
+    return top > m.scrollTop + 0.5 ? top : null;
+}
+
 export interface AgentSections {
     asking: AgentVM[];
     working: AgentVM[];

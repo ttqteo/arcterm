@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Opening a compaction's summary at the end of Chat brings it into view: after a `/compact`, click the
+  COMPACTED chip near the bottom; as the summary opens the conversation rises until the chip sits just under the
+  pinned prompt bar, the summary's first lines showing below it, in one smooth move with no jump back. A chip already
+  near the top opens without moving. Only unit-tested and typechecked; `task verify:ui -- agent-chat` step 80 was
+  updated for it but not run (`narrationtimeline.tsx` CompactionDivider).
 - [ ] (arcterm) Settings → Jarvis & Office shows three short cards before Folding: Jarvis (Character, Vietnam's
   colours), Form (Shows as, Hologram size) and Behaviour (Roams, Quotes), each row's text on one or two lines; searching
   "quotes" or "hologram" still finds its row. Only unit-tested (89dc8e4ef: `settingsmodel.ts`, `settingspages/jarvis.tsx`).

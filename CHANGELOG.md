@@ -63,6 +63,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Opening a compaction's summary at the bottom of Chat scrolls it into view: the Compacted line rises to the top as the
+  summary opens, instead of the summary opening out of sight below.
 - Chat no longer drops what Claude says between tool calls when Claude Code keeps only a summary of it (the lines the
   terminal marks "· summary"): the summary shows as Claude's reply.
 - A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
