@@ -597,16 +597,26 @@ func stubRecoverAsk(t *testing.T, ctx context.Context, dagID string) *[]recovere
 	return calls
 }
 
-// countOpenAskReads counts the transcript reads the ask recovery makes; they are whole-file reads under the dag lock.
-func countOpenAskReads(t *testing.T) *int {
+// countTranscriptReads counts the transcript reads a stall candidate makes; they are whole-file reads under the dag
+// lock, and one read serves both the ask recovery and the background-shell check.
+func countTranscriptReads(t *testing.T) *int {
 	t.Helper()
-	prev, reads := workerOpenAskFn, 0
-	workerOpenAskFn = func(path string) (string, []baseds.AgentAskQuestion, bool, error) {
+	prev, reads := workerTranscriptFn, 0
+	workerTranscriptFn = func(path string) ([]string, error) {
 		reads++
 		return prev(path)
 	}
-	t.Cleanup(func() { workerOpenAskFn = prev })
+	t.Cleanup(func() { workerTranscriptFn = prev })
 	return &reads
+}
+
+// stubBackgroundWatch gives a test its own first-seen clocks, as stubRecoverAsk gives it its own ask log.
+func stubBackgroundWatch(t *testing.T) *backgroundShells {
+	t.Helper()
+	prev := backgroundWatch
+	backgroundWatch = newBackgroundShells()
+	t.Cleanup(func() { backgroundWatch = prev })
+	return backgroundWatch
 }
 
 // The 2026-11-12 run's t-3: its AskUserQuestion hook was cancelled on timeout, so the registry never heard of the
@@ -616,7 +626,7 @@ func TestRecoverAskFromTheTranscriptOfAStallCandidate(t *testing.T) {
 	noCPUThrottle(t)
 	stubChildCPU(t, func(int) (int64, bool) { return 0, false })
 	calls := stubRecoverAsk(t, ctx, g.OID)
-	reads := countOpenAskReads(t)
+	reads := countTranscriptReads(t)
 
 	before := time.Now().UnixMilli()
 	task := tick(t, ctx, g)
@@ -687,7 +697,7 @@ func TestRecoverAskReadsOnlyAStallCandidatesTranscript(t *testing.T) {
 		noCPUThrottle(t)
 		stubChildCPU(t, func(int) (int64, bool) { return 0, false })
 		calls := stubRecoverAsk(t, ctx, g.OID)
-		reads := countOpenAskReads(t)
+		reads := countTranscriptReads(t)
 		tick(t, ctx, g)
 		tick(t, ctx, g)
 		if *reads != 0 || len(*calls) != 0 {
@@ -699,7 +709,7 @@ func TestRecoverAskReadsOnlyAStallCandidatesTranscript(t *testing.T) {
 		noCPUThrottle(t)
 		stubChildCPU(t, func(call int) (int64, bool) { return int64(call) * 60_000, true })
 		calls := stubRecoverAsk(t, ctx, g.OID)
-		reads := countOpenAskReads(t)
+		reads := countTranscriptReads(t)
 		tick(t, ctx, g)
 		if task := tick(t, ctx, g); task.State != TaskState_Running {
 			t.Fatalf("a worker whose CPU advanced is not stalled, got %s", task.State)
@@ -713,7 +723,7 @@ func TestRecoverAskReadsOnlyAStallCandidatesTranscript(t *testing.T) {
 		noCPUThrottle(t)
 		stubChildCPU(t, func(int) (int64, bool) { return 0, false })
 		calls := stubRecoverAsk(t, ctx, g.OID)
-		reads := countOpenAskReads(t)
+		reads := countTranscriptReads(t)
 		askOnWorkerBlock(t)
 		if task := tick(t, ctx, g); task.State != TaskState_Running {
 			t.Fatalf("a registered question keeps the task running, got %s", task.State)
@@ -727,7 +737,7 @@ func TestRecoverAskReadsOnlyAStallCandidatesTranscript(t *testing.T) {
 		noCPUThrottle(t)
 		stubChildCPU(t, func(int) (int64, bool) { return 0, false })
 		calls := stubRecoverAsk(t, ctx, g.OID)
-		reads := countOpenAskReads(t)
+		reads := countTranscriptReads(t)
 		if task := tick(t, ctx, g); task.State != TaskState_Stalled {
 			t.Fatalf("a silent pi worker stalls, got %s", task.State)
 		}
@@ -735,6 +745,181 @@ func TestRecoverAskReadsOnlyAStallCandidatesTranscript(t *testing.T) {
 			t.Fatalf("only a claude transcript holds an AskUserQuestion: %d reads, %d calls", *reads, len(*calls))
 		}
 	})
+}
+
+const (
+	// a background `task check:ts`, as claude writes it: the call, its start result, and (later) the notification that
+	// it finished
+	bgShellUse    = `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_bg1","name":"Bash","input":{"command":"task check:ts","description":"typecheck in the background","run_in_background":true}}]}}`
+	bgShellResult = `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_bg1","content":"Command running in background with ID: bgtask1"}]},"toolUseResult":{"backgroundTaskId":"bgtask1"}}`
+	bgShellDone   = `{"type":"queue-operation","operation":"enqueue","content":"<task-notification>\n<task-id>bgtask1</task-id>\n<tool-use-id>toolu_bg1</tool-use-id>\n<status>completed</status>\n</task-notification>"}`
+)
+
+func childRunID(t *testing.T, ctx context.Context, g *waveobj.TaskGroup) string {
+	t.Helper()
+	return mustLoadDag(t, ctx, g.OID).Tasks[0].RunID
+}
+
+// The 2026-11-12 run's t-3 after the resume: its worker waited on its own background `task check:ts`, tsc running 6+
+// minutes. The transcript is silent and the tree's CPU can read idle between tsc's bursts, so only the transcript's
+// live background shell says the worker is busy.
+func TestWorkerWaitingOnItsBackgroundShellIsNotStalled(t *testing.T) {
+	ctx, g, f, _ := seedClaudeChild(t, "bg-shell", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, bgShellUse, bgShellResult)
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 5_000, true })
+	stubBackgroundWatch(t)
+	calls := stubRecoverAsk(t, ctx, g.OID)
+	reads := countTranscriptReads(t)
+
+	if task := tick(t, ctx, g); task.State != TaskState_Running {
+		t.Fatalf("the first CPU reading is only a baseline, got %s", task.State)
+	}
+	before := time.Now().UnixMilli()
+	task := tick(t, ctx, g)
+	if task.State != TaskState_Running || task.StallRetries != 0 {
+		t.Fatalf("a worker waiting on its background shell is not stalled, got state=%s stallretries=%d", task.State, task.StallRetries)
+	}
+	if task.BusyTs < before {
+		t.Fatalf("a live background shell counts as activity like a busy CPU sample, got BusyTs %d (before %d)", task.BusyTs, before)
+	}
+	if len(f.sends) != 0 || len(*calls) != 0 {
+		t.Fatalf("a worker with a shell running is nobody's to wake: wakes %q, recovered asks %d", f.sends, len(*calls))
+	}
+	if *reads != 1 {
+		t.Fatalf("the ask recovery and the background check share one transcript read, got %d", *reads)
+	}
+	if digest := buildTaskDigest(g, task, nil, nil, nil, time.Now().UnixMilli()); !digest.Busy {
+		t.Fatalf("the digest reads the worker busy, got %+v", digest)
+	}
+}
+
+// the shell's own notification says it is over, and a worker idle with nothing running is stalled as it always was
+func TestWorkerWhoseBackgroundShellFinishedStillStalls(t *testing.T) {
+	ctx, g, _, _ := seedClaudeChild(t, "bg-shell-done", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, bgShellUse, bgShellResult, bgShellDone)
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 5_000, true })
+	stubBackgroundWatch(t)
+	stubRecoverAsk(t, ctx, g.OID)
+
+	tick(t, ctx, g)
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+		t.Fatalf("a finished background shell is no reason to keep a silent worker, got %s", task.State)
+	}
+}
+
+// a watcher nobody stops would hold the task forever: past StallThreshold x 3 from when it was first seen it stalls
+func TestWorkerWithAForgottenBackgroundShellStillStalls(t *testing.T) {
+	ctx, g, f, _ := seedClaudeChild(t, "bg-shell-forgotten", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, bgShellUse, bgShellResult)
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 5_000, true })
+	watch := stubBackgroundWatch(t)
+	stubRecoverAsk(t, ctx, g.OID)
+	run := childRunID(t, ctx, g)
+
+	// first seen just inside the bound: still the worker's wait
+	watch.since[run] = time.Now().UnixMilli() - 3*StallThreshold.Milliseconds() + time.Minute.Milliseconds()
+	tick(t, ctx, g)
+	if task := tick(t, ctx, g); task.State != TaskState_Running {
+		t.Fatalf("a shell first seen inside StallThreshold x 3 keeps the task running, got %s", task.State)
+	}
+
+	// and just past it
+	watch.since[run] = time.Now().UnixMilli() - 3*StallThreshold.Milliseconds() - time.Minute.Milliseconds()
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].BusyTs = 0
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	*g = *mustLoadDag(t, ctx, g.OID)
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+		t.Fatalf("a shell running longer than StallThreshold x 3 stalls the task, got %s", task.State)
+	}
+	if len(f.sends) != 1 {
+		t.Fatalf("the lead hears of the stall once, got %q", f.sends)
+	}
+}
+
+// the first-seen clock is the worker's, and ends with its time as a running task
+func TestBackgroundShellClockEndsWhenTheTaskLeavesRunning(t *testing.T) {
+	ctx, g, _, _ := seedClaudeChild(t, "bg-shell-leaves", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, bgShellUse, bgShellResult)
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 5_000, true })
+	watch := stubBackgroundWatch(t)
+	stubRecoverAsk(t, ctx, g.OID)
+	run := childRunID(t, ctx, g)
+
+	tick(t, ctx, g)
+	tick(t, ctx, g)
+	if _, seen := watch.since[run]; !seen {
+		t.Fatalf("a candidate with a shell running gets a first-seen time, got %v", watch.since)
+	}
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].State = TaskState_Stalled
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	*g = *mustLoadDag(t, ctx, g.OID)
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+		t.Fatalf("a silent stalled task stays stalled, got %s", task.State)
+	}
+	if _, seen := watch.since[run]; seen {
+		t.Fatalf("a task that is not running keeps no first-seen time, got %v", watch.since)
+	}
+}
+
+// a worker that is not claude has no background-shell record to read
+func TestBackgroundShellCheckReadsOnlyAStallCandidateOfAClaudeWorker(t *testing.T) {
+	ctx, g, _ := seedChildWrittenAt(t, "bg-shell-pi", time.Now().Add(-StallThreshold-time.Minute))
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 5_000, true })
+	stubBackgroundWatch(t)
+	reads := countTranscriptReads(t)
+	tick(t, ctx, g)
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled || *reads != 0 {
+		t.Fatalf("a silent pi worker stalls without a read: state=%s, %d reads", task.State, *reads)
+	}
+}
+
+// backgroundShells is driven with a scripted clock: the bound runs from when a shell was first seen, not from the wall
+func TestBackgroundShellsBoundRunsFromFirstSeen(t *testing.T) {
+	bound := 3 * StallThreshold.Milliseconds()
+	labels := []string{"typecheck in the background"}
+	w := newBackgroundShells()
+	base := int64(1_000_000)
+
+	if !w.busy("run-1", labels, base) {
+		t.Fatal("a shell seen for the first time is the worker's wait")
+	}
+	if !w.busy("run-1", labels, base+bound-1) || !w.busy("run-1", labels, base+bound) {
+		t.Fatal("a shell is busy up to StallThreshold x 3 after it was first seen")
+	}
+	if w.busy("run-1", labels, base+bound+1) {
+		t.Fatal("a shell past StallThreshold x 3 is no longer a reason to wait")
+	}
+	if w.busy("run-1", labels, base+2*bound) {
+		t.Fatal("the bound does not renew while the same shell keeps running")
+	}
+
+	// another worker has its own clock
+	if !w.busy("run-2", labels, base+2*bound) {
+		t.Fatal("a second worker's shell starts its own clock")
+	}
+
+	// nothing running forgets the clock: the next shell is a new one
+	if w.busy("run-1", nil, base+2*bound+5) {
+		t.Fatal("no shell running is not busy")
+	}
+	if !w.busy("run-1", labels, base+2*bound+10) {
+		t.Fatal("a shell started after the last one ended gets a whole bound")
+	}
+
+	// leaving running forgets it too
+	w.forget("run-2")
+	if _, seen := w.since["run-2"]; seen {
+		t.Fatalf("forget leaves no clock, got %v", w.since)
+	}
 }
 
 // writeAgySession writes a transcript where agy puts a conversation: brain/<id>/.system_generated/logs.

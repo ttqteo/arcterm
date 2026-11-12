@@ -156,9 +156,16 @@ func OpenAsk(path string) (toolUseId string, questions []baseds.AgentAskQuestion
 	if err != nil {
 		return "", nil, false, err
 	}
-	id, input, open := openAskCall(tail.Lines)
+	toolUseId, questions, ok = OpenAskLines(tail.Lines)
+	return toolUseId, questions, ok, nil
+}
+
+// OpenAskLines is OpenAsk for a transcript already read, so a caller that also reads something else out of the same
+// lines (the engine's stall check looks for a live background shell) pays one read of the file.
+func OpenAskLines(lines []string) (toolUseId string, questions []baseds.AgentAskQuestion, ok bool) {
+	id, input, open := openAskCall(lines)
 	if !open {
-		return "", nil, false, nil
+		return "", nil, false
 	}
 	var in struct {
 		Questions []struct {
@@ -173,7 +180,7 @@ func OpenAsk(path string) (toolUseId string, questions []baseds.AgentAskQuestion
 		} `json:"questions"`
 	}
 	if json.Unmarshal(input, &in) != nil || len(in.Questions) == 0 {
-		return "", nil, false, nil
+		return "", nil, false
 	}
 	questions = make([]baseds.AgentAskQuestion, len(in.Questions))
 	for i, q := range in.Questions {
@@ -186,5 +193,5 @@ func OpenAsk(path string) (toolUseId string, questions []baseds.AgentAskQuestion
 		}
 		questions[i] = baseds.AgentAskQuestion{Question: q.Question, Header: q.Header, MultiSelect: q.MultiSelect, Options: opts}
 	}
-	return id, questions, true, nil
+	return id, questions, true
 }

@@ -522,6 +522,10 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 		if t.RunID == "" {
 			continue
 		}
+		// the first-seen clock of a background shell is a running worker's
+		if t.State != TaskState_Running {
+			backgroundWatch.forget(t.RunID)
+		}
 		// a reboot leaves the child run running and its transcript frozen, with nothing to relaunch the worker,
 		// and so does an exit the hook lost: waiting out StallThreshold only delays the retry. The run is
 		// re-read because a worker that just completed is gone too
@@ -616,14 +620,23 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 		stallCandidate := t.State == TaskState_Running && (quiet || turnEnded) &&
 			(verdict == cpuIdle || verdict == cpuNone)
 		// a worker's question is registered only by its PreToolUse hook, and a hook cancelled on timeout leaves the
-		// dialog open on a worker the registry knows nothing of: it would read as hung. Only a task about to stall
-		// reads its transcript for one, since the read is of the whole file. An open question is the queue's, as a
-		// registered one is: the silence clock restarts, and the question is registered once this pass has committed
+		// dialog open on a worker the registry knows nothing of: it would read as hung. A worker waiting on its own
+		// background shell (a typecheck run_in_background) is as quiet, and its tree's CPU can read idle between
+		// bursts. Only a task about to stall reads its transcript for either, since the read is of the whole file, and
+		// it reads once for both. An open question is the queue's, as a registered one is: the silence clock restarts,
+		// and the question is registered once this pass has committed. A live background shell restarts it as a busy
+		// CPU sample does, until backgroundShellBound has passed since it was first seen
 		if stallCandidate {
-			if found, open := recoverableAsk(ctx, runs[t.RunID]); open {
-				t.AskTs = now
-				stallCandidate = false
-				*recovered = append(*recovered, found)
+			if reading, ok := readStallCandidate(ctx, runs[t.RunID]); ok {
+				switch {
+				case reading.askOpen:
+					t.AskTs = now
+					stallCandidate = false
+					*recovered = append(*recovered, reading.ask)
+				case backgroundWatch.busy(t.RunID, reading.background, now):
+					t.BusyTs = now
+					stallCandidate = false
+				}
 			}
 		}
 		if stallCandidate {
