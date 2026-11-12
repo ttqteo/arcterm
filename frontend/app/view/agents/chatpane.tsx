@@ -655,10 +655,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         {working != null && !empty && !opening ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
                                 <span
-                                    className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot"
+                                    className="h-[7px] w-[7px] flex-none rounded-full jarvis-dot pulse-dot"
                                     aria-hidden
                                 />
-                                <span className="min-w-0 truncate">{working}</span>
+                                <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
                                 {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}

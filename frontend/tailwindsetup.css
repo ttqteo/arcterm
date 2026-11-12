@@ -585,6 +585,29 @@ svg [aria-label="tip"] g path {
     translate: 0 calc((var(--typing, 0.35) - 0.35) / 0.65 * -3px);
 }
 
+/* Chat's working line (chatpane.tsx) in Jarvis's working colours, the hologram's blue and its hot core
+   (hologramscene.ts readHologramColours; its gold means something waits on you, so it stays out), shimmering as
+   Claude Code's spinner verb does: pulsedriver.tsx sets --sweep (0 to 1, then again) at 12fps and the hot band
+   crosses the text left to right. Without the driver (reduced motion) the text rests in the blue. */
+.shimmer-jarvis {
+    --shimmer-at: calc(var(--sweep, -1) * 160% - 30%);
+    background-image: linear-gradient(
+        90deg,
+        var(--color-conn-1) calc(var(--shimmer-at) - 22%),
+        var(--color-accent-100) var(--shimmer-at),
+        var(--color-conn-1) calc(var(--shimmer-at) + 22%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* the working line's dot: a small Jarvis core, hot in the middle and blue at the rim, breathing with pulse-dot */
+.jarvis-dot {
+    background: radial-gradient(circle, var(--color-accent-100) 0 28%, var(--color-conn-1) 72%);
+    box-shadow: 0 0 5px color-mix(in oklab, var(--color-conn-1) 55%, transparent);
+}
+
 /* Asking attention (moment 3): a slow, persistent amber breathing glow. drop-shadow
    (not box-shadow) so it never clashes with the card's cursor-ring box-shadow, and
    is not clipped by the card's overflow-hidden. Amber comes from the status token.

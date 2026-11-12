@@ -57,6 +57,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,
   until Claude Code's own title for it arrives.
 - Chat's jump-to-latest button now shows its shortcut (Ctrl+End) beside the ↓, not only in its tooltip.
+- Chat's "Working…" line now takes Jarvis's colours: its dot is a small blue core and the text shimmers, a bright band
+  sweeping across it as Claude Code's spinner does, instead of a plain dot in the accent colour.
 - A message you send in Chat now rises into the conversation from the box, instead of appearing there at once.
 - A message you send in Chat shows as your normal bubble at once, no longer dimmed, and Claude taking it no longer
   makes it blink or shift the conversation: there is no "Sending…" line, and a message sent while the agent works has
