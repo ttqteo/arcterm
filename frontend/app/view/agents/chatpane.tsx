@@ -613,7 +613,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     `[data-sleeping-composer] [data-chat-input]`. */}
                 <div ref={dockRef} data-chat-dock className="pointer-events-none absolute inset-x-6 bottom-5 z-10">
                     <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
-                        {/* Chat's own jump-to-latest: a round ↓ centred just above the box while the reader is scrolled
+                        {/* Chat's own jump-to-latest: a ↓ pill naming its key, centred just above the box while the reader is scrolled
                             up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the
                             button's alone) */}
                         <div className="absolute bottom-full left-1/2 z-10 mb-4 -translate-x-1/2">
@@ -631,9 +631,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         onClick={jumpToBottom}
                                         title={`Jump to latest (${formatChordString(CHAT_JUMP_KEYS)})`}
                                         aria-label="Jump to latest"
-                                        className="flex size-[32px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                        className="group flex h-[32px] cursor-pointer items-center justify-center gap-1.5 rounded-full border border-edge-strong bg-surface-raised pl-[9px] pr-3 text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                     >
                                         <ArrowDown size={14} strokeWidth={2} aria-hidden />
+                                        <kbd className="font-sans text-[10.5px] text-muted group-hover:text-secondary">
+                                            {formatChordString(CHAT_JUMP_KEYS)}
+                                        </kbd>
                                     </motion.button>
                                 ) : null}
                             </AnimatePresence>

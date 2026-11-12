@@ -30,6 +30,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   suggestion showing, Tab still completes the word under the caret.
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,
   until Claude Code's own title for it arrives.
+- Chat's jump-to-latest button now shows its shortcut (Ctrl+End) beside the ↓, not only in its tooltip.
 
 ### Fixed
 

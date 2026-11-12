@@ -727,14 +727,14 @@ export default function (kit) {
                     if (!j) return null;
                     const r = j.getBoundingClientRect();
                     const br = b?.getBoundingClientRect();
-                    return { w: Math.round(r.width), h: Math.round(r.height), aboveBox: br ? r.bottom <= br.top + 1 : null };
+                    return { w: Math.round(r.width), h: Math.round(r.height), aboveBox: br ? r.bottom <= br.top + 1 : null, key: j.querySelector("kbd")?.textContent ?? null };
                 })()`);
                 await shot(h, "15-jump-visible");
                 await h.ev(`${layerOf(A)}?.querySelector("[data-chat-jump]")?.click()`);
                 const atEnd = await polishWaitFor(h, `(() => { const s = ${scrollerOf(A)}; return !!s && s.scrollHeight - s.scrollTop - s.clientHeight <= 8; })()`, SHORT_MS);
                 const gone = await polishWaitFor(h, `!${SEEN}(${layerOf(A)}?.querySelector("[data-chat-jump]"))`, SHORT_MS);
                 await shot(h, "15-jump-gone");
-                rec(`${name}: scrolled up [data-chat-jump] is visible (a round 32px button above the box); a click returns to the end and it leaves`, shown && geo?.w === 32 && geo?.h === 32 && geo.aboveBox === true && atEnd && gone, { scrolled, shown, geo, atEnd, gone });
+                rec(`${name}: scrolled up [data-chat-jump] is visible (a 32px-high pill above the box naming its key); a click returns to the end and it leaves`, shown && geo?.h === 32 && geo.w > 32 && /End/.test(geo.key ?? "") && geo.aboveBox === true && atEnd && gone, { scrolled, shown, geo, atEnd, gone });
             });
 
             // 16. frame timing while 30 blocks stream in
