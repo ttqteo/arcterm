@@ -43085,6 +43085,31 @@ const agentChat = {
                 { before5, tools, diff }
             );
 
+            // 5b. the arrow at the chip's end opens the file itself in the agent's File tab, as a path link in the terminal
+            // does; the chip's own diff stays as it was
+            mkdirSync(dirname(ctx.files.edited), { recursive: true });
+            writeFileSync(ctx.files.edited, "export const retries = 3;\nexport const backoff = true;\n");
+            const wantFile5b = JSON.stringify(ctx.files.edited.split("\\").join("/").toLowerCase());
+            const arrow5b = await h.ev(`(() => {
+                const b = ${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]");
+                return b ? { path: b.getAttribute("data-chat-file-open"), label: b.getAttribute("aria-label") } : null;
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]")?.scrollIntoView({ block: "center" })`);
+            await h.shot("cdp-shots/agent-chat-5b-chip-open.png");
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]")?.click()`);
+            const file5b = await polishWaitFor(
+                h,
+                `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantFile5b}`,
+                AC_WAIT_MS
+            );
+            const diffKept5b = await h.ev(`!!${acLayer(A)}?.querySelector("[data-chat-diff]")`);
+            await h.shot("cdp-shots/agent-chat-5b-file-tab.png");
+            rec(
+                "5b. the arrow at a file chip's end (Open client.ts) opens the file in the agent's File tab; the chip's diff stays open",
+                arrow5b?.path === ctx.files.edited && arrow5b.label === "Open client.ts" && file5b && diffKept5b,
+                { arrow5b, file5b, diffKept5b }
+            );
+
             // 6. picking Terminal: the layer is gone, the xterm is the same element with focus, the rail has its Transcript
             // tab; picking Chat brings the layer back and focus to the box
             await acHeaderClick(h, "Terminal");
@@ -43248,6 +43273,52 @@ const agentChat = {
             );
             await acQueue(h, orefA, []);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+
+            // 11b. the card from the keyboard: with the chat box empty ↑ and ↓ move a ring over Allow and Deny (held at the
+            // ends), and Enter sends the ringed choice, typing nothing into the block and leaving the box empty; a new request
+            // starts on Allow, so Enter on it allows
+            const ringOn11b = `[...(${acCard(A)}?.querySelectorAll("[data-perm-choice]") ?? [])].filter((b) => b.classList.contains("outline-accent")).map((b) => b.getAttribute("data-perm-choice"))`;
+            await acQueue(h, orefA, [perm("perm-k1", "Bash", "npm run test:keys")]);
+            const up11b = await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-allow]")`, 3000);
+            await acClear(h, acBox(A));
+            await h.ev(`${acBox(A)}?.focus()`);
+            const ring0 = await h.ev(ringOn11b);
+            const hint11b = await h.ev(`${acCard(A)}?.querySelector("[data-permission-keys]")?.textContent.trim() ?? null`);
+            await acKey(h, acKeys.down);
+            const ring1 = await h.ev(ringOn11b);
+            await acKey(h, acKeys.down);
+            const ring2 = await h.ev(ringOn11b);
+            await acKey(h, acKeys.up);
+            const ring3 = await h.ev(ringOn11b);
+            await acKey(h, acKeys.down);
+            await h.shot("cdp-shots/agent-chat-11b-keys.png");
+            const inputs11b = await acInputs(h, blockA);
+            const calls11b = (await acCalls(h, "agentpermissionanswer")).length;
+            await acKey(h, acKeys.enter);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "agentpermissionanswer").length === ${calls11b + 1}`, 3000);
+            const denied11b = (await acCalls(h, "agentpermissionanswer"))[calls11b];
+            await polishWaitFor(h, `!${acCard(A)}`, 3000);
+            await acQueue(h, orefA, [perm("perm-k2", "Bash", "npm run test:keys -- --again")]);
+            await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-allow]")`, 3000);
+            const ringNew = await h.ev(ringOn11b);
+            await h.ev(`${acBox(A)}?.focus()`);
+            await acKey(h, acKeys.enter);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "agentpermissionanswer").length === ${calls11b + 2}`, 3000);
+            const allowed11b = (await acCalls(h, "agentpermissionanswer"))[calls11b + 1];
+            const box11b = await h.ev(acVal(acBox(A)));
+            const typed11b = (await acInputs(h, blockA)).slice(inputs11b.length);
+            await acQueue(h, orefA, []);
+            rec(
+                "11b. from the empty chat box ↑ ↓ move the card's ring (Allow → Deny, held at the end, back, down), Enter on Deny sends allow: false, a new request starts on Allow and Enter allows it; nothing is typed and the box stays empty",
+                up11b && hint11b === "↑↓ Enter" &&
+                    JSON.stringify(ring0) === JSON.stringify(["allow"]) && JSON.stringify(ring1) === JSON.stringify(["deny"]) &&
+                    JSON.stringify(ring2) === JSON.stringify(["deny"]) && JSON.stringify(ring3) === JSON.stringify(["allow"]) &&
+                    denied11b?.data?.id === "perm-k1" && denied11b.data.allow === false &&
+                    JSON.stringify(ringNew) === JSON.stringify(["allow"]) &&
+                    allowed11b?.data?.id === "perm-k2" && allowed11b.data.allow === true &&
+                    box11b === "" && typed11b.length === 0,
+                { up11b, hint11b, ring0, ring1, ring2, ring3, denied11b, ringNew, allowed11b, box11b, typed11b }
+            );
 
             // 12. an agent asking an AskUserQuestion shows its choices in the chat; clicking one sends the answer
             await showAgent(D);
