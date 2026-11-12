@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm, Mac) Inline code in Chat is lavender like the terminal's: open a Claude agent's Chat, find a reply
+  with `code` in it (and one with a highlighted sentence holding code), and the code reads lavender on its faint pill,
+  apart from the highlight's yellow ground, not gold. `0a83928dc`.
+- [ ] (arcterm, Mac) Skim highlights in Chat survive other agents: with two Claude agents running, get a marked reply
+  in one, let the other answer with a marked reply, then switch back: the first reply still shows its highlights.
+  Needs a build with `bc13ac270` installed, and agents started after it.
 - [ ] (arcterm, Mac) Chat's "Working…" line wears Jarvis's colours: while a Claude agent works, the dot is a small
   core (bright centre, blue rim) that breathes, and the text is blue with a bright band sweeping left to right about
   every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
