@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Jobs popover (spec 2026-10-09-heavy-job-queue-design.md): every heavy shell job running or waiting its turn, with
-// Run now and Skip on a queued one, the Slots picker for how many run at once (or Auto, as RAM allows, or Off), and
-// Pause 1h / 4h to turn the queue off for a while. It hangs from the app bar's Jobs
+// Run now and Skip on a queued one, the Slots picker for how many run at once (or Auto, as RAM and CPU allow, or
+// Off), and Pause 1h / 4h to turn the queue off for a while. It hangs from the app bar's Jobs
 // chip and shares the Consumers panel's shell. jobqueue.ts decides; this draws. Mounted once in cockpit-root, which
 // also keeps the one feed of the queue (useJobQueueFeed) the chip reads.
 

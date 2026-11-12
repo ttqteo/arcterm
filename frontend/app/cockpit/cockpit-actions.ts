@@ -172,7 +172,8 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         // transcript holds it (a /command is a command row there, never a bubble)
         const first = opts.task.trim();
         if (first && pendsAsBubble(first)) {
-            addPending(tabId, first, []);
+            // nothing runs yet for it to queue behind: it reads Starting…, then Sending…
+            addPending(tabId, first, [], false);
         }
     }
     // A launch foregrounds into the Agent surface so its booting terminal mounts (which starts the process): an

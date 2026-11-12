@@ -13,6 +13,9 @@ const gb = uint64(1) << 30
 
 var t0 = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 
+// manyCPUs leaves Auto's CPU cap (four at once) out of the cases that test the RAM, the pressure and the slots
+const manyCPUs = 24
+
 func TestPlan(t *testing.T) {
 	run := func(id string, bytes uint64, started time.Time) Job {
 		return Job{Id: id, Request: Request{Name: id, Bytes: bytes}, Running: true, StartedAt: started}
@@ -40,7 +43,7 @@ func TestPlan(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			start, reason := plan(c.jobs, c.slots, ModeSlots, c.available, PressureUnknown, t0)
+			start, reason := plan(c.jobs, c.slots, manyCPUs, ModeSlots, c.available, PressureUnknown, t0)
 			if len(start) != len(c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}
@@ -82,7 +85,7 @@ func TestPlanModes(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// one slot throughout: neither mode reads it
-			start, reason := plan(c.jobs, 1, c.mode, c.available, PressureUnknown, t0)
+			start, reason := plan(c.jobs, 1, manyCPUs, c.mode, c.available, PressureUnknown, t0)
 			if !slices.Equal(start, c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}
@@ -90,6 +93,78 @@ func TestPlanModes(t *testing.T) {
 				t.Fatalf("reason = %q, want %q", reason, c.reason)
 			}
 		})
+	}
+}
+
+// Auto runs at most one heavy job per CPUsPerJob CPUs: on a 12-thread Windows box with 9-19 GB free it started 3-4
+// typechecks and verifies within minutes and the machine lagged (2026-11-11); the RAM never ran short there.
+func TestPlanAutoCapsByCPU(t *testing.T) {
+	run := func(id string, bytes uint64, started time.Time) Job {
+		return Job{Id: id, Request: Request{Name: id, Bytes: bytes}, Running: true, StartedAt: started}
+	}
+	wait := func(id string, bytes uint64) Job { return Job{Id: id, Request: Request{Name: id, Bytes: bytes}} }
+	council := func(j Job) Job { j.NoCPU = true; return j }
+	old := t0.Add(-2 * RampUp)
+	cases := []struct {
+		name   string
+		jobs   []Job
+		cpus   int
+		mode   string
+		start  []string
+		reason string
+	}{
+		{"12 CPUs run two at once though the RAM fits more", []Job{wait("a", 3*gb), wait("b", 3*gb), wait("c", 3*gb)}, 12, ModeAuto, []string{"a", "b"}, "CPU busy, 2 at a time"},
+		{"12 CPUs: a third waits beside two running", []Job{run("r", 3*gb, old), run("s", 3*gb, old), wait("a", gb)}, 12, ModeAuto, nil, "CPU busy, 2 at a time"},
+		{"8 CPUs run one at a time", []Job{run("r", 3*gb, old), wait("a", gb)}, 8, ModeAuto, nil, "CPU busy, 1 at a time"},
+		{"few CPUs still start one", []Job{wait("a", gb), wait("b", gb)}, 4, ModeAuto, []string{"a"}, "CPU busy, 1 at a time"},
+		{"no CPU reading still starts one", []Job{wait("a", gb), wait("b", gb)}, 0, ModeAuto, []string{"a"}, "CPU busy, 1 at a time"},
+		{"24 CPUs run four", []Job{wait("a", gb), wait("b", gb), wait("c", gb), wait("d", gb), wait("e", gb)}, 24, ModeAuto, []string{"a", "b", "c", "d"}, "CPU busy, 4 at a time"},
+		{"a council call waits on the network, not the CPU: it starts beside a full cap", []Job{run("r", 3*gb, old), council(wait("c", gb))}, 8, ModeAuto, []string{"c"}, ""},
+		{"and running ones leave the cap to heavy jobs", []Job{council(run("c1", gb, old)), council(run("c2", gb, old)), wait("a", 3*gb)}, 8, ModeAuto, []string{"a"}, ""},
+		{"the cap still keeps the queue in order", []Job{run("r", 3*gb, old), wait("a", gb), council(wait("c", gb))}, 8, ModeAuto, nil, "CPU busy, 1 at a time"},
+		{"slots mode counts the slots, not the CPUs", []Job{wait("a", gb), wait("b", gb), wait("c", gb)}, 4, ModeSlots, []string{"a", "b", "c"}, ""},
+		{"off starts every job", []Job{run("r", gb, old), wait("a", gb)}, 4, ModeOff, []string{"a"}, ""},
+		{"run now starts past the cap", []Job{run("r", gb, old), {Id: "f", Request: Request{Name: "f", Bytes: gb}, Forced: true}}, 8, ModeAuto, []string{"f"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			start, reason := plan(c.jobs, 3, c.cpus, c.mode, 64*gb, PressureUnknown, t0)
+			if !slices.Equal(start, c.start) {
+				t.Fatalf("start = %v, want %v", start, c.start)
+			}
+			if reason != c.reason {
+				t.Fatalf("reason = %q, want %q", reason, c.reason)
+			}
+		})
+	}
+}
+
+// The queue reads the CPU count it caps Auto by from its Config, the machine's own when none is given.
+func TestAutoReadsTheCPUCount(t *testing.T) {
+	q := New(Config{Mode: func() string { return ModeAuto }, CPUs: func() int { return 6 }})
+	first, err := q.Acquire(context.Background(), Request{Name: "a", Bytes: gb}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	got := make(chan Wait, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		if s, err := q.Acquire(ctx, Request{Name: "b", Bytes: gb}, func(w Wait) { got <- w }); err == nil {
+			s.Release()
+		}
+	}()
+	select {
+	case w := <-got:
+		if w.Position != 1 || w.Reason != "CPU busy, 1 at a time" {
+			t.Fatalf("the second job's place = %+v, want #1 waiting on the CPU", w)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the second job started beside the first on 6 CPUs")
+	}
+	if n := New(Config{}).cpus(); n < 1 {
+		t.Fatalf("an unset CPU count reads %d, want the machine's", n)
 	}
 }
 
@@ -132,7 +207,7 @@ func TestPlanPressure(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			start, reason := plan(c.jobs, 1, c.mode, c.available, c.pressure, t0)
+			start, reason := plan(c.jobs, 1, manyCPUs, c.mode, c.available, c.pressure, t0)
 			if !slices.Equal(start, c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}
@@ -222,6 +297,8 @@ func TestModeIsReadOnEveryEvaluation(t *testing.T) {
 		Slots:     func() int { return 1 },
 		Mode:      func() string { return mode.Load().(string) },
 		Available: func(context.Context) (uint64, error) { return 64 * gb, nil },
+		// past Auto's CPU cap: this machine's own count would hold b
+		CPUs: func() int { return manyCPUs },
 	})
 	ctx := context.Background()
 	held, _ := q.Acquire(ctx, Request{Name: "a", Bytes: gb}, nil)

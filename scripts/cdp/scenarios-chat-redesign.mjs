@@ -2,7 +2,7 @@
 // a floating message box that changes shape by state, step lines that fold into `Worked for…`, the frosted suggestion
 // panel, the type rhythm, the brainstorm question card in the conversation, the jump button, and frame timing while
 // blocks stream in. It is written against the spec's DOM contract ("Builder decisions"), not against the components:
-// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop], [data-chat-action-chip],
+// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop], [data-chat-action],
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
 // [data-chat-bscard][data-chat-bscard-state], [data-chat-bscard-option], [data-chat-bscard-send],
 // [data-chat-bscard-open], [data-chat-bscard-pointer], [data-chat-bscard-answered], [data-chat-jump], and the existing
@@ -315,7 +315,7 @@ export default function (kit) {
                 );
             });
 
-            // 2. the agent working: the box runs, with suggested actions and Stop in place of Send
+            // 2. the agent working: the box runs, with its action icons and Stop in place of Send
             await run("2. box running", async (name) => {
                 await setRoster(WORKING);
                 const running = await toState("running");
@@ -323,13 +323,13 @@ export default function (kit) {
                     const layer = ${layerOf(A)};
                     return {
                         state: layer?.querySelector("[data-chat-box]")?.getAttribute("data-chat-box-state") ?? null,
-                        chips: [...(layer?.querySelectorAll("[data-chat-action-chip]") ?? [])].map(${FLAT}),
+                        actions: [...(layer?.querySelectorAll("[data-chat-action]") ?? [])].map((b) => b.getAttribute("aria-label")),
                         stop: !!layer?.querySelector("[data-chat-stop]"),
                         send: !!layer?.querySelector("[data-chat-send]"),
                     };
                 })()`);
                 await shot(h, "2-box-running");
-                rec(`${name}: state running, at least one suggested-action chip and Stop`, running && got.state === "running" && got.chips.length >= 1 && got.stop, got);
+                rec(`${name}: state running, an Open the terminal icon and Stop`, running && got.state === "running" && got.actions.includes("Open the terminal") && got.stop, got);
             });
 
             // 3. files dragged over the box: a drop zone; leaving puts the state back
@@ -388,6 +388,25 @@ export default function (kit) {
                     `${name}: / opens [data-chat-suggest-panel] holding [data-chat-slash], visible, with a blur(18px) backdrop-filter and the box in state suggest; Escape closes it`,
                     up && suggest && got.visible && got.blurs.some((b) => (b ?? "").includes("blur(18px)")) && got.state === "suggest" && closed && idle,
                     { ...got, closed, idle }
+                );
+            });
+
+            // 4b. a command Chat answers itself runs on one click: /cont, then the context row, empties the box and draws the
+            // context card, with nothing sent to the agent
+            await run("4b. in-chat command runs on pick", async (name) => {
+                await clearBox(h, A);
+                await typeInBox(h, A, "/cont");
+                const up = await polishWaitFor(h, `!!document.querySelector('[data-chat-suggest-panel] [data-chat-slash-item="context"]')`, SHORT_MS);
+                const group = await h.ev(`document.querySelector("[data-chat-suggest-panel] [data-chat-slash-group]")?.getAttribute("data-chat-slash-group") ?? null`);
+                // a row picks on mousedown (the box keeps the focus), as a real click starts
+                await h.ev(`document.querySelector('[data-chat-suggest-panel] [data-chat-slash-item="context"]')?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))`);
+                const card = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector('[data-chat-local="context"]')`, SHORT_MS);
+                const got = await h.ev(`({ text: (${inputOf(A)})?.innerText.replace(/\\n$/, "") ?? null, panel: !!document.querySelector("[data-chat-suggest-panel]") })`);
+                await shot(h, "4b-in-chat-run");
+                rec(
+                    `${name}: /cont lists context under In Chat; a click on it draws the [data-chat-local="context"] card and leaves the box empty with the panel shut`,
+                    up && group === "In Chat" && card && got.text === "" && !got.panel,
+                    { up, group, card, ...got }
                 );
             });
 
@@ -757,6 +776,51 @@ export default function (kit) {
                     `${name}: while ${BLOCKS} blocks land ${BLOCK_GAP_MS} ms apart the p95 frame interval is at most ${FRAME_P95_MAX_MS} ms and the view follows the tail to the end`,
                     stats != null && stats.frames > 30 && stats.p95 <= FRAME_P95_MAX_MS && shown && stats.atEnd,
                     stats == null ? "no frames were recorded" : { p95Ms: round(stats.p95), worstMs: round(stats.worst), p50Ms: round(stats.p50), frames: stats.frames, followedTail: stats.atEnd, lastBlockShown: shown }
+                );
+            });
+
+            // 17. an image pasted into the box: its chip opens it full size, and Escape closes it with the image still attached
+            await run("17. pasted image opens", async (name) => {
+                const pasted = await h.ev(`(() => {
+                    const box = ${inputOf(A)};
+                    if (!box) return { ok: false, why: "no box" };
+                    box.focus();
+                    // a 320x200 picture drawn here, so the zoom has something to fit
+                    const c = document.createElement("canvas");
+                    c.width = 320;
+                    c.height = 200;
+                    const g = c.getContext("2d");
+                    g.fillStyle = "#d97757";
+                    g.fillRect(0, 0, 320, 200);
+                    g.fillStyle = "#30302e";
+                    g.fillRect(40, 40, 240, 120);
+                    const bin = atob(c.toDataURL("image/png").split(",")[1]);
+                    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+                    const dt = new DataTransfer();
+                    dt.items.add(new File([bytes], "shot.png", { type: "image/png" }));
+                    const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+                    box.dispatchEvent(ev);
+                    return { ok: true, taken: ev.defaultPrevented };
+                })()`);
+                const chip = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-attachment-chip] [data-attachment-open]")`, SHORT_MS);
+                await h.ev(`${layerOf(A)}?.querySelector("[data-attachment-open]")?.click()`);
+                const opened = await polishWaitFor(h, `!!document.querySelector("[data-image-zoom] [data-image-zoom-img]")`, SHORT_MS);
+                await polishNap(400);
+                const zoom = await h.ev(`(() => {
+                    const img = document.querySelector("[data-image-zoom-img]");
+                    const r = img?.getBoundingClientRect();
+                    return img ? { src: img.getAttribute("src")?.slice(0, 5), w: Math.round(r.width), h: Math.round(r.height) } : null;
+                })()`);
+                await shot(h, "17-image-zoom");
+                await key(h, KEYS.escape);
+                const closed = await polishWaitFor(h, `!document.querySelector("[data-image-zoom]")`, SHORT_MS);
+                const kept = await h.ev(`!!${layerOf(A)}?.querySelector("[data-attachment-chip] [data-attachment-open]")`);
+                // take the image back out, so the box is as the steps before left it
+                await h.ev(`${layerOf(A)}?.querySelector('[data-attachment-chip] button[title="Remove"]')?.click()`);
+                rec(
+                    `${name}: a pasted image shows a chip whose [data-attachment-open] opens [data-image-zoom] with the image drawn; Escape closes it and the image stays attached`,
+                    pasted.ok && chip && opened && zoom != null && zoom.w > 0 && closed && kept,
+                    { pasted, chip, opened, zoom, closed, kept }
                 );
             });
 

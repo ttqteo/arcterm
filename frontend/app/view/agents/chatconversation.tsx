@@ -950,13 +950,16 @@ export function ChatConversation({
                 className
             )}
         >
-            {/* the sticky row is a flex child of a gap-4 column: -mb-4 cancels the gap its zero-height row would add */}
+            {/* the sticky row is a flex child of a gap-4 column: -mb-4 cancels the gap its zero-height row would add. The
+                card keeps clear of the Skim toggle in the pane's corner (mr-10), while the band under it spans the
+                column, so a reply scrolling beneath never shows beside the card */}
             <PinnedPromptBar
                 rootRef={rootRef}
                 index={pinned}
                 text={prompts[pinned]}
                 bg="bg-background"
-                className="-mb-4 pr-10"
+                className="-mb-4"
+                cardClassName="mr-10"
             />
             {hidden > 0 || onLoadEarlier != null ? (
                 <button

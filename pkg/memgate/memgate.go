@@ -46,6 +46,13 @@ var (
 	jobGoTestAll     = Job{"go test ./...", 2560 * mib}
 	jobVerify        = Job{"scripts/verify.mjs", 2560 * mib}
 	jobGoOrchestrate = Job{"go test pkg/orchestrate", 2 * gib}
+	// compiling every package, as task build:backend compiles two
+	jobGoBuildAll = Job{"go build ./...", 1536 * mib}
+	jobGoVetAll   = Job{"go vet ./...", 1536 * mib}
+	// a Final run by hand: it starts its own dev app and drives a browser, the peak the engine's Final claims
+	jobFinalVerify = Job{"scripts/cdp/final-verify.mjs", DevBytes}
+	// any project's build script; in arcterm it is task tauri:build, so it claims that peak
+	jobNpmBuild = Job{"npm run build", 3584 * mib}
 	// other projects': an e2e script starts the app's servers, builds the frontend and drives Chromium
 	jobE2E = Job{"e2e script", 4 * gib}
 	// a browser check against an app already running: Chromium and its pages, not the servers
@@ -86,20 +93,63 @@ func FormatGB(bytes uint64) string {
 	return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(bytes)/float64(gib)), ".0") + " GB"
 }
 
-// one step's words, past its env assignments and the wrappers that only run it
+// the wrappers that only run the command after them, by name, with their flags that take a value: `nice -n 10`,
+// `env -u FOO`, `/usr/bin/time -o mem.txt`, `caffeinate -t 3600`. timeout has a duration too (pastTimeout)
+var wrappers = map[string][]string{
+	"env":        {"-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-P"},
+	"time":       {"-f", "--format", "-o", "--output"},
+	"nice":       {"-n", "--adjustment"},
+	"nohup":      nil,
+	"caffeinate": {"-t", "-w"},
+	"command":    nil,
+	"exec":       {"-a"},
+}
+
+// one step's words, past its env assignments and the wrappers that only run it, each by any path and with its
+// own flags
 func program(words []string) []string {
 	for len(words) > 0 {
 		w := words[0]
-		switch {
-		case isAssignment(w), w == "env", w == "time", w == "nice", w == "command", w == "exec":
+		if isAssignment(w) {
 			words = words[1:]
-		case w == "timeout":
+			continue
+		}
+		name := path.Base(w)
+		if name == "timeout" || name == "gtimeout" {
 			words = pastTimeout(words[1:])
-		default:
+			continue
+		}
+		valued, ok := wrappers[name]
+		if !ok {
 			return words
+		}
+		var flags []string
+		words, flags = pastFlags(words[1:], valued)
+		// command -v / -V looks the program up, it does not run it
+		if name == "command" && has(flags, "-v", "-V") {
+			return nil
 		}
 	}
 	return nil
+}
+
+// pastFlags splits a wrapper's args into its leading flags and the command after them: a flag in valued takes the
+// next word as its value, and -- ends the flags.
+func pastFlags(args []string, valued []string) (rest []string, flags []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			return args[i+1:], flags
+		case !strings.HasPrefix(a, "-"):
+			return args[i:], flags
+		}
+		flags = append(flags, a)
+		if has(valued, a) {
+			i++
+		}
+	}
+	return nil, flags
 }
 
 // pastTimeout is timeout's command: past its flags (-s and -k take a value) and the duration
@@ -172,15 +222,19 @@ func classifyStep(words []string) (Job, bool) {
 			return pytest(args[i+2:])
 		}
 		return Job{}, false
-	case "sh", "bash":
-		// a -c string is not split here; a script run by name is
-		if has(args, "-c") {
+	case "sh", "bash", "zsh":
+		ops := operands(args)
+		if len(ops) == 0 {
 			return Job{}, false
 		}
-		if ops := operands(args); len(ops) > 0 {
-			return classifyTool(path.Base(ops[0]), nil)
+		// -c (alone or among short flags: -lc) makes the first operand a command line of its own
+		for _, a := range args {
+			if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.Contains(a[1:], "c") {
+				return Classify(ops[0])
+			}
 		}
-		return Job{}, false
+		// a script run by name
+		return classifyTool(path.Base(ops[0]), nil)
 	case "npx":
 		if len(args) == 0 {
 			return Job{}, false
@@ -223,28 +277,57 @@ func classifyTask(args []string) (Job, bool) {
 	return heaviest, heaviest.Bytes > 0
 }
 
+// npm's flags that take a value, wherever they sit: npm --prefix frontend test, npm test -w web
+var npmValueFlags = []string{"--prefix", "-w", "--workspace"}
+
 func classifyNpm(args []string) (Job, bool) {
-	ops := operands(args)
-	if len(ops) == 0 {
-		return Job{}, false
-	}
-	switch ops[0] {
+	args = dropValueFlags(args, npmValueFlags)
+	sub, rest := firstOperand(args)
+	switch sub {
 	case "install", "i", "ci":
 		return jobInstall, true
 	case "test", "t":
-		return vitest(args[1:])
+		return vitest(rest)
 	case "run", "run-script":
-		if len(ops) > 1 {
-			switch ops[1] {
-			case "build":
-				return jobAppBuild, true
-			case "test":
-				return vitest(args[2:])
-			}
-			return browserScript(ops[1])
+		script, rest := firstOperand(rest)
+		switch script {
+		case "":
+			return Job{}, false
+		case "build":
+			return jobNpmBuild, true
+		case "test":
+			return vitest(rest)
+		}
+		return browserScript(script)
+	case "exec":
+		if tool, rest := firstOperand(rest); tool != "" {
+			return classifyTool(path.Base(tool), rest)
 		}
 	}
 	return Job{}, false
+}
+
+// firstOperand is the first word that is not a flag, and the words after it
+func firstOperand(args []string) (string, []string) {
+	for i, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return a, args[i+1:]
+		}
+	}
+	return "", nil
+}
+
+// dropValueFlags takes each flag in valued out of args, with the value after it, wherever it sits
+func dropValueFlags(args []string, valued []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		if has(valued, args[i]) {
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
 }
 
 // a package.json script by name: one named e2e or smoke (test:e2e, e2e:ui, smoke) drives a browser
@@ -403,6 +486,10 @@ func classifyNode(args []string) (Job, bool) {
 			return jobTypecheck, true
 		case a == "scripts/verify.mjs", strings.HasSuffix(a, "/scripts/verify.mjs"):
 			return jobVerify, true
+		case a == "scripts/cdp/final-verify.mjs", strings.HasSuffix(a, "/scripts/cdp/final-verify.mjs"):
+			return jobFinalVerify, true
+		case a == "scripts/release-build.mjs", strings.HasSuffix(a, "/scripts/release-build.mjs"):
+			return jobAppBuild, true
 		case strings.HasSuffix(a, "vitest/vitest.mjs"):
 			return vitest(args[i+1:])
 		case strings.HasSuffix(a, "astro/bin/astro.mjs"):
@@ -446,16 +533,35 @@ func tauriCLI(args []string) (Job, bool) {
 
 func classifyGo(args []string) (Job, bool) {
 	ops := operands(args)
-	if len(ops) == 0 || ops[0] != "test" {
+	if len(ops) == 0 {
 		return Job{}, false
 	}
+	all := false
 	for _, op := range ops[1:] {
-		if strings.Contains(op, "...") {
-			return jobGoTestAll, true
-		}
+		all = all || strings.Contains(op, "...")
 	}
-	if has(args, "-run") {
+	switch ops[0] {
+	case "build":
+		if all {
+			return jobGoBuildAll, true
+		}
 		return Job{}, false
+	case "vet":
+		if all {
+			return jobGoVetAll, true
+		}
+		return Job{}, false
+	case "test":
+	default:
+		return Job{}, false
+	}
+	if all {
+		return jobGoTestAll, true
+	}
+	for _, a := range args {
+		if a == "-run" || strings.HasPrefix(a, "-run=") {
+			return Job{}, false
+		}
 	}
 	for _, op := range ops[1:] {
 		if strings.TrimSuffix(strings.TrimPrefix(op, "./"), "/") == "pkg/orchestrate" {
@@ -467,7 +573,9 @@ func classifyGo(args []string) (Job, bool) {
 
 // steps splits a shell command line into its simple commands' words: on the unquoted separators
 // (&& || ; | & and newlines) and on unquoted whitespace, quotes removed. A quoted separator stays a word,
-// so `echo "a && task check:ts"` is one echo. Subshell parens are dropped. It does not expand anything.
+// so `echo "a && task check:ts"` is one echo. Subshell parens are dropped. A redirection (2>&1, > out.txt,
+// &>> log, < in) is no word at all, its target included: `npx vitest run 2>&1` names no test file. It does
+// not expand anything.
 func steps(command string) [][]string {
 	var (
 		out    [][]string
@@ -475,16 +583,23 @@ func steps(command string) [][]string {
 		word   strings.Builder
 		inWord bool
 		quote  byte
+		// the next word is a redirection's target
+		target bool
 	)
 	endWord := func() {
 		if inWord {
-			words = append(words, word.String())
+			if target {
+				target = false
+			} else {
+				words = append(words, word.String())
+			}
 			word.Reset()
 			inWord = false
 		}
 	}
 	endStep := func() {
 		endWord()
+		target = false
 		if len(words) > 0 {
 			out = append(out, words)
 			words = nil
@@ -509,13 +624,18 @@ func steps(command string) [][]string {
 			i++
 			word.WriteByte(command[i])
 			inWord = true
-		case c == ';' || c == '|' || c == '&' || c == '\n' || c == '(' || c == ')':
-			// a redirection's & (2>&1, &>) joins streams, it does not end the step
-			if c == '&' && (i > 0 && command[i-1] == '>' || i+1 < len(command) && command[i+1] == '>') {
-				word.WriteByte(c)
-				inWord = true
-				continue
+		case c == '>' || c == '<' || c == '&' && i+1 < len(command) && command[i+1] == '>':
+			// the stream number in front of it (the 2 of 2>&1) goes with it; a word up against it does not
+			if inWord && !isStreamNumber(word.String()) {
+				endWord()
 			}
+			word.Reset()
+			inWord = false
+			end, joined := redirection(command, i)
+			// a stream joined to another (2>&1, >&2, <&-) names no file; any other is followed by its target
+			target = !joined
+			i = end - 1
+		case c == ';' || c == '|' || c == '&' || c == '\n' || c == '(' || c == ')':
 			if c == '(' || c == ')' {
 				endWord()
 				continue
@@ -530,4 +650,45 @@ func steps(command string) [][]string {
 	}
 	endStep()
 	return out
+}
+
+// redirection reads the operator at command[i] (> >> < << <<< <> >| &> &>>, or a join such as >&2 or <&-): end is
+// just past it, and joined says it joins a stream to another rather than naming a file after it.
+func redirection(command string, i int) (end int, joined bool) {
+	if command[i] == '&' {
+		i++
+	}
+	op := command[i]
+	i++
+	for i < len(command) && (command[i] == '>' || command[i] == '<') {
+		i++
+	}
+	if op == '>' && i < len(command) && command[i] == '|' {
+		return i + 1, false
+	}
+	if i < len(command) && command[i] == '&' {
+		j := i + 1
+		for j < len(command) && (command[j] >= '0' && command[j] <= '9' || command[j] == '-') {
+			j++
+		}
+		if j > i+1 {
+			return j, true
+		}
+		// >& file sends both streams to it
+		return i + 1, false
+	}
+	return i, false
+}
+
+// isStreamNumber says a word is all digits: the stream a redirection right after it acts on (the 2 of 2>&1)
+func isStreamNumber(word string) bool {
+	if word == "" {
+		return false
+	}
+	for i := 0; i < len(word); i++ {
+		if word[i] < '0' || word[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

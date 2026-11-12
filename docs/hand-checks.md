@@ -13,6 +13,22 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) One RAM figure per agent on Windows: after installing a build from 8eb023f79, an agent's RAM in the
   Agent sidebar matches its row in the app bar's RAM popover (within a few MB; before, the sidebar read ~170 MB higher)
   and sits near Task Manager's Memory column for its processes (`pkg/resmon/sample_windows.go` privateWorkingSet).
+- [ ] (arcterm) The subagent card in Chat, on a build from 8c4050322: in a Claude agent's Chat (not bypassPermissions)
+  ask for a subagent → the card reads "Wants to start a subagent" with the call's description, type and model, the
+  agent reads waiting; Allow starts it and the agent reads working at once; Deny ends the turn. The terminal's own
+  dialog goes with either (`wshcmd-agenthook.go` permissionRaiseFor, `pkg/agentperm`).
+
+- [ ] (arcterm) Chat take-back and the Sending… caption, on a build from bd3a302a5: send a message to an idle Claude →
+  its bubble reads Sending… until it lands, never Queued with Send now (3c7de6e85). Send two while Claude works → both
+  read Queued; Esc (or ↑ in the empty box) → both come back into the box, one per line, the bubbles go, the turn runs
+  on and the terminal's own box is empty. Send one to an idle Claude and press Esc before it answers → the turn stops
+  and the text is back in the box. A pty probe saw the Esc half on Claude Code 2.1.322, never ↑ on a live queue
+  (`chattakeback.ts`, `chattakebackstore.ts`).
+
+- [ ] (arcterm) Heavy jobs in Auto on the 12-thread Windows PC, on a build from 921a1a485: with several agents running
+  `task check:ts`, the Jobs popover shows at most 2 running and the rest waiting with "CPU busy, 2 at a time"; a
+  council's experts still run side by side (`pkg/jobqueue` autoCap).
+
 - [ ] (arcterm) Jobslot never holds a command: after installing a build from 7835c75de, an agent's `ls` runs at once
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
   command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).

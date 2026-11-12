@@ -31,11 +31,11 @@ export function chipLabel(d: JobQueueData): string | null {
     return queued > 0 ? `${queued} queued` : null;
 }
 
-/** How the queue starts its jobs (pkg/jobqueue's Mode): `auto` (the default) starts each as RAM allows, `slots`
- * also counts them, `off` never waits. wavesrv sends one of the three. */
+/** How the queue starts its jobs (pkg/jobqueue's Mode): `auto` (the default) starts each as RAM and CPU allow (one
+ * heavy job per 6 CPU threads), `slots` counts them instead, `off` never waits. wavesrv sends one of the three. */
 function paceText(d: JobQueueData): string {
     if (d.mode === "auto") {
-        return "as RAM allows";
+        return "as RAM and CPU allow";
     }
     if (d.mode === "off") {
         return "queue off: each starts at once";

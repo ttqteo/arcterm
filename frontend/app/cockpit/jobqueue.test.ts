@@ -170,7 +170,7 @@ describe("jobqueue", () => {
     it("words the chip's tooltip in Auto and Off", () => {
         const jobs = [job({ running: true }), job({ id: "j2" })];
         expect(queueTitle({ slots: 1, mode: "auto", jobs })).toBe(
-            "Heavy jobs: 1 running, 1 queued (as RAM allows; set in the popover)"
+            "Heavy jobs: 1 running, 1 queued (as RAM and CPU allow; set in the popover)"
         );
         expect(queueTitle({ slots: 1, mode: "off", jobs })).toBe(
             "Heavy jobs: 1 running, 1 queued (queue off: each starts at once; set in the popover)"

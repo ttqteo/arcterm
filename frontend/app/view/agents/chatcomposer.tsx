@@ -25,7 +25,7 @@
 // answers like the part of a textarea they use.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { microFade, MOTION, turnTransition } from "@/app/element/motiontokens";
+import { MOTION, turnTransition } from "@/app/element/motiontokens";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -45,15 +45,25 @@ import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
-import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
+import { ChatFooter, Fold } from "./chatfooter";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
-import { localCommand, type LocalRoute } from "./chatlocal";
+import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
-import { holdLine, isSendNowKey, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
-import { addPending, dropPending, noteSent, sentHistory, setHeldSend, useHeldSend } from "./chatpendingstore";
+import { holdLine, isSendNowKey, pendingStill, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
+import {
+    addPending,
+    dropPending,
+    getPending,
+    noteSent,
+    sentHistory,
+    setHeldSend,
+    useHeldSend,
+} from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
+import { mergeTaken, takeBackPlan } from "./chattakeback";
+import { takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot, recentMentionPaths } from "./launchermention";
@@ -124,7 +134,7 @@ export function ChatComposer({
     /** the box's state (chatboxstate.ts) whenever it changes, and once as the box mounts: the pane words the empty box's
      *  placeholder from it */
     onBoxState?: (state: BoxState) => void;
-    /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
+    /** the running agent's "Show the diff" icon; left out, the icon is not drawn */
     onShowDiff?: () => void;
     /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
      *  every command is sent. */
@@ -200,6 +210,18 @@ export function ChatComposer({
         off: recalled.current.at != null && text === recalled.current.shown,
         look: "frosted",
         frame: boxRef,
+        // the box answers /usage, /context… itself only when Chat takes local commands, and a pick of one runs it at once:
+        // it goes through the one send path, as Enter on the typed command would
+        inChat: onLocal != null ? answersInChat : undefined,
+        onRun: (name) => {
+            const typed = `/${name}`;
+            if (typed === text) {
+                submitRef.current();
+                return;
+            }
+            submitNext.current = true;
+            setTextAt(typed);
+        },
     });
     const cwd = block?.meta?.["cmd:cwd"];
     // Bash mode's ghost text (as Claude Code's TUI has it): the newest `!` command from its history that starts with what
@@ -375,7 +397,7 @@ export function ChatComposer({
                 // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
                 // pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
-                    addPending(agent.id, sent, entries);
+                    addPending(agent.id, sent, entries, agent.state !== "idle");
                 }
                 flipIfTui(sent);
                 for (const a of att.attachments) {
@@ -448,6 +470,10 @@ export function ChatComposer({
         ) {
             return false;
         }
+        // ↑ in an empty box takes back the messages queued in Claude Code first, as ↑ in its own box does
+        if (dir === "up" && text === "" && takeBackKey("ArrowUp")) {
+            return true;
+        }
         const r = recalled.current;
         const empty = text === "";
         const editing = r.at != null && text === r.shown;
@@ -470,6 +496,29 @@ export function ChatComposer({
         const next = recall(history, r.at, dir);
         recalled.current = { at: next.at, shown: next.text };
         setTextAt(next.text);
+        return true;
+    };
+    // Esc, or ↑ in an empty box: a message Claude has not taken or answered yet comes back into the box
+    // (chattakeback.ts), put ahead of what the box holds. False when there is none: the key keeps its old job
+    const takeBackKey = (key: "Escape" | "ArrowUp"): boolean => {
+        const blockid = agent.blockId;
+        if (blockid == null || asleep) {
+            return false;
+        }
+        const plan = takeBackPlan(
+            key,
+            pendingStill(getPending(agent.id), entries ?? [], Date.now()),
+            entries,
+            agent.state
+        );
+        if (plan == null) {
+            return false;
+        }
+        fireAndForget(async () => {
+            await takeBack(agent.id, blockid, plan, (texts) => {
+                latest.current.setText(mergeTaken(texts, latest.current.text), texts.join("\n").length);
+            });
+        });
         return true;
     };
     const stop = () => {
@@ -794,9 +843,12 @@ export function ChatComposer({
                                 e.preventDefault();
                                 submit();
                             } else if (e.key === "Escape") {
-                                // the box lets go of the keys; Stop is its own button, so a stray Esc never interrupts the agent
+                                // a message Claude has not taken or answered yet comes back into the box; else the box
+                                // lets go of the keys: Stop is its own button, so a stray Esc never stops a turn under way
                                 e.preventDefault();
-                                e.currentTarget.blur();
+                                if (!takeBackKey("Escape")) {
+                                    e.currentTarget.blur();
+                                }
                             }
                         }}
                     />
@@ -804,12 +856,6 @@ export function ChatComposer({
                 {slash.list}
                 {bashList.list}
                 {mention.list}
-                {/* a running agent: the two things Chat can show for it, as chips (the diff of what it is changing, its terminal) */}
-                <AnimatePresence initial={false}>
-                    {showStop ? (
-                        <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
-                    ) : null}
-                </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
                 <MotionConfig reducedMotion="user">
                     <div className="flex items-center gap-1.5">
@@ -841,6 +887,22 @@ export function ChatComposer({
                         </AnimatePresence>
                         {/* takes the row's free width, so Stop and Send stay at the far right */}
                         <ChatFooter agent={agent} />
+                        {/* a running agent: the two things Chat can show for it (the diff of what it is changing, its
+                            terminal), as icons beside Stop, so the box grows no row for them */}
+                        <AnimatePresence initial={false}>
+                            {showStop && onShowDiff != null ? (
+                                <Fold key="diff">
+                                    <ActionIcon icon={FileDiff} label="Show the diff" onClick={onShowDiff} />
+                                </Fold>
+                            ) : null}
+                        </AnimatePresence>
+                        <AnimatePresence initial={false}>
+                            {showStop ? (
+                                <Fold key="terminal">
+                                    <ActionIcon icon={Terminal} label="Open the terminal" onClick={showTerminal} />
+                                </Fold>
+                            ) : null}
+                        </AnimatePresence>
                         {/* the round Stop where Send is while the agent works; Send folds out beside it with nothing to send */}
                         <AnimatePresence initial={false}>
                             {showStop ? (
@@ -931,28 +993,19 @@ export function ChatComposer({
     );
 }
 
-// The running agent's suggested actions: what Chat already offers, as chips (no new commands). They fade in on the micro
-// ease; the box's own height spring makes room for them.
-function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal: () => void }) {
-    const part = usePartMotion(microFade);
-    return (
-        <motion.div {...part} className="flex flex-wrap items-center gap-1.5">
-            {onShowDiff != null ? <ActionChip icon={FileDiff} label="Show the diff" onClick={onShowDiff} /> : null}
-            <ActionChip icon={Terminal} label="Open the terminal" onClick={onOpenTerminal} />
-        </motion.div>
-    );
-}
-
-function ActionChip({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+// One of the running agent's actions (what Chat already offers, no new commands): a bare icon the size of the `+`, its
+// name in the tooltip
+function ActionIcon({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
     return (
         <button
             type="button"
-            data-chat-action-chip=""
+            data-chat-action=""
+            aria-label={label}
+            title={label}
             onClick={onClick}
-            className="flex h-[28px] cursor-pointer items-center gap-1.5 rounded-full border border-edge-mid bg-surface px-[11px] text-[12.5px] text-secondary transition-colors hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className="flex size-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
         >
-            <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" />
-            {label}
+            <Icon size={15} strokeWidth={1.8} aria-hidden />
         </button>
     );
 }

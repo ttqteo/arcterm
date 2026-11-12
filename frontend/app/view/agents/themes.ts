@@ -90,21 +90,24 @@ export const THEMES: ThemeDef[] = [
     {
         id: "graphite",
         name: "Graphite",
-        // Neutral greys after Antigravity's agent manager: regions separated by tone, not lines. muted and inkFaint
-        // are lifted above Antigravity's #6e6e6e to the DESIGN.md contrast floor.
+        // Neutral greys after Antigravity's agent manager (re-measured 2026-11-12): regions separated by tone, not
+        // lines; #111 canvas, #171717 sidebar, #1c1c1c composer, code cells a raised #1a1a1a card above the canvas
+        // rather than an inset well, and near-white #ebebeb text. surfaceSelected stays a step above its #262626 so a
+        // selected row still parts from a hovered one, and muted and inkFaint are lifted above Antigravity's #6e6e6e
+        // to the DESIGN.md contrast floor.
         palette: {
-            bg: "#101010",
-            surface: "#161616",
+            bg: "#111111",
+            surface: "#171717",
             surfaceRaised: "#1c1c1c",
             surfaceHover: "#252525",
             surfaceSelected: "#2d2d2d",
-            code: "#0c0c0c",
-            border: "#1f1f1f",
+            code: "#1a1a1a",
+            border: "#232323",
             edgeMid: "#2a2a2a",
             edgeStrong: "#3d3d3d",
             edgeFaint: "#1a1a1a",
-            text: "#d6d6d6",
-            secondary: "#cccccc",
+            text: "#ebebeb",
+            secondary: "#bdbdbd",
             muted: "#8e8e8e",
             inkFaint: "#666666",
             accent: "#5e9cff",

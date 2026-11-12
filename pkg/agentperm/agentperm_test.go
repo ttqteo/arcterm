@@ -80,12 +80,13 @@ func TestSummaryIgnoresANullInput(t *testing.T) {
 }
 
 func TestAnswerableTable(t *testing.T) {
-	for _, name := range []string{"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"} {
+	// Agent and Task (its old name): the subagent dialog arcterm's gate hook raises is the plain Yes/No one
+	for _, name := range []string{"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Task"} {
 		if !Answerable(name) {
 			t.Errorf("Answerable(%q) = false, want true", name)
 		}
 	}
-	for _, name := range []string{"ExitPlanMode", "Read", "mcp__x__y", "AskUserQuestion", "Task", "bash", ""} {
+	for _, name := range []string{"ExitPlanMode", "Read", "mcp__x__y", "AskUserQuestion", "bash", ""} {
 		if Answerable(name) {
 			t.Errorf("Answerable(%q) = true, want false", name)
 		}
@@ -103,6 +104,11 @@ func TestSummaryByTool(t *testing.T) {
 		{"NotebookEdit", `{"notebook_path":"/a/n.ipynb","new_source":"x"}`, "/a/n.ipynb"},
 		{"WebFetch", `{"url":"https://example.com/x","prompt":"p"}`, "https://example.com/x"},
 		{"WebSearch", `{"query":"go generics"}`, "go generics"},
+		// a subagent: what it is for, its type and model; never its prompt, which runs to pages
+		{"Agent", `{"description":"Claude Code queued message keys","subagent_type":"claude-code-guide","prompt":"long"}`, "Claude Code queued message keys (claude-code-guide)"},
+		{"Agent", `{"description":"Scan the docs","subagent_type":"Explore","model":"haiku","prompt":"p"}`, "Scan the docs (Explore on haiku)"},
+		{"Task", `{"description":"Find the call sites","prompt":"p"}`, "Find the call sites (general-purpose)"},
+		{"Agent", `{"prompt":"p"}`, `Agent {"prompt":"p"}`},
 		// a missing field falls back to the tool and its input
 		{"Bash", `{}`, `Bash {}`},
 		{"Edit", `{"old_string":"x"}`, `Edit {"old_string":"x"}`},

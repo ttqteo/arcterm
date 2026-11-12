@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -26,6 +27,9 @@ import (
 const (
 	DefaultSlots = 1
 	MaxSlots     = 4
+	// CPUsPerJob is how many CPUs ModeAuto gives each heavy job: a typecheck, a build or a test suite takes several
+	// cores and the disk, so 3-4 at once on a 12-thread machine saturated it while the RAM still fit (2026-11-11)
+	CPUsPerJob = 6
 	// RampUp is how long a started job counts its whole peak against the free RAM: one just started has not
 	// reached its peak, so the reading still shows that RAM as free.
 	RampUp = 60 * time.Second
@@ -73,7 +77,14 @@ const (
 	ReasonPressureCritical = "memory pressure critical"
 	// an e2e or smoke run waits on another (memgate.Solo): two at once saturate the CPU while the RAM still fits
 	ReasonBrowserRunBusy = "an e2e or smoke run is running"
+	// ModeAuto's CPU cap is full (autoCap), "CPU busy, 2 at a time"
+	reasonCPUBusy = "CPU busy, %d at a time"
 )
+
+// autoCap is how many heavy jobs ModeAuto runs at once on cpus CPUs: one per CPUsPerJob, and always one.
+func autoCap(cpus int) int {
+	return max(1, cpus/CPUsPerJob)
+}
 
 // PressureFromLevel reads macOS's kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical.
 func PressureFromLevel(level uint32) Pressure {
@@ -135,6 +146,9 @@ type Request struct {
 	Name   string // memgate's job name, or the engine step
 	Bytes  uint64 // rough RAM peak
 	Engine bool   // an engine step: no Skip, never reclaimed
+	// NoCPU is a call that waits on the network, not the CPU (a council expert's claude -p): Auto's CPU cap neither
+	// counts it nor holds it
+	NoCPU  bool
 	Source Source
 }
 
@@ -177,6 +191,8 @@ type Config struct {
 	Available func(context.Context) (uint64, error)
 	OnChange  func(Snapshot) // when the snapshot differs from the last one handed out, outside the lock
 	Now       func() time.Time
+	// CPUs is the machine's CPU count, which caps ModeAuto (autoCap); nil reads runtime.NumCPU
+	CPUs func() int
 }
 
 // Slot is a started job's hold on the queue.
@@ -252,18 +268,22 @@ func clampSlots(n int) int {
 }
 
 // plan picks the queued jobs that start now, in queue order: a forced job always, and every job in ModeOff;
-// otherwise the head while fewer than slots run (in ModeSlots) and the RAM allows it. With a pressure reading
+// otherwise the head while fewer than slots run (in ModeSlots), or fewer than autoCap(cpus) heavy jobs that take the
+// CPU (in ModeAuto: a NoCPU call neither counts nor waits on it), and the RAM allows it. With a pressure reading
 // that is the pressure: normal starts it, beside a job still ramping up only when the free RAM fits both (the
 // pressure has not seen that job's peak yet); warn and critical only once no job runs. With none it is the free
 // RAM less the peaks of jobs still ramping up, which must fit its peak. It stops at the first job that cannot
 // start, and returns why the rest wait.
-func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
-	running, rampingJobs := 0, 0
+func plan(jobs []Job, slots, cpus int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
+	running, rampingJobs, cpuJobs := 0, 0, 0
 	soloRunning := false
 	var ramping uint64
 	for _, j := range jobs {
 		if j.Running {
 			running++
+			if !j.NoCPU {
+				cpuJobs++
+			}
 			soloRunning = soloRunning || memgate.Solo(j.Name)
 			if now.Sub(j.StartedAt) < RampUp {
 				ramping += j.Bytes
@@ -281,6 +301,9 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 		if j.Forced || mode == ModeOff {
 			start = append(start, j.Id)
 			running++
+			if !j.NoCPU {
+				cpuJobs++
+			}
 			rampingJobs++
 			free = sub(free, j.Bytes)
 			soloRunning = soloRunning || memgate.Solo(j.Name)
@@ -292,6 +315,8 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 		switch {
 		case mode == ModeSlots && running >= slots:
 			reason = "slot busy"
+		case mode == ModeAuto && !j.NoCPU && cpuJobs >= autoCap(cpus):
+			reason = fmt.Sprintf(reasonCPUBusy, autoCap(cpus))
 		case soloRunning && memgate.Solo(j.Name):
 			reason = ReasonBrowserRunBusy
 		// critical still starts one once nothing runs: holding every job left agents waiting with no end in sight,
@@ -306,6 +331,9 @@ func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressur
 		default:
 			start = append(start, j.Id)
 			running++
+			if !j.NoCPU {
+				cpuJobs++
+			}
 			rampingJobs++
 			free = sub(free, j.Bytes)
 			soloRunning = soloRunning || memgate.Solo(j.Name)
@@ -383,7 +411,7 @@ func (q *Queue) evaluate(ctx context.Context) {
 	if !q.pausedUntil(now).IsZero() {
 		mode = ModeOff
 	}
-	start, reason := plan(jobs, clampSlots(q.cfg.Slots()), mode, available, pressure, now)
+	start, reason := plan(jobs, clampSlots(q.cfg.Slots()), q.cpus(), mode, available, pressure, now)
 	for _, id := range start {
 		for _, e := range q.entries {
 			if e.Id == id {
@@ -433,6 +461,14 @@ func (q *Queue) evaluate(ctx context.Context) {
 		q.lastSnap = snap
 		q.cfg.OnChange(snap)
 	}
+}
+
+// cpus is the CPU count Auto's cap reads
+func (q *Queue) cpus() int {
+	if q.cfg.CPUs != nil {
+		return q.cfg.CPUs()
+	}
+	return runtime.NumCPU()
 }
 
 func (q *Queue) remove(e *entry) {

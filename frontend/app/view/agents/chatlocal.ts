@@ -29,17 +29,21 @@ const ROUTES: Record<string, LocalPanel | "diff"> = {
     diff: "diff",
 };
 
+/** Pure: whether Chat answers the bare command `name` (no slash) itself, with a card or the Diff surface: the `/` menu
+ *  lists these first, as In Chat. */
+export function answersInChat(name: string): boolean {
+    return Object.prototype.hasOwnProperty.call(ROUTES, name);
+}
+
 /** Pure: what Chat does with `text` instead of sending it, or null to send it: only a bare command (no argument, an
  *  argument is Claude Code's to read). */
 export function localCommand(text: string): LocalRoute | null {
     const found = /^\/([a-z-]+)$/u.exec(text.trim());
-    if (found == null) {
+    // own keys only: `/constructor` names no route
+    if (found == null || !answersInChat(found[1])) {
         return null;
     }
     const to = ROUTES[found[1]];
-    if (to == null) {
-        return null;
-    }
     const command = `/${found[1]}`;
     return to === "diff" ? { open: "diff", command } : { panel: to, command };
 }
