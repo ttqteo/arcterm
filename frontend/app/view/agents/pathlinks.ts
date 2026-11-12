@@ -45,15 +45,16 @@ const EXTENSIONLESS_NAMES = new Set([
     "CODEOWNERS",
 ]);
 // Claude Code shortens a long path in the middle with an ellipsis ("…\servic…\QueryTest.java"), so what touches one
-// names no file
+// names no file. After a token, only an ellipsis that a separator follows is a shortened middle ("servic…\", "a/…/b"):
+// a path that just ends in one ("Editing src/b.ts…") still links, as ours always did
 const BEFORE_ELISION_RE = /…[\\/]?$/;
-const AFTER_ELISION_RE = /^[\\/]?…/;
+const AFTER_ELISION_RE = /^[\\/]?…[\\/]/;
 
-// the token at [start, end) runs straight into an ellipsis, with at most a separator between ("servic…\a.java", "a/…/b")
+// the token at [start, end) runs into a shortened middle, with at most a separator between ("servic…\a.java", "a/…/b")
 function touchesElision(text: string, start: number, end: number): boolean {
     return (
         BEFORE_ELISION_RE.test(text.slice(Math.max(0, start - 2), start)) ||
-        AFTER_ELISION_RE.test(text.slice(end, end + 2))
+        AFTER_ELISION_RE.test(text.slice(end, end + 3))
     );
 }
 
