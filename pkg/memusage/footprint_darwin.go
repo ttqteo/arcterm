@@ -28,6 +28,11 @@ func footprint(pid int32) (uint64, bool) {
 	return uint64(ri.ri_phys_footprint), ok
 }
 
+// jobFootprint is the same physical footprint: a job's peak should count what macOS compressed or swapped too.
+func jobFootprint(pid int32) (uint64, bool) {
+	return footprint(pid)
+}
+
 // resident is the resident set: what the process holds in RAM now, leaving out what macOS compressed or swapped.
 func resident(pid int32) (uint64, bool) {
 	ri, ok := rusage(pid)
