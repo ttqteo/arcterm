@@ -128,22 +128,44 @@ describe("buildConsumers", () => {
         expect(view.groups[0].rows[0].spendUsd).toBeUndefined();
     });
 
-    it("groups a run's workers under their run and orders groups by their heaviest row", () => {
+    it("groups a run's lead and workers under their run, after the agents you opened however heavy", () => {
         const dag = { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" };
         const view = buildConsumers(
             reading([
                 agent("mine", { rambytes: 300 * MB }),
                 agent("w1", { rambytes: 2.5 * GB, dag }),
                 agent("w2", { rambytes: 200 * MB, dag: { ...dag, taskid: "t-4" } }),
+                agent("lead", { rambytes: 400 * MB }),
             ]),
-            [vm("mine"), vm("w1"), vm("w2")],
+            [vm("mine"), vm("w1", { runId: "child" }), vm("w2"), vm("lead", { state: "idle", runId: "85548d0b-aaaa" })],
             "ram"
         );
+        // the headless group of your agents leads, so none of them reads as one of the run's
         expect(view.groups.map((g) => [g.key, g.label])).toEqual([
-            ["85548d0b-aaaa", "Run 85548d0b"],
             ["agents", undefined],
+            ["85548d0b-aaaa", "Run 85548d0b"],
         ]);
-        expect(ids(view.groups[0].rows)).toEqual(["w1", "w2"]);
+        expect(ids(view.groups[1].rows)).toEqual(["w1", "lead", "w2"]);
+        expect(view.groups[0].run).toBeUndefined();
+        expect(view.groups[1].run).toMatchObject({ ramBytes: 2.5 * GB + 600 * MB, working: 2 });
+    });
+
+    it("ranks runs by their sums and sums only what was read", () => {
+        const a = { channelid: "ch", runid: "aaaaaaaa-1", taskid: "t" };
+        const b = { channelid: "ch", runid: "bbbbbbbb-1", taskid: "t" };
+        const view = buildConsumers(
+            reading([
+                agent("a1", { rambytes: 1 * GB, dag: a }),
+                agent("b1", { rambytes: 800 * MB, dag: b }),
+                agent("b2", { rambytes: 800 * MB, dag: b, tokensread: false }),
+            ]),
+            [vm("a1"), vm("b1"), vm("b2")],
+            "ram"
+        );
+        expect(view.groups.map((g) => g.key)).toEqual(["bbbbbbbb-1", "aaaaaaaa-1"]);
+        expect(view.groups[0].run?.ramBytes).toBe(1600 * MB);
+        expect(view.groups[0].run?.tokens).toBe(0); // b1 read no buckets; b2's transcript was not read
+        expect(view.groups[1].run?.cpu).toBeUndefined(); // no Resource Manager snapshot
     });
 
     it("offers → Sonnet only to Claude on Opus", () => {
@@ -399,6 +421,15 @@ describe("holdOrder", () => {
         );
         expect(order(next)).toEqual(["b", "c", "w1"]);
         expect(next.order).toEqual(["b", "c", "w1"]);
+    });
+
+    it("keeps the agents you opened first when the first of them starts while the panel is open", () => {
+        const opened = holdOrder(buildConsumers(reading([agent("w1", { dag })]), roster, "ram"), null);
+        const next = holdOrder(
+            buildConsumers(reading([agent("w1", { dag }), agent("a")]), roster, "ram"),
+            opened.order
+        );
+        expect(next.view.groups.map((g) => g.key)).toEqual(["agents", "85548d0b-aaaa"]);
     });
 });
 

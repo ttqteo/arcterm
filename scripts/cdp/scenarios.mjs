@@ -41045,6 +41045,9 @@ const consumersResmon = (ready) => ({
 const consumersCells = (sel) =>
     `Object.fromEntries([...document.querySelectorAll("[data-consumer-row]")].map((r) => [r.dataset.consumerRow, r.querySelector(${JSON.stringify(sel)})?.textContent.trim() ?? null]))`;
 const consumersRowExpr = (id) => `document.querySelector('[data-consumer-row="${id}"]')`;
+// the run's folded row; the panel opens with it folded, so the worker's row needs the chevron first
+const CONSUMERS_RUN = `document.querySelector('[data-consumers-run="85548d0b-fx"]')`;
+const CONSUMERS_OPEN_RUN = `(() => { const t = ${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]"); if (t?.getAttribute("aria-expanded") === "false") t.click(); })()`;
 const consumersDialogExpr = (text) =>
     `[...document.querySelectorAll('[role="dialog"]')].find((d) => !d.matches("[data-consumers-panel]") && d.textContent.includes(${JSON.stringify(text)}))`;
 const consumersToastExpr = (...parts) =>
@@ -41141,26 +41144,45 @@ const consumersPopover = {
         );
 
         await consumersMode(h, "reading");
-        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 4`, 5000);
+        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 3 && !!${CONSUMERS_RUN}`, 5000);
+        const panelRows = `[...document.querySelectorAll("[data-consumers-panel] [data-consumer-row]")].map((r) => r.dataset.consumerRow)`;
         const ram = await h.ev(`(() => {
             const p = document.querySelector("[data-consumers-panel]");
             if (!p) return null;
+            const run = ${CONSUMERS_RUN};
             return {
-                rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
+                rows: ${panelRows},
                 header: p.querySelector("[data-consumers-header]")?.textContent ?? "",
                 inRam: p.querySelector("[data-consumers-in-ram]")?.textContent ?? "",
-                runLabel: p.textContent.toLowerCase().includes("run 85548d0b"),
+                run: run?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                runAfterMine: !!run && !!(${consumersRowExpr("fx-consumers-mine")}?.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING),
                 ramCols: p.querySelectorAll("[data-consumer-ram]").length,
                 tokenCols: p.querySelectorAll("[data-consumer-tokens]").length,
             };
         })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "3. rows by RAM: the run's worker first under its run, free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
-            !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
+            "3. rows by RAM: the agents you opened first, then the run folded into one row of its sums (its 2.5 GB worker hidden), free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
+            !!ram && JSON.stringify(ram.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId]) &&
+                /^Run 85548d0b ?1 agent · 1 working ?2\.5 GB/.test(ram.run ?? "") && ram.runAfterMine &&
                 ram.header.includes("free of") && ram.header.includes("4.5 GB swap") && ram.header.includes("5h quota 62%") &&
-                /^arcterm 1\.9 GB in RAM · [\d.]+ GB with swap$/.test(ram.inRam) && ram.ramCols === 4 && ram.tokenCols === 4,
+                /^arcterm 1\.9 GB in RAM · [\d.]+ GB with swap$/.test(ram.inRam) && ram.ramCols === 3 && ram.tokenCols === 3,
             JSON.stringify(ram)
+        );
+
+        await h.ev(CONSUMERS_OPEN_RUN);
+        await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 2000);
+        const opened3 = await h.ev(`({
+            rows: ${panelRows},
+            inRun: !!${consumersRowExpr("fx-consumers-worker")}?.closest("[data-consumers-run-rows]"),
+            expanded: ${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]")?.getAttribute("aria-expanded"),
+        })`);
+        await h.shot("cdp-shots/consumers-run-open.png");
+        rec(
+            "3b. the run's chevron opens it onto its worker, set in under the run row",
+            JSON.stringify(opened3.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId, "fx-consumers-worker"]) &&
+                opened3.inRun && opened3.expanded === "true",
+            JSON.stringify(opened3)
         );
 
         const own = await h.ev(`[...document.querySelectorAll("[data-consumers-own]")].map((o) => [o.dataset.consumersOwn, o.textContent])`);
@@ -41356,6 +41378,8 @@ const consumersPopover = {
         // a real Escape over a confirm closes the confirm alone: the panel stays and the stop is not sent
         const stopsBefore = (await calls()).filter((c) => c.command === "dagaction").length;
         const reopened3 = await openFromChip();
+        await polishWaitFor(h, `!!${CONSUMERS_RUN}`, 5000);
+        await h.ev(CONSUMERS_OPEN_RUN);
         await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 5000);
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
         const escConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
@@ -41381,6 +41405,8 @@ const consumersPopover = {
         await h.ev(`window.__resmonFixture?.set(${JSON.stringify(consumersResmon(false))})`);
         await settle(200);
         const compactUp = await openFromChip();
+        await polishWaitFor(h, `!!${CONSUMERS_RUN}`, 3000);
+        await h.ev(CONSUMERS_OPEN_RUN);
         await polishWaitFor(h, `!!document.querySelector("[data-consumers-arc]") && !!document.querySelector("[data-consumer-command]")`, 3000);
         await settle(400);
         const first = await h.ev(`({
@@ -41481,16 +41507,17 @@ const CP_READING = {
     ],
 };
 
-// swaps the app's own WorkspaceService.CloseTab (the instance agentactions.ts imports) for one that records the tab
+// swaps the app's own WorkspaceService.CloseTab (the instance closetab.ts, which every close goes through, imports) for
+// one that records the tab
 async function installClosePickedMock(h) {
     const resolved = await ahResolveModules(h);
     if (resolved.error) return `unresolved: ${resolved.error}`;
     return h.ev(`(async () => {
         if (window.${CP_CLOSE_KEY}) return "already-installed";
-        const from = new URL("../view/agents/agentactions.ts", ${JSON.stringify(resolved.urls.store)}).href;
+        const from = new URL("../view/agents/closetab.ts", ${JSON.stringify(resolved.urls.store)}).href;
         const src = await (await fetch(from)).text();
         const m = src.match(/["']([^"'\\s]*\\/store\\/services\\.ts(?:\\?[^"'\\s]*)?)["']/);
-        if (!m) return "agentactions.ts does not import services.ts";
+        if (!m) return "closetab.ts does not import services.ts";
         const svc = (await import(new URL(m[1], from).href)).WorkspaceService;
         if (!svc) return "no WorkspaceService";
         const state = { svc, calls: [] };
@@ -41551,7 +41578,12 @@ const consumersClosePicked = {
 
         const chipReady = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
         await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
-        const rows = await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 6`, 5000);
+        // the worker sits folded in its run's row
+        const rows = await polishWaitFor(
+            h,
+            `document.querySelectorAll("[data-consumer-row]").length === 5 && !!document.querySelector('[data-consumers-run="77aa11bb-fx"]')`,
+            5000
+        );
         const rest = await h.ev(`({
             ticks: [...document.querySelectorAll("[data-consumer-pick]")].map((t) => t.dataset.consumerPick),
             shown: [...document.querySelectorAll("[data-consumer-pick]")].filter((t) => t.getClientRects().length > 0).length,
