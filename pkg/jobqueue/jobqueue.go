@@ -531,13 +531,20 @@ func (q *Queue) snapshotLocked() Snapshot {
 }
 
 // NoteBypass records an agent command that ran without a slot because its `wsh jobslot` stopped waiting before the
-// queue answered. The Jobs popover shows the count, so a queue too slow to answer is seen, not only logged.
-func (q *Queue) NoteBypass(name string, src Source) {
+// queue answered, or could not reach wavesrv at all (then at is when it ran, reported by a later wsh; zero is now).
+// The Jobs popover shows the count, so a queue too slow to answer is seen, not only logged.
+func (q *Queue) NoteBypass(name string, src Source, at time.Time) {
+	if at.IsZero() {
+		at = q.cfg.Now()
+	}
 	q.mu.Lock()
 	q.bypassed++
-	q.last = Bypass{Name: name, Source: src, At: q.cfg.Now()}
+	if !at.Before(q.last.At) {
+		q.last = Bypass{Name: name, Source: src, At: at}
+	}
 	q.mu.Unlock()
-	log.Printf("[jobqueue] %s (block %q) ran without a slot: wsh stopped waiting before the queue answered", name, src.BlockId)
+	log.Printf("[jobqueue] %s (block %q) ran without a slot at %s: wsh stopped waiting before the queue answered",
+		name, src.BlockId, at.Format("15:04:05"))
 	q.evaluate(context.Background())
 }
 

@@ -41,6 +41,9 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		yes, no := true, false
 		job, heavy := memgate.Classify(data.Command)
 		q := jobqueue.Default
+		if q != nil {
+			noteMissed(ctx, q, data.Missed)
+		}
 		if !heavy || job.LongRunning() || q == nil {
 			send(wshrpc.JobSlotUpdate{Run: &yes})
 			return
@@ -53,7 +56,7 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		}
 		if data.GiveUpTs > 0 && time.Now().UnixMilli() > data.GiveUpTs {
 			// read after the caller stopped waiting: its command already runs without a slot
-			q.NoteBypass(job.Name, src)
+			q.NoteBypass(job.Name, src, time.Time{})
 			return
 		}
 		slot, err := q.Acquire(ctx, jobqueue.Request{Name: job.Name, Bytes: job.Bytes, Source: src}, func(w jobqueue.Wait) {
@@ -92,6 +95,19 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		}
 	}()
 	return ch
+}
+
+// noteMissed counts the commands earlier wsh jobslots ran without a slot because they never reached wavesrv
+func noteMissed(ctx context.Context, q *jobqueue.Queue, missed []wshrpc.JobSlotMissed) {
+	for _, m := range missed {
+		src := jobqueue.Source{BlockId: m.BlockId}
+		if m.BlockId != "" {
+			if tabId, err := wstore.DBFindTabForBlockId(ctx, m.BlockId); err == nil {
+				src.TabId = tabId
+			}
+		}
+		q.NoteBypass(m.Name, src, time.UnixMilli(m.Ts))
+	}
 }
 
 // how a slot handed to a process watches it; tests swap both
