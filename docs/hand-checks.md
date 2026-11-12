@@ -21,6 +21,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   break after it; a `/command` and `! ls` go with no noticeable delay (a box the check cannot read waits up to 2 s).
   Before, "…cũng hay" sat in the box and went out with the next message as "…cũng hay\ncó", leaving two Sending…
   bubbles (`agentsubmit.ts` waitForEcho, `chattakeback.ts` boxShowsTyped).
+- [ ] (arcterm) Kael-sync behaviour reverted to ours (branch `fix/kael-revert-ours`, 2026-11-12; initiative "Kael
+  sync: reverted to ours"): Usage → By provider, 7-day window → the Daily chart starts at your first day of use;
+  Code, a Markdown file in Preview → `b` toggles Blame and stays in Preview; an agent writing "Editing src/x.ts…" →
+  Ctrl+click on the path opens it; Ctrl+P on Code, type `@` → paths, Alt+O → Symbols; a changed file opened as a diff
+  in the agent panel and Code's Diff mode still fill their pane (they are back on our layout; the Diff surface and the
+  peek card keep the fill one). Scenario `code-outline` checks the `@` / Alt+O split.
 - [ ] (arcterm) Kael-sync edge fixes (branch `fix/kael-sync-edges`, 2026-11-12), unit-tested only:
   on a Mac, Option+←/→ in Code's editor moves a word (Windows: Alt+←/→ there still goes back/forward);
   Code → Send review shows an asking agent greyed with "answer it first";

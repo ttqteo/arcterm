@@ -34,6 +34,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   until Claude Code's own title for it arrives.
 - Chat's jump-to-latest button now shows its shortcut (Ctrl+End) beside the ↓, not only in its tooltip.
 - A message you send in Chat now rises into the conversation from the box, instead of appearing there at once.
+- Back as before 1.0.7: Usage's By provider Daily chart starts at your first day of use again rather than padding
+  empty days back to the window's start (By work still spans the window); Blame (`b` or its button) in Preview or Diff
+  no longer switches the file to Source; a path just before an ellipsis ("Editing src/foo.ts…") is a link again; and
+  an `@` typed into Ctrl+P on Code searches paths again — Alt+O still opens the open file's symbols.
 
 ### Fixed
 
