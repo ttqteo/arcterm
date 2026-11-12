@@ -38,6 +38,23 @@ export function agentRamLabel(
     return bytes == null ? null : fmtMem(bytes);
 }
 
+/** A run's words for the RAM all its tabs hold (its lead, workers, reviewers and stage sessions): the sum of the
+ * figures the readings name, or null when they name none of them. A tab no reading names adds nothing. */
+export function runRamLabel(
+    blockIds: string[],
+    snap: ResMonSnapshotData | null,
+    consumers: CommandGetConsumersRtnData | null
+): string | null {
+    let sum: number | null = null;
+    for (const id of blockIds) {
+        const bytes = agentRamBytes(id, snap, consumers);
+        if (bytes != null) {
+            sum = (sum ?? 0) + bytes;
+        }
+    }
+    return sum == null ? null : fmtMem(sum);
+}
+
 /** Whether the rows need the Consumers reading polled: the field is on and the snapshot says the Resource Manager does
  * not run here. Before the first snapshot it is not known yet, so nothing polls. */
 export function needsConsumersPoll(ramOn: boolean, snap: ResMonSnapshotData | null): boolean {

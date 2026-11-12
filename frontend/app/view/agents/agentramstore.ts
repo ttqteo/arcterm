@@ -8,7 +8,7 @@
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { useEffect } from "react";
-import { agentRamLabel, needsConsumersPoll } from "./agentram";
+import { agentRamLabel, needsConsumersPoll, runRamLabel } from "./agentram";
 import { consumersReadingAtom, loadConsumers } from "./consumersstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
 
@@ -23,6 +23,20 @@ export function agentRamAtom(blockId: string | undefined): Atom<string | null> {
     if (a == null) {
         a = atom((get) => agentRamLabel(key, get(resmonSnapshotAtom), get(consumersReadingAtom).data));
         ramAtoms.set(key, a);
+    }
+    return a;
+}
+
+const runRamAtoms = new Map<string, Atom<string | null>>();
+
+/** The RAM words of a run's tabs together, by the terminals they hold (`blockKey`: their block ids joined by ","), or
+ * null while no reading names any of them. */
+export function runRamAtom(blockKey: string): Atom<string | null> {
+    let a = runRamAtoms.get(blockKey);
+    if (a == null) {
+        const ids = blockKey === "" ? [] : blockKey.split(",");
+        a = atom((get) => runRamLabel(ids, get(resmonSnapshotAtom), get(consumersReadingAtom).data));
+        runRamAtoms.set(blockKey, a);
     }
     return a;
 }
