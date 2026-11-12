@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) One RAM figure per agent on Windows: after installing a build from 8eb023f79, an agent's RAM in the
+  Agent sidebar matches its row in the app bar's RAM popover (within a few MB; before, the sidebar read ~170 MB higher)
+  and sits near Task Manager's Memory column for its processes (`pkg/resmon/sample_windows.go` privateWorkingSet).
 - [ ] (arcterm) Jobslot never holds a command: after installing a build from 7835c75de, an agent's `ls` runs at once
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
   command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).
