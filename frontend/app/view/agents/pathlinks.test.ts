@@ -224,7 +224,9 @@ describe("findPathCandidates: a path shortened with an ellipsis", () => {
     });
 
     it("keeps a path elsewhere on the line, and an ellipsis set apart from one", () => {
-        expect(names("Read src/a.ts … and src/b.ts…")).toEqual(["src/a.ts"]);
+        // ours: a path that just ends in an ellipsis is still a path
+        expect(names("Read src/a.ts … and src/b.ts…")).toEqual(["src/a.ts", "src/b.ts"]);
+        expect(names("Editing src/foo.ts…")).toEqual(["src/foo.ts"]);
         expect(names("… +12 lines (ctrl+o to expand) src/a.ts")).toEqual(["src/a.ts"]);
     });
 });
