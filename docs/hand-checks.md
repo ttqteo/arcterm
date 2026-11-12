@@ -6,6 +6,8 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm, Mac) A new canvas lights the Canvas tab: have a Claude agent draw a canvas (`arc:design`) and reveal it
+  while you stay on Chat; the agent header's Canvas tab shows its clay dot until you open it. `c8cd814d4`.
 - [ ] (arcterm, Mac) Inline code in Chat is lavender like the terminal's: open a Claude agent's Chat, find a reply
   with `code` in it (and one with a highlighted sentence holding code), and the code reads lavender on its faint pill,
   apart from the highlight's yellow ground, not gold. `0a83928dc`.
