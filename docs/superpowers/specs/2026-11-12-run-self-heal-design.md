@@ -18,24 +18,27 @@ Date: 2026-11-12. Trigger: run `1cad2fd0` (Kael sync small fixes) sat 2h30m at 1
 
 ## Decisions
 
-1. **A held wake has a deadline.** When wakes have been held for `LeadHungAfter` (30 min) and the lead's process
-   tree used no CPU over that time, the lead is hung: the engine treats it as `leadDiedLocked` with a "lead hung"
-   reason, which relaunches an autonomous run's lead and otherwise hands its questions to the person. A lead running
-   a long command uses CPU and is left alone.
+1. **A held wake has a deadline.** When wakes have been held for `LeadHungAfter` (30 min) while the lead was working
+   (not asking: a lead waiting on a person's answer is never counted) and the lead's process tree used no CPU over
+   that time, the lead is hung: the engine stops the hung lead's process (its tab stays) and treats it as
+   `leadDiedLocked` with a "lead hung" reason, which relaunches an autonomous run's lead and otherwise hands its
+   questions to the person. A lead running a long command uses CPU and is left alone; the clock restarts and it is
+   judged again one window later.
 2. **A worker's open question is recovered from its transcript.** The liveness pass, for a running or stalled dag task
    with no registered ask, reads the worker transcript with `AskOpen`; an open question is registered as the hook
    would have registered it, so it reaches the lead's `dag asks` and the digest shows `ask:`.
 3. **Plan commands run through Git's launcher bash.** A PATH hit in `<git>\usr\bin` resolves to `<git>\bin\bash.exe`
    when that exists. `term:gitbashpath` still wins.
 4. **The run row says what is stuck.** A working run with tasks in `stalled`, `verify-failed`, `review-failed`,
-   `blocked-merge` or `failed` reads `Working · 1/6 · 3 stuck`; the tooltip names each (`t-2 Verify failed`).
-5. **A worker whose task passed review may sleep.** `agentsleep` lets a run-owned worker sleep once its task is
-   `done`, `verifying` or `verify-failed`; its session stays resumable. Leads and workers of unfinished tasks stay
-   exempt.
+   `blocked-merge` or `failed` reads `Working · 1/6 · 3 stuck`; the tooltip names each in the words the task list
+   already uses (`FAILED_TEXT`, `frontend/app/view/agents/sessionsruns.ts:115`: `t-2 verify failed`).
+5. **A worker whose task passed review may sleep.** The automatic sleep loop lets a run-owned worker sleep once its
+   task is `done`, `verifying` or `verify-failed`; its session stays resumable. Leads and workers of unfinished tasks
+   stay exempt. A person's Sleep on a run agent is still refused (`sleepRefusal`): this decision is the loop only.
 6. **A resumed lead keeps its run context.** Root-caused by a test that pauses and resumes a lead and asks
    `JarvisCtx` from the lead's block.
 7. **A slow dag lock names its slow phase.** `scheduleLocked` times its phases; the slow-lock log line adds the three
-   longest. Re-measure on 2026-11-26 decides what to move out of the lock.
+   longest. Re-measure on 2026-11-26 decides what to move out of the lock (an initiative chunk due that day).
 8. **A worker waiting on its own background shell is busy.** The liveness pass counts a live background shell in
    the worker transcript (`agentsleep.BackgroundRunning`) as activity.
 
