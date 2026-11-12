@@ -6,6 +6,7 @@
 // chatpendingstore.ts; the views in chatpane.tsx and chatcomposer.tsx.
 
 import type { AgentEntry } from "./agentsviewmodel";
+import { stripResultLines } from "./chatinitiative";
 import { unwrapWholePaste } from "./chattagblocks";
 import { opensPanel } from "./slashcommands";
 
@@ -92,7 +93,9 @@ export function userTextCount(entries: AgentEntry[], text: string): number {
     const bash = bashCommand(text);
     let n = 0;
     for (const e of entries) {
-        if (e.kind === "user" && unwrapWholePaste(e.text).trim() === want) {
+        // the result lines Arc put in front of the message are no part of what the person wrote (stripResultLines also
+        // unwraps a whole paste, so a message that carried them is compared by its own text)
+        if (e.kind === "user" && unwrapWholePaste(stripResultLines(e.text)).trim() === want) {
             n++;
         } else if (e.kind === "command" && e.name === "!") {
             if (bash != null && flat(e.args ?? "") === bash) {

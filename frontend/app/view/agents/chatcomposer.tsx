@@ -47,6 +47,7 @@ import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
+import { putBackResultLines, takeResultLines } from "./chatinitiativestore";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
@@ -123,6 +124,7 @@ export function ChatComposer({
     onShowDiff,
     onLocal,
     onSendNow,
+    questionWaits,
 }: {
     agent: AgentVM;
     placeholder: string;
@@ -144,6 +146,9 @@ export function ChatComposer({
     /** a queued message's Send now, while one shows: Ctrl+Enter (Cmd+Enter on a Mac) in an empty box presses it. A box
      *  with text sends it as Enter does: the chord could reach the terminal before the text was typed in */
     onSendNow?: () => void;
+    /** a brainstorm question's card waits on an answer (chatbrainstormwire.ts boxPlaceholderOverride): what is typed is that
+     *  answer, which the card pairs with the transcript by exact text, so no initiative result line goes in front of it */
+    questionWaits?: boolean;
     /** extra data attributes on the box: the sleeping overlay keeps `data-sleeping-composer` there */
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
@@ -402,7 +407,16 @@ export function ChatComposer({
         }
         const sent = message;
         const riding = att.attachments.map((a) => a.id);
-        if (send()) {
+        // What became of the cards the person handled (chatinitiativestore.ts) goes in front of their next plain message
+        // only: a /command or /btw (a line before one breaks it), a `!` command, a wake send, and an answer typed while a
+        // brainstorm question waits (its record pairs with the transcript by exact text) leave the lines queued for the
+        // next one. `sent` and everything kept of it (recall, the pending bubble, onSent) stay the person's own text.
+        const lines = !asleep && !questionWaits && !bash && !sent.startsWith("/") ? takeResultLines(agent.id) : [];
+        const taken = send(lines);
+        if (!taken && lines.length > 0) {
+            putBackResultLines(agent.id, lines);
+        }
+        if (taken) {
             if (asleep) {
                 wakeSent.current = riding;
             }

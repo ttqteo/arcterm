@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
 import type { PendingMessage } from "./chatpending";
 import { boxHolds, boxShowsTyped, inputBoxRows, mergeTaken, takeBackPlan } from "./chattakeback";
 
@@ -38,6 +39,21 @@ describe("takeBackPlan", () => {
         });
         // its bubble already gone: the transcript's last entry is still that message
         expect(takeBackPlan("Escape", [], [said("done"), you("fix it")], "working")).toEqual({
+            kind: "interrupt",
+            ids: [],
+            texts: ["fix it"],
+        });
+    });
+    it("puts back only what the person wrote when the message carried initiative result lines (result line)", () => {
+        const sent = withResultLines(["initiative: added note to Auth (effort:ab12) › 2"], "fix it");
+        expect(takeBackPlan("Escape", [], [said("done"), you(sent)], "working")).toEqual({
+            kind: "interrupt",
+            ids: [],
+            texts: ["fix it"],
+        });
+        // Claude Code wraps a multi-line message whole as a paste
+        const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+        expect(takeBackPlan("Escape", [], [said("done"), you(wrapped)], "working")).toEqual({
             kind: "interrupt",
             ids: [],
             texts: ["fix it"],

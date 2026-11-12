@@ -2,6 +2,7 @@
 
 import { modelLabel } from "@/app/view/agents/session-models/sessionviewmodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
+import { stripResultLines } from "./chatinitiative";
 import { sessionIdFromTranscript } from "./launch";
 import { projectNameFromTranscriptPath } from "./projectname";
 
@@ -330,10 +331,11 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
         if (e.kind === "message") {
             items.push({ kind: "message", text: e.text, index: i });
         } else if (e.kind === "user") {
+            // the result lines Arc put in front of the message (chatinitiative.ts) are the agent's to read, never drawn: this
+            // is the one place the Chat bubble, the Terminal-side transcript and the narration take your text from
+            const text = stripResultLines(e.text);
             items.push(
-                e.images
-                    ? { kind: "user", text: e.text, images: e.images, index: i }
-                    : { kind: "user", text: e.text, index: i }
+                e.images ? { kind: "user", text, images: e.images, index: i } : { kind: "user", text, index: i }
             );
         } else if (e.kind === "command") {
             items.push({
@@ -385,8 +387,10 @@ export function burstRenderMode(o: {
 export function conversationText(entries: AgentEntry[]): string {
     const out: string[] = [];
     for (const e of entries) {
-        if (e.kind === "message" || e.kind === "user") {
+        if (e.kind === "message") {
             out.push(e.text);
+        } else if (e.kind === "user") {
+            out.push(stripResultLines(e.text));
         } else if (e.kind === "command") {
             const name = e.isSkill ? "/" + e.name : e.name;
             out.push(e.args ? `${name} ${e.args}` : name);
