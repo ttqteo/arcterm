@@ -8,7 +8,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
 
 - [ ] (arcterm) Chat's compaction summary collapses from inside: in a Chat that compacted, click the Compacted pill
   → the summary shows a Collapse button at its top right and at its end; the top one closes it, the end one closes it
-  and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider).
+  and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider). Since 2026-11-12 both
+  open and close animate on the spring (~0.35 s), its border and padding folding with it rather than snapping, and the
+  end button's scroll back is smooth.
+- [ ] (arcterm) A new session is named by its task while it starts: New agent with a task ("sao lag vậy") → during
+  "Starting Claude Code…" the agent header and the tree read the task's first line, not the project name; Claude Code's
+  ai-title replaces it once it reports (`agentsviewmodel.ts` launchTitle, `cockpit-actions.ts`).
+- [ ] (arcterm) A nested `claude -p` leaves its agent alone on Windows: from a Claude agent's Bash, run
+  `timeout 90 claude -p "say ok" --model haiku | cat` with a build carrying `agentobserve.nestedSession` → the agent
+  stays working under its own name and its Chat keeps its own conversation; before, it went idle under the nested
+  session's title and Chat showed that session.
 - [ ] (arcterm) Chat's tool fold lines up: open a "Worked for …" line in Chat → its caret sits centred over the step
   icons (spinner or tool icon) below it, and "Worked for" starts where the step names start (`chatstepsview.tsx`
   FoldCaret and the fold button's `px-1.5 gap-2`, matching StepLine).

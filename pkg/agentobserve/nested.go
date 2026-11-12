@@ -39,8 +39,26 @@ func (p procLink) isClaude() bool {
 // NestedSession reports whether the calling process (a hook, `wsh agentctl`) belongs to a claude session that runs
 // inside another claude session. A session the daemon hosts is not nested: the claude processes above it are the
 // daemon's pty host and the daemon itself, which run no conversation.
+//
+// A print-mode claude (`claude -p`, which exports CLAUDE_CODE_ENTRYPOINT=sdk-cli to its hooks over the agent's cli)
+// counts as nested without the walk: it runs no session a person types into, so it is never the block's agent, and
+// on Windows the walk loses it. Under Git Bash a pipeline or `timeout` puts an MSYS fork stub between the nested
+// claude and the outer shell, and the stub has exited by the time a hook walks up, so the chain ends before it reaches
+// the agent's claude. A `timeout 150 claude --resume … --fork-session -p … | node` an agent ran reported into its
+// block that way: the agent read idle under the nested session's title, every tool hook of its own turn was dropped
+// as out of turn, and Chat showed the nested conversation with your message stuck at Sending… (2026-11-12).
 func NestedSession() bool {
-	return nestedIn(ancestors(int32(os.Getppid()), maxNestedAncestors))
+	return nestedSession(os.Getenv("CLAUDE_CODE_ENTRYPOINT"), func() []procLink {
+		return ancestors(int32(os.Getppid()), maxNestedAncestors)
+	})
+}
+
+// nestedSession is NestedSession over the caller's CLAUDE_CODE_ENTRYPOINT and a walk taken only when it is needed.
+func nestedSession(entrypoint string, chain func() []procLink) bool {
+	if IsHeadlessEntrypoint(entrypoint) {
+		return true
+	}
+	return nestedIn(chain())
 }
 
 // nestedIn is NestedSession over the chain of processes above the caller, nearest first.

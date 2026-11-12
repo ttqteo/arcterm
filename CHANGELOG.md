@@ -28,6 +28,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
   suggestion showing, Tab still completes the word under the caret.
+- A session you start with a task is named after that task while Claude Code starts, instead of the project name,
+  until Claude Code's own title for it arrives.
+
+### Fixed
+
+- An agent that runs `claude -p` from its own shell no longer gets stuck: Chat used to show the nested session, your
+  message stayed at Sending…, and the agent read idle under the wrong name while it kept working.
+- Collapsing a compaction summary in Chat now animates closed, as its other folds do, instead of snapping shut.
 
 ## 1.0.7 — 2026-11-12
 

@@ -18,7 +18,12 @@ import {
     type AsleepLaunch,
 } from "@/app/view/agents/agentsleep";
 import { submitToAgent } from "@/app/view/agents/agentsubmit";
-import { backgroundAttachCommand, type AgentVM, type PendingLaunch } from "@/app/view/agents/agentsviewmodel";
+import {
+    backgroundAttachCommand,
+    launchTitle,
+    type AgentVM,
+    type PendingLaunch,
+} from "@/app/view/agents/agentsviewmodel";
 import { backgroundAgentsAtom } from "@/app/view/agents/backgroundagentsstore";
 import { SESSION_BRAINSTORM } from "@/app/view/agents/brainstormstore";
 import { pendsAsBubble } from "@/app/view/agents/chatpending";
@@ -167,7 +172,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         const pending: PendingLaunch = {
             tabId,
             blockId,
-            name: opts.label || opts.projectName,
+            name: opts.label || launchTitle(opts.task) || opts.projectName,
             project: opts.projectName,
             ts: Date.now(),
             runtime: opts.runtime,
