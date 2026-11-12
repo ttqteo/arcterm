@@ -403,6 +403,15 @@ export function unmetDeps(dag: TaskGroup | undefined, task: TaskNode): string[] 
     return (task.deps ?? []).filter((d) => byId.get(d)?.state !== "done");
 }
 
+// the states a task ends up stuck in, in the words the task list and the run row both use
+export const FAILED_TEXT: Record<string, string> = {
+    failed: "failed",
+    stalled: "stalled",
+    "review-failed": "review failed",
+    "blocked-merge": "merge blocked",
+    "verify-failed": "verify failed",
+};
+
 // runProgress counts a run's finished tasks: done or skipped, out of every task in the plan.
 /** Pure: the run has ended, by its dag's status or, before a dag exists, its own. A run a human landed past a
  *  failed final stage has ended too: its dag stays blocked on that failure, but the run is done and in its base. */

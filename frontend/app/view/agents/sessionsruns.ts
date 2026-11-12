@@ -11,6 +11,7 @@ import type { Runtime } from "./launch";
 import {
     BRAINSTORM_JUDGE_ROLE,
     BUILDER_CHECK_ROLE,
+    FAILED_TEXT,
     planReviewerOf,
     runTitle,
     stageLabel,
@@ -112,14 +113,6 @@ export interface Status {
     key: StatusKey;
     text: string;
 }
-
-const FAILED_TEXT: Record<string, string> = {
-    failed: "failed",
-    stalled: "stalled",
-    "review-failed": "review failed",
-    "blocked-merge": "merge blocked",
-    "verify-failed": "verify failed",
-};
 
 export function taskNum(taskId: string): string {
     return taskId.replace(/^t-/, "");
