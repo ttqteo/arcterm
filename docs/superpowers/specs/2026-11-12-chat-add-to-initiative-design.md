@@ -195,6 +195,17 @@ holds), and a line in front of a slash command breaks the command.
 Chat's UI strings stay English, as the rest of Chat: `Add to initiative`, `Waiting on you`, `Change…`, `Add note`,
 `Edit`, `Dismiss`, `Note added`, `Dismissed`. The user's content (titles, labels, notes) shows as written.
 
+## Deviations
+
+Controls the build added that the boards do not show (builder decisions, recorded by the run's lead):
+
+- **Cancel in the editor of a card the agent proposed** (beside the verb and Dismiss). It is the only way back from
+  `Edit`: it closes the editor to the compact card the agent proposed and drops the edited draft. Without it, a person
+  who opened Edit to look could only add or dismiss. A card opened from a message keeps its own Cancel (§3: it goes,
+  leaving no row).
+- **`No topic` in the `Under` row**, shown once a topic is chosen. It is the only way to undo a topic choice and create
+  an initiative with no parent, which §6's row already words for (`under …` is left out with no topic).
+
 ## Testing
 
 - vitest for `chatinitiative.ts`: parsing (valid, broken JSON, unknown kind, missing text), the default target from

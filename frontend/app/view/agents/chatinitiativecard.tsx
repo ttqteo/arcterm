@@ -754,11 +754,11 @@ function LiveCard({ host, origin, cardKey, initial, onAdded, onDismiss, onCancel
                     </>
                 )}
             </div>
-            <blockquote
-                data-chat-initiative-quote
-                className="m-0 line-clamp-2 whitespace-pre-wrap rounded-[8px] bg-surface px-[12px] py-[8px] text-[13px] leading-[1.5] text-secondary"
-            >
-                {draft.text}
+            {/* the clamp sits on an unpadded inner box: on a padded one the clipped third line paints into the padding */}
+            <blockquote className="m-0 rounded-[8px] bg-surface px-[12px] py-[8px] text-[13px] leading-[1.5] text-secondary">
+                <div data-chat-initiative-quote className="line-clamp-2 whitespace-pre-wrap">
+                    {draft.text}
+                </div>
             </blockquote>
         </>
     );

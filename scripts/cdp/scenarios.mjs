@@ -47359,7 +47359,8 @@ const ciReadCard = (h, cardExpr) =>
             quote: quote?.textContent ?? null,
             clamp: quote ? getComputedStyle(quote).webkitLineClamp : null,
             clamped: quote ? quote.scrollHeight > quote.clientHeight : null,
-            sentence: quote?.previousElementSibling?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+            // the clamped quote sits in the padded blockquote, whose sibling is the sentence
+            sentence: quote?.closest("blockquote")?.previousElementSibling?.textContent.replace(/\\s+/g, " ").trim() ?? null,
             into: txt("[data-chat-initiative-into]"),
             chunk: txt("[data-chat-initiative-chunk]"),
             under: txt("[data-chat-initiative-under]"),
