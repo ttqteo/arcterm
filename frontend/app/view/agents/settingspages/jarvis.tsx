@@ -5,7 +5,14 @@
 // Cockpit office's animation, work hours and sound.
 
 import { getSettingsKeyAtom } from "@/app/store/global";
-import { PET_FORM_NAME, petForm, type PetForm } from "@/app/view/jarvis/hologrammodel";
+import {
+    HOLOGRAM_SIZE_NAME,
+    hologramSize,
+    PET_FORM_NAME,
+    petForm,
+    type HologramSize,
+    type PetForm,
+} from "@/app/view/jarvis/hologrammodel";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
@@ -13,6 +20,7 @@ import { PET_STAY_CHOICES, shownStayChoice, stayUntilLabel, type PetStayChoice }
 import {
     petCharacterAtom,
     petFormAtom,
+    petHologramSizeAtom,
     petOutfitChoiceAtom,
     petQuotesOnAtom,
     petStayAtom,
@@ -49,6 +57,7 @@ export function JarvisPage() {
         <>
             <SettingCard id="jarvis" label="Jarvis">
                 <PetFormRow />
+                <HologramSizeRow />
                 <PetCharacterRow />
                 <PetOutfitRow />
                 <PetStayRow />
@@ -76,6 +85,24 @@ function PetFormRow() {
     return (
         <SettingRow id="appearance.petform">
             <Segmented<PetForm> options={PET_FORM_OPTIONS} value={petForm(form)} onChange={(id) => setForm(id)} />
+        </SettingRow>
+    );
+}
+
+const HOLOGRAM_SIZE_OPTIONS: { id: HologramSize; label: string }[] = (["s", "m", "l"] as const).map((id) => ({
+    id,
+    label: HOLOGRAM_SIZE_NAME[id],
+}));
+
+function HologramSizeRow() {
+    const [size, setSize] = useAtom(petHologramSizeAtom);
+    return (
+        <SettingRow id="appearance.petholosize">
+            <Segmented<HologramSize>
+                options={HOLOGRAM_SIZE_OPTIONS}
+                value={hologramSize(size)}
+                onChange={(id) => setSize(id)}
+            />
         </SettingRow>
     );
 }

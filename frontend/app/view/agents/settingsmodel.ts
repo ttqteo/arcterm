@@ -669,6 +669,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "local",
                         },
                         {
+                            id: "appearance.petholosize",
+                            title: "Hologram size",
+                            desc: "How big the hologram is in its corner: S, M, or L (132 px). Sprout keeps its size.",
+                            key: "jarvis.pet.hologramsize",
+                            scope: "local",
+                        },
+                        {
                             id: "appearance.petcharacter",
                             title: "Character",
                             desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each.",

@@ -32,7 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   stays as it was. Claude agents only.
 - Jarvis as a hologram: Settings → Jarvis & Office → Form → Hologram puts Jarvis in the window's bottom-right corner
   instead of Sprout on the footer. Blue rings while all is calm (the core beats while agents work), an amber neural
-  sphere while something waits on you; click it for the same peek. Float and the fold keep Sprout. <!-- big -->
+  sphere while something waits on you; click it for the same peek. Hologram size picks S, M or L. Float and the fold
+  keep Sprout. <!-- big -->
 
 ### Changed
 

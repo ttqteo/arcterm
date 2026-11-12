@@ -16,8 +16,6 @@ import { easeMix, hologramFps, stepMix, type HologramPose } from "./hologrammode
 import type { HologramScene } from "./hologramscene";
 import { closePeek } from "./peekstore";
 
-export const HOLOGRAM_PX = 132;
-
 // Reduced motion holds the forms at this moment rather than at 0, where every ring starts aligned
 const STILL_T = 12;
 
@@ -33,7 +31,9 @@ export function useNeedsYouCount(model: AgentsViewModel): number {
     }, [attention, agents, messages]);
 }
 
+// The size is read once, when the scene is built: PetView keys this view by it, so a new size is a new canvas.
 export function HologramView({
+    sizePx,
     pose,
     unread,
     peekOpen,
@@ -42,6 +42,7 @@ export function HologramView({
     openPeek,
     onFail,
 }: {
+    sizePx: number;
     pose: HologramPose;
     unread: boolean;
     peekOpen: boolean;
@@ -53,8 +54,8 @@ export function HologramView({
 }) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     // the loop starts once per mount and reads these through refs, so a pose change never rebuilds the GL context
-    const live = useRef({ pose, reduce, onFail });
-    live.current = { pose, reduce, onFail };
+    const live = useRef({ sizePx, pose, reduce, onFail });
+    live.current = { sizePx, pose, reduce, onFail };
 
     useEffect(() => {
         let disposed = false;
@@ -106,7 +107,7 @@ export function HologramView({
                 // the declaration is live, so a theme picked since still reads through on the next mount
                 const rootStyle = getComputedStyle(document.documentElement);
                 const colours = mod.readHologramColours((name) => rootStyle.getPropertyValue(name).trim());
-                scene = mod.HologramScene.create(canvas, HOLOGRAM_PX, colours, fail);
+                scene = mod.HologramScene.create(canvas, live.current.sizePx, colours, fail);
                 if (scene == null) {
                     fail();
                     return;
@@ -142,12 +143,15 @@ export function HologramView({
             transition={reduce ? { duration: 0 } : { opacity: { duration: 0.3 } }}
             // round, so the corner of the terminal outside the form still takes clicks
             className="fixed bottom-[40px] right-[18px] z-[60] cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            style={{ width: HOLOGRAM_PX, height: HOLOGRAM_PX }}
+            style={{ width: sizePx, height: sizePx }}
         >
             <canvas ref={canvasRef} aria-hidden="true" className="block h-full w-full" />
-            {/* the unread marker: a kind of thing happened, never how many */}
+            {/* the unread marker: a kind of thing happened, never how many; on the form's rim at every size */}
             {unread ? (
-                <span className="pointer-events-none absolute right-[18px] top-[18px] h-[9px] w-[9px] rounded-full border border-background bg-accent" />
+                <span
+                    className="pointer-events-none absolute h-[9px] w-[9px] rounded-full border border-background bg-accent"
+                    style={{ right: Math.round(sizePx * 0.14), top: Math.round(sizePx * 0.14) }}
+                />
             ) : null}
         </motion.div>
     );

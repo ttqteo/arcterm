@@ -36,7 +36,7 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { hologramPose, petForm } from "./hologrammodel";
+import { HOLOGRAM_SIZE_PX, hologramPose, hologramSize, petForm } from "./hologrammodel";
 import { HologramView, useNeedsYouCount } from "./hologramview";
 import { openTarget } from "./openref";
 import { closePeek, openPetPeek, peekChordActive } from "./peekstore";
@@ -84,6 +84,7 @@ import {
     petCharacterAtom,
     petEventsAtom,
     petFormAtom,
+    petHologramSizeAtom,
     petHomeAtom,
     petOfficeBossAtom,
     petOfficeCornerAtom,
@@ -332,6 +333,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const [hologramFailed, setHologramFailed] = useState(false);
     useEffect(() => setHologramFailed(false), [form]);
     const hologram = form === "hologram" && !hologramFailed && !floating && !folded;
+    const hologramPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
     const needsYou = useNeedsYouCount(model);
     const shownAnchor = inOffice ? officeBoss : anchor;
     const shownCorner = inOffice ? officeCorner : hologram ? "bottom-right" : corner;
@@ -423,6 +425,8 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
             {inOffice ? null : hologram ? (
                 <HologramView
+                    key={hologramPx}
+                    sizePx={hologramPx}
                     pose={hologramPose({ waiting: needsYou, working, speaking: bubble != null, peekOpen })}
                     unread={unread}
                     peekOpen={peekOpen}

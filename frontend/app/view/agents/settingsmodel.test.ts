@@ -375,7 +375,7 @@ describe("settings pages", () => {
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
         expect(cards["jarvis/jarvis"]).toEqual([
-            "appearance.petform", "appearance.petcharacter", "appearance.petoutfit", "appearance.petstay", "appearance.petquotes",
+            "appearance.petform", "appearance.petholosize", "appearance.petcharacter", "appearance.petoutfit", "appearance.petstay", "appearance.petquotes",
         ]);
         expect(cards["jarvis/folding"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
         expect(cards["jarvis/office"]).toEqual([
@@ -397,8 +397,8 @@ describe("settings pages", () => {
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
-        // , the agent row's RAM and the pet's form
-        expect(ids).toHaveLength(75 + RUNTIME_FLAGS.claude.length);
+        // , the agent row's RAM, and the pet's form and hologram size
+        expect(ids).toHaveLength(76 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

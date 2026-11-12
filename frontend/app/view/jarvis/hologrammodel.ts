@@ -22,6 +22,20 @@ export function petForm(value: unknown): PetForm {
     return value === "sprout" || value === "hologram" ? value : DEFAULT_PET_FORM;
 }
 
+// How big the hologram draws (Settings → Jarvis & Office → Hologram size). L is the study's corner size.
+export type HologramSize = "s" | "m" | "l";
+
+export const DEFAULT_HOLOGRAM_SIZE: HologramSize = "l";
+
+export const HOLOGRAM_SIZE_PX: Record<HologramSize, number> = { s: 80, m: 104, l: 132 };
+
+export const HOLOGRAM_SIZE_NAME: Record<HologramSize, string> = { s: "S", m: "M", l: "L" };
+
+/** A stored choice, or L for anything that is not one of the three. */
+export function hologramSize(value: unknown): HologramSize {
+    return value === "s" || value === "m" || value === "l" ? value : DEFAULT_HOLOGRAM_SIZE;
+}
+
 export interface HologramInputs {
     // things waiting on you: the peek's queue (useWaitingCount)
     waiting: number;

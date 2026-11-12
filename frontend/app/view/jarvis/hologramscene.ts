@@ -38,6 +38,8 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 const TAU = Math.PI * 2;
 // past 1.5 the bloom's targets cost more than the softness they buy at this size (the study's cap)
 const MAX_DPR = 1.5;
+// the size every width and spark in the study was tuned at
+const STUDY_PX = 132;
 
 // Bloom replaces alpha; this hands it back from the light (the study's formula), so the glow has no rectangular edge on
 // the app behind. It runs last, on display values (after OutputPass), and writes premultiplied colour into a
@@ -99,14 +101,19 @@ function randomSequence(seed: number): () => number {
 class Builder {
     faders: Fader[] = [];
 
-    constructor(private dpr: number) {}
+    // scale: the size against the study's 132 px, so a smaller hologram draws thinner lines and smaller sparks
+    // rather than the same pixels packed into less room, which blew the core out into a blob at S and M
+    constructor(
+        private dpr: number,
+        private scale: number
+    ) {}
 
     segments(parent: Object3D, positions: number[], colour: Color, width = 1, opacity = 0.7): LineSegments2 {
         const geometry = new LineSegmentsGeometry();
         geometry.setPositions(positions);
         const material = new LineMaterial({
             color: colour,
-            linewidth: width,
+            linewidth: width * this.scale,
             transparent: true,
             opacity,
             blending: AdditiveBlending,
@@ -148,7 +155,7 @@ class Builder {
             blending: AdditiveBlending,
             uniforms: {
                 tint: { value: colour },
-                diameter: { value: size * this.dpr },
+                diameter: { value: size * this.dpr * this.scale },
                 time: { value: 0 },
                 energy: { value: 1 },
                 fade: { value: 1 },
@@ -191,8 +198,8 @@ class Builder {
 }
 
 // The orbital HUD: four tilted rings turning at their own pace around a lit core. Busy, the core beats.
-function hud(c: HologramColours, dpr: number): Form {
-    const b = new Builder(dpr);
+function hud(c: HologramColours, dpr: number, scale: number): Form {
+    const b = new Builder(dpr, scale);
     const group = new Group();
     group.rotation.x = 0.18;
     group.rotation.y = -0.16;
@@ -264,8 +271,8 @@ function hud(c: HologramColours, dpr: number): Form {
 
 // The neural sphere: amber filaments branching out of a wireframe nucleus, a pulse running out along them. It is the
 // form for "something waits on you", so its pulse always runs.
-function neural(c: HologramColours, dpr: number): Form {
-    const b = new Builder(dpr);
+function neural(c: HologramColours, dpr: number, scale: number): Form {
+    const b = new Builder(dpr, scale);
     const group = new Group();
     const random = randomSequence(731);
     const filaments: number[] = [];
@@ -393,8 +400,9 @@ export class HologramScene {
         composer.addPass(new UnrealBloomPass(new Vector2(sizePx, sizePx), 0.35, 0.2, 0.4));
         composer.addPass(new OutputPass());
         composer.addPass(new ShaderPass(alphaFromLight));
-        const hudForm = hud(colours, dpr);
-        const neuralForm = neural(colours, dpr);
+        const scale = sizePx / STUDY_PX;
+        const hudForm = hud(colours, dpr, scale);
+        const neuralForm = neural(colours, dpr, scale);
         scene.add(hudForm.group, neuralForm.group);
         const lost = (ev: Event) => {
             ev.preventDefault();

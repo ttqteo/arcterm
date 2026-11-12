@@ -13,7 +13,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { DEFAULT_PET_FORM, type PetForm } from "./hologrammodel";
+import { DEFAULT_HOLOGRAM_SIZE, DEFAULT_PET_FORM, type HologramSize, type PetForm } from "./hologrammodel";
 import type { PetActState } from "./petacts";
 import { DEFAULT_PET_CHARACTER } from "./petcharacter";
 import type { PetCorner } from "./petledge";
@@ -140,6 +140,14 @@ export const petCharacterAtom = atomWithStorage<PetCharacter>(
 export const petFormAtom = atomWithStorage<PetForm>("jarvis.pet.form", DEFAULT_PET_FORM, undefined, {
     getOnInit: true,
 }) as PrimitiveAtom<PetForm>;
+
+// The hologram's size, S / M / L (hologrammodel.ts), read through hologramSize
+export const petHologramSizeAtom = atomWithStorage<HologramSize>(
+    "jarvis.pet.hologramsize",
+    DEFAULT_HOLOGRAM_SIZE,
+    undefined,
+    { getOnInit: true }
+) as PrimitiveAtom<HologramSize>;
 
 // Whether the pet says a quote now and then (petquotes.ts, Settings → Appearance), persisted like the outfit.
 export const DEFAULT_PET_QUOTES = true;

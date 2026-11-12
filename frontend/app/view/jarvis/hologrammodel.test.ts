@@ -6,8 +6,10 @@ import {
     easeMix,
     HOLOGRAM_IDLE_FPS,
     HOLOGRAM_LIVE_FPS,
+    HOLOGRAM_SIZE_PX,
     hologramFps,
     hologramPose,
+    hologramSize,
     petForm,
     stepMix,
 } from "./hologrammodel";
@@ -20,6 +22,19 @@ describe("petForm", () => {
         expect(petForm("sprout")).toBe("sprout");
         expect(petForm("orb")).toBe("sprout");
         expect(petForm(undefined)).toBe("sprout");
+    });
+});
+
+describe("hologramSize", () => {
+    it("keeps S, M and L, smallest first, and turns anything else into L", () => {
+        expect(hologramSize("s")).toBe("s");
+        expect(hologramSize("m")).toBe("m");
+        expect(hologramSize("l")).toBe("l");
+        expect(hologramSize("xl")).toBe("l");
+        expect(hologramSize(undefined)).toBe("l");
+        expect(HOLOGRAM_SIZE_PX.s).toBeLessThan(HOLOGRAM_SIZE_PX.m);
+        expect(HOLOGRAM_SIZE_PX.m).toBeLessThan(HOLOGRAM_SIZE_PX.l);
+        expect(HOLOGRAM_SIZE_PX.l).toBe(132);
     });
 });
 
