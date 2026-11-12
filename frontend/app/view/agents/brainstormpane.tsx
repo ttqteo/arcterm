@@ -20,6 +20,7 @@ import { getProcExitAtom } from "./agentcontrollerstore";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { Check } from "./brainstormcheck";
+import { useCheckTimes } from "./brainstormchecktimes";
 import { BrainstormHints } from "./brainstormhintscard";
 import {
     bodyBeyondGist,
@@ -437,22 +438,6 @@ function DesignMain({
             </div>
         </>
     );
-}
-
-// how long this machine's past builder checks took; null until read, or when they could not be. Read again for each
-// check (key, its run), so the one before it counts
-function useCheckTimes(key: string | undefined): BrainstormCheckTimes | null {
-    const [times, setTimes] = useState<BrainstormCheckTimes | null>(null);
-    useEffect(() => {
-        let live = true;
-        RpcApi.BrainstormCheckTimesCommand(TabRpcClient)
-            .then((t) => live && setTimes(t))
-            .catch((e) => console.error("brainstorm: reading past builder check times:", e));
-        return () => {
-            live = false;
-        };
-    }, [key]);
-    return times;
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;

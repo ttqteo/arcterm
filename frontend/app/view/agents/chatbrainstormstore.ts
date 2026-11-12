@@ -1,10 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The record of the answers Arc sent to an agent's brainstorm questions (a click in the Chat card or the Brainstorm
-// pane, or the box while a question waits), kept in localStorage `chat.brainstorm.sent` so it survives a reload and a
-// sleeping agent. Chat pairs it with the transcript's user messages (chatbrainstorm.ts pairAnswers) to draw each answered
-// question as one ✓ row in place of the bubble. Module-level atoms, as every surface but Agent unmounts on a switch.
+// The record of the lines Arc sent to an agent's brainstorm (a click in a Chat card or the Brainstorm pane, or the box
+// while a question waits): the answers, the builder's answers, the steps (check, approved, keep talking, run) and the
+// actions (confirm, edit, keep…). Kept in localStorage `chat.brainstorm.sent` so it survives a reload and a sleeping
+// agent. Chat pairs it with the transcript's user messages (chatbrainstorm.ts pairAnswers) to draw each answered
+// question or finished step as one ✓ row in place of the bubble, and to hide an action's. Module-level atoms, as every
+// surface but Agent unmounts on a switch.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
@@ -58,7 +60,7 @@ export function brainstormAnswers(agentId: string): SentAnswer[] {
     return recordsOf(globalStore.get(brainstormSentAtom), agentId);
 }
 
-/** Keeps the answer just sent: at most 50 per agent, the oldest dropped. */
+/** Keeps the record of the line just sent: at most 200 per agent, the oldest dropped. */
 export function recordBrainstormAnswer(agentId: string, record: SentAnswer): void {
     const prev = globalStore.get(brainstormSentAtom);
     const next = pruneAnswerAgents({ ...prev, [agentId]: addAnswer(recordsOf(prev, agentId), record) });
