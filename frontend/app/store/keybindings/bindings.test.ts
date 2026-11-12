@@ -3849,7 +3849,7 @@ describe("Kael sync: Code keys", () => {
 
     // 4c026402d: Alt+arrows are not editing keys, and the editor is where a jump starts. code:back / code:forward keep
     // their bare-surface guard (an existing case pins it); a twin takes the same keys from a field.
-    it("Alt+←/→ are live from the editor too, as two bindings that are never live together", () => {
+    it("Alt+←/→ are live from the editor too on Windows, as two bindings that are never live together", () => {
         const typing = { ...code, editable: true };
         for (const [id, twin, keys] of [
             ["code:back", "code:back-from-field", "Alt:ArrowLeft"],
@@ -3860,9 +3860,17 @@ describe("Kael sync: Code keys", () => {
             expect(find(id).when!(code)).toBe(true);
             expect(find(twin).when!(code)).toBe(false);
             expect(find(id).when!(typing)).toBe(false);
-            expect(find(twin).when!(typing)).toBe(true);
-            expect(find(twin).when!({ ...typing, modalOpen: true })).toBe(false);
-            expect(find(twin).when!({ ...typing, surface: "cockpit" })).toBe(false);
+            // a Mac's Option+←/→ moves the caret a word in the editor and in every input: the twin leaves it there
+            expect(find(twin).when!(typing)).toBe(false);
+            setPlatform("win32");
+            try {
+                expect(find(twin).when!(typing)).toBe(true);
+                expect(find(twin).when!(code)).toBe(false);
+                expect(find(twin).when!({ ...typing, modalOpen: true })).toBe(false);
+                expect(find(twin).when!({ ...typing, surface: "cockpit" })).toBe(false);
+            } finally {
+                setPlatform("darwin");
+            }
             expect(find(twin).paletteHidden).toBe(true);
         }
     });

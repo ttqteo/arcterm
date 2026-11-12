@@ -89,3 +89,40 @@ func TestRecordTabSessionEffortSkipsNoTranscript(t *testing.T) {
 		t.Fatalf("want no new rows, got %d before and %d after", len(before), len(after))
 	}
 }
+
+// the agent's block need not be first: with it closed under its dock terminal, or a terminal ahead of it, the tab's
+// first block names no transcript
+func TestRecordTabSessionEffortFindsTheAgentBlock(t *testing.T) {
+	ctx := context.Background()
+	transcript := "/projects/C--repo/" + uuid.NewString() + ".jsonl"
+	tab := seedEffortTab(t, waveobj.MetaMapType{
+		waveobj.MetaKey_SessionAgent: "claude", waveobj.MetaKey_SessionEffort: "effort:dock",
+	}, transcript)
+	dock := &waveobj.Block{OID: uuid.NewString(), ParentORef: "tab:" + tab.OID, Meta: waveobj.MetaMapType{}}
+	if err := DBInsert(ctx, dock); err != nil {
+		t.Fatal(err)
+	}
+	tab.BlockIds = append([]string{dock.OID}, tab.BlockIds...)
+	if err := RecordTabSessionEffort(ctx, tab); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionEffortsFor(t, transcript); len(got) != 1 || got[0].EffortOID != "dock" {
+		t.Fatalf("want one row for effort dock, got %+v", got)
+	}
+}
+
+// a block recorded on its own, as DeleteBlock does before the tab loses it
+func TestRecordBlockSessionEffort(t *testing.T) {
+	ctx := context.Background()
+	transcript := "/projects/C--repo/" + uuid.NewString() + ".jsonl"
+	tab := &waveobj.Tab{OID: uuid.NewString(), Meta: waveobj.MetaMapType{
+		waveobj.MetaKey_SessionAgent: "claude", waveobj.MetaKey_SessionEffort: "effort:last",
+	}}
+	block := &waveobj.Block{OID: uuid.NewString(), Meta: waveobj.MetaMapType{waveobj.MetaKey_AgentTranscriptPath: transcript}}
+	if err := RecordBlockSessionEffort(ctx, tab, block); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionEffortsFor(t, transcript); len(got) != 1 || got[0].EffortOID != "last" {
+		t.Fatalf("want one row for effort last, got %+v", got)
+	}
+}

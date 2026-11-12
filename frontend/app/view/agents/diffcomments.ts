@@ -21,15 +21,18 @@ export type CommentSide = "modified" | "original";
 // what the send needs to find its folder, its project and the run that started it.
 export interface BatchSource {
     key: string; // originKey(scope.repo.origin)
-    kind: "agent" | "run" | "project";
+    // a worktree is one checkout of a registered project: its comments go to a new agent in that checkout, not the
+    // project's main one, where the lines commented on are not
+    kind: "agent" | "run" | "project" | "worktree";
     label: string;
     // filesStateAtom.cwd when published; "" when the source no longer resolves one
     cwd: string;
     agentId?: string;
     // a run origin's id, or the source agent's AgentVM.runId
     runId?: string;
-    // a project origin's name, or the source agent's AgentVM.project
+    // a project origin's name, a worktree's project, or the source agent's AgentVM.project
     project?: string;
+    // a project origin's path, or a worktree origin's own checkout
     projectPath?: string;
 }
 
@@ -73,7 +76,7 @@ export const COMMENT_STORAGE_KEY = "diff.comments.pending";
 export const MAX_COMMENT_BATCHES = 50;
 export const MAX_QUOTE_LINES = 40;
 
-const SOURCE_KINDS: BatchSource["kind"][] = ["agent", "run", "project"];
+const SOURCE_KINDS: BatchSource["kind"][] = ["agent", "run", "project", "worktree"];
 
 function isObject(v: unknown): v is Record<string, unknown> {
     return v != null && typeof v === "object" && !Array.isArray(v);
@@ -243,6 +246,14 @@ export function pairKey(refs: DiffPairRefs): string {
     return JSON.stringify(refs);
 }
 
+/** Whether a comment made on pair `a` belongs on pair `b`: the same pair, or two pairs whose modified side is the live
+ *  working tree. An unanchored tree's original side is HEAD's sha (pairRefsFor), so a commit, even of another file,
+ *  changes the pair while the comment's lines are still the tree's; it stays drawn and is re-found by its quote
+ *  (relocate), going lost, and coming back, as the text it quotes does. */
+export function samePair(a: DiffPairRefs, b: DiffPairRefs): boolean {
+    return pairKey(a) === pairKey(b) || (a.modified.kind === "worktree" && b.modified.kind === "worktree");
+}
+
 function splitLines(text: string): string[] {
     return text.split(/\r?\n/);
 }
@@ -402,10 +413,14 @@ export function relocateComments(
     const pair = pairKey(refs);
     let changed = false;
     const comments = batch.comments.map((c) => {
-        if (c.path !== path || pairKey(c.refs) !== pair) {
+        if (c.path !== path || !samePair(c.refs, refs)) {
             return c;
         }
-        const next = relocate(c, texts[c.side]);
+        let next = relocate(c, texts[c.side]);
+        // re-found on the tree's new base: its lines are now that pair's, which the prompt names
+        if (!next.lost && pairKey(next.refs) !== pair) {
+            next = { ...next, refs };
+        }
         changed ||= next !== c;
         return next;
     });
@@ -415,8 +430,7 @@ export function relocateComments(
 }
 
 export function commentsOnPair(batch: CommentBatch | undefined, path: string, refs: DiffPairRefs): PendingComment[] {
-    const pair = pairKey(refs);
-    return (batch?.comments ?? []).filter((c) => c.path === path && !c.lost && pairKey(c.refs) === pair);
+    return (batch?.comments ?? []).filter((c) => c.path === path && !c.lost && samePair(c.refs, refs));
 }
 
 // every pair, lost comments included: the file list's badge counts what will be sent
@@ -449,5 +463,7 @@ export function batchSourceFor(
             return { ...base, kind: "run", runId: o.runId };
         case "project":
             return { ...base, kind: "project", project: o.name, projectPath: o.path };
+        case "worktree":
+            return { ...base, kind: "worktree", project: o.project, projectPath: o.path };
     }
 }

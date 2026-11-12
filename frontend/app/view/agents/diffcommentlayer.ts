@@ -20,8 +20,8 @@ import {
     commentDraftAtom,
     commentsOnPair,
     commentStoreAtom,
-    pairKey,
     quoteLines,
+    samePair,
     type CommentSide,
 } from "./diffcomments";
 import { diffPairAtom } from "./diffcontentstore";
@@ -125,7 +125,7 @@ function wantedZones(diff: MonacoTypes.editor.IStandaloneDiffEditor): Map<string
         source != null &&
         !editingDrawn &&
         draft.path === pair.path &&
-        pairKey(draft.refs) === pairKey(pair.refs) &&
+        samePair(draft.refs, pair.refs) &&
         commentableSide(draft.side, split)
     ) {
         want.set("draft", { kind: "draft", side: draft.side, afterLine: draft.end });
@@ -277,7 +277,7 @@ export function mountCommentLayer(diff: MonacoTypes.editor.IStandaloneDiffEditor
             commentsOnPair(globalStore.get(commentStoreAtom)[source.key], pair.path, pair.refs).forEach((c) =>
                 mark(c.side, c.start, c.end)
             );
-            if (draft != null && draft.path === pair.path && pairKey(draft.refs) === pairKey(pair.refs)) {
+            if (draft != null && draft.path === pair.path && samePair(draft.refs, pair.refs)) {
                 mark(draft.side, draft.start, draft.end);
             }
         }

@@ -52,6 +52,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   not be reached at all; for 30 minutes after one, the Jobs chip stays in the app bar ("2 ran unqueued") to say so.
 - Pressing Esc while an agent's heavy command waits its turn in the job queue now drops it for good: it no longer
   runs anyway once the wait ends.
+- On a Mac, Option+←/→ in Code's editor and inputs moves the caret a word again, instead of jumping back and forward
+  through opened files.
+- Code's Send review no longer offers an agent that is waiting on a question: the review's Enter would have answered
+  it.
+- Diff comments work on a worktree picked in the Diff sidebar, and are sent to a new agent in that worktree.
+- Diff comments stay on screen when a commit moves HEAD under the working tree, instead of vanishing while still
+  counted.
+- Diff shows line counts as unavailable, not +0 −0, when git can't count them for an agent's or a run's changes.
+- An empty shared Instructions doc no longer empties the arcterm section of every harness's instructions file.
+- A comment you started in Code no longer follows you into another project.
+- Usage keeps a session's initiative when its tab closes along with its last pane.
 
 ## 1.0.7 — 2026-11-12
 

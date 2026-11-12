@@ -229,6 +229,28 @@ describe("resolveRecipient: project source", () => {
     });
 });
 
+describe("resolveRecipient: worktree source", () => {
+    const worktreeBatch = (over: Partial<BatchSource> = {}) =>
+        batchOf({
+            key: "worktree:C:/p/waveterm/.worktrees/x",
+            kind: "worktree",
+            label: "x",
+            project: "waveterm",
+            projectPath: "C:/p/waveterm/.worktrees/x",
+            agentId: undefined,
+            ...over,
+        });
+
+    it("starts the agent in the worktree, not the registered main checkout", () => {
+        const r = resolveRecipient(worktreeBatch(), facts({ projectPath: "C:/p/waveterm" }));
+        expect(r).toEqual({ kind: "new", cwd: "C:/p/waveterm/.worktrees/x", project: "waveterm", folder: "x" });
+    });
+
+    it("waits when the worktree has no path", () => {
+        expect(resolveRecipient(worktreeBatch({ projectPath: undefined }), facts()).kind).toBe("wait");
+    });
+});
+
 describe("sendBarText", () => {
     const summary = { comments: 3, files: 2 };
 

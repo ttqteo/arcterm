@@ -140,10 +140,17 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	nameStatus, _ := run(ctx, cwd, "diff", "--name-status", "-z", "--relative", ref)
 	trackedZ := nameStatusToStatusZ(nameStatus)
 	untrackedZ := untrackedEntriesZ(statusZ)
-	numstat, _ := run(ctx, cwd, "diff", "--numstat", "--relative", ref)
+	// as in live mode, a failed count is carried beside the list, so an agent's or a run's scope shows its counts as
+	// unavailable rather than as +0 −0 (the ref is a commit, so unlike live mode an unborn HEAD is no excuse)
+	refNumstatArgs := []string{"diff", "--numstat", "--relative", ref}
+	numstat, nerr := run(ctx, cwd, refNumstatArgs...)
+	refNumstatError := ""
+	if nerr != nil {
+		refNumstatError = describeGitError(refNumstatArgs, nerr)
+	}
 	numstat += untrackedNumstat(cwd, untrackedZ)
 	return &Changes{Branch: strings.TrimSpace(branch), StatusZ: trackedZ + untrackedZ, Numstat: numstat, IsRepo: true, Head: head,
-		Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind}, nil
+		Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind, NumstatError: refNumstatError}, nil
 }
 
 // GetRangeChanges computes the per-file changes introduced by the commit range base..end — the commits

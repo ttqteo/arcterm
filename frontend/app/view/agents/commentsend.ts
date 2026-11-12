@@ -92,6 +92,11 @@ export function resolveRecipient(batch: CommentBatch, facts: RecipientFacts): Re
     switch (source.kind) {
         case "project":
             return resolveProject(batch, facts.projectPath);
+        case "worktree":
+            // its own checkout, never the registered project's path, which is the main checkout
+            return source.projectPath
+                ? newAgent(source.projectPath, source.project)
+                : { kind: "wait", reason: "the worktree's folder is unknown" };
         case "run":
             return resolveRun(source.runId ?? "", batch, facts.run);
         case "agent": {

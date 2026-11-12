@@ -2784,15 +2784,16 @@ export function buildCodeBindings(model?: AgentsViewModel): Binding[] {
                 void goForward();
             },
         },
-        // Alt+arrows are not editing keys, and the editor is where a jump starts: the same two actions while a field
-        // or the editor holds focus, where `on` above stands down. Complementary `when`s, so no two are live at once.
+        // Alt+arrows are not editing keys on Windows, and the editor is where a jump starts: the same two actions while a
+        // field or the editor holds focus, where `on` above stands down. Complementary `when`s, so no two are live at
+        // once. Not on a Mac: there Option+←/→ moves the caret a word in Monaco and every input, which these would take.
         {
             id: "code:back-from-field",
             keys: "Alt:ArrowLeft",
             group: "Code",
             label: "Back (from the editor)",
             paletteHidden: true, // duplicates code:back
-            when: inField,
+            when: (ctx) => !isMacOS() && inField(ctx),
             run: () => {
                 void goBack();
             },
@@ -2803,7 +2804,7 @@ export function buildCodeBindings(model?: AgentsViewModel): Binding[] {
             group: "Code",
             label: "Forward (from the editor)",
             paletteHidden: true, // duplicates code:forward
-            when: inField,
+            when: (ctx) => !isMacOS() && inField(ctx),
             run: () => {
                 void goForward();
             },
