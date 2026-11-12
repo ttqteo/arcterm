@@ -29,6 +29,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
   suggestion showing, Tab still completes the word under the caret.
 
+### Fixed
+
+- When the machine is short of RAM and slow, an agent's heavy command no longer skips the job queue just because
+  reaching arcterm took a few seconds: it gets 15 s to connect, then 5 s for an answer. A command that still ran
+  without waiting its turn is counted at the bottom of the Jobs popover, with the latest one.
+
 ## 1.0.7 — 2026-11-12
 
 ### Added

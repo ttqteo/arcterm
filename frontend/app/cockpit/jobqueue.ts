@@ -153,6 +153,18 @@ export function formatElapsed(ms: number): string {
     return `${Math.floor(total / 3600)}h ${Math.floor((total % 3600) / 60)}m`;
 }
 
+/** The popover's footer when agent commands ran without a slot because the queue answered too late: "2 commands ran
+ *  without a slot · last task check:ts, 4m ago"; null when none did since wavesrv started. */
+export function bypassLine(d: JobQueueData | null, now: number): string | null {
+    const n = d?.bypassed ?? 0;
+    if (n <= 0) {
+        return null;
+    }
+    const head = `${n} ${n === 1 ? "command" : "commands"} ran without a slot`;
+    const last = d?.lastbypass;
+    return last ? `${head} · last ${last.name}, ${formatElapsed(now - last.ts)} ago` : head;
+}
+
 /** The rows' order: running jobs first, the longest-running on top, then the queue in the order it will be served. */
 export function ordered(jobs: JobQueueJob[]): JobQueueJob[] {
     return [...jobs].sort((a, b) => {

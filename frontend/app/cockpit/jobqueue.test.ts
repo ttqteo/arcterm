@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    bypassLine,
     chipLabel,
     chipText,
     chipTitle,
@@ -227,5 +228,21 @@ describe("jobqueue", () => {
     it("writes a pause's end, and Resume clears it", () => {
         expect(pausePatch(3_600_000, 1_000)).toEqual({ "jobs:pauseuntil": 3_601_000 });
         expect(pausePatch(null, 1_000)).toEqual({ "jobs:pauseuntil": 0 });
+    });
+    it("says how many commands ran without a slot, and the latest", () => {
+        expect(bypassLine(null, 0)).toBeNull();
+        expect(bypassLine({ slots: 1, mode: "auto", jobs: [] }, 0)).toBeNull();
+        expect(
+            bypassLine(
+                { slots: 1, mode: "auto", jobs: [], bypassed: 1, lastbypass: { name: "task check:ts", ts: 1_000 } },
+                241_000
+            )
+        ).toBe("1 command ran without a slot · last task check:ts, 4m 0s ago");
+        expect(
+            bypassLine(
+                { slots: 1, mode: "auto", jobs: [], bypassed: 3, lastbypass: { name: "npm test", ts: 0 } },
+                5_000
+            )
+        ).toBe("3 commands ran without a slot · last npm test, 5s ago");
     });
 });

@@ -39,6 +39,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
   command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).
 
+- [ ] (arcterm) Jobslot bypass count: on a build with feat/jobslot-connect-deadline, stop wavesrv's queue from
+  answering in time (e.g. suspend wavesrv for ~10 s with a heavy command waiting, then resume it) → the command runs,
+  and once wavesrv resumes the Jobs popover's footer reads "1 command ran without a slot · last …" and waveapp.log
+  has `[jobqueue] … ran without a slot`. A normal `task check:ts` adds nothing to the count (`wshserver_jobqueue.go`
+  GiveUpTs, `jobqueue.NoteBypass`).
+
 - [ ] (arcterm) No transcript error before a run's first message: start an orchestrator run, open its lead in Chat
   while the run's Setup is still going → the empty conversation shows no "Could not read the transcript: …" line, and
   the lead's messages appear once it starts (`chatempty.ts` chatEmptyError, `transcript.go` noTranscriptFile;

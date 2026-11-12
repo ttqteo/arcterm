@@ -22,18 +22,23 @@ import (
 // as long as it runs.
 const jobslotTimeout = 24 * time.Hour
 
-// jobslotFirstWord is how long a heavy command waits for wavesrv's first line. A live server answers at once,
-// with a place in the queue or the verdict, so silence means a stuck one, and a stuck queue must never hold an
-// agent's command: on 2026-11-11 a hung wavesrv held every shell command of every agent, a stop sent to a
-// runaway bench included, for minutes.
+// jobslotFirstWord is how long a heavy command waits for wavesrv's first line once connected. A live server
+// answers at once, with a place in the queue or the verdict, so silence means a stuck one, and a stuck queue must
+// never hold an agent's command: on 2026-11-11 a hung wavesrv held every shell command of every agent, a stop sent
+// to a runaway bench included, for minutes.
 var jobslotFirstWord = 5 * time.Second
+
+// jobslotConnectWait bounds the connect and its authentication, on their own clock: under swap they alone can take
+// seconds, and counted in jobslotFirstWord they sent heavy commands past the queue exactly when RAM was short.
+var jobslotConnectWait = 15 * time.Second
 
 // the Claude mod and the pi extension run this before every shell command an agent runs, and keep it alive
 // while the command runs: it waits for a slot in arcterm's heavy-job queue, prints one JSON line per state
 // ({"queued":2,"behind":…,"for":…} while queued, then {"run":true} or {"run":false,"reason":…}), and holds the
 // slot until it is killed. A command that takes no slot gets {"run":true} at once, with no connection. Any
-// error, or no word from wavesrv within jobslotFirstWord, exits non-zero with no verdict line, and the hooks
-// run the command.
+// error, a connect past jobslotConnectWait, or no word from wavesrv within jobslotFirstWord of connecting, exits
+// non-zero with no verdict line, and the hooks run the command; wavesrv counts it as a bypass when it reads the
+// request late.
 //
 // A background command outlives the hook's tool call, so the Claude mod puts this in front of it instead:
 // --hold-parent waits inside the command's own shell, then hands the slot to that shell (its parent), which
@@ -106,14 +111,14 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 	if jobslotHoldParent {
 		holdPid = int32(os.Getppid())
 	}
-	msgs := jobslotOpen(func() (chan jobslotMsg, error) {
-		if err := preRunSetupRpcClient(nil, nil); err != nil {
-			return nil, err
-		}
+	msgs := jobslotOpen(func() error {
+		return preRunSetupRpcClient(nil, nil)
+	}, func(giveUp time.Time) chan jobslotMsg {
 		data := jobslotData(command)
 		data.HoldPid = holdPid
-		return wshclient.JobSlotCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: jobslotTimeout.Milliseconds()}), nil
-	}, jobslotFirstWord)
+		data.GiveUpTs = giveUp.UnixMilli()
+		return wshclient.JobSlotCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: jobslotTimeout.Milliseconds()})
+	}, jobslotConnectWait, jobslotFirstWord)
 	if jobslotHoldParent {
 		if msgs == nil {
 			fmt.Fprintln(os.Stderr, "arc: arcterm's job queue did not answer; running without a slot")
@@ -138,18 +143,28 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 
 type jobslotMsg = wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]
 
-// jobslotOpen runs open (connect, then start the stream) and returns the stream once its first message is in,
-// that message replayed at its head. nil when open fails, the stream ends with no word, or nothing comes
-// within wait: the caller then runs the command without a slot. On a timeout the work is left behind; the
-// process exits soon after, which closes the link and frees anything the server held for it.
-func jobslotOpen(open func() (chan jobslotMsg, error), wait time.Duration) chan jobslotMsg {
+// jobslotOpen connects (within connectWait), starts the stream with the time the caller gives up, wait from the
+// connect, and returns the stream once its first message is in, that message replayed at its head. nil when the
+// connect fails or hangs, the stream ends with no word, or nothing comes within wait: the caller then runs the
+// command without a slot. On a timeout the work is left behind; the process exits soon after, which closes the
+// link and frees anything the server held for it.
+func jobslotOpen(connect func() error, start func(giveUp time.Time) chan jobslotMsg, connectWait, wait time.Duration) chan jobslotMsg {
+	connected := make(chan error, 1)
+	go func() { connected <- connect() }()
+	connectTimer := time.NewTimer(connectWait)
+	defer connectTimer.Stop()
+	select {
+	case err := <-connected:
+		if err != nil {
+			return nil
+		}
+	case <-connectTimer.C:
+		return nil
+	}
+	giveUp := time.Now().Add(wait)
 	got := make(chan chan jobslotMsg, 1)
 	go func() {
-		msgs, err := open()
-		if err != nil {
-			got <- nil
-			return
-		}
+		msgs := start(giveUp)
 		first, ok := <-msgs
 		if !ok {
 			got <- nil
