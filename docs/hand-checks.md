@@ -13,6 +13,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   / L redraws it smaller with thinner lines, not a blown-out core. Placement, peek and the asking switch were checked
   in the browser cockpit, the look in a live WKWebView window; never yet in the installed app since a20195495 and
   975f3352d (`hologramview.tsx`, `hologramscene.ts`).
+- [ ] (arcterm) Chat streams Claude's reply: in a Claude agent started after the install, ask for a long answer in
+  Chat; its text grows word by word at the end of the conversation (`data-chat-live` on the part) and, a few seconds
+  after each paragraph ends, the stored copy takes its place with no jump or duplicate. A code block mid-stream draws
+  closed, a highlight shows once its mark closes, a reply between tool calls ("· summary" in the terminal) shows too,
+  and `~/.arc/live/<session id>.json` is rewritten while it streams. Only unit-tested and the mod's `turn.step` probed
+  under `claude -p` (05485e953: `live-core.ts`, `livereply.go`, `chatlive.ts`, `chatlivestore.ts`).
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers
