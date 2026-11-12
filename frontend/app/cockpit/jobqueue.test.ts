@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     bypassLine,
+    bypassOnly,
     chipLabel,
     chipText,
     chipTitle,
@@ -21,6 +22,7 @@ import {
     queuedJobFor,
     queuedTag,
     queueTitle,
+    RECENT_BYPASS_MS,
     sourceLabel,
 } from "./jobqueue";
 
@@ -228,6 +230,21 @@ describe("jobqueue", () => {
     it("writes a pause's end, and Resume clears it", () => {
         expect(pausePatch(3_600_000, 1_000)).toEqual({ "jobs:pauseuntil": 3_601_000 });
         expect(pausePatch(null, 1_000)).toEqual({ "jobs:pauseuntil": 0 });
+    });
+    it("raises the chip for a while after a command ran without a slot, only with the queue empty", () => {
+        const d: JobQueueData = {
+            slots: 1,
+            mode: "auto",
+            jobs: [],
+            bypassed: 2,
+            lastbypass: { name: "task check:ts", ts: 0 },
+        };
+        expect(chipText(d, 60_000)).toBe("2 ran unqueued");
+        expect(bypassOnly(d, 60_000)).toBe(true);
+        expect(chipTitle(d, 60_000)).toContain("2 commands ran without a slot");
+        expect(chipText(d, RECENT_BYPASS_MS)).toBeNull();
+        expect(chipText({ ...d, jobs: [job({ running: true })] }, 60_000)).toBe("1 running");
+        expect(chipText({ ...d, bypassed: 0, lastbypass: undefined }, 60_000)).toBeNull();
     });
     it("says how many commands ran without a slot, and the latest", () => {
         expect(bypassLine(null, 0)).toBeNull();

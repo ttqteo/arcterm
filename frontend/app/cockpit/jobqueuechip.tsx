@@ -5,7 +5,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Layers, Pause, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { chipText, chipTitle, longWait, pauseLeft, queuedTag } from "./jobqueue";
+import { bypassOnly, chipText, chipTitle, longWait, pauseLeft, queuedTag, recentBypass } from "./jobqueue";
 import { jobQueueAtom, toggleJobQueue } from "./jobqueuestore";
 
 // how often a waiting or paused queue re-reads the clock, so the chip turns to its warning, or counts a pause down,
@@ -13,26 +13,29 @@ import { jobQueueAtom, toggleJobQueue } from "./jobqueuestore";
 const LONG_WAIT_CHECK_MS = 15_000;
 
 // The app bar's Jobs chip: how many heavy shell jobs run and how many wait their turn; a click opens the Jobs popover.
-// Nothing while the queue is empty, unless a pause is on: then it counts the pause down. It takes the warning tone
+// Nothing while the queue is empty, unless a pause is on: then it counts the pause down; or, for RECENT_BYPASS_MS after
+// a command ran without a slot, "N ran unqueued" in the warning tone. It takes the warning tone
 // once a job has waited past LONG_WAIT_MS.
 export function JobQueueChip() {
     const data = useAtomValue(jobQueueAtom);
     const now = Date.now();
     const waiting = data?.jobs.some((j) => !j.running) ?? false;
     const paused = pauseLeft(data, now) != null;
+    // a recent bypass keeps the clock going too, so the chip it raised goes once RECENT_BYPASS_MS is up
+    const bypassed = recentBypass(data, now);
     const [, setTick] = useState(0);
     useEffect(() => {
-        if (!waiting && !paused) {
+        if (!waiting && !paused && !bypassed) {
             return;
         }
         const timer = setInterval(() => setTick((n) => n + 1), LONG_WAIT_CHECK_MS);
         return () => clearInterval(timer);
-    }, [waiting, paused]);
+    }, [waiting, paused, bypassed]);
     const label = data == null ? null : chipText(data, now);
     if (data == null || label == null) {
         return null;
     }
-    const warn = longWait(data, now);
+    const warn = longWait(data, now) || bypassOnly(data, now);
     const Icon = warn ? TriangleAlert : paused ? Pause : Layers;
     return (
         <button

@@ -1938,6 +1938,7 @@ declare global {
         blockid?: string;
         holdpid?: number;
         giveupts?: number;
+        missed?: JobSlotMissed[];
     };
 
     // wshrpc.CommandLandRunData
@@ -3659,6 +3660,13 @@ declare global {
         tabid?: string;
         runid?: string;
         label?: string;
+    };
+
+    // wshrpc.JobSlotMissed
+    type JobSlotMissed = {
+        name: string;
+        ts: number;
+        blockid?: string;
     };
 
     // wshrpc.JobSlotUpdate

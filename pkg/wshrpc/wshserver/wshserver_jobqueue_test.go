@@ -417,3 +417,19 @@ func TestJobSlotPastItsGiveUpTimeCountsABypass(t *testing.T) {
 		t.Fatalf("bypassed = %d after an answer in time, want 1", got)
 	}
 }
+
+// commands that never reached wavesrv come with the next request and count, whatever that request is
+func TestJobSlotCountsTheMissedItCarries(t *testing.T) {
+	q := installQueue(t, 1)
+	at := time.Now().Add(-10 * time.Minute).Truncate(time.Millisecond)
+	ch := (&WshServer{}).JobSlotCommand(context.Background(), wshrpc.CommandJobSlotData{
+		Command: "echo hi",
+		Missed:  []wshrpc.JobSlotMissed{{Name: "task check:ts", Ts: at.UnixMilli()}, {Name: "npm test", Ts: at.UnixMilli()}},
+	})
+	requireRun(t, nextSlotUpdate(t, ch))
+	requireStreamClosed(t, ch)
+	s := q.Snapshot()
+	if s.Bypassed != 2 || s.LastBypass.Name != "npm test" || !s.LastBypass.At.Equal(at) {
+		t.Fatalf("snapshot = %+v, want 2 bypasses, the latest npm test at %v", s, at)
+	}
+}

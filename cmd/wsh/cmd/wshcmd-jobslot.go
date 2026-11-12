@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
+	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 // jobslotTimeout is the stream's RPC ceiling: a command can queue behind long jobs, and then holds its slot for
@@ -111,14 +114,21 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 	if jobslotHoldParent {
 		holdPid = int32(os.Getppid())
 	}
-	msgs := jobslotOpen(func() error {
+	missedDir := jobslotMissedDir()
+	msgs, reached := jobslotOpen(func() error {
 		return preRunSetupRpcClient(nil, nil)
 	}, func(giveUp time.Time) chan jobslotMsg {
 		data := jobslotData(command)
 		data.HoldPid = holdPid
 		data.GiveUpTs = giveUp.UnixMilli()
+		data.Missed = jobslotTakeMissed(missedDir)
 		return wshclient.JobSlotCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: jobslotTimeout.Milliseconds()})
 	}, jobslotConnectWait, jobslotFirstWord)
+	if msgs == nil && !reached && os.Getenv(wshutil.WaveJwtTokenVarName) != "" {
+		// inside arcterm but wavesrv never heard of it: the next heavy command that gets through tells it
+		job, _ := memgate.Classify(command)
+		jobslotNoteMissed(missedDir, wshrpc.JobSlotMissed{Name: job.Name, Ts: time.Now().UnixMilli(), BlockId: os.Getenv("WAVETERM_BLOCKID")})
+	}
 	if jobslotHoldParent {
 		if msgs == nil {
 			fmt.Fprintln(os.Stderr, "arc: arcterm's job queue did not answer; running without a slot")
@@ -143,12 +153,87 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 
 type jobslotMsg = wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]
 
+// jobslotMissedMax is how many noted bypasses one request hands over; the rest go with the next
+const jobslotMissedMax = 50
+
+// jobslotMissedDir holds the commands a wsh jobslot ran without a slot because it never reached wavesrv (a connect
+// that failed or hung), one file each, until a later heavy command that gets through hands them over; empty when
+// there is no home directory
+func jobslotMissedDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".arc", "jobslot-missed")
+}
+
+// jobslotNoteMissed writes one under a temporary name, then renames it, so a reader never sees half a file. Best
+// effort: a failure loses only the count.
+func jobslotNoteMissed(dir string, m wshrpc.JobSlotMissed) {
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	// a unique name: the clock alone repeats within a burst on Windows
+	f, err := os.CreateTemp(dir, "*.tmp")
+	if err != nil {
+		return
+	}
+	tmp := f.Name()
+	_, werr := f.Write(b)
+	if cerr := f.Close(); werr != nil || cerr != nil {
+		os.Remove(tmp)
+		return
+	}
+	if err := os.Rename(tmp, strings.TrimSuffix(tmp, ".tmp")+".json"); err != nil {
+		os.Remove(tmp)
+	}
+}
+
+// jobslotTakeMissed reads and removes up to jobslotMissedMax noted bypasses. Two wsh can race for one: only the one
+// whose remove succeeds hands it over.
+func jobslotTakeMissed(dir string) []wshrpc.JobSlotMissed {
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []wshrpc.JobSlotMissed
+	for _, e := range entries {
+		if len(out) >= jobslotMissedMax {
+			break
+		}
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(p)
+		if err != nil || os.Remove(p) != nil {
+			continue
+		}
+		var m wshrpc.JobSlotMissed
+		if json.Unmarshal(b, &m) == nil && m.Name != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // jobslotOpen connects (within connectWait), starts the stream with the time the caller gives up, wait from the
 // connect, and returns the stream once its first message is in, that message replayed at its head. nil when the
 // connect fails or hangs, the stream ends with no word, or nothing comes within wait: the caller then runs the
-// command without a slot. On a timeout the work is left behind; the process exits soon after, which closes the
+// command without a slot; reached says whether the connect went through, so wavesrv saw the request (and counts
+// a late one itself). On a timeout the work is left behind; the process exits soon after, which closes the
 // link and frees anything the server held for it.
-func jobslotOpen(connect func() error, start func(giveUp time.Time) chan jobslotMsg, connectWait, wait time.Duration) chan jobslotMsg {
+func jobslotOpen(connect func() error, start func(giveUp time.Time) chan jobslotMsg, connectWait, wait time.Duration) (msgs chan jobslotMsg, reached bool) {
 	connected := make(chan error, 1)
 	go func() { connected <- connect() }()
 	connectTimer := time.NewTimer(connectWait)
@@ -156,10 +241,10 @@ func jobslotOpen(connect func() error, start func(giveUp time.Time) chan jobslot
 	select {
 	case err := <-connected:
 		if err != nil {
-			return nil
+			return nil, false
 		}
 	case <-connectTimer.C:
-		return nil
+		return nil, false
 	}
 	giveUp := time.Now().Add(wait)
 	got := make(chan chan jobslotMsg, 1)
@@ -184,9 +269,9 @@ func jobslotOpen(connect func() error, start func(giveUp time.Time) chan jobslot
 	defer timer.Stop()
 	select {
 	case msgs := <-got:
-		return msgs
+		return msgs, true
 	case <-timer.C:
-		return nil
+		return nil, true
 	}
 }
 

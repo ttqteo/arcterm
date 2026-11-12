@@ -23,6 +23,15 @@ type CommandJobSlotData struct {
 	// GiveUpTs is when `wsh jobslot` stops waiting for a first word and runs the command without a slot (Unix ms):
 	// a request read later takes no place and counts as a bypass
 	GiveUpTs int64 `json:"giveupts,omitempty"`
+	// Missed are commands earlier `wsh jobslot`s ran without a slot because they could not reach wavesrv at all
+	// (a connect that failed or hung): wsh keeps them on disk and hands them over with the next request
+	Missed []JobSlotMissed `json:"missed,omitempty"`
+}
+
+type JobSlotMissed struct {
+	Name    string `json:"name"` // memgate's job name
+	Ts      int64  `json:"ts"`   // Unix ms when it ran
+	BlockId string `json:"blockid,omitempty"`
 }
 
 // JobSlotUpdate is one line of `wsh jobslot`: a queued place while it waits (the job ahead and who it is

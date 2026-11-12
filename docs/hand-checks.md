@@ -55,7 +55,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   answering in time (e.g. suspend wavesrv for ~10 s with a heavy command waiting, then resume it) → the command runs,
   and once wavesrv resumes the Jobs popover's footer reads "1 command ran without a slot · last …" and waveapp.log
   has `[jobqueue] … ran without a slot`. A normal `task check:ts` adds nothing to the count (`wshserver_jobqueue.go`
-  GiveUpTs, `jobqueue.NoteBypass`).
+  GiveUpTs, `jobqueue.NoteBypass`). With no other job running, the app bar's Jobs chip reads "1 ran unqueued" in the
+  warning tone and goes after 30 min. With wavesrv suspended past 15 s (the connect never completes), the command
+  still runs, a file appears in `~/.arc/jobslot-missed/`, and the next heavy command after the resume removes it and
+  the count goes up (`wshcmd-jobslot.go` jobslotNoteMissed / jobslotTakeMissed).
 
 - [ ] (arcterm) No transcript error before a run's first message: start an orchestrator run, open its lead in Chat
   while the run's Setup is still going → the empty conversation shows no "Could not read the transcript: …" line, and
