@@ -34,6 +34,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   run each show as a card in the conversation, and fold into a ✓ row once their step is done. The decisions made so far
   fold into the question card's footer, and the `brainstorm: …` lines Arc sends for your clicks no longer show as
   messages.
+- Chat can add to an initiative without leaving the conversation: a new chunk, a note on a chunk, or a new initiative.
+  The agent proposes it as a card you add, edit or dismiss, and any message or reply has an Add to initiative… entry
+  (beside Copy, or right-click) that opens the same card with its text. A handled card folds into one row, and the
+  agent hears the outcome with your next message. Claude agents only.
 
 ### Changed
 

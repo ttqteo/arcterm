@@ -6,6 +6,17 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A real Claude agent files a follow-up through a card and reads its outcome (Add to an initiative from
+  Chat, spec 2026-11-12-chat-add-to-initiative-design): in a Claude agent's Chat that you started yourself (not one an
+  Arc run started), after an app launch has synced the updated `arc:initiatives` skill, ask it to file a follow-up
+  ("add a chunk to this initiative for the logging gap") → its reply holds an `arc-initiative` block that Chat draws as
+  an Add to initiative card (Waiting on you), not as raw JSON, and the agent has not run `wsh effort chunk add` itself;
+  press Add chunk, then send any plain message ("ok, go on") → the agent's next turn treats the `initiative: added chunk
+  …` line that opens your message as the outcome (it does not answer it as a request, and does not propose the chunk
+  again), and your bubble shows only what you typed. A live agent's behaviour, which no scenario can drive:
+  `chat-initiative` covers the card, the rows and the line with fixture transcripts and a mock RPC (cards from
+  `8c5873beb`; the skill rule is `skills/initiatives/SKILL.md`).
+
 - [ ] (arcterm) The Brainstorm tab's own-words field is a "You replied" in Chat: on an agent with a brainstorm
   question open, type an answer in that question's own-words field in the Brainstorm tab ("Answer in your own words…",
   or "Or type your own answer…" under options) and send it with OK or Enter → the ✓ row for that question in the

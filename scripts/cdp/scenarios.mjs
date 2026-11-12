@@ -47048,6 +47048,866 @@ const chatFork = {
     },
 };
 
+// --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
+// 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
+// initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
+// leaves the fourth a code block. The steps handle them one by one (Edit, the chunk dropdown and the picker, Add, Dismiss), open
+// cards from messages (a reply's and your own bubble's hover button, the context menu), switch one to a new initiative that the
+// mock refuses once, send plain messages that carry the outcome lines, read an exited agent's static card and reload. It reuses
+// agent-chat's tab fixtures and its RPC mock (installAgentChatMock: what the page types into a block is recorded in
+// window.__arcAgentChatMock) with a second layer over it that answers the initiative commands itself: effortlist (three
+// initiatives of the agent's project, one under a topic, the topic and one of another project), effortget (the agent's initiative
+// holds a chunk whose workrefs carry the agent's tab), effortmutate (applies an appendNote or addChunk op) and effortcreate
+// (refuses the first one on purpose). Every call is recorded; no real initiative is written. The transcripts are JSONL in a temp
+// dir. Teardown puts the roster, the mocks, the chat modes, the grid and the four chat.initiative.* localStorage keys back.
+const CI_MOCK_KEY = "__arcChatInitiativeMock";
+const CI_KEYS = {
+    handled: "chat.initiative.handled",
+    cards: "chat.initiative.cards",
+    drafts: "chat.initiative.drafts",
+    pending: "chat.initiative.pending",
+};
+const CI_SESSION = "chat-initiative-main";
+const CI_NAMES = { main: "initiative main", gone: "initiative gone" };
+const CI_PROJECT = "arcterm";
+const CI_WAIT_MS = 8000;
+const CI_REFUSED = "mock: the initiative store refused this create";
+const CI_OID = {
+    sync: "c1a00000-0000-4000-8000-000000000001",
+    policy: "c1a00000-0000-4000-8000-000000000002",
+    queue: "c1a00000-0000-4000-8000-000000000003",
+    topic: "c1a00000-0000-4000-8000-000000000004",
+    other: "c1a00000-0000-4000-8000-000000000005",
+    created: "c1a00000-0000-4000-8000-0000000000f1",
+};
+const CI_TITLE = {
+    sync: "Sync client retries",
+    policy: "Retry policy review",
+    queue: "Offline queue",
+    topic: "Sync and offline",
+    other: "Billing export",
+};
+// the agent's initiative: its second chunk is the one the agent holds (its tab is in the chunk's workrefs)
+const CI_CHUNKS = ["Add retries to the sync client", "Back off between attempts", "Log each retry attempt"];
+const CI_OWN_CHUNK = CI_CHUNKS[1];
+// long enough to run past the compact card's two clamped lines, and past the 300 characters a folded row keeps
+const CI_NOTE =
+    "Backoff is capped at 30 seconds and jittered by 20%, so two clients never retry in step. The cap comes from the p99 of how long the sync endpoint takes to recover, and a longer cap would stall the queue behind one slow request. The jitter is uniform and drawn once per attempt, not once per client, so a restart does not line the clients up again.";
+const CI_NEW_CHUNK = "Document the retry policy in the sync README";
+const CI_NEW_INITIATIVE = {
+    title: "Retry telemetry",
+    text: "Follow up: count how often a sync request retries, per endpoint.",
+    chunks: ["Count retries per request", "Chart the retry rate per endpoint"],
+};
+const CI_BROKEN = `{"kind": "note", "text": `;
+const CI_GONE_NOTE = "Each attempt's log line should carry the request id, so a stuck sync can be traced end to end.";
+const ciFence = (body) => "```arc-initiative\n" + body + "\n```";
+const CI_REPLY_1 = [
+    "I looked through the retry work. Three follow-ups are yours to decide, so they are cards:",
+    "",
+    ciFence(JSON.stringify({ kind: "note", effort: CI_OID.sync, text: CI_NOTE })),
+    "",
+    ciFence(JSON.stringify({ kind: "chunk", effort: `effort:${CI_OID.sync}`, text: CI_NEW_CHUNK })),
+    "",
+    ciFence(
+        JSON.stringify({
+            kind: "initiative",
+            title: CI_NEW_INITIATIVE.title,
+            text: CI_NEW_INITIATIVE.text,
+            chunks: CI_NEW_INITIATIVE.chunks,
+            parent: CI_OID.topic,
+        })
+    ),
+    "",
+    "And this block is not valid JSON, so it stays a code block:",
+    "",
+    ciFence(CI_BROKEN),
+].join("\n");
+const CI_PLAIN =
+    "Retries now back off exponentially, capped at 30 seconds.\n\nEach attempt waits twice as long as the last, with 20% jitter so two clients never retry in step. Worth tracking: how often a request retries in production.";
+const CI_ASK_1 = "file the follow-ups for the sync retry work";
+const CI_ASK_2 = "and how does the backoff work?";
+const CI_GONE_REPLY = [
+    "One more note for the retry work:",
+    "",
+    ciFence(JSON.stringify({ kind: "note", effort: CI_OID.sync, chunk: CI_CHUNKS[2], text: CI_GONE_NOTE })),
+].join("\n");
+const CI_SENT = ["thanks, keep going", "one more thing", "go on with the logging"];
+// the Chat's wording of a folded row's text: whitespace folded, at most 300 characters (chatinitiative.ts MAX_ROW_TEXT)
+const ciFlat = (t) => t.replace(/\s+/g, " ").trim();
+const ciClip = (t) => (ciFlat(t).length <= 300 ? ciFlat(t) : `${ciFlat(t).slice(0, 299).trimEnd()}…`);
+// What the mock recorded of one write, as the person's text: the mock reads the bytes with atob, which yields a Latin-1 string, so
+// the UTF-8 of a `›` is read back as three characters; the bracketed-paste markers go and xterm's "\r" line ends read as "\n"
+const ciUnbracket = (i) =>
+    Buffer.from(i, "latin1").toString("utf8").replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, "").replace(/\r/g, "\n");
+
+function ciWriteFixtures(dir) {
+    const base = Date.now() - 3_600_000;
+    const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
+    return {
+        main: AC.writeTranscript(dir, CI_SESSION, [
+            AC.userText(CI_ASK_1, o(0)),
+            AC.assistantText(CI_REPLY_1, o(2)),
+            AC.userText(CI_ASK_2, o(10)),
+            AC.assistantText(CI_PLAIN, o(12)),
+        ]),
+        gone: AC.writeTranscript(dir, "chat-initiative-gone", [
+            AC.userText("check the retry logs", o(0)),
+            AC.assistantText(CI_GONE_REPLY, o(2)),
+        ]),
+    };
+}
+
+// the roster: the live main agent (it works on the sync initiative) and a second agent whose process step 9 ends
+function ciRoster(ctx) {
+    const now = Date.now();
+    const base = { project: CI_PROJECT, task: "", agent: "claude", model: "opus", state: "idle", idleSince: now - 60_000 };
+    return [
+        {
+            ...base,
+            id: ctx.tabs.main.tabId,
+            name: CI_NAMES.main,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.files.main,
+            effortId: CI_OID.sync,
+        },
+        {
+            ...base,
+            id: ctx.tabs.gone.tabId,
+            name: CI_NAMES.gone,
+            blockId: ctx.tabs.gone.blockId,
+            transcriptPath: ctx.files.gone,
+        },
+    ];
+}
+
+// what the effort commands answer: the list (the project's three, the topic the first sits under, one of another project)
+// and each initiative's detail
+function ciEfforts(ctx) {
+    const now = Date.now();
+    const chunk = (label, status, extra = {}) => ({ label, status, updatedts: now - 3_600_000, ...extra });
+    const own = { kind: "agent", oref: `agent:${ctx.tabs.main.tabId}`, ts: now - 1_800_000 };
+    const specs = [
+        {
+            key: "sync",
+            project: CI_PROJECT,
+            parent: CI_OID.topic,
+            chunks: [chunk(CI_CHUNKS[0], "done"), chunk(CI_CHUNKS[1], "active", { workrefs: [own] }), chunk(CI_CHUNKS[2], "pending")],
+        },
+        {
+            key: "policy",
+            project: CI_PROJECT,
+            chunks: [chunk("Compare fixed and exponential backoff", "pending"), chunk("Write the recommendation", "pending")],
+        },
+        {
+            key: "queue",
+            project: CI_PROJECT,
+            chunks: [
+                chunk("Persist the queue", "done"),
+                chunk("Replay on reconnect", "done"),
+                chunk("Drop stale entries", "pending"),
+                chunk("Show the queue length in the footer", "pending"),
+            ],
+        },
+        { key: "topic", project: CI_PROJECT, chunks: [chunk("Keep the sync work in one place", "pending")] },
+        { key: "other", project: "billing", chunks: [chunk("Export invoices as CSV", "done"), chunk("Schedule the nightly export", "pending")] },
+    ];
+    const summaries = [];
+    const details = {};
+    for (const s of specs) {
+        const oid = CI_OID[s.key];
+        summaries.push({
+            oref: `effort:${oid}`,
+            title: CI_TITLE[s.key],
+            project: s.project,
+            status: "active",
+            parentoid: s.parent,
+            chunks: s.chunks.map((c) => ({ label: c.label, status: c.status, workrefs: c.workrefs })),
+            done: s.chunks.filter((c) => c.status === "done").length,
+            total: s.chunks.length,
+            activechunk: s.chunks.find((c) => c.status === "active")?.label,
+            updatedts: now - 3_600_000,
+        });
+        details[oid] = {
+            otype: "effort",
+            oid,
+            version: 1,
+            meta: {},
+            title: CI_TITLE[s.key],
+            project: s.project,
+            status: "active",
+            parentoid: s.parent,
+            chunks: s.chunks,
+            notes: [],
+            createdts: now - 86_400_000,
+            updatedts: now - 3_600_000,
+        };
+    }
+    return { summaries, details };
+}
+
+// The second mock layer, over agent-chat's: answers the initiative commands and records the writes (`mutates`, `creates`).
+// The first create is refused (m.refuse), as wavesrv would refuse one it cannot make; the next is answered.
+async function installCiMock(h, ctx) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    const { summaries, details } = ciEfforts(ctx);
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CI_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, efforts: ${JSON.stringify(summaries)}, details: ${JSON.stringify(details)}, mutates: [], creates: [], reads: [], refuse: true };
+        const clone = (v) => JSON.parse(JSON.stringify(v));
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "effortlist") return Promise.resolve({ efforts: clone(m.efforts) });
+                if (command === "effortget") {
+                    m.reads.push(data.effortoid);
+                    const d = m.details[data.effortoid];
+                    return d ? Promise.resolve({ effort: clone(d) }) : Promise.reject(new Error("mock: no initiative " + data.effortoid));
+                }
+                if (command === "effortmutate") {
+                    m.mutates.push(clone(data));
+                    const d = m.details[data.effortoid];
+                    if (!d) return Promise.reject(new Error("mock: no initiative " + data.effortoid));
+                    const now = Date.now();
+                    for (const op of data.ops ?? []) {
+                        if (op.op === "appendNote") {
+                            const c = d.chunks.find((x) => x.label === op.chunk);
+                            if (!c) return Promise.reject(new Error("mock: no chunk " + op.chunk));
+                            c.notes = [...(c.notes ?? []), { ts: now, text: op.note, author: data.author }];
+                            c.updatedts = now;
+                        } else if (op.op === "addChunk") {
+                            d.chunks.push({ label: op.label, status: "pending", updatedts: now });
+                            const s = m.efforts.find((e) => e.oref === "effort:" + data.effortoid);
+                            if (s) s.total += 1;
+                        } else {
+                            return Promise.reject(new Error("mock: no op " + op.op));
+                        }
+                    }
+                    d.updatedts = now;
+                    d.version += 1;
+                    return Promise.resolve({ effort: clone(d) });
+                }
+                if (command === "effortcreate") {
+                    m.creates.push(clone(data));
+                    if (m.refuse) {
+                        m.refuse = false;
+                        return Promise.reject(new Error(${JSON.stringify(CI_REFUSED)}));
+                    }
+                    const oid = ${JSON.stringify(CI_OID.created)};
+                    const now = Date.now();
+                    const chunks = (data.chunks ?? []).map((c) => ({ label: c.label, status: "pending", updatedts: now }));
+                    m.details[oid] = { otype: "effort", oid, version: 1, meta: {}, title: data.title, project: data.project, status: "active", parentoid: data.parentoid, chunks, notes: [], createdts: now, updatedts: now };
+                    m.efforts.push({ oref: "effort:" + oid, title: data.title, project: data.project, status: "active", parentoid: data.parentoid, chunks: chunks.map((c) => ({ label: c.label, status: c.status })), done: 0, total: chunks.length, updatedts: now });
+                    return Promise.resolve({ effortoid: oid });
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CI_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const removeCiMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CI_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${CI_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// the cards of one agent's Chat by where they came from, the card whose Add button reads `verb` (the verb names the kind in both
+// the compact card and the editor), and the rows the handled ones fold into
+const ciCards = (id, origin) => `[...document.querySelectorAll('[data-agent-chat="${id}"] [data-chat-initiative-origin="${origin}"]')]`;
+const ciCardWith = (id, verb) =>
+    `(${ciCards(id, "agent")}.find((c) => (c.querySelector("[data-chat-initiative-add]")?.textContent ?? "").trim() === ${JSON.stringify(verb)}) ?? null)`;
+const ciRows = (id) => `[...document.querySelectorAll('[data-agent-chat="${id}"] [data-chat-initiative-row]')]`;
+// while Edit or Cancel swaps a card's two bodies both are in the DOM for the spring's length (the folding one takes no click), so a
+// step waits for the settled one: the editor holds the textarea or the title field and no quote, the compact body holds the quote
+const ciEditorSettled = (cardExpr) =>
+    `(() => { const c = ${cardExpr}; return !!c && !!c.querySelector("[data-chat-initiative-text],[data-chat-initiative-title]") && !c.querySelector("[data-chat-initiative-quote]"); })()`;
+const ciCompactSettled = (cardExpr) =>
+    `(() => { const c = ${cardExpr}; return !!c && !!c.querySelector("[data-chat-initiative-quote]") && !c.querySelector("[data-chat-initiative-text],[data-chat-initiative-title],[data-chat-initiative-chunks]"); })()`;
+// everything a step asserts about one card, read at once
+const ciReadCard = (h, cardExpr) =>
+    h.ev(`(() => {
+        const c = ${cardExpr};
+        if (!c) return null;
+        const txt = (sel) => c.querySelector(sel)?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+        const val = (sel) => c.querySelector(sel)?.value ?? null;
+        const quote = c.querySelector("[data-chat-initiative-quote]");
+        return {
+            label: c.getAttribute("aria-label"),
+            phase: c.getAttribute("data-chat-initiative"),
+            origin: c.getAttribute("data-chat-initiative-origin"),
+            isStatic: c.hasAttribute("data-chat-initiative-static"),
+            header: c.firstElementChild?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+            waiting: !!c.querySelector("[data-chat-initiative-waiting]"),
+            kinds: [...c.querySelectorAll("[data-chat-initiative-kind]")].map((b) => [b.getAttribute("data-chat-initiative-kind"), b.textContent.trim(), b.getAttribute("aria-pressed")]),
+            text: val("[data-chat-initiative-text]"),
+            title: val("[data-chat-initiative-title]"),
+            chunks: val("[data-chat-initiative-chunks]"),
+            quote: quote?.textContent ?? null,
+            clamp: quote ? getComputedStyle(quote).webkitLineClamp : null,
+            clamped: quote ? quote.scrollHeight > quote.clientHeight : null,
+            sentence: quote?.previousElementSibling?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+            into: txt("[data-chat-initiative-into]"),
+            chunk: txt("[data-chat-initiative-chunk]"),
+            under: txt("[data-chat-initiative-under]"),
+            add: txt("[data-chat-initiative-add]"),
+            addDisabled: c.querySelector("[data-chat-initiative-add]")?.disabled ?? null,
+            retry: txt("[data-chat-initiative-retry]"),
+            edit: txt("[data-chat-initiative-edit]"),
+            dismiss: txt("[data-chat-initiative-dismiss]"),
+            cancel: txt("[data-chat-initiative-cancel]"),
+            error: txt("[data-chat-initiative-error]"),
+        };
+    })()`);
+// the folded rows of one agent's Chat in order: which, the spans of its line (the glyph and the empty filler dropped), Open ↗
+const ciReadRows = (h, id) =>
+    h.ev(`${ciRows(id)}.map((r) => ({
+        kind: r.getAttribute("data-chat-initiative-row"),
+        parts: [...r.children].filter((c) => c.tagName !== "svg").map((c) => c.textContent.trim()).filter((t) => t !== ""),
+        open: !!r.querySelector("[data-chat-initiative-open]"),
+    }))`);
+// a native value written to a controlled field, as typing would (the framework's tracker sees the change)
+const ciSetField = (h, selExpr, value) =>
+    h.ev(`(() => {
+        const el = ${selExpr};
+        if (!el) return false;
+        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+    })()`);
+
+const chatInitiative = {
+    name: "chat-initiative",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-initiative-")),
+            tabs: {},
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+            prevStore: await h.ev(`Object.fromEntries(${JSON.stringify(Object.values(CI_KEYS))}.map((k) => [k, localStorage.getItem(k)]))`),
+        };
+        // a throw past this point still returns ctx, so teardown undoes whatever was already made
+        let at = "writing the fixtures";
+        try {
+            ctx.files = ciWriteFixtures(ctx.dir);
+            at = "resetting the grid and the stored cards";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            // the store reads these once, when the page loads: no card is handled, none waits and no line is pending
+            await h.ev(`for (const k of ${JSON.stringify(Object.values(CI_KEYS))}) localStorage.removeItem(k)`);
+            at = "reloading the page";
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            for (const key of Object.keys(CI_NAMES)) {
+                at = `making the ${key} tab`;
+                ctx.tabs[key] = await acMakeTab(h, ctx, { label: CI_NAMES[key] });
+            }
+            // the mocks go in before the roster: a card asks for the initiative list when its Chat first mounts, which the roster
+            // brings, and a host keeps the list it got (the real store's is empty)
+            at = "installing the mocks";
+            const mock = await installAgentChatMock(h, ctx);
+            if (mock !== "installed") throw new Error(`chat mock: ${mock}`);
+            const ci = await installCiMock(h, ctx);
+            if (ci !== "installed") throw new Error(`initiative mock: ${ci}`);
+            at = "setting the roster";
+            await AC.setRoster(h, ciRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: Boolean(ok), detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agents, their transcripts and the mocks", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const G = ctx.tabs.gone.tabId;
+        const blockA = ctx.tabs.main.blockId;
+        const SYNC = `effort:${CI_OID.sync}`;
+        const until = (expr, ms = CI_WAIT_MS) => polishWaitFor(h, expr, ms);
+        // a settled frame for the shot: the card's spring is over
+        const shot = async (name) => {
+            await polishNap(500);
+            await h.shot(`cdp-shots/chat-initiative-${name}.png`);
+        };
+        const showAgent = async (id) => {
+            await AC.focusAgent(h, id);
+            return polishWaitFor(h, `!!${acCell(id)}`, CI_WAIT_MS);
+        };
+        const mock = () => h.ev(`(() => { const m = window.${CI_MOCK_KEY}; return m ? { mutates: m.mutates, creates: m.creates } : null; })()`);
+        const stored = (key) => h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(key)}) ?? "{}")`);
+        const click = (expr) => h.ev(`(() => { const el = ${expr}; el?.click(); return !!el; })()`);
+        // the n-th of your bubbles and of the agent's prose parts in the main agent's Chat
+        const you = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]')[${n}]`;
+        const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
+        const msgCard = `(${ciCards(A, "message")}[0] ?? null)`;
+        // the hover button of one message opens a card from it (a real pointer on the message, so :hover draws the button)
+        const openFrom = async (msgExpr) => {
+            const hovered = await cfHover(h, msgExpr);
+            const clicked = await click(`(${msgExpr})?.querySelector("[data-chat-add-initiative]")`);
+            const up = await until(`${ciCards(A, "message")}.length === 1`);
+            return { hovered, clicked, up };
+        };
+        // the element a card or row sits in is a sibling of the chat items; true when the item right before it holds `expr`
+        const afterItem = (elExpr, itemHoldsExpr) =>
+            h.ev(`(() => {
+                let slot = ${elExpr};
+                if (!slot) return null;
+                while (slot.parentElement && !slot.parentElement.querySelector(":scope > [data-chat-item]")) slot = slot.parentElement;
+                const prev = slot.previousElementSibling;
+                return !!prev && prev.hasAttribute("data-chat-item") && prev.contains(${itemHoldsExpr}) && !slot.hasAttribute("data-chat-item");
+            })()`);
+        // a plain message from the box: what the page typed into the block (the text, then its Enter) as one string, and the text of
+        // the pending bubbles read as soon as the send is made (an idle agent's goes five seconds after, chatpending.ts)
+        const pendingTexts = `[...${acLayer(A)}.querySelectorAll("[data-chat-pending]")].map((p) => p.firstElementChild?.textContent.trim())`;
+        const sendPlain = async (text) => {
+            const before = (await acSettled(h, blockA)).length;
+            await acType(h, acBox(A), text);
+            await polishWaitFor(h, `${pendingTexts}.includes(${JSON.stringify(text)})`, 1500);
+            const pend = await h.ev(pendingTexts);
+            await acUntil(async () => ((await acInputs(h, blockA)).length > before ? true : null), 5000);
+            const inputs = (await acSettled(h, blockA)).slice(before);
+            return { inputs, pend, typed: inputs.filter((i) => i !== "\r").map(ciUnbracket).join("") };
+        };
+        try {
+            // the keys need the page in focus, which Chromium holds back while the dev window is behind another
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+
+            // 1. the compact card from the agent
+            await showAgent(A);
+            const ready1 = await until(
+                `${ciCards(A, "agent")}.length === 3 && (${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-chunk]")?.textContent ?? "").includes(${JSON.stringify(CI_OWN_CHUNK)}) && (${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-into]")?.textContent ?? "").includes(${JSON.stringify(CI_TITLE.sync)})`,
+                15000
+            );
+            await acScrollTo(h, ciCardWith(A, "Add note"));
+            const c1 = await ciReadCard(h, ciCardWith(A, "Add note"));
+            const verbs1 = await h.ev(`${ciCards(A, "agent")}.map((c) => c.querySelector("[data-chat-initiative-add]")?.textContent.trim())`);
+            const broken1 = await h.ev(`(() => {
+                const p = ${prose(0)};
+                const heads = [...(p?.querySelectorAll("[data-code-head]") ?? [])];
+                return {
+                    codeBlocks: heads.length,
+                    lang: heads[0]?.textContent.includes("arc-initiative") ?? false,
+                    body: heads[0]?.parentElement?.textContent.includes('"kind": "note"') ?? false,
+                    folded: !!document.querySelector('[data-agent-chat="${A}"] [data-chat-fold]'),
+                    cardsInProse: p?.querySelectorAll("[data-chat-initiative]").length ?? 0,
+                };
+            })()`);
+            await shot("1-compact");
+            rec(
+                "1. the agent's reply draws three cards in place (a note, a chunk, a new initiative; the fourth block, broken JSON, stays a code block, and the reply is not folded behind Show more): the note card is compact, headed `Add to initiative · proposed by the agent` with the amber `Waiting on you` dot, reads `Add a note to` the initiative chip (title and 1/3) and the chunk dropdown (the agent's own chunk), quotes the note clamped to two lines (it runs past them) and offers Add note / Edit / Dismiss",
+                ready1 && c1 != null &&
+                    JSON.stringify(verbs1) === JSON.stringify(["Add note", "Add chunk", "Create initiative"]) &&
+                    broken1.codeBlocks === 1 && broken1.lang && broken1.body && !broken1.folded && broken1.cardsInProse === 3 &&
+                    c1.label === "Add to initiative" && c1.phase === "waiting" && c1.origin === "agent" && !c1.isStatic &&
+                    c1.header.includes("Add to initiative · proposed by the agent") && c1.header.includes("Waiting on you") && c1.waiting &&
+                    c1.sentence.includes("Add a note to") && c1.into.includes(CI_TITLE.sync) && c1.into.includes("1/3") &&
+                    c1.chunk.includes(CI_OWN_CHUNK) && c1.quote === CI_NOTE && c1.clamp === "2" && c1.clamped === true &&
+                    c1.add === "Add note" && c1.edit === "Edit" && c1.dismiss === "Dismiss" && c1.cancel === null && c1.kinds.length === 0,
+                { ready1, c1, verbs1, broken1 }
+            );
+
+            // 2. Edit opens the editor in place; the chunk dropdown lists the chunks by number with the agent's own marked; Change…
+            // opens the picker over the Into row, the project's initiatives first and the other projects behind
+            await click(`${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-edit]")`);
+            const editing2 = await until(ciEditorSettled(ciCardWith(A, "Add note")));
+            const e2 = await ciReadCard(h, ciCardWith(A, "Add note"));
+            await click(`${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-chunk]")`);
+            const listUp = await until(`!!document.querySelector("[data-chat-initiative-chunk-list]")`);
+            const options2 = await h.ev(`[...document.querySelectorAll("[data-chat-initiative-chunk-option]")].map((o) => ({ label: o.getAttribute("data-chat-initiative-chunk-option"), text: o.textContent.replace(/\\s+/g, " ").trim() }))`);
+            await shot("2-editor-chunks");
+            await acKey(h, acKeys.escape);
+            const listGone = await until(`!document.querySelector("[data-chat-initiative-chunk-list]")`);
+            await click(`${ciCardWith(A, "Add note")}?.querySelector('[data-chat-initiative-change="into"]')`);
+            const pickerUp = await until(`!!document.querySelector("[data-initiative-picker]")`);
+            const picker2 = await h.ev(`(() => {
+                const p = document.querySelector("[data-initiative-picker]");
+                const change = ${ciCardWith(A, "Add note")}?.querySelector('[data-chat-initiative-change="into"]')?.getBoundingClientRect();
+                const r = p?.getBoundingClientRect();
+                return {
+                    rows: [...(p?.querySelectorAll("[data-picker-row]") ?? [])].map((x) => x.getAttribute("data-picker-row")),
+                    others: p?.querySelector("[data-picker-others]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    project: p?.textContent.includes(${JSON.stringify(CI_PROJECT)}) ?? false,
+                    near: !!r && !!change ? Math.abs(r.top - change.bottom) < 40 || Math.abs(r.bottom - change.top) < 40 : null,
+                };
+            })()`);
+            await shot("2-picker");
+            await acKey(h, acKeys.escape);
+            const pickerGone = await until(`!document.querySelector("[data-initiative-picker]")`);
+            rec(
+                "2. Edit on the note card opens the editor in place (the kind switch New chunk / Note / New initiative with Note pressed, the note in a textarea, the Into row with the chip and Change…, the Chunk dropdown); the dropdown lists the three chunks with their numbers and marks `· this agent's` on the agent's own only; Change… opens the picker with the project's four initiatives first and `Other projects · 1` behind, and Escape closes it",
+                editing2 && e2 != null &&
+                    JSON.stringify(e2.kinds) === JSON.stringify([["chunk", "New chunk", "false"], ["note", "Note", "true"], ["initiative", "New initiative", "false"]]) &&
+                    e2.text === CI_NOTE && e2.into.includes(CI_TITLE.sync) && e2.chunk.includes(CI_OWN_CHUNK) &&
+                    e2.add === "Add note" && e2.cancel === "Cancel" && e2.edit === null && e2.dismiss === "Dismiss" &&
+                    listUp && options2.length === 3 &&
+                    JSON.stringify(options2.map((o) => o.label)) === JSON.stringify(CI_CHUNKS) &&
+                    options2.every((o, i) => o.text.startsWith(String(i + 1)) && o.text.includes(o.label) && o.text.includes("· this agent's") === (i === 1)) &&
+                    listGone && pickerUp &&
+                    JSON.stringify(picker2.rows) === JSON.stringify([CI_OID.sync, CI_OID.policy, CI_OID.queue, CI_OID.topic].map((o) => `effort:${o}`)) &&
+                    (picker2.others ?? "").startsWith("Other projects · 1") && picker2.project && pickerGone,
+                { editing2, e2, listUp, options2, listGone, pickerUp, picker2, pickerGone }
+            );
+
+            // 3. Add note writes the note on the agent's chunk and the card folds into its row
+            await click(`${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-add]")`);
+            const row3 = await until(`${ciRows(A)}.length === 1 && ${ciCards(A, "agent")}.length === 2`);
+            await acScrollTo(h, `${ciRows(A)}[0]`);
+            const rows3 = await ciReadRows(h, A);
+            const m3 = await mock();
+            await shot("3-note-row");
+            rec(
+                "3. Add note folds the card into the ✓ row `Note added · <initiative> › 2 — <text>` with Open ↗, and the mock recorded one mutate: an appendNote of the note on the agent's chunk",
+                row3 && rows3.length === 1 && rows3[0].kind === "added" && rows3[0].open &&
+                    JSON.stringify(rows3[0].parts) === JSON.stringify(["Note added ·", `${CI_TITLE.sync} › 2`, `— ${ciClip(CI_NOTE)}`, "Open ↗"]) &&
+                    m3.mutates.length === 1 && m3.creates.length === 0 &&
+                    m3.mutates[0].effortoid === CI_OID.sync &&
+                    JSON.stringify(m3.mutates[0].ops) === JSON.stringify([{ op: "appendNote", chunk: CI_OWN_CHUNK, note: CI_NOTE }]),
+                { row3, rows3, m3 }
+            );
+
+            // 4. Add chunk on the chunk card appends it, and the row names the new chunk's place
+            await acScrollTo(h, ciCardWith(A, "Add chunk"));
+            const c4 = await ciReadCard(h, ciCardWith(A, "Add chunk"));
+            await click(`${ciCardWith(A, "Add chunk")}?.querySelector("[data-chat-initiative-add]")`);
+            const row4 = await until(`${ciRows(A)}.length === 2 && ${ciCards(A, "agent")}.length === 1`);
+            const rows4 = await ciReadRows(h, A);
+            await acScrollTo(h, `${ciRows(A)}[1]`);
+            const m4 = await mock();
+            await shot("4-chunk-row");
+            rec(
+                "4. the chunk card reads `Add a chunk to` the initiative with no chunk dropdown; Add chunk folds it into the ✓ row `Chunk added · <initiative> › 4 — <label>` (the new chunk's place), and the mock recorded a second mutate: an addChunk with the label",
+                c4 != null && c4.sentence.includes("Add a chunk to") && c4.chunk === null && c4.quote === CI_NEW_CHUNK && c4.add === "Add chunk" &&
+                    row4 && rows4.length === 2 && rows4[1].kind === "added" && rows4[1].open &&
+                    JSON.stringify(rows4[1].parts) === JSON.stringify(["Chunk added ·", `${CI_TITLE.sync} › 4`, `— ${CI_NEW_CHUNK}`, "Open ↗"]) &&
+                    m4.mutates.length === 2 && m4.creates.length === 0 &&
+                    JSON.stringify(m4.mutates[1].ops) === JSON.stringify([{ op: "addChunk", label: CI_NEW_CHUNK }]),
+                { c4, row4, rows4, m4 }
+            );
+
+            // 5. the new-initiative card: Edit opens its editor (the board fold-rows), Dismiss leaves the faint row and writes nothing
+            await acScrollTo(h, ciCardWith(A, "Create initiative"));
+            const c5 = await ciReadCard(h, ciCardWith(A, "Create initiative"));
+            await click(`${ciCardWith(A, "Create initiative")}?.querySelector("[data-chat-initiative-edit]")`);
+            const editing5 = await until(ciEditorSettled(ciCardWith(A, "Create initiative")));
+            const e5 = await ciReadCard(h, ciCardWith(A, "Create initiative"));
+            await shot("5-new-initiative-editor");
+            await click(`${ciCardWith(A, "Create initiative")}?.querySelector("[data-chat-initiative-dismiss]")`);
+            const row5 = await until(`${ciRows(A)}.length === 3 && ${ciCards(A, "agent")}.length === 0`);
+            const rows5 = await ciReadRows(h, A);
+            await acScrollTo(h, `${ciRows(A)}[2]`);
+            const m5 = await mock();
+            await shot("5-dismissed");
+            rec(
+                "5. the new-initiative card reads `Create a new initiative “Retry telemetry” under` the topic chip; Edit opens its editor (header `proposed by the agent`, New initiative pressed, the Title, the first chunks one per line, Under with the topic chip, Create initiative and Dismiss); Dismiss leaves the faint row `Dismissed · new initiative “Retry telemetry” under <topic>` (no Open) and nothing was written",
+                c5 != null && c5.sentence.includes("Create a new initiative “Retry telemetry” under") && c5.under.includes(CI_TITLE.topic) &&
+                    editing5 && e5 != null && e5.header.includes("proposed by the agent") &&
+                    JSON.stringify(e5.kinds) === JSON.stringify([["chunk", "New chunk", "false"], ["note", "Note", "false"], ["initiative", "New initiative", "true"]]) &&
+                    e5.title === CI_NEW_INITIATIVE.title && e5.chunks === CI_NEW_INITIATIVE.chunks.join("\n") && e5.under.includes(CI_TITLE.topic) &&
+                    e5.add === "Create initiative" && e5.dismiss === "Dismiss" &&
+                    row5 && rows5.length === 3 && rows5[2].kind === "dismissed" && !rows5[2].open &&
+                    JSON.stringify(rows5[2].parts) === JSON.stringify([`Dismissed · new initiative “${CI_NEW_INITIATIVE.title}” under ${CI_TITLE.topic}`]) &&
+                    m5.mutates.length === 2 && m5.creates.length === 0,
+                { c5, editing5, e5, row5, rows5, m5 }
+            );
+
+            // 6. Add to initiative… from a message: from the plain reply's hover button (a card right after that reply, in the
+            // editor, kind Note, the whole message filled), the same entry in its context menu, Cancel removes the card with no
+            // row; and from one of your own bubbles
+            const open6 = await openFrom(prose(1));
+            await until(ciEditorSettled(msgCard));
+            const c6 = await ciReadCard(h, msgCard);
+            const placed6 = await afterItem(`(${msgCard})`, prose(1));
+            const rowsBefore6 = (await ciReadRows(h, A)).length;
+            await acScrollTo(h, msgCard);
+            await shot("6-message-card");
+            await h.ev(`(() => {
+                const el = ${prose(1)};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 12, button: 2 }));
+            })()`);
+            const menu6 = await until(`!!document.querySelector('[data-menu-item="Add to initiative…"]')`);
+            const copyInMenu6 = await h.ev(`!!document.querySelector('[data-menu-item="Copy text"]')`);
+            await shot("6-context-menu");
+            await AC.agentPage(h, `const C = await mod("app/store/contextmenu.ts"); C.closeContextMenu(); return true;`);
+            const pendingBefore6 = (await stored(CI_KEYS.pending))[A] ?? [];
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-cancel]")`);
+            const gone6 = await until(`${ciCards(A, "message")}.length === 0`);
+            const cardsStore6 = (await stored(CI_KEYS.cards))[A] ?? [];
+            const rowsAfter6 = (await ciReadRows(h, A)).length;
+            const pendingAfter6 = (await stored(CI_KEYS.pending))[A] ?? [];
+            // your own bubble: the card opens filled with its text
+            const open6b = await openFrom(you(0));
+            await until(ciEditorSettled(msgCard));
+            const c6b = await ciReadCard(h, msgCard);
+            await acScrollTo(h, msgCard);
+            await shot("6-your-message");
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-cancel]")`);
+            const gone6b = await until(`${ciCards(A, "message")}.length === 0`);
+            rec(
+                "6. Add to initiative… on the plain reply's hover button opens a card right after that reply (not a chat item), origin message, in the editor with Note pressed, the whole message in the textarea, Add note and Cancel and no Dismiss; the reply's context menu has the same entry beside Copy text; Cancel removes the card with no row, nothing stored and no line queued; your own bubble's hover button opens a card filled with that bubble's text, which Cancel removes too",
+                open6.hovered && open6.clicked && open6.up && c6 != null && placed6 === true &&
+                    c6.label === "Add to initiative" && c6.origin === "message" && c6.phase === "editing" &&
+                    c6.header.includes("Add to initiative · from your message") &&
+                    JSON.stringify(c6.kinds) === JSON.stringify([["chunk", "New chunk", "false"], ["note", "Note", "true"], ["initiative", "New initiative", "false"]]) &&
+                    c6.text.trim() === CI_PLAIN.trim() && c6.add === "Add note" && c6.cancel === "Cancel" && c6.dismiss === null &&
+                    c6.into.includes(CI_TITLE.sync) && c6.chunk.includes(CI_OWN_CHUNK) &&
+                    menu6 && copyInMenu6 &&
+                    gone6 && cardsStore6.length === 0 && rowsBefore6 === 3 && rowsAfter6 === 3 &&
+                    JSON.stringify(pendingAfter6) === JSON.stringify(pendingBefore6) &&
+                    open6b.hovered && open6b.clicked && open6b.up && c6b != null && c6b.origin === "message" && c6b.text.trim() === CI_ASK_1 &&
+                    c6b.kinds.find((k) => k[0] === "note")?.[2] === "true" && gone6b,
+                { open6, c6, placed6, menu6, copyInMenu6, gone6, cardsStore6, rowsBefore6, rowsAfter6, pendingBefore6, pendingAfter6, open6b, c6b, gone6b }
+            );
+
+            // 7. open it again and switch to New initiative: the title, the first chunks and Under with the topic chip; the mock
+            // refuses the create, so the reason and Try again show on the card, which does not fold; Try again creates it
+            const open7 = await openFrom(prose(1));
+            await until(ciEditorSettled(msgCard));
+            await click(`${msgCard}?.querySelector('[data-chat-initiative-kind="initiative"]')`);
+            const switched7 = await until(`!!${msgCard}?.querySelector("[data-chat-initiative-title]") && !${msgCard}?.querySelector("[data-chat-initiative-text]")`);
+            const topicShown7 = await until(`(${msgCard}?.querySelector("[data-chat-initiative-under]")?.textContent ?? "").includes(${JSON.stringify(CI_TITLE.topic)})`);
+            const first7 = await ciReadCard(h, msgCard);
+            const NEW_TITLE = "Retry rate dashboard";
+            const NEW_CHUNKS = ["Add a retry counter", "Graph retries per endpoint"];
+            await ciSetField(h, `${msgCard}?.querySelector("[data-chat-initiative-title]")`, NEW_TITLE);
+            await ciSetField(h, `${msgCard}?.querySelector("[data-chat-initiative-chunks]")`, NEW_CHUNKS.join("\n"));
+            const filled7 = await until(`(${msgCard}?.querySelector("[data-chat-initiative-title]")?.value ?? "") === ${JSON.stringify(NEW_TITLE)}`);
+            await acScrollTo(h, msgCard);
+            await shot("7-new-initiative-editor");
+            const filledRead7 = await ciReadCard(h, msgCard);
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-add]")`);
+            const failed7 = await until(`${msgCard}?.getAttribute("data-chat-initiative") === "failed" && !!${msgCard}?.querySelector("[data-chat-initiative-error]")`);
+            const f7 = await ciReadCard(h, msgCard);
+            const rowsFailed7 = (await ciReadRows(h, A)).length;
+            await acScrollTo(h, msgCard);
+            await shot("7-refused");
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-retry]")`);
+            const row7 = await until(`${ciCards(A, "message")}.length === 0 && ${ciRows(A)}.length === 4`);
+            const rows7 = await ciReadRows(h, A);
+            const m7 = await mock();
+            const placed7 = await afterItem(`${ciRows(A)}[3]`, prose(1));
+            await acScrollTo(h, `${ciRows(A)}[3]`);
+            await shot("7-created");
+            rec(
+                "7. a card opened again from the reply and switched to New initiative shows the Title (from the message's first line), the first chunks field and Under with the topic chip (the topic of the agent's initiative); Create initiative is refused by the mock: the card stays (phase failed, no row) with the reason and Try again; Try again creates it with the title, the project, the topic and the chunks, and the card folds into the ✓ row `Initiative created · “<title>” under <topic>` after the reply",
+                open7.hovered && open7.clicked && open7.up && switched7 && topicShown7 && first7 != null &&
+                    first7.title === CI_PLAIN.split("\n")[0] && first7.chunks === "" && first7.under.includes(CI_TITLE.topic) &&
+                    first7.add === "Create initiative" && first7.cancel === "Cancel" &&
+                    filled7 && filledRead7.title === NEW_TITLE && filledRead7.chunks === NEW_CHUNKS.join("\n") &&
+                    failed7 && f7.phase === "failed" && f7.error === CI_REFUSED && f7.retry === "Try again" && f7.add === null && rowsFailed7 === 3 &&
+                    row7 && rows7.length === 4 && rows7[3].kind === "added" && rows7[3].open &&
+                    JSON.stringify(rows7[3].parts) === JSON.stringify(["Initiative created ·", `“${NEW_TITLE}” under ${CI_TITLE.topic}`, "Open ↗"]) &&
+                    placed7 === true &&
+                    m7.creates.length === 2 && m7.mutates.length === 2 &&
+                    JSON.stringify(m7.creates[0]) === JSON.stringify(m7.creates[1]) &&
+                    JSON.stringify(m7.creates[1]) ===
+                        JSON.stringify({
+                            title: NEW_TITLE,
+                            project: CI_PROJECT,
+                            parentoid: CI_OID.topic,
+                            chunks: NEW_CHUNKS.map((label) => ({ label })),
+                        }),
+                { open7, switched7, topicShown7, first7, filled7, filledRead7, failed7, f7, rowsFailed7, row7, rows7, placed7, m7 }
+            );
+
+            // 8. a plain message carries the outcome lines: the four cards handled, in order, then a blank line and the text; the
+            // bubble shows only the text. The next plain message carries none; a `/` command sent while a line is pending carries
+            // none and leaves it pending, and the next plain message carries it
+            const LINES = [
+                `initiative: added note to ${CI_TITLE.sync} (${SYNC}) › ${CI_OWN_CHUNK}`,
+                `initiative: added chunk "${CI_NEW_CHUNK}" to ${CI_TITLE.sync} (${SYNC})`,
+                `initiative: dismissed initiative for ${CI_NEW_INITIATIVE.title}`,
+                `initiative: created initiative ${NEW_TITLE} (effort:${CI_OID.created}) under ${CI_TITLE.topic}`,
+            ];
+            const pending8 = (await stored(CI_KEYS.pending))[A] ?? [];
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, CI_WAIT_MS);
+            await acClear(h, acBox(A));
+            const wire8 = `${LINES.join("\n")}\n\n${CI_SENT[0]}`;
+            const sent8 = await sendPlain(CI_SENT[0]);
+            const pendingAfterSend8 = (await stored(CI_KEYS.pending))[A] ?? null;
+            const pendingBubble8 = sent8.pend.includes(CI_SENT[0]);
+            // Claude Code stores a multi-line message whole inside one paste block: the line it writes for the message
+            acAppend(ctx.files.main, AC.userText(`<pasted_content id="ci1">\n${wire8}\n</pasted_content>`, { cwd: ctx.dir }));
+            const youHas = (text) => `[...${acLayer(A)}.querySelectorAll("[data-chat-you]")].filter((e) => e.textContent.includes(${JSON.stringify(text)}))`;
+            const landed8 = await until(`${youHas(CI_SENT[0])}.length === 1 && ![...${acLayer(A)}.querySelectorAll("[data-chat-pending]")].some((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(CI_SENT[0])})`, 15000);
+            const bubble8 = await h.ev(`(() => {
+                const b = ${youHas(CI_SENT[0])}[0];
+                return { text: b?.textContent.trim() ?? null, lines: b?.textContent.includes("initiative:") ?? null, tag: b?.textContent.includes("pasted_content") ?? null };
+            })()`);
+            await acScrollTo(h, `${youHas(CI_SENT[0])}[0]`);
+            await shot("8-sent");
+            rec(
+                "8a. the first plain message sent after the four cards were handled is typed into the block with the four `initiative:` lines in the order handled (note added, chunk added, initiative dismissed, initiative created, with the initiative's oid), one blank line, then the text; the queue is empty after; its pending bubble and, once Claude Code's paste-wrapped line is in the transcript, its bubble show only the text",
+                JSON.stringify(pending8) === JSON.stringify(LINES) && sent8.typed === wire8 && sent8.inputs.includes("\r") &&
+                    pendingAfterSend8 === null && pendingBubble8 && landed8 &&
+                    bubble8.text === CI_SENT[0] && bubble8.lines === false && bubble8.tag === false,
+                { pending8, sent8, pendingAfterSend8, pendingBubble8, landed8, bubble8 }
+            );
+
+            const sent8b = await sendPlain(CI_SENT[1]);
+            acAppend(ctx.files.main, AC.userText(CI_SENT[1], { cwd: ctx.dir }));
+            await until(`${youHas(CI_SENT[1])}.length === 1`, 15000);
+            rec("8b. the second plain message carries no lines: only its text is typed", sent8b.typed === CI_SENT[1], { sent8b });
+
+            // a card handled now queues a line (a note filed from the reply, as step 6 opened it); a `/` command goes without it
+            await openFrom(prose(1));
+            await until(ciEditorSettled(msgCard));
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-add]")`);
+            const row8 = await until(`${ciCards(A, "message")}.length === 0 && ${ciRows(A)}.length === 5`);
+            const m8 = await mock();
+            const queued8 = (await stored(CI_KEYS.pending))[A] ?? [];
+            const beforeSlash = (await acSettled(h, blockA)).length;
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "/compact", false);
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 2000);
+            await acKey(h, acKeys.enter);
+            let slashInputs = await acUntil(async () => {
+                const now = await acInputs(h, blockA);
+                return now.length > beforeSlash ? now : null;
+            }, 2500);
+            if (slashInputs == null) {
+                // Enter picked the menu's row, which put `/compact ` in the box: the next Enter sends it
+                await acKey(h, acKeys.enter);
+                slashInputs = await acUntil(async () => {
+                    const now = await acInputs(h, blockA);
+                    return now.length > beforeSlash ? now : null;
+                }, 2500);
+            }
+            const typedSlash = (await acSettled(h, blockA)).slice(beforeSlash).filter((i) => i !== "\r").map(ciUnbracket).join("");
+            const stillPending8 = (await stored(CI_KEYS.pending))[A] ?? [];
+            const sent8c = await sendPlain(CI_SENT[2]);
+            const emptyAfter8 = (await stored(CI_KEYS.pending))[A] ?? null;
+            rec(
+                "8c. a card handled after that (a note filed from the reply) queues its line; a `/` command sent while it is pending is typed bare, without the line, and leaves it pending; the next plain message then carries it, and the queue is empty",
+                row8 && m8.mutates.length === 3 && queued8.length === 1 && queued8[0] === LINES[0] &&
+                    slashInputs != null && typedSlash.trim() === "/compact" && JSON.stringify(stillPending8) === JSON.stringify(queued8) &&
+                    sent8c.typed === `${queued8[0]}\n\n${CI_SENT[2]}` && emptyAfter8 === null,
+                { row8, mutates: m8.mutates.length, queued8, typedSlash, stillPending8, sent8c, emptyAfter8 }
+            );
+
+            // 9. an agent whose process exited: its card shows no amber dot (static), its Add note still writes and folds
+            await showAgent(G);
+            const ready9 = await until(
+                `${ciCards(G, "agent")}.length === 1 && (${ciCards(G, "agent")}[0]?.querySelector("[data-chat-initiative-chunk]")?.textContent ?? "").includes(${JSON.stringify(CI_CHUNKS[2])})`,
+                15000
+            );
+            const before9 = await ciReadCard(h, `${ciCards(G, "agent")}[0]`);
+            await bsPublishProc(h, { blockId: ctx.tabs.gone.blockId }, "done", 1);
+            const static9 = await until(`${ciCards(G, "agent")}[0]?.hasAttribute("data-chat-initiative-static") === true`);
+            await acScrollTo(h, `${ciCards(G, "agent")}[0]`);
+            const exited9 = await ciReadCard(h, `${ciCards(G, "agent")}[0]`);
+            await shot("9-exited");
+            await click(`${ciCards(G, "agent")}[0]?.querySelector("[data-chat-initiative-add]")`);
+            const row9 = await until(`${ciRows(G)}.length === 1 && ${ciCards(G, "agent")}.length === 0`);
+            const rows9 = await ciReadRows(h, G);
+            const m9 = await mock();
+            await shot("9-exited-row");
+            rec(
+                "9. the exited agent's card: before its process ends it waits with the amber dot; once it exits the card is static (data-chat-initiative-static, no amber dot), its Add note still writes (a fourth mutate: the note on `Log each retry attempt`) and the card folds into its ✓ row `Note added · <initiative> › 3 — <text>`",
+                ready9 && before9 != null && before9.waiting && !before9.isStatic &&
+                    static9 && exited9 != null && exited9.isStatic && !exited9.waiting && exited9.add === "Add note" && exited9.addDisabled === false &&
+                    row9 && rows9.length === 1 && rows9[0].kind === "added" &&
+                    JSON.stringify(rows9[0].parts) === JSON.stringify(["Note added ·", `${CI_TITLE.sync} › 3`, `— ${CI_GONE_NOTE}`, "Open ↗"]) &&
+                    m9.mutates.length === 4 &&
+                    JSON.stringify(m9.mutates[3].ops) === JSON.stringify([{ op: "appendNote", chunk: CI_CHUNKS[2], note: CI_GONE_NOTE }]),
+                { ready9, before9, static9, exited9, row9, rows9, mutates: m9.mutates.length, last: m9.mutates[3] }
+            );
+            await bsPublishProc(h, { blockId: ctx.tabs.gone.blockId }, "running", 0);
+
+            // 10. reload: every row stays folded and no handled card waits again
+            const handled10 = Object.keys(await stored(CI_KEYS.handled)).length;
+            const drafts10 = Object.keys(await stored(CI_KEYS.drafts)).length;
+            const reloaded = await ahReload(h);
+            await h.goto("agent");
+            const mocks10 = [await installAgentChatMock(h, ctx), await installCiMock(h, ctx)];
+            await AC.setRoster(h, ciRoster(ctx));
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await showAgent(A);
+            const back10 = await until(`${ciRows(A)}.length === 5`, 15000);
+            await polishNap(500);
+            const rows10 = await ciReadRows(h, A);
+            const live10 = await h.ev(`document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-initiative]').length`);
+            const code10 = await h.ev(`(() => {
+                const heads = [...(${prose(0)}?.querySelectorAll("[data-code-head]") ?? [])];
+                return { codeBlocks: heads.length, body: heads[0]?.parentElement?.textContent.includes('"kind": "note"') ?? false };
+            })()`);
+            await acScrollTo(h, `${ciRows(A)}[0]`);
+            await shot("10-reload");
+            await showAgent(G);
+            const back10g = await until(`${ciRows(G)}.length === 1`, 15000);
+            const live10g = await h.ev(`document.querySelectorAll('[data-agent-chat="${G}"] [data-chat-initiative]').length`);
+            await polishNap(300);
+            await shot("10-reload-exited");
+            rec(
+                "10. after a reload every row is back folded and no card waits: the main agent's Chat has its five rows (note added, chunk added, dismissed, initiative created, note added, in the order they were handled) and no card, the broken block is still a code block, and the exited agent's Chat has its one ✓ row and no card; no draft is left stored",
+                reloaded && JSON.stringify(mocks10) === JSON.stringify(["installed", "installed"]) && back10 && live10 === 0 &&
+                    JSON.stringify(rows10.map((r) => r.kind)) === JSON.stringify(["added", "added", "dismissed", "added", "added"]) &&
+                    JSON.stringify(rows10.map((r) => r.parts[0])) ===
+                        JSON.stringify(["Note added ·", "Chunk added ·", `Dismissed · new initiative “${CI_NEW_INITIATIVE.title}” under ${CI_TITLE.topic}`, "Initiative created ·", "Note added ·"]) &&
+                    code10.codeBlocks === 1 && code10.body &&
+                    // the handled records are the proposed blocks': the main agent's three and the exited agent's one
+                    back10g && live10g === 0 && handled10 === 4 && drafts10 === 0,
+                { reloaded, mocks10, back10, rows10, live10, code10, back10g, live10g, handled10, drafts10 }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-initiative teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the menu", () => AC.agentPage(h, `const C = await mod("app/store/contextmenu.ts"); C.closeContextMenu(); return true;`));
+        await step("empty the main agent's box", async () => {
+            const id = ctx.tabs?.main?.tabId;
+            if (id) await acClear(h, acBox(id));
+        });
+        await step("clear the exit", () => (ctx.tabs?.gone ? bsPublishProc(h, { blockId: ctx.tabs.gone.blockId }, "running", 0) : null));
+        await step("remove the initiative mock", () => removeCiMock(h));
+        await step("remove the chat mock", () => removeAgentChatMock(h));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        // the four chat.initiative.* keys go back as they were (removed when they were absent), with the grid and the chat modes;
+        // the page reloads below, so its stores read them again
+        await step("restore the grid, the chat modes and the initiative keys", () =>
+            h.ev(`(() => {
+                const put = (key, prev) => (prev == null ? localStorage.removeItem(key) : localStorage.setItem(key, prev));
+                put(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid ?? null)});
+                put("agent.chatmode", ${JSON.stringify(ctx.prevModes ?? null)});
+                for (const [key, prev] of Object.entries(${JSON.stringify(ctx.prevStore ?? {})})) put(key, prev);
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcripts", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- sidebar-agent-ram: an agent row in the sidebar shows the RAM its processes hold (agentram.ts), read from the Resource
 // Manager's snapshot, which the step pins (window.__resmonFixture) so the figures are known: 412 MB for the first agent,
 // 1.3 GB for the second, none for the third (no group). Settings → Appearance → Agent sidebar → RAM off hides them.
@@ -68325,6 +69185,7 @@ export const SCENARIOS = [
     chatScrollKeep,
     chatAsleepAttachJump,
     chatFork,
+    chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
     sidebarAgentRam,
