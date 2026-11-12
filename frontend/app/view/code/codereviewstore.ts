@@ -71,6 +71,13 @@ export const codeReviewSendOpenAtom = atom<boolean>(false) as PrimitiveAtom<bool
 // A comment asked for outside the source editor: the view switches to Source, and the viewer starts the
 // comment once the editor has mounted and its caret can be read (consumePendingComment).
 export const codeCommentPendingAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// A comment being written belongs to the project it was started in: its line range and anchor are that project's
+// file. Switching project (by hand, or the app bar's follow) drops it, or a file of the same path in the next project
+// opened with the old comment box focused and Enter saved it into the wrong review.
+globalStore.sub(codeProjectAtom, () => {
+    globalStore.set(codeCommentDraftAtom, null);
+    globalStore.set(codeCommentPendingAtom, false);
+});
 
 // The viewer lends the store the editor's selection, or the caret as an empty one, the way codestore's
 // caret readers work: the store never touches Monaco.

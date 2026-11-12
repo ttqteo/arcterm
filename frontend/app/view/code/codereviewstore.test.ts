@@ -56,6 +56,16 @@ afterEach(() => {
     setCommentSelectionReader(() => null);
 });
 
+describe("a comment being written", () => {
+    it("is dropped when the project changes, so it never opens on the next project's file of the same path", () => {
+        globalStore.set(codeCommentDraftAtom, { path: "a.ts", startLine: 2, endLine: 3, anchor: "two" });
+        globalStore.set(codeCommentPendingAtom, true);
+        globalStore.set(codeProjectAtom, { name: "beta", path: "/repos/beta" });
+        expect(globalStore.get(codeCommentDraftAtom)).toBeNull();
+        expect(globalStore.get(codeCommentPendingAtom)).toBe(false);
+    });
+});
+
 describe("sendReview to an agent", () => {
     it("sends the whole review to the agent once, as one message, and clears the project", async () => {
         seed([comment]);
