@@ -13490,14 +13490,17 @@ async function primitiveSteps(h, ctx, rec, styles, take) {
 const dagLifecycle = {
     name: "dag-lifecycle",
     surface: "jarvis",
-    async arrange(h) {
+    async arrange(h0) {
+        // every RPC of this scenario takes the long budget: the engine's dag lock outlasts the 5 s default
+        const h = withLongRpc(h0);
         const cwd = mkdtempSync(join(tmpdir(), "verify-dag-"));
         const wslist = await h.rpc("workspacelist", null);
         const workspaceId = wslist[0].workspacedata.oid;
         const ch = await h.rpc("createchannel", { name: "verify-dag", projectpath: cwd });
         return { cwd, workspaceId, channelId: ch.oid };
     },
-    async assert(h, ctx) {
+    async assert(h0, ctx) {
+        const h = withLongRpc(h0);
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const getRun = async (runId) => (await channelRuns(h, ctx.channelId)).find((x) => x.id === runId);
@@ -13861,7 +13864,8 @@ const dagLifecycle = {
         );
         return steps;
     },
-    async teardown(h, ctx) {
+    async teardown(h0, ctx) {
+        const h = withLongRpc(h0);
         try {
             await deleteChannelWorkerBlocks(h, ctx.channelId);
         } catch (e) {
@@ -42345,13 +42349,20 @@ function acRoster(ctx, mainPatch = {}, rowPatches = {}) {
     return rows;
 }
 
+// The harness for a scenario step that drives a real orchestrator run: its `rpc` carries a 90 s budget at least.
+// Every call is a wavesrv RPC with a default 5 s budget, which the engine's dag lock (held 5 to 15 s a tick on a
+// loaded machine) outlasts: "EC-TIME: timeout waiting for response" failed this arrange in a Final beside other work.
+// `ev`, `goto` and `shot` stay the harness's own (the prototype's).
+function withLongRpc(h0) {
+    const h = Object.create(h0);
+    h.rpc = (command, data, opts) => h0.rpc(command, data, { ...opts, timeout: Math.max(opts?.timeout ?? 0, 90_000) });
+    return h;
+}
+
 // A real orchestrator run (held by deferstart) with two lanes. t-1's stand-in child run is marked done and the engine moves
 // the task to done by itself; the staged file keeps the engine from merging the lane, so the task stays an ended worker.
 async function acArrangeRun(h0, ctx) {
-    // every call here is a wavesrv RPC with a default 5 s budget, which the engine's dag lock (held 5 to 15 s a tick on a
-    // loaded machine) outlasts: "EC-TIME: timeout waiting for response" failed this arrange in a Final beside other work
-    const h = Object.create(h0);
-    h.rpc = (command, data, opts) => h0.rpc(command, data, { ...opts, timeout: Math.max(opts?.timeout ?? 0, 90_000) });
+    const h = withLongRpc(h0);
     ctx.cwd = mkdtempSync(join(tmpdir(), "verify-agent-chat-run-"));
     fstGitInit(ctx.cwd);
     writeFileSync(join(ctx.cwd, "held.txt"), "staged by the agent-chat fixture\n");
