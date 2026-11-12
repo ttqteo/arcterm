@@ -56,12 +56,56 @@ export const RUNTIME_FLAGS: Record<Runtime, FlagDef[]> = {
     terminal: [],
 };
 
+// Splits a command line the way a shell would, without running one: whitespace separates tokens, '...' is
+// literal, "..." groups (only \" and \\ escape inside it), and a backslash outside quotes is literal because
+// Windows paths are typed that way. An unclosed quote runs to the end.
+export function splitCommandLine(line: string): string[] {
+    const tokens: string[] = [];
+    let cur = "";
+    let inToken = false;
+    let quote: "'" | '"' | null = null;
+    for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (quote === "'") {
+            if (c === "'") {
+                quote = null;
+            } else {
+                cur += c;
+            }
+        } else if (quote === '"') {
+            if (c === '"') {
+                quote = null;
+            } else if (c === "\\" && (line[i + 1] === '"' || line[i + 1] === "\\")) {
+                cur += line[++i];
+            } else {
+                cur += c;
+            }
+        } else if (c === "'" || c === '"') {
+            quote = c;
+            inToken = true;
+        } else if (/\s/.test(c)) {
+            if (inToken) {
+                tokens.push(cur);
+                cur = "";
+                inToken = false;
+            }
+        } else {
+            cur += c;
+            inToken = true;
+        }
+    }
+    if (inToken) {
+        tokens.push(cur);
+    }
+    return tokens;
+}
+
 // Append the runtime's enabled flags to the base startup command, skipping any flag the user already
 // typed into the base (so toggling a flag that's also hand-written doesn't duplicate it). Preserves
 // catalog order. buildLaunchMeta then tokenizes the result into cmd + args.
 export function composeStartupCommand(base: string, runtime: Runtime, enabled: Record<string, boolean>): string {
     const trimmed = base.trim();
-    const present = new Set(trimmed.split(/\s+/).filter(Boolean));
+    const present = new Set(splitCommandLine(trimmed));
     const flags = RUNTIME_FLAGS[runtime].filter((f) => enabled[f.id] && !present.has(f.flag)).map((f) => f.flag);
     return [trimmed, ...flags].join(" ").trim();
 }
@@ -76,6 +120,9 @@ export const ASK_SETTINGS_ARG = ".arc/claude-ask.json";
 const ASK_DROPPED_FLAGS = new Set(["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"]);
 
 // A Home claude's command: the one composed, with a --settings of its own and the skip flags replaced by the ask settings.
+// It splits on whitespace, not splitCommandLine, on purpose: it re-joins its tokens with a space and buildLaunchMeta
+// then reads the result, so a quoted argument's quotes must survive the round trip (splitCommandLine would drop them
+// and the argument would re-split in two).
 export function askStartupCommand(command: string): string {
     const tokens = command.trim().split(/\s+/).filter(Boolean);
     const kept: string[] = [];
@@ -166,7 +213,7 @@ export interface LaunchMetaSpec {
 
 // Build the CreateBlock meta. Terminal -> default shell block (plus its first command). Agent runtimes -> cmd block with the
 // task passed as a single positional arg (arg array avoids all shell-quoting issues). The startup
-// command is tokenized on whitespace (best-effort if the user adds flags) — unless startupArgs is
+// command is tokenized by splitCommandLine, so a quoted argument stays whole — unless startupArgs is
 // given, in which case it is used verbatim because a pi resume path can never survive re-tokenizing.
 export function buildLaunchMeta(spec: LaunchMetaSpec): Record<string, unknown> {
     if (spec.runtime === "terminal") {
@@ -185,7 +232,7 @@ export function buildLaunchMeta(spec: LaunchMetaSpec): Record<string, unknown> {
         }
         return meta;
     }
-    const startupTokens = spec.startupCommand.trim().split(/\s+/).filter(Boolean);
+    const startupTokens = splitCommandLine(spec.startupCommand);
     const cmd = startupTokens[0] ?? "claude";
     // the launch flags/options before the task prompt, kept verbatim so resume-on-reopen can recompose
     // the command as `<cmd> --resume <id> <baseArgs>` without having to guess which arg was the prompt
