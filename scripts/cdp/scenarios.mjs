@@ -13793,6 +13793,41 @@ const dagLifecycle = {
         const modalGone = await h.ev(`(() => !document.querySelector('[data-dag-modal-kind]'))()`);
         rec("6. Escape -> modal closes, no cockpit takeover", modalGone === true, JSON.stringify({ esc, modalGone }));
 
+        // The modal's state is a global atom but Jarvis unmounts when the user leaves it, so a DAG left open
+        // reappeared on the next visit (DagModal now dismisses it on unmount). It is reopened here, ahead of the
+        // cancel in step 7 while the run's card still shows, the way step 5 opened it: the run's card, then Open DAG.
+        await h.goto("jarvis");
+        const reopened = await h.ev(`(async () => {
+            const openDag = () => [...document.querySelectorAll('button')].find((x) => (x.textContent || '').includes('Open DAG'));
+            for (let i = 0; i < 30; i++) {
+                if (document.querySelector('[data-dag-modal-kind]')) return true;
+                const dag = openDag();
+                if (dag) {
+                    dag.click();
+                } else {
+                    const card = [...document.querySelectorAll('[data-jarvis-brief-region="activity"] [data-jarvis-activity-card="run"]')]
+                        .find((x) => (x.textContent || '').includes(${JSON.stringify(parentGoal)}));
+                    if (card) card.click();
+                    else {
+                        const all = document.querySelector('[data-jarvis-activity-tab="all"]');
+                        if (all && all.getAttribute('aria-pressed') !== 'true') all.click();
+                    }
+                }
+                await new Promise((r) => setTimeout(r, 500));
+            }
+            return false;
+        })()`);
+        const openBeforeLeaving = await h.ev(`(() => !!document.querySelector('[data-dag-modal-kind]'))()`);
+        await h.goto("agent");
+        await h.goto("jarvis");
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const modalAfterReturn = await h.ev(`(() => !!document.querySelector('[data-dag-modal-kind]'))()`);
+        rec(
+            "6a. Leaving Jarvis with the DAG modal open closes it: the next visit finds no modal",
+            reopened === true && openBeforeLeaving === true && modalAfterReturn === false,
+            JSON.stringify({ reopened, openBeforeLeaving, modalAfterReturn })
+        );
+
         // one DAG cancellation command owns the parent, children, and worker shutdown.
         await h.rpc("dagaction", { channelid: ctx.channelId, runid: runId, taskid: "", action: "cancel" });
         const cancelledRuns = await channelRuns(h, ctx.channelId);
