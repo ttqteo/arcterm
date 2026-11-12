@@ -143,6 +143,7 @@ function DiffView({ peek, text }: { peek: CodePeek; text: string }) {
                         <MonacoInsertedText path={INSERTED_PREFIX + peek.abs} text={text} options={DIFF_OPTIONS} />
                     ) : (
                         <MonacoDiffViewer
+                            fill
                             path={MODEL_PREFIX + peek.abs}
                             language={languageForPath(peek.abs)}
                             original={git.head.kind === "text" ? git.head.text : ""}
