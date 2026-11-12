@@ -59,6 +59,12 @@ type JobQueueJob struct {
 	TabId     string `json:"tabid,omitempty"`
 	RunId     string `json:"runid,omitempty"`
 	Label     string `json:"label,omitempty"`
+	// Measured is whether Bytes comes from peaks wavesrv measured for this command, not the memgate table's
+	// estimate; Elsewhere, that they were measured only in another project; Peaks are the recent ones that figure
+	// rests on, newest first (the non-zero ones)
+	Measured  bool     `json:"measured,omitempty"`
+	Elsewhere bool     `json:"elsewhere,omitempty"`
+	Peaks     []uint64 `json:"peaks,omitempty"`
 }
 
 type JobQueueData struct {

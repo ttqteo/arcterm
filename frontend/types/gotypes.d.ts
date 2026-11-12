@@ -3673,6 +3673,9 @@ declare global {
         tabid?: string;
         runid?: string;
         label?: string;
+        measured?: boolean;
+        elsewhere?: boolean;
+        peaks?: number[];
     };
 
     // wshrpc.JobSlotMissed

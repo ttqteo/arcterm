@@ -6,6 +6,7 @@ package wshserver
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -275,6 +276,45 @@ func TestGetJobQueueListsJobsWithUnixMillisecondTimes(t *testing.T) {
 	if queued.Running || queued.Position != 1 || queued.Reason != "slot busy" || queued.Name != "task check:ts" ||
 		queued.QueuedTs < before || queued.StartedTs != 0 {
 		t.Fatalf("queued job = %+v", queued)
+	}
+}
+
+// the figure's basis crosses the wire as three plain fields: whether it is measured, whether only in another project,
+// and the non-zero peaks newest first; a job with no basis leaves all three empty
+func TestJobQueueDataBasis(t *testing.T) {
+	data := JobQueueData(jobqueue.Snapshot{Jobs: []jobqueue.Job{
+		{Id: "j1", Running: true, Request: jobqueue.Request{
+			Name: "task check:ts", Bytes: 3 * testGB,
+			Basis: jobqueue.Basis{Measured: true, Peaks: [5]uint64{3, 2}},
+		}},
+		{Id: "j2", Request: jobqueue.Request{
+			Name: "make build", Bytes: 2 * testGB,
+			Basis: jobqueue.Basis{Measured: true, Elsewhere: true, Peaks: [5]uint64{5, 0, 4}},
+		}},
+		{Id: "j3", Request: jobqueue.Request{Name: "npm test", Bytes: testGB}},
+	}})
+	if len(data.Jobs) != 3 {
+		t.Fatalf("jobs = %+v", data.Jobs)
+	}
+	measured, elsewhere, none := data.Jobs[0], data.Jobs[1], data.Jobs[2]
+	if !measured.Measured || measured.Elsewhere || !slices.Equal(measured.Peaks, []uint64{3, 2}) {
+		t.Fatalf("measured job = %+v, want Measured with peaks [3 2]", measured)
+	}
+	if !elsewhere.Measured || !elsewhere.Elsewhere || !slices.Equal(elsewhere.Peaks, []uint64{5, 4}) {
+		t.Fatalf("elsewhere job = %+v, want Measured and Elsewhere with peaks [5 4]", elsewhere)
+	}
+	if none.Measured || none.Elsewhere || len(none.Peaks) != 0 {
+		t.Fatalf("job with no basis = %+v, want all three empty", none)
+	}
+	// omitempty: an estimate adds nothing to the wire
+	raw, err := json.Marshal(none)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"measured", "elsewhere", "peaks"} {
+		if strings.Contains(string(raw), key) {
+			t.Fatalf("an estimate's JSON %s carries %q", raw, key)
+		}
 	}
 }
 

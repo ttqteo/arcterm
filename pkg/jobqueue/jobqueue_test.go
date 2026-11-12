@@ -556,6 +556,62 @@ func TestNoteBypassReachesTheSnapshot(t *testing.T) {
 	}
 }
 
+// the figure's basis is fixed at Acquire, like Bytes, and the cockpit's snapshot carries it unchanged, a running
+// job's and a queued one's alike
+func TestBasisReachesTheSnapshot(t *testing.T) {
+	q := New(Config{
+		Slots:     func() int { return 1 },
+		Available: func(context.Context) (uint64, error) { return 64 * gb, nil },
+		Now:       func() time.Time { return t0 },
+	})
+	measured := Basis{Measured: true, Peaks: [5]uint64{3 * gb, 2 * gb, gb}}
+	elsewhere := Basis{Measured: true, Elsewhere: true, Peaks: [5]uint64{5 * gb}}
+	first, err := q.Acquire(context.Background(), Request{Name: "task check:ts", Bytes: 4 * gb, Basis: measured}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	queued := make(chan *Slot, 1)
+	go func() {
+		s, err := q.Acquire(context.Background(), Request{Name: "make build", Bytes: 6 * gb, Basis: elsewhere}, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		queued <- s
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(q.Snapshot().Jobs) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("the second job never queued")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	jobs := q.Snapshot().Jobs
+	if !jobs[0].Running || jobs[0].Basis != measured {
+		t.Fatalf("running job = %+v, want basis %+v", jobs[0], measured)
+	}
+	if jobs[1].Running || jobs[1].Basis != elsewhere {
+		t.Fatalf("queued job = %+v, want basis %+v", jobs[1], elsewhere)
+	}
+	first.Release()
+	if s := <-queued; s != nil {
+		s.Release()
+	}
+}
+
+// a request with no basis reads as an estimate: nothing measured, no peaks
+func TestBasisDefaultsToAnEstimate(t *testing.T) {
+	q := New(Config{Available: func(context.Context) (uint64, error) { return 64 * gb, nil }})
+	s, err := q.Acquire(context.Background(), Request{Name: "task check:ts", Bytes: 3 * gb}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Release()
+	if got := q.Snapshot().Jobs[0].Basis; got != (Basis{}) {
+		t.Fatalf("basis = %+v, want the zero Basis", got)
+	}
+}
+
 // one a later wsh reports (it could not reach wavesrv) counts, but an older one never replaces the latest
 func TestNoteBypassReportedLateKeepsTheLatest(t *testing.T) {
 	q := New(Config{Now: func() time.Time { return t0 }})

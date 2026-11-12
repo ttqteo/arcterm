@@ -179,6 +179,9 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 			Id:        j.Id,
 			Name:      j.Name,
 			Bytes:     j.Bytes,
+			Measured:  j.Basis.Measured,
+			Elsewhere: j.Basis.Elsewhere,
+			Peaks:     basisPeaks(j.Basis),
 			Running:   j.Running,
 			Forced:    j.Forced,
 			Engine:    j.Engine,
@@ -191,6 +194,17 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 			RunId:     j.Source.RunId,
 			Label:     j.Source.Label,
 		})
+	}
+	return out
+}
+
+// basisPeaks is the basis's non-zero peaks, newest first; nil when there are none, so the field leaves the wire
+func basisPeaks(b jobqueue.Basis) []uint64 {
+	var out []uint64
+	for _, p := range b.Peaks {
+		if p > 0 {
+			out = append(out, p)
+		}
 	}
 	return out
 }
