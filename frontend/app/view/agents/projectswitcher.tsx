@@ -24,7 +24,7 @@ export function ProjectSwitcher({ model, variant }: { model: AgentsViewModel; va
     const rows = useAtomValue(projectListAtom);
     const projects = switcherProjects(rows, projectsFromAgents(agents));
     const projectLabel = filter === "all" ? "All projects" : filter;
-    const copy = projectControlCopy(variant === "header" ? "cockpit" : surface, projectLabel);
+    const copy = projectControlCopy(variant === "header" ? "cockpit" : surface, projectLabel, variant === "bar");
     const close = () => {
         setConfirming(null);
         setOpen(false);

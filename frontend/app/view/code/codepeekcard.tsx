@@ -8,6 +8,7 @@
 // ownsKeys), the way backgroundtaskpeek.tsx's do. With focus in the terminal the card does not touch Escape.
 
 import { Markdown } from "@/app/element/markdown";
+import { fenceFrontMatter } from "@/app/element/markdown-util";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
@@ -171,8 +172,15 @@ function PeekBody({ peek, blockId }: { peek: CodePeek; blockId: string }) {
     // keyed by the file, so a moved card never shows the previous file's models
     const key = `${peek.abs}|${peek.mode}`;
     if (peek.mode === "preview") {
+        // a doc's yaml front matter reads as a metadata block, not a rule and prose (Code's preview draws it as a card)
         return (
-            <Markdown key={key} text={file.text} scrollable className="h-full" contentClassName="px-[26px] py-[20px]" />
+            <Markdown
+                key={key}
+                text={fenceFrontMatter(file.text)}
+                scrollable
+                className="h-full"
+                contentClassName="px-[26px] py-[20px]"
+            />
         );
     }
     if (peek.mode === "diff") {

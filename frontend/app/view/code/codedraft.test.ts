@@ -8,6 +8,7 @@ import {
     conflictOf,
     nextDrafts,
     parseStoredDrafts,
+    projectDraftPaths,
     renameDraftKeys,
     storedDraftsJson,
     withoutDraft,
@@ -130,6 +131,23 @@ describe("renameDraftKeys", () => {
         ]);
         const out = renameDraftKeys(start, "/repo/pkg", "/repo/lib");
         expect([...out.keys()]).toEqual(["/repo/lib/a.go", "/repo/pkg2/a.go"]);
+    });
+});
+
+describe("projectDraftPaths", () => {
+    const d: Draft = { text: "x", base };
+
+    it("projectDraftPaths lists only this project's drafts, relative", () => {
+        const drafts = new Map([
+            ["C:\\repo\\src\\b.ts", d],
+            ["C:\\repo\\a.ts", d],
+            ["C:\\repo2\\a.ts", d],
+            ["C:\\other\\x.ts", d],
+            ["C:\\repo\\gone\\deleted.ts", d],
+        ]);
+        // registry paths can carry forward slashes, a trailing separator and another case
+        expect(projectDraftPaths(drafts, "c:/Repo/")).toEqual(["a.ts", "gone/deleted.ts", "src/b.ts"]);
+        expect(projectDraftPaths(drafts, "C:\\nowhere")).toEqual([]);
     });
 });
 

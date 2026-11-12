@@ -16,7 +16,7 @@ export type SymbolKind = "func" | "type" | "class" | "const" | "var" | "heading"
 export interface OutlineSymbol {
     name: string;
     kind: SymbolKind;
-    line: number; // 1-based, as codePendingLineAtom takes it
+    line: number; // 1-based, as a pending jump (codePendingJumpAtom) takes it
     depth: number; // 0 at the top level; 1 for a member of an enclosing block
 }
 
@@ -358,4 +358,37 @@ function outlineMarkdown(lines: readonly string[]): OutlineSymbol[] {
         }
     }
     return out;
+}
+
+// The rendered heading a markdown preview scrolls to for a source line: the one opening the line's
+// section, as an index into the preview's headings, or -1 above the first. Matched by text before
+// order, because the renderer can count headings this outline skips (setext, a frontmatter block's last
+// line), so a plain index can land one off.
+export function previewHeadingFor(
+    outline: readonly OutlineSymbol[],
+    line: number,
+    rendered: readonly string[]
+): number {
+    const headings = outline.filter((s) => s.kind === "heading");
+    let at = -1;
+    while (at + 1 < headings.length && headings[at + 1].line <= line) {
+        at++;
+    }
+    if (at === -1) {
+        return -1;
+    }
+    const key = headingKey(headings[at].name);
+    const nth = headings.slice(0, at).filter((h) => headingKey(h.name) === key).length;
+    let seen = 0;
+    for (let i = 0; i < rendered.length; i++) {
+        if (headingKey(rendered[i]) === key && seen++ === nth) {
+            return i;
+        }
+    }
+    return Math.min(at, rendered.length - 1);
+}
+
+// the source carries inline markup (`code`, **bold**) the rendered text does not
+function headingKey(s: string): string {
+    return s.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase();
 }

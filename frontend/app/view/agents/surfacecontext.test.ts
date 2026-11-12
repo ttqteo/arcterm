@@ -57,4 +57,17 @@ describe("surface context capabilities", () => {
             title: "Set the project default; this surface is not project-filtered",
         });
     });
+
+    it("Code's switcher title says it opens the project", () => {
+        // the app bar's switcher asks for it; the copy without it is the one every caller had before
+        expect(projectControlCopy("code", "waveterm", true)).toEqual({
+            label: "Default · waveterm",
+            title: "Set the project default; Code opens it",
+        });
+        // only a surface that follows the switcher changes its title
+        expect(projectControlCopy("files", "waveterm", true)).toEqual({
+            label: "Default · waveterm",
+            title: "Set the project default; this surface keeps its explicit target",
+        });
+    });
 });

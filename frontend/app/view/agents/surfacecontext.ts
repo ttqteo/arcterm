@@ -27,10 +27,21 @@ export const SURFACE_CONTEXT = {
     app: { project: "unsupported" },
 } satisfies Record<SurfaceKey, SurfaceContextSupport>;
 
-export function projectControlCopy(surface: SurfaceKey, projectLabel: string): { label: string; title: string } {
+// Surfaces that open the project when the switcher changes while they show (Code: codefollow.ts), so their
+// subject is not kept; the switcher's title says so.
+export const FOLLOWS_PROJECT: ReadonlySet<SurfaceKey> = new Set<SurfaceKey>(["code"]);
+
+export function projectControlCopy(
+    surface: SurfaceKey,
+    projectLabel: string,
+    follows = false
+): { label: string; title: string } {
     const support = SURFACE_CONTEXT[surface].project;
     if (support === "filter") {
         return { label: projectLabel, title: "Filter this surface by project" };
+    }
+    if (follows && FOLLOWS_PROJECT.has(surface)) {
+        return { label: `Default · ${projectLabel}`, title: "Set the project default; Code opens it" };
     }
     if (support === "subject") {
         return {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { outlineOf, rankSymbols, type OutlineSymbol } from "./codeoutline";
+import { outlineOf, previewHeadingFor, rankSymbols, type OutlineSymbol } from "./codeoutline";
 
 const lines = (...ls: string[]) => ls.join("\n");
 const brief = (syms: OutlineSymbol[]) => syms.map((s) => `${s.depth}:${s.kind}:${s.name}@${s.line}`);
@@ -318,5 +318,45 @@ describe("rankSymbols", () => {
     it("drops non-matches and ranks the closer match first", () => {
         expect(rankSymbols("openin", syms).map((s) => s.name)).toEqual(["openInCode"]);
         expect(rankSymbols("open", syms).map((s) => s.name)).toEqual(["openPath", "openInCode"]);
+    });
+});
+
+describe("previewHeadingFor", () => {
+    const md = lines(
+        "intro", // 1
+        "# Title", // 2
+        "body", // 3
+        "## The `codestore` module", // 4
+        "body", // 5
+        "## Notes", // 6
+        "## Notes", // 7
+        "body" // 8
+    );
+    const outline = outlineOf(md, "markdown");
+    const rendered = ["Title", "The codestore module", "Notes", "Notes"];
+
+    it("picks the heading of the section the line sits in", () => {
+        expect(previewHeadingFor(outline, 2, rendered)).toBe(0);
+        expect(previewHeadingFor(outline, 5, rendered)).toBe(1);
+    });
+
+    it("is -1 above the first heading", () => {
+        expect(previewHeadingFor(outline, 1, rendered)).toBe(-1);
+    });
+
+    it("tells same-text headings apart by order", () => {
+        expect(previewHeadingFor(outline, 6, rendered)).toBe(2);
+        expect(previewHeadingFor(outline, 8, rendered)).toBe(3);
+    });
+
+    it("matches by text when the renderer counts a heading the outline skips", () => {
+        // a frontmatter block's last line can render as a setext heading the outline never lists
+        expect(previewHeadingFor(outline, 5, ["title: x", ...rendered])).toBe(2);
+    });
+
+    it("falls back to the outline's order when no rendered text matches", () => {
+        expect(previewHeadingFor(outline, 5, ["a", "b", "c"])).toBe(1);
+        expect(previewHeadingFor(outline, 8, ["a"])).toBe(0);
+        expect(previewHeadingFor(outline, 8, [])).toBe(-1);
     });
 });

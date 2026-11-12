@@ -15,6 +15,41 @@ export interface DocLinkTarget {
 const EXTERNAL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 // GitHub's line anchors: #L12 and #L12-L20
 const LINE_ANCHOR_RE = /^L(\d+)(?:-L\d+)?$/;
+// what GitHub strips from a heading's text to make its anchor
+const SLUG_DROP_RE = /[^\p{L}\p{M}\p{N}\s_-]/gu;
+
+// GitHub's heading anchors, in document order: a repeat takes the next free "-n", as github-slugger does
+export function slugHeadings(names: readonly string[]): string[] {
+    const seen = new Map<string, number>();
+    return names.map((name) => {
+        const base = name.toLowerCase().replace(SLUG_DROP_RE, "").replace(/\s/g, "-");
+        let slug = base;
+        while (seen.has(slug)) {
+            const n = seen.get(base) + 1;
+            seen.set(base, n);
+            slug = `${base}-${n}`;
+        }
+        seen.set(slug, 0);
+        return slug;
+    });
+}
+
+// The heading a link into another document names (`b.md#some-heading`), decoded, or null for no fragment, a line
+// anchor (resolveDocLink reads those) or an in-page `#anchor` (the preview's own heading scroll handles that one).
+// Kept beside resolveDocLink rather than in its answer, whose shape other callers rely on.
+export function docLinkAnchor(href: string): string | null {
+    const hashAt = href.indexOf("#");
+    if (hashAt <= 0 || EXTERNAL_RE.test(href)) {
+        return null;
+    }
+    let fragment: string;
+    try {
+        fragment = decodeURIComponent(href.slice(hashAt + 1));
+    } catch {
+        return null;
+    }
+    return fragment === "" || LINE_ANCHOR_RE.test(fragment) ? null : fragment;
+}
 
 export function resolveDocLink(fromRel: string, href: string): DocLinkTarget | null {
     if (href === "" || href.startsWith("#") || EXTERNAL_RE.test(href)) {

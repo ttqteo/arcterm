@@ -2,6 +2,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { normalizeRepoPath } from "@/util/paths";
 import { isWindows } from "@/util/platformutil";
 
 // Pure: unsaved edits and the decision of whether saving one is safe. No React, no IO.
@@ -91,6 +92,24 @@ export function renameDraftKeys(drafts: Drafts, from: string, to: string): Map<s
         }
     }
     return out;
+}
+
+// A project's drafts as sorted repo-relative paths (forward slashes, as the index has them). The root
+// comes from the registry or a typed path, so it is compared the way sameRepoPath compares; a draft
+// whose file has since left the index is still listed, since its edits are still here.
+export function projectDraftPaths(drafts: Drafts, projectPath: string): string[] {
+    const root = normalizeRepoPath(projectPath);
+    if (root === "") {
+        return [];
+    }
+    const out: string[] = [];
+    for (const key of drafts.keys()) {
+        const slashed = key.replace(/[\\/]+/g, "/");
+        if (slashed.toLowerCase().startsWith(root + "/")) {
+            out.push(slashed.slice(root.length + 1));
+        }
+    }
+    return out.sort();
 }
 
 // Drafts outlive an app reload as a JSON array of [absolute path, draft] pairs. Malformed rows are

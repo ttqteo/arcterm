@@ -32,6 +32,35 @@ describe("buildTree", () => {
     it("returns an empty array for an empty repo", () => {
         expect(buildTree([])).toEqual([]);
     });
+
+    it("buildTree shows an extra dir as an empty folder row", () => {
+        const tree = buildTree(["src/lib.ts", "README.md"], [], ["empty", "src/fresh"]);
+        expect(tree.map((n) => [n.path, n.isDir])).toEqual([
+            ["empty", true],
+            ["src", true],
+            ["README.md", false],
+        ]);
+        expect(tree[0].children).toEqual([]);
+        expect(tree[1].children.map((n) => [n.path, n.isDir])).toEqual([
+            ["src/fresh", true],
+            ["src/lib.ts", false],
+        ]);
+    });
+
+    it("an extra dir that the index already holds is not duplicated", () => {
+        const tree = buildTree(["src/lib.ts"], [], ["src"]);
+        expect(tree.map((n) => n.path)).toEqual(["src"]);
+        expect(tree[0].children.map((n) => n.path)).toEqual(["src/lib.ts"]);
+    });
+
+    it("an extra dir is a tracked row, not an ignored one", () => {
+        const tree = buildTree(["a.ts"], ["build/"], ["fresh"]);
+        expect(tree.map((n) => [n.path, n.ignored])).toEqual([
+            ["build", true],
+            ["fresh", false],
+            ["a.ts", false],
+        ]);
+    });
 });
 
 describe("visibleRows", () => {

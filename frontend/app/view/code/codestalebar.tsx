@@ -4,11 +4,12 @@
 
 // "The file you are reading changed on disk" is information, not an annoyance to hide — agents run
 // against this same working tree. Reload is always deliberate, and when a draft exists the button
-// says what it destroys, matching the save-conflict banner's honesty.
+// says what it destroys, matching the save-conflict banner's honesty. With a draft, Compare with disk
+// shows what the reload would throw away before anyone chooses it.
 
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { codeDraftsAtom, codeProjectAtom, codeStaleAtom, draftKey, reloadFromDisk } from "./codestore";
+import { codeDraftsAtom, codeProjectAtom, codeStaleAtom, compareWithDisk, draftKey, reloadFromDisk } from "./codestore";
 
 export function CodeStaleBar() {
     const stale = useAtomValue(codeStaleAtom);
@@ -33,6 +34,15 @@ export function CodeStaleBar() {
             >
                 {dirty ? "Discard my edits and reload" : "Reload"}
             </button>
+            {dirty ? (
+                <button
+                    type="button"
+                    onClick={compareWithDisk}
+                    className="flex-none cursor-pointer rounded-[6px] border border-warning/40 px-2 py-[2px] hover:bg-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    Compare with disk
+                </button>
+            ) : null}
         </div>
     );
 }
