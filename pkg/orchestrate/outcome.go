@@ -212,6 +212,10 @@ func HandleRunWorkerExit(ctx context.Context, workerORef string, exit jarvis.Wor
 	// went terminal was deliberately skipped there for this moment. Best-effort, never fails the exit.
 	closeLeadTabOnExit(ctx, run)
 	if run.DagORef != "" {
+		// a dag run's lead that exits is the waker's to hand over: nothing else notices it while the dag waits on it
+		if isRunLeadTab(run, workerORef) {
+			LeadExited(ctx, channelId, runId)
+		}
 		return nil
 	}
 	return failWorkerPhase(ctx, channelId, runId, workerORef, workerExitedNote, leadExitedNote)

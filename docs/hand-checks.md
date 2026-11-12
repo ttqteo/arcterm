@@ -24,6 +24,26 @@ does not, say what you saw and it becomes a bug row under Actionable.
   (`chatbrainstorm.ts` brainstormCard, `chatbrainstormconfirm.tsx`, `chatbrainstormcheck.tsx`,
   `chatbrainstormrun.tsx`, `chatconversation.tsx`; unit-tested and typechecked only.)
 
+- [ ] (arcterm) A dead lead is brought back (lead-dead recovery spec 2026-11-12): in a live Ask me run sitting in a
+  failed plan review, `/exit` its lead → the run's Cockpit card shows "Lead down" with Relaunch lead at once, and
+  `wsh runs relaunch-lead <run>` starts a lead whose first message says to revise and `wsh jarvis dag submit` again;
+  on an autonomous run the replacement starts by itself. Then pause a run whose lead was launched less than a minute
+  ago (before its first reply) and resume it → `waveapp.log` shows `had no transcript to resume; launched a fresh
+  lead`, not a `claude --resume` that prints "No conversation found". Unit tests stub the spawn and the process exit
+  (`pkg/orchestrate/leaddead_test.go`); the real exit hook, spawn and the Cockpit button with no failure row
+  (`leadProcessLive`, which only knows exits this window saw) were never run.
+
+- [ ] (arcterm) A run's hung lead is stopped and replaced (run a1d131bb t-2): in a live run, have its lead sit in one
+  tool call that never returns (a command that only sleeps, so nothing under the lead uses CPU) while a worker
+  finishes → after 30 min of held wakes `waveapp.log` shows `wake: run <id>'s lead held its wakes 30 min with an idle
+  process tree; stopping block …`, the lead's process is stopped (its tab stays), and an autonomous run gets a
+  replacement lead that carries the missed wakes; on an Ask me run the lead's questions reach you instead. Every test
+  scripts `stopLeadFn`; the real `DestroyBlockController` against a real hung lead was never run
+  (`pkg/orchestrate/wake.go` `checkHungLocked`, `LeadHungAfter`).
+- [ ] (arcterm) A finished worker of a live run sleeps (run a1d131bb t-5): in a run whose first task has passed review
+  and whose other tasks keep it open, that task's worker reads asleep in the Agent tree after the idle wait
+  (`agents:sleepaftermin`, 30 min), and Wake reopens the same conversation; its lead, a reviewer and the workers of
+  unfinished tasks stay awake (`wshserver_agentsleeploop.go` `runOwnedForSleep`; unit-tested only).
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers

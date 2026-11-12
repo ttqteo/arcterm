@@ -631,6 +631,7 @@ func main() {
 	})
 	orchestrate.SealRunEvidenceHook = wshserver.SealDoneRunEvidenceAsync // a run the engine closed itself gets the same evidence snapshot `wsh jarvis complete` produces; before StartWatchdog, whose first tick is immediate and can be the tick that closes one
 	orchestrate.LaunchLeadHook = wshserver.LaunchPlanLead                // a run submitted with no lead gets one at its first judgment event; before StartWatchdog, whose first tick can deliver one
+	orchestrate.RecoverAskHook = wshserver.RecoverWorkerAsk              // a worker's question its timed-out hook never registered is registered from its transcript; before StartWatchdog, whose first tick can find one
 	// a snapshot store's runs are the packaged app's: a resume would start workers and leads in real checkouts, and the
 	// watchdog and regulator would advance, merge and pause them
 	if !snapshotSkips("orchestrate.MarkInterruptedRuns") {

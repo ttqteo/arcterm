@@ -1189,9 +1189,9 @@ func TestSlowLockLogNamesItsCaller(t *testing.T) {
 	log.SetOutput(&logged)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	under := slowDagLock - time.Millisecond
-	logSlowDagLock("fast", under, under)
-	logSlowDagLock("held", 0, slowDagLock)
-	logSlowDagLock("waited", slowDagLock, 0)
+	logSlowDagLock("fast", under, under, nil)
+	logSlowDagLock("held", 0, slowDagLock, nil)
+	logSlowDagLock("waited", slowDagLock, 0, nil)
 	out := logged.String()
 	if strings.Contains(out, "dag fast") {
 		t.Errorf("a wait and hold under the rpc budget must not log:\n%s", out)
@@ -1203,5 +1203,194 @@ func TestSlowLockLogNamesItsCaller(t *testing.T) {
 	}
 	if !strings.Contains(out, "by orchestrate.TestSlowLockLogNamesItsCaller (mutation_test.go:") {
 		t.Errorf("the log must name the caller, not the lock's own frames:\n%s", out)
+	}
+	if strings.Contains(out, "slowest") {
+		t.Errorf("a slow lock with no timings must read as before:\n%s", out)
+	}
+}
+
+func TestSlowPhasesNamesTheLongestInOrder(t *testing.T) {
+	timings := []phaseTiming{
+		{"load", 200 * time.Millisecond},
+		{"merge", 3 * time.Second},
+		{"liveness", 9800 * time.Millisecond},
+		{"review", 12100 * time.Millisecond},
+		{"dispatch", 40 * time.Millisecond},
+	}
+	if got, want := slowPhases(timings, 3), "review 12.1s, liveness 9.8s, merge 3.0s"; got != want {
+		t.Errorf("slowPhases = %q, want %q", got, want)
+	}
+	if got, want := slowPhases(timings[:2], 3), "merge 3.0s, load 0.2s"; got != want {
+		t.Errorf("fewer phases than asked for = %q, want %q", got, want)
+	}
+	if got := slowPhases(nil, 3); got != "" {
+		t.Errorf("no timings = %q, want empty", got)
+	}
+	if timings[0].name != "load" {
+		t.Errorf("slowPhases reordered the caller's slice: %v", timings)
+	}
+}
+
+func TestSlowLockLogCarriesItsPhases(t *testing.T) {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	phases := []phaseTiming{{"dispatch", time.Second}, {"review", 12 * time.Second}}
+	logSlowDagLock("held", 0, slowDagLock, phases)
+	logSlowDagLock("fast", time.Millisecond, time.Millisecond, phases)
+	out := logged.String()
+	if !strings.Contains(out, "by orchestrate.TestSlowLockLogCarriesItsPhases (mutation_test.go:") ||
+		!strings.Contains(out, "review 12.0s, dispatch 1.0s") {
+		t.Errorf("the log must name the caller and, after it, the slow phases:\n%s", out)
+	}
+	if strings.Contains(out, "dag fast") {
+		t.Errorf("a fast lock must not log, whatever it timed:\n%s", out)
+	}
+}
+
+// withSlowDagLock lowers the slow-lock bar so a test's lock can pass it without sleeping the rpc budget
+func withSlowDagLock(t *testing.T, bar time.Duration) *bytes.Buffer {
+	t.Helper()
+	old := slowDagLock
+	slowDagLock = bar
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() {
+		slowDagLock = old
+		log.SetOutput(os.Stderr)
+	})
+	return &logged
+}
+
+func TestDagLockHandsItsHoldersPhasesToTheLog(t *testing.T) {
+	logged := withSlowDagLock(t, 10*time.Millisecond)
+	for _, tc := range []struct {
+		name string
+		hold func(dagID string, fn func() error) error
+	}{
+		{"WithDagMutation", WithDagMutation},
+		{"TryWithDagMutation", func(dagID string, fn func() error) error { _, err := TryWithDagMutation(dagID, fn); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logged.Reset()
+			dagID := "phased-" + tc.name
+			if err := tc.hold(dagID, func() error {
+				recordLockPhase(dagID, "first-phase", 12*time.Second)
+				time.Sleep(15 * time.Millisecond)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(logged.String(), "first-phase 12.0s") {
+				t.Errorf("the holder's phase must reach the slow-lock line:\n%s", logged.String())
+			}
+			// the next holder has its own phases: the first's must be gone, not carried over
+			logged.Reset()
+			if err := tc.hold(dagID, func() error {
+				time.Sleep(15 * time.Millisecond)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if out := logged.String(); !strings.Contains(out, "dag "+dagID+" lock") || strings.Contains(out, "first-phase") {
+				t.Errorf("a holder that timed nothing must log without the previous holder's phases:\n%s", out)
+			}
+			if left := takeLockPhases(dagID); left != nil {
+				t.Errorf("the holder's phases outlived its lock: %v", left)
+			}
+		})
+	}
+}
+
+// A holder's phases are taken before it unlocks: the waiter that takes the lock next starts its own entry at once, and
+// a holder that took after the unlock would carry off that entry, or leave the waiter's phases to be dropped.
+func TestAHolderKeepsItsPhasesFromTheWaiterBehindIt(t *testing.T) {
+	logged := withSlowDagLock(t, 0)
+	const rounds = 300
+	for i := range rounds {
+		dagID := fmt.Sprintf("handoff-%d", i)
+		waiter := make(chan error, 1)
+		if err := WithDagMutation(dagID, func() error {
+			recordLockPhase(dagID, "holder-phase", 12*time.Second)
+			go func() {
+				waiter <- WithDagMutation(dagID, func() error {
+					recordLockPhase(dagID, "waiter-phase", 12*time.Second)
+					return nil
+				})
+			}()
+			// long enough for the waiter to be parked on the lock
+			time.Sleep(time.Millisecond)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-waiter; err != nil {
+			t.Fatal(err)
+		}
+	}
+	holders, waiters, mixed := 0, 0, 0
+	for line := range strings.SplitSeq(logged.String(), "\n") {
+		if !strings.Contains(line, "handoff-") {
+			continue
+		}
+		h, w := strings.Contains(line, "holder-phase"), strings.Contains(line, "waiter-phase")
+		switch {
+		case h && w:
+			mixed++
+		case h:
+			holders++
+		case w:
+			waiters++
+		}
+	}
+	if holders != rounds || waiters != rounds || mixed != 0 {
+		t.Errorf("over %d hand-offs, %d lines named only the holder's phase, %d only the waiter's, %d both; want %d, %d, 0", rounds, holders, waiters, mixed, rounds, rounds)
+	}
+}
+
+// peekLockPhases reads the current holder's phases without taking them
+func peekLockPhases(dagID string) []phaseTiming {
+	lockPhases.mu.Lock()
+	defer lockPhases.mu.Unlock()
+	return append([]phaseTiming(nil), lockPhases.m[dagID]...)
+}
+
+func TestLockPhasesAreRecordedOnlyWhileTheLockIsHeld(t *testing.T) {
+	recordLockPhase("unheld-dag", "stray", time.Second)
+	if err := WithDagMutation("unheld-dag", func() error {
+		if got := peekLockPhases("unheld-dag"); len(got) != 0 {
+			t.Errorf("a phase recorded with no holder reached the next holder: %v", got)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScheduleTimesItsPhasesUnderTheLock(t *testing.T) {
+	ctx, dag, _ := seedFailedDag(t)
+	var phases []phaseTiming
+	if err := withDagMutation(dag.OID, func() error {
+		var stalled []stalledTask
+		var recovered []askRecovery
+		err := scheduleLocked(ctx, dag.OID, &stalled, &recovered)
+		phases = peekLockPhases(dag.OID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, p := range phases {
+		names = append(names, p.name)
+	}
+	want := []string{"liveness", "review", "plan review", "base check", "dispatch", "final", "commit"}
+	next := 0
+	for _, n := range names {
+		if next < len(want) && n == want[next] {
+			next++
+		}
+	}
+	if next != len(want) {
+		t.Errorf("scheduleLocked timed %v, want %v among them in that order", names, want)
 	}
 }

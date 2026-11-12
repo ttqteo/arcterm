@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
+  names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
@@ -54,6 +56,25 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run whose lead dies while the run waits on it (after a failed plan review, or a failed final stage) now shows
+  Relaunch lead, and an autonomous run brings its lead back by itself, instead of sitting with no lead and nothing to
+  press. `wsh runs relaunch-lead <run>` does the same from a terminal.
+- Resuming a paused run no longer reopens a lead that was stopped before it wrote anything into an endless "No
+  conversation found": it starts that lead fresh. A pause no longer counts against a plan, task or final reviewer
+  either, so a resume does not throw away reviewers that were still working.
+- `wsh runs cancel` no longer asks for `--yes` because of a lead or worker whose process is already gone.
+- A run whose lead hangs in one command for 30 minutes (nothing running under it, every later report waiting behind it)
+  now has the lead stopped and replaced, or its questions handed to you, instead of the run waiting forever.
+- A worker's question no longer goes missing when arcterm is slow: when the hook that reports it times out, the engine
+  finds the open question in the worker's transcript and hands it to the lead as usual, instead of marking the task
+  stalled.
+- A plan's Verify that calls `npx` (or another Node shim) no longer fails with exit 127 on Windows when Git's `usr\bin`
+  comes first on PATH.
+- A run's worker sleeps once its task has passed review, freeing its RAM; Wake reopens it.
+- Pausing a run no longer makes the engine start a replacement lead: after a resume the lead keeps its run context, so
+  its `wsh jarvis` commands keep working.
+- A run's task no longer reads as stalled while its worker waits on a command of its own that runs in the background (a
+  long typecheck, say).
 - A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
   (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
 - Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then

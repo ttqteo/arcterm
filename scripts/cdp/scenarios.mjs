@@ -21021,6 +21021,141 @@ const runPaused = {
     },
 };
 
+// --- run-row-stuck: a working run's row in the Agent tree says how many of its tasks are stuck ------------
+// (docs/superpowers/specs/2026-11-12-run-self-heal-design.md, decision 4; dagProgressLabel in runmodel.ts.)
+// A real orchestrator run held by deferstart, with a fixture lead in the roster so the Agent tree draws its row. Its
+// four-task plan is seeded the way final-stage seeds one (seedDag): t-1 done and merged with its child run unlinked,
+// so a tick has no run to derive its state from again, t-2 verify-failed, t-3 stalled and t-4 pending. Seeding writes
+// no event, so the engine wakes no lead for the two stuck tasks, and none is launched. A seeded dag proves the UI, not
+// the engine (docs/reference/cdp-run-fixtures.md).
+const RUN_ROW_STUCK_LEAD = "run-row-stuck lead";
+const RUN_ROW_STUCK_TASKS = [
+    { id: "t-1", label: "noop", description: "do nothing, stop immediately", deps: [], gate: false, state: "" },
+    { id: "t-2", label: "noop 2", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+    { id: "t-3", label: "noop 3", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+    { id: "t-4", label: "noop 4", description: "do nothing, stop immediately", deps: ["t-2", "t-3"], gate: false, state: "" },
+];
+const RUN_ROW_STUCK_STATES = { "t-1": "done", "t-2": "verify-failed", "t-3": "stalled", "t-4": "pending" };
+const runRowStuckPrint = (dag) => (dag?.tasks ?? []).map((t) => `${t.id}:${t.state}`).join(",");
+
+// The lead's row in the Agent tree, and the progress line it draws: the span titled with the run's stage and count.
+// Waits for the stuck count to show, and reads whatever is there when the wait runs out.
+const runRowStuckRead = (h) =>
+    h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        const row = () => treeRow(${JSON.stringify(RUN_ROW_STUCK_LEAD)});
+        const progress = () => [...(row()?.querySelectorAll("span[title]") ?? [])].find((s) => text(s).startsWith("Working")) ?? null;
+        await until(() => text(progress()).includes("stuck"));
+        const el = progress();
+        return { row: row() != null, text: el ? text(el) : null, title: el ? el.getAttribute("title") : null };
+    })()`);
+
+const runRowStuck = {
+    name: "run-row-stuck",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-run-row-stuck-"));
+        const ctx = { cwd, prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`) };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await arrangeFixtureRun(h, ctx, "run-row-stuck", RUN_ROW_STUCK_LEAD);
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify run-row-stuck",
+                parallelism: 1,
+                tasks: RUN_ROW_STUCK_TASKS,
+            });
+            // a seed written while t-1 is still being dispatched would be overwritten by that tick
+            await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            if (!ctx.dagId) throw new Error("the run has no dag");
+            await seedDag(
+                h,
+                ctx,
+                (dag) => ({
+                    ...dag,
+                    tasks: dag.tasks.map(({ runid: _run, reviewrunid: _review, ...t }) => ({
+                        ...t,
+                        state: RUN_ROW_STUCK_STATES[t.id] ?? t.state,
+                        merged: t.id === "t-1" ? true : t.merged,
+                    })),
+                }),
+                runRowStuckPrint
+            );
+            ctx.seeded = runRowStuckPrint(
+                (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group
+            );
+            // the roster is read once at boot, and every project's folder open, as the default has it
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
+            await h.ev("location.reload()");
+            if (!(await polishWaitFor(h, `!!document.querySelector("nav button")`, 30_000))) {
+                throw new Error("the app did not come back within 30s of the reload");
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const want = runRowStuckPrint({ tasks: Object.entries(RUN_ROW_STUCK_STATES).map(([id, state]) => ({ id, state })) });
+        rec(
+            "0. the run's plan is seeded with a done, a verify-failed, a stalled and a pending task, and the page booted on it",
+            ctx.arrangeError == null && ctx.seeded === want,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, dagId: ctx.dagId, seeded: ctx.seeded })
+        );
+        if (ctx.arrangeError != null) return steps;
+
+        await h.goto("agent");
+        const row = await runRowStuckRead(h);
+        rec(
+            "1. the run's row in the Agent tree reads Working with its count and \"· 2 stuck\"",
+            row.row === true && typeof row.text === "string" && /^Working · \d+\/4 · 2 stuck$/.test(row.text),
+            JSON.stringify(row)
+        );
+        const title = row.title ?? "";
+        const verifyAt = title.indexOf("t-2 verify failed");
+        const stalledAt = title.indexOf("t-3 stalled");
+        rec(
+            "2. its tooltip names t-2 verify failed and t-3 stalled in task order, and no task that is not stuck",
+            verifyAt >= 0 && stalledAt > verifyAt && !/t-1 |t-4 /.test(title),
+            JSON.stringify({ title })
+        );
+        await h.shot("cdp-shots/run-row-stuck.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "run-row-stuck", {
+            what: "cancel t-1's unlinked child run and put the tree's folds back",
+            fn: async () => {
+                const failed = [];
+                const attempt = async (what, fn) => {
+                    try {
+                        await fn();
+                    } catch (e) {
+                        failed.push(`${what}: ${e?.message ?? e}`);
+                    }
+                };
+                // t-1's child run, which the seed unlinked from its task with its worker still at work in the lane's
+                // tree: cancelling the run does not reach it
+                if (ctx.channelId) {
+                    await attempt("cancel the channel's other runs", async () => {
+                        for (const run of await channelRuns(h, ctx.channelId)) {
+                            if (run.id !== ctx.runId && run.status !== "done" && run.status !== "cancelled") {
+                                await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                            }
+                        }
+                    });
+                }
+                await attempt("put the tree's folds back", () => h.ev(restoreLocalStorage(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
+                if (failed.length) throw new Error(failed.join("; "));
+            },
+        });
+    },
+};
+
 // --- run-cost: the API-equivalent estimate of a run's tokens on the run surfaces ------------------------
 // The run sheet, the DAG header, the run peek and the details rail's Task section each price the same usage rows
 // (docs/superpowers/specs/2026-10-08-usage-attribution-design.md). The rows are seeded as the run's sealed
@@ -67435,6 +67570,7 @@ export const SCENARIOS = [
     runTimingScenario,
     runCost,
     runPaused,
+    runRowStuck,
     dagObservability,
     dagPeekScenario,
     dagMotionScenario,

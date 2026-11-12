@@ -412,10 +412,29 @@ export function runAdjustable(run: Pick<RunInfo, "dag" | "status">): boolean {
     return run.dag != null && !runFinished(run);
 }
 
-/** Pure: the lead cannot take wakes. The newest wake failure stands until a lead is launched after it. */
-export function isLeadDown(events: RunEvent[]): boolean {
+/** Pure: the run's dag waits on its lead: a resubmit after a plan review that did not pass, or a fix plan or the
+ *  report after a failed final stage. A paused or finished run waits on nothing. */
+export function dagWaitsOnLead(run: Pick<RunInfo, "dag" | "status" | "land" | "pausedBy">): boolean {
+    const dag = run.dag;
+    if (dag == null || runFinished(run) || run.pausedBy || dag.pausedts) {
+        return false;
+    }
+    return dag.planreview?.state === "failed" || dag.final?.state === "failed";
+}
+
+/** Pure: the lead cannot take wakes. The newest wake failure stands until a lead is launched after it. A run whose dag
+ *  waits on its lead is down too when the lead's process is not live (leadLive), even with no failure row: the engine
+ *  writes one only when it notices, and run ca080f5c sat 3h50m with no lead and no Relaunch lead to press. */
+export function isLeadDown(
+    events: RunEvent[],
+    run?: Pick<RunInfo, "dag" | "status" | "land" | "pausedBy">,
+    leadLive = true
+): boolean {
     const failed = events.filter((e) => e.kind === "lead-wake-failed").sort((a, b) => b.ts - a.ts)[0];
-    return failed != null && relaunchLeadAction(failed, events, false) != null;
+    if (failed != null && relaunchLeadAction(failed, events, false) != null) {
+        return true;
+    }
+    return run != null && !leadLive && dagWaitsOnLead(run);
 }
 
 export interface ReviewFinding {
