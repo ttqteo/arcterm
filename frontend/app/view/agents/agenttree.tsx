@@ -1206,10 +1206,9 @@ function ParentRow({
     // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
     // list shows unread messages, and the name reads bold
     const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
-    // an idle turn that stopped on part 1/3 of something waits on your reply: its step takes the count's place, and
-    // stays after you have read it, since that is when a reply gets forgotten
-    const step = agent.state === "idle" ? agent.step : undefined;
-    const unread = unreadCount > 0 || step != null;
+    // the row shows no "n/m" part an agent stopped on: read off its last message, it caught any n/m in the prose
+    // ("steps 14/14a" drew a 14/14 chip); an agent asking you is seen by its breathing row (.asking-tint) instead
+    const unread = unreadCount > 0;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     // the roster overlay already turned a question the file asks, or a design waiting on confirms, into state "asking";
@@ -1348,19 +1347,7 @@ function ParentRow({
                     <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                 </button>
             ) : asking ? (
-                <>
-                    <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
-                    {/* a question that names its part ("Phần 1/4 ổn chưa?") shows the part beside it */}
-                    {agent.step ? (
-                        <span
-                            data-agent-step={agent.step}
-                            aria-label={`asking about part ${agent.step}`}
-                            className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
-                        >
-                            {agent.step}
-                        </span>
-                    ) : null}
-                </>
+                <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
             ) : (
                 <>
                     {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command or the
@@ -1410,15 +1397,7 @@ function ParentRow({
                             {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
                         </span>
                     ) : null}
-                    {step ? (
-                        <span
-                            data-agent-step={step}
-                            aria-label={`stopped on part ${step}, waiting on your reply`}
-                            className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
-                        >
-                            {step}
-                        </span>
-                    ) : unread ? (
+                    {unread ? (
                         <span
                             data-agent-unread={unreadCount}
                             aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}

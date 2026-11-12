@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A sleeping Claude agent left on its Brainstorm, Canvas or Review can go back to its conversation: Chat stays clickable
   (and Alt+C reaches it) while the agent sleeps; only Terminal waits for it to wake.
+- An agent's row in the Agent tree no longer shows a stray "14/14"-style chip picked from any n/m in its last message;
+  an agent asking you still stands out by its pulsing row.
 - A message sent from Chat no longer sits unsent in Claude Code's box with a line break after it, to go out joined to
   your next message: Chat now presses Enter only once the box shows the whole message.
 - An agent that runs `claude -p` from its own shell no longer gets stuck: Chat used to show the nested session, your
