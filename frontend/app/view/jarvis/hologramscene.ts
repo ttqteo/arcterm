@@ -34,6 +34,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { assembleReveal } from "./hologrammodel";
 
 const TAU = Math.PI * 2;
 // past 1.5 the bloom's targets cost more than the softness they buy at this size (the study's cap)
@@ -197,14 +198,29 @@ class Builder {
     }
 }
 
-// The orbital HUD: four tilted rings turning at their own pace around a lit core. Busy, the core beats.
-function hud(c: HologramColours, dpr: number, scale: number): Form {
+// Scales what a fader shows by `reveal`, after fade() has set it for the frame
+function dim(faders: Fader[], reveal: number): void {
+    for (const f of faders) {
+        if ("points" in f) {
+            f.points.uniforms.fade.value *= reveal;
+        } else {
+            f.material.opacity *= reveal;
+        }
+    }
+}
+
+// The orbital HUD: four tilted rings turning at their own pace around a lit core. Busy, the core beats. Assembling (the
+// startup loader), the core lights first and the rings fade and grow in from the inside out (assembleReveal).
+function hud(c: HologramColours, dpr: number, scale: number, assemble: boolean): Form {
     const b = new Builder(dpr, scale);
     const group = new Group();
     group.rotation.x = 0.18;
     group.rotation.y = -0.16;
     const rings: Group[] = [];
+    // what each part draws, so it can enter on its own: [0] the core, [1..4] the rings from the inside out
+    const parts: Fader[][] = [];
     for (let layer = 0; layer < 4; layer++) {
+        const firstFader = b.faders.length;
         const ring = new Group();
         ring.position.z = (layer - 1.5) * 0.12;
         group.add(ring);
@@ -238,7 +254,9 @@ function hud(c: HologramColours, dpr: number, scale: number): Form {
             }
             b.segments(ring, ticks, c.blue, 0.8, 0.55);
         }
+        parts[layer + 1] = b.faders.slice(firstFader);
     }
+    const coreFirstFader = b.faders.length;
     const core = new Group();
     group.add(core);
     b.arc(core, 0.33, 0, TAU, c.blueHot, 1.8, 0.9);
@@ -253,15 +271,21 @@ function hud(c: HologramColours, dpr: number, scale: number): Form {
     b.segments(core, paths, c.blueHot, 1, 0.65);
     const sparks = b.points(core, [0, 0, 0.08], c.blueHot, 8);
     const nucleus = b.wire(core, 0.11, c.blueHot, 0.65, false);
+    parts[0] = b.faders.slice(coreFirstFader);
     const speeds = [0.075, -0.12, 0.045, -0.03];
     return {
         group,
         faders: b.faders,
         update: (t, busy) => {
+            const reveal = (part: number) => (assemble ? assembleReveal(t, part) : 1);
             rings.forEach((ring, i) => {
                 ring.rotation.z = t * speeds[i];
+                ring.scale.setScalar(0.7 + 0.3 * reveal(i + 1));
             });
-            core.scale.setScalar(busy ? 1.05 + Math.sin(t * 4) * 0.06 : 1);
+            core.scale.setScalar((busy ? 1.05 + Math.sin(t * 4) * 0.06 : 1) * (0.6 + 0.4 * reveal(0)));
+            if (assemble) {
+                parts.forEach((faders, part) => dim(faders, reveal(part)));
+            }
             nucleus.rotation.set(t * 0.15, t * 0.22, 0);
             sparks.material.uniforms.time.value = t;
             sparks.material.uniforms.energy.value = busy ? 1.8 : 1;
@@ -367,12 +391,14 @@ export class HologramScene {
         private onLost: (ev: Event) => void
     ) {}
 
-    /** null when the GL context cannot be had: the caller shows Sprout instead of a blank corner. */
+    /** null when the GL context cannot be had: the caller shows Sprout instead of a blank corner. `assemble` builds the
+     * HUD part by part from the scene's first frame (the startup loader) instead of showing it whole. */
     static create(
         canvas: HTMLCanvasElement,
         sizePx: number,
         colours: HologramColours,
-        onLost: () => void
+        onLost: () => void,
+        assemble = false
     ): HologramScene | null {
         let renderer: WebGLRenderer;
         try {
@@ -401,7 +427,7 @@ export class HologramScene {
         composer.addPass(new OutputPass());
         composer.addPass(new ShaderPass(alphaFromLight));
         const scale = sizePx / STUDY_PX;
-        const hudForm = hud(colours, dpr, scale);
+        const hudForm = hud(colours, dpr, scale, assemble);
         const neuralForm = neural(colours, dpr, scale);
         scene.add(hudForm.group, neuralForm.group);
         const lost = (ev: Event) => {

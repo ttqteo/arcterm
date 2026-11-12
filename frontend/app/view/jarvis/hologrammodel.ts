@@ -83,6 +83,25 @@ export function easeMix(mix: number): number {
     return m * m * (3 - 2 * m);
 }
 
+// The startup loader (startuploader.tsx) builds the HUD before it turns: the core lights first, then the four rings
+// from the inside out, each fading and growing into place. Seconds on the scene's clock, which starts at its first frame.
+export const ASSEMBLE_START_S = 0.1;
+export const ASSEMBLE_STAGGER_S = 0.2;
+export const ASSEMBLE_PART_S = 0.5;
+// the core and the four rings
+export const ASSEMBLE_PARTS = 5;
+export const ASSEMBLE_DONE_S = ASSEMBLE_START_S + (ASSEMBLE_PARTS - 1) * ASSEMBLE_STAGGER_S + ASSEMBLE_PART_S;
+
+/** How far part `part` (0 the core, 1 to 4 the rings from the inside out) is into its entrance `t` seconds in: 0 not
+ * shown yet, 1 in place, eased out so it settles rather than stops. */
+export function assembleReveal(t: number, part: number): number {
+    const p = (t - ASSEMBLE_START_S - part * ASSEMBLE_STAGGER_S) / ASSEMBLE_PART_S;
+    if (!(p > 0)) {
+        return 0;
+    }
+    return p >= 1 ? 1 : 1 - (1 - p) ** 3;
+}
+
 // Frames a second: a calm HUD needs few; the sphere's pulses, a beating core and a crossfade need more
 export const HOLOGRAM_IDLE_FPS = 15;
 export const HOLOGRAM_LIVE_FPS = 30;

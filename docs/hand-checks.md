@@ -632,6 +632,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   runs, with "Setting up arcterm" under it, instead of grey skeleton boxes; once the roster is read the usual screen
   replaces it. With Windows' animation effects off the pet stands still in the middle. Unit tests (`startuprun.ts`) and
   the typecheck only; never seen in the app (`startuploader.tsx`).
+- [ ] (arcterm) **Jarvis's hologram shows while arcterm starts up.** Settings → Jarvis & Office → Form → Hologram,
+  then relaunch arcterm (on the Agent screen, and once landing on the Cockpit) → while the agents load, the middle of
+  the screen shows the blue HUD a size up from the corner's: the core lights first, the four rings fade and grow in
+  from the inside out within about 1.5 s, then they turn with the core beating, over "Setting up arcterm"; no hologram
+  sits in the bottom-right corner meanwhile, and it fades in there once the roster is read. No milky disc or square
+  edge round it (WKWebView). With Form → Sprout the pet still runs; in Float the pet runs whatever the form. Unit tests
+  (`hologrammodel.ts` assembleReveal) and the typecheck only; never seen in the app (`startuploader.tsx`,
+  `hologramscene.ts`).
 - [ ] (arcterm) **A double right-click in a terminal opens the menu.** In the installed app, in an agent's or a shell
   terminal, with nothing selected: right-click once → the clipboard pastes once after a short beat; right-click twice
   at your usual double-click pace → the terminal menu opens and nothing pastes. With text selected, one right-click

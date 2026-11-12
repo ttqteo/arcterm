@@ -45,6 +45,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Settings → Jarvis & Office groups Jarvis's settings into three short cards: Jarvis (character, Vietnam's colours),
   Form (Sprout or hologram, and the hologram's size) and Behaviour (roams, quotes).
+- With Jarvis set to the hologram, arcterm now starts up with Jarvis in the middle of the screen, its rings lighting up
+  one by one and then turning until your agents load, instead of Sprout running; the corner hologram appears once
+  loading is done.
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of

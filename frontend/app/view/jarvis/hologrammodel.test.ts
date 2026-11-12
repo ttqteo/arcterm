@@ -3,6 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    ASSEMBLE_DONE_S,
+    ASSEMBLE_PARTS,
+    assembleReveal,
     easeMix,
     HOLOGRAM_IDLE_FPS,
     HOLOGRAM_LIVE_FPS,
@@ -96,5 +99,35 @@ describe("hologramFps", () => {
         expect(hologramFps(pose, 0.4)).toBe(HOLOGRAM_LIVE_FPS);
         expect(hologramFps(hologramPose({ ...calm, working: 1 }), 0)).toBe(HOLOGRAM_LIVE_FPS);
         expect(hologramFps(hologramPose({ ...calm, waiting: 1 }), 1)).toBe(HOLOGRAM_LIVE_FPS);
+    });
+});
+
+describe("assembleReveal", () => {
+    it("shows nothing at the start and every part in place once the HUD is whole", () => {
+        for (let part = 0; part < ASSEMBLE_PARTS; part++) {
+            expect(assembleReveal(0, part)).toBe(0);
+            expect(assembleReveal(ASSEMBLE_DONE_S, part)).toBe(1);
+            expect(assembleReveal(60, part)).toBe(1);
+        }
+    });
+
+    it("lights the core first, then the rings from the inside out", () => {
+        const t = 0.5;
+        const reveals = Array.from({ length: ASSEMBLE_PARTS }, (_, part) => assembleReveal(t, part));
+        for (let part = 1; part < ASSEMBLE_PARTS; part++) {
+            expect(reveals[part]).toBeLessThanOrEqual(reveals[part - 1]);
+        }
+        expect(reveals[0]).toBeGreaterThan(0);
+        expect(reveals[ASSEMBLE_PARTS - 1]).toBe(0);
+    });
+
+    it("eases out: past half its time a part is more than half in", () => {
+        const half = assembleReveal(0.1 + 0.25, 0);
+        expect(half).toBeGreaterThan(0.5);
+        expect(half).toBeLessThan(1);
+    });
+
+    it("reads a clock that is not a number as not started", () => {
+        expect(assembleReveal(Number.NaN, 0)).toBe(0);
     });
 });

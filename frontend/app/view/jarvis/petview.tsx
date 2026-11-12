@@ -80,6 +80,7 @@ import {
 import { isStaying, stayEndsInMs } from "./petstay";
 import {
     clearExpiredPetStay,
+    hologramLoadersShownAtom,
     petBubbleAtom,
     petCharacterAtom,
     petEventsAtom,
@@ -333,6 +334,8 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const [hologramFailed, setHologramFailed] = useState(false);
     useEffect(() => setHologramFailed(false), [form]);
     const hologram = form === "hologram" && !hologramFailed && !floating && !folded;
+    // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
+    const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const hologramPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
     const needsYou = useNeedsYouCount(model);
     const shownAnchor = inOffice ? officeBoss : anchor;
@@ -423,7 +426,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     return (
         <>
             {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
-            {inOffice ? null : hologram ? (
+            {inOffice || (hologram && loaderHologram) ? null : hologram ? (
                 <HologramView
                     key={hologramPx}
                     sizePx={hologramPx}

@@ -3,7 +3,8 @@
 //
 // Jarvis as a hologram (Settings → Jarvis → Form): fixed in the window's bottom-right corner, where Sprout would walk
 // the footer. What it shows is hologrammodel.ts's, its pixels hologramscene.ts's, loaded only once this mounts. It
-// opens the same peek and carries the same bubble as Sprout; PetView decides which of the two is shown.
+// opens the same peek and carries the same bubble as Sprout; PetView decides which of the two is shown. The frame loop
+// is useHologramCanvas, which the startup loader (startuploader.tsx) draws its own hologram with.
 
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom, cockpitWaitingCount, splitAttention } from "@/app/view/agents/attentionstore";
@@ -11,7 +12,7 @@ import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { answeredAskIdsAcross } from "@/app/view/agents/jarvisderive";
 import { useAtomValue } from "jotai";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { easeMix, hologramFps, stepMix, type HologramPose } from "./hologrammodel";
 import type { HologramScene } from "./hologramscene";
 import { closePeek } from "./peekstore";
@@ -29,6 +30,99 @@ export function useNeedsYouCount(model: AgentsViewModel): number {
         const answered = answeredAskIdsAcross(Object.values(messages));
         return cockpitWaitingCount(split.cockpit, agents, answered) + split.jarvis.length;
     }, [attention, agents, messages]);
+}
+
+export interface HologramCanvasInputs {
+    sizePx: number;
+    pose: HologramPose;
+    reduce: boolean;
+    // no GL context, or it was lost: the caller shows Sprout instead of an empty space
+    onFail: () => void;
+    // false while the canvas is not on screen (a surface kept mounted under display:none): no scene is built and
+    // nothing draws until it is
+    shown?: boolean;
+    // build the HUD part by part from the first frame (hologramscene.ts) instead of showing it whole
+    assemble?: boolean;
+}
+
+// The size and `assemble` are read once, when the scene is built: a caller keys its canvas by the size, so a new size is
+// a new canvas. The loop starts once per mount and reads the rest through a ref, so a pose change never rebuilds the GL
+// context.
+export function useHologramCanvas(canvasRef: RefObject<HTMLCanvasElement | null>, inputs: HologramCanvasInputs) {
+    const live = useRef(inputs);
+    live.current = inputs;
+
+    useEffect(() => {
+        let disposed = false;
+        let mod: typeof import("./hologramscene") | null = null;
+        let scene: HologramScene | null = null;
+        let raf = 0;
+        let t = 0;
+        let lastDraw = -Infinity;
+        let mix: number = live.current.pose.sphere;
+        let stillKey = "";
+        const fail = () => {
+            if (!disposed) {
+                live.current.onFail();
+            }
+        };
+        const frame = (now: number) => {
+            raf = requestAnimationFrame(frame);
+            const { pose: p, reduce: still, shown = true } = live.current;
+            const canvas = canvasRef.current;
+            if (document.hidden || mod == null || canvas == null || !shown) {
+                lastDraw = now;
+                // a still frame is drawn again when it shows again
+                stillKey = "";
+                return;
+            }
+            if (scene == null) {
+                // the declaration is live, so a theme picked since still reads through on the next mount
+                const rootStyle = getComputedStyle(document.documentElement);
+                const colours = mod.readHologramColours((name) => rootStyle.getPropertyValue(name).trim());
+                scene = mod.HologramScene.create(canvas, live.current.sizePx, colours, fail, live.current.assemble);
+                if (scene == null) {
+                    cancelAnimationFrame(raf);
+                    fail();
+                    return;
+                }
+            }
+            if (still) {
+                // no motion: the form the pose asks for, drawn once per change
+                mix = p.sphere;
+                const key = `${p.sphere}`;
+                if (key !== stillKey) {
+                    stillKey = key;
+                    scene.draw(STILL_T, false, mix);
+                }
+                return;
+            }
+            stillKey = "";
+            const dt = now - lastDraw;
+            if (dt < 1000 / hologramFps(p, mix) - 1) {
+                return;
+            }
+            lastDraw = now;
+            const step = Math.min(dt, 100);
+            t += step / 1000;
+            mix = stepMix(mix, p.sphere, step);
+            scene.draw(t, p.busy, easeMix(mix));
+        };
+        import("./hologramscene")
+            .then((loaded) => {
+                if (disposed) {
+                    return;
+                }
+                mod = loaded;
+                raf = requestAnimationFrame(frame);
+            })
+            .catch(fail);
+        return () => {
+            disposed = true;
+            cancelAnimationFrame(raf);
+            scene?.dispose();
+        };
+    }, []);
 }
 
 // The size is read once, when the scene is built: PetView keys this view by it, so a new size is a new canvas.
@@ -53,74 +147,7 @@ export function HologramView({
     onFail: () => void;
 }) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    // the loop starts once per mount and reads these through refs, so a pose change never rebuilds the GL context
-    const live = useRef({ sizePx, pose, reduce, onFail });
-    live.current = { sizePx, pose, reduce, onFail };
-
-    useEffect(() => {
-        let disposed = false;
-        let scene: HologramScene | null = null;
-        let raf = 0;
-        let t = 0;
-        let lastDraw = -Infinity;
-        let mix: number = live.current.pose.sphere;
-        let stillKey = "";
-        const fail = () => {
-            if (!disposed) {
-                live.current.onFail();
-            }
-        };
-        const frame = (now: number) => {
-            raf = requestAnimationFrame(frame);
-            const { pose: p, reduce: still } = live.current;
-            if (document.hidden || scene == null) {
-                lastDraw = now;
-                return;
-            }
-            if (still) {
-                // no motion: the form the pose asks for, drawn once per change
-                mix = p.sphere;
-                const key = `${p.sphere}`;
-                if (key !== stillKey) {
-                    stillKey = key;
-                    scene.draw(STILL_T, false, mix);
-                }
-                return;
-            }
-            stillKey = "";
-            const dt = now - lastDraw;
-            if (dt < 1000 / hologramFps(p, mix) - 1) {
-                return;
-            }
-            lastDraw = now;
-            const step = Math.min(dt, 100);
-            t += step / 1000;
-            mix = stepMix(mix, p.sphere, step);
-            scene.draw(t, p.busy, easeMix(mix));
-        };
-        import("./hologramscene")
-            .then((mod) => {
-                const canvas = canvasRef.current;
-                if (disposed || canvas == null) {
-                    return;
-                }
-                // the declaration is live, so a theme picked since still reads through on the next mount
-                const rootStyle = getComputedStyle(document.documentElement);
-                const colours = mod.readHologramColours((name) => rootStyle.getPropertyValue(name).trim());
-                scene = mod.HologramScene.create(canvas, live.current.sizePx, colours, fail);
-                if (scene == null) {
-                    fail();
-                    return;
-                }
-                raf = requestAnimationFrame(frame);
-            })
-            .catch(fail);
-        return () => {
-            disposed = true;
-            cancelAnimationFrame(raf);
-            scene?.dispose();
-        };
-    }, []);
+    useHologramCanvas(canvasRef, { sizePx, pose, reduce, onFail });
 
     return (
         <motion.div

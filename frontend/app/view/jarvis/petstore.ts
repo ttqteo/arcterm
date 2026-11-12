@@ -149,6 +149,10 @@ export const petHologramSizeAtom = atomWithStorage<HologramSize>(
     { getOnInit: true }
 ) as PrimitiveAtom<HologramSize>;
 
+// How many startup loaders (startuploader.tsx) show the hologram on screen now. While one does, PetView draws no corner
+// hologram, so arcterm starts with one Jarvis rather than two; the corner one fades in once the roster is read.
+export const hologramLoadersShownAtom = atom(0) as PrimitiveAtom<number>;
+
 // Whether the pet says a quote now and then (petquotes.ts, Settings → Appearance), persisted like the outfit.
 export const DEFAULT_PET_QUOTES = true;
 export const petQuotesOnAtom = atomWithStorage<boolean>("jarvis.pet.quotes", DEFAULT_PET_QUOTES, undefined, {
