@@ -58,9 +58,15 @@ function baseName(path: string): string {
     return path.split(/[\\/]/).pop() || path;
 }
 
+// the caret sits in a slot as wide as a step's icon slot (StepLine), so the caret and the step icons under it share one
+// column
 function FoldCaret({ open }: { open: boolean }) {
     const Icon = open ? ChevronDown : ChevronRight;
-    return <Icon size={11} strokeWidth={2.2} aria-hidden className="shrink-0" />;
+    return (
+        <span className="flex h-[14px] w-[14px] shrink-0 items-center justify-center">
+            <Icon size={11} strokeWidth={2.2} aria-hidden />
+        </span>
+    );
 }
 
 // a call with no result in a working session: a dashed ring that turns, in the colour of a run that is going well
@@ -351,7 +357,7 @@ export function ChatSteps({
                 data-fold
                 aria-expanded={shown}
                 onClick={onToggle}
-                className="flex cursor-pointer items-center gap-[6px] self-start py-[2px] text-[12px] text-muted hover:text-secondary"
+                className="flex cursor-pointer items-center gap-2 self-start px-1.5 py-[2px] text-[12px] text-muted hover:text-secondary"
             >
                 <FoldCaret open={shown} />
                 <span>

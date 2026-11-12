@@ -121,6 +121,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In Chat, the caret of a "Worked for …" line and the icons of the steps under it now sit in one column, and its text
+  lines up with the step names.
 - On Windows, an agent's RAM in the sidebar and in Resource Manager now matches the RAM popover and Task Manager: it
   no longer counts the system pages every process shares, which put each agent about 170 MB too high.
 - A reply scrolling under your pinned message in Chat no longer shows through beside it, under the Skim button.

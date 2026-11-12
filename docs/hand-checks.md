@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's tool fold lines up: open a "Worked for …" line in Chat → its caret sits centred over the step
+  icons (spinner or tool icon) below it, and "Worked for" starts where the step names start (`chatstepsview.tsx`
+  FoldCaret and the fold button's `px-1.5 gap-2`, matching StepLine).
 - [ ] (arcterm) A picture sent to a sleeping agent reaches it: paste an image into a real sleeping Claude agent's Chat
   box and press Enter → it wakes, and its first turn shows the picture in your bubble and answers about it. The box,
   the chip, the wake call and Ctrl+End are covered by `task verify:ui -- chat-asleep-attach-jump` over a mocked wake;
