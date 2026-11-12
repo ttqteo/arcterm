@@ -67,6 +67,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On a Mac, text replacements (System Settings → Keyboard → Text Replacements, such as `sv` → sinh viên) work in
+  Chat's message box again, still without red underlines under Vietnamese words.
 - A message you took back in Chat (Esc before Claude answered) and sent again no longer shows twice: Chat now shows
   only the message you sent, as the terminal does, and a conversation rewound to an earlier point drops what came after.
 - Allowing a subagent from Chat's card no longer leaves a second "Wants to start a subagent" card behind, whose Allow
