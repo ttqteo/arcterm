@@ -44729,9 +44729,11 @@ const agentChat = {
             await acClear(h, acBox(A));
             const before42 = (await acSettled(h, blockA)).length;
             const click42 = await acClickFrame(h, A, "chart.html", 76, 34);
-            // The prompt's text goes in at the click and its Enter the echo wait later, so the second click is made once the text
-            // is in (well inside the 1.5 s gap), and the Enter is waited for after it
-            await acUntil(async () => ((await typedSince(blockA, before42)).join("").startsWith(ASK) ? true : null), 3000);
+            // The gap runs from the click's own send, so the second click is made once that send shows: its pending bubble,
+            // drawn by the send itself. Waiting for the text to reach the block instead timed the terminal's echo, which a
+            // loaded machine stretched past the gap (3.1 s in one Final, against 0.15-0.45 s otherwise). The Enter is waited
+            // for after the second click
+            await polishWaitFor(h, `${pendingOfA(ASK)}.length >= 1`, 3000);
             const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             const sent42 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before42)).join("");
