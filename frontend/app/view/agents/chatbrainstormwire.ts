@@ -46,7 +46,16 @@ export function boxAnswerRecord(
     if (body === "" || body.startsWith("/") || body.startsWith("!")) {
         return null;
     }
-    return { topic, n: question.n, part: question.part, text, sentAt: now, seen: userTextCount(entries, text) };
+    // `typed`: these are the user's words, not a click on an option, so the ✓ row says "You replied"
+    return {
+        topic,
+        n: question.n,
+        part: question.part,
+        text,
+        sentAt: now,
+        seen: userTextCount(entries, text),
+        typed: true,
+    };
 }
 
 /** The box's placeholder while a question card waits, or null (no card, a card of another kind, or an agent that
