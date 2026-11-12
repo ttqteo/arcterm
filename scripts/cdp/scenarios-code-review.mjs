@@ -23,6 +23,8 @@ const VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false
 const FILE = "review.ts";
 const AGENT_NAME = "review-fixer";
 const MENU_LABEL = "Add review comment";
+// a drag that fell short is made again this many times in all (see dragLines)
+const DRAG_TRIES = 3;
 const line = (n) => `const value_${n} = ${n};`;
 const SOURCE = Array.from({ length: 12 }, (_, i) => line(i + 1)).join("\n") + "\n";
 
@@ -32,6 +34,12 @@ const COUNT = `(document.querySelector("[data-code-review-count]")?.getAttribute
 const MARKERS = `document.querySelectorAll(".monaco-editor .code-comment-marker").length`;
 const CARET_LINE = `(() => { const el = document.querySelector(".monaco-editor .active-line-number"); return el ? Number(el.textContent.trim()) : null; })()`;
 const ROWS = `[...document.querySelectorAll("[data-code-review-row]")].map((r) => r.getAttribute("data-code-review-row"))`;
+
+// the source lines Monaco draws a selection on (its selected-text boxes sit in the line's overlay row, at the line's top)
+const SELECTED_LINES = `(() => {
+    const tops = new Set([...document.querySelectorAll('.monaco-editor .view-overlays > div')].filter((r) => r.querySelector('.selected-text')).map((r) => r.style.top));
+    return [...document.querySelectorAll('.monaco-editor .view-lines .view-line')].filter((l) => tops.has(l.style.top)).map((l) => l.textContent.replace(/\\u00a0/g, ' ').trim());
+})()`;
 
 // Monaco draws its context menu inside a shadow root, so an item is looked for there as well
 const menuItem = (label) => `(() => {
@@ -58,18 +66,35 @@ export default function (kits) {
         }
     };
 
-    // drags from the start of one line to the start of another, which selects the lines between; a selection that ends at
-    // column 1 of the later line covers only the lines above it (selectionLines)
+    // Drags from the start of one line to the start of another, which selects the lines between; a selection that ends at
+    // column 1 of the later line covers only the lines above it (selectionLines). The result is the number of the try that
+    // took, or 0 when none did.
+    //
+    // A drag is not atomic: Monaco stops following it at the first pointer event that is not the scripted one (a pointermove
+    // whose buttons differ from the press's, or a click in the editor), and the selection stays where the last scripted move
+    // left it, or is cleared. This window shares the desktop with whoever is using the machine, and a page short of CPU holds
+    // the gesture open for seconds: the page's own pointer log of a 20x CPU-throttled run held pointer events nobody scripted
+    // between the last scripted move and the release, and one such pointermove sent into an otherwise idle page ends the
+    // drag at once. The comment then lands on the line right-clicked instead of the range ("Comment on line 3", one gutter
+    // bar and a message without the range), the failure a Final run showed in three steps. The context menu is not at fault:
+    // the selection was already wrong before it opened. So the drag is checked, as a person looks at what they selected, and
+    // made again when it fell short.
     const dragLines = async (h, from, to) => {
-        const a = await linePoint(h, from);
-        const b = await linePoint(h, to);
-        if (a == null || b == null) return false;
-        await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: a.left + 1, y: a.y, button: "left", buttons: 1, clickCount: 1 });
-        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.left + 1, y: (a.y + b.y) / 2, button: "left", buttons: 1 });
-        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: b.left + 1, y: b.y, button: "left", buttons: 1 });
-        await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: b.left + 1, y: b.y, button: "left", buttons: 0, clickCount: 1 });
-        await polishNap(250);
-        return true;
+        for (let tries = 1; tries <= DRAG_TRIES; tries++) {
+            const a = await linePoint(h, from);
+            const b = await linePoint(h, to);
+            if (a == null || b == null) return 0;
+            const at = (type, p, y, buttons) =>
+                h.cdp("Input.dispatchMouseEvent", { type, x: p.left + 1, y, button: "left", buttons, clickCount: 1 });
+            await at("mousePressed", a, a.y, 1);
+            await at("mouseMoved", a, (a.y + b.y) / 2, 1);
+            await at("mouseMoved", b, b.y, 1);
+            await at("mouseReleased", b, b.y, 0);
+            await polishNap(250);
+            // the caret sits where the drag ended
+            if ((await h.ev(CARET_LINE)) === to) return tries;
+        }
+        return 0;
     };
 
     // Monaco moves the caret to a right-clicked spot outside its selection and keeps a selection the click lands inside
@@ -114,8 +139,17 @@ export default function (kits) {
     // a comment on lines from..to through the context menu, then its note; from === to is the caret's line
     const addComment = async (h, from, to, note) => {
         const out = { from, to };
-        if (to > from) out.selected = await dragLines(h, from, to + 1);
-        const openMenu = async () => (await rightClickLine(h, from + (to > from ? 1 : 0))) && (await clickMenuItem(h, MENU_LABEL));
+        if (to > from) {
+            out.dragTries = await dragLines(h, from, to + 1);
+            out.selected = out.dragTries > 0;
+            // what the editor draws as selected, before and after the right click: a failure names where the range was lost
+            out.afterDrag = await h.ev(SELECTED_LINES);
+        }
+        const openMenu = async () => {
+            const clicked = await rightClickLine(h, from + (to > from ? 1 : 0));
+            if (clicked && to > from) out.afterRight = await h.ev(SELECTED_LINES);
+            return clicked && (await clickMenuItem(h, MENU_LABEL));
+        };
         out.menu = await openMenu();
         out.shown = out.menu && (await polishWaitFor(h, `!!${INPUT}`, 4000));
         if (out.menu && !out.shown) {
