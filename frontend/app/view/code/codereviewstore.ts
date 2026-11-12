@@ -161,6 +161,10 @@ export async function sendReview(
     if (key == null || comments.length === 0) {
         return { ok: false, message: "There are no comments to send." };
     }
+    // the send ends with Enter, which on an agent waiting on a question (a permission prompt) would answer it
+    if (target?.state === "asking") {
+        return { ok: false, message: `${target.name} is waiting on a question. Answer it first, then send the review.` };
+    }
     const markdown = reviewMarkdown(projectName, key, reanchored(comments));
     try {
         if (target != null) {

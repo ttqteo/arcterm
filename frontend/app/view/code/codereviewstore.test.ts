@@ -86,6 +86,18 @@ describe("sendReview to an agent", () => {
         expect(projectComments(globalStore.get(codeReviewsAtom), project.path)).toEqual([comment]);
     });
 
+    it("refuses an agent waiting on a question: the send's Enter would answer it", async () => {
+        seed([comment]);
+        sendText.mockResolvedValue({ ok: true });
+
+        const res = await sendReview({ ...agent, state: "asking" }, "alpha");
+
+        expect(res.ok).toBe(false);
+        expect("message" in res && res.message).toContain("waiting on a question");
+        expect(sendText).not.toHaveBeenCalled();
+        expect(projectComments(globalStore.get(codeReviewsAtom), project.path)).toEqual([comment]);
+    });
+
     it("keeps the comments when the send throws", async () => {
         seed([comment]);
         sendText.mockRejectedValue(new Error("route not found"));
