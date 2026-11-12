@@ -228,7 +228,10 @@ func resumeInNewTab(ctx context.Context, run *waveobj.Run, phaseIdx int, closed,
 	if err != nil {
 		return fmt.Errorf("loading channel: %w", err)
 	}
-	tabORef, err := jarvis.SpawnRunWorker(ctx, cap, run.WorkspaceId, ch.Name, jarvis.LandPath(run), nudge, jarvis.RunWorkerOptions{RunId: run.ID})
+	// a lead's tab must outlive its process while the dag's children run, as the first spawn keeps it
+	// (jarvis.EnsureWorkers); without it every pause/resume of the lead makes yet another tab
+	opts := jarvis.RunWorkerOptions{KeepOnExit: run.Mode == jarvis.RunMode_Orchestrator, RunId: run.ID}
+	tabORef, err := jarvis.SpawnRunWorker(ctx, cap, run.WorkspaceId, ch.Name, jarvis.LandPath(run), nudge, opts)
 	if err != nil {
 		return err
 	}
