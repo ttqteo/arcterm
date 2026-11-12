@@ -267,6 +267,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **A closed tab's session stays under its initiative** (from the kaeltran16 fork): Usage counted a session under the
   initiative its tab carried only while the tab was open; it keeps it after the tab closes. A brainstorm judge's or
   check's session shows its role instead of reading as a plain session.
+- **A quoted startup command keeps its argument whole** (from the kaeltran16 fork): a startup command such as
+  `claude --append-system-prompt "a b"` reaches the agent with `a b` as one argument, instead of split in two with the
+  quote marks left inside.
+- **An opencode conversation survives a stray `null`** (from the kaeltran16 fork): a `null` line, or a tool call whose
+  input is `null` or any other value that is not an object, no longer stops an opencode transcript from showing; the
+  messages after it still appear.
+- **Older Claude models read as a family and a version** (from the kaeltran16 fork): `claude-3-7-sonnet-20250219`
+  shows as "Sonnet 3.7" and `claude-3-5-haiku-20241022` as "Haiku 3.5", where the first read "Sonnet 20250219".
+- **Leaving Jarvis closes the DAG modal** (from the kaeltran16 fork): a DAG left open no longer reappears on your next
+  visit to Jarvis.
+- **A digit or Enter walks an ask of several questions** (from the kaeltran16 fork): on the Cockpit, a digit picks an
+  option and moves to the next unanswered question, and Enter sends once every question is answered, otherwise moves to
+  the first unanswered one, instead of opening the agent over a partial answer.
 ### Changed
 
 - A background command that left a server running is named in the Agent tree by the server and its port
