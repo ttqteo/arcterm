@@ -560,6 +560,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     brainstorm={{ agent, topic: brainstormTopic, answers: sentAnswers, question }}
+                                    model={model}
+                                    agent={agent}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>

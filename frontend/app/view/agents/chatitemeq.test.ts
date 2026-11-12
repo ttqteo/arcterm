@@ -101,6 +101,15 @@ describe("sameChatItem", () => {
         expect(sameChatItem(items([bare])[0], items([bash("x")])[0])).toBe(false);
     });
 
+    it("tells the same text under another record uuid apart: Fork from here cuts at the uuid", () => {
+        const you = (uuid: string): AgentEntry => ({ kind: "user", text: "a", uuid });
+        expect(sameChatItem(items([you("u1")])[0], items([you("u1")])[0])).toBe(true);
+        expect(sameChatItem(items([you("u1")])[0], items([you("u2")])[0])).toBe(false);
+        const says = (uuid: string): AgentEntry => ({ kind: "message", text: "a", uuid });
+        expect(sameChatItem(items([says("a1")])[0], items([says("a1")])[0])).toBe(true);
+        expect(sameChatItem(items([says("a1")])[0], items([says("a2")])[0])).toBe(false);
+    });
+
     it("tells different kinds and keys apart", () => {
         const a = items([{ kind: "user", text: "x" }]);
         const b = items([{ kind: "message", text: "x" }]);

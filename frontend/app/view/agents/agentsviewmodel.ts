@@ -55,8 +55,9 @@ export type BtwAnswer = { answer: string } | { failure: string };
 
 // One item of "previous info": something the agent said, or something it did.
 export type AgentEntry =
-    | { kind: "message"; text: string }
-    | { kind: "user"; text: string; images?: string[] } // images: what was pasted with it, as data URLs
+    // `uuid` (on a message and on your text messages): the transcript record it came from, which Fork from here cuts at
+    | { kind: "message"; text: string; uuid?: string }
+    | { kind: "user"; text: string; images?: string[]; uuid?: string } // images: what was pasted with it, as data URLs
     // a slash command or skill you ran, or (name "!") a bash-mode command you typed; `shell` is what it printed, once that
     // lands (a slash command that printed nothing has none); `btw` a /btw's side answer
     | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult; btw?: BtwAnswer }

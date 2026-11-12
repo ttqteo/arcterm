@@ -187,13 +187,15 @@ export function tabFixtures({ waveService }) {
     return { makeTab, closeTabs };
 }
 
-// Claude transcript records, one JSON line each. opts: cwd, sessionId, ts (an ISO string).
+// Claude transcript records, one JSON line each. opts: cwd, sessionId, ts (an ISO string), uuid (the record's own id,
+// which Chat's Fork from here cuts at; left off a record that is given none, as an old transcript has none).
 const record = (type, message, opts = {}, extra = {}) =>
     JSON.stringify({
         type,
         timestamp: opts.ts ?? new Date().toISOString(),
         cwd: opts.cwd ?? FIXTURE_DIR,
         sessionId: opts.sessionId ?? DEFAULT_SESSION_ID,
+        ...(opts.uuid ? { uuid: opts.uuid } : {}),
         message,
         ...extra,
     });

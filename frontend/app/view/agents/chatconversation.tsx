@@ -23,9 +23,10 @@ import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
     isNearBottom,
@@ -41,6 +42,8 @@ import { ChatBrainstormAnswered, ChatBrainstormCard } from "./chatbrainstormcard
 import { answerMessages, answeredText } from "./chatbrainstormwire";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
+import { canForkInChat, forkPointOfProse, forkPointOfYou, type ForkPoint } from "./chatfork";
+import { forkFromChat } from "./chatforkaction";
 import { sameChatItem } from "./chatitemeq";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
@@ -82,17 +85,30 @@ function Caret({ open }: { open: boolean }) {
     return <Icon size={11} strokeWidth={2.2} aria-hidden className="shrink-0" />;
 }
 
-// Copy in the gap under a bubble's bottom edge (the bubble keeps a margin that holds it), shown while the bubble is hovered or the button has focus (the bubble is `group`)
-function BubbleCopy({ text, align }: { text: string; align: "left" | "right" }) {
+// Copy in the gap under a bubble's bottom edge (the bubble keeps a margin that holds it), shown while the bubble is hovered or the button has focus (the bubble is `group`).
+// Beside it, Fork from here (`onFork`, given only where the item points at a transcript record of a forkable session).
+function BubbleCopy({ text, align, onFork }: { text: string; align: "left" | "right"; onFork?: () => void }) {
     return (
         <div
             data-chat-copy
             className={cn(
-                "absolute top-full z-10 mt-0 rounded-md bg-surface opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
+                "absolute top-full z-10 mt-0 flex items-center rounded-md bg-surface opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
                 align === "left" ? "left-1" : "right-1"
             )}
         >
             <CopyButton title="Copy" content={text} className="p-1 text-[12px]" />
+            {onFork ? (
+                <button
+                    type="button"
+                    data-chat-fork
+                    title="Fork from here: a new session with the conversation up to this point"
+                    aria-label="Fork from here"
+                    onClick={onFork}
+                    className="cursor-pointer rounded p-1 text-[12px] text-muted hover:bg-hover hover:text-ink-mid"
+                >
+                    <GitFork size={12} strokeWidth={2} aria-hidden />
+                </button>
+            ) : null}
         </div>
     );
 }
@@ -125,7 +141,8 @@ function ProseText({ text }: { text: string }) {
     );
 }
 
-type CopyMenu = (text: string) => (e: React.MouseEvent) => void;
+// the context menu of one bubble: Copy text and Copy conversation, and with a fork point, Fork from here
+type CopyMenu = (text: string, fork?: ForkPoint | null) => (e: React.MouseEvent) => void;
 
 // a command you ran, as one card: the command as you typed it, then what it printed under a rule, stderr in red, scrolling
 // past 200 px, as the TUI draws it under its line. A bash-mode one (`! cmd`, `bash`) leads with the `!` in the accent and,
@@ -244,10 +261,14 @@ function YouBubble({
     item,
     onContextMenu,
     onOpenTerminal,
+    onFork,
 }: {
     item: Extract<ChatItem, { kind: "you" }>;
     onContextMenu: CopyMenu;
     onOpenTerminal?: () => void;
+    // given where this session can fork: starts the fork from the message's own record (forkPointOfYou finds none for a
+    // command, or a message with no uuid, and then it offers nothing)
+    onFork?: (point: ForkPoint) => void;
 }) {
     if ("command" in item && item.command.startsWith("! ")) {
         return <CommandCard command={item.command.slice(2)} bash shell={item.shell} onContextMenu={onContextMenu} />;
@@ -285,11 +306,12 @@ function YouBubble({
     const text = said.text.trim();
     const hasPictures = (item.images?.length ?? 0) > 0 || said.images.length > 0;
     const hasFiles = said.files.length > 0;
+    const fork = onFork != null ? forkPointOfYou(item) : null;
     return (
         <div
             data-chat-you
             data-user-prompt
-            onContextMenu={onContextMenu(item.text)}
+            onContextMenu={onContextMenu(item.text, fork)}
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
             {text !== "" || hasPictures ? (
@@ -303,7 +325,13 @@ function YouBubble({
                     {text !== "" ? <TaggedPromptText text={text} /> : null}
                     {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
                     {/* the whole message, files and all, as the context menu copies it */}
-                    {text !== "" ? <BubbleCopy text={item.text} align="right" /> : null}
+                    {text !== "" ? (
+                        <BubbleCopy
+                            text={item.text}
+                            align="right"
+                            onFork={fork != null ? () => onFork?.(fork) : undefined}
+                        />
+                    ) : null}
                 </div>
             ) : null}
             {hasFiles ? <ChatFileCards paths={said.files} /> : null}
@@ -472,6 +500,7 @@ interface DrawnItem {
     active: boolean;
     live: boolean;
     terminal: boolean;
+    fork: boolean;
     folds: string;
     answer: string;
     element: ReactNode;
@@ -574,6 +603,8 @@ export function ChatConversation({
     working,
     onOpenTerminal,
     brainstorm,
+    model,
+    agent,
     className,
 }: {
     entries: AgentEntry[];
@@ -594,6 +625,10 @@ export function ChatConversation({
     // the agent's brainstorm: its open question as a card after the last row, and its answered questions as ✓ rows. Left
     // out where there is none (a caller that has no agent to answer to)
     brainstorm?: ChatBrainstorm;
+    // the cockpit and the agent this conversation is of, which Fork from here forks (chatforkaction.ts): left out where
+    // there is no live agent to fork (an ended session, a subagent's interior), and then no item offers a fork
+    model?: AgentsViewModel;
+    agent?: AgentVM;
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
@@ -782,8 +817,14 @@ export function ChatConversation({
     const openTerminalRef = useRef(onOpenTerminal);
     openTerminalRef.current = onOpenTerminal;
     const openTerminal = useCallback(() => openTerminalRef.current?.(), []);
+    // Fork from here is offered while the agent can fork (a Claude agent with a .jsonl transcript, which can arrive after
+    // the first items were drawn: DrawnItem.fork), and runs through a ref for the same reason as the two above
+    const canFork = !!model && !!agent && canForkInChat(agent);
+    const forkRef = useRef<((p: ForkPoint) => void) | null>(null);
+    forkRef.current = canFork ? (p) => forkFromChat(model!, agent!, p) : null;
+    const forkHere = useCallback((p: ForkPoint) => forkRef.current?.(p), []);
     const copyMenu: CopyMenu = useCallback(
-        (text) => (e) =>
+        (text, fork) => (e) =>
             ContextMenuModel.getInstance().showContextMenu(
                 [
                     {
@@ -796,6 +837,17 @@ export function ChatConversation({
                         icon: <Copy size={15} />,
                         click: () => void navigator.clipboard.writeText(conversationText(entriesRef.current)),
                     },
+                    ...(fork != null
+                        ? [
+                              { type: "separator" as const },
+                              {
+                                  label: "Fork from here",
+                                  sublabel: "a new session up to this point",
+                                  icon: <GitFork size={15} />,
+                                  click: () => forkRef.current?.(fork),
+                              },
+                          ]
+                        : []),
                 ],
                 e
             ),
@@ -812,17 +864,23 @@ export function ChatConversation({
         switch (part.kind) {
             // what the agent said: a document column, no bubble and no avatar (only your messages are bubbles); its tools
             // and files sit between the paragraphs, and the copy button hangs in the gap under the text
-            case "prose":
+            case "prose": {
+                const fork = canFork ? forkPointOfProse(part) : null;
                 return (
                     <div
                         data-chat-prose
-                        onContextMenu={copyMenu(part.text)}
+                        onContextMenu={copyMenu(part.text, fork)}
                         className="group relative mb-3 min-w-0 max-w-full self-stretch"
                     >
                         <ProseText text={part.text} />
-                        <BubbleCopy text={part.text} align="left" />
+                        <BubbleCopy
+                            text={part.text}
+                            align="left"
+                            onFork={fork != null ? () => forkRef.current?.(fork) : undefined}
+                        />
                     </div>
                 );
+            }
             case "work": {
                 // the work the agent is doing now: nothing but its files chip after it in the last item. It shows open,
                 // so a click on it folds it (a key of its own, which stops counting once the agent is done)
@@ -865,6 +923,7 @@ export function ChatConversation({
                         item={item}
                         onContextMenu={copyMenu}
                         onOpenTerminal={onOpenTerminal != null ? openTerminal : undefined}
+                        onFork={canFork ? forkHere : undefined}
                     />
                 );
             }
@@ -896,7 +955,8 @@ export function ChatConversation({
     // already seen, so a block landing at the end of a long conversation renders the last item and not every one before it
     // (chat-redesign step 16 reads that cost as frame time). The keep is by what the item draws from: its content
     // (sameChatItem), whether it is the last, whether the session is live, the folds opened inside it, whether there is
-    // a terminal to open and the brainstorm answer it stands for, if any. Everything else it draws from is state of its
+    // a terminal to open, whether it can fork (the transcript path arrives after the first rows are drawn) and the
+    // brainstorm answer it stands for, if any. Everything else it draws from is state of its
     // own components or read through a ref.
     const drawnItems = useRef(new Map<string, DrawnItem>());
     const drawnNow = new Map<string, DrawnItem>();
@@ -911,6 +971,7 @@ export function ChatConversation({
             kept.active === !!active &&
             kept.live === toolsLive &&
             kept.terminal === (onOpenTerminal != null) &&
+            kept.fork === canFork &&
             kept.folds === folds &&
             kept.answer === answer &&
             sameChatItem(kept.item, item);
@@ -922,6 +983,7 @@ export function ChatConversation({
                   active: !!active,
                   live: toolsLive,
                   terminal: onOpenTerminal != null,
+                  fork: canFork,
                   folds,
                   answer,
                   element: drawItem(item, last),

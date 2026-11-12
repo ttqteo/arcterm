@@ -263,8 +263,11 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             if (queued?.type !== "queued_command" || queued.commandMode !== "prompt") {
                 continue;
             }
-            rec = { type: "user", message: { content: queued.prompt }, timestamp: rec.timestamp };
+            rec = { type: "user", message: { content: queued.prompt }, timestamp: rec.timestamp, uuid: rec.uuid };
         }
+        // the record's own id, which a message of yours or a reply carries so Fork from here can cut the transcript at it
+        const uuid = typeof rec?.uuid === "string" ? rec.uuid : undefined;
+        const tag = uuid != null ? { uuid } : {};
         if (rec.type === "assistant") {
             const content = rec?.message?.content;
             if (!Array.isArray(content)) {
@@ -272,7 +275,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             }
             for (const block of content) {
                 if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
-                    entries.push({ kind: "message", text: block.text });
+                    entries.push({ kind: "message", text: block.text, ...tag });
                     continue;
                 }
                 if (block?.type === "tool_use" && typeof block.name === "string") {
@@ -368,7 +371,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     if (cmd != null) {
                         entries.push({ kind: "command", ...cmd });
                     } else if (content.trim() !== "") {
-                        entries.push({ kind: "user", text: content });
+                        entries.push({ kind: "user", text: content, ...tag });
                     }
                 }
                 continue;
@@ -382,13 +385,13 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     ? [`data:${b.source.media_type ?? "image/png"};base64,${b.source.data}`]
                     : []
             );
-            let prompt: { kind: "user"; text: string; images?: string[] } | undefined;
+            let prompt: { kind: "user"; text: string; images?: string[]; uuid?: string } | undefined;
             for (const block of content) {
                 if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
                     if (isInterrupted(block.text)) {
                         entries.push({ kind: "interrupted" });
                     } else {
-                        prompt = { kind: "user", text: block.text };
+                        prompt = { kind: "user", text: block.text, ...tag };
                         entries.push(prompt);
                     }
                     continue;

@@ -1831,21 +1831,25 @@ describe("chat mode keys", () => {
         expect(run("t1", claude)).toBe(false);
     });
 
-    it("Alt+C on a sleeping Claude agent walks only what its header leaves usable, never Chat or Terminal", () => {
+    it("Alt+C on a sleeping Claude agent walks Chat and what else its header leaves usable, never Terminal", () => {
         const asleep = { ...claude, sleeping: { since: 1, freedBytes: 0 } };
         const cycle = find(modelWith("a1", [asleep]), "agent:view-cycle");
-        // a canvas alone: Chat and Terminal are disabled, so one usable option is left and the key passes
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        // Chat alone: one usable option, so the key passes
         expect(cycle.run(inTerm)).toBe(false);
-        expect([mode(), canvasMode()]).toEqual(["chat", "terminal"]);
-        // a canvas and a review: the key walks the two, and the stored chat mode stays Chat, so it wakes in Chat
-        syncDocReview("a1", docAsk("/r/paper/main.tex"));
+        // a canvas: the key walks Chat and the canvas, the way back from it included
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
         expect(cycle.run(inTerm)).not.toBe(false);
+        expect([mode(), canvasMode()]).toEqual(["chat", "canvas"]);
+        cycle.run(inTerm);
+        expect([mode(), canvasMode()]).toEqual(["chat", "terminal"]);
+        // a canvas and a review: the key walks Chat, the two, and back; the stored chat mode stays Chat, so it wakes in Chat
+        syncDocReview("a1", docAsk("/r/paper/main.tex"));
+        cycle.run(inTerm);
         expect([canvasMode(), getDocReview("a1")!.mode]).toEqual(["canvas", "terminal"]);
         cycle.run(inTerm);
         expect([canvasMode(), getDocReview("a1")!.mode]).toEqual(["terminal", "review"]);
         cycle.run(inTerm);
-        expect([canvasMode(), getDocReview("a1")!.mode]).toEqual(["canvas", "terminal"]);
+        expect([canvasMode(), getDocReview("a1")!.mode]).toEqual(["terminal", "terminal"]);
         expect(mode()).toBe("chat");
     });
 

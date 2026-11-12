@@ -83,7 +83,7 @@ function sameAction(a: AgentActionEntry, b: AgentActionEntry): boolean {
 function samePart(a: AgentPart, b: AgentPart): boolean {
     switch (a.kind) {
         case "prose":
-            return b.kind === "prose" && a.text === b.text;
+            return b.kind === "prose" && a.text === b.text && a.uuid === b.uuid;
         case "work":
             return (
                 b.kind === "work" &&
@@ -120,7 +120,7 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
                     JSON.stringify(a.btw) === JSON.stringify(other.btw)
                 );
             }
-            return a.text === other.text && sameStrings(a.images, other.images);
+            return a.text === other.text && a.uuid === other.uuid && sameStrings(a.images, other.images);
         }
         case "sent": {
             const other = b as typeof a;

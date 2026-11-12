@@ -1515,6 +1515,43 @@ describe("projectTranscript: a message queued while Claude worked", () => {
     });
 });
 
+// Fork from here cuts the transcript at a record, and Chat reads only a window of it: an entry names its record by uuid
+describe("projectTranscript: the record uuid", () => {
+    it("tags your messages and the agent's replies with their record uuid", () => {
+        const lines = [
+            JSON.stringify({ type: "user", uuid: "u1", message: { content: "hello" } }),
+            JSON.stringify({ type: "assistant", uuid: "a1", message: { content: [{ type: "text", text: "hi" }] } }),
+            JSON.stringify({
+                type: "attachment",
+                uuid: "q1",
+                attachment: { type: "queued_command", commandMode: "prompt", prompt: "queued one" },
+            }),
+            JSON.stringify({ type: "user", uuid: "u2", message: { content: [{ type: "text", text: "with blocks" }] } }),
+        ];
+        expect(projectTranscript(lines)).toEqual([
+            { kind: "user", text: "hello", uuid: "u1" },
+            { kind: "message", text: "hi", uuid: "a1" },
+            { kind: "user", text: "queued one", uuid: "q1" },
+            { kind: "user", text: "with blocks", uuid: "u2" },
+        ]);
+    });
+
+    it("leaves the uuid off a record that has none, and off a message of pictures alone", () => {
+        const lines = [
+            JSON.stringify({ type: "user", message: { content: "no uuid" } }),
+            JSON.stringify({
+                type: "user",
+                uuid: "u9",
+                message: { content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } }] },
+            }),
+        ];
+        expect(projectTranscript(lines)).toEqual([
+            { kind: "user", text: "no uuid" },
+            { kind: "user", text: "", images: ["data:image/png;base64,AAA"] },
+        ]);
+    });
+});
+
 // the shapes of errored Bash results Claude Code writes, as seen in real transcripts
 describe("bashNeverRan", () => {
     it("reads a refusal before the command started as never ran", () => {

@@ -24,6 +24,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Fork a session from Chat: Fork in the agent header's ⋯ menu starts a new session with the whole conversation, and
+  Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
+  point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
+  stays as it was. Claude agents only.
+
 ### Changed
 
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
