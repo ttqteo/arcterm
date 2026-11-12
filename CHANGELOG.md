@@ -69,6 +69,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A message you took back in Chat (Esc before Claude answered) and sent again no longer shows twice: Chat now shows
   only the message you sent, as the terminal does, and a conversation rewound to an earlier point drops what came after.
+- Allowing a subagent from Chat's card no longer leaves a second "Wants to start a subagent" card behind, whose Allow
+  typed a stray `1` into Claude's box, ahead of the next message you sent ("1có…").
 - A subagent's report reaching Chat no longer shows as a message from you ("Agent message", pinned at the top as your
   prompt): it shows as the subagent's report row, which opens to the full report.
 - The prompt pinned to the top of Chat stands out from the reply scrolling under it, in a small or floating window too.
