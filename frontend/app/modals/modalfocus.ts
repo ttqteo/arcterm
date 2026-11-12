@@ -80,8 +80,8 @@ export function setModalFocusFallback(f: FocusFallback): () => void {
 }
 
 /** The element a surface marks with data-focus-home as the owner of its keyboard (the Cockpit container: its j/k/Enter
- *  are its own onKeyDown). Only a showing one counts: an off-screen surface that stays mounted keeps its node in the
- *  DOM. */
+ *  are its own onKeyDown; the Code surface's file tree, whose keys need the tree focused). Only a showing one counts:
+ *  an off-screen surface that stays mounted keeps its node in the DOM. */
 export function visibleFocusHome(): HTMLElement | null {
     for (const el of document.querySelectorAll<HTMLElement>("[data-focus-home]")) {
         if (el.checkVisibility()) {

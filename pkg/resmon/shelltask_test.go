@@ -5,8 +5,14 @@ package resmon
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
+
+// shQuote single-quotes s as claude code does for its eval: the inverse of EvalCommand's unquoting.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
 
 const bashScript = `source /c/snap.sh 2>/dev/null || true && eval 'sleep 600 # probe' < /dev/null && pwd -P >| /c/cwd`
 
@@ -29,6 +35,57 @@ func TestIsTaskProcessBash(t *testing.T) {
 	// the script is only read after -c
 	if isTaskProcess("bash.exe", "", []string{"bash.exe", bashScript}, "b1", "sleep 600 # probe") {
 		t.Error("matched a script that is not a -c argument")
+	}
+}
+
+func TestEvalCommand(t *testing.T) {
+	cases := []struct {
+		name string
+		argv []string
+		want string
+		ok   bool
+	}{
+		{"windows bash", []string{`C:\Program Files\Git\bin\bash.exe`, "-c", bashScript}, "sleep 600 # probe", true},
+		{"zsh with a login flag", []string{"/bin/zsh", "-c", "-l", bashScript}, "sleep 600 # probe", true},
+		{"bash with two short flags", []string{"/bin/bash", "-c", "-l", "-i", bashScript}, "sleep 600 # probe", true},
+		{"no -c", []string{"bash.exe", bashScript}, "", false},
+		{"-c without a script", []string{"bash.exe", "-c"}, "", false},
+		{"-c with only flags after it", []string{"bash.exe", "-c", "-l"}, "", false},
+		{"a script that evals nothing", []string{"bash.exe", "-c", "ls -la"}, "", false},
+		{"an eval that is not closed by the redirect", []string{"bash.exe", "-c", "eval 'ls' | cat"}, "", false},
+		{"no argv", nil, "", false},
+	}
+	for _, c := range cases {
+		got, ok := EvalCommand(c.argv)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: EvalCommand = %q, %v; want %q, %v", c.name, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// the command is read back out of claude code's quoting, quotes and all, the inverse of shQuote
+func TestEvalCommandUndoesTheQuoting(t *testing.T) {
+	for _, command := range []string{
+		`echo "it's" '$HOME'`,
+		`it's`,
+		"two\nlines && echo 'x'",
+		``,
+		`'`,
+		`a ' < /dev/null && eval 'b' < /dev/null`,
+	} {
+		script := "source /c/snap.sh 2>/dev/null || true && " + evalPrefix + shQuote(command) + evalSuffix + " && pwd -P >| /c/cwd"
+		got, ok := EvalCommand([]string{"/bin/zsh", "-c", "-l", script})
+		if !ok || got != command {
+			t.Errorf("EvalCommand(%q) = %q, %v", command, got, ok)
+		}
+	}
+}
+
+func TestIsTaskProcessLoginShell(t *testing.T) {
+	// macOS and Linux start `<shell> -c -l <script>`
+	argv := []string{"/bin/zsh", "-c", "-l", bashScript}
+	if !isTaskProcess("zsh", "", argv, "b1", "sleep 600 # probe") {
+		t.Error("did not match a login shell's -c script")
 	}
 }
 
@@ -63,23 +120,23 @@ S   61731   61730   61724      39177  ?         197609 00:43:44 /usr/bin/node
 `
 
 func TestParseMsysPs(t *testing.T) {
-	got := parseMsysPs(psOut)
-	want := []msysProc{
+	got := ParseMsysPs(psOut)
+	want := []MsysProc{
 		{61724, 61724, 14056}, {61730, 61724, 39176}, {61731, 61724, 39177}, {65363, 65363, 53632}, {65400, 61724, 22792},
 	}
 	if !slices.Equal(got, want) {
-		t.Fatalf("parseMsysPs = %v, want %v", got, want)
+		t.Fatalf("ParseMsysPs = %v, want %v", got, want)
 	}
 }
 
 func TestMsysGroupPids(t *testing.T) {
-	procs := parseMsysPs(psOut)
-	got := msysGroupPids(procs, []int{50304, 14056})
+	procs := ParseMsysPs(psOut)
+	got := MsysGroupPids(procs, []int{50304, 14056})
 	if want := []int{14056, 39176, 39177, 22792}; !slices.Equal(got, want) {
 		t.Errorf("group led by the task's shell = %v, want %v", got, want)
 	}
 	// 22792 is in the group but does not lead it: the group is not taken
-	if got := msysGroupPids(procs, []int{22792}); len(got) != 0 {
+	if got := MsysGroupPids(procs, []int{22792}); len(got) != 0 {
 		t.Errorf("group of a non-leader = %v, want none", got)
 	}
 }

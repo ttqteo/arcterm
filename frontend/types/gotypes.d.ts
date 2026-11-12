@@ -1875,6 +1875,7 @@ declare global {
         cwd: string;
         hash?: string;
         base?: string;
+        end?: string;
         maxbytes: number;
     };
 
@@ -3673,6 +3674,9 @@ declare global {
         tabid?: string;
         runid?: string;
         label?: string;
+        measured?: boolean;
+        elsewhere?: boolean;
+        peaks?: number[];
     };
 
     // wshrpc.JobSlotMissed

@@ -314,6 +314,7 @@ function OptionsMenu({ items, onPick }: { items: OptionItem[]; onPick: (id: Opti
 export interface ReviewTarget {
     source: string; // "worktree" or a commit hash
     base: string; // FilesState.ref: what the Uncommitted row's file list diffs against
+    end: string; // FilesState.end: a landed run's tip, the list's bound ("" = the working tree)
     // changes when the working tree does, so Review re-reads it without blanking
     refreshKey: string;
     // the file the commit pane's list was last clicked on; n grows with each click
@@ -451,6 +452,7 @@ export function DiffPane({
                     repoKey={repoCwd}
                     source={review.source}
                     base={review.base}
+                    end={review.end}
                     refreshKey={review.refreshKey}
                     scrollTo={review.scrollTo}
                     loading={<PaneSkeleton />}

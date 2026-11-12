@@ -8,6 +8,7 @@ import {
     buildSessionViewModel,
     cwdToServiceLabel,
     cycleTarget,
+    duplicatePendingLaunch,
     findSessionTermBlock,
     flattenVisualOrder,
     labelChanged,
@@ -668,6 +669,19 @@ describe("buildSessionViewModel — subagents", () => {
         const row = vm.groups[0].sessions[0];
         expect(row.subagents).toEqual([]);
         expect(row.subagentsExpanded).toBe(false);
+    });
+});
+
+describe("duplicatePendingLaunch", () => {
+    it("names the source's runtime, so the clone's booting header is not Unknown", () => {
+        expect(duplicatePendingLaunch("t2", "b2", "fix it", "codex", undefined, 5)).toEqual({
+            tabId: "t2",
+            blockId: "b2",
+            name: "fix it",
+            project: "",
+            ts: 5,
+            runtime: "codex",
+        });
     });
 });
 

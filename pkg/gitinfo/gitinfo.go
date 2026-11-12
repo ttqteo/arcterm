@@ -111,9 +111,12 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	// `-uall` lists untracked files individually instead of collapsing a wholly-new directory into one
 	// "dir/" entry — that collapsed row can't be diffed (a directory has no file content to diff) and
 	// wedges the Files pane, so we expand it at the source. status drives untracked detection in both modes.
-	statusZ, err := run(ctx, cwd, "status", "--porcelain=v1", "-z", "-uall", "--", ".")
+	// a failed status in a work tree (a corrupt .git/index) is a failed read, not "not a repository": the error carries
+	// git's own words, which a bare exit status lacks
+	statusArgs := []string{"status", "--porcelain=v1", "-z", "-uall", "--", "."}
+	statusZ, err := run(ctx, cwd, statusArgs...)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(describeGitError(statusArgs, err))
 	}
 	statusZ = stripPrefixZ(statusZ, prefix)
 	if ref == "" {
@@ -1240,6 +1243,16 @@ const reviewContext = 1 << 24
 // GetChanges and CommitChanges produce, so every listed file names a section here. maxBytes caps each
 // file's patch or content (0 = no cap). IsRepo=false when cwd is not a repo; a git failure errors.
 func ReviewPatch(ctx context.Context, cwd, hash, base string, maxBytes int64) (*ReviewPatchResult, error) {
+	return reviewPatch(ctx, cwd, hash, base, "", maxBytes)
+}
+
+// ReviewPatchTo is ReviewPatch bounded at end: base..end, the committed changes alone, with no working tree and no
+// untracked files, as GetChangesTo lists them for a landed run read up to its own tip.
+func ReviewPatchTo(ctx context.Context, cwd, base, end string, maxBytes int64) (*ReviewPatchResult, error) {
+	return reviewPatch(ctx, cwd, "", base, end, maxBytes)
+}
+
+func reviewPatch(ctx context.Context, cwd, hash, base, end string, maxBytes int64) (*ReviewPatchResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
@@ -1262,6 +1275,9 @@ func ReviewPatch(ctx context.Context, cwd, hash, base string, maxBytes int64) (*
 			}
 		}
 		revs = []string{base}
+		if end != "" {
+			revs = append(revs, end)
+		}
 	}
 	// quotePath off and the prefixes pinned, so a user's diff.noprefix or diff.mnemonicPrefix cannot
 	// change the headers the split reads paths from; ext-diff off so the text is git's own patch
@@ -1277,7 +1293,7 @@ func ReviewPatch(ctx context.Context, cwd, hash, base string, maxBytes int64) (*
 			files[i].Diff, files[i].TooLarge, files[i].Size = "", true, size
 		}
 	}
-	if hash == "" {
+	if hash == "" && end == "" {
 		// ls-files lists untracked paths relative to cwd and only under it, matching --relative above
 		listed, err := runErr(ctx, cwd, "ls-files", "--others", "--exclude-standard", "-z")
 		if err != nil {

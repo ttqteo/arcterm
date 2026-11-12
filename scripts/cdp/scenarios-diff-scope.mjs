@@ -16,7 +16,7 @@
 // kits is scenarios.mjs's KAEL_KITS ({ rt, code, files, jarvis }). verify.mjs pins the viewport before a scenario; the
 // steps pin it again where a view needs a wider panel.
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -315,6 +315,21 @@ export default function (kits) {
                         pickedRow.includes("filler commit 3") && onRun && commitListed && !laterListed,
                         JSON.stringify({ pickedRow, onRun, commitListed, laterListed })
                     );
+
+                    // 3b. Review on the run's row reads base..tip as its list does: the run's files, not the commit landed after
+                    // it or the checkout's uncommitted edit (it read base against the working tree before)
+                    const reviewOn = onRun && (await click(h, '[data-diff-mode-option="review"]'));
+                    const sections = reviewOn && (await until(h, `document.querySelectorAll("[data-review-file]").length > 0`, 15000));
+                    const reviewed = sections
+                        ? await settled(h, `JSON.stringify([...document.querySelectorAll("[data-review-file]")].map((r) => r.getAttribute("data-review-file")).sort())`)
+                        : "";
+                    await h.shot("cdp-shots/diff-scope-run-review.png");
+                    await click(h, '[data-diff-mode-option="file"]');
+                    rec(
+                        "3b. Review on a landed run's row lists only the run's files (base..tip), not the commit landed after it or the checkout's uncommitted edit",
+                        reviewOn && sections && reviewed === JSON.stringify([...RUN_FILES].sort()),
+                        JSON.stringify({ reviewOn, sections, reviewed, want: [...RUN_FILES].sort() })
+                    );
                 }
 
                 // 4. a card's Diff chip scopes to its agent, over a project pinned on the Diff
@@ -408,7 +423,7 @@ export default function (kits) {
     }
 
     // The page's RPC client refuses one command while this is on: the failure a read can meet (a timeout, a dropped
-    // socket) put in directly, since a corrupt repository reads as "not a repository" rather than as an RPC failure.
+    // socket) put in directly. Step 6b breaks the repository itself (a corrupt .git/index), which fails the read the same way.
     const refuseRpc = (h, command, on) =>
         h.ev(
             on
@@ -440,6 +455,33 @@ export default function (kits) {
                 "6. a refresh that fails keeps the last read and says so (the working-tree row and its list stay), and the next good read takes the notice away",
                 hasFile && notice && /Couldn’t refresh/.test(noticeText) && stays && cleared,
                 JSON.stringify({ hasFile, notice, noticeText, stays, cleared })
+            );
+
+            // 6b. the repository's own index corrupt: git status fails ("index file corrupt") while rev-parse still finds a work
+            // tree, so the refresh is a failed read with the same notice, not "not a repository"; the index put back clears it
+            const indexPath = join(ctx.dir, ".git", "index");
+            const goodIndex = readFileSync(indexPath);
+            let corrupt = {};
+            try {
+                writeFileSync(indexPath, "this is not an index file, not even close to one");
+                await modEval(h, `const m = await mod("app/view/agents/filesstore.ts"); await m.reloadChanges(${JSON.stringify(ctx.dir)});`);
+                const cNotice = await until(h, `!!${q("[data-refresh-failed]")}`, 10000);
+                corrupt = {
+                    notice: cNotice,
+                    text: cNotice ? await text(h, "[data-refresh-failed]") : "",
+                    notARepo: await h.ev(`/not a (git )?repository/i.test(document.body.innerText)`),
+                    stays: await h.ev(`!!${q(rowSel(EDITED))}`),
+                };
+                await h.shot("cdp-shots/diff-scope-corrupt-index.png");
+            } finally {
+                writeFileSync(indexPath, goodIndex);
+            }
+            await modEval(h, `const m = await mod("app/view/agents/filesstore.ts"); await m.reloadChanges(${JSON.stringify(ctx.dir)});`);
+            corrupt.cleared = await until(h, `!${q("[data-refresh-failed]")}`, 10000);
+            rec(
+                "6b. a corrupt .git/index reads as a failed refresh (Couldn’t refresh, the last read kept), not as not a repository, and putting the index back clears it",
+                corrupt.notice === true && /Couldn’t refresh/.test(corrupt.text) && corrupt.notARepo === false && corrupt.stays === true && corrupt.cleared === true,
+                JSON.stringify(corrupt)
             );
         } catch (e) {
             rec("6. refresh failure", false, String(e?.message ?? e));

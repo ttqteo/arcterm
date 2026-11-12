@@ -199,7 +199,7 @@ import {
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
-import { sessionsArchiveAtom } from "./sessionsarchivestore";
+import { loadSessionsArchive, sessionsArchiveAtom, sessionsErrorAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import {
@@ -3437,6 +3437,7 @@ function StartingRunRow({ model, row }: { model: AgentsViewModel; row: StartingR
 function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const archive = useAtomValue(sessionsArchiveAtom);
+    const archiveError = useAtomValue(sessionsErrorAtom);
     const registered = useAtomValue(projectsAtom);
     const filter = useAtomValue(model.projectFilterAtom);
     const collapsedList = useAtomValue(collapsedConversationProjectsAtom);
@@ -3482,7 +3483,23 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
         <div data-agent-conversations>
             <SectionHeader section="conversations" label="Conversations" count={conversationCount(ended, filter)} />
             <FoldBody open={open}>
-                {archive == null ? null : rows.length === 0 ? (
+                {archive == null ? null : rows.length === 0 && archiveError ? (
+                    // a failed scan is not an empty past: it retries on its own (sessionsarchivestore), and Retry is for
+                    // when those retries are spent
+                    <div
+                        data-agent-conversations-error
+                        className="flex items-center gap-2 px-[10px] py-[6px] text-[12px] text-muted"
+                    >
+                        <span className="min-w-0 flex-1">Could not read past conversations</span>
+                        <button
+                            type="button"
+                            className="flex-none cursor-pointer text-accent-soft hover:underline"
+                            onClick={() => fireAndForget(loadSessionsArchive)}
+                        >
+                            Retry
+                        </button>
+                    </div>
+                ) : rows.length === 0 ? (
                     <div className="px-[10px] py-[6px] text-[12px] text-muted">
                         {filtered ? `No past conversations in ${filter}` : "No past conversations"}
                     </div>

@@ -5,6 +5,8 @@
 
 package resmon
 
+import "github.com/shirou/gopsutil/v4/process"
+
 // attribution is Windows-only (job objects): the snapshot reports unsupported and the readout hides
 const supported = false
 
@@ -28,4 +30,18 @@ func readListenPorts() map[int][]int {
 
 func splitCmdline(cmdline string) []string {
 	return nil
+}
+
+// ReadArgv is pid's argv, as gopsutil reads it (the proc file on Linux, the kernel's process arguments on macOS,
+// where claude code starts a Bash-tool command as `<shell> -c -l <script>`); nil when it cannot be read.
+func ReadArgv(pid int) []string {
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return nil
+	}
+	argv, err := p.CmdlineSlice()
+	if err != nil {
+		return nil
+	}
+	return argv
 }

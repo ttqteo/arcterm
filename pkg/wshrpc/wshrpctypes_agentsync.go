@@ -125,7 +125,8 @@ type AgentSyncSkillColumn struct {
 	Path string `json:"path"`
 }
 
-// AgentSyncSkillLink is a link in a harness skills folder whose target is gone: neither a skill nor written through.
+// AgentSyncSkillLink is a symlink or junction in a harness skills folder, whether its target is there or gone: neither a
+// skill nor written through (agentsync.SkillLinks lists every one).
 type AgentSyncSkillLink struct {
 	Runtime string `json:"runtime"`
 	Name    string `json:"name"`

@@ -23,6 +23,7 @@ import {
     queuedTag,
     queueTitle,
     RECENT_BYPASS_MS,
+    sizeLabel,
     sourceLabel,
 } from "./jobqueue";
 
@@ -261,5 +262,57 @@ describe("jobqueue", () => {
                 5_000
             )
         ).toBe("3 commands ran without a slot · last npm test, 5s ago");
+    });
+    describe("sizeLabel", () => {
+        const GB = 2 ** 30;
+        it("says measured, with the rule and the last peaks (newest first) in the tooltip", () => {
+            expect(sizeLabel(job({ bytes: 2.1 * GB, measured: true, peaks: [1.8 * GB, 1.2 * GB, 0.9 * GB] }))).toEqual({
+                text: "2.1 GB",
+                tag: "measured",
+                title: "2.1 GB: max of the last 3 runs × 1.2 (1.8, 1.2, 0.9 GB)",
+                measured: true,
+            });
+        });
+        it("reads the last run, not the last 1 runs, when one peak is kept", () => {
+            const label = sizeLabel(job({ bytes: 1.2 * GB, measured: true, peaks: [1 * GB] }));
+            expect(label.tag).toBe("measured");
+            expect(label.title).toBe("1.2 GB: max of the last run × 1.2 (1 GB)");
+        });
+        it("says a figure measured in another project, with its own peaks", () => {
+            expect(
+                sizeLabel(
+                    job({
+                        bytes: 2.1 * GB,
+                        measured: true,
+                        elsewhere: true,
+                        peaks: [1.8 * GB, 1.5 * GB, 1.2 * GB, 0.9 * GB, 0.5 * GB],
+                    })
+                )
+            ).toEqual({
+                text: "2.1 GB",
+                tag: "measured",
+                title: "2.1 GB: measured in another project, max of its last 5 runs × 1.2 (1.8, 1.5, 1.2, 0.9, 0.5 GB)",
+                measured: true,
+            });
+            expect(sizeLabel(job({ bytes: 1.2 * GB, measured: true, elsewhere: true, peaks: [1 * GB] })).title).toBe(
+                "1.2 GB: measured in another project, max of its last run × 1.2 (1 GB)"
+            );
+        });
+        it("says est. for the table's figure, whatever peaks ride along", () => {
+            const expected = {
+                text: "3 GB",
+                tag: "est.",
+                title: "3 GB: estimate (not measured yet)",
+                measured: false,
+            };
+            expect(sizeLabel(job({ bytes: 3 * GB }))).toEqual(expected);
+            expect(sizeLabel(job({ bytes: 3 * GB, measured: false, peaks: [1 * GB] }))).toEqual(expected);
+        });
+        it("still says measured when a measured figure carries no peaks", () => {
+            const label = sizeLabel(job({ bytes: 2.1 * GB, measured: true }));
+            expect(label.measured).toBe(true);
+            expect(label.tag).toBe("measured");
+            expect(label.title).toBe("2.1 GB: max of the recent runs × 1.2");
+        });
     });
 });

@@ -21,6 +21,24 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `compacttranscript.tsx`, `pinnedpromptbar.tsx`, hosted by
   `sessionsdetail.tsx`, `sleepingtranscript.tsx`, `endedtranscript.tsx`).
 
+- [ ] (arcterm) The agents/backend and code/diff follow-up fixes of 2026-11-13 render: run `task verify:ui --
+  code-changed-walk setup-memory agent-history diff-comments diff-scope` on a dev app (or `node
+  scripts/cdp/final-verify.mjs` with those names). New or changed steps, never run: code-changed-walk's last step (a
+  palette pick of Code leaves focus on the file tree and ArrowDown moves its cursor), setup-memory step 9 (step 8's
+  error alert clears on the next move), agent-history step 15 (a failed scan shows "Could not read past conversations"
+  with Retry and retries on its own after 5 s), diff-comments step 6b (the Commit tab's rows badge the pending
+  comments), diff-scope steps 3b (Review on a landed run lists only the run's files) and 6b (a corrupt `.git/index`
+  reads as Couldn't refresh, not as not a repository). Only unit tests, the typecheck and `node --check` ran.
+
+- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
+  in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
+  tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then
+  have the agent run a `make`-style build that peaks over 1 GB (`make build`, `gradle build`) twice → after the first,
+  `~/.arc/jobslot-learned.json` lists its pattern and the second takes a slot and queues like a table command; a
+  `waveapp.log` line `[jobpeaks] cannot write …` means the file was held open at that instant (Windows) and the next run
+  rewrites it. A worktree dev app leaves that file alone. Unit tests script the process table, the footprints, the
+  roster and the store; the real Git Bash process tree on Windows (`ps -l` groups), the Mac's footprint and the live
+  roster were never run together (`pkg/jobmeter`, `wshserver_jobpeaks.go`).
 - [ ] (arcterm) The brainstorm review cards in Chat draw and act: run `task verify:ui -- chat-brainstorm-review
   chat-redesign agent-chat` on a dev app that boots. Both Final attempts of run f2306dc6 ended unverified on the
   machine (a locked `cmd/wsh/cmd/claude-view-mod` copy, then a cold Vite still pre-bundling after 600 s under memory

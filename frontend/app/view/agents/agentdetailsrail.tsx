@@ -43,6 +43,7 @@ import {
 } from "./agentrailmodel";
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
+    bgSessionLive,
     bgTaskStatusLabel,
     bgTaskStoppable,
     planAgentRail,
@@ -865,7 +866,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const cacheCountdown = isClaude ? formatCacheCountdown(cacheStatus, now) : "—";
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
-    const live = agent.blockId != null && !ended;
+    const live = bgSessionLive(agent.blockId, ended != null);
     // what types into its terminal (the Resume and Stop button, Compact and Clear) also needs it awake: a sleeping
     // agent's process is gone, so its PTY is dead. `live` alone keeps feeding the background-task rows below.
     const drivable = live && canDrive(agent);
@@ -1277,7 +1278,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         live={live}
                         onStop={
                             // the kill finds the task among the agent block's job object: Windows only
-                            isWindows() && agent.blockId != null && bgTaskStoppable(t, live)
+                            isWindows() && bgTaskStoppable(t, live)
                                 ? () => fireAndForget(() => stopBackgroundTask(agent.id, agent.blockId!, t))
                                 : undefined
                         }

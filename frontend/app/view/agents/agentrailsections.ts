@@ -112,7 +112,14 @@ export function bgTaskStatusLabel(status: BackgroundTaskStatus, live: boolean): 
     return status === "running" && !live ? "unknown" : status;
 }
 
-// a running task of a live session with a command and a terminal block to find its process in can be stopped
+/** Pure: the session a background task belongs to is live, as the details rail and the Agent tree's task peek both read
+ *  it: it has a terminal block to find the task's process in, and it is not an ended worker shown from its record (the
+ *  rail's ended worker; for the peek, an agent gone from the roster). */
+export function bgSessionLive(blockId: string | undefined, ended: boolean): boolean {
+    return blockId != null && !ended;
+}
+
+// a running task of a live session (bgSessionLive) with a command can be stopped
 export function bgTaskStoppable(task: { status: BackgroundTaskStatus; command?: string }, live: boolean): boolean {
     return task.status === "running" && live && (task.command ?? "") !== "";
 }

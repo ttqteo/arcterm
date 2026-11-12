@@ -40,7 +40,7 @@ import {
     type ReactNode,
     type RefObject,
 } from "react";
-import { bgTaskStoppable } from "./agentrailsections";
+import { bgSessionLive, bgTaskStoppable } from "./agentrailsections";
 import type { AgentsViewModel } from "./agents";
 import { parseAnsiLines, runCss } from "./ansitext";
 import {
@@ -480,8 +480,9 @@ export function BackgroundTaskPeek({
     const monitor = backgroundTaskKind(current) === "monitor";
     const state = backgroundTaskState(current);
     const Mark = monitor ? Radio : Terminal;
-    // as the details rail does: the kill finds the task among the agent block's processes, which is Windows only
-    const stoppable = isWindows() && blockId != null && bgTaskStoppable(current, true);
+    // as the details rail does: the kill finds the task among the agent block's processes, which is Windows only, and
+    // only while the session is live (an agent gone from the roster has ended)
+    const stoppable = isWindows() && bgTaskStoppable(current, bgSessionLive(blockId, agent == null));
 
     const { refs, floatingStyles, context } = useFloating({
         open: true,

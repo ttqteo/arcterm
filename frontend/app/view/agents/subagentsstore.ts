@@ -83,7 +83,9 @@ export async function stopBackgroundTask(agentId: string, blockId: string, task:
 // the child interior currently open in the focused view (null = show the parent terminal)
 export const focusSubagentAtom = atom<FocusSubagent | null>(null) as PrimitiveAtom<FocusSubagent | null>;
 
-const PARENT_TAIL_LINES = 1000; // covers the current turn's Task spawns + results
+// the parent transcript tail read for its Task spawns and background tasks: a chatty Monitor writes a line per event, and
+// 1000 lines dropped the spawn (so the task left the Agent tree) while it still ran; the fork reads 2000
+export const PARENT_TAIL_LINES = 2000;
 const DEBOUNCE_MS = 4000; // same cadence as cardgitstore
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const loadSeq = new Map<string, number>();

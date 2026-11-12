@@ -30,7 +30,14 @@ import { PathTail } from "./pathtail";
 import { ProjectContextHeader, ProjectContextTab } from "./projectcontexttab";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
-import { ConflictDiskChanges, HarnessNote, HarnessPreview, isSaveKey, SyncNow } from "./setupinstructionsync";
+import {
+    ConflictDiskChanges,
+    HarnessNote,
+    HarnessPreview,
+    isSaveKey,
+    SyncNow,
+    TONE_TEXT,
+} from "./setupinstructionsync";
 import { MemoryHeader, MemoryTab } from "./setupmemory";
 import {
     changedLineCount,
@@ -112,7 +119,6 @@ import { ToolsHeader, ToolsLibrary } from "./toolslibrary";
 import { fileTextOf, useFileText } from "./usefiletext";
 
 const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
-const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };
 
 const TABS: { key: SetupTab; label: string }[] = [
     { key: "instructions", label: "Instructions" },

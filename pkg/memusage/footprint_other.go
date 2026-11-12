@@ -21,6 +21,11 @@ func footprint(pid int32) (uint64, bool) {
 	return m.RSS, true
 }
 
+// jobFootprint is the resident set too.
+func jobFootprint(pid int32) (uint64, bool) {
+	return footprint(pid)
+}
+
 // resident is nil: the footprint here is already what the process holds in RAM
 var resident func(pid int32) (uint64, bool)
 

@@ -55,6 +55,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   empty days back to the window's start (By work still spans the window); Blame (`b` or its button) in Preview or Diff
   no longer switches the file to Source; a path just before an ellipsis ("Editing src/foo.ts…") is a link again; and
   an `@` typed into Ctrl+P on Code searches paths again — Alt+O still opens the open file's symbols.
+- The heavy-job queue learns what a job really takes. Once a Claude agent has run `task check:ts` or another heavy
+  command, the queue plans its next run on the largest of its last 5 peaks plus 20%, in that project, instead of a fixed
+  estimate, so a small repo no longer claims 3 GB. A build the queue did not know (`make build`, `gradle build`) that
+  peaks at 1 GB or more starts queueing from its next run. The Jobs popover says whether a row's RAM is measured or an
+  estimate (est.), and its tooltip names the runs behind it.
 
 ### Fixed
 
@@ -71,6 +76,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Jumping to an item in the Transcript tab, such as a compaction marker, lands it below the pinned prompt instead of
   under it.
 - Conversation History of a long live session no longer shifts its drawn messages or open folds while the session grows.
+- An agent whose launch failed no longer counts as an unread turn on the Agent badge.
+- A duplicated session's header names its harness while it starts, instead of Unknown.
+- Opening Code from the palette leaves the keyboard on its file tree, so j/k and the arrows work with no click first.
+- A busy Monitor no longer drops out of the Agent tree while it is still running.
+- The Memory tab's error alert goes away once you move to another change or project.
+- When past conversations fail to load, the Agent tree's Conversations section now says it could not read them and
+  offers Retry, instead of "No past conversations", and it tries again on its own.
+- The Code peek card says "changes unknown" when git's changes cannot be read, rather than "no changes".
+- The Diff's Commit tab rows show the pending-comment badge, as the Log tab's rows do.
+- Review of a landed run reads only the run's own changes, up to its tip, as its file list does, rather than the
+  checkout's later commits and uncommitted edits.
+- A skill or memory file saved with Windows line endings or a byte order mark keeps its description in Setup, and a
+  harness override merges into its front matter instead of stacking a second block.
 - A run whose lead dies while the run waits on it (after a failed plan review, or a failed final stage) now shows
   Relaunch lead, and an autonomous run brings its lead back by itself, instead of sitting with no lead and nothing to
   press. `wsh runs relaunch-lead <run>` does the same from a terminal.
