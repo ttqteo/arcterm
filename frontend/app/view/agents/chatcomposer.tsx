@@ -70,7 +70,8 @@ import { fallAsleepLabel } from "./fallasleepstore";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot, recentMentionPaths } from "./launchermention";
 import { isPathsDrag, pathsFromDrop } from "./pathdrop";
-import { usePermission } from "./permissionstore";
+import { permissionBoxKey } from "./permissionmodel";
+import { permissionCardKey, usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
 import { opensTui } from "./slashcommands";
 import { useSlashMenu } from "./slashmenu";
@@ -365,7 +366,8 @@ export function ChatComposer({
     // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits. Send
     // then queues the message (`held`, kept per agent while the box unmounts for the terminal), and it goes by itself
     // once the prompt is answered.
-    const permission = usePermission(agent.blockId != null ? `block:${agent.blockId}` : undefined);
+    const permissionOref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
+    const permission = usePermission(permissionOref);
     const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
     const held = useHeldSend(agent.id);
     const ready = canSend && blocker == null;
@@ -846,6 +848,28 @@ export function ChatComposer({
                                     e.preventDefault();
                                     attach();
                                 }
+                                return;
+                            }
+                            // the chat's permission card, while it can answer its prompt: from an empty box ↑ and ↓ move its
+                            // highlight and Enter sends the highlighted choice, as the prompt's own list does in the terminal
+                            const cardKey = permissionBoxKey(
+                                {
+                                    key: e.key,
+                                    shiftKey: e.shiftKey,
+                                    altKey: e.altKey,
+                                    ctrlKey: e.ctrlKey,
+                                    metaKey: e.metaKey,
+                                    isComposing: e.nativeEvent.isComposing,
+                                },
+                                text === ""
+                            );
+                            if (
+                                cardKey != null &&
+                                permissionOref != null &&
+                                !e.currentTarget.readOnly &&
+                                permissionCardKey(permissionOref, cardKey)
+                            ) {
+                                e.preventDefault();
                                 return;
                             }
                             if (recallKey(e)) {

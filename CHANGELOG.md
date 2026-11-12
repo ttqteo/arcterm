@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   instead of Sprout on the footer. Blue rings while all is calm (the core beats while agents work), an amber neural
   sphere while something waits on you; click it for the same peek. Hologram size picks S, M or L. Float and the fold
   keep Sprout. <!-- big -->
+- Chat's permission card answers from the keyboard: with the chat box empty, ↑ and ↓ move between Allow, "Yes, and
+  don't ask again" and Deny, and Enter picks the highlighted one, as in the terminal's own prompt.
 
 ### Changed
 
