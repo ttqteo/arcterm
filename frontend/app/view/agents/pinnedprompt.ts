@@ -21,6 +21,17 @@ export function pinnedPromptIndex(anchors: PromptAnchor[], viewTop: number): num
     return at >= 0 && anchors[at].bottom <= viewTop ? at : -1;
 }
 
+/** Pure: how far the pinned band moves up (0 or less, px) as the next prompt comes up under it: not at all while that
+ *  prompt is more than the band's height below the top, then pixel for pixel with it, so the next prompt shoves the band
+ *  out instead of the band vanishing over it. nextTop is the next prompt's top below the scroller's top edge, null with
+ *  no next prompt. It stops at the band's height, where the band is out of view. */
+export function pinnedPromptPush(nextTop: number | null, bandHeight: number): number {
+    if (nextTop == null) {
+        return 0;
+    }
+    return Math.max(-bandHeight, Math.min(0, nextTop - bandHeight));
+}
+
 // fired (bubbling) on a transcript's root as its pinned prompt starts the scroll back, so a feed that sticks to its tail
 // (sticktobottom.tsx) lets go first: a smooth scroll starts at the bottom, and a re-pin on the next streamed entry would
 // snap it back down, over and over while the agent writes

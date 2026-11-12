@@ -9,11 +9,12 @@
 // The band sticks at the scroller's padding edge, so a scroller that holds it has no top padding: content scrolling
 // past would show in the gap above the band.
 
+import { springPop } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { ArrowUp } from "lucide-react";
-import { useReducedMotion } from "motion/react";
-import { useEffect, useState, type RefObject } from "react";
-import { pinnedPromptIndex, PROMPT_JUMP_EVENT } from "./pinnedprompt";
+import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "motion/react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { pinnedPromptIndex, pinnedPromptPush, PROMPT_JUMP_EVENT } from "./pinnedprompt";
 
 const PROMPT_SELECTOR = "[data-user-prompt]";
 
@@ -72,7 +73,11 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
  *  scroller's own background, which the row's band paints over what scrolls beneath it. className goes on the sticky
  *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. cardClassName
  *  goes on the card inside the band, for room beside it (a button in the corner): the band still spans the row, so
- *  nothing scrolling beneath shows in that room. */
+ *  nothing scrolling beneath shows in that room.
+ *  The band pops in from the top edge as your prompt scrolls away and out as it comes back (springPop), and the next
+ *  prompt shoves it up as it comes up under it, in step with the scroll (pinnedPromptPush): a band that blinked on and
+ *  off over the bubble it stands for read as a jump. Each pinned prompt is its own row, keyed by its index, so one
+ *  leaving and the next arriving cross over instead of the text swapping in place. */
 export function PinnedPromptBar({
     rootRef,
     index,
@@ -88,10 +93,67 @@ export function PinnedPromptBar({
     className?: string;
     cardClassName?: string;
 }) {
+    return (
+        <AnimatePresence initial={false}>
+            {index >= 0 && text != null ? (
+                <div key={index} data-pinned-prompt className={cn("sticky top-0 z-10 h-0", className)}>
+                    <PinnedBand rootRef={rootRef} index={index} text={text} bg={bg} cardClassName={cardClassName} />
+                </div>
+            ) : null}
+        </AnimatePresence>
+    );
+}
+
+// the band of one pinned prompt: it follows the prompt after it (pinnedPromptPush) for as long as it is drawn, its
+// exit included, so a band on its way out still moves with the scroll
+function PinnedBand({
+    rootRef,
+    index,
+    text,
+    bg,
+    cardClassName,
+}: {
+    rootRef: RefObject<HTMLElement>;
+    index: number;
+    text: string;
+    bg: string;
+    cardClassName?: string;
+}) {
     const reduce = useReducedMotion();
-    if (index < 0 || text == null) {
-        return null;
-    }
+    const bandRef = useRef<HTMLDivElement>(null);
+    const push = useMotionValue(0);
+    useEffect(() => {
+        const root = rootRef.current;
+        const scroller = scrollParent(root);
+        const band = bandRef.current;
+        if (root == null || scroller == null || band == null) {
+            return;
+        }
+        let frame = 0;
+        const measure = () => {
+            frame = 0;
+            const next = root.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index + 1];
+            const nextTop =
+                next == null ? null : next.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+            push.set(pinnedPromptPush(nextTop, band.offsetHeight));
+        };
+        const schedule = () => {
+            if (frame === 0) {
+                frame = requestAnimationFrame(measure);
+            }
+        };
+        measure();
+        scroller.addEventListener("scroll", schedule, { passive: true });
+        const ro = new ResizeObserver(schedule);
+        ro.observe(root);
+        return () => {
+            scroller.removeEventListener("scroll", schedule);
+            ro.disconnect();
+            if (frame !== 0) {
+                cancelAnimationFrame(frame);
+            }
+        };
+    }, [rootRef, index, push]);
     const jump = () => {
         const root = rootRef.current;
         const target = root?.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index];
@@ -101,32 +163,39 @@ export function PinnedPromptBar({
         root.dispatchEvent(new Event(PROMPT_JUMP_EVENT, { bubbles: true }));
         target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
     };
-    // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more
+    // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more.
+    // y is the scroll's, not an entrance: the band arrives on opacity + scale like any card
     return (
-        <div data-pinned-prompt className={cn("sticky top-0 z-10 h-0", className)}>
-            <div className={cn("pb-2 pt-1", bg)}>
-                <div className={cn("relative", cardClassName)}>
-                    {index > 0 ? (
-                        <div
-                            aria-hidden
-                            className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-edge-mid bg-surface"
-                        />
-                    ) : null}
-                    {/* the scroller's ground under the card, so the card behind does not show through it. The card is
-                        neutral, your message bubble's surface: an accent tint goes muddy over a coloured theme */}
-                    <div className={cn("relative rounded-[8px]", bg)}>
-                        <button
-                            type="button"
-                            onClick={jump}
-                            title="Back to this prompt"
-                            className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[5px] text-left hover:border-edge-strong hover:bg-surface-hover"
-                        >
-                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
-                            <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
-                        </button>
-                    </div>
+        <motion.div
+            ref={bandRef}
+            variants={springPop}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{ y: push, transformOrigin: "top center" }}
+            className={cn("pb-2 pt-1", bg)}
+        >
+            <div className={cn("relative", cardClassName)}>
+                {index > 0 ? (
+                    <div
+                        aria-hidden
+                        className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-edge-mid bg-surface"
+                    />
+                ) : null}
+                {/* the scroller's ground under the card, so the card behind does not show through it. The card is
+                    neutral, your message bubble's surface: an accent tint goes muddy over a coloured theme */}
+                <div className={cn("relative rounded-[8px]", bg)}>
+                    <button
+                        type="button"
+                        onClick={jump}
+                        title="Back to this prompt"
+                        className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[5px] text-left hover:border-edge-strong hover:bg-surface-hover"
+                    >
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
+                        <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
+                    </button>
                 </div>
             </div>
-        </div>
+        </motion.div>
     );
 }
