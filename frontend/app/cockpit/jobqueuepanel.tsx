@@ -18,7 +18,6 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { PANEL_WIDTH } from "@/app/view/agents/consumers";
 import { usePanelPlacement } from "@/app/view/agents/consumerspanel";
 import { runTitle } from "@/app/view/agents/runlineage";
-import { formatGB } from "@/app/view/agents/workercapacity";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
@@ -36,6 +35,7 @@ import {
     PAUSE_CHOICES,
     pauseLeft,
     pausePatch,
+    sizeLabel,
     sourceLabel,
     type JobAgent,
 } from "./jobqueue";
@@ -161,6 +161,7 @@ function Row({
     const running = job.running === true;
     const target = openTargetFor(job, agents);
     const source = sourceLabel(job, agents, useRunTitle(job.runid));
+    const size = sizeLabel(job);
     return (
         <div
             data-job-row={job.id}
@@ -181,8 +182,17 @@ function Row({
                 <span data-job-name className="min-w-0 flex-1 truncate text-[12.5px] text-primary" title={job.name}>
                     {job.name}
                 </span>
-                <span data-job-size title="Its peak RAM" className="text-[12px] tabular-nums text-secondary">
-                    {formatGB(job.bytes)}
+                <span className="flex flex-none items-baseline gap-1 whitespace-nowrap">
+                    <span data-job-size title={size.title} className="text-[12px] tabular-nums text-secondary">
+                        {size.text}
+                    </span>
+                    <span
+                        data-job-basis={size.measured ? "measured" : "estimate"}
+                        title={size.title}
+                        className="text-[10.5px] text-muted"
+                    >
+                        {size.tag}
+                    </span>
                 </span>
                 <span data-job-elapsed className="w-[88px] text-right text-[12px] tabular-nums text-secondary">
                     {running

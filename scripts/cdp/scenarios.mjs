@@ -52217,6 +52217,129 @@ const jobqueueAgentTag = {
     },
 };
 
+// --- jobqueue-measured: each row of the Jobs popover says whether its RAM figure is measured or the table's estimate
+// (docs/superpowers/specs/2026-11-12-measured-job-peaks-design.md). No run and no real job: one running measured job and
+// one queued estimated one are set through the dev hook window.__jobQueueInject, the popover is opened from the app bar's
+// chip, and each row's tag and tooltip are read back.
+const JQM_SNAPSHOT = `(() => {
+    const GB = 2 ** 30;
+    window.__jobQueueInject({
+        slots: 1,
+        mode: "auto",
+        jobs: [
+            {
+                id: "jqm-run", name: "task check:ts", bytes: Math.round(2.1 * GB), running: true, measured: true,
+                peaks: [1.8, 1.2, 0.9].map((g) => Math.round(g * GB)),
+                queuedts: Date.now() - 60_000, startedts: Date.now() - 60_000,
+            },
+            { id: "jqm-wait", name: "cargo build", bytes: 3 * GB, position: 1, reason: "slot busy", queuedts: Date.now() - 20_000 },
+        ],
+    });
+    return true;
+})()`;
+// per row: the figure, the tag after it and the tooltips the popover gives them, and whether the row stays inside the panel
+const JQM_ROWS = `[...document.querySelectorAll("[data-job-queue-panel] [data-job-row]")].map((r) => {
+    const size = r.querySelector("[data-job-size]");
+    const tag = r.querySelector("[data-job-basis]");
+    const panel = r.closest("[data-job-queue-panel]");
+    const lastButton = [...r.querySelectorAll("button")].pop();
+    return {
+        id: r.dataset.jobRow,
+        size: size?.textContent?.trim() ?? null,
+        sizeTitle: size?.title ?? null,
+        tag: tag?.textContent?.trim() ?? null,
+        basis: tag?.dataset.jobBasis ?? null,
+        tagTitle: tag?.title ?? null,
+        muted: tag?.classList.contains("text-muted") ?? false,
+        fits: r.scrollWidth <= r.clientWidth + 1 && (!lastButton || lastButton.getBoundingClientRect().right <= panel.getBoundingClientRect().right),
+    };
+})`;
+
+const jobqueueMeasured = {
+    name: "jobqueue-measured",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const hooked = await h.ev(`typeof window.__jobQueueInject === "function"`);
+        if (!hooked) {
+            rec("0. the dev hook window.__jobQueueInject", false, "not defined (a dev build is needed)");
+            return steps;
+        }
+
+        // 1. the chip counts one running and one queued job, and opens the popover
+        await h.ev(JQM_SNAPSHOT);
+        const chipUp = await polishWaitFor(
+            h,
+            `document.querySelector("[data-job-queue-chip]")?.textContent?.includes("1 · 1 queued") === true`,
+            3000
+        );
+        await h.ev(`document.querySelector("[data-job-queue-chip]")?.click()`);
+        const listed = await polishWaitFor(
+            h,
+            `document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length === 2`,
+            3000
+        );
+        const rows = listed ? await h.ev(JQM_ROWS) : [];
+        await h.shot("cdp-shots/jobqueue-measured-popover.png");
+        rec(
+            "1. the Jobs chip says 1 · 1 queued and its popover lists both jobs",
+            chipUp && listed,
+            JSON.stringify({ chipUp, listed, rows: rows.length })
+        );
+
+        // 2. the running job's figure is measured: the tag says so, the tooltip names the rule and the peaks
+        const measured = rows.find((r) => r.id === "jqm-run");
+        const measuredTitle = "2.1 GB: max of the last 3 runs × 1.2 (1.8, 1.2, 0.9 GB)";
+        rec(
+            "2. the running job reads 2.1 GB measured, its tooltip the max of the last 3 runs × 1.2 and their peaks",
+            measured?.size === "2.1 GB" &&
+                measured.tag === "measured" &&
+                measured.basis === "measured" &&
+                measured.tagTitle === measuredTitle &&
+                measured.sizeTitle === measuredTitle,
+            JSON.stringify(measured)
+        );
+
+        // 3. the queued job's figure is the table's: est., and its tooltip says it is not measured yet
+        const estimated = rows.find((r) => r.id === "jqm-wait");
+        const estimateTitle = "3 GB: estimate (not measured yet)";
+        rec(
+            "3. the queued job reads 3 GB est., its tooltip estimate (not measured yet)",
+            estimated?.size === "3 GB" &&
+                estimated.tag === "est." &&
+                estimated.basis === "estimate" &&
+                estimated.tagTitle === estimateTitle &&
+                estimated.sizeTitle === estimateTitle,
+            JSON.stringify(estimated)
+        );
+
+        // 4. the word is muted and keeps the crowded row inside the panel (Run now and Skip are still in reach)
+        rec(
+            "4. the tag is muted on both rows and neither row spills out of the panel",
+            rows.length === 2 && rows.every((r) => r.muted && r.fits),
+            JSON.stringify(rows.map((r) => [r.id, r.muted, r.fits]))
+        );
+        return steps;
+    },
+    async teardown(h) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jobqueue-measured teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the popover", () =>
+            h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`)
+        );
+        await step("clear the injected snapshot", () => h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })"));
+    },
+};
+
 // --- float folded into Sprout ------------------------------------------------------------------
 // Float a fresh terminal, fold it into Sprout, open the chat from Sprout, give the float window back, and check the
 // terminal's PTY size never moved (the shell is hidden before the window shrinks). Windows only: WKWebView answers
@@ -67660,6 +67783,7 @@ export const SCENARIOS = [
     notifyToast,
     jobqueueChip,
     jobqueueAgentTag,
+    jobqueueMeasured,
     floatMini,
     floatNote,
     floatLedgeTabs,

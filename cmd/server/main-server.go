@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,7 +32,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/harnessupdate"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisvolunteer"
+	"github.com/wavetermdev/waveterm/pkg/jobmeter"
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
+	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/memhygiene"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
@@ -364,6 +368,25 @@ func startJobQueue() {
 	}()
 }
 
+// startJobPeaks opens the store of the RAM peaks wavesrv measured for each heavy command (jobpeaks.json in the data dir)
+// and starts the meter that fills it: the queue then admits a command on what its last runs took, and queues an unknown
+// one that turned out heavy. Only a wavesrv that installs the global hooks writes ~/.arc/jobslot-learned.json, which wsh
+// reads to know which unknown commands take a slot: a dev app keeps what it learns to its own data dir, so the file does
+// not flip between two wavesrvs.
+func startJobPeaks() {
+	learnedPath := ""
+	if !wavebase.NoGlobalInstall() {
+		learnedPath = memgate.LearnedPath(wavebase.GetHomeDir())
+	}
+	jobpeaks.Default = jobpeaks.Open(filepath.Join(wavebase.GetWaveDataDir(), "jobpeaks.json"), learnedPath, time.Now)
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("jobmeter.Run", recover())
+		}()
+		jobmeter.Run(context.Background(), wshserver.JobMeterConfig())
+	}()
+}
+
 func createMainWshClient() {
 	rpc := wshserver.GetMainRpcClient()
 	wshutil.DomainLinkClosedHook = rpc.CancelRequestsForLink // a dead wsh's streams end with it (a held job slot)
@@ -557,6 +580,7 @@ func main() {
 	if err != nil {
 		log.Printf("error fixing up wave zsh history: %v\n", err)
 	}
+	startJobPeaks() // before the queue: a first request already reads the store
 	startJobQueue()
 	startTelebot()
 	createMainWshClient()

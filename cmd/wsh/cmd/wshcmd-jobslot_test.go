@@ -11,11 +11,40 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
+
+// no test reads the learned file of whoever runs it: a test that wants one points the path at its own
+func init() {
+	jobslotLearnedPath = func() string { return "" }
+}
+
+// learnedAt makes wsh read the learned file at path for the rest of the test, and read it afresh
+func learnedAt(t *testing.T, path string) {
+	t.Helper()
+	savedPath := jobslotLearnedPath
+	jobslotLearnedPath = func() string { return path }
+	jobslotLearnedOnce = sync.Once{}
+	t.Cleanup(func() {
+		jobslotLearnedPath = savedPath
+		jobslotLearnedOnce = sync.Once{}
+	})
+}
+
+// learnedWith writes a learned file holding patterns and points wsh at it
+func learnedWith(t *testing.T, patterns ...string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), ".arc", "jobslot-learned.json")
+	if err := memgate.WriteLearned(path, patterns); err != nil {
+		t.Fatal(err)
+	}
+	learnedAt(t, path)
+}
 
 func TestRpcWithContextGivesUpWhenTheContextEnds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -93,6 +122,122 @@ func TestJobslotTakesSlotMatchesTheServer(t *testing.T) {
 		if got := jobslotTakesSlot(command); got != want {
 			t.Errorf("jobslotTakesSlot(%q) = %v, want %v", command, got, want)
 		}
+	}
+}
+
+// a pattern wavesrv learned from a measured run takes a slot, in any command that holds it as a step
+func TestJobslotLearnedPatternTakesASlot(t *testing.T) {
+	learnedWith(t, "make build", "gradle build")
+	cases := map[string]bool{
+		"make build":                              true,
+		"cd web && make build 2>&1 | tail -5":     true,
+		"bash -c 'make build'":                    true,
+		"env FOO=1 nice -n 5 gradle build --info": true,
+		"make build && make test":                 true,
+		"make test":                               false,
+		"make":                                    false,
+		"ls -la":                                  false,
+		"echo make build":                         false,
+		// the table keeps its verdicts, learned or not
+		"task check:ts":              true,
+		"task dev":                   false, // a dev server never queues
+		"go test ./pkg/x -run X":     false,
+		"npx vitest run foo.test.ts": false,
+	}
+	for command, want := range cases {
+		if got := jobslotTakesSlot(command); got != want {
+			t.Errorf("jobslotTakesSlot(%q) = %v, want %v", command, got, want)
+		}
+	}
+}
+
+// a missing file, a broken one and no home directory all read as nothing learned: an unknown command runs without a
+// slot, as it did before the file existed
+func TestJobslotLearnedMissingOrBrokenFileLeavesAnUnknownCommandLight(t *testing.T) {
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "broken.json")
+	if err := os.WriteFile(broken, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wrongShape := filepath.Join(dir, "wrong.json")
+	if err := os.WriteFile(wrongShape, []byte(`{"patterns": "make build"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"missing":     filepath.Join(dir, "nope", "jobslot-learned.json"),
+		"broken":      broken,
+		"wrong shape": wrongShape,
+		"no home":     "",
+		"a directory": dir,
+	}
+	for name, path := range cases {
+		t.Run(name, func(t *testing.T) {
+			learnedAt(t, path)
+			if jobslotTakesSlot("make build") {
+				t.Fatal("an unknown command took a slot with nothing learned")
+			}
+			// the table is unaffected by the file
+			if !jobslotTakesSlot("task check:ts") {
+				t.Fatal("a command in the table lost its slot")
+			}
+		})
+	}
+}
+
+// the file is read once per wsh run: a change to it after the first read is the next run's
+func TestJobslotLearnedIsReadOncePerRun(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobslot-learned.json")
+	if err := memgate.WriteLearned(path, []string{"make build"}); err != nil {
+		t.Fatal(err)
+	}
+	learnedAt(t, path)
+	if !jobslotTakesSlot("make build") {
+		t.Fatal("a learned pattern did not take a slot")
+	}
+	if err := memgate.WriteLearned(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !jobslotTakesSlot("make build") {
+		t.Fatal("the file was read again within one run")
+	}
+	learnedAt(t, path) // the next run
+	if jobslotTakesSlot("make build") {
+		t.Fatal("a pattern that left the file still takes a slot")
+	}
+}
+
+// --heavy answers from the same classification: exit 0 for a command that takes a slot, 1 for one that does not
+func TestJobslotLearnedHeavyFlag(t *testing.T) {
+	learnedWith(t, "make build")
+	savedHeavy, savedExit := jobslotHeavy, WshExitCode
+	defer func() { jobslotHeavy, WshExitCode = savedHeavy, savedExit }()
+	jobslotHeavy = true
+	for command, wantExit := range map[string]int{"cd web && make build": 0, "make test": 1, "task check:ts": 0, "ls": 1} {
+		WshExitCode = 0
+		if err := jobslotRun(jobslotCmd, []string{command}); err != nil {
+			t.Fatalf("jobslotRun(%q): %v", command, err)
+		}
+		if WshExitCode != wantExit {
+			t.Errorf("--heavy %q exits %d, want %d", command, WshExitCode, wantExit)
+		}
+	}
+}
+
+// the agy hook's turn connects for a learned command and, like any light one, not for the rest
+func TestJobslotLearnedTurnConnectsOnlyForAHeavyCommand(t *testing.T) {
+	learnedWith(t, "make build")
+	saved := RpcClient
+	RpcClient = nil
+	defer func() { RpcClient = saved }()
+	t.Setenv("WAVETERM_JWT", "") // a light command must not even try to connect
+	if run, reason, err := jobslotTurn(context.Background(), "make test"); err != nil || !run || reason != "" {
+		t.Fatalf("an unlearned command: run %v reason %q err %v", run, reason, err)
+	}
+	// a learned one goes for the queue: with its context already done it stops there, which a light command never does
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := jobslotTurn(ctx, "cd web && make build"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a learned command: err = %v, want context.Canceled (it was sent to the queue)", err)
 	}
 }
 

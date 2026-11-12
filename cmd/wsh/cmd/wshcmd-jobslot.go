@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -126,7 +127,7 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 	}, jobslotConnectWait, jobslotFirstWord)
 	if msgs == nil && !reached && os.Getenv(wshutil.WaveJwtTokenVarName) != "" {
 		// inside arcterm but wavesrv never heard of it: the next heavy command that gets through tells it
-		job, _ := memgate.Classify(command)
+		job, _ := jobslotClassify(command)
 		jobslotNoteMissed(missedDir, wshrpc.JobSlotMissed{Name: job.Name, Ts: time.Now().UnixMilli(), BlockId: os.Getenv("WAVETERM_BLOCKID")})
 	}
 	if jobslotHoldParent {
@@ -275,10 +276,43 @@ func jobslotOpen(connect func() error, start func(giveUp time.Time) chan jobslot
 	}
 }
 
+// jobslotLearnedPath is where wavesrv writes the unknown commands it has measured heavy (memgate.LearnedPath); empty
+// when there is no home directory. A variable so a test can point it at a file of its own.
+var jobslotLearnedPath = func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return memgate.LearnedPath(home)
+}
+
+var (
+	jobslotLearnedOnce sync.Once
+	jobslotLearnedSet  map[string]bool
+)
+
+// jobslotLearned is the learned set, read from the file on first use and kept for the rest of this wsh run: a
+// missing or broken file, or no home directory, is an empty set, so an unknown command stays light.
+func jobslotLearned() map[string]bool {
+	jobslotLearnedOnce.Do(func() {
+		jobslotLearnedSet = map[string]bool{}
+		if path := jobslotLearnedPath(); path != "" {
+			jobslotLearnedSet = memgate.ReadLearned(path)
+		}
+	})
+	return jobslotLearnedSet
+}
+
+// jobslotClassify is the verdict wsh decides on locally: the memgate table, plus the unknown commands wavesrv has
+// learned to be heavy. Reading the file is no connection: a light command still never reaches wavesrv.
+func jobslotClassify(command string) (memgate.Job, bool) {
+	return memgate.ClassifyWith(command, jobslotLearned())
+}
+
 // jobslotTakesSlot is what the server decides first: a heavy command waits for a slot unless it runs on for good
 // (a dev server), which never queues
 func jobslotTakesSlot(command string) bool {
-	job, heavy := memgate.Classify(command)
+	job, heavy := jobslotClassify(command)
 	return heavy && !job.LongRunning()
 }
 
@@ -316,7 +350,7 @@ func jobslotHand(msgs chan wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate], w io.W
 // an error is a broken gate, which callers answer by letting the command run.
 func jobslotTurn(ctx context.Context, command string) (run bool, reason string, err error) {
 	// only a heavy command pays for the connection
-	if _, heavy := memgate.Classify(command); !heavy {
+	if _, heavy := jobslotClassify(command); !heavy {
 		return true, "", nil
 	}
 	if err := ctx.Err(); err != nil {
