@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Chat shows Claude's reply as it is written, word by word as in the terminal, instead of each paragraph appearing
+  only once it is done. Claude agents started after the update.
 - Fork a session from Chat: Fork in the agent header's ⋯ menu starts a new session with the whole conversation, and
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked

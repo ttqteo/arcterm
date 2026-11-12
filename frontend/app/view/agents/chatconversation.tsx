@@ -23,9 +23,11 @@ import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
+import { atom, useAtomValue, type Atom } from "jotai";
 import { ChevronDown, ChevronRight, Copy, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
@@ -45,6 +47,7 @@ import { splitAttachments } from "./chatfiles";
 import { canForkInChat, forkPointOfProse, forkPointOfYou, type ForkPoint } from "./chatfork";
 import { forkFromChat } from "./chatforkaction";
 import { sameChatItem } from "./chatitemeq";
+import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
@@ -118,7 +121,9 @@ function BubbleCopy({ text, align, onFork }: { text: string; align: "left" | "ri
 // runs per part. The copy button and the context menu keep the text as stored, without marks. With the toggle and
 // Settings → Appearance → Chat's fold switch on, a long reply folds as the skim mod folds it in the terminal (chatFold):
 // its verdict and marked sentences, then Show more.
-function ProseText({ text }: { text: string }) {
+// memo: a reply still being written redraws its group on each tick, and the stored replies above it in the group have
+// not changed
+const ProseText = memo(function ProseText({ text }: { text: string }) {
     const { marks, fold, open, toggle } = useSkimFold(text);
     const full = useMemo(() => withMarks(text, marks), [text, marks]);
     const folded = fold != null && !open;
@@ -139,6 +144,16 @@ function ProseText({ text }: { text: string }) {
             ) : null}
         </>
     );
+});
+
+// a reply still being written (chatlive.ts): its marks are still in it, so they are read from it rather than from the
+// skim mod's store, which keeps them only once the reply is stored; never folded, since it is still growing
+function LiveProseText({ text }: { text: string }) {
+    const full = useMemo(() => {
+        const { clean, marks } = parseMarks(text);
+        return withMarks(clean, marks);
+    }, [text]);
+    return <CouncilText text={full} className={PROSE} />;
 }
 
 // the context menu of one bubble: Copy text and Copy conversation, and with a fork point, Fork from here
@@ -480,6 +495,7 @@ function Arriving({
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
+const NO_LIVE_REPLY: Atom<LiveReply | null> = atom<LiveReply | null>(null);
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
 
 /** The agent's brainstorm as the conversation draws it: `question` is what it waits on now (a card, or the one line that
@@ -601,6 +617,8 @@ function Marker({ item }: { item: ChatMarker }) {
 
 export function ChatConversation({
     entries,
+    liveReply,
+    liveNarrates,
     placeId,
     onLoadEarlier,
     active,
@@ -612,6 +630,10 @@ export function ChatConversation({
     className,
 }: {
     entries: AgentEntry[];
+    // the reply Claude is writing (chatlive.ts, chatlivestore.ts): drawn at the end until the transcript holds its blocks,
+    // its thinking blocks too when `liveNarrates`. Read here, not by the caller, so its ticks redraw only the conversation
+    liveReply?: Atom<LiveReply | null>;
+    liveNarrates?: boolean;
     // keeps where the reader is under this id (transcriptplace.ts) and opens there again; a caller that sticks to the
     // end (useStickToBottom) passes it the same id, so it does not pin over a kept place
     placeId?: string;
@@ -636,7 +658,12 @@ export function ChatConversation({
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
-    const items = useMemo(() => chatItems(entries), [entries]);
+    const stored = useMemo(() => chatItems(entries), [entries]);
+    const reply = useAtomValue(liveReply ?? NO_LIVE_REPLY);
+    const items = useMemo(
+        () => withLiveReply(stored, liveTexts(reply, !!liveNarrates), entries.length),
+        [stored, reply, liveNarrates, entries.length]
+    );
     // which of your messages answered a question, by row key: every answered question of the conversation, not only the
     // latest. Nothing to pair, nothing computed
     const sentAnswers = brainstorm?.answers;
@@ -645,8 +672,8 @@ export function ChatConversation({
         () =>
             sentAnswers == null || sentAnswers.length === 0 || sentTopic == null
                 ? NO_ANSWERS
-                : pairAnswers(sentAnswers, answerMessages(items), sentTopic),
-        [items, sentAnswers, sentTopic]
+                : pairAnswers(sentAnswers, answerMessages(stored), sentTopic),
+        [stored, sentAnswers, sentTopic]
     );
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
@@ -869,6 +896,14 @@ export function ChatConversation({
             // what the agent said: a document column, no bubble and no avatar (only your messages are bubbles); its tools
             // and files sit between the paragraphs, and the copy button hangs in the gap under the text
             case "prose": {
+                // a reply still being written: drawn as the stored one will be, but with no fold, copy or fork yet
+                if (part.live) {
+                    return (
+                        <div data-chat-prose data-chat-live className="relative mb-3 min-w-0 max-w-full self-stretch">
+                            <LiveProseText text={part.text} />
+                        </div>
+                    );
+                }
                 const fork = canFork ? forkPointOfProse(part) : null;
                 return (
                     <div

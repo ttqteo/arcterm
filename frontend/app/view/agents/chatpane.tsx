@@ -48,6 +48,8 @@ import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
+import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
+import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
@@ -469,6 +471,16 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             requestAppend();
         }
     }, [stamp]);
+    // the reply Claude is writing (chatlive.ts), from the arc mod's live file: a stream of its own, open while the
+    // transcript's is, for a Claude agent that is awake
+    const liveStreams = streaming && !!streamId && !asleep && streamsLiveReply(agent);
+    useEffect(() => {
+        if (!liveStreams) {
+            return;
+        }
+        startLiveReplyStream(streamId, path);
+        return () => stopLiveReplyStream(streamId);
+    }, [liveStreams, streamId]);
 
     // the skim mod's store is read again whenever the transcript grows: it writes the marks before the transcript line, so
     // the newest reply's marks are there when its text arrives (refreshSkimMarks throttles to one read a second)
@@ -498,6 +510,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
+    // the live reply, which ChatConversation reads itself so its ticks redraw only the conversation: held back while the
+    // message that started its turn has not landed (its bubble is drawn under the conversation, and the reply belongs
+    // after it), and with its thinking blocks only where the session narrates in them
+    const narrates = useMemo(() => (lines != null ? narratesThinking(lines) : false), [lines]);
+    const awaitsOwn = awaitsOwnMessage(pending);
     // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
     const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
@@ -577,6 +594,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 <ChatConversation
                                     key={`${view!.path}:${view!.epoch}`}
                                     entries={entries}
+                                    liveReply={liveStreams && !awaitsOwn ? liveReplyAtom(streamId) : undefined}
+                                    liveNarrates={narrates}
                                     placeId={placeId}
                                     active={agent.state !== "idle"}
                                     working={agent.state === "working"}

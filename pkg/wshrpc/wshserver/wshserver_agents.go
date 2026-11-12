@@ -526,3 +526,23 @@ func (ws *WshServer) StreamAgentTranscriptCommand(ctx context.Context, data wshr
 	}()
 	return ch
 }
+
+func (ws *WshServer) StreamAgentLiveReplyCommand(ctx context.Context, data wshrpc.CommandStreamAgentLiveReplyData) chan wshrpc.RespOrErrorUnion[wshrpc.AgentLiveReplyUpdate] {
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentLiveReplyUpdate], 16)
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("StreamAgentLiveReplyCommand", recover())
+		}()
+		defer close(ch)
+		dir := liveReplyDir()
+		path, err := liveReplyFile(dir, data.Path)
+		if err == nil {
+			maybeSweepLiveReplies(dir)
+			err = streamLiveReply(ctx, path, ch)
+		}
+		if err != nil {
+			ch <- wshutil.RespErr[wshrpc.AgentLiveReplyUpdate](err)
+		}
+	}()
+	return ch
+}

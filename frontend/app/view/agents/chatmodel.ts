@@ -25,8 +25,9 @@ import type { TurnStats } from "./transcriptprojection";
 
 /** One piece of what the agent did between two of your messages. */
 export type AgentPart =
-    // `uuid`: the transcript record the prose came from, which Fork from here cuts at
-    | { kind: "prose"; text: string; uuid?: string }
+    // `uuid`: the transcript record the prose came from, which Fork from here cuts at. `live`: a reply still being
+    // written, which the transcript does not hold yet (chatlive.ts)
+    | { kind: "prose"; text: string; uuid?: string; live?: true }
     | { kind: "work"; work: WorkItem }
     // the files that work edited, once per path with the summed counts; follows its work part
     | { kind: "files"; files: EditFile[]; adds: number; dels: number };

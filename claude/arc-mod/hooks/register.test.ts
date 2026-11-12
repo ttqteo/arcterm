@@ -267,3 +267,68 @@ describe("a spawn that joins another's Token burn card", () => {
         expect(next).not.toHaveBeenCalled();
     });
 });
+
+describe("the live reply (turn.step)", () => {
+    // an arcterm session whose home is /home/me and whose id is sess-1, recording each file write
+    function liveEngine(writes: { path: string; text: string }[]) {
+        const $ = arcEngine([]);
+        return {
+            ...$,
+            env: {
+                get: async (k: string) =>
+                    k === "WAVETERM_BLOCKID" || k === "WAVETERM_JWT" ? "x" : k === "HOME" ? "/home/me" : undefined,
+            },
+            session: { ...$.session, id: async () => "sess-1" },
+            fs: {
+                ...$.fs,
+                write: async (path: string, text: string) => {
+                    writes.push({ path, text });
+                },
+            },
+        };
+    }
+
+    const CHUNKS = [
+        { kind: "thinking", index: 0, text: "" },
+        { kind: "text", index: 1, text: "Hel" },
+        { kind: "text", index: 1, text: "lo" },
+        { kind: "tool", index: 2, name: "Bash", id: "t1" },
+        { kind: "stop", stopReason: "tool_use", usage: null },
+    ];
+
+    async function step(event: Record<string, unknown>, writes: { path: string; text: string }[]) {
+        const handlers = registered();
+        const $ = liveEngine(writes);
+        await handlers.get("session.start")!($, { cwd: "/repo" }, async () => undefined);
+        const next = () =>
+            (async function* () {
+                yield* CHUNKS;
+            })();
+        const out: unknown[] = [];
+        for await (const c of handlers.get("turn.step")!($, event, next) as unknown as AsyncIterable<unknown>) {
+            out.push(c);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return out;
+    }
+
+    it("passes every chunk on as it came and writes the text beside the session, done at the end", async () => {
+        const writes: { path: string; text: string }[] = [];
+        expect(await step({ turnId: "turn-1", index: 0 }, writes)).toEqual(CHUNKS);
+        expect(writes.length).toBeGreaterThan(0);
+        const last = writes[writes.length - 1];
+        expect(last.path).toBe("/home/me/.arc/live/sess-1.json");
+        expect(JSON.parse(last.text)).toMatchObject({
+            turn: "turn-1",
+            step: 0,
+            done: true,
+            blocks: [{ index: 1, kind: "text", text: "Hello" }],
+        });
+    });
+
+    it("writes nothing for a subagent's step", async () => {
+        const writes: { path: string; text: string }[] = [];
+        expect(await step({ turnId: "turn-1", index: 0, agentId: "a1" }, writes)).toEqual(CHUNKS);
+        expect(writes).toEqual([]);
+    });
+});
