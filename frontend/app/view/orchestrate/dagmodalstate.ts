@@ -72,9 +72,15 @@ export function openDagTask(channelId: string, runId: string, dagOref: string, t
     globalStore.set(selectedTaskIdAtom, taskId);
 }
 
-export function closeDagModal(): void {
+// dismissDagModal shuts the modal without going back: leaving Jarvis by any route takes the modal with it,
+// so a later visit never finds it still open
+export function dismissDagModal(): void {
     resetSelection();
     dispatchDagModal({ type: "close" });
+}
+
+export function closeDagModal(): void {
+    dismissDagModal();
     returnToOrigin("dag");
 }
 

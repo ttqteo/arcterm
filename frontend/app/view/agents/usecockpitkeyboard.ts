@@ -5,10 +5,12 @@
 // These keys are cockpit-local — handled here, not by the global keybinding registry. Extracted from
 // cockpitsurface.tsx as a hook taking a single deps object.
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { peekTarget } from "@/app/view/jarvis/openref";
 import { type KeyboardEvent, type MutableRefObject } from "react";
 import type { AgentsViewModel } from "./agents";
 import { answerDigitTarget, canSubmitAsk, hasAnswerableAsk, moveCursor, nextAskId, type AgentVM } from "./agentsviewmodel";
+import { enterAction, pickAdvance } from "./askflow";
 import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
@@ -99,6 +101,38 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         office,
         toggleView,
     } = deps;
+
+    // the atoms, not the render's snapshot: a digit's toggle has just written them
+    const answersOf = (id: string) => ({
+        sel: globalStore.get(model.answerSelAtom)[id] ?? {},
+        txt: globalStore.get(model.answerTextAtom)[id] ?? {},
+    });
+    // a digit picks its option; on an ask of several questions a single-select pick then moves to the next unanswered
+    // question, as a click does, but never submits (askflow.ts). A single-question ask only toggles, as it always did.
+    const pickDigit = (asker: AgentVM, qi: number, oi: number) => {
+        toggleAnswer(asker.id, qi, oi);
+        const { sel, txt } = answersOf(asker.id);
+        const next = pickAdvance(asker.ask?.questions ?? [], sel, txt, qi);
+        if (next != null) {
+            selectQuestion(asker.id, next);
+        }
+    };
+    // Enter on an ask of several questions sends it once every question is answered and otherwise moves to the first
+    // unanswered one, so it never opens the Agent surface over a partial answer. False for a single-question ask: the
+    // caller then does what it always did (send it if answered, else open focus).
+    const enterAsk = (asker: AgentVM): boolean => {
+        const { sel, txt } = answersOf(asker.id);
+        const action = enterAction(asker.ask?.questions ?? [], sel, txt, answerTab[asker.id] ?? 0);
+        if (action == null) {
+            return false;
+        }
+        if (action.kind === "submit") {
+            submitAnswer(asker.id);
+        } else {
+            selectQuestion(asker.id, action.qi);
+        }
+        return true;
+    };
 
     return (e: KeyboardEvent) => {
         const t = e.target as HTMLElement;
@@ -248,15 +282,17 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 const d = parseInt(key, 10);
                 const target = asker ? answerDigitTarget(asker, answerTab[asker.id] ?? 0, d) : null;
                 if (asker && target) {
-                    toggleAnswer(asker.id, target.qi, target.oi);
+                    pickDigit(asker, target.qi, target.oi);
                 } else {
                     row.actions[d - 1]?.();
                 }
             } else if (key === "Enter") {
-                if (asker && canSubmitAsk(asker.ask?.questions ?? [], answerSel[asker.id] ?? {})) {
-                    submitAnswer(asker.id);
-                } else if (row.openId) {
-                    openFocus(row.openId, false);
+                if (!(asker?.state === "asking" && enterAsk(asker))) {
+                    if (asker && canSubmitAsk(asker.ask?.questions ?? [], answerSel[asker.id] ?? {})) {
+                        submitAnswer(asker.id);
+                    } else if (row.openId) {
+                        openFocus(row.openId, false);
+                    }
                 }
             } else if (row.openId) {
                 model.openTerminal(row.openId);
@@ -296,6 +332,9 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         } else if (key === "Enter") {
             e.preventDefault();
             if (!cur) return;
+            if (cur.state === "asking" && enterAsk(cur)) {
+                return;
+            }
             if (cur.state === "asking" && canSubmitAsk(cur.ask?.questions ?? [], answerSel[cur.id] ?? {})) {
                 submitAnswer(cur.id);
             } else {
@@ -327,7 +366,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 const target = answerDigitTarget(cur, answerTab[cur.id] ?? 0, parseInt(key, 10));
                 if (target) {
                     e.preventDefault();
-                    toggleAnswer(cur.id, target.qi, target.oi);
+                    pickDigit(cur, target.qi, target.oi);
                 }
             }
         }

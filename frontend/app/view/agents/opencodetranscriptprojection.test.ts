@@ -38,6 +38,35 @@ describe("projectOpencodeTranscript", () => {
         ]);
         expect(entries[0]).toMatchObject({ target: "auth.go", path: "/a/b/auth.go" });
     });
+
+    it("skips a line that is JSON null and keeps projecting", () => {
+        expect(projectOpencodeTranscript(["null", `{"type":"user","text":"hi","ts":1}`])).toEqual([
+            { kind: "user", text: "hi" },
+        ]);
+    });
+
+    it("labels a file tool whose input parses to JSON null by the raw input, and keeps projecting", () => {
+        const tool = (name: string, input: unknown) =>
+            JSON.stringify({ type: "tool", name, state: "completed", input });
+        const entries = projectOpencodeTranscript([tool("read", "null"), tool("glob", "{}")]);
+        expect(entries.map((e) => (e as { target: string }).target)).toEqual(["null", "{}"]);
+    });
+
+    it("projects the records after a null line and a null tool input", () => {
+        const entries = projectOpencodeTranscript([
+            `{"type":"user","text":"first","ts":1}`,
+            "null",
+            `{"type":"tool","name":"read","state":"completed","input":"null","ts":2}`,
+            `{"type":"assistant","text":"after","ts":3}`,
+            `{"type":"tool","name":"edit","state":"completed","input":"{\\"filePath\\":\\"/a/b/auth.go\\"}","ts":4}`,
+        ]);
+        expect(entries).toEqual([
+            { kind: "user", text: "first" },
+            { kind: "action", verb: "read", target: "null" },
+            { kind: "message", text: "after" },
+            { kind: "action", verb: "edited", target: "auth.go", path: "/a/b/auth.go" },
+        ]);
+    });
 });
 
 describe("extractOpencodeTitle", () => {

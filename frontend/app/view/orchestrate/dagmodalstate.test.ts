@@ -1,13 +1,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { atom } from "jotai";
 import { describe, expect, it } from "vitest";
 import { globalStore } from "@/app/store/jotaiStore";
+import type { SurfaceKey } from "../agents/agents";
+import { forgetOrigin, landOn } from "../jarvis/returnsurface";
 import { selectedTaskIdAtom } from "./dagstore";
 import {
     closeDagModal,
     dagModalAgentsContextAtom,
     dagModalStateAtom,
+    dismissDagModal,
     escapeDagModal,
     openDagLive,
     openDagTask,
@@ -77,6 +81,21 @@ describe("dag modal atom actions", () => {
         expect(ctx?.agents[0]).toMatchObject({ id: "w1" });
         // selection source stays selectedTaskIdAtom — the context never writes it
         expect(globalStore.get(selectedTaskIdAtom)).toBeNull();
+    });
+});
+
+describe("dismissDagModal", () => {
+    // leaving Jarvis shuts the modal where the user is; only closing it in place goes back
+    it("closes without returning to the surface the jump came from", () => {
+        const surfaceAtom = atom<SurfaceKey>("agent");
+        forgetOrigin();
+        landOn(surfaceAtom, "jarvis", "dag");
+        openDagTask("c", "r", "dag:x", "t-1");
+        dismissDagModal();
+        expect(globalStore.get(dagModalStateAtom)).toBeNull();
+        expect(globalStore.get(selectedTaskIdAtom)).toBeNull();
+        expect(globalStore.get(surfaceAtom)).toBe("jarvis");
+        forgetOrigin();
     });
 });
 

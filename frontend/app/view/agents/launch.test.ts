@@ -21,8 +21,92 @@ import {
     runtimeStartupCommand,
     runtimeSupportsWorktree,
     sessionIdFromTranscript,
+    splitCommandLine,
     worktreeOutcome,
 } from "./launch";
+
+describe("splitCommandLine", () => {
+    it("keeps a double-quoted argument whole", () => {
+        expect(splitCommandLine('claude --model haiku "a b c"')).toEqual(["claude", "--model", "haiku", "a b c"]);
+    });
+    it("takes single quotes literally", () => {
+        expect(splitCommandLine(`'a "b"'`)).toEqual(['a "b"']);
+    });
+    it("unescapes a quote and a backslash inside double quotes", () => {
+        expect(splitCommandLine('"say \\"hi\\""')).toEqual(['say "hi"']);
+        expect(splitCommandLine('"a\\\\b"')).toEqual(["a\\b"]);
+    });
+    it("leaves a backslash outside quotes alone, so a Windows path survives", () => {
+        expect(splitCommandLine("C:\\tools\\claude.exe --x")).toEqual(["C:\\tools\\claude.exe", "--x"]);
+    });
+    it("runs an unclosed quote to the end", () => {
+        expect(splitCommandLine('"a b')).toEqual(["a b"]);
+    });
+    it("makes no empty tokens from extra whitespace or an empty string", () => {
+        expect(splitCommandLine("  claude   --x  ")).toEqual(["claude", "--x"]);
+        expect(splitCommandLine("")).toEqual([]);
+        expect(splitCommandLine("   ")).toEqual([]);
+    });
+    it("joins a quote that touches text into one token", () => {
+        expect(splitCommandLine('--msg="a b"')).toEqual(["--msg=a b"]);
+    });
+    it("reads unquoted input exactly as a whitespace split does", () => {
+        expect(splitCommandLine("claude --model opus --verbose")).toEqual(["claude", "--model", "opus", "--verbose"]);
+        expect(splitCommandLine("claude\t--x\n--y")).toEqual(["claude", "--x", "--y"]);
+    });
+});
+
+describe("a quoted startup command", () => {
+    it("reaches cmd:args as one argument before the task", () => {
+        const m = buildLaunchMeta({
+            runtime: "claude",
+            startupCommand: 'claude --model haiku "a b c"',
+            task: "T",
+            cwd: "/x",
+        });
+        expect(m.cmd).toBe("claude");
+        expect(m["cmd:args"]).toEqual(["--model", "haiku", "a b c", "T"]);
+        expect(m["agent:baseargs"]).toEqual(["--model", "haiku", "a b c"]);
+    });
+    it("keeps a single-quoted argument with spaces whole", () => {
+        const m = buildLaunchMeta({
+            runtime: "claude",
+            startupCommand: "claude --model x --append-system-prompt 'a b'",
+            task: "T",
+            cwd: "/x",
+        });
+        expect(m.cmd).toBe("claude");
+        expect(m["agent:baseargs"]).toEqual(["--model", "x", "--append-system-prompt", "a b"]);
+        expect(m["cmd:args"]).toEqual(["--model", "x", "--append-system-prompt", "a b", "T"]);
+    });
+    it("is not given a flag it already holds inside a quoted token", () => {
+        expect(composeStartupCommand('claude "--verbose"', "claude", { verbose: true })).toBe('claude "--verbose"');
+    });
+    it("keeps a quoted argument whole when composing with flags", () => {
+        expect(composeStartupCommand('claude --append-system-prompt "a b"', "claude", { verbose: true })).toBe(
+            'claude --append-system-prompt "a b" --verbose'
+        );
+    });
+    it("stays one argument through askStartupCommand into buildLaunchMeta (double quotes)", () => {
+        const asked = askStartupCommand('claude --model x --append-system-prompt "a b"');
+        expect(asked).toBe('claude --model x --append-system-prompt "a b" --settings .arc/claude-ask.json');
+        const m = buildLaunchMeta({ runtime: "claude", startupCommand: asked, task: "T", cwd: "/x" });
+        expect(m.cmd).toBe("claude");
+        expect(m["agent:baseargs"]).toEqual([
+            "--model",
+            "x",
+            "--append-system-prompt",
+            "a b",
+            "--settings",
+            ".arc/claude-ask.json",
+        ]);
+    });
+    it("stays one argument through askStartupCommand into buildLaunchMeta (single quotes)", () => {
+        const asked = askStartupCommand("claude --append-system-prompt 'a b'");
+        const m = buildLaunchMeta({ runtime: "claude", startupCommand: asked, task: "T", cwd: "/x" });
+        expect(m["agent:baseargs"]).toEqual(["--append-system-prompt", "a b", "--settings", ".arc/claude-ask.json"]);
+    });
+});
 
 describe("runtime helpers", () => {
     it("derives the startup command", () => {

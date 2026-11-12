@@ -11,7 +11,7 @@ import { harnessesAtom } from "../agents/harnessstore";
 import { channelProjectLabel } from "../agents/projectlabel";
 import { projectsAtom } from "../agents/projectsstore";
 import { DagGraphView } from "./daggraph";
-import { closeDagModal, dagModalStateAtom, escapeDagModal, type DagModalState } from "./dagmodalstate";
+import { closeDagModal, dagModalStateAtom, dismissDagModal, escapeDagModal, type DagModalState } from "./dagmodalstate";
 import { ModelPicksBanner } from "./modelpicksview";
 import { timelineLayout, type TimelineLayout } from "./timelinefilter";
 import { TimelineRail } from "./timelinerail";
@@ -25,6 +25,10 @@ export function DagModal() {
     const panelRef = useRef<HTMLDivElement>(null);
     const open = state != null;
     const layout = useTimelineLayout();
+
+    // the modal's state is global but the surface hosting it unmounts on switch
+    useEffect(() => dismissDagModal, []);
+
     // the panel arrives blank and the graph mounts once it has: mounting ReactFlow in the click's frame
     // held the modal off screen, and mounting it mid-entrance dropped the animation's frames
     const [entered, setEntered] = useState(false);

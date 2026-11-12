@@ -79,6 +79,7 @@ import diffStatesScenarios from "./scenarios-diff-states.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
@@ -13489,14 +13490,17 @@ async function primitiveSteps(h, ctx, rec, styles, take) {
 const dagLifecycle = {
     name: "dag-lifecycle",
     surface: "jarvis",
-    async arrange(h) {
+    async arrange(h0) {
+        // every RPC of this scenario takes the long budget: the engine's dag lock outlasts the 5 s default
+        const h = withLongRpc(h0);
         const cwd = mkdtempSync(join(tmpdir(), "verify-dag-"));
         const wslist = await h.rpc("workspacelist", null);
         const workspaceId = wslist[0].workspacedata.oid;
         const ch = await h.rpc("createchannel", { name: "verify-dag", projectpath: cwd });
         return { cwd, workspaceId, channelId: ch.oid };
     },
-    async assert(h, ctx) {
+    async assert(h0, ctx) {
+        const h = withLongRpc(h0);
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const getRun = async (runId) => (await channelRuns(h, ctx.channelId)).find((x) => x.id === runId);
@@ -13793,6 +13797,41 @@ const dagLifecycle = {
         const modalGone = await h.ev(`(() => !document.querySelector('[data-dag-modal-kind]'))()`);
         rec("6. Escape -> modal closes, no cockpit takeover", modalGone === true, JSON.stringify({ esc, modalGone }));
 
+        // The modal's state is a global atom but Jarvis unmounts when the user leaves it, so a DAG left open
+        // reappeared on the next visit (DagModal now dismisses it on unmount). It is reopened here, ahead of the
+        // cancel in step 7 while the run's card still shows, the way step 5 opened it: the run's card, then Open DAG.
+        await h.goto("jarvis");
+        const reopened = await h.ev(`(async () => {
+            const openDag = () => [...document.querySelectorAll('button')].find((x) => (x.textContent || '').includes('Open DAG'));
+            for (let i = 0; i < 30; i++) {
+                if (document.querySelector('[data-dag-modal-kind]')) return true;
+                const dag = openDag();
+                if (dag) {
+                    dag.click();
+                } else {
+                    const card = [...document.querySelectorAll('[data-jarvis-brief-region="activity"] [data-jarvis-activity-card="run"]')]
+                        .find((x) => (x.textContent || '').includes(${JSON.stringify(parentGoal)}));
+                    if (card) card.click();
+                    else {
+                        const all = document.querySelector('[data-jarvis-activity-tab="all"]');
+                        if (all && all.getAttribute('aria-pressed') !== 'true') all.click();
+                    }
+                }
+                await new Promise((r) => setTimeout(r, 500));
+            }
+            return false;
+        })()`);
+        const openBeforeLeaving = await h.ev(`(() => !!document.querySelector('[data-dag-modal-kind]'))()`);
+        await h.goto("agent");
+        await h.goto("jarvis");
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const modalAfterReturn = await h.ev(`(() => !!document.querySelector('[data-dag-modal-kind]'))()`);
+        rec(
+            "6a. Leaving Jarvis with the DAG modal open closes it: the next visit finds no modal",
+            reopened === true && openBeforeLeaving === true && modalAfterReturn === false,
+            JSON.stringify({ reopened, openBeforeLeaving, modalAfterReturn })
+        );
+
         // one DAG cancellation command owns the parent, children, and worker shutdown.
         await h.rpc("dagaction", { channelid: ctx.channelId, runid: runId, taskid: "", action: "cancel" });
         const cancelledRuns = await channelRuns(h, ctx.channelId);
@@ -13825,7 +13864,8 @@ const dagLifecycle = {
         );
         return steps;
     },
-    async teardown(h, ctx) {
+    async teardown(h0, ctx) {
+        const h = withLongRpc(h0);
         try {
             await deleteChannelWorkerBlocks(h, ctx.channelId);
         } catch (e) {
@@ -42369,13 +42409,20 @@ function acRoster(ctx, mainPatch = {}, rowPatches = {}) {
     return rows;
 }
 
+// The harness for a scenario step that drives a real orchestrator run: its `rpc` carries a 90 s budget at least.
+// Every call is a wavesrv RPC with a default 5 s budget, which the engine's dag lock (held 5 to 15 s a tick on a
+// loaded machine) outlasts: "EC-TIME: timeout waiting for response" failed this arrange in a Final beside other work.
+// `ev`, `goto` and `shot` stay the harness's own (the prototype's).
+function withLongRpc(h0) {
+    const h = Object.create(h0);
+    h.rpc = (command, data, opts) => h0.rpc(command, data, { ...opts, timeout: Math.max(opts?.timeout ?? 0, 90_000) });
+    return h;
+}
+
 // A real orchestrator run (held by deferstart) with two lanes. t-1's stand-in child run is marked done and the engine moves
 // the task to done by itself; the staged file keeps the engine from merging the lane, so the task stays an ended worker.
 async function acArrangeRun(h0, ctx) {
-    // every call here is a wavesrv RPC with a default 5 s budget, which the engine's dag lock (held 5 to 15 s a tick on a
-    // loaded machine) outlasts: "EC-TIME: timeout waiting for response" failed this arrange in a Final beside other work
-    const h = Object.create(h0);
-    h.rpc = (command, data, opts) => h0.rpc(command, data, { ...opts, timeout: Math.max(opts?.timeout ?? 0, 90_000) });
+    const h = withLongRpc(h0);
     ctx.cwd = mkdtempSync(join(tmpdir(), "verify-agent-chat-run-"));
     fstGitInit(ctx.cwd);
     writeFileSync(join(ctx.cwd, "held.txt"), "staged by the agent-chat fixture\n");
@@ -67168,6 +67215,7 @@ export const SCENARIOS = [
     ...usageWorkScenarios(KAEL_KITS),
     ...setupInstructionsScenarios(KAEL_KITS),
     ...kaelKeysScenarios(KAEL_KITS),
+    ...kaelAskKeysScenarios(KAEL_KITS),
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];
