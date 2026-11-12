@@ -437,15 +437,17 @@ func closeLeadAfterSettle(ctx context.Context, g *waveobj.TaskGroup) {
 	}
 }
 
-// runTick runs one scheduling pass under the dag lock, then retries the tasks it found stalled with nobody to judge
-// them, outside the lock, and runs again to dispatch them. Each task is retried at most MaxAutoStallRetries times,
-// which is what ends the loop.
+// runTick runs one scheduling pass under the dag lock, then registers the questions it found open in worker
+// transcripts and retries the tasks it found stalled with nobody to judge them, both outside the lock, and runs again
+// to dispatch the retried. Each task is retried at most MaxAutoStallRetries times, which is what ends the loop.
 func runTick(ctx context.Context, dagID string) error {
 	for {
 		var stalled []stalledTask
-		if err := withDagMutation(dagID, func() error { return scheduleLocked(ctx, dagID, &stalled) }); err != nil {
+		var recovered []askRecovery
+		if err := withDagMutation(dagID, func() error { return scheduleLocked(ctx, dagID, &stalled, &recovered) }); err != nil {
 			return err
 		}
+		recoverAsks(ctx, recovered)
 		retried := false
 		for _, s := range stalled {
 			retried = autoRetryStalled(ctx, dagID, s) || retried
@@ -457,8 +459,10 @@ func runTick(ctx context.Context, dagID string) error {
 }
 
 // scheduleLocked is one scheduling pass; the caller holds the dag lock. The tasks whose stall the engine retries
-// itself are left stalled and appended to stalled: stopping a worker is not done under the lock.
-func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) error {
+// itself are left stalled and appended to stalled: stopping a worker is not done under the lock. The questions it
+// finds open in a worker transcript are appended to recovered, for the caller to register once the pass has committed:
+// the registration walks the store and is not done under the lock either.
+func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, recovered *[]askRecovery) error {
 	// an action is working on a task outside the dag lock (taskActions), and ticks when it is done
 	if !taskActions.TryLock(dagID) {
 		return nil
@@ -609,8 +613,20 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		// fresh idle sample, or none at all, lets a quiet task stall; a skipped or first reading defers a tick
 		quiet := t.LastActivity > 0 && now-max(t.LastActivity, t.BusyTs, t.AskTs) > StallThreshold.Milliseconds()
 		turnEnded := turnEndedPast(ctx, t, runs[t.RunID], now)
-		if t.State == TaskState_Running && (quiet || turnEnded) &&
-			(verdict == cpuIdle || verdict == cpuNone) {
+		stallCandidate := t.State == TaskState_Running && (quiet || turnEnded) &&
+			(verdict == cpuIdle || verdict == cpuNone)
+		// a worker's question is registered only by its PreToolUse hook, and a hook cancelled on timeout leaves the
+		// dialog open on a worker the registry knows nothing of: it would read as hung. Only a task about to stall
+		// reads its transcript for one, since the read is of the whole file. An open question is the queue's, as a
+		// registered one is: the silence clock restarts, and the question is registered once this pass has committed
+		if stallCandidate {
+			if found, open := recoverableAsk(ctx, runs[t.RunID]); open {
+				t.AskTs = now
+				stallCandidate = false
+				*recovered = append(*recovered, found)
+			}
+		}
+		if stallCandidate {
 			t.State = TaskState_Stalled
 		}
 		// a refused turn ends the worker's work as surely as an exit, so it skips the wait. Only an idle worker is

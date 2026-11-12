@@ -535,6 +535,208 @@ func TestWorkerThatEndedItsTurnOnAQuestionIsNotStalled(t *testing.T) {
 	}
 }
 
+const (
+	recoverAskText   = `{"type":"assistant","message":{"content":[{"type":"text","text":"checking the callers"}]}}`
+	recoverAskUse    = `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_ask1","name":"AskUserQuestion","input":{"questions":[{"question":"Keep the old API?","header":"API","options":[{"label":"Keep"},{"label":"Drop"}]}]}}]}}`
+	recoverAskResult = `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_ask1"}]}}`
+)
+
+// seedClaudeChild is seedChildWrittenAt's child turned into a claude worker whose transcript holds records, the way
+// claude writes one: AskUserQuestion's call is in it from the moment its dialog opens.
+func seedClaudeChild(t *testing.T, name string, lastWrite time.Time, records ...string) (context.Context, *waveobj.TaskGroup, *fakeLead, string) {
+	t.Helper()
+	ctx, g, f := seedChildWrittenAt(t, name, lastWrite)
+	// seedChildWrittenAt records the run on the stored dag only
+	child, err := wstore.GetRun(ctx, g.ChannelId, mustLoadDag(t, ctx, g.OID).Tasks[0].RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	stubSessionsRoot(t, root)
+	path := writeClaudeSession(t, root, child.ProjectPath, liveSession, lastWrite)
+	if err := os.WriteFile(path, []byte(strings.Join(records, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, lastWrite, lastWrite); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateRun(ctx, g.ChannelId, child.ID, func(r *waveobj.Run) error {
+		r.Runtime = "claude"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return ctx, g, f, path
+}
+
+// recoveredCall is one RecoverAskHook call, with what the dag looked like at that moment.
+type recoveredCall struct {
+	blockOref   string
+	toolUseId   string
+	questions   []baseds.AgentAskQuestion
+	lockFree    bool
+	committedTs int64 // the task's AskTs as the store held it
+}
+
+// stubRecoverAsk records every RecoverAskHook call. The registration it stands for walks the store, so the dag lock
+// must be free when it runs, and the tick's own write must already be in.
+func stubRecoverAsk(t *testing.T, ctx context.Context, dagID string) *[]recoveredCall {
+	t.Helper()
+	prev, prevLog := RecoverAskHook, askRecoveries
+	askRecoveries = newAskRecoveryLog()
+	calls := &[]recoveredCall{}
+	RecoverAskHook = func(_ context.Context, blockOref, toolUseId string, questions []baseds.AgentAskQuestion) {
+		free, _ := TryWithDagMutation(dagID, func() error { return nil })
+		call := recoveredCall{blockOref: blockOref, toolUseId: toolUseId, questions: questions, lockFree: free}
+		if stored, err := wstore.GetDag(ctx, dagID); err == nil {
+			call.committedTs = stored.Tasks[0].AskTs
+		}
+		*calls = append(*calls, call)
+	}
+	t.Cleanup(func() { RecoverAskHook, askRecoveries = prev, prevLog })
+	return calls
+}
+
+// countOpenAskReads counts the transcript reads the ask recovery makes; they are whole-file reads under the dag lock.
+func countOpenAskReads(t *testing.T) *int {
+	t.Helper()
+	prev, reads := workerOpenAskFn, 0
+	workerOpenAskFn = func(path string) (string, []baseds.AgentAskQuestion, bool, error) {
+		reads++
+		return prev(path)
+	}
+	t.Cleanup(func() { workerOpenAskFn = prev })
+	return &reads
+}
+
+// The 2026-11-12 run's t-3: its AskUserQuestion hook was cancelled on timeout, so the registry never heard of the
+// question, `dag asks` was empty, and the task read stalled. The transcript still shows the dialog open.
+func TestRecoverAskFromTheTranscriptOfAStallCandidate(t *testing.T) {
+	ctx, g, f, path := seedClaudeChild(t, "recover-ask", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, recoverAskUse)
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 0, false })
+	calls := stubRecoverAsk(t, ctx, g.OID)
+	reads := countOpenAskReads(t)
+
+	before := time.Now().UnixMilli()
+	task := tick(t, ctx, g)
+	if task.State != TaskState_Running || task.StallRetries != 0 {
+		t.Fatalf("a worker with its question open is not stalled, got state=%s stallretries=%d", task.State, task.StallRetries)
+	}
+	if task.AskTs < before {
+		t.Fatalf("an open question restarts the silence clock like a registered one, got AskTs %d (before %d)", task.AskTs, before)
+	}
+	if len(f.sends) != 0 {
+		t.Fatalf("a question is the queue's, not a stall for the lead: %q", f.sends)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("want the question recovered once, got %d calls", len(*calls))
+	}
+	call := (*calls)[0]
+	wantQuestions := []baseds.AgentAskQuestion{{Question: "Keep the old API?", Header: "API", Options: []baseds.AgentAskOption{{Label: "Keep"}, {Label: "Drop"}}}}
+	if call.blockOref != waveobj.MakeORef(waveobj.OType_Block, "worker-block").String() || call.toolUseId != "toolu_ask1" || !reflect.DeepEqual(call.questions, wantQuestions) {
+		t.Fatalf("recovered the wrong question: %+v", call)
+	}
+	if !call.lockFree || call.committedTs < before {
+		t.Fatalf("the registration runs after the tick committed and released the dag lock: lockFree=%v, stored AskTs %d (before %d)", call.lockFree, call.committedTs, before)
+	}
+
+	// the same question found again (the clock aged out, and nothing registered it) is not registered twice
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].AskTs, cur.Tasks[0].BusyTs = 0, 0
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	*g = *mustLoadDag(t, ctx, g.OID)
+	if task := tick(t, ctx, g); task.State != TaskState_Running {
+		t.Fatalf("the same open question still keeps the task running, got %s", task.State)
+	}
+	if len(*calls) != 1 || *reads != 2 {
+		t.Fatalf("the same tool_use id is recovered once: %d calls after %d reads", len(*calls), *reads)
+	}
+
+	// answered: the transcript no longer shows a question, so silence stalls as it always did
+	if err := os.WriteFile(path, []byte(strings.Join([]string{recoverAskText, recoverAskUse, recoverAskResult}, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-StallThreshold - time.Minute)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].AskTs, cur.Tasks[0].BusyTs = 0, 0
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	*g = *mustLoadDag(t, ctx, g.OID)
+	if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+		t.Fatalf("an answered question is no reason to keep a silent worker, got %s", task.State)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("a closed question is not recovered, got %d calls", len(*calls))
+	}
+}
+
+// ReadTail reads the whole transcript, so only a task about to stall pays for it, and only when the registry has
+// nothing for its block and the worker is claude (the only runtime with an AskUserQuestion to find).
+func TestRecoverAskReadsOnlyAStallCandidatesTranscript(t *testing.T) {
+	t.Run("a worker still writing", func(t *testing.T) {
+		ctx, g, _, _ := seedClaudeChild(t, "recover-fresh", time.Now().Add(-2*time.Minute), recoverAskText, recoverAskUse)
+		noCPUThrottle(t)
+		stubChildCPU(t, func(int) (int64, bool) { return 0, false })
+		calls := stubRecoverAsk(t, ctx, g.OID)
+		reads := countOpenAskReads(t)
+		tick(t, ctx, g)
+		tick(t, ctx, g)
+		if *reads != 0 || len(*calls) != 0 {
+			t.Fatalf("a task that is not about to stall costs no transcript read: %d reads, %d calls", *reads, len(*calls))
+		}
+	})
+	t.Run("a busy worker", func(t *testing.T) {
+		ctx, g, _, _ := seedClaudeChild(t, "recover-busy", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, recoverAskUse)
+		noCPUThrottle(t)
+		stubChildCPU(t, func(call int) (int64, bool) { return int64(call) * 60_000, true })
+		calls := stubRecoverAsk(t, ctx, g.OID)
+		reads := countOpenAskReads(t)
+		tick(t, ctx, g)
+		if task := tick(t, ctx, g); task.State != TaskState_Running {
+			t.Fatalf("a worker whose CPU advanced is not stalled, got %s", task.State)
+		}
+		if *reads != 0 || len(*calls) != 0 {
+			t.Fatalf("a busy worker is not a stall candidate: %d reads, %d calls", *reads, len(*calls))
+		}
+	})
+	t.Run("a question the hook registered", func(t *testing.T) {
+		ctx, g, _, _ := seedClaudeChild(t, "recover-registered", time.Now().Add(-StallThreshold-time.Minute), recoverAskText, recoverAskUse)
+		noCPUThrottle(t)
+		stubChildCPU(t, func(int) (int64, bool) { return 0, false })
+		calls := stubRecoverAsk(t, ctx, g.OID)
+		reads := countOpenAskReads(t)
+		askOnWorkerBlock(t)
+		if task := tick(t, ctx, g); task.State != TaskState_Running {
+			t.Fatalf("a registered question keeps the task running, got %s", task.State)
+		}
+		if *reads != 0 || len(*calls) != 0 {
+			t.Fatalf("the registry already has this block's question: %d reads, %d calls", *reads, len(*calls))
+		}
+	})
+	t.Run("a worker that is not claude", func(t *testing.T) {
+		ctx, g, _ := seedChildWrittenAt(t, "recover-pi", time.Now().Add(-StallThreshold-time.Minute))
+		noCPUThrottle(t)
+		stubChildCPU(t, func(int) (int64, bool) { return 0, false })
+		calls := stubRecoverAsk(t, ctx, g.OID)
+		reads := countOpenAskReads(t)
+		if task := tick(t, ctx, g); task.State != TaskState_Stalled {
+			t.Fatalf("a silent pi worker stalls, got %s", task.State)
+		}
+		if *reads != 0 || len(*calls) != 0 {
+			t.Fatalf("only a claude transcript holds an AskUserQuestion: %d reads, %d calls", *reads, len(*calls))
+		}
+	})
+}
+
 // writeAgySession writes a transcript where agy puts a conversation: brain/<id>/.system_generated/logs.
 func writeAgySession(t *testing.T, brain, id string, mtime time.Time) string {
 	t.Helper()

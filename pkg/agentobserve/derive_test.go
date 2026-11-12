@@ -6,6 +6,7 @@ package agentobserve
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,59 @@ func TestPendingAsk(t *testing.T) {
 	}
 	if pendingAsk([]string{recAssistantToolUse}) {
 		t.Fatal("a non-ask tool_use is not a pending ask")
+	}
+}
+
+// recAskWithInput is an AskUserQuestion call that carries its questions the way Claude writes them.
+const recAskWithInput = `{"type":"assistant","message":{"content":[{"type":"text","text":"one question"},` +
+	`{"type":"tool_use","id":"a1","name":"AskUserQuestion","input":{"questions":[` +
+	`{"question":"Which approach?","header":"Approach","multiSelect":true,"options":[` +
+	`{"label":"A","description":"the small one"},{"label":"B","description":"the big one","preview":"# B"}]},` +
+	`{"question":"Ship it?","header":"Ship","options":[{"label":"Yes"},{"label":"No"}]}]}}]}}`
+
+func TestOpenAskReturnsTheOpenQuestionsFromTheToolInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	write := func(records ...string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(strings.Join(records, "\n")+"\n"), 0o644); err != nil {
+			t.Fatalf("writing transcript: %v", err)
+		}
+	}
+	siblingResult := `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}`
+
+	write(recAssistantToolUse, recAskWithInput, siblingResult)
+	id, questions, ok, err := OpenAsk(path)
+	if err != nil || !ok || id != "a1" {
+		t.Fatalf("an AskUserQuestion with no result is open: id=%q ok=%v err=%v", id, ok, err)
+	}
+	want := []baseds.AgentAskQuestion{
+		{Question: "Which approach?", Header: "Approach", MultiSelect: true, Options: []baseds.AgentAskOption{
+			{Label: "A", Description: "the small one"},
+			{Label: "B", Description: "the big one", Preview: "# B"},
+		}},
+		{Question: "Ship it?", Header: "Ship", Options: []baseds.AgentAskOption{{Label: "Yes"}, {Label: "No"}}},
+	}
+	if !reflect.DeepEqual(questions, want) {
+		t.Fatalf("questions decoded from the tool_use input:\n got %+v\nwant %+v", questions, want)
+	}
+
+	write(recAssistantToolUse, recAskWithInput, siblingResult, recAskResult)
+	if id, questions, ok, err := OpenAsk(path); err != nil || ok || id != "" || questions != nil {
+		t.Fatalf("a question with its result is closed: id=%q questions=%v ok=%v err=%v", id, questions, ok, err)
+	}
+	if _, _, _, err := OpenAsk(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Fatal("a transcript that cannot be read is an error, not a closed question")
+	}
+}
+
+// an open question whose input carries no questions has nothing to show a person: it is not recoverable
+func TestOpenAskWithoutQuestionsIsNotOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, []byte(recAskUse+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if id, _, ok, err := OpenAsk(path); err != nil || ok {
+		t.Fatalf("an ask with no input has no questions to recover: id=%q ok=%v err=%v", id, ok, err)
 	}
 }
 
