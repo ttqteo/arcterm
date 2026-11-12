@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import type { PendingMessage } from "./chatpending";
-import { boxHolds, inputBoxRows, mergeTaken, takeBackPlan } from "./chattakeback";
+import { boxHolds, boxShowsTyped, inputBoxRows, mergeTaken, takeBackPlan } from "./chattakeback";
 
 const rule = "─".repeat(40);
 const pend = (id: string, text: string, queued: boolean, kind?: PendingMessage["kind"]): PendingMessage => ({
@@ -84,6 +84,32 @@ describe("inputBoxRows and boxHolds", () => {
     it("does not take the conversation's copy of the message for the box", () => {
         expect(boxHolds(screen("❯ "), ["fix the chip"])).toBe(false);
         expect(boxHolds(["> fix the chip"], ["fix the chip"])).toBe(false);
+    });
+});
+
+// a send presses Enter only once the box shows the whole text: an Enter read in the same chunk as the text is a line break,
+// and the next message went in after it as one prompt ("…cũng hay\ncó", 2026-11-12)
+describe("boxShowsTyped", () => {
+    const screen = (...box: string[]) => ["> có, và tôi thấy", "", rule, ...box, rule, "  ⏵⏵ auto mode on"];
+    const msg = "có, và tôi thấy nó link mở SKILL hay memory/claude file cũng hay";
+    it("waits while the box is empty or shows only part of the text", () => {
+        expect(boxShowsTyped(screen("❯ "), msg)).toBe(false);
+        expect(boxShowsTyped(screen("❯ có, và tôi thấy nó link mở SKI"), msg)).toBe(false);
+        expect(boxShowsTyped(screen("❯ "), "có")).toBe(false);
+    });
+    it("sees the whole text, wrapped, after a draft, or as a paste placeholder", () => {
+        expect(boxShowsTyped(screen(`❯ ${msg}`), msg)).toBe(true);
+        expect(
+            boxShowsTyped(screen("❯ có, và tôi thấy nó link mở SKILL hay memory/claude", "  file cũng hay"), msg)
+        ).toBe(true);
+        expect(boxShowsTyped(screen("❯ draft then có"), "có")).toBe(true);
+        expect(boxShowsTyped(screen("❯ [Pasted text #1 +3 lines]"), "a\nb\nc\nd")).toBe(true);
+    });
+    it("matches a decomposed text against the composed screen", () => {
+        expect(boxShowsTyped(screen("❯ cũng hay"), "cũng hay".normalize("NFD"))).toBe(true);
+    });
+    it("has nothing to wait for when no box shows", () => {
+        expect(boxShowsTyped(["a permission dialog"], msg)).toBeNull();
     });
 });
 

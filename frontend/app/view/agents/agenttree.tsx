@@ -79,6 +79,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
@@ -278,7 +279,7 @@ import { ServerMark, StatusDot } from "./statusdot";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
-import { agentRamAtom, useAgentRamPoll } from "./agentramstore";
+import { agentRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
@@ -484,6 +485,12 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
                     }),
             },
         ];
+    }
+    // a Sleep already under way (the call, or the compaction before it, while the agent works) says so and takes no
+    // second press
+    const falling = fallingAsleepOf(agent.id, false);
+    if (falling != null) {
+        return [{ label: fallAsleepLabel(falling), icon: <Moon size={15} />, enabled: false }];
     }
     const sleepable =
         agent.state === "idle" &&
@@ -1193,7 +1200,11 @@ function ParentRow({
     const shownBranch = fields.branch ? notableBranch(branch) : undefined;
     const shownModel = fields.model ? agent.model : undefined;
     // what its processes hold now (agentram.ts); an asleep agent has none, whatever a reading still names
-    const ram = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
+    const ownRam = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
+    // a lead's row stands for its run, so it shows what the whole run holds: the lead, its workers, reviewers and
+    // stage sessions together, as the Resource Manager's run group adds them up
+    const runRam = useRunRam(model, lead?.run.runId);
+    const ram = lead != null ? runRam : ownRam;
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
@@ -1206,10 +1217,9 @@ function ParentRow({
     // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
     // list shows unread messages, and the name reads bold
     const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
-    // an idle turn that stopped on part 1/3 of something waits on your reply: its step takes the count's place, and
-    // stays after you have read it, since that is when a reply gets forgotten
-    const step = agent.state === "idle" ? agent.step : undefined;
-    const unread = unreadCount > 0 || step != null;
+    // the row shows no "n/m" part an agent stopped on: read off its last message, it caught any n/m in the prose
+    // ("steps 14/14a" drew a 14/14 chip); an agent asking you is seen by its breathing row (.asking-tint) instead
+    const unread = unreadCount > 0;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     // the roster overlay already turned a question the file asks, or a design waiting on confirms, into state "asking";
@@ -1348,19 +1358,7 @@ function ParentRow({
                     <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                 </button>
             ) : asking ? (
-                <>
-                    <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
-                    {/* a question that names its part ("Phần 1/4 ổn chưa?") shows the part beside it */}
-                    {agent.step ? (
-                        <span
-                            data-agent-step={agent.step}
-                            aria-label={`asking about part ${agent.step}`}
-                            className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
-                        >
-                            {agent.step}
-                        </span>
-                    ) : null}
-                </>
+                <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
             ) : (
                 <>
                     {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command or the
@@ -1396,7 +1394,11 @@ function ParentRow({
                     {fields.ram && ram ? (
                         <span
                             data-agent-ram={agent.id}
-                            title="RAM the agent and the commands it runs hold now"
+                            title={
+                                lead != null
+                                    ? `RAM the run's agents and the commands they run hold now (the lead alone: ${ownRam ?? "not read"})`
+                                    : "RAM the agent and the commands it runs hold now"
+                            }
                             className={RAM_COL}
                         >
                             {ram}
@@ -1410,15 +1412,7 @@ function ParentRow({
                             {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
                         </span>
                     ) : null}
-                    {step ? (
-                        <span
-                            data-agent-step={step}
-                            aria-label={`stopped on part ${step}, waiting on your reply`}
-                            className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
-                        >
-                            {step}
-                        </span>
-                    ) : unread ? (
+                    {unread ? (
                         <span
                             data-agent-unread={unreadCount}
                             aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
@@ -1642,6 +1636,8 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
     // drawn as a lead's row (ParentRow) is: a run reads the same whether or not its lead's tab is open, and only the
     // tokens a lead's session carries are missing
     const mark = leadMark(run, undefined);
+    const ramOn = useAtomValue(rowFieldsAtom).ram;
+    const ram = useRunRam(model, run.runId);
     return (
         <div
             onClick={() => show(false)}
@@ -1666,9 +1662,47 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
                 />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{run.title}</span>
             </div>
-            <RunSubline model={model} run={run} open={open} live={live} leadless />
+            <RunSubline
+                model={model}
+                run={run}
+                open={open}
+                live={live}
+                leadless
+                trailing={
+                    ramOn && ram ? (
+                        <span
+                            data-run-ram={run.runId}
+                            title="RAM the run's agents and the commands they run hold now"
+                            className={RAM_COL}
+                        >
+                            {ram}
+                        </span>
+                    ) : undefined
+                }
+            />
         </div>
     );
+}
+
+// The RAM words for everything a run holds: its awake tabs' terminals (the lead, workers, reviewers, stage sessions)
+// summed. The block ids are picked into one string, so a row redraws when that set or the figure changes, not on every
+// roster update. Null with no run, or while no reading names any of them.
+function useRunRam(model: AgentsViewModel, runId: string | undefined): string | null {
+    const keyAtom = useMemo(
+        () =>
+            atom((get) =>
+                runId == null
+                    ? ""
+                    : runAgentsOf(get(model.lineageAtom), get(model.agentsAtom), runId)
+                          .filter((a) => a.blockId != null && a.sleeping == null)
+                          .map((a) => a.blockId)
+                          .sort()
+                          .join(",")
+            ),
+        [model, runId]
+    );
+    const key = useAtomValue(keyAtom);
+    return useAtomValue(runRamAtom(key));
 }
 
 // A task's worker under its run. A done task's worker opens as its read-only transcript, whether or not its tab

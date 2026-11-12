@@ -186,6 +186,8 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 		"wsh jarvis dag status",
 		"wsh effort chunk add <effort>",
 		"wsh effort create",
+		"wsh effort list --topics",
+		"--parent <topic oid>",
 		AskTool("claude"),
 		AskTool("pi"),
 		"report",

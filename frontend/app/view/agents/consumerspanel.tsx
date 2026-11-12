@@ -63,6 +63,7 @@ import {
     type ConsumersView,
 } from "./consumers";
 import { consumersOpenAtom, consumersOpenerAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
+import { useFallingAsleep } from "./fallasleepstore";
 import { officeAnimation, officeAnimationAtom } from "./officestore";
 import { TickBox } from "./tickbox";
 import { usePlanDonuts } from "./usagemeters";
@@ -195,6 +196,8 @@ function Row({
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
     // a wake started anywhere else (the sleeping card, the composer) holds this Wake too
     const waking = useWaking(row.id);
+    // a Sleep started anywhere (the row's menu, this button) holds this Sleep until the agent reads asleep
+    const falling = useFallingAsleep(row.id, row.sleeping);
     const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
         setPending(kind);
         fireAndForget(async () => {
@@ -289,7 +292,7 @@ function Row({
                             data-consumer-sleep
                             title="Sleep: end this agent's process to free its RAM; Wake or a message resumes it"
                             aria-label="Sleep"
-                            disabled={pending != null}
+                            disabled={pending != null || falling != null}
                             onClick={() => run("sleep", () => sleepWithConfirm(row.vm))}
                             className={ICON_ACTION}
                         >

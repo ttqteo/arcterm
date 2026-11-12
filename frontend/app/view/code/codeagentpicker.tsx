@@ -36,18 +36,25 @@ export function AgentPicker({
     }
     return (
         <>
-            {targets.map((t) => (
-                <button
-                    key={t.id}
-                    type="button"
-                    data-code-agent-picker-row={t.name}
-                    onClick={() => onPick(t)}
-                    className="flex w-full cursor-pointer items-center justify-between rounded-[6px] px-2 py-1 text-left text-[11.5px] text-secondary hover:bg-accent/10 hover:text-primary"
-                >
-                    <span className="min-w-0 truncate">{t.name}</span>
-                    <span className="flex-none pl-2 font-mono text-[10.5px] text-muted">{t.state}</span>
-                </button>
-            ))}
+            {targets.map((t) => {
+                // the review is pasted and then Enter is pressed: on an agent waiting on a question that Enter would
+                // answer it, so the row is shut until the question is answered, as the Diff's line review does
+                const asking = t.state === "asking";
+                return (
+                    <button
+                        key={t.id}
+                        type="button"
+                        data-code-agent-picker-row={t.name}
+                        disabled={asking}
+                        title={asking ? `${t.name} is waiting on a question — answer it first` : undefined}
+                        onClick={() => onPick(t)}
+                        className="flex w-full cursor-pointer items-center justify-between rounded-[6px] px-2 py-1 text-left text-[11.5px] text-secondary hover:bg-accent/10 hover:text-primary disabled:cursor-default disabled:opacity-50"
+                    >
+                        <span className="min-w-0 truncate">{t.name}</span>
+                        <span className="flex-none pl-2 font-mono text-[10.5px] text-muted">{t.state}</span>
+                    </button>
+                );
+            })}
         </>
     );
 }

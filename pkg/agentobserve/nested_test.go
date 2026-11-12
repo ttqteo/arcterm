@@ -38,6 +38,35 @@ func TestNestedIn(t *testing.T) {
 	}
 }
 
+func TestNestedSessionPrintMode(t *testing.T) {
+	sh := procLink{name: "sh"}
+	agent := procLink{name: "claude.exe", cmdline: "claude --resume b15a588a-543e-41ed-bc1b-5190879e814b"}
+	// what a Git Bash pipeline leaves on Windows: the nested claude, then the fork stub that already exited
+	broken := []procLink{sh, {name: "claude.exe", cmdline: "claude -p hi"}, {name: "timeout.exe"}, {name: "timeout.exe"}}
+	walked := 0
+	walk := func(chain []procLink) func() []procLink {
+		return func() []procLink {
+			walked++
+			return chain
+		}
+	}
+	if !nestedSession("sdk-cli", walk(broken)) {
+		t.Error("a print-mode claude whose chain ends at a gone stub is not the block's agent")
+	}
+	if walked != 0 {
+		t.Error("print mode decides it without walking the process tree")
+	}
+	if nestedSession("cli", walk(broken)) {
+		t.Error("an interactive claude whose chain shows no outer claude stays the agent")
+	}
+	if nestedSession("cli", walk([]procLink{sh, agent})) {
+		t.Error("the agent's own hook is not nested")
+	}
+	if !nestedSession("", walk([]procLink{sh, {name: "claude.exe", cmdline: "claude"}, {name: "bash.exe"}, agent})) {
+		t.Error("with no entrypoint the walk still decides")
+	}
+}
+
 func TestAncestorsOfAGonePid(t *testing.T) {
 	// a process gone before the walk reads it ends the chain instead of failing
 	chain := ancestors(int32(1<<30), 3)

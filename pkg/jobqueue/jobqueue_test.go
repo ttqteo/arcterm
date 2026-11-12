@@ -532,3 +532,41 @@ func TestOff(t *testing.T) {
 		t.Fatal("a past pause is not off")
 	}
 }
+
+// a command whose wsh jobslot stopped waiting ran without a slot: the count and the latest reach the cockpit
+func TestNoteBypassReachesTheSnapshot(t *testing.T) {
+	var snaps []Snapshot
+	q := New(Config{
+		Slots:     func() int { return 1 },
+		Available: func(context.Context) (uint64, error) { return 64 * gb, nil },
+		Now:       func() time.Time { return t0 },
+		OnChange:  func(s Snapshot) { snaps = append(snaps, s) },
+	})
+	q.NoteBypass("task check:ts", Source{BlockId: "b1"}, time.Time{})
+	q.NoteBypass("npm test", Source{BlockId: "b2"}, time.Time{})
+	s := q.Snapshot()
+	if s.Bypassed != 2 || s.LastBypass.Name != "npm test" || s.LastBypass.Source.BlockId != "b2" || !s.LastBypass.At.Equal(t0) {
+		t.Fatalf("snapshot = %+v", s)
+	}
+	if len(s.Jobs) != 0 {
+		t.Fatalf("a bypass queued %d jobs", len(s.Jobs))
+	}
+	if len(snaps) != 2 || snaps[1].Bypassed != 2 {
+		t.Fatalf("OnChange got %d snapshots (%+v), want one per bypass", len(snaps), snaps)
+	}
+}
+
+// one a later wsh reports (it could not reach wavesrv) counts, but an older one never replaces the latest
+func TestNoteBypassReportedLateKeepsTheLatest(t *testing.T) {
+	q := New(Config{Now: func() time.Time { return t0 }})
+	q.NoteBypass("task check:ts", Source{BlockId: "b1"}, time.Time{})
+	q.NoteBypass("npm test", Source{BlockId: "b2"}, t0.Add(-time.Minute))
+	s := q.Snapshot()
+	if s.Bypassed != 2 || s.LastBypass.Name != "task check:ts" {
+		t.Fatalf("snapshot = %+v, want 2 with task check:ts the latest", s)
+	}
+	q.NoteBypass("cargo build", Source{}, t0.Add(time.Minute))
+	if s := q.Snapshot(); s.LastBypass.Name != "cargo build" || !s.LastBypass.At.Equal(t0.Add(time.Minute)) {
+		t.Fatalf("latest = %+v", s.LastBypass)
+	}
+}

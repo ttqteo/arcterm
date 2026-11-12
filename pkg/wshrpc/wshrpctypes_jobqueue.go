@@ -20,6 +20,18 @@ type CommandJobSlotData struct {
 	// HoldPid, when set, keeps the slot past the stream for as long as that process runs: `wsh jobslot
 	// --hold-parent` exits once its command may start and hands the slot to the shell that runs it
 	HoldPid int32 `json:"holdpid,omitempty"`
+	// GiveUpTs is when `wsh jobslot` stops waiting for a first word and runs the command without a slot (Unix ms):
+	// a request read later takes no place and counts as a bypass
+	GiveUpTs int64 `json:"giveupts,omitempty"`
+	// Missed are commands earlier `wsh jobslot`s ran without a slot because they could not reach wavesrv at all
+	// (a connect that failed or hung): wsh keeps them on disk and hands them over with the next request
+	Missed []JobSlotMissed `json:"missed,omitempty"`
+}
+
+type JobSlotMissed struct {
+	Name    string `json:"name"` // memgate's job name
+	Ts      int64  `json:"ts"`   // Unix ms when it ran
+	BlockId string `json:"blockid,omitempty"`
 }
 
 // JobSlotUpdate is one line of `wsh jobslot`: a queued place while it waits (the job ahead and who it is
@@ -54,6 +66,17 @@ type JobQueueData struct {
 	Mode        string        `json:"mode"`                  // jobqueue.ModeAuto, ModeSlots or ModeOff
 	PausedUntil int64         `json:"pauseduntil,omitempty"` // Unix ms while a pause is on: every job starts at once
 	Jobs        []JobQueueJob `json:"jobs"`
+	// Bypassed counts the agent commands that ran without a slot since wavesrv started (the queue answered after
+	// their `wsh jobslot` stopped waiting); LastBypass is the latest
+	Bypassed   int             `json:"bypassed,omitempty"`
+	LastBypass *JobQueueBypass `json:"lastbypass,omitempty"`
+}
+
+type JobQueueBypass struct {
+	Name    string `json:"name"`
+	Ts      int64  `json:"ts"`
+	BlockId string `json:"blockid,omitempty"`
+	TabId   string `json:"tabid,omitempty"`
 }
 
 type CommandJobQueueActData struct {

@@ -176,21 +176,24 @@ func worktreeMain(gitFile string) (string, bool) {
 }
 
 // tabAgentSession is the harness and session id of the agent in tab, read off its agent block's transcript, or
-// ok false while the block names no transcript yet.
+// ok false while no block names a transcript yet. The agent's block is the first that names one: a dock terminal
+// ahead of it names none.
 func tabAgentSession(ctx context.Context, tab *waveobj.Tab) (harness, session string, ok bool) {
 	harness = tab.Meta.GetString(waveobj.MetaKey_SessionAgent, "")
-	if harness == "" || len(tab.BlockIds) == 0 {
+	if harness == "" {
 		return "", "", false
 	}
-	transcript, err := readBlockTranscriptMeta(ctx, tab.BlockIds[0])
-	if err != nil {
-		log.Printf("usage: the agent of tab %s: %v", tab.OID, err)
-		return "", "", false
+	for _, blockId := range tab.BlockIds {
+		transcript, err := readBlockTranscriptMeta(ctx, blockId)
+		if err != nil {
+			log.Printf("usage: the agent of tab %s: %v", tab.OID, err)
+			return "", "", false
+		}
+		if transcript != "" {
+			return harness, usagestats.SessionIdOf(harness, transcript), true
+		}
 	}
-	if transcript == "" {
-		return "", "", false
-	}
-	return harness, usagestats.SessionIdOf(harness, transcript), true
+	return "", "", false
 }
 
 // tabEffort is the initiative the tab of the agent running harness's session is tagged with. A closed tab's tag

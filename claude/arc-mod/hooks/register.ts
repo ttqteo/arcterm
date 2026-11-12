@@ -440,22 +440,30 @@ async function withUiCheck<R extends { deny?: string; isError?: true; context?: 
 // frees the slot. the stream's loop is the child's life, so this holds the iterator open across run(). its
 // queued lines show here meanwhile, and a refusal (the person skipped it on the card) denies the command.
 // any failure of wsh's lets the command run. spawn, not run: run gives up after ten minutes, and a queue
-// can wait longer
+// can wait longer. an interrupt (Esc) while it waits ends the wait and never runs the command: the engine kills wsh
+// on signal's abort, which frees its place, but the stream ending would otherwise read as "run it"
 async function withJobSlot<T>(
     $: EngineInterface,
     command: string,
+    signal: AbortSignal | undefined,
     run: () => Promise<T>
 ): Promise<T | { deny: string }> {
     if (!active) {
         return run();
     }
     const stream = $.process.spawn({ argv: [WSH, ...jobslotArgs(command)] });
+    const interrupted = new Promise<"interrupted">((resolve) => {
+        if (signal?.aborted) {
+            resolve("interrupted");
+        }
+        signal?.addEventListener("abort", () => resolve("interrupted"), { once: true });
+    });
     let buffered = "";
     let denied: string | null = null;
     try {
         wait: for (;;) {
-            const step = await stream.next();
-            if (step.done) {
+            const step = await Promise.race([stream.next(), interrupted]);
+            if (step === "interrupted" || step.done) {
                 break;
             }
             if (step.value.stream !== "stdout") {
@@ -477,6 +485,9 @@ async function withJobSlot<T>(
         $.ui.log(`arc: wsh jobslot failed: ${String(err)}`, { to: "debug" });
     }
     try {
+        if (signal?.aborted) {
+            return { deny: "Interrupted while waiting in arcterm's job queue; not run." };
+        }
         return denied !== null ? { deny: denied } : await run();
     } finally {
         // ending the stream kills wsh, and the server's waiter cancel frees the slot. a no-op once wsh has exited
@@ -797,7 +808,9 @@ export const register: Register = (on) => {
             const held = { ...e, command: heldInBackground(WSH, e.command) };
             return withUiCheck($, e.command, () => withGoalposts($, findings, held, next));
         }
-        return withJobSlot($, e.command, () => withUiCheck($, e.command, () => withGoalposts($, findings, e, next)));
+        return withJobSlot($, e.command, next.signal, () =>
+            withUiCheck($, e.command, () => withGoalposts($, findings, e, next))
+        );
     });
 
     // a background command heldInBackground wrapped is decided as the model wrote it: the rules and the mode judge
@@ -814,7 +827,9 @@ export const register: Register = (on) => {
             return { deny: why };
         }
         const findings = await goalposts($, () => inspectCommand(e.command, ALL_CATEGORIES));
-        return withJobSlot($, e.command, () => withUiCheck($, e.command, () => withGoalposts($, findings, e, next)));
+        return withJobSlot($, e.command, next.signal, () =>
+            withUiCheck($, e.command, () => withGoalposts($, findings, e, next))
+        );
     });
 
     on("tool.call", { tool: "Edit" }, async ($, e, next) => {

@@ -26365,7 +26365,9 @@ const launcherResume = {
                 const cover = document.querySelector('[data-sleeping-transcript="${tabId}"]');
                 return {
                     moon: !!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]'),
-                    card: (document.querySelector('[data-sleeping-card="${tabId}"]')?.textContent ?? '').trim(),
+                    // the chat box says it sleeps (the card over the terminal shows only for a failed wake)
+                    card: !!document.querySelector('[data-sleeping-card="${tabId}"]'),
+                    asleepNote: (document.querySelector('[data-sleeping-composer="${tabId}"] [data-chat-asleep]')?.textContent ?? '').trim(),
                     conversation: (cover?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
                     // the conversation is chat's: your message as a bubble, from the transcript's one prompt
                     bubble: (cover?.querySelector('[data-chat-you]')?.textContent ?? '').trim(),
@@ -26376,9 +26378,9 @@ const launcherResume = {
         }
         await h.shot("cdp-shots/launcher-resume-6-asleep-agent.png");
         rec(
-            "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble, the Sleeping card and the box to wake it",
+            "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble and the box to wake it, which says Asleep since",
             appeared && tabId != null && cell?.moon && cell.conversation && cell.bubble === LAUNCHER_RESUME_TASK &&
-                cell.card.includes("Sleeping since") && /to wake it/.test(cell.composer ?? ""),
+                !cell.card && cell.asleepNote.includes("Asleep since") && /to wake it/.test(cell.composer ?? ""),
             JSON.stringify({ rowUp, appeared, tabId, cell })
         );
 
@@ -41657,7 +41659,7 @@ const consumersClosePicked = {
 // second layer above it answers agentssleep, agentswake and controllerinput, each call recorded in `calls`, by the mode a
 // step sets. Wake: "ok" resolves, "hold" keeps the call pending until the step releases it, "fail" rejects with the
 // server's reason. Sleep: "ok" answers the bytes freed, "background" answers a call without `force` with the tasks
-// running under the agent and a forced one with the bytes freed. The scenario never writes a setting: step 8 only reads
+// running under the agent and a forced one with the bytes freed, "compacting" answers that the server compacts first. The scenario never writes a setting: step 8 only reads
 // Settings > Agents. Teardown puts both RPC layers, the roster fixture and the page back.
 const AS_MOCK_KEY = "__arcAgentSleepMock";
 const AS_AWAKE_ID = "fx-as-awake";
@@ -41718,7 +41720,11 @@ async function installAgentSleepMock(h) {
         };
         const sleep = (data) =>
             Promise.resolve(
-                m.sleep === "background" && !data.force ? { background: [${JSON.stringify(AS_BACKGROUND)}] } : { freedbytes: ${AS_FREED} }
+                m.sleep === "compacting"
+                    ? { compacting: true }
+                    : m.sleep === "background" && !data.force
+                      ? { background: [${JSON.stringify(AS_BACKGROUND)}] }
+                      : { freedbytes: ${AS_FREED} }
             );
         api.setMockRpcClient({
             mockWshRpcCall(client, command, data, opts) {
@@ -41779,7 +41785,6 @@ const removeAgentSleepMock = (h) =>
     })()`);
 
 const asRow = (id) => `document.querySelector('[data-agent-row="${id}"]')`;
-const asCard = `document.querySelector("[data-sleeping-card]")`;
 const asEscape = (h) => h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
 // the composer of the sleeping agent, wherever the Cockpit draws it
 const AS_COMPOSER = `[...document.querySelectorAll("[data-agent-composer] textarea")].find((t) => t.placeholder === ${JSON.stringify(`message ${AS_SLEEPING_NAME}…`)})`;
@@ -41837,23 +41842,27 @@ const agentSleep = {
             JSON.stringify(row)
         );
 
-        // 2. focused, the sleeping agent's terminal has the card over it, and its conversation covers the terminal in its
-        // cell: the one chat pane (its root is the cover and the chat layer at once), which with the fixture's no transcript
-        // reads "No messages yet"; the awake agent's cell has no cover
+        // 2. focused, the sleeping agent's conversation covers the terminal in its cell: the one chat pane (its root is the
+        // cover and the chat layer at once), which with the fixture's no transcript reads "No messages yet"; its box says
+        // "Asleep since" where an awake box has its attach and mode, and Send reads Wake while the box is empty. No card
+        // sits over the terminal (it is left for a failed wake); the awake agent's cell has no cover
         await h.ev(`${asRow(AS_SLEEPING_ID)}?.click()`);
-        const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-card="${AS_SLEEPING_ID}"]')`, 5000);
+        const AS_BOX = `document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"]')`;
+        const AS_WAKE = `${AS_BOX}?.querySelector("[data-chat-send]")`;
+        const noteUp = await polishWaitFor(h, `!!${AS_BOX}?.querySelector("[data-chat-asleep]")`, 5000);
         const coverUp = await polishWaitFor(
             h,
             `!!document.querySelector('[data-agent-terminal="${AS_SLEEPING_ID}"] [data-sleeping-transcript="${AS_SLEEPING_ID}"]')`,
             5000
         );
         const card = await h.ev(`(() => {
-            const c = document.querySelector("[data-sleeping-card]");
             const cover = document.querySelector('[data-sleeping-transcript="${AS_SLEEPING_ID}"]');
             const r = cover?.getBoundingClientRect();
             return {
-                text: c?.textContent.trim() ?? null,
-                wake: c?.querySelector("[data-sleeping-wake]")?.textContent.trim() ?? null,
+                note: ${AS_BOX}?.querySelector("[data-chat-asleep]")?.textContent.trim() ?? null,
+                wake: ${AS_WAKE}?.textContent.trim() ?? null,
+                wakeDisabled: ${AS_WAKE}?.disabled ?? null,
+                card: !!document.querySelector("[data-sleeping-card]"),
                 cover: cover?.textContent.trim() ?? null,
                 coverIsChat: cover?.getAttribute("data-agent-chat") === ${JSON.stringify(AS_SLEEPING_ID)},
                 coverSize: r ? [Math.round(r.width), Math.round(r.height)] : null,
@@ -41862,38 +41871,40 @@ const agentSleep = {
         })()`);
         await h.shot("cdp-shots/agent-sleep-card.png");
         rec(
-            "2. focused, the card says \"Sleeping since\" and offers Wake, and the conversation (the chat pane, reading No messages yet) covers the terminal",
-            cardUp && (card.text ?? "").includes("Sleeping since") && card.wake === "Wake" &&
+            "2. focused, the chat box says \"Asleep since\" and its Send reads Wake, no card over the terminal, and the conversation (the chat pane, reading No messages yet) covers the terminal",
+            noteUp && (card.note ?? "").includes("Asleep since") && card.wake === "Wake" && card.wakeDisabled === false && !card.card &&
                 coverUp && (card.cover ?? "").includes("No messages yet") && card.coverIsChat &&
                 card.coverSize != null && card.coverSize[0] > 0 && card.coverSize[1] > 0 && !card.awakeCover,
             JSON.stringify(card)
         );
 
-        // 3. Wake reads Waking… and is disabled while the call is pending; the call names the tab
+        // 3. Wake in the empty box reads Waking… and is disabled while the call is pending; the call names the tab and
+        // carries no message
         await asMode(h, "wake", "hold");
-        await h.ev(`document.querySelector("[data-sleeping-wake]")?.click()`);
+        await h.ev(`${AS_WAKE}?.click()`);
         const waking = await polishWaitFor(
             h,
-            `(() => { const b = document.querySelector("[data-sleeping-wake]"); return !!b && b.textContent.trim() === "Waking…" && b.disabled; })()`,
+            `(() => { const b = ${AS_WAKE}; return !!b && b.textContent.trim() === "Waking…" && b.disabled; })()`,
             3000
         );
         const wakeCalls = await asCalls(h, "agentswake");
         await h.shot("cdp-shots/agent-sleep-waking.png");
         rec(
-            "3. Wake on the card reads Waking… and is disabled, and agentswake names the tab",
-            waking && wakeCalls.length === 1 && wakeCalls[0].data.tab === AS_SLEEPING_ID && wakeCalls[0].data.fresh == null && wakeCalls[0].data.message == null,
+            "3. Wake in the box reads Waking… and is disabled, and agentswake names the tab with no message",
+            waking && wakeCalls.length === 1 && wakeCalls[0].data.tab === AS_SLEEPING_ID && wakeCalls[0].data.fresh == null && !wakeCalls[0].data.message,
             JSON.stringify({ waking, wakeCalls })
         );
         await asRelease(h);
         await polishWaitFor(
             h,
-            `(() => { const b = document.querySelector("[data-sleeping-wake]"); return !!b && b.textContent.trim() === "Wake" && !b.disabled; })()`,
+            `(() => { const b = ${AS_WAKE}; return !!b && b.textContent.trim() === "Wake" && !b.disabled; })()`,
             3000
         );
 
-        // 4. a failed wake shows the server's reason with Start fresh and Close; Start fresh asks for a fresh start
+        // 4. a failed wake (here from the box) brings the card over the terminal with the server's reason, Start fresh and
+        // Close; Start fresh asks for a fresh start
         await asMode(h, "wake", "fail");
-        await h.ev(`document.querySelector("[data-sleeping-wake]")?.click()`);
+        await h.ev(`${AS_WAKE}?.click()`);
         const failed = await polishWaitFor(h, `!!document.querySelector("[data-sleeping-error]")`, 3000);
         const failure = await h.ev(`(() => ({
             reason: document.querySelector("[data-sleeping-error]")?.textContent.trim() ?? null,
@@ -41911,7 +41922,7 @@ const agentSleep = {
         );
         const freshCall = (await asCalls(h, "agentswake")).find((c) => c.data.fresh === true);
         rec(
-            "4. a failed wake shows the reason with Start fresh and Close, and Start fresh sends fresh: true",
+            "4. a failed wake from the box shows the card with the reason, Start fresh and Close, and Start fresh sends fresh: true",
             failed && failure.reason === AS_WAKE_FAIL && failure.fresh === "Start fresh" && failure.close === "Close" && !failure.wake &&
                 starting && freshCall?.data?.tab === AS_SLEEPING_ID,
             JSON.stringify({ failed, failure, starting, freshCall })
@@ -41970,6 +41981,55 @@ const agentSleep = {
                 sleepCalls.length === 2 && sleepCalls[1].data.tab === AS_AWAKE_ID && sleepCalls[1].data.force === true && freedToast,
             JSON.stringify({ menuItems, menuHasWake, confirm, sleepCalls, freedToast })
         );
+        await asMode(h, "sleep", "ok");
+
+        // 5b. a Sleep under way shuts what would undo it until the agent reads asleep (the fixture roster never does, so the
+        // step drops the mark itself). The confirmed Sleep above holds the awake row's menu at "Going to sleep…", disabled;
+        // a Sleep the server answers by compacting first holds it at "Compacting, then sleeping…", and the agent's Chat box
+        // says so in Asleep's place, with its editor read-only and its Send disabled
+        const AS_FALL = `const F = await mod("app/view/agents/fallasleepstore.ts");`;
+        const openAwakeMenu = () =>
+            h.ev(`(() => {
+                const el = ${asRow(AS_AWAKE_ID)};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+        await asEscape(h);
+        await openAwakeMenu();
+        const goingUp = await polishWaitFor(h, caMenuHas("Going to sleep…"), 3000);
+        const goingItem = await h.ev(`(() => { const r = ${caMenuRow("Going to sleep…")}; return r ? { disabled: r.closest("[data-menu-item]")?.getAttribute("aria-disabled") === "true" } : null; })()`);
+        await asEscape(h);
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
+        await asMode(h, "sleep", "compacting");
+        await openAwakeMenu();
+        await polishWaitFor(h, caMenuHas("Sleep"), 3000);
+        await h.ev(caMenuClick("Sleep"));
+        const compactingToast = await polishWaitFor(h, consumersToastExpr("Compacting"), 3000);
+        // the Escapes that closed the menus also go back a surface: show the Agent surface again for the shot
+        await h.goto("agent");
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        const AWAKE_BOX = `document.querySelector('[data-agent-chat-composer="${AS_AWAKE_ID}"]')`;
+        const boxHeld = await polishWaitFor(h, `!!${AWAKE_BOX}?.querySelector('[data-chat-falling-asleep="compacting"]')`, 3000);
+        const box5b = await h.ev(`(() => {
+            const b = ${AWAKE_BOX};
+            return {
+                note: b?.querySelector("[data-chat-falling-asleep]")?.textContent.trim() ?? null,
+                readOnly: b?.querySelector("[data-chat-input]")?.isContentEditable === false,
+                send: b?.querySelector("[data-chat-send]")?.disabled ?? null,
+                stop: !!b?.querySelector("[data-chat-stop]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/agent-sleep-falling.png");
+        await openAwakeMenu();
+        const compactingItem = await polishWaitFor(h, caMenuHas("Compacting, then sleeping…"), 3000);
+        await asEscape(h);
+        rec(
+            "5b. a Sleep under way holds the row menu at Going to sleep… (disabled), and one that compacts first at Compacting, then sleeping…, with the agent's Chat box saying so, read-only, its Send disabled and no Stop",
+            goingUp && goingItem?.disabled === true && compactingToast && boxHeld && box5b.note === "Compacting, then sleeping…" &&
+                box5b.readOnly && box5b.send === true && !box5b.stop && compactingItem,
+            JSON.stringify({ goingUp, goingItem, compactingToast, boxHeld, box5b, compactingItem })
+        );
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
         await asMode(h, "sleep", "ok");
 
         // 6. the Consumers panel: a Sleeping group with Wake, Sleep on the awake row (by RAM, as on macOS)
@@ -43301,21 +43361,26 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-14-asleep.png");
-            const viewDim = (sleep14.view ?? []).length === 2 && sleep14.view.every((b) => b.disabled && b.asleepMark && b.opacity > 0.35 && b.opacity < 0.45);
+            // Chat stays usable asleep (the way back to the conversation from a canvas, review or brainstorm); Terminal is
+            // disabled and dimmed
+            const viewDim =
+                (sleep14.view ?? []).length === 2 &&
+                !sleep14.view[0].disabled && !sleep14.view[0].asleepMark && sleep14.view[0].opacity > 0.9 &&
+                sleep14.view[1].disabled && sleep14.view[1].asleepMark && sleep14.view[1].opacity > 0.35 && sleep14.view[1].opacity < 0.45;
             rec(
-                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected, both options disabled and dimmed",
+                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected and usable, Terminal disabled and dimmed",
                 asleep && sleep14.you === "an earlier question" && sleep14.agent && sleep14.onePane &&
-                    (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Send" &&
+                    (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Wake" &&
                     sleep14.label === "opus" && !sleep14.modelChip && (sleep14.asleepNote ?? "").includes("Asleep") && !sleep14.modeChip && !sleep14.attach &&
                     sleep14.view?.map((b) => b.text).join("|") === "Chat|Terminal" && sleep14.view[0].pressed && !sleep14.view[1].pressed && viewDim,
                 sleep14
             );
 
-            // 14a. Alt+C on the asleep agent walks only what the header leaves usable: Chat and Terminal are disabled, so it
-            // never selects them. With nothing else open there is nothing to walk and the key passes whatever it did before, so
-            // the step gives F a canvas (nothing detaches one but a click; it is taken off at the end): one usable option, so
-            // the key still passes. Before the fix the key walked [terminal, canvas]: from Chat it went to the Canvas, from the
-            // Canvas back to the terminal's slot, which the header shows as Chat
+            // 14a. Alt+C and a click on the asleep agent walk only what the header leaves usable: Terminal is disabled, so
+            // neither ever selects it, and Chat stays usable, the way back to the conversation from a canvas, review or
+            // brainstorm (it was disabled once, which left a sleeping agent shown on its brainstorm with no way back to the
+            // chat). The step gives F a canvas (nothing detaches one but a click; it is taken off at the end): Alt+C walks
+            // Chat → Canvas → Chat, and a click on Chat from the Canvas goes back too; neither changes the stored chat mode
             const AC_VIEW_NOW = `[...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim() + (b.getAttribute("aria-pressed") === "true" ? "*" : "") + (b.disabled ? "!" : "")).join("|")`;
             await AC.agentPage(
                 h,
@@ -43323,20 +43388,22 @@ const agentChat = {
                 C.attachCanvas(${JSON.stringify(F)}, { topic: "ac-asleep", dir: "ac-asleep-canvas", projectDir: "ac-asleep-project" }, Date.now());
                 return true;`
             );
-            const three14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!|Canvas"`, 4000);
+            const three14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!|Canvas"`, 4000);
             const atChat14a = await h.ev(AC_VIEW_NOW);
             await acKey(h, acKeys.altC);
-            await polishNap(500);
+            const onCanvas14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat|Terminal!|Canvas*"`, 4000);
             const afterChat14a = await h.ev(AC_VIEW_NOW);
+            await acKey(h, acKeys.altC);
+            await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!|Canvas"`, 4000);
+            const afterCanvas14a = await h.ev(AC_VIEW_NOW);
             await AC.agentPage(
                 h,
                 `const V = await mod("app/view/agents/agentview.ts"); V.setAgentView(${JSON.stringify(F)}, "canvas", Date.now()); return true;`
             );
-            const onCanvas14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat!|Terminal!|Canvas*"`, 4000);
-            const atCanvas14a = await h.ev(AC_VIEW_NOW);
-            await acKey(h, acKeys.altC);
-            await polishNap(500);
-            const afterCanvas14a = await h.ev(AC_VIEW_NOW);
+            await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat|Terminal!|Canvas*"`, 4000);
+            await h.ev(`[...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Chat")?.click()`);
+            await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!|Canvas"`, 4000);
+            const afterClick14a = await h.ev(AC_VIEW_NOW);
             const mode14a = await h.ev(`window.__arcChatMode.get(${JSON.stringify(F)})`);
             await h.shot("cdp-shots/agent-chat-14a-asleep-altc.png");
             await AC.agentPage(
@@ -43347,13 +43414,13 @@ const agentChat = {
                 C.detachCanvas(${JSON.stringify(F)});
                 return true;`
             );
-            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!"`, 4000);
+            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!"`, 4000);
             rec(
-                "14a. Alt+C on the asleep agent leaves the header's selected option where it was and never selects Terminal: with a canvas attached (Chat and Terminal disabled, Canvas the one usable option) Chat stays selected, and with the Canvas showing it stays selected rather than going back to Chat; the stored chat mode is not Terminal",
-                three14a && atChat14a === "Chat*!|Terminal!|Canvas" && afterChat14a === atChat14a &&
-                    onCanvas14a && atCanvas14a === "Chat!|Terminal!|Canvas*" && afterCanvas14a === atCanvas14a &&
+                "14a. on the asleep agent with a canvas attached (Terminal disabled, Chat and Canvas usable), Alt+C walks Chat → Canvas → Chat and never selects Terminal, and a click on Chat from the Canvas goes back to the conversation; the stored chat mode is not Terminal",
+                three14a && atChat14a === "Chat*|Terminal!|Canvas" && onCanvas14a && afterChat14a === "Chat|Terminal!|Canvas*" &&
+                    afterCanvas14a === "Chat*|Terminal!|Canvas" && afterClick14a === "Chat*|Terminal!|Canvas" &&
                     mode14a !== "terminal" && restored14a,
-                { three14a, atChat14a, afterChat14a, onCanvas14a, atCanvas14a, afterCanvas14a, mode14a, restored14a }
+                { three14a, atChat14a, afterChat14a, onCanvas14a, afterCanvas14a, afterClick14a, mode14a, restored14a }
             );
 
             // 14b. the grid bar's switch of an asleep Claude agent: drawn, Chat selected, both options disabled and dimmed. A single
@@ -45031,26 +45098,29 @@ const agentChat = {
             await acType(h, acBox(A), "!git s", false);
             const front76 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === "tash list"`, 3000);
             const ghostAfterSend76 = await h.ev(`${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null`);
+            // Tab takes the ghost too, as → does (no Tab list opens: the ghost is what Tab means while it shows)
+            await acKey(h, acKeys.tab);
+            const tabTaken76 = await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             const gone76 = await read76();
             rec(
-                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list; an empty box has no caption, well or bang",
+                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → or Tab accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list, and Tab takes it; an empty box has no caption, well or bang",
                 ghosted76 && asked76.length >= 1 && asked76[0].data.cwd === ctx.dir.replace(/\\/g, "/") &&
                     typed76.mode === true && typed76.text === "!git l" && typed76.caption === "Bash" && typed76.chip === false &&
                     typed76.well != null && typed76.well.radius === "8px" && typed76.well.bg !== "rgba(0, 0, 0, 0)" &&
                     /JetBrains Mono/.test(typed76.font ?? "") && !/JetBrains Mono/.test(plainFont76 ?? "") &&
                     typed76.bang?.text === "!" && typed76.accent != null && typed76.bang.color === typed76.accent && typed76.bang.weight === "600" &&
                     typed76.bangOut === true && typed76.bangGap != null && typed76.bangGap >= 6 &&
-                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ accept" &&
+                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ or Tab accept" &&
                     taken76 && after76.ghost === null && after76.accept === null && after76.mode === true &&
                     bare76.mode === true && bare76.text === "!" && bare76.caption === "Bash" && bare76.bang?.text === "!" &&
                     bare76.ghost === null && bare76.accept === null && /agent's shell; Backspace leaves bash mode/.test(bare76.placeholder ?? "") &&
                     unbanged76 &&
                     mentions76 === 0 &&
-                    sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" &&
+                    sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" && tabTaken76 &&
                     gone76.mode === false && gone76.caption === null && gone76.well?.bg === "rgba(0, 0, 0, 0)" && gone76.bang === null,
-                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, unbanged76, mentions76, sent76, front76, ghostAfterSend76, gone76 }
+                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, unbanged76, mentions76, sent76, front76, ghostAfterSend76, tabTaken76, gone76 }
             );
 
             // 76b. The !git stash list step 76 sent runs with nothing of it in the transcript: Claude Code writes its <bash-input> row
@@ -45089,7 +45159,7 @@ const agentChat = {
             // first highlighted, a footer with the keys and the agent's folder. Tab asked for kind file and the word typed, in that folder,
             // and the focus stayed in the box. ↓ and ↑ move the highlight; Enter puts the highlighted file in place of the word with a
             // space after it and sends nothing; Escape closes the list and leaves the text and the focus; any other key closes it too.
-            // The ghost text and its hint step aside while the list is open and come back when it closes
+            // While a ghost text shows, Tab takes it instead (as → does) and asks no completion
             const cwd77 = ctx.dir.replace(/\\/g, "/");
             const word77 = "frontend/app/view/agents/chatp";
             const cmd77 = `!npx vitest run ${word77}`;
@@ -45170,25 +45240,23 @@ const agentChat = {
             await acKey(h, { key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
             const otherShut77 = await listGone77(3000);
             const other77 = await boxText77();
-            // the ghost text of `!git l` steps aside for the list and comes back with Escape
+            // with the ghost text of `!git l` showing, Tab takes it: no completion is asked and no list opens
             await acSetShell(h, ["lib/", "log.txt"]);
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await acType(h, acBox(A), "!git l", false);
             const ghostAt77 = `${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null`;
             const ghostBefore77 = await polishWaitFor(h, `(${ghostAt77}) === "og --oneline -5"`, 3000);
+            const ghostAsks77 = (await acCalls(h, "shellcomplete")).length;
             await acKey(h, acKeys.tab);
-            const ghostListUp77 = await listUp77(5000);
-            await polishNap(250);
-            const ghostOpen77 = await h.ev(ghostAt77);
-            const hintOpen77 = await h.ev(`!!${composer76}?.querySelector("[data-chat-bash-accept]")`);
-            await acKey(h, acKeys.escape);
-            await listGone77(3000);
-            const ghostBack77 = await polishWaitFor(h, `(${ghostAt77}) === "og --oneline -5"`, 3000);
+            const ghostTaken77 = await polishWaitFor(h, `${acVal(acBox(A))} === "!git log --oneline -5"`, 3000);
+            await polishNap(400);
+            const ghostNoList77 = await h.ev(`!document.querySelector("[data-chat-bash-list]")`);
+            const ghostNoAsk77 = (await acCalls(h, "shellcomplete")).length === ghostAsks77;
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             rec(
-                "77. Tab on `!npx vitest run frontend/app/view/agents/chatp` (the mock answers three files) asks for kind file and that word in the box's folder and opens a list above the box headed Files 3: the three rows in order in the mono font, the folder part of each muted (a folder keeps its trailing /), the first highlighted, a footer with Tab complete, Esc close and `in <folder>`; the focus stays in the box and the text is as typed; ↓ then ↑ move the highlight; Enter puts frontend/app/view/agents/chatpane.tsx and a space in place of the word, sends nothing and closes the list; Escape closes it and keeps the text and the focus; any other key closes it; the ghost text of `!git l` and its hint are gone while the list is open and back after Escape",
+                "77. Tab on `!npx vitest run frontend/app/view/agents/chatp` (the mock answers three files) asks for kind file and that word in the box's folder and opens a list above the box headed Files 3: the three rows in order in the mono font, the folder part of each muted (a folder keeps its trailing /), the first highlighted, a footer with Tab complete, Esc close and `in <folder>`; the focus stays in the box and the text is as typed; ↓ then ↑ move the highlight; Enter puts frontend/app/view/agents/chatpane.tsx and a space in place of the word, sends nothing and closes the list; Escape closes it and keeps the text and the focus; any other key closes it; with the ghost text of `!git l` showing, Tab takes it (!git log --oneline -5), asks no completion and opens no list",
                 opened77 && asked77.length === 1 && asked77[0].data.kind === "file" && asked77[0].data.word === word77 && asked77[0].data.cwd === cwd77 &&
                     list77 != null && list77.group === "Files" && list77.count === "3" &&
                     list77.rows.map((r) => r.key).join("|") === AC_SHELL_FILES.join("|") &&
@@ -45200,17 +45268,18 @@ const agentChat = {
                     movedDown77 && movedUp77 && picked77 && shutAfterPick77 && sentOnPick77 === 0 && afterPick77 === want77 &&
                     reopened77 && escShut77 && esc77.text === cmd77 && esc77.focused === true &&
                     reopenedAgain77 && otherShut77 && other77.startsWith(cmd77) &&
-                    ghostBefore77 && ghostListUp77 && ghostOpen77 === null && hintOpen77 === false && ghostBack77,
-                { opened77, asked77, list77, movedDown77, movedUp77, picked77, shutAfterPick77, sentOnPick77, afterPick77, reopened77, escShut77, esc77, reopenedAgain77, otherShut77, other77, ghostBefore77, ghostListUp77, ghostOpen77, hintOpen77, ghostBack77 }
+                    ghostBefore77 && ghostTaken77 && ghostNoList77 && ghostNoAsk77,
+                { opened77, asked77, list77, movedDown77, movedUp77, picked77, shutAfterPick77, sentOnPick77, afterPick77, reopened77, escShut77, esc77, reopenedAgain77, otherShut77, other77, ghostBefore77, ghostTaken77, ghostNoList77, ghostNoAsk77 }
             );
 
             // 78. One answer goes in at once, with no list, as a shell does (the mock answers one name): a file word (`!cat READ` ->
-            // `!cat README.md `), the first word asks for commands (`!gi` -> `!git `), a $word for variables, which the shell names without
+            // `!cat README.md `), the first word asks for commands (`!nod` -> `!node `), a $word for variables, which the shell names without
             // the $ and the box puts after the one typed (`!echo $HO` -> `!echo $HOME `). Each Tab asked for its kind and the word (a
             // variable's without its $) in the box's folder. No answer changes nothing, and Tab does not take the focus out of the box
             const cases78 = [
                 { typed: "!cat READ", answer: ["README.md"], kind: "file", word: "READ", want: "!cat README.md " },
-                { typed: "!gi", answer: ["git"], kind: "command", word: "gi", want: "!git " },
+                // not a start of the ! history (git …), which would show a ghost text for Tab to take instead
+                { typed: "!nod", answer: ["node"], kind: "command", word: "nod", want: "!node " },
                 { typed: "!echo $HO", answer: ["HOME"], kind: "variable", word: "HO", want: "!echo $HOME " },
             ];
             const res78 = [];
@@ -45240,7 +45309,7 @@ const agentChat = {
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             rec(
-                "78. one answer is put in at once with no list: `!cat READ` + Tab (kind file, word READ) -> `!cat README.md `, `!gi` (kind command, word gi) -> `!git `, `!echo $HO` (kind variable, word HO) -> `!echo $HOME `, each asked once in the box's folder; an empty answer to `!cat zzz` changes nothing, opens no list and leaves the focus in the box",
+                "78. one answer is put in at once with no list: `!cat READ` + Tab (kind file, word READ) -> `!cat README.md `, `!nod` (kind command, word nod) -> `!node `, `!echo $HO` (kind variable, word HO) -> `!echo $HOME `, each asked once in the box's folder; an empty answer to `!cat zzz` changes nothing, opens no list and leaves the focus in the box",
                 res78.every(
                     (r) =>
                         r.text === r.want && r.list === false && r.asked.length === 1 &&

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/memroots"
@@ -74,6 +75,12 @@ func projectSteering(p Paths, dryRun bool) ([]Action, error) {
 			return nil, nil // nothing canonical yet
 		}
 		return nil, fmt.Errorf("reading canonical steering doc: %w", err)
+	}
+	// a blank doc (an interrupted save, or the editor cleared and saved) is never projected: it would replace every
+	// harness's region with an empty one at the next launch. Status reads it "blank" and Setup offers no Sync now,
+	// so the writer agrees with what the UI says
+	if strings.TrimSpace(string(body)) == "" {
+		return nil, nil
 	}
 	var actions []Action
 	for _, spec := range harness.List() {

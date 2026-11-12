@@ -24,6 +24,61 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
+  initiatives list, and `wsh effort list --topics` lists those topics.
+- A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
+  the lead's alone; hover it for the lead's own figure.
+- In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
+  suggestion showing, Tab still completes the word under the caret.
+- A session you start with a task is named after that task while Claude Code starts, instead of the project name,
+  until Claude Code's own title for it arrives.
+- Chat's jump-to-latest button now shows its shortcut (Ctrl+End) beside the ↓, not only in its tooltip.
+- A message you send in Chat now rises into the conversation from the box, instead of appearing there at once.
+- Back as before 1.0.7: Usage's By provider Daily chart starts at your first day of use again rather than padding
+  empty days back to the window's start (By work still spans the window); Blame (`b` or its button) in Preview or Diff
+  no longer switches the file to Source; a path just before an ellipsis ("Editing src/foo.ts…") is a link again; and
+  an `@` typed into Ctrl+P on Code searches paths again — Alt+O still opens the open file's symbols.
+
+### Fixed
+
+- A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
+  (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
+- Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then
+  sleeping…" when it compacts first) and stays shut, and Sleep, Stop and the header's More menu wait until it sleeps.
+  Asleep, the box itself says "Asleep since 16:52 · freed 503 MB" in place of the card above the conversation, and
+  Send reads Wake while the box is empty.
+- When a Claude agent asks you a question in Chat, only its question card shows: the extra "Wants to use AskUserQuestion" card with the raw question and Answer in Terminal is gone.
+- A sleeping Claude agent left on its Brainstorm, Canvas or Review can go back to its conversation: Chat stays clickable
+  (and Alt+C reaches it) while the agent sleeps; only Terminal waits for it to wake.
+- An agent's row in the Agent tree no longer shows a stray "14/14"-style chip picked from any n/m in its last message;
+  an agent asking you still stands out by its pulsing row.
+- A message sent from Chat no longer sits unsent in Claude Code's box with a line break after it, to go out joined to
+  your next message: Chat now presses Enter only once the box shows the whole message.
+- An agent that runs `claude -p` from its own shell no longer gets stuck: Chat used to show the nested session, your
+  message stayed at Sending…, and the agent read idle under the wrong name while it kept working.
+- Collapsing a compaction summary in Chat now animates closed, as its other folds do, instead of snapping shut.
+- When the machine is short of RAM and slow, an agent's heavy command no longer skips the job queue just because
+  reaching arcterm took a few seconds: it gets 15 s to connect, then 5 s for an answer. A command that still ran
+  without waiting its turn is counted at the bottom of the Jobs popover, with the latest one, even when arcterm could
+  not be reached at all; for 30 minutes after one, the Jobs chip stays in the app bar ("2 ran unqueued") to say so.
+- Pressing Esc while an agent's heavy command waits its turn in the job queue now drops it for good: it no longer
+  runs anyway once the wait ends.
+- On a Mac, Option+←/→ in Code's editor and inputs moves the caret a word again, instead of jumping back and forward
+  through opened files.
+- Code's Send review no longer offers an agent that is waiting on a question: the review's Enter would have answered
+  it.
+- Diff comments work on a worktree picked in the Diff sidebar, and are sent to a new agent in that worktree.
+- Diff comments stay on screen when a commit moves HEAD under the working tree, instead of vanishing while still
+  counted.
+- Diff shows line counts as unavailable, not +0 −0, when git can't count them for an agent's or a run's changes.
+- An empty shared Instructions doc no longer empties the arcterm section of every harness's instructions file.
+- A comment you started in Code no longer follows you into another project.
+- Usage keeps a session's initiative when its tab closes along with its last pane.
+
+## 1.0.7 — 2026-11-12
+
 ### Added
 
 - A compaction summary opened in Chat has a Collapse button at its top and at its end, so a long one closes without
@@ -181,6 +236,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Usage keeps what it measured** (from the kaeltran16 fork): the daily chart of one project or initiative spans the
   whole held window, empty days included, and a failed switch of the range shows a panel with Retry over the held
   figures.
+- A background command that left a server running is named in the Agent tree by the server and its port
+  (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
+- The peek of a background command or Monitor opens at a set size and no longer stretches across the window to fit a
+  long line: drag its right edge, bottom edge or corner to make it larger, and it keeps that size the next time it
+  opens (double-click an edge for the default again).
+- A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched
+  with a task shows that task at once as your first message, captioned "Starting Claude Code…"; one launched without
+  a task shows the agent's logo, "Starting Claude Code…" and the project it starts in. Once it is ready, it shows
+  "New conversation" with the model, the project and how to begin (`@` for a file, `/` for a command). An agent that
+  failed to start says so, with why.
 
 ### Fixed
 

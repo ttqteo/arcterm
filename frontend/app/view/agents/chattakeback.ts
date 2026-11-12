@@ -92,6 +92,25 @@ export function boxHolds(lines: string[], texts: string[]): boolean {
     return first !== "" && box.includes(first);
 }
 
+// the end of a typed text that has to show in the box: enough to tell it from what the box held before
+const TYPED_TAIL = 24;
+
+/** Whether Claude Code's box shows the end of `text` just typed or pasted into it (wrapping aside), or the placeholder
+ *  it draws for a paste: its input reader has taken all of it, so an Enter written now is a chunk of its own. null when
+ *  the screen shows no box (a dialog covers it), when there is nothing to wait for. */
+export function boxShowsTyped(lines: string[], text: string): boolean | null {
+    const rows = inputBoxRows(lines);
+    if (rows == null) {
+        return null;
+    }
+    const box = squash(rows.map((r) => r.replace(/^\s*❯/, "")).join("")).normalize("NFC");
+    if (box.includes("[Pastedtext")) {
+        return true;
+    }
+    const tail = squash(text).normalize("NFC").slice(-TYPED_TAIL);
+    return tail === "" || box.includes(tail);
+}
+
 /** The chat box after a take-back: the messages first, one per line, then what the box held, as Claude Code's box puts
  *  them back ahead of your draft. */
 export function mergeTaken(texts: string[], box: string): string {

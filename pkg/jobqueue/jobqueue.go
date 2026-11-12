@@ -169,6 +169,17 @@ type Snapshot struct {
 	Mode        string
 	PausedUntil time.Time // zero unless a pause is on: until then every job starts at once
 	Jobs        []Job     // running first, then the queue in order
+	// Bypassed counts the agent commands that ran without a slot since wavesrv started: the queue answered after
+	// their `wsh jobslot` had stopped waiting. LastBypass is the latest; zero when none did.
+	Bypassed   int
+	LastBypass Bypass
+}
+
+// Bypass is one agent command that ran without a slot.
+type Bypass struct {
+	Name   string
+	Source Source
+	At     time.Time
 }
 
 // Wait is a queued job's place, handed to Acquire's wait callback whenever it changes.
@@ -231,6 +242,8 @@ type Queue struct {
 	mu       sync.Mutex
 	seq      int
 	entries  []*entry // in the order they asked, running and queued together
+	bypassed int
+	last     Bypass
 }
 
 // Default is wavesrv's queue; nil (tests, wsh) means no queue: Hold runs at once.
@@ -457,7 +470,8 @@ func (q *Queue) evaluate(ctx context.Context) {
 		n.wait(n.w)
 	}
 	if q.cfg.OnChange != nil && (q.lastSnap.Slots != snap.Slots || q.lastSnap.Mode != snap.Mode ||
-		!q.lastSnap.PausedUntil.Equal(snap.PausedUntil) || !slices.Equal(q.lastSnap.Jobs, snap.Jobs)) {
+		!q.lastSnap.PausedUntil.Equal(snap.PausedUntil) || !slices.Equal(q.lastSnap.Jobs, snap.Jobs) ||
+		q.lastSnap.Bypassed != snap.Bypassed) {
 		q.lastSnap = snap
 		q.cfg.OnChange(snap)
 	}
@@ -500,6 +514,8 @@ func (q *Queue) snapshotLocked() Snapshot {
 		Slots:       clampSlots(q.cfg.Slots()),
 		Mode:        NormMode(q.cfg.Mode()),
 		PausedUntil: q.pausedUntil(q.cfg.Now()),
+		Bypassed:    q.bypassed,
+		LastBypass:  q.last,
 	}
 	var queued []Job
 	for _, e := range q.entries {
@@ -512,6 +528,24 @@ func (q *Queue) snapshotLocked() Snapshot {
 	sort.SliceStable(snap.Jobs, func(i, j int) bool { return snap.Jobs[i].StartedAt.Before(snap.Jobs[j].StartedAt) })
 	snap.Jobs = append(snap.Jobs, queued...)
 	return snap
+}
+
+// NoteBypass records an agent command that ran without a slot because its `wsh jobslot` stopped waiting before the
+// queue answered, or could not reach wavesrv at all (then at is when it ran, reported by a later wsh; zero is now).
+// The Jobs popover shows the count, so a queue too slow to answer is seen, not only logged.
+func (q *Queue) NoteBypass(name string, src Source, at time.Time) {
+	if at.IsZero() {
+		at = q.cfg.Now()
+	}
+	q.mu.Lock()
+	q.bypassed++
+	if !at.Before(q.last.At) {
+		q.last = Bypass{Name: name, Source: src, At: at}
+	}
+	q.mu.Unlock()
+	log.Printf("[jobqueue] %s (block %q) ran without a slot at %s: wsh stopped waiting before the queue answered",
+		name, src.BlockId, at.Format("15:04:05"))
+	q.evaluate(context.Background())
 }
 
 // RunNow starts a queued job past both gates; false for an unknown or already running job.

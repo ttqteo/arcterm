@@ -167,9 +167,13 @@ type DiffViewerProps = {
     // same shape as MonacoCodeEditor's: returns its own teardown, run just before the editor disposes
     // monacoApi is the module, for a caller that needs enums and Range without importing monaco itself
     onMount?: (diff: MonacoTypes.editor.IStandaloneDiffEditor, monacoApi?: typeof monaco) => () => void;
+    // The fork's fill layout (from the Kael sync): an outer box that takes the parent's leftover space and an absolute host
+    // laid out to the observed box. The Diff surface's pane (its comment zones) and Code's peek card take it; every other
+    // caller keeps ours, a flex column at h-full laid out by monaco's own measure.
+    fill?: boolean;
 };
 
-export function MonacoDiffViewer({ original, modified, language, path, options, onMount }: DiffViewerProps) {
+export function MonacoDiffViewer({ original, modified, language, path, options, onMount, fill }: DiffViewerProps) {
     const divRef = useRef<HTMLDivElement>(null);
     const diffRef = useRef<MonacoTypes.editor.IStandaloneDiffEditor | null>(null);
     const onUnmountRef = useRef<(() => void) | null>(null);
@@ -211,9 +215,10 @@ export function MonacoDiffViewer({ original, modified, language, path, options, 
         const el = divRef.current;
         if (!diff || !el) return;
 
-        // layout() with no size re-measures monaco's own root, so it is handed the observed box instead
+        // fill: layout() with no size re-measures monaco's own root, so it is handed the observed box instead.
+        // Ours lets monaco measure, as it always did
         const debouncedLayout = debounce(100, (width: number, height: number) => {
-            diff.layout({ width, height });
+            diff.layout(fill ? { width, height } : undefined);
         });
         const resizeObserver = new ResizeObserver((entries) => {
             const { width, height } = entries[entries.length - 1].contentRect;
@@ -225,7 +230,7 @@ export function MonacoDiffViewer({ original, modified, language, path, options, 
             resizeObserver.disconnect();
             debouncedLayout.cancel();
         };
-    }, []);
+    }, [fill]);
 
     // Update models on prop change
     useEffect(() => {
@@ -249,6 +254,9 @@ export function MonacoDiffViewer({ original, modified, language, path, options, 
         diff.updateOptions(options);
     }, [options]);
 
+    if (!fill) {
+        return <div className="flex flex-col h-full w-full" ref={divRef} />;
+    }
     // The outer box takes the parent's leftover space (flex-1 in a flex column, h-full in a block) and the absolute host
     // inside it gets a size that depends only on that box, never on what monaco has drawn: a host sized by its content
     // kept its first measured height and never filled the pane.

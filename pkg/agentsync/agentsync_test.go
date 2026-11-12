@@ -94,6 +94,28 @@ func TestProjectSteeringReachesAgyOnlyWhenItsConfigRootExists(t *testing.T) {
 	}
 }
 
+func TestProjectSteeringLeavesRegionsAloneForABlankDoc(t *testing.T) {
+	p := testPaths(t, "canonical rules\n", ".codex")
+	if _, err := projectSteering(p, false); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(p.Home, ".codex", "AGENTS.md")
+	before := readFile(t, target)
+	for _, blank := range []string{"", "  \r\n\t\n"} {
+		writeFile(t, p.SteeringDoc, blank)
+		actions, err := projectSteering(p, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(actions) != 0 {
+			t.Fatalf("blank doc %q: actions = %+v, want none", blank, actions)
+		}
+		if after := readFile(t, target); after != before {
+			t.Fatalf("blank doc %q rewrote the harness region:\n%s", blank, after)
+		}
+	}
+}
+
 func TestProjectSteeringIsIdempotentAndDryRunWritesNothing(t *testing.T) {
 	p := testPaths(t, "canonical rules\n", ".codex")
 	if _, err := projectSteering(p, false); err != nil {

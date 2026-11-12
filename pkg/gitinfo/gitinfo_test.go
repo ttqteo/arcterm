@@ -2946,6 +2946,31 @@ func TestGetChangesLiveModeNumstatFailureKeepsList(t *testing.T) {
 	}
 }
 
+// ref mode (an agent's session scope, a run's) carries the same failure: before, it read as +0 −0 with no notice.
+func TestGetChangesRefModeNumstatFailureKeepsList(t *testing.T) {
+	dir := repoWithChange(t) // a.txt modified over its committed content
+	base := gitRun(t, dir, "rev-parse", "HEAD")
+	blob := gitRun(t, dir, "rev-parse", "HEAD:a.txt")
+	obj := filepath.Join(dir, ".git", "objects", blob[:2], blob[2:])
+	if err := os.Chmod(obj, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(obj); err != nil {
+		t.Fatalf("removing the loose blob: %v", err)
+	}
+	ch, err := GetChanges(context.Background(), dir, base)
+	if err != nil {
+		t.Fatalf("GetChanges(ref): %v, want the list with the numstat error beside it", err)
+	}
+	if !strings.Contains(ch.NumstatError, "diff --numstat") {
+		t.Fatalf("NumstatError %q does not name the failing command", ch.NumstatError)
+	}
+	healthy, err := GetChanges(context.Background(), repoWithChange(t), "HEAD")
+	if err != nil || healthy.NumstatError != "" {
+		t.Errorf("healthy ref read: NumstatError %q, err %v; want none", healthy.NumstatError, err)
+	}
+}
+
 // A healthy read, and a repo with no commits (where `diff --numstat HEAD` fails by nature), report no
 // numstat error: it names a real failed read only.
 func TestGetChangesNumstatErrorIsEmptyWhenTheReadIsFine(t *testing.T) {

@@ -466,6 +466,7 @@ export function DiffPane({
         return (
             <Suspense fallback={<PaneSkeleton />}>
                 <MonacoDiffViewer
+                    fill
                     path={path}
                     original={pair.original}
                     modified={pair.modified}

@@ -386,3 +386,50 @@ func TestJobSlotFreedWhenItsLinkCloses(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// a request read after its wsh jobslot stopped waiting: that command already runs without a slot, so it takes no
+// place in the queue and counts as a bypass the cockpit shows
+func TestJobSlotPastItsGiveUpTimeCountsABypass(t *testing.T) {
+	q := installQueue(t, 1)
+	before := time.Now().UnixMilli()
+	ch := (&WshServer{}).JobSlotCommand(context.Background(), wshrpc.CommandJobSlotData{
+		Command: "task check:ts", BlockId: "", GiveUpTs: time.Now().Add(-time.Second).UnixMilli(),
+	})
+	requireStreamClosed(t, ch)
+	if n := len(q.Snapshot().Jobs); n != 0 {
+		t.Fatalf("%d jobs queued for a command that already ran", n)
+	}
+	data, err := (&WshServer{}).GetJobQueueCommand(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Bypassed != 1 || data.LastBypass == nil || data.LastBypass.Name != "task check:ts" || data.LastBypass.Ts < before {
+		t.Fatalf("queue = %+v, want one bypass of task check:ts", data)
+	}
+	// still in time: it queues as before
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ok := (&WshServer{}).JobSlotCommand(ctx, wshrpc.CommandJobSlotData{
+		Command: "task check:ts", GiveUpTs: time.Now().Add(time.Minute).UnixMilli(),
+	})
+	requireRun(t, nextSlotUpdate(t, ok))
+	if got := q.Snapshot().Bypassed; got != 1 {
+		t.Fatalf("bypassed = %d after an answer in time, want 1", got)
+	}
+}
+
+// commands that never reached wavesrv come with the next request and count, whatever that request is
+func TestJobSlotCountsTheMissedItCarries(t *testing.T) {
+	q := installQueue(t, 1)
+	at := time.Now().Add(-10 * time.Minute).Truncate(time.Millisecond)
+	ch := (&WshServer{}).JobSlotCommand(context.Background(), wshrpc.CommandJobSlotData{
+		Command: "echo hi",
+		Missed:  []wshrpc.JobSlotMissed{{Name: "task check:ts", Ts: at.UnixMilli()}, {Name: "npm test", Ts: at.UnixMilli()}},
+	})
+	requireRun(t, nextSlotUpdate(t, ch))
+	requireStreamClosed(t, ch)
+	s := q.Snapshot()
+	if s.Bypassed != 2 || s.LastBypass.Name != "npm test" || !s.LastBypass.At.Equal(at) {
+		t.Fatalf("snapshot = %+v, want 2 bypasses, the latest npm test at %v", s, at)
+	}
+}

@@ -18,7 +18,7 @@
 // can always rise above the box. Chat's jump-to-latest button (data-chat-jump) rides the dock, centred above the box.
 
 import { KeyCap } from "@/app/element/keycap";
-import { layerFade, springPop } from "@/app/element/motiontokens";
+import { layerFade, sentRise, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatChordString } from "@/util/keysym";
@@ -55,6 +55,7 @@ import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmo
 import { setChatMode, useChatMode } from "./chatmodestore";
 import { pendingCaption, pendingStill, queuedBubbleUp, type PendingKind, type PendingMessage } from "./chatpending";
 import { usePending } from "./chatpendingstore";
+import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
@@ -103,6 +104,13 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
     );
 }
 
+// Whether a pending bubble rises in from the box (sentRise), decided once as it mounts: the message just sent does, one
+// drawn again later (back to this agent, Terminal back to Chat) shows at once (chatsentrise.ts)
+function useRisesFromBox(sentAt: number): boolean {
+    const [rises] = useState(() => risesFromBox(sentAt, Date.now()));
+    return rises;
+}
+
 // a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet: the command, dimmed, as its card will
 // draw it, and under it what it waits on: the side answer the arc mod is asking a fork of the session for, the panel
 // open on Claude Code's own screen (its row lands only once it closes), or the command running (its row and output land
@@ -110,14 +118,25 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
 function PendingCommand({
     text,
     kind,
+    sentAt,
     onOpenTerminal,
 }: {
     text: string;
     kind: PendingKind;
+    sentAt: number;
     onOpenTerminal?: () => void;
 }) {
+    const rises = useRisesFromBox(sentAt);
     return (
-        <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col items-end gap-1">
+        <motion.div
+            data-chat-pending
+            data-chat-pending-kind={kind}
+            variants={sentRise}
+            initial={rises ? "initial" : false}
+            animate="animate"
+            style={{ transformOrigin: "bottom right" }}
+            className="flex flex-col items-end gap-1"
+        >
             <div className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]">
                 {text.trim()}
             </div>
@@ -135,7 +154,7 @@ function PendingCommand({
                     </button>
                 ) : null}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -152,8 +171,16 @@ function PendingBubble({
     const queued = pending.queued === true;
     const body = said.text.trim();
     const chord = sendNowChord();
+    const rises = useRisesFromBox(pending.sentAt);
     return (
-        <div data-chat-pending className="flex flex-col items-end gap-1">
+        <motion.div
+            data-chat-pending
+            variants={sentRise}
+            initial={rises ? "initial" : false}
+            animate="animate"
+            style={{ transformOrigin: "bottom right" }}
+            className="flex flex-col items-end gap-1"
+        >
             {body !== "" || said.images.length > 0 ? (
                 <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
                     {body !== "" ? <TaggedPromptText text={body} /> : null}
@@ -185,7 +212,7 @@ function PendingBubble({
                     </button>
                 ) : null}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -548,6 +575,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         key={p.id}
                                         text={p.text}
                                         kind={p.kind}
+                                        sentAt={p.sentAt}
                                         onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     />
                                 ) : (
@@ -585,7 +613,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}
-                        <PermissionCard agent={agent} onOpenTerminal={() => setChatMode(agent.id, "terminal")} />
+                        <PermissionCard
+                            agent={agent}
+                            askShown={asking}
+                            onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                        />
                         {asking ? (
                             <div data-chat-ask={agent.id}>
                                 <AskRow model={model} agent={agent} alert />
@@ -613,7 +645,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     `[data-sleeping-composer] [data-chat-input]`. */}
                 <div ref={dockRef} data-chat-dock className="pointer-events-none absolute inset-x-6 bottom-5 z-10">
                     <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
-                        {/* Chat's own jump-to-latest: a round ↓ centred just above the box while the reader is scrolled
+                        {/* Chat's own jump-to-latest: a ↓ pill naming its key, centred just above the box while the reader is scrolled
                             up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the
                             button's alone) */}
                         <div className="absolute bottom-full left-1/2 z-10 mb-4 -translate-x-1/2">
@@ -631,9 +663,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         onClick={jumpToBottom}
                                         title={`Jump to latest (${formatChordString(CHAT_JUMP_KEYS)})`}
                                         aria-label="Jump to latest"
-                                        className="flex size-[32px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                        className="group flex h-[32px] cursor-pointer items-center justify-center gap-1.5 rounded-full border border-edge-strong bg-surface-raised pl-[9px] pr-3 text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                     >
                                         <ArrowDown size={14} strokeWidth={2} aria-hidden />
+                                        <kbd className="font-sans text-[10.5px] text-muted group-hover:text-secondary">
+                                            {formatChordString(CHAT_JUMP_KEYS)}
+                                        </kbd>
                                     </motion.button>
                                 ) : null}
                             </AnimatePresence>

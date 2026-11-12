@@ -1190,6 +1190,22 @@ export interface PendingLaunch {
     transcriptPath?: string;
 }
 
+/** Pure: the name a session launched on `task` goes by until Claude Code's ai-title reaches it: the task's first line,
+ *  as `wsh agent-hook` titles a session with no ai-title (titleFromPrompt, 72 characters), so the header and the tree
+ *  read what you asked rather than the project name the header already shows beside it. "" for no task or a
+ *  /command (its name says nothing about the work). */
+export function launchTitle(task: string | undefined): string {
+    const line = (task ?? "")
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l !== "");
+    if (line == null || line.startsWith("/")) {
+        return "";
+    }
+    const chars = Array.from(line);
+    return chars.length <= 72 ? line : chars.slice(0, 72).join("");
+}
+
 /** Pure: a pending launch -> a "booting" working AgentVM. A fresh launch has no transcriptPath (none exists yet); a
  *  resume carries the one it resumes. The Agent surface shows its live terminal until the real row arrives. */
 export function pendingToVM(p: PendingLaunch, now: number): AgentVM {

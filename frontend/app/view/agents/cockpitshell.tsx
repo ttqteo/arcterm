@@ -24,6 +24,7 @@ import { useDocCompileSync } from "./docpdfstore";
 import { DocReviewDialog } from "./docreviewdialog";
 import { docNotesAtom, pruneNotes } from "./docreviewnotes";
 import { useDocReviewSync } from "./docreviewstore";
+import { useFallAsleepSync } from "./fallasleepstore";
 import { FilesSurface } from "./filessurface";
 import { floatModeAtom } from "./floatstore";
 import { initHarnessPreference, loadHarnesses } from "./harnessstore";
@@ -163,6 +164,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useViewingSync(model);
     // a sleeping agent's title, which every surface names it by
     useSleeperTitles(model);
+    // a Sleep under way ends when the roster reads the agent asleep, whatever surface shows then
+    useFallAsleepSync(useAtomValue(model.agentsAtom));
     useDockBadge(model);
     const surface = useAtomValue(model.surfaceAtom);
     const floating = useAtomValue(floatModeAtom);

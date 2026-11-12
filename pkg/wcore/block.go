@@ -97,6 +97,15 @@ func DeleteBlock(ctx context.Context, blockId string, recursive bool) error {
 			}
 		}
 	}
+	// an agent's session keeps its tab's initiative once the block is gone: read now, while the block and the tab
+	// still hold it (a tab closed with its last block reaches DeleteTab already empty)
+	if parent := waveobj.ParseORefNoErr(block.ParentORef); parent != nil && parent.OType == waveobj.OType_Tab {
+		if tab, _ := wstore.DBGet[*waveobj.Tab](ctx, parent.OID); tab != nil {
+			if err := wstore.RecordBlockSessionEffort(ctx, tab, block); err != nil {
+				log.Printf("recording the initiative of block %s's session: %v", blockId, err)
+			}
+		}
+	}
 	parentBlockCount, err := deleteBlockObj(ctx, blockId)
 	if err != nil {
 		return fmt.Errorf("error deleting block: %w", err)

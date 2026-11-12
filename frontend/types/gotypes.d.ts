@@ -1937,6 +1937,8 @@ declare global {
         command: string;
         blockid?: string;
         holdpid?: number;
+        giveupts?: number;
+        missed?: JobSlotMissed[];
     };
 
     // wshrpc.CommandLandRunData
@@ -3624,12 +3626,22 @@ declare global {
         autonomous?: boolean;
     };
 
+    // wshrpc.JobQueueBypass
+    type JobQueueBypass = {
+        name: string;
+        ts: number;
+        blockid?: string;
+        tabid?: string;
+    };
+
     // wshrpc.JobQueueData
     type JobQueueData = {
         slots: number;
         mode: string;
         pauseduntil?: number;
         jobs: JobQueueJob[];
+        bypassed?: number;
+        lastbypass?: JobQueueBypass;
     };
 
     // wshrpc.JobQueueJob
@@ -3648,6 +3660,13 @@ declare global {
         tabid?: string;
         runid?: string;
         label?: string;
+    };
+
+    // wshrpc.JobSlotMissed
+    type JobSlotMissed = {
+        name: string;
+        ts: number;
+        blockid?: string;
     };
 
     // wshrpc.JobSlotUpdate

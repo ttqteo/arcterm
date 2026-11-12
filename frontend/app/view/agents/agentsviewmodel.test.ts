@@ -32,6 +32,7 @@ import {
     isQuiet,
     isRecentlyIdle,
     latestMessageText,
+    launchTitle,
     liveAsk,
     liveWindowAgents,
     mergeOrder,
@@ -1139,6 +1140,25 @@ describe("taskProgress", () => {
             { text: "d", done: false },
         ];
         expect(taskProgress(some)).toEqual({ done: 1, total: 4, pct: 25 });
+    });
+});
+
+describe("launchTitle", () => {
+    it("names a launch by its task's first non-empty line", () => {
+        expect(launchTitle("\n  sao lag vậy  \nmore detail")).toBe("sao lag vậy");
+    });
+
+    it("is empty for no task, a blank one, or a /command", () => {
+        expect(launchTitle(undefined)).toBe("");
+        expect(launchTitle("   \n ")).toBe("");
+        expect(launchTitle("/arc:brainstorm a sidebar")).toBe("");
+    });
+
+    it("caps at 72 characters without splitting a multi-unit character", () => {
+        const long = "ơ".repeat(70) + "😀😀😀";
+        const got = launchTitle(long);
+        expect(Array.from(got)).toHaveLength(72);
+        expect(got.endsWith("😀😀")).toBe(true);
     });
 });
 

@@ -1,3 +1,4 @@
+import { globalStore } from "@/app/store/jotaiStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_GRID } from "./agentgrid";
 import {
@@ -6,6 +7,7 @@ import {
     compactingToastText,
     rosterStatus,
     sleepingAge,
+    sleepingLine,
     sleepingOf,
     sleepingStatus,
     sleepToastText,
@@ -14,6 +16,7 @@ import {
     wakeAgent,
     wakeErrorToast,
 } from "./agentsleep";
+import { fallingAsleepAtom, fallingAsleepOf } from "./fallasleepstore";
 
 const sleepCmd = vi.fn();
 const wakeCmd = vi.fn();
@@ -31,7 +34,7 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/store/modalmodel", () => ({ modalsModel: { pushModal: (...a: any[]) => pushModal(...a) } }));
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: any[]) => pushToast(...a) }));
 vi.mock("@/app/store/global", () => ({ atoms: { documentHasFocus: {} } }));
-vi.mock("@/app/store/jotaiStore", () => ({ globalStore: { get: () => undefined, set: () => {} } }));
+vi.mock("@/app/store/jotaiStore", async () => ({ globalStore: (await import("jotai")).createStore() }));
 
 const MB = 2 ** 20;
 const SINCE = 1_700_000_000_000;
@@ -248,17 +251,38 @@ describe("wakeErrorToast", () => {
     });
 });
 
+describe("sleepingLine", () => {
+    it("says since when it sleeps and what it freed", () => {
+        const since = new Date(2026, 10, 12, 16, 52).getTime();
+        const now = new Date(2026, 10, 12, 17, 30).getTime();
+        expect(sleepingLine("Asleep", { since, freedBytes: 503 * MB }, now)).toBe("Asleep since 16:52 · freed 503 MB");
+        expect(sleepingLine("Sleeping", { since, freedBytes: 0 }, now)).toBe("Sleeping since 16:52");
+    });
+
+    it("names the day when it fell asleep on another one", () => {
+        const since = new Date(2026, 10, 3, 9, 5).getTime();
+        const now = new Date(2026, 10, 12, 9, 0).getTime();
+        expect(sleepingLine("Asleep", { since, freedBytes: 0 }, now)).toMatch(/^Asleep since .*3.* 09:05$/);
+    });
+});
+
 describe("sleepWithConfirm", () => {
     const agent = { id: "tab-1", name: "Lumen" };
     beforeEach(() => {
         sleepCmd.mockReset();
         pushModal.mockReset();
         pushToast.mockReset();
+        globalStore.set(fallingAsleepAtom, new Map());
     });
 
     it("sleeps the agent and toasts what it freed", async () => {
         sleepCmd.mockResolvedValue({ freedbytes: 330 * MB });
-        await sleepWithConfirm(agent);
+        const call = sleepWithConfirm(agent);
+        // marked from the press, so the box and the menus shut at once
+        expect(fallingAsleepOf("tab-1", false)).toBe("sleeping");
+        await call;
+        // kept until the roster reads the agent asleep (useFallAsleepSync drops it then)
+        expect(fallingAsleepOf("tab-1", false)).toBe("sleeping");
         expect(sleepCmd).toHaveBeenCalledTimes(1);
         expect(sleepCmd.mock.calls[0][1]).toEqual({ tab: "tab-1" });
         expect(sleepCmd.mock.calls[0][2]).toEqual({ timeout: 15_000 }); // the server may take 5 s to see its tree die
@@ -272,6 +296,8 @@ describe("sleepWithConfirm", () => {
         sleepCmd.mockResolvedValueOnce({ background: ["npm run build"] });
         await sleepWithConfirm(agent);
         expect(pushToast).not.toHaveBeenCalled();
+        // nothing slept: the mark goes while the confirm asks
+        expect(fallingAsleepOf("tab-1", false)).toBeUndefined();
         expect(pushModal).toHaveBeenCalledTimes(1);
         const [name, props] = pushModal.mock.calls[0];
         expect(name).toBe("ConfirmModal");
@@ -293,11 +319,20 @@ describe("sleepWithConfirm", () => {
             expect.objectContaining({ title: compactingToastText("Lumen"), level: "info" })
         );
         expect(compactingToastText("Lumen")).toBe("Compacting Lumen first · it sleeps once the summary lands");
+        expect(fallingAsleepOf("tab-1", false)).toBe("compacting");
+    });
+
+    it("does not send a second Sleep while one is under way", async () => {
+        sleepCmd.mockResolvedValue({ compacting: true });
+        await sleepWithConfirm(agent);
+        await sleepWithConfirm(agent);
+        expect(sleepCmd).toHaveBeenCalledTimes(1);
     });
 
     it("toasts the server's error and never throws", async () => {
         sleepCmd.mockRejectedValue(new Error("Lumen did not stop"));
         await expect(sleepWithConfirm(agent)).resolves.toBeUndefined();
+        expect(fallingAsleepOf("tab-1", false)).toBeUndefined();
         expect(pushToast).toHaveBeenCalledWith(
             expect.objectContaining({ title: "Couldn't put Lumen to sleep", level: "error" })
         );

@@ -24,6 +24,10 @@ paste-and-tick list. Ticked lines become `done`; chunks you plan but have not st
 The project defaults to the arcterm project holding the current directory; pass `--project` only when
 the effort belongs to another one.
 
+Put it under its topic: `wsh effort list --topics` lists the efforts others are linked under (Chat,
+Council, …), and `--parent <oid>` files the new one there, where the Brief nests it. Leave `--parent`
+out only when no topic fits; a run's follow-ups never go to the top level when one does.
+
 ## When the route is still unclear
 
 An effort too foggy to name its phases gets a tracker of decisions first, not build steps:
@@ -45,7 +49,7 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 
 | Command | What it does |
 |---|---|
-| `wsh effort list [--project P] [--archived]` | efforts: oid, title, status, done/total, active chunk; archived hidden unless `--archived` |
+| `wsh effort list [--project P] [--archived] [--topics]` | efforts: oid, title, status, done/total, active chunk; archived hidden unless `--archived`; `--topics` keeps only the efforts others are linked under |
 | `wsh effort show <effort>` | full detail: chunks, statuses, owners, note trails |
 | `wsh effort rename <effort> <title>` | retitle |
 | `wsh effort project <effort> <project\|"">` | set/clear project |

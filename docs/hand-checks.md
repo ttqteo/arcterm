@@ -6,9 +6,55 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A real Sleep says so until the agent sleeps: on an idle Claude agent with a long, warm conversation
+  (so the server compacts first), Sleep from its row menu → its Chat box reads "Compacting, then sleeping…", read-only,
+  no Stop, the row menu shows that line disabled; once the summary lands (up to a minute later) the box reads "Asleep
+  since HH:MM · freed N MB" with Wake, and no card sits above the conversation; on a short conversation the box reads
+  "Going to sleep…" for the few seconds the process takes (`fallasleepstore.ts`, `chatcomposer.tsx`; CDP
+  `agent-sleep` 5b passes with a mocked server only).
+- [ ] (arcterm) A question in Chat shows one card: have a Claude agent call AskUserQuestion with Chat open → only the
+  question card with its tabs and options shows, no "Wants to use AskUserQuestion" card with raw JSON and Answer in
+  Terminal above it; answer it → the agent goes on; a Bash prompt it raises next still gets its Allow/Deny card
+  (`permissionmodel.ts` cardHead, `permissioncard.tsx`; unit-tested only).
+- [ ] (arcterm) A run's row shows the whole run's RAM: with Settings → Appearance → Agent sidebar → RAM on and a run
+  working with its lead and two or more workers, the lead's row ends with the sum of the lead and its workers (about the
+  Resource Manager's run group added up, not the lead's figure alone); hover it → the tooltip names the lead's own
+  figure; a worker's row still shows its own; close the lead's tab → the lead-less run row shows the workers' sum
+  (`agenttree.tsx` useRunRam, `agentram.ts` runRamLabel; unit-tested only).
+- [ ] (arcterm) A sleeping agent goes back to its chat from a brainstorm: on a Claude agent asleep with its Brainstorm
+  (or Canvas) showing, click Chat in the header → the conversation shows; Alt+C walks Chat ↔ Brainstorm and never
+  Terminal, which stays dimmed and disabled; wake it → it opens in the Chat/Terminal mode it had before
+  (`agentheader.tsx`, `chatmode.ts` cellViewOptions, `agent:view-cycle`; CDP `agent-chat` steps 14/14a updated, not run).
+- [ ] (arcterm) A Chat message never joins the next one: on a dev app or build with `boxShowsTyped`, send a dozen
+  messages to an idle Claude from Chat (short, Vietnamese, ~200 characters, one with a line break, a `/model`, a
+  `! ls`) → each goes as its own prompt and its Sending… bubble goes, none stays in the terminal's box with a line
+  break after it; a `/command` and `! ls` go with no noticeable delay (a box the check cannot read waits up to 2 s).
+  Before, "…cũng hay" sat in the box and went out with the next message as "…cũng hay\ncó", leaving two Sending…
+  bubbles (`agentsubmit.ts` waitForEcho, `chattakeback.ts` boxShowsTyped).
+- [ ] (arcterm) Kael-sync behaviour reverted to ours (branch `fix/kael-revert-ours`, 2026-11-12; initiative "Kael
+  sync: reverted to ours"): Usage → By provider, 7-day window → the Daily chart starts at your first day of use;
+  Code, a Markdown file in Preview → `b` toggles Blame and stays in Preview; an agent writing "Editing src/x.ts…" →
+  Ctrl+click on the path opens it; Ctrl+P on Code, type `@` → paths, Alt+O → Symbols; a changed file opened as a diff
+  in the agent panel and Code's Diff mode still fill their pane (they are back on our layout; the Diff surface and the
+  peek card keep the fill one). Scenario `code-outline` checks the `@` / Alt+O split.
+- [ ] (arcterm) Kael-sync edge fixes (branch `fix/kael-sync-edges`, 2026-11-12), unit-tested only:
+  on a Mac, Option+←/→ in Code's editor moves a word (Windows: Alt+←/→ there still goes back/forward);
+  Code → Send review shows an asking agent greyed with "answer it first";
+  Diff → pick a worktree in the sidebar → `m` on a line opens a comment, and the send bar offers a new agent in that
+  worktree; comment a dirty file in project scope, commit another file → the comment stays drawn;
+  start a Code comment (Alt+M), switch project → no comment box on the next project's file.
 - [ ] (arcterm) Chat's compaction summary collapses from inside: in a Chat that compacted, click the Compacted pill
   → the summary shows a Collapse button at its top right and at its end; the top one closes it, the end one closes it
-  and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider).
+  and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider). Since 2026-11-12 both
+  open and close animate on the spring (~0.35 s), its border and padding folding with it rather than snapping, and the
+  end button's scroll back is smooth.
+- [ ] (arcterm) A new session is named by its task while it starts: New agent with a task ("sao lag vậy") → during
+  "Starting Claude Code…" the agent header and the tree read the task's first line, not the project name; Claude Code's
+  ai-title replaces it once it reports (`agentsviewmodel.ts` launchTitle, `cockpit-actions.ts`).
+- [ ] (arcterm) A nested `claude -p` leaves its agent alone on Windows: from a Claude agent's Bash, run
+  `timeout 90 claude -p "say ok" --model haiku | cat` with a build carrying `agentobserve.nestedSession` → the agent
+  stays working under its own name and its Chat keeps its own conversation; before, it went idle under the nested
+  session's title and Chat showed that session.
 - [ ] (arcterm) Chat's tool fold lines up: open a "Worked for …" line in Chat → its caret sits centred over the step
   icons (spinner or tool icon) below it, and "Worked for" starts where the step names start (`chatstepsview.tsx`
   FoldCaret and the fold button's `px-1.5 gap-2`, matching StepLine).
@@ -38,6 +84,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Jobslot never holds a command: after installing a build from 7835c75de, an agent's `ls` runs at once
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
   command starts within ~5 s instead of hanging (`cmd/wsh/cmd/wshcmd-jobslot.go` jobslotOpen, merge 7835c75de).
+
+- [ ] (arcterm) Jobslot bypass count: on a build with feat/jobslot-connect-deadline, stop wavesrv's queue from
+  answering in time (e.g. suspend wavesrv for ~10 s with a heavy command waiting, then resume it) → the command runs,
+  and once wavesrv resumes the Jobs popover's footer reads "1 command ran without a slot · last …" and waveapp.log
+  has `[jobqueue] … ran without a slot`. A normal `task check:ts` adds nothing to the count (`wshserver_jobqueue.go`
+  GiveUpTs, `jobqueue.NoteBypass`). With no other job running, the app bar's Jobs chip reads "1 ran unqueued" in the
+  warning tone and goes after 30 min. With wavesrv suspended past 15 s (the connect never completes), the command
+  still runs, a file appears in `~/.arc/jobslot-missed/`, and the next heavy command after the resume removes it and
+  the count goes up (`wshcmd-jobslot.go` jobslotNoteMissed / jobslotTakeMissed).
 
 - [ ] (arcterm) No transcript error before a run's first message: start an orchestrator run, open its lead in Chat
   while the run's Setup is still going → the empty conversation shows no "Could not read the transcript: …" line, and
@@ -2254,3 +2309,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   the changes → Diff says "This agent has ended" with Open its folder; compare in a repository with no remote shows no
   Fetch, and in one with a remote Fetch is there (`diffsource.ts` subjectState, `landedRunTip`, `ListBranches`
   hasremote; commit c40d7d075; the scenarios break the reads at the RPC client).
+- [ ] (arcterm) **A sent message rises into Chat from the box.** In an agent's Chat, send a message (to an idle agent,
+  then one while it works, then a `! ls`): its dimmed bubble rises in from the box in about a third of a second rather
+  than appearing at once, and the transcript's copy replacing it later does not move. Switch to another agent and back,
+  or to Terminal and back, while one is still Sending… or Queued: it shows at once, with no second rise. With the OS's
+  reduced motion on, it only fades (`chatpane.tsx` PendingBubble / PendingCommand, `chatsentrise.ts`; no scenario
+  catches the motion).

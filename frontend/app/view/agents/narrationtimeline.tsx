@@ -20,7 +20,7 @@ import {
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { MOTION, composerReveal, shouldFadeEntry } from "@/app/element/motiontokens";
+import { MOTION, composerReveal, shouldFadeEntry, springReveal } from "@/app/element/motiontokens";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
     burstRenderMode,
@@ -630,10 +630,11 @@ export function CompactionDivider({
     // a long summary ends far below the divider: closing it from its foot brings the divider back on screen, so the
     // reader is not left wherever the feed lands once the summary's height is gone
     const rootRef = useRef<HTMLDivElement>(null);
+    // the scroll is smooth so it rides along with the summary's closing height rather than jumping ahead of it
     const collapse = (fromFoot: boolean) => {
         setOpen(false);
         if (fromFoot) {
-            rootRef.current?.scrollIntoView({ block: "nearest" });
+            rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         }
     };
     const collapseButton = (fromFoot: boolean) => (
@@ -678,22 +679,27 @@ export function CompactionDivider({
             </button>
             <AnimatePresence initial={false}>
                 {open && summary ? (
+                    // the motion box holds only the height: the box's margin, border and padding sit inside it, so they
+                    // fold away with the height instead of snapping when it reaches 0 (a summary is long, so the
+                    // spring, as Chat's other folds, not the 0.14 s tween that read as no animation at all)
                     <motion.div
                         key="sum"
-                        variants={composerReveal}
+                        variants={springReveal}
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="my-2 overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code px-3.5 py-3"
+                        className="overflow-hidden"
                     >
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
-                                Summary — kept context
-                            </span>
-                            {collapseButton(false)}
+                        <div className="my-2 rounded-[8px] border border-edge-mid bg-surface-code px-3.5 py-3">
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                                <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
+                                    Summary — kept context
+                                </span>
+                                {collapseButton(false)}
+                            </div>
+                            <MarkdownMessage text={summary} />
+                            <div className="mt-2 flex justify-end">{collapseButton(true)}</div>
                         </div>
-                        <MarkdownMessage text={summary} />
-                        <div className="mt-2 flex justify-end">{collapseButton(true)}</div>
                     </motion.div>
                 ) : null}
             </AnimatePresence>

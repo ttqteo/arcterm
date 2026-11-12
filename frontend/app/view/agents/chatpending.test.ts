@@ -304,10 +304,10 @@ describe("pastesBody", () => {
 // Claude Code reads "\r" as Enter only when it arrives as its own chunk: "text\r" in one write is one text token, its "\r"
 // a line break in the box, and the message sat unsent (seen with a 165-character line from Chat)
 describe("submitSteps", () => {
-    it("types a short line, then presses Enter on its own after a wait", () => {
+    it("types a short line, then presses Enter on its own once the box shows it", () => {
         expect(submitSteps("máy windows đang chạy PREREG")).toEqual([
             { kind: "type", text: "máy windows đang chạy PREREG" },
-            { kind: "wait", ms: 80 },
+            { kind: "wait", ms: 80, echo: "máy windows đang chạy PREREG" },
             { kind: "enter" },
         ]);
     });
@@ -317,7 +317,7 @@ describe("submitSteps", () => {
         expect(submitSteps("one\ntwo")[0]).toEqual({ kind: "paste", text: "one\ntwo" });
         expect(submitSteps(long)).toEqual([
             { kind: "paste", text: long },
-            { kind: "wait", ms: submitDelayMs(long.length) },
+            { kind: "wait", ms: submitDelayMs(long.length), echo: long },
             { kind: "enter" },
         ]);
     });

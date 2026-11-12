@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -103,12 +105,18 @@ func jobslotStream(updates ...wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]) cha
 	return ch
 }
 
-// a stuck wavesrv must never hold an agent's command: silence past the deadline, a failed connect and a stream
-// that ends with no word all give nil, which runs the command without a slot
+func connected() error { return nil }
+
+func streamOf(ch chan jobslotMsg) func(time.Time) chan jobslotMsg {
+	return func(time.Time) chan jobslotMsg { return ch }
+}
+
+// a stuck wavesrv must never hold an agent's command: silence past the deadline, a connect that hangs past its own
+// bound or fails, and a stream that ends with no word all give nil, which runs the command without a slot
 func TestJobslotOpenGivesUpOnASilentQueue(t *testing.T) {
 	silent := make(chan jobslotMsg)
 	start := time.Now()
-	if msgs := jobslotOpen(func() (chan jobslotMsg, error) { return silent, nil }, 30*time.Millisecond); msgs != nil {
+	if msgs, _ := jobslotOpen(connected, streamOf(silent), time.Second, 30*time.Millisecond); msgs != nil {
 		t.Fatal("a silent queue gave a stream")
 	}
 	if time.Since(start) > time.Second {
@@ -116,25 +124,45 @@ func TestJobslotOpenGivesUpOnASilentQueue(t *testing.T) {
 	}
 	hung := make(chan struct{})
 	defer close(hung)
-	if msgs := jobslotOpen(func() (chan jobslotMsg, error) { <-hung; return nil, nil }, 30*time.Millisecond); msgs != nil {
+	if msgs, _ := jobslotOpen(func() error { <-hung; return nil }, streamOf(jobslotStream()), 30*time.Millisecond, time.Second); msgs != nil {
 		t.Fatal("a hung connect gave a stream")
 	}
-	if msgs := jobslotOpen(func() (chan jobslotMsg, error) { return nil, errors.New("no socket") }, time.Second); msgs != nil {
+	if msgs, _ := jobslotOpen(func() error { return errors.New("no socket") }, streamOf(jobslotStream()), time.Second, time.Second); msgs != nil {
 		t.Fatal("a failed connect gave a stream")
 	}
-	if msgs := jobslotOpen(func() (chan jobslotMsg, error) { return jobslotStream(), nil }, time.Second); msgs != nil {
+	if msgs, _ := jobslotOpen(connected, streamOf(jobslotStream()), time.Second, time.Second); msgs != nil {
 		t.Fatal("an empty stream gave a stream")
+	}
+}
+
+// under swap the connect alone can take longer than the first-word deadline: that wait must not use it up, and
+// the request names when the caller gives up, a deadline counted from the connect
+func TestJobslotOpenStartsTheDeadlineOnceConnected(t *testing.T) {
+	yes := true
+	var connectedAt, giveUp time.Time
+	msgs, _ := jobslotOpen(func() error {
+		time.Sleep(80 * time.Millisecond)
+		connectedAt = time.Now()
+		return nil
+	}, func(g time.Time) chan jobslotMsg {
+		giveUp = g
+		time.Sleep(30 * time.Millisecond)
+		return jobslotStream(jobslotMsg{Response: wshrpc.JobSlotUpdate{Run: &yes}})
+	}, time.Second, 50*time.Millisecond)
+	if msgs == nil {
+		t.Fatal("a slow connect used up the first-word deadline")
+	}
+	if d := giveUp.Sub(connectedAt); d < 40*time.Millisecond || d > 200*time.Millisecond {
+		t.Fatalf("gives up %s after the connect, want the 50ms deadline", d)
 	}
 }
 
 func TestJobslotOpenReplaysTheFirstWordThenTheRest(t *testing.T) {
 	yes := true
-	msgs := jobslotOpen(func() (chan jobslotMsg, error) {
-		return jobslotStream(
-			jobslotMsg{Response: wshrpc.JobSlotUpdate{Queued: 1}},
-			jobslotMsg{Response: wshrpc.JobSlotUpdate{Run: &yes}},
-		), nil
-	}, time.Second)
+	msgs, _ := jobslotOpen(connected, streamOf(jobslotStream(
+		jobslotMsg{Response: wshrpc.JobSlotUpdate{Queued: 1}},
+		jobslotMsg{Response: wshrpc.JobSlotUpdate{Run: &yes}},
+	)), time.Second, time.Second)
 	if msgs == nil {
 		t.Fatal("no stream")
 	}
@@ -177,5 +205,52 @@ func TestJobslotHandStopsTheShellOnlyOnARefusal(t *testing.T) {
 	}
 	if code := jobslotHand(jobslotStream(), io.Discard); code != 0 {
 		t.Fatalf("exit %d on an empty stream, want 0", code)
+	}
+}
+
+// wavesrv counts a request it reads late itself; one that never got through is the caller's to note
+func TestJobslotOpenSaysWhetherItGotThrough(t *testing.T) {
+	if _, reached := jobslotOpen(func() error { return errors.New("no socket") }, streamOf(jobslotStream()), time.Second, time.Second); reached {
+		t.Fatal("a failed connect reads as reached")
+	}
+	hung := make(chan struct{})
+	defer close(hung)
+	if _, reached := jobslotOpen(func() error { <-hung; return nil }, streamOf(jobslotStream()), 30*time.Millisecond, time.Second); reached {
+		t.Fatal("a hung connect reads as reached")
+	}
+	if msgs, reached := jobslotOpen(connected, streamOf(make(chan jobslotMsg)), time.Second, 30*time.Millisecond); msgs != nil || !reached {
+		t.Fatalf("a silent queue after a connect: stream %v reached %v, want nil and true", msgs != nil, reached)
+	}
+}
+
+func TestJobslotMissedAreHandedOverOnce(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "missed")
+	if got := jobslotTakeMissed(dir); got != nil {
+		t.Fatalf("no dir gave %+v", got)
+	}
+	jobslotNoteMissed(dir, wshrpc.JobSlotMissed{Name: "task check:ts", Ts: 1, BlockId: "b1"})
+	jobslotNoteMissed(dir, wshrpc.JobSlotMissed{Name: "npm test", Ts: 2})
+	if err := os.WriteFile(filepath.Join(dir, "half.tmp"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := jobslotTakeMissed(dir)
+	if len(got) != 2 {
+		t.Fatalf("took %+v, want both notes and not the half-written file", got)
+	}
+	names := map[string]bool{got[0].Name: true, got[1].Name: true}
+	if !names["task check:ts"] || !names["npm test"] {
+		t.Fatalf("took %+v", got)
+	}
+	if again := jobslotTakeMissed(dir); len(again) != 0 {
+		t.Fatalf("handed over twice: %+v", again)
+	}
+	for i := 0; i < jobslotMissedMax+3; i++ {
+		jobslotNoteMissed(dir, wshrpc.JobSlotMissed{Name: "x", Ts: int64(i)})
+	}
+	if n := len(jobslotTakeMissed(dir)); n != jobslotMissedMax {
+		t.Fatalf("took %d, want at most %d", n, jobslotMissedMax)
+	}
+	if n := len(jobslotTakeMissed(dir)); n != 3 {
+		t.Fatalf("the rest: %d, want 3", n)
 	}
 }

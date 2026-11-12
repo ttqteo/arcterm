@@ -80,13 +80,13 @@ describe("cellViewOptions", () => {
         expect(cellViewOptions(false, false, false, true)).toEqual(["terminal", "brainstorm"]);
     });
 
-    it("leaves Chat and Terminal out for a sleeping capable agent, as the header disables them", () => {
-        // asleep with a canvas and a review open: the key walks the canvas and the review only
-        expect(cellViewOptions(true, true, true, false, true)).toEqual(["canvas", "review"]);
-        expect(cellViewOptions(true, false, true, true, true)).toEqual(["brainstorm", "review"]);
-        expect(cellViewOptions(true, true, false, false, true)).toEqual(["canvas"]);
-        // asleep with nothing else open: no options at all
-        expect(cellViewOptions(true, false, false, false, true)).toEqual([]);
+    it("leaves Terminal out for a sleeping capable agent, as the header disables it, and keeps Chat", () => {
+        // asleep with a canvas and a review open: the key walks Chat, the canvas and the review
+        expect(cellViewOptions(true, true, true, false, true)).toEqual(["chat", "canvas", "review"]);
+        expect(cellViewOptions(true, false, true, true, true)).toEqual(["chat", "brainstorm", "review"]);
+        expect(cellViewOptions(true, true, false, false, true)).toEqual(["chat", "canvas"]);
+        // asleep with nothing else open: Chat alone
+        expect(cellViewOptions(true, false, false, false, true)).toEqual(["chat"]);
     });
 
     it("keeps the full list when not asleep, and asleep means nothing to an agent that is not capable", () => {
@@ -114,13 +114,14 @@ describe("nextCellView", () => {
         expect(nextCellView("canvas", ["chat", "terminal"])).toBe("chat");
     });
 
-    it("walks a sleeping agent's canvas and review only, and passes when it has fewer than two", () => {
+    it("walks a sleeping agent's Chat, canvas and review, and passes when it has fewer than two", () => {
         const o = cellViewOptions(true, true, true, false, true);
-        expect(nextCellView("terminal", o)).toBe("canvas");
+        expect(nextCellView("chat", o)).toBe("canvas");
         expect(nextCellView("canvas", o)).toBe("review");
-        expect(nextCellView("review", o)).toBe("canvas");
-        expect(nextCellView("terminal", cellViewOptions(true, false, false, false, true))).toBeNull();
-        expect(nextCellView("terminal", cellViewOptions(true, true, false, false, true))).toBeNull();
+        expect(nextCellView("review", o)).toBe("chat");
+        // back to the conversation from a brainstorm while asleep
+        expect(nextCellView("brainstorm", cellViewOptions(true, false, false, true, true))).toBe("chat");
+        expect(nextCellView("chat", cellViewOptions(true, false, false, false, true))).toBeNull();
     });
 });
 

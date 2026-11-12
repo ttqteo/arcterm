@@ -71,6 +71,13 @@ export const codeReviewSendOpenAtom = atom<boolean>(false) as PrimitiveAtom<bool
 // A comment asked for outside the source editor: the view switches to Source, and the viewer starts the
 // comment once the editor has mounted and its caret can be read (consumePendingComment).
 export const codeCommentPendingAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// A comment being written belongs to the project it was started in: its line range and anchor are that project's
+// file. Switching project (by hand, or the app bar's follow) drops it, or a file of the same path in the next project
+// opened with the old comment box focused and Enter saved it into the wrong review.
+globalStore.sub(codeProjectAtom, () => {
+    globalStore.set(codeCommentDraftAtom, null);
+    globalStore.set(codeCommentPendingAtom, false);
+});
 
 // The viewer lends the store the editor's selection, or the caret as an empty one, the way codestore's
 // caret readers work: the store never touches Monaco.
@@ -160,6 +167,10 @@ export async function sendReview(
     const comments = key == null ? [] : projectComments(globalStore.get(codeReviewsAtom), key);
     if (key == null || comments.length === 0) {
         return { ok: false, message: "There are no comments to send." };
+    }
+    // the send ends with Enter, which on an agent waiting on a question (a permission prompt) would answer it
+    if (target?.state === "asking") {
+        return { ok: false, message: `${target.name} is waiting on a question. Answer it first, then send the review.` };
     }
     const markdown = reviewMarkdown(projectName, key, reanchored(comments));
     try {

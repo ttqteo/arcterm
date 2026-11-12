@@ -230,20 +230,27 @@ export function pastesBody(message: string): boolean {
 export type SubmitStep =
     | { kind: "type"; text: string }
     | { kind: "paste"; text: string }
-    | { kind: "wait"; ms: number }
+    // `echo`: after `ms`, keep waiting (at most ECHO_WAIT_MAX_MS) until the box shows this text (boxShowsTyped)
+    | { kind: "wait"; ms: number; echo?: string }
     | { kind: "enter" };
 
-/** Pure: how a line goes into an agent's TUI and is submitted. Enter is always a write of its own, after a wait: Claude
- *  Code's input reader reads "\r" as Enter only when it arrives as its own chunk, and a "text\r" read in one chunk is one
- *  text token whose "\r" is a line break in the box, so the message sat there unsent (whether the PTY splits a single
- *  write is luck). A line with a break or past PASTE_OVER goes as a paste, any other is typed. */
+/** How long a send waits at most for Claude Code's box to show the message before it presses Enter anyway. */
+export const ECHO_WAIT_MAX_MS = 2_000;
+
+/** Pure: how a line goes into an agent's TUI and is submitted. Enter is always a write of its own, after the box shows
+ *  the text: Claude Code's input reader reads "\r" as Enter only when it arrives as its own chunk, and a "text\r" read in
+ *  one chunk is one text token whose "\r" is a line break in the box, so the message sat there unsent. A fixed wait
+ *  between the two writes was not enough: Claude Code reads its input only when its event loop is free, and both writes
+ *  waiting there land in one read (a 65-character message to an idle Claude took the next message's text on the line
+ *  after it, and both went as one prompt). Once the box shows the text it has been read, so the Enter comes alone. A line
+ *  with a break or past PASTE_OVER goes as a paste, any other is typed. */
 export function submitSteps(text: string): SubmitStep[] {
     if (text === "") {
         return [{ kind: "enter" }];
     }
     return [
         pastesBody(text) ? { kind: "paste", text } : { kind: "type", text },
-        { kind: "wait", ms: submitDelayMs(text.length) },
+        { kind: "wait", ms: submitDelayMs(text.length), echo: text },
         { kind: "enter" },
     ];
 }

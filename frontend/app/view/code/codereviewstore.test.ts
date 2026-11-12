@@ -56,6 +56,16 @@ afterEach(() => {
     setCommentSelectionReader(() => null);
 });
 
+describe("a comment being written", () => {
+    it("is dropped when the project changes, so it never opens on the next project's file of the same path", () => {
+        globalStore.set(codeCommentDraftAtom, { path: "a.ts", startLine: 2, endLine: 3, anchor: "two" });
+        globalStore.set(codeCommentPendingAtom, true);
+        globalStore.set(codeProjectAtom, { name: "beta", path: "/repos/beta" });
+        expect(globalStore.get(codeCommentDraftAtom)).toBeNull();
+        expect(globalStore.get(codeCommentPendingAtom)).toBe(false);
+    });
+});
+
 describe("sendReview to an agent", () => {
     it("sends the whole review to the agent once, as one message, and clears the project", async () => {
         seed([comment]);
@@ -83,6 +93,18 @@ describe("sendReview to an agent", () => {
 
         expect(res.ok).toBe(false);
         expect("message" in res && res.message).toBe("Could not send the review: claude's terminal is not open");
+        expect(projectComments(globalStore.get(codeReviewsAtom), project.path)).toEqual([comment]);
+    });
+
+    it("refuses an agent waiting on a question: the send's Enter would answer it", async () => {
+        seed([comment]);
+        sendText.mockResolvedValue({ ok: true });
+
+        const res = await sendReview({ ...agent, state: "asking" }, "alpha");
+
+        expect(res.ok).toBe(false);
+        expect("message" in res && res.message).toContain("waiting on a question");
+        expect(sendText).not.toHaveBeenCalled();
         expect(projectComments(globalStore.get(codeReviewsAtom), project.path)).toEqual([comment]);
     });
 

@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     answerFailureMessage,
+    cardHead,
     cardShown,
     headIdOf,
     moreWaiting,
@@ -17,6 +18,26 @@ import {
 } from "./permissionmodel";
 import { tuiPermissionOptions } from "./tuiscreen";
 import fixtures from "./tuiscreen.fixtures.json";
+
+describe("cardHead", () => {
+    const ask = { id: "a", toolname: "AskUserQuestion" };
+    const bash = { id: "b", toolname: "Bash" };
+
+    it("leaves an AskUserQuestion at the head to the chat's question card", () => {
+        expect(cardHead([ask], true)).toBeUndefined();
+        expect(cardHead([ask, bash], true)).toBeUndefined();
+    });
+
+    it("draws an AskUserQuestion when the chat shows no question card", () => {
+        expect(cardHead([ask], false)).toBe(ask);
+    });
+
+    it("draws any other head, with or without a question card", () => {
+        expect(cardHead([bash, ask], true)).toBe(bash);
+        expect(cardHead([bash], false)).toBe(bash);
+        expect(cardHead([], true)).toBeUndefined();
+    });
+});
 
 describe("permissionTitle", () => {
     it("names what each answerable tool wants", () => {

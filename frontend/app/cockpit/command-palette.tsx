@@ -320,6 +320,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     );
     const things = useAtomValue(thingsAtom);
     const [nav, setNavState] = useState<NavState>(() => initialNav(surface));
+    // opened by Code's symbol chord (Alt+O, which seeds "@"): only then does a leading "@" list the open file's
+    // symbols. Typed into a plain Ctrl+P, "@" stays part of a path ("@scope/pkg"), as ours always read it
+    const [symbolOpen, setSymbolOpen] = useState(false);
     const [sel, setSel] = useState(0);
     const [paletteError, setPaletteError] = useState<string | undefined>(undefined);
     // the Resume brainstorm picker's list: read only while that drill is showing
@@ -392,6 +395,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         const seed = globalStore.get(model.paletteSeedAtom);
         globalStore.set(model.paletteSeedAtom, null);
         setNav({ ...initialNav(globalStore.get(model.surfaceAtom)), query: seed ?? "" });
+        setSymbolOpen(seed === "@");
         setOpenGen((g) => g + 1);
         setDraft(null);
         setArmed(null);
@@ -1289,9 +1293,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
 
     function fileScopeGroups(): { groups: PaletteGroup<PaletteItem>[]; fileHighlight?: string } {
         const empty = (emptyText: string) => [{ key: "empty", label: "Files", items: [], emptyText }];
-        // "@" lists symbols on Code only: elsewhere the Files scope searches paths as it always has
+        // "@" lists symbols on Code only, and only in a search Alt+O opened: elsewhere, and in a plain Ctrl+P, the
+        // Files scope searches paths as it always has
         const fq = parseFinderQuery(nav.query);
-        if (fq.symbol && surface === "code") {
+        if (fq.symbol && surface === "code" && symbolOpen) {
             return symbolScopeGroups(fq.text);
         }
         if (fileTarget == null) {

@@ -25,6 +25,7 @@ import { atom, useAtomValue } from "jotai";
 import { Pause } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+    bypassLine,
     formatElapsed,
     formatLeft,
     openTargetFor,
@@ -260,6 +261,7 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
         return () => window.removeEventListener("keydown", onKey, true);
     }, [open]);
     const jobs = ordered(data?.jobs ?? []);
+    const bypass = bypassLine(data, now);
     return (
         <>
             {open ? <div data-job-queue-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}
@@ -300,6 +302,15 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
                             jobs.map((j) => <Row key={j.id} job={j} now={now} agents={agents} model={model} />)
                         )}
                     </div>
+                    {bypass == null ? null : (
+                        <div
+                            data-job-queue-bypassed
+                            title="The queue answered after these agents' wsh jobslot had stopped waiting (a slow connect or a stuck queue), so their commands ran at once. Counted since arcterm started."
+                            className="truncate border-t border-border px-3 py-[6px] text-[11.5px] text-warning"
+                        >
+                            {bypass}
+                        </div>
+                    )}
                 </div>
             </PopoverReveal>
         </>

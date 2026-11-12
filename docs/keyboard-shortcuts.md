@@ -452,12 +452,12 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `d` | Cycle the diff: HEAD, branch base, off. Needs a git repository: in a plain folder the key does nothing |
 | `b` | Toggle the blame column; a click on an entry opens the run that landed it, or copies the sha. From Preview or Diff it switches to Source first |
 | `r` | Refresh the file index |
-| `Alt`+`←` / `Alt`+`→` | Back / forward through opened files and jumps, also while typing in the editor |
+| `Alt`+`←` / `Alt`+`→` | Back / forward through opened files and jumps, also while typing in the editor on Windows (on a Mac, `Option`+`←`/`→` there moves the caret a word) |
 | `Alt`+`M` | Comment on the selection, or the caret's line: `Enter` saves the note, `Esc` cancels. From Preview or Diff it switches to Source first; the editor's context menu has "Add review comment". Also while typing in the editor |
 | `Alt`+`Shift`+`M` | Send the review: open the toolbar's Send review, to pick an agent or copy it. Does nothing while the project has no comments. Also while typing in the editor |
 | `F12` | Go to the definition of the word at the caret: one match jumps there, several list in Search. Also while typing in the editor; the context menu has "Go to Definition in Project" |
 | `Shift`+`F12` | Find references to the word at the caret, in Search. Also while typing in the editor |
-| `Alt`+`O` | Go to a symbol in the open file: opens Search seeded with `@`, which lists the file's outline. Also while typing in the editor (`Mod`+`Shift`+`O` stays Open a tool) |
+| `Alt`+`O` | Go to a symbol in the open file: opens Search seeded with `@`, which lists the file's outline (an `@` typed into a plain `Ctrl`+`P` still searches paths). Also while typing in the editor (`Mod`+`Shift`+`O` stays Open a tool) |
 | `Mod`+`S` | Save the open file |
 | `Mod`+`Shift`+`F` | Search file contents, also while typing in the editor |
 | `Alt`+`T` (or `Mod`+`Shift`+`E`, VS Code's Explorer key) | Focus the file tree, also from inside the editor |

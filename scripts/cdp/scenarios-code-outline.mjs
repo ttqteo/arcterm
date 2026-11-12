@@ -204,11 +204,24 @@ export default function (kits) {
             const afterRow = await waitCaret(h, 19);
             rec("clicking a symbol row moves the editor to its line", afterRow === 19, `caret=${afterRow}`);
 
-            const opened1 = await openPalette(h);
-            const typed = opened1 && (await typeFinder(h, "@"));
+            // ours: "@" typed into a plain Ctrl+P stays a path search; only Alt+O, which seeds "@", lists symbols
+            const openedPlain = await openPalette(h);
+            const typedPlain = openedPlain && (await typeFinder(h, "@"));
+            await polishNap(400);
+            const plainSymbols = typedPlain && (await h.ev(`document.body.textContent.includes("Symbols in main.go")`));
+            rec("@ typed into a plain Ctrl+P does not switch to symbols", typedPlain === true && plainSymbols === false, `opened=${openedPlain} typed=${typedPlain} symbols=${plainSymbols}`);
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            await polishWaitFor(h, `document.querySelector("input[data-palette-input]") == null`, 4000);
+
+            // Alt+O (modifier 1 = Alt) opens the search seeded with "@", listing the file's symbols
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "o", code: "KeyO", windowsVirtualKeyCode: 79, modifiers: 1 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "o", code: "KeyO", windowsVirtualKeyCode: 79, modifiers: 1 });
+            const opened1 = await polishWaitFor(h, `!!document.querySelector("input[data-palette-input]")`, 4000);
+            const typed = opened1 && (await h.ev(`document.querySelector("input[data-palette-input]").value`)) === "@";
             const group = typed && (await polishWaitFor(h, `document.body.textContent.includes("Symbols in main.go")`, 4000));
             await h.shot("cdp-shots/code-outline-finder.png");
-            rec("@ in the finder lists the file's symbols", group === true, `opened=${opened1} typed=${typed} group=${group}`);
+            rec("Alt+O opens the finder on @, listing the file's symbols", group === true, `opened=${opened1} seeded=${typed} group=${group}`);
 
             const picked = await setFinderQuery(h, "@alpha");
             const afterPick = await waitCaret(h, 5);
