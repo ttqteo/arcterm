@@ -7,18 +7,28 @@
 // chatbrainstormcard.tsx, and the conversation draws both (chatconversation.tsx).
 
 import {
+    approveBlocker,
     brainstormPhase,
+    checkReview,
     decisionParts,
     judgeWait,
     judgeWork,
     optionLetter,
     partGist,
     partTitle,
+    partView,
     plural,
+    reviewHead,
+    unseenSince,
+    withStartingRun,
     type AnswerOption,
+    type BrainstormAction,
     type BrainstormFile,
     type BrainstormQuestion,
     type BuilderCheckView,
+    type SeenMark,
+    type SentKind,
+    type StartingRunMark,
 } from "./brainstormmodel";
 import type { RunInfo } from "./runlineage";
 import { runStage, type RunStageView } from "./runstage";
@@ -69,7 +79,8 @@ export function builderAnswerText(line: string): string {
     return text.startsWith(BUILDER_ANSWER_PREFIX) ? text.slice(BUILDER_ANSWER_PREFIX.length).trim() : text;
 }
 
-export const MAX_ANSWERS_PER_AGENT = 50;
+// every line Arc sends leaves a record (an action too, to be hidden), so the cap is well past the answers a brainstorm needs
+export const MAX_ANSWERS_PER_AGENT = 200;
 export const MAX_ANSWER_AGENTS = 40;
 
 /** The agent's records with `record` last (newest last), at most MAX_ANSWERS_PER_AGENT: the oldest are dropped. */
@@ -111,7 +122,45 @@ function isSentAnswer(v: unknown): v is SentAnswer {
     );
 }
 
-/** The stored map, with whatever a hand-edited or older value could hold dropped: only the six record fields are kept. */
+const RECORD_KINDS: ReadonlySet<string> = new Set<RecordKind>([
+    "answer",
+    "builder-answer",
+    "design",
+    "builder",
+    "run",
+    "action",
+]);
+
+function wholeCount(v: unknown): number | undefined {
+    return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined;
+}
+
+/** The record as stored: the six fields every record has, and `kind` and the step fields when they are well-typed. A
+ *  field that is not (a hand-edited value, a kind a newer version wrote) is dropped and the record kept: without a kind
+ *  it reads as an answer, as every record did before kinds. */
+function readRecord(r: SentAnswer): SentAnswer {
+    const out: SentAnswer = { topic: r.topic, n: r.n, part: r.part, text: r.text, sentAt: r.sentAt, seen: r.seen };
+    const raw = r as unknown as Record<string, unknown>;
+    if (typeof raw.kind === "string" && RECORD_KINDS.has(raw.kind)) {
+        out.kind = raw.kind as RecordKind;
+    }
+    for (const key of ["decisions", "questions", "calls"] as const) {
+        const count = wholeCount(raw[key]);
+        if (count !== undefined) {
+            out[key] = count;
+        }
+    }
+    if (raw.outcome === "approved" || raw.outcome === "keep-talking") {
+        out.outcome = raw.outcome;
+    }
+    if (typeof raw.runId === "string" && raw.runId !== "") {
+        out.runId = raw.runId;
+    }
+    return out;
+}
+
+/** The stored map, with whatever a hand-edited or older value could hold dropped: the six record fields, and the kind and
+ *  counts of a step record when they are well-typed. */
 export function parseSentStore(raw: string | null | undefined): SentByAgent {
     if (!raw) {
         return {};
@@ -131,14 +180,7 @@ export function parseSentStore(raw: string | null | undefined): SentByAgent {
         if (id === "__proto__" || !Array.isArray(list)) {
             continue;
         }
-        const records = list.filter(isSentAnswer).map((r) => ({
-            topic: r.topic,
-            n: r.n,
-            part: r.part,
-            text: r.text,
-            sentAt: r.sentAt,
-            seen: r.seen,
-        }));
+        const records = list.filter(isSentAnswer).map(readRecord);
         if (records.length > 0) {
             out[id] = records.slice(-MAX_ANSWERS_PER_AGENT);
         }
@@ -360,7 +402,7 @@ export function openQuestion(
         const phase = brainstormPhase(file);
         return phase === "talk" ? null : { state: "pointer", phase, line: POINTER_LINE[phase] };
     }
-    if (records.some((r) => r.topic === topic && r.n === q.n)) {
+    if (answeredBy(records, topic, q)) {
         return null;
     }
     // the agent writing with a question still in the file is taking a change in: nothing to answer until it asks again
@@ -368,6 +410,12 @@ export function openQuestion(
         return null;
     }
     return questionCard(file, q, exited);
+}
+
+/** An answer of `topic` was already sent to the talk question `q`. Only an `answer` record counts: a builder answer
+ *  numbers the builder's questions from 1 again, and a step or an action line stores n 0. */
+function answeredBy(records: readonly SentAnswer[], topic: string, q: BrainstormQuestion): boolean {
+    return records.some((r) => r.topic === topic && recordKind(r) === "answer" && r.n === q.n);
 }
 
 /** The card for the question `q` of `file`, whatever else the file is doing: the caller decides whether it shows. */
@@ -396,6 +444,241 @@ export function questionCard(file: BrainstormFile, q: BrainstormQuestion, exited
         reasons: options.some((o) => o.pros != null || o.cons != null),
         decided: yoursGists(file),
     };
+}
+
+/** What `brainstormCard` reads: the brainstorm as Arc shows it (`shownBrainstormFile`), the agent's send records, whether
+ *  its process exited, the topic the records are matched against, the builder check as the pane reads it
+ *  (`builderCheckView`), the kind of the line Arc sent that the agent has not taken yet (`BrainstormState.sent?.kind`),
+ *  what the user has seen of the brainstorm, and the run Approve is starting. */
+export type CardInput = {
+    file: BrainstormFile | null;
+    records: readonly SentAnswer[];
+    exited: boolean;
+    topic: string;
+    check: BuilderCheckView;
+    sent: SentKind | null;
+    seen: SeenMark | null;
+    starting: StartingRunMark | null;
+};
+
+// the text shownFile (brainstormmodel.ts) writes into the file while a `check` line is pending
+const CHECK_READING_TEXT = "A builder is reading the design.";
+
+function seenIds(f: BrainstormFile, seen: SeenMark | null): ReadonlySet<string> {
+    return new Set(unseenSince(f, seen).parts);
+}
+
+// the builder questions are asked one at a time, in order: the first the builder left for the user without an answer
+function openBuilderIndex(f: BrainstormFile): number {
+    return f.check?.yours.findIndex((y) => y.a == null) ?? -1;
+}
+
+function builderQuestionCard(f: BrainstormFile): BuilderQuestionCard | null {
+    const index = openBuilderIndex(f);
+    if (f.check == null || index < 0) {
+        return null;
+    }
+    const y = f.check.yours[index];
+    const options = y.options ?? [];
+    const pick = options.findIndex((o) => o.pick === true);
+    return {
+        n: index + 1,
+        total: f.check.yours.length,
+        part: y.part ? partTitle(f, y.part) : "",
+        question: y.q,
+        why: y.why ?? null,
+        options,
+        pick: pick >= 0 ? pick : null,
+    };
+}
+
+function confirmCard(input: CardInput, f: BrainstormFile): ConfirmCard | null {
+    // the agent still asking, or past the review into the builder check, is another card
+    if (!f.done || f.question != null || f.check != null) {
+        return null;
+    }
+    const head = reviewHead(f, input.check);
+    const unseen = seenIds(f, input.seen);
+    const rows: DecisionRowModel[] = [];
+    for (const p of decisionParts(f)) {
+        const view = partView(f, p);
+        if (view === "guess" || view === "changed") {
+            rows.push({
+                id: p.id,
+                title: p.title,
+                gist: partGist(f, p),
+                view,
+                ...(p.was != null ? { was: p.was } : {}),
+                ...(p.why != null ? { why: p.why } : {}),
+                isNew: unseen.has(p.id),
+            });
+        }
+    }
+    if (head.action == null && rows.length === 0) {
+        return null;
+    }
+    // a click is being written up (a `check` line is the check card's): the card stays, its buttons off, instead of
+    // vanishing until the agent writes the file again
+    const writing = f.working != null && !input.exited;
+    return {
+        kind: "confirm",
+        state: input.exited ? "static" : writing ? "working" : "waiting",
+        line: writing ? f.working! : head.line,
+        action: head.action,
+        guesses: head.guesses,
+        rows,
+        yours: yoursGists(f),
+    };
+}
+
+function checkCard(input: CardInput, f: BrainstormFile): CheckCard | null {
+    const { check, sent } = input;
+    let stage: CheckCard["stage"];
+    let pending: CheckCard["pending"] = null;
+    let reason: string | null = null;
+    if (check.kind === "pending") {
+        stage = check.stage;
+        pending = check;
+    } else if (check.kind === "failed" && f.check == null) {
+        stage = "failed";
+        reason = check.reason;
+    } else if (sent === "check" && check.kind === "none") {
+        // the line is sent and Arc has no record of the builder yet
+        stage = "reading";
+        pending = { kind: "pending", stage: "reading", text: CHECK_READING_TEXT };
+    } else if (f.check != null) {
+        stage = openBuilderIndex(f) >= 0 ? "asking" : "review";
+    } else {
+        return null;
+    }
+    const unseen = seenIds(f, input.seen);
+    const rows: DecisionRowModel[] = [];
+    if (f.check != null) {
+        const review = checkReview(f);
+        for (const r of [...review.changed, ...review.fresh]) {
+            if (r.action === "keep-restore" || r.action === "confirm") {
+                rows.push({
+                    id: r.id,
+                    title: r.title,
+                    gist: r.gist,
+                    view: r.action === "keep-restore" ? "changed" : "guess",
+                    ...(r.was != null ? { was: r.was } : {}),
+                    ...(r.cause !== "" ? { why: r.cause } : {}),
+                    isNew: unseen.has(r.id),
+                });
+            }
+        }
+    }
+    const working = stage === "reading" || stage === "taking-in" || f.working != null;
+    return {
+        kind: "check",
+        state: input.exited ? "static" : working ? "working" : "waiting",
+        stage,
+        pending,
+        reason,
+        question: builderQuestionCard(f),
+        calls: f.check?.calls.map((c) => c.text) ?? [],
+        spec: f.check?.answered ?? [],
+        rows,
+        approveBlocker: approveBlocker(f, input.starting),
+    };
+}
+
+/** The card the conversation ends with, or null. One card shows at a time, in this order: the run the brainstorm
+ *  started; the talk question, unless an `answer` record of `topic` already answered it or the agent is writing with it
+ *  still in the file; the builder check (pending, failed, its line just sent, or the file holding a check); Confirm the
+ *  design (the agent is done, no check yet, and a decision to confirm or the check to start). Anything else, and a
+ *  brainstorm still being talked through with nothing to confirm, has none. An agent that exited turns every card
+ *  static. Pass the file as Arc shows it (`shownBrainstormFile`). */
+export function brainstormCard(input: CardInput): ChatCard | null {
+    if (input.file == null) {
+        return null;
+    }
+    const f = withStartingRun(input.file, input.starting);
+    if (f.run != null) {
+        return { kind: "run", state: input.exited ? "static" : "waiting", runId: f.run };
+    }
+    const q = f.question;
+    if (q != null && !answeredBy(input.records, input.topic, q) && !(f.working != null && !judgeWait(f, false))) {
+        return questionCard(f, q, input.exited);
+    }
+    return checkCard(input, f) ?? confirmCard(input, f);
+}
+
+// the newest record of the design or builder step of `topic`: what the last `check` led to
+function newestStep(records: readonly SentAnswer[], topic: string): SentAnswer | null {
+    let newest: SentAnswer | null = null;
+    for (const r of records) {
+        const kind = recordKind(r);
+        const step = kind === "design" || kind === "builder";
+        if (r.topic === topic && step && (newest == null || r.sentAt >= newest.sentAt)) {
+            newest = r;
+        }
+    }
+    return newest;
+}
+
+/** The record to keep for the line `line` that Arc is sending as `action`, or null when the line is nothing the
+ *  conversation folds or hides. `file` is the brainstorm as Arc shows it, `records` the agent's records so far, `seen`
+ *  how many of the agent's user messages already held exactly `line` (the count is taken before the send).
+ *
+ *  - an answer is kept only with a talk question open, against its number and part, as it always was: typed with none
+ *    open it is the user's own words (pushback, a question back) and stays a bubble. It carries no kind;
+ *  - a builder answer is kept against the open builder question (none open: no record, the line stays a bubble);
+ *  - `check` is the design step, with the decisions it held; one sent while the newest step of the topic is already the
+ *    design (a retry after a failed check) is an action, so it draws no second row;
+ *  - `approved` and `keep-talking` are the builder step, with the questions the builder left for the user and the calls
+ *    the agent made, and what the person did;
+ *  - `run` is the run Arc told the agent about;
+ *  - every other line is an action, hidden. */
+export function sendRecord(
+    action: BrainstormAction,
+    file: BrainstormFile | null,
+    records: readonly SentAnswer[],
+    topic: string,
+    line: string,
+    seen: number,
+    now: number
+): SentAnswer | null {
+    const base = { topic, n: 0, part: "", text: line, sentAt: now, seen };
+    switch (action.kind) {
+        case "answer": {
+            const q = file?.question;
+            return file == null || q == null ? null : { ...base, n: q.n, part: partTitle(file, q.part) };
+        }
+        case "builder-answer": {
+            const open = file != null ? builderQuestionCard(file) : null;
+            return open == null ? null : { ...base, n: open.n, part: open.part, kind: "builder-answer" };
+        }
+        case "check": {
+            const retry = newestStep(records, topic);
+            if (retry != null && recordKind(retry) === "design") {
+                return { ...base, kind: "action" };
+            }
+            return { ...base, kind: "design", decisions: file != null ? decisionParts(file).length : 0 };
+        }
+        case "approved":
+        case "keep-talking":
+            return {
+                ...base,
+                kind: "builder",
+                questions: file?.check?.yours.length ?? 0,
+                calls: file?.check?.calls.length ?? 0,
+                outcome: action.kind,
+            };
+        case "run":
+            return { ...base, kind: "run", runId: action.runId };
+        case "guess":
+        case "skip":
+        case "confirm":
+        case "confirm-all":
+        case "edit":
+        case "keep":
+        case "restore":
+        case "keep-all":
+        case "builder-decide":
+            return { ...base, kind: "action" };
+    }
 }
 
 /** "Question 2 · Motion", or "Question 2" when the question names no part: the card's header and the ✓ row's start. */
