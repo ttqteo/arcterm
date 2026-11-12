@@ -64,6 +64,7 @@ import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
+import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
@@ -57815,6 +57816,10 @@ const CR_KIT = {
     bsSeeHints,
 };
 
+// what the brainstorm review in Chat (scenarios-chat-brainstorm-review.mjs) needs of this file: the Chat redesign's kit, and
+// the helper that writes a fixture run's stored object (a landed run) and publishes it to the page
+const CBR_KIT = { ...CR_KIT, fstWriteRun };
+
 // what the Jarvis revamp's scenario modules (scenarios-jarvis-{cards,activity,sheet}.mjs,
 // docs/superpowers/plans/2026-11-05-jarvis-revamp.md) need of this file: the Brief's own helpers (open Jarvis on a reload,
 // pick a briefing fixture, seed and clear initiatives, the viewport, the localStorage keys), the fixture-run helpers that
@@ -67511,6 +67516,7 @@ export const SCENARIOS = [
     chatAsleepAttachJump,
     chatFork,
     ...chatRedesignScenarios(CR_KIT),
+    ...chatBrainstormReviewScenarios(CBR_KIT),
     sidebarAgentRam,
     machineServers,
     sidebarAgentGlyph,

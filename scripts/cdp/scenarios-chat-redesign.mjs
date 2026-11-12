@@ -5,8 +5,9 @@
 // [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop], [data-chat-action],
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
 // [data-chat-bscard][data-chat-bscard-state], [data-chat-bscard-option], [data-chat-bscard-send],
-// [data-chat-bscard-open], [data-chat-bscard-pointer], [data-chat-bscard-answered], [data-chat-jump], and the existing
-// data-chat-* attributes agent-chat reads.
+// [data-chat-bscard-open], [data-chat-bscard-kind], [data-chat-bscard-answered], [data-chat-jump], and the existing
+// data-chat-* attributes agent-chat reads. ([data-chat-bscard-pointer] is read only to assert it is gone: the builder check
+// and the run are cards now, which scenarios-chat-brainstorm-review.mjs reads.)
 //
 // One fixture Claude agent over a real tab, a fixture roster row for it (the page's dev mock roster), a throwaway git
 // project registered with the app (the `@` list needs a registered project), and a fixture transcript the steps append
@@ -208,6 +209,7 @@ export default function (kit) {
                 send: !!layer?.querySelector("[data-chat-bscard-send]"),
                 open: !!layer?.querySelector("[data-chat-bscard-open]"),
                 pointer: !!layer?.querySelector("[data-chat-bscard-pointer]"),
+                checkCard: !!layer?.querySelector('[data-chat-bscard-kind="check"]'),
                 answered: [...(layer?.querySelectorAll("[data-chat-bscard-answered]") ?? [])].map(flat),
                 amber: !!card?.querySelector('[class*="bg-asking"], [class*="bg-warning"]'),
                 waitingText: flat(card).includes("Waiting on you"),
@@ -690,14 +692,19 @@ export default function (kit) {
                 );
             });
 
-            await run("14b. brainstorm card pointer", async (name) => {
-                // the builder check: no open question, the check lives in the Brainstorm tab
+            await run("14b. brainstorm card builder check", async (name) => {
+                // the builder check: no open question, the check is a card of its own in Chat (chat-brainstorm-review reads it
+                // in full); the one-line pointer to the Brainstorm tab is gone
                 await writeBrainstorm(h, ctx, FILES_BRAINSTORM.check);
-                const up = await polishWaitFor(h, `${layerOf(A)}?.querySelector("[data-chat-bscard-pointer]") != null`, WAIT_MS);
+                const up = await polishWaitFor(h, `${layerOf(A)}?.querySelector('[data-chat-bscard-kind="check"]') != null`, WAIT_MS);
                 await polishNap(600);
                 const card = await readCard(h, A);
-                await shot(h, "14b-brainstorm-card-pointer");
-                rec(`${name}: at the builder check the card is the one [data-chat-bscard-pointer] line and draws no [data-chat-bscard-option]`, up && card.pointer && card.options === 0, card);
+                await shot(h, "14b-brainstorm-card-check");
+                rec(
+                    `${name}: at the builder check the card is [data-chat-bscard-kind="check"], there is no [data-chat-bscard-pointer] line, and no [data-chat-bscard-option] row is drawn`,
+                    up && card.checkCard && !card.pointer && card.options === 0,
+                    card
+                );
             });
 
             // 15. the jump button: scrolled up it shows, a click goes back to the tail
