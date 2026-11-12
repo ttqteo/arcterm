@@ -43254,9 +43254,14 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-14-asleep.png");
-            const viewDim = (sleep14.view ?? []).length === 2 && sleep14.view.every((b) => b.disabled && b.asleepMark && b.opacity > 0.35 && b.opacity < 0.45);
+            // Chat stays usable asleep (the way back to the conversation from a canvas, review or brainstorm); Terminal is
+            // disabled and dimmed
+            const viewDim =
+                (sleep14.view ?? []).length === 2 &&
+                !sleep14.view[0].disabled && !sleep14.view[0].asleepMark && sleep14.view[0].opacity > 0.9 &&
+                sleep14.view[1].disabled && sleep14.view[1].asleepMark && sleep14.view[1].opacity > 0.35 && sleep14.view[1].opacity < 0.45;
             rec(
-                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected, both options disabled and dimmed",
+                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected and usable, Terminal disabled and dimmed",
                 asleep && sleep14.you === "an earlier question" && sleep14.agent && sleep14.onePane &&
                     (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Send" &&
                     sleep14.label === "opus" && !sleep14.modelChip && (sleep14.asleepNote ?? "").includes("Asleep") && !sleep14.modeChip && !sleep14.attach &&
@@ -43264,11 +43269,11 @@ const agentChat = {
                 sleep14
             );
 
-            // 14a. Alt+C on the asleep agent walks only what the header leaves usable: Chat and Terminal are disabled, so it
-            // never selects them. With nothing else open there is nothing to walk and the key passes whatever it did before, so
-            // the step gives F a canvas (nothing detaches one but a click; it is taken off at the end): one usable option, so
-            // the key still passes. Before the fix the key walked [terminal, canvas]: from Chat it went to the Canvas, from the
-            // Canvas back to the terminal's slot, which the header shows as Chat
+            // 14a. Alt+C and a click on the asleep agent walk only what the header leaves usable: Terminal is disabled, so
+            // neither ever selects it, and Chat stays usable, the way back to the conversation from a canvas, review or
+            // brainstorm (it was disabled once, which left a sleeping agent shown on its brainstorm with no way back to the
+            // chat). The step gives F a canvas (nothing detaches one but a click; it is taken off at the end): Alt+C walks
+            // Chat → Canvas → Chat, and a click on Chat from the Canvas goes back too; neither changes the stored chat mode
             const AC_VIEW_NOW = `[...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim() + (b.getAttribute("aria-pressed") === "true" ? "*" : "") + (b.disabled ? "!" : "")).join("|")`;
             await AC.agentPage(
                 h,
@@ -43276,20 +43281,22 @@ const agentChat = {
                 C.attachCanvas(${JSON.stringify(F)}, { topic: "ac-asleep", dir: "ac-asleep-canvas", projectDir: "ac-asleep-project" }, Date.now());
                 return true;`
             );
-            const three14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!|Canvas"`, 4000);
+            const three14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!|Canvas"`, 4000);
             const atChat14a = await h.ev(AC_VIEW_NOW);
             await acKey(h, acKeys.altC);
-            await polishNap(500);
+            const onCanvas14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat|Terminal!|Canvas*"`, 4000);
             const afterChat14a = await h.ev(AC_VIEW_NOW);
+            await acKey(h, acKeys.altC);
+            await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!|Canvas"`, 4000);
+            const afterCanvas14a = await h.ev(AC_VIEW_NOW);
             await AC.agentPage(
                 h,
                 `const V = await mod("app/view/agents/agentview.ts"); V.setAgentView(${JSON.stringify(F)}, "canvas", Date.now()); return true;`
             );
-            const onCanvas14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat!|Terminal!|Canvas*"`, 4000);
-            const atCanvas14a = await h.ev(AC_VIEW_NOW);
-            await acKey(h, acKeys.altC);
-            await polishNap(500);
-            const afterCanvas14a = await h.ev(AC_VIEW_NOW);
+            await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat|Terminal!|Canvas*"`, 4000);
+            await h.ev(`[...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Chat")?.click()`);
+            await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!|Canvas"`, 4000);
+            const afterClick14a = await h.ev(AC_VIEW_NOW);
             const mode14a = await h.ev(`window.__arcChatMode.get(${JSON.stringify(F)})`);
             await h.shot("cdp-shots/agent-chat-14a-asleep-altc.png");
             await AC.agentPage(
@@ -43300,13 +43307,13 @@ const agentChat = {
                 C.detachCanvas(${JSON.stringify(F)});
                 return true;`
             );
-            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*!|Terminal!"`, 4000);
+            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!"`, 4000);
             rec(
-                "14a. Alt+C on the asleep agent leaves the header's selected option where it was and never selects Terminal: with a canvas attached (Chat and Terminal disabled, Canvas the one usable option) Chat stays selected, and with the Canvas showing it stays selected rather than going back to Chat; the stored chat mode is not Terminal",
-                three14a && atChat14a === "Chat*!|Terminal!|Canvas" && afterChat14a === atChat14a &&
-                    onCanvas14a && atCanvas14a === "Chat!|Terminal!|Canvas*" && afterCanvas14a === atCanvas14a &&
+                "14a. on the asleep agent with a canvas attached (Terminal disabled, Chat and Canvas usable), Alt+C walks Chat → Canvas → Chat and never selects Terminal, and a click on Chat from the Canvas goes back to the conversation; the stored chat mode is not Terminal",
+                three14a && atChat14a === "Chat*|Terminal!|Canvas" && onCanvas14a && afterChat14a === "Chat|Terminal!|Canvas*" &&
+                    afterCanvas14a === "Chat*|Terminal!|Canvas" && afterClick14a === "Chat*|Terminal!|Canvas" &&
                     mode14a !== "terminal" && restored14a,
-                { three14a, atChat14a, afterChat14a, onCanvas14a, atCanvas14a, afterCanvas14a, mode14a, restored14a }
+                { three14a, atChat14a, afterChat14a, onCanvas14a, afterCanvas14a, afterClick14a, mode14a, restored14a }
             );
 
             // 14b. the grid bar's switch of an asleep Claude agent: drawn, Chat selected, both options disabled and dimmed. A single

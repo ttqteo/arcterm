@@ -441,9 +441,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const swapKey = docReview != null ? "r" : brainstorm != null ? "b" : "c";
     // A Claude agent's control always shows, Chat first, awake or asleep: Chat and Terminal are the one "terminal" slot,
     // and the agent's chat mode picks which of the two shows (chatmode.ts). Asleep, its cell draws the conversation
-    // whatever the stored mode (its terminal holds only the kill), so Chat is the selected option of the slot and Chat
-    // and Terminal are disabled until it wakes; a canvas, review or brainstorm option stays usable. Every other agent's
-    // control is as before.
+    // whatever the stored mode (its terminal holds only the kill), so Chat is the selected option of the slot and
+    // Terminal is disabled until it wakes; Chat stays usable, the way back to the conversation from a canvas, review or
+    // brainstorm, and picking it leaves the stored mode alone. Every other agent's control is as before.
     const chatMode = useChatMode(agent);
     const chatShown = chatCapable(agent);
     const chatAsleep = chatShown && agent.sleeping != null;
@@ -456,7 +456,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const linkFromMenu = lean && canLink && agent.effortId == null;
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
-    // what Alt+C walks: asleep it skips the disabled Chat and Terminal (agent:view-cycle passes the same asleep flag)
+    // what Alt+C walks: asleep it skips the disabled Terminal (agent:view-cycle passes the same asleep flag)
     const keyOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null, chatAsleep);
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
@@ -809,10 +809,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           key: "chat" as const,
                                           label: "Chat",
                                           title: chatAsleep
-                                              ? ASLEEP_VIEW_TITLE
+                                              ? "Chat: the conversation so far"
                                               : `Chat (${formatChordString("Mod:Shift:k")})`,
-                                          disabled: chatAsleep,
-                                          dataAttrs: chatAsleep ? { "data-chat-view-asleep": "" } : undefined,
                                       },
                                   ]
                                 : []),
@@ -887,9 +885,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         ]}
                         // an agent with no Chat option (not a Claude agent) keeps its stored chat mode
                         onChange={(v) =>
-                            chatShown || v === "chat"
-                                ? selectCellView(agent.id, v, Date.now())
-                                : setAgentView(agent.id, v, Date.now())
+                            chatAsleep && v === "chat"
+                                ? // asleep, the slot shows Chat whatever the stored mode: keep the mode, so it wakes as it was
+                                  setAgentView(agent.id, "terminal", Date.now())
+                                : chatShown || v === "chat"
+                                  ? selectCellView(agent.id, v, Date.now())
+                                  : setAgentView(agent.id, v, Date.now())
                         }
                     />
                 ) : null}

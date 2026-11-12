@@ -2112,8 +2112,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // Review control (Brainstorm in the canvas's slot, for an agent with a brainstorm) also has a chord that
             // works from inside the terminal, as Alt+1..9 does for the agents
             // A Claude agent's control starts with Chat (chatmode.ts), so the key walks Chat too. A sleeping Claude
-            // agent's header disables Chat and Terminal, so the key walks only what the header leaves usable (the
-            // asleep argument of cellViewOptions). The agent is in the model's atoms, which a when() cannot read, so
+            // agent's header disables Terminal, so the key walks only what the header leaves usable (the asleep
+            // argument of cellViewOptions); asleep, the slot shows Chat whatever the stored mode, and picking Chat
+            // leaves that mode alone, so the agent wakes as it was. The agent is in the model's atoms, which a when() cannot read, so
             // run() lets the key pass when there is one option only.
             id: "agent:view-cycle",
             keys: "Alt:c",
@@ -2124,19 +2125,23 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 const agent = chatAgent();
                 const claude = claudeAgent();
                 const view = slotView();
+                const asleep = claude != null && claude.sleeping != null;
                 const options = cellViewOptions(
                     claude != null,
                     canvas() != null,
                     docReview() != null,
                     brainstorm() != null,
-                    claude != null && claude.sleeping != null
+                    asleep
                 );
-                const next = nextCellView(agent != null ? cellView(view, getChatMode(agent)) : view, options);
+                const mode = asleep ? "chat" : agent != null ? getChatMode(agent) : null;
+                const next = nextCellView(mode != null ? cellView(view, mode) : view, options);
                 if (next == null) {
                     return false;
                 }
-                // an agent with no Chat option keeps its stored chat mode: a sleeping one wakes as it was
-                if (agent != null || next === "chat") {
+                // an agent with no Chat option, or one asleep, keeps its stored chat mode: it wakes as it was
+                if (asleep && next === "chat") {
+                    setAgentView(focusId(), "terminal", Date.now());
+                } else if (agent != null || next === "chat") {
                     selectCellView(focusId(), next, Date.now());
                 } else {
                     setAgentView(focusId(), next, Date.now());
