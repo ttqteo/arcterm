@@ -346,8 +346,10 @@
     --color-syntax-comment: #6b7178;
     --color-syntax-punct: #8b939d;
     --color-syntax-ident: #cdd3da;
-    /* inline code in markdown + transcript narration (Antigravity's warm gold); theme-agnostic like syntax */
-    --color-code-inline: #d7b981;
+    /* inline code in markdown + transcript narration: Claude Code's own inline-code lavender (its dark theme's
+       `permission`), so Chat matches the terminal and code stands apart from a skim highlight's warm ground;
+       theme-agnostic like syntax */
+    --color-code-inline: #b1b9f9;
     /* a file a council message cites (councilsourcespanel.tsx): a Slack-like link blue, so a source reads apart from the
        clay accent the thread's reply link and the CTAs take; theme-agnostic like syntax (not mirrored in themes.ts) */
     --color-link: #1d9bd1;
