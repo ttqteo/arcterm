@@ -1,14 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The pure half of the brainstorm question card in Chat (docs/superpowers/specs/2026-11-11-chat-redesign-design.md,
-// section 6): which transcript message is the answer to which question, and what the card has to draw for the
-// question the brainstorm asks now. The send record lives in chatbrainstormstore.ts, the card in
-// chatbrainstormcard.tsx, and the conversation draws both (chatconversation.tsx).
+// The pure half of the brainstorm cards in Chat (docs/superpowers/specs/2026-11-11-chat-redesign-design.md, section 6,
+// and 2026-11-12-chat-brainstorm-review-design.md): which transcript message is the answer to which question (or the
+// line of which step), and which card the brainstorm has to draw now (`brainstormCard`). The send record lives in
+// chatbrainstormstore.ts, the cards in chatbrainstormcard.tsx and its siblings, and the conversation draws them all
+// (chatconversation.tsx).
 
 import {
     approveBlocker,
-    brainstormPhase,
     checkReview,
     decisionParts,
     judgeWait,
@@ -369,49 +369,6 @@ export function yoursGists(file: BrainstormFile): Gist[] {
         .map((p) => ({ id: p.id, title: p.title, gist: partGist(file, p) }));
 }
 
-/** The brainstorm is past its questions: the builder check or the run stays in the Brainstorm tab, and the card is one
- *  line pointing there. */
-export interface PointerCard {
-    state: "pointer";
-    phase: "check" | "run";
-    line: string;
-}
-
-export type OpenQuestion = QuestionCard | PointerCard;
-
-const POINTER_LINE = {
-    check: "The builder check runs in the Brainstorm tab.",
-    run: "This brainstorm has started a run. Follow it in the Brainstorm tab.",
-};
-
-/** The question to draw at the end of the conversation, or null: no brainstorm attached, no question open (the design
- *  is being reviewed, or the agent is writing), or the question already answered by a record of `topic`. Pass the file
- *  as Arc shows it (`shownBrainstormFile`), whose question is already gone once an answer was sent. With no question
- *  open, a brainstorm in its builder check or its run is a pointer. */
-export function openQuestion(
-    file: BrainstormFile | null,
-    records: readonly SentAnswer[],
-    exited: boolean,
-    topic: string
-): OpenQuestion | null {
-    if (file == null) {
-        return null;
-    }
-    const q = file.question;
-    if (q == null) {
-        const phase = brainstormPhase(file);
-        return phase === "talk" ? null : { state: "pointer", phase, line: POINTER_LINE[phase] };
-    }
-    if (answeredBy(records, topic, q)) {
-        return null;
-    }
-    // the agent writing with a question still in the file is taking a change in: nothing to answer until it asks again
-    if (file.working != null && !judgeWait(file, false)) {
-        return null;
-    }
-    return questionCard(file, q, exited);
-}
-
 /** An answer of `topic` was already sent to the talk question `q`. Only an `answer` record counts: a builder answer
  *  numbers the builder's questions from 1 again, and a step or an action line stores n 0. */
 function answeredBy(records: readonly SentAnswer[], topic: string, q: BrainstormQuestion): boolean {
@@ -719,13 +676,9 @@ export function compareLine(boards: number): string {
     return `Compare ${plural(boards, "board", "boards")} in Brainstorm`;
 }
 
-/** The message box's placeholder while the question waits, or null when no question waits (a pointer). A question with
- *  options says they can be picked above (`A–C`); one with none, or one the judge is still weighing, is answered in
- *  words only. */
-export function questionPlaceholder(q: OpenQuestion): string | null {
-    if (q.state === "pointer") {
-        return null;
-    }
+/** The message box's placeholder while the question waits. A question with options says they can be picked above
+ *  (`A–C`); one with none, or one the judge is still weighing, is answered in words only. */
+export function questionPlaceholder(q: QuestionCard): string {
     const own = `Answer question ${q.n} in your own words`;
     if (q.options.length === 0) {
         return own;

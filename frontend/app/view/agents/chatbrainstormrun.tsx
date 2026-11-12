@@ -9,14 +9,15 @@
 
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
+import { atom, useAtomValue } from "jotai";
 import { ArrowUpRight, Play } from "lucide-react";
 import { motion } from "motion/react";
-import type { ComponentProps } from "react";
+import { useMemo, type ComponentProps } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { runCardView, runDoneLine, type RunCard, type RunCardView } from "./chatbrainstorm";
 import { CardShell, DoneRow, FOCUS_RING, SMALL_BTN, type CardState } from "./chatbrainstormparts";
-import { useRunInfo } from "./runlineagestore";
+import { runInfoAtom, useRunInfo } from "./runlineagestore";
 import type { StageTone } from "./runstage";
 
 // the stage's dot by its tone: amber only for a run that needs the person (the card's one amber), green for a task at
@@ -142,6 +143,29 @@ export function ChatBrainstormRunRow({
             <RunCardBox agent={agent} card={card} model={model} view={view} loaded={read.loaded} />
         </motion.div>
     );
+}
+
+const NO_RUNS: ReadonlySet<string> = new Set();
+
+/** Which of `runIds` are over (landed, complete or cancelled), for the conversation to tell whether the line that started
+ *  a run draws its ✓ row or nothing (`pairedHidden`): the line is a row in the column or it is not there at all, so the
+ *  conversation has to know before it draws the line, which a component of the row itself cannot say. The runs are read
+ *  from the run store through one derived atom whose value is the done ids as a string, so a run changing stage
+ *  re-renders the conversation only when one of them crosses into done. A run the store has not loaded reads as not
+ *  done. The set is stable while the ids that are done are. */
+export function useDoneRuns(runIds: readonly string[]): ReadonlySet<string> {
+    const ids = runIds.join("\n");
+    const doneAtom = useMemo(
+        () =>
+            atom((get) =>
+                (ids === "" ? [] : ids.split("\n"))
+                    .filter((id) => runCardView(get(runInfoAtom(id)).run).done)
+                    .join("\n")
+            ),
+        [ids]
+    );
+    const done = useAtomValue(doneAtom);
+    return useMemo(() => (done === "" ? NO_RUNS : new Set(done.split("\n"))), [done]);
 }
 
 /** A run that is over as one ✓ row, "Run · <name> · Landed", drawn in place of the `brainstorm: run <id>` message that

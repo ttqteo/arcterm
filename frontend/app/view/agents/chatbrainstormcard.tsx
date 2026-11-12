@@ -1,21 +1,22 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The brainstorm question as Chat draws it (docs/superpowers/specs/2026-11-11-chat-redesign-design.md, section 6): a card
-// at the end of the conversation while the agent waits on an answer, a one-line pointer once the brainstorm moved on to
-// its builder check or run (both stay in the Brainstorm tab), and the ✓ rows a finished question or step folds into.
-// What each draws is chatbrainstorm.ts's; the conversation decides where they go (chatconversation.tsx). What the cards
-// share (shell, folds, option rows, the ✓ row) is chatbrainstormparts.tsx. Brainstorm stays its own tab: the card shows
-// the question, its why, the options, the read and the decisions made so far, and never the pros, cons or boards.
+// The brainstorm as Chat draws it (docs/superpowers/specs/2026-11-11-chat-redesign-design.md, section 6, and
+// 2026-11-12-chat-brainstorm-review-design.md): the card at the end of the conversation, by its kind (the question the
+// agent waits on here; the Confirm the design card, the builder check card and the run card are chatbrainstormconfirm.tsx,
+// chatbrainstormcheck.tsx and chatbrainstormrun.tsx), and the ✓ rows a finished question or step folds into. What each
+// draws is chatbrainstorm.ts's; the conversation decides where they go (chatconversation.tsx). What the cards share
+// (shell, folds, option rows, the ✓ row) is chatbrainstormparts.tsx. Brainstorm stays its own tab: the question card
+// shows the question, its why, the options, the read and the decisions made so far, and never the pros, cons or boards.
 
-import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { Check, Lightbulb, PanelsTopLeft } from "lucide-react";
-import { motion } from "motion/react";
 import { useState } from "react";
+import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { pickedLine, sendPickedLabel, togglePick } from "./brainstormmodel";
 import { sendBrainstorm } from "./brainstormsend";
+import { shownBrainstormFile, type BrainstormState } from "./brainstormstore";
 import { ERROR_LINE, useAction } from "./brainstormui";
 import {
     builderAnswerText,
@@ -25,17 +26,18 @@ import {
     designDoneLine,
     questionHead,
     weighingLine,
-    type OpenQuestion,
+    type ChatCard,
     type PairedAnswer,
-    type PointerCard,
     type QuestionCard,
+    type RunCard,
 } from "./chatbrainstorm";
+import { ChatBrainstormCheck } from "./chatbrainstormcheck";
+import { ChatBrainstormConfirm } from "./chatbrainstormconfirm";
 import {
     CardShell,
     DoneRow,
     FOCUS_RING,
     Fold,
-    OpenButton,
     OptionRows,
     PRIMARY_BTN,
     SMALL_BTN,
@@ -184,49 +186,37 @@ function QuestionBox({ agent, q, onPick }: { agent: AgentVM; q: QuestionCard; on
     );
 }
 
-// the builder check and the run stay in the Brainstorm tab: one line says so, and opens it
-function PointerLine({ agent, card }: { agent: AgentVM; card: PointerCard }) {
-    return (
-        <motion.div
-            variants={springReveal}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="overflow-hidden rounded-[10px]"
-        >
-            <div
-                data-chat-bscard-pointer
-                data-chat-bscard-phase={card.phase}
-                className="flex min-w-0 items-center gap-[10px] rounded-[10px] border border-edge-mid bg-surface px-[14px] py-[9px] text-[12.5px]"
-            >
-                <Lightbulb size={14} strokeWidth={2} className="flex-none text-muted" aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-secondary" title={card.line}>
-                    {card.line}
-                </span>
-                <OpenButton agent={agent} />
-            </div>
-        </motion.div>
-    );
-}
-
-/** The question the brainstorm asks now, drawn in the conversation: the card while it waits (a click on an option sends
- *  exactly the line the Brainstorm pane sends, through sendBrainstorm, and `onPick` hears the text once it went), the
- *  one-line pointer once the brainstorm is past its questions. Enters on springReveal; the conversation wraps it in an
- *  AnimatePresence so it also leaves on it. */
+/** The card the conversation ends with, by its kind: the question it waits on (a click on an option sends exactly the
+ *  line the Brainstorm pane sends, through sendBrainstorm, and `onPick` hears the text once it went), the Confirm the
+ *  design card, or the builder check card. Each is its own `CardShell`, which enters on springReveal; the conversation
+ *  wraps this in an AnimatePresence so it also leaves on it. The run card is `ChatBrainstormRunRow`'s, which draws its own
+ *  end row (a done run draws no row at all), so it is not a card this takes. `model` and `state` are the cockpit and the
+ *  agent's brainstorm the check and Confirm cards read from (the clock, the launcher, the file they were made from). */
 export function ChatBrainstormCard({
     agent,
-    question,
+    card,
+    model,
+    state,
     onPick,
 }: {
     agent: AgentVM;
-    question: OpenQuestion;
+    card: Exclude<ChatCard, RunCard>;
+    model: AgentsViewModel;
+    state: BrainstormState;
     onPick?: (text: string) => void;
 }) {
-    return question.state === "pointer" ? (
-        <PointerLine agent={agent} card={question} />
-    ) : (
-        <QuestionBox agent={agent} q={question} onPick={onPick} />
-    );
+    switch (card.kind) {
+        case "question":
+            return <QuestionBox agent={agent} q={card} onPick={onPick} />;
+        case "confirm": {
+            const file = shownBrainstormFile(state);
+            return file == null ? null : (
+                <ChatBrainstormConfirm agent={agent} card={card} path={state.path} file={file} />
+            );
+        }
+        case "check":
+            return <ChatBrainstormCheck agent={agent} card={card} model={model} state={state} />;
+    }
 }
 
 /** An answered question as one ✓ row, drawn in place of the user's message that carried the answer, so it is never

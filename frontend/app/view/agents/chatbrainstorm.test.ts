@@ -24,10 +24,10 @@ import {
     compareLine,
     designDoneLine,
     MAX_ANSWERS_PER_AGENT,
-    openQuestion,
     pairAnswers,
     parseSentStore,
     pruneAnswerAgents,
+    questionCard,
     questionHead,
     questionPlaceholder,
     recordKind,
@@ -37,7 +37,6 @@ import {
     weighingLine,
     type CardInput,
     type ChatCard,
-    type OpenQuestion,
     type QuestionCard,
     type SentAnswer,
 } from "./chatbrainstorm";
@@ -290,190 +289,31 @@ function file(over: Partial<BrainstormFile> = {}): BrainstormFile {
     };
 }
 
-function card(q: OpenQuestion | null): QuestionCard {
-    if (q == null || q.state === "pointer") {
-        throw new Error("expected a question card");
-    }
-    return q;
+// the question card of a file's open question, whatever else the file is doing (questionPlaceholder's input)
+function asked(f: BrainstormFile): QuestionCard {
+    return questionCard(f, f.question!, false);
 }
-
-describe("openQuestion", () => {
-    it("draws a waiting card from the open question", () => {
-        const q = card(openQuestion(file(), [], false, TOPIC));
-        expect(q).toMatchObject({
-            state: "waiting",
-            n: 2,
-            part: "Motion",
-            question: "Which motion?",
-            why: "DESIGN.md allows one entrance.",
-            read: "A keeps DESIGN.md.",
-            pick: 0,
-            pickLabel: "Agent's pick",
-            multi: false,
-            openText: false,
-            weighing: null,
-            boards: 2,
-            reasons: false,
-        });
-        expect(q.options).toHaveLength(3);
-    });
-
-    it("is a question card, and lists the decisions that are yours as it was asked", () => {
-        const q = card(
-            openQuestion(
-                file({
-                    parts: [
-                        { id: "builder", title: "Builder", state: "yours", gist: "Sonnet builds it", body: "" },
-                        { id: "motion", title: "Motion", state: "asked", body: "" },
-                        { id: "scope", title: "Scope", state: "yours", gist: "Chat only", body: "" },
-                        { id: "why", title: "Why", state: "yours", kind: "note", gist: "background", body: "" },
-                        { id: "tone", title: "Tone", state: "guess", gist: "Quiet", body: "" },
-                        { id: "icons", title: "Icons", state: "yours", gist: "", body: "Lucide. Kept small.\nMore." },
-                    ],
-                }),
-                [],
-                false,
-                TOPIC
-            )
-        );
-        expect(q.kind).toBe("question");
-        // design order (the builder part last), notes, guesses and the asked part left out, the gist as the design reads it
-        expect(q.decided).toEqual([
-            { id: "scope", title: "Scope", gist: "Chat only" },
-            { id: "icons", title: "Icons", gist: "Lucide." },
-            { id: "builder", title: "Builder", gist: "Sonnet builds it" },
-        ]);
-    });
-
-    it("has no decided entries while nothing is yours yet", () => {
-        const q = card(
-            openQuestion(
-                file({ parts: [{ id: "motion", title: "Motion", state: "asked", body: "" }] }),
-                [],
-                false,
-                TOPIC
-            )
-        );
-        expect(q.decided).toEqual([]);
-    });
-
-    it("is null with no brainstorm attached, or with no question open in the talk", () => {
-        expect(openQuestion(null, [], false, TOPIC)).toBeNull();
-        expect(openQuestion(file({ question: null }), [], false, TOPIC)).toBeNull();
-    });
-
-    it("is null once a record of this topic answered the question, but not for another topic's", () => {
-        expect(openQuestion(file(), [rec({ n: 2 })], false, TOPIC)).toBeNull();
-        expect(openQuestion(file(), [rec({ n: 2, topic: "other" })], false, TOPIC)?.state).toBe("waiting");
-        expect(openQuestion(file(), [rec({ n: 1 })], false, TOPIC)?.state).toBe("waiting");
-    });
-
-    it("is not hidden by a builder answer or an action line that shares its number", () => {
-        expect(openQuestion(file(), [rec({ n: 2, kind: "builder-answer" })], false, TOPIC)?.state).toBe("waiting");
-        expect(openQuestion(file(), [rec({ n: 2, kind: "answer" })], false, TOPIC)).toBeNull();
-    });
-
-    it("is weighing while the judge works on an approach question that has no options yet", () => {
-        const weighed: BrainstormQuestion = {
-            n: 3,
-            text: "How should it arrive?",
-            part: "motion",
-            approaches: [
-                { name: "Spring", description: "", facts: [] },
-                { name: "Tween", description: "", facts: [] },
-            ],
-        };
-        const q = card(
-            openQuestion(file({ question: weighed, working: "The judge is weighing 2 approaches." }), [], false, TOPIC)
-        );
-        expect(q).toMatchObject({ state: "weighing", weighing: 2, openText: false, pick: null });
-        expect(q.options).toEqual([]);
-        expect(weighingLine(2)).toBe("The judge is weighing 2 approaches.");
-        expect(weighingLine(1)).toBe("The judge is weighing 1 approach.");
-    });
-
-    it("is null while the agent writes with a question still in the file", () => {
-        expect(openQuestion(file({ working: "Taking in your change." }), [], false, TOPIC)).toBeNull();
-    });
-
-    it("is static once the agent has exited, and still carries the question and its options", () => {
-        const q = card(openQuestion(file(), [], true, TOPIC));
-        expect(q.state).toBe("static");
-        expect(q.options).toHaveLength(3);
-        expect(q.question).toBe("Which motion?");
-    });
-
-    it("is open text when the question offers no options", () => {
-        const q = card(openQuestion(file({ question: { ...QUESTION, options: undefined } }), [], false, TOPIC));
-        expect(q).toMatchObject({ state: "waiting", openText: true, pick: null });
-    });
-
-    it("carries a multi-answer question's flag, a judged pick and the reasons", () => {
-        const judged: BrainstormQuestion = {
-            ...QUESTION,
-            multi: true,
-            judge: { kind: "weighed", added: [], dropped: [] },
-            options: [
-                { label: "A1", detail: "", pick: true, pros: ["fast"] },
-                { label: "B1", detail: "" },
-            ],
-        };
-        const q = card(openQuestion(file({ question: judged }), [], false, TOPIC));
-        expect(q).toMatchObject({ multi: true, pickLabel: "Judge's pick", pick: 0, reasons: true });
-    });
-
-    it("counts boards only once the brainstorm names its canvas, and shows the part id for an undefined part", () => {
-        expect(card(openQuestion(file({ canvas: undefined }), [], false, TOPIC)).boards).toBe(0);
-        const stray = card(openQuestion(file({ question: { ...QUESTION, part: "ghost" } }), [], false, TOPIC));
-        expect(stray).toMatchObject({ part: "ghost", boards: 0 });
-        expect(card(openQuestion(file({ question: { ...QUESTION, part: "" } }), [], false, TOPIC)).part).toBe("");
-    });
-
-    it("is a pointer once the brainstorm reached the builder check or a run", () => {
-        const check = { yours: [], calls: [], answered: [] };
-        const atCheck = openQuestion(file({ question: null, done: true, check }), [], false, TOPIC);
-        expect(atCheck).toMatchObject({ state: "pointer", phase: "check" });
-        const atRun = openQuestion(file({ question: null, done: true, check, run: "run-1" }), [], true, TOPIC);
-        expect(atRun).toMatchObject({ state: "pointer", phase: "run" });
-        expect(atRun?.state === "pointer" && atRun.line).toContain("Brainstorm tab");
-    });
-
-    it("keeps a talk question open in the check a card", () => {
-        const check = { yours: [], calls: [], answered: [] };
-        expect(openQuestion(file({ done: true, check }), [], false, TOPIC)?.state).toBe("waiting");
-    });
-});
 
 describe("questionPlaceholder", () => {
     it("tells how many options can be picked above", () => {
-        const q = openQuestion(file(), [], false, TOPIC)!;
-        expect(questionPlaceholder(q)).toBe("Answer question 2 in your own words, or pick A–C above");
+        expect(questionPlaceholder(asked(file()))).toBe("Answer question 2 in your own words, or pick A–C above");
     });
 
     it("says only the words for an open-text question, and for one the judge still weighs", () => {
-        const open = openQuestion(file({ question: { ...QUESTION, options: undefined } }), [], false, TOPIC)!;
+        const open = asked(file({ question: { ...QUESTION, options: undefined } }));
         expect(questionPlaceholder(open)).toBe("Answer question 2 in your own words");
-        const judging = openQuestion(
+        const judging = asked(
             file({
                 question: { n: 4, text: "q", part: "motion", approaches: [{ name: "x", description: "", facts: [] }] },
                 working: "w",
-            }),
-            [],
-            false,
-            TOPIC
-        )!;
+            })
+        );
         expect(questionPlaceholder(judging)).toBe("Answer question 4 in your own words");
     });
 
-    it("names a single option, and has none for a pointer", () => {
-        const one = openQuestion(
-            file({ question: { ...QUESTION, options: [{ label: "Only", detail: "" }] } }),
-            [],
-            false,
-            TOPIC
-        )!;
+    it("names a single option", () => {
+        const one = asked(file({ question: { ...QUESTION, options: [{ label: "Only", detail: "" }] } }));
         expect(questionPlaceholder(one)).toBe("Answer question 2 in your own words, or pick A above");
-        expect(questionPlaceholder({ state: "pointer", phase: "check", line: "" })).toBeNull();
     });
 });
 
@@ -677,9 +517,8 @@ const BUILDER_CHECK: BuilderCheck = {
 const BUILDER_DONE = { ...BUILDER_CHECK, yours: BUILDER_CHECK.yours.map((y) => ({ ...y, a: y.a ?? "SQS" })) };
 
 describe("brainstormCard: the question", () => {
-    it("is the question card while a question waits (asking), the same one openQuestion draws", () => {
+    it("is the question card while a question waits (asking)", () => {
         const c = pick(brainstormCard(inp()), "question");
-        expect(c).toEqual(openQuestion(file(), [], false, TOPIC));
         expect(c).toMatchObject({
             kind: "question",
             state: "waiting",
@@ -706,6 +545,25 @@ describe("brainstormCard: the question", () => {
         expect(none.decided).toEqual([]);
     });
 
+    it("lists Decided in the design's order, with notes, guesses and the asked part left out", () => {
+        const f = file({
+            parts: [
+                { id: "builder", title: "Builder", state: "yours", gist: "Sonnet builds it", body: "" },
+                { id: "motion", title: "Motion", state: "asked", body: "" },
+                { id: "scope", title: "Scope", state: "yours", gist: "Chat only", body: "" },
+                { id: "why", title: "Why", state: "yours", kind: "note", gist: "background", body: "" },
+                { id: "tone", title: "Tone", state: "guess", gist: "Quiet", body: "" },
+                { id: "icons", title: "Icons", state: "yours", gist: "", body: "Lucide. Kept small.\nMore." },
+            ],
+        });
+        // design order (the builder part last), the gist as the design reads it
+        expect(pick(brainstormCard(inp({ file: f })), "question").decided).toEqual([
+            { id: "scope", title: "Scope", gist: "Chat only" },
+            { id: "icons", title: "Icons", gist: "Lucide." },
+            { id: "builder", title: "Builder", gist: "Sonnet builds it" },
+        ]);
+    });
+
     it("is weighing while the judge works on an approach question that has no options yet", () => {
         const weighed: BrainstormQuestion = {
             n: 3,
@@ -722,6 +580,8 @@ describe("brainstormCard: the question", () => {
         );
         expect(c).toMatchObject({ state: "weighing", weighing: 2, openText: false, pick: null });
         expect(c.options).toEqual([]);
+        expect(weighingLine(2)).toBe("The judge is weighing 2 approaches.");
+        expect(weighingLine(1)).toBe("The judge is weighing 1 approach.");
     });
 
     it("is null while the agent writes with a question still in the file", () => {
@@ -800,6 +660,10 @@ describe("brainstormCard: the question", () => {
     it("wins over a pending check line and a design waiting for review", () => {
         expect(pick(brainstormCard(inp({ check: READING })), "question").n).toBe(2);
         expect(brainstormCard(inp({ file: file({ done: true }) }))?.kind).toBe("question");
+    });
+
+    it("is null with no question open while the brainstorm is still in its talk", () => {
+        expect(brainstormCard(inp({ file: file({ question: null }) }))).toBeNull();
     });
 
     it("is null with no brainstorm attached", () => {
