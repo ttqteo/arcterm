@@ -47,6 +47,7 @@ import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
+import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
@@ -355,6 +356,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // where the reader left the conversation, kept while the cell shows the terminal or another agent
     const placeId = `chat:${agent.id}:${path}`;
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
+    // the jump-to-latest key (agent:chat-jump-latest) presses the ↓ below, and passes while the ↓ is not drawn
+    const jumpState = useRef({ atBottom, jumpToBottom });
+    jumpState.current = { atBottom, jumpToBottom };
+    useEffect(
+        () =>
+            registerChatJump(agent.id, () => {
+                if (jumpState.current.atBottom) {
+                    return false;
+                }
+                jumpState.current.jumpToBottom();
+                return true;
+            }),
+        [agent.id]
+    );
 
     // The live stream only says the file grew: each stamp asks for an append read (the RailTranscript pattern). It runs
     // while the Agent surface is the one seen, and what was written while it was not is read when it is seen again. A
@@ -613,7 +628,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         exit="exit"
                                         style={{ transformOrigin: "bottom" }}
                                         onClick={jumpToBottom}
-                                        title="Jump to latest"
+                                        title={`Jump to latest (${formatChordString(CHAT_JUMP_KEYS)})`}
                                         aria-label="Jump to latest"
                                         className="flex size-[32px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                     >

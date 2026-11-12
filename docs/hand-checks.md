@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat attachments while asleep, and Ctrl+End: with a sleeping Claude agent shown in Chat, paste an image
+  into the box → its chip shows; Enter wakes the agent, the image's chip goes once it is back, and its first message
+  carries the picture (`chatcomposer.tsx` wakeSent, `agentcomposer.tsx` onWoken). A wake that fails keeps the chip.
+  Scrolled up in Chat, Ctrl+End jumps to the latest message from the box and from the conversation; the ↓'s tooltip
+  reads "Jump to latest (Ctrl+End)" (`chatjump.ts`, binding `agent:chat-jump-latest`).
 - [ ] (arcterm) One RAM figure per agent on Windows: after installing a build from 8eb023f79, an agent's RAM in the
   Agent sidebar matches its row in the app bar's RAM popover (within a few MB; before, the sidebar read ~170 MB higher)
   and sits near Task Manager's Memory column for its processes (`pkg/resmon/sample_windows.go` privateWorkingSet).

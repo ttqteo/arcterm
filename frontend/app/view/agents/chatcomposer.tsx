@@ -147,20 +147,24 @@ export function ChatComposer({
             requestAnimationFrame(() => focusTerm(blockId));
         }
     };
-    // an asleep agent takes text only: the wake carries a message, and there is no process to read a file yet
-    const { text, setText, message, canSend, waking, send } = useAgentSend(
-        agent.blockId,
-        agent,
-        asleep ? undefined : att.attachments,
-        {
-            keepDraft: true,
-            // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
-            onBtwTyped: (sent) => {
-                dropPending(agent.id, sent);
-                showTerminal();
-            },
-        }
-    );
+    // Asleep the attachments ride the wake's message as they ride any other: a pasted file is already on disk (wavesrv
+    // wrote it), and the message reaches the agent once it is back. Their chips go only when the wake took the message,
+    // so a wake that failed keeps them with the text. `wakeSent` is the chips that went with the wake in flight.
+    const wakeSent = useRef<string[]>([]);
+    const { text, setText, message, canSend, waking, send } = useAgentSend(agent.blockId, agent, att.attachments, {
+        onWoken: () => {
+            for (const id of wakeSent.current) {
+                att.remove(id);
+            }
+            wakeSent.current = [];
+        },
+        keepDraft: true,
+        // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
+        onBtwTyped: (sent) => {
+            dropPending(agent.id, sent);
+            showTerminal();
+        },
+    });
     // `!` first: Claude Code runs the text as a bash command, so the box says so as its own box does (chatmodel.ts)
     const bash = bashMode(text);
     const editorRef = useRef<EditorLike>(null);
@@ -315,7 +319,7 @@ export function ChatComposer({
         [agent.id]
     );
     // appendAttachments leaves out an upload in flight and a failed one: sending past them would drop a file unannounced
-    const blocker = asleep ? null : attachmentBlocker(att.attachments);
+    const blocker = attachmentBlocker(att.attachments);
     // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits. Send
     // then queues the message (`held`, kept per agent while the box unmounts for the terminal), and it goes by itself
     // once the prompt is answered.
@@ -351,7 +355,11 @@ export function ChatComposer({
             return;
         }
         const sent = message;
+        const riding = att.attachments.map((a) => a.id);
         if (send()) {
+            if (asleep) {
+                wakeSent.current = riding;
+            }
             onSent?.(sent);
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
@@ -482,21 +490,16 @@ export function ChatComposer({
             editorRef.current?.focus();
         });
     };
-    // A drag of files over an awake agent's box turns it into the drop zone. dragenter and dragleave fire for every child
-    // the drag crosses, so `dragDepth` counts the enters not yet left: the zone goes when the count is back to zero (the
-    // drag left the box), and a drop, a dragend or a sleep ends it at once. A dragover alone starts it too, so a box
-    // that missed the enter (the drag began over it) still shows the zone.
+    // A drag of files over the box, awake or asleep, turns it into the drop zone. dragenter and dragleave fire for every
+    // child the drag crosses, so `dragDepth` counts the enters not yet left: the zone goes when the count is back to zero
+    // (the drag left the box), and a drop or a dragend ends it at once. A dragover alone starts it too, so a box that
+    // missed the enter (the drag began over it) still shows the zone.
     const [dragging, setDragging] = useState(false);
     const dragDepth = useRef(0);
     const endDrag = () => {
         dragDepth.current = 0;
         setDragging(false);
     };
-    useEffect(() => {
-        if (asleep) {
-            endDrag();
-        }
-    }, [asleep]);
     useEffect(() => {
         if (!dragging) {
             return;
@@ -511,7 +514,7 @@ export function ChatComposer({
     }, [dragging]);
     const offersFiles = (dt: DataTransfer | null) => dragHasFiles(dt) || dragNamesPaths(dt);
     const onDragEnter = (e: DragEvent<HTMLElement>) => {
-        if (!asleep && offersFiles(e.dataTransfer)) {
+        if (offersFiles(e.dataTransfer)) {
             dragDepth.current++;
             setDragging(true);
         }
@@ -522,15 +525,13 @@ export function ChatComposer({
         }
     };
     // the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file: any drag that holds
-    // files is taken here, and kept only by an awake agent
+    // files is taken here
     const onDragOver = (e: DragEvent<HTMLElement>) => {
         if (offersFiles(e.dataTransfer)) {
             e.preventDefault();
-            e.dataTransfer.dropEffect = asleep ? "none" : "copy";
-            if (!asleep) {
-                dragDepth.current = Math.max(dragDepth.current, 1);
-                setDragging(true);
-            }
+            e.dataTransfer.dropEffect = "copy";
+            dragDepth.current = Math.max(dragDepth.current, 1);
+            setDragging(true);
         }
     };
     // Explorer hands over real files (copied, as a paste is); arcterm's tree, VS Code, Obsidian and "Copy as path"
@@ -540,9 +541,7 @@ export function ChatComposer({
         const dt = e.dataTransfer;
         if (dragHasFiles(dt)) {
             e.preventDefault();
-            if (!asleep) {
-                att.addFiles(Array.from(dt.files));
-            }
+            att.addFiles(Array.from(dt.files));
             return;
         }
         const paths = pathsFromDrop(Array.from(dt.types), (type) => dt.getData(type));
@@ -551,10 +550,8 @@ export function ChatComposer({
         }
         e.preventDefault();
         e.stopPropagation();
-        if (!asleep) {
-            att.addPaths(paths);
-            editorRef.current?.focus();
-        }
+        att.addPaths(paths);
+        editorRef.current?.focus();
     };
     const showStop = !asleep && agent.blockId != null && canStop(agent.state, agent.sleeping);
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
@@ -656,7 +653,7 @@ export function ChatComposer({
                         ) : null}
                     </div>
                 ) : null}
-                {asleep ? null : <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />}
+                <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
                 {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
                 {bash ? (
                     <div data-chat-bash-caption="" className="flex items-center gap-1.5 whitespace-nowrap text-[12px]">
@@ -704,15 +701,11 @@ export function ChatComposer({
                                 bashList.onCaret(box);
                             }
                         }}
-                        onPasteFiles={
-                            asleep
-                                ? undefined
-                                : (e) => {
-                                      // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
-                                      att.onPaste(e as never);
-                                      return e.defaultPrevented;
-                                  }
-                        }
+                        onPasteFiles={(e) => {
+                            // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
+                            att.onPaste(e as never);
+                            return e.defaultPrevented;
+                        }}
                         onKeyDown={(e) => {
                             // the Tab list's keys (bash mode), the `/` menu's and the `@` picker's (↑↓, Enter and Tab to pick,
                             // Escape to close) come first; at most one of them has a list open (the `/` and `@` lists are shut
@@ -766,14 +759,14 @@ export function ChatComposer({
                                 }
                             }
                             // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
-                            // open `/` or `@` list leaves it alone. An asleep agent takes text only, as its + is not drawn.
+                            // open `/` or `@` list leaves it alone. Asleep it attaches too, though the + menu is not drawn.
                             const addFilesKey =
                                 e.key.toLowerCase() === "u" &&
                                 !e.altKey &&
                                 !e.shiftKey &&
                                 (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
                             if (addFilesKey) {
-                                if (!asleep && !waking && !slash.shown && !mention.shown) {
+                                if (!waking && !slash.shown && !mention.shown) {
                                     e.preventDefault();
                                     attach();
                                 }

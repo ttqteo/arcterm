@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Ctrl+End (⌘End on a Mac) in Chat jumps back to the latest message, as the round ↓ above the box does; its tooltip
+  names the key.
 - Each agent in the Agent sidebar shows the RAM it and the commands it runs hold now, beside its tokens. Settings →
   Appearance → Agent sidebar → RAM turns it off.
 - In Chat, a `!` command you send shows at once with Running… until it finishes, instead of nothing until its output
@@ -56,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat's box takes pictures and files while its agent is asleep: paste, drop or Ctrl+U attach them, and they go with
+  the message that wakes it.
 - In Chat's bash mode the `!` sits beside the command as a marker with a gap after it, as in Claude Code's own box,
   instead of running into the first word; Backspace at the start of the command leaves bash mode.
 - Chat has a new look and moves more smoothly: the message box floats over the conversation as a rounded pill that
