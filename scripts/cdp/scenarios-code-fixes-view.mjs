@@ -145,6 +145,71 @@ const CLIPBOARD_SPY = `(() => {
 })()`;
 const COPIED = `(window.__copied ?? [])`;
 
+// codestore.ts's OPENING_PLACEHOLDER_DELAY_MS: a read slower than this earns the Opening… placeholder
+const OPENING_DELAY_MS = 150;
+// the placeholder can still be in the DOM for the one frame that falls between the read's reply and React committing the
+// text it set; anything later than this after the reply means the placeholder sat through the render
+const HANDOFF_MS = 34;
+
+// Times the stat and the read of one file the way the page sees them, so a placeholder can be judged against how long the
+// read really took. The wavesrv websocket's send is wrapped to note when the request for `rel` goes out, and the socket's
+// onmessage to note when its reply arrives, before the app's own handler (which sets the file and starts the render) runs.
+// Nothing here reaches the store: a scenario module has no module resolver, and this reads the wire, not the app.
+const installReadTap = (rel) => `(() => {
+    const want = ${JSON.stringify(`/${rel}`)};
+    const tap = { stat: null, read: null, wrapped: [] };
+    const orig = WebSocket.prototype.send;
+    const watch = (sock) => {
+        if (sock.__codeReadTap) return;
+        const handler = sock.onmessage;
+        const wrapped = function (e) {
+            const t = performance.now();
+            if (typeof e.data === "string") {
+                for (const k of ["stat", "read"]) {
+                    const r = tap[k];
+                    if (r && r.end == null && e.data.includes(r.reqid)) r.end = t;
+                }
+            }
+            return handler ? handler.call(this, e) : undefined;
+        };
+        sock.__codeReadTap = true;
+        sock.onmessage = wrapped;
+        tap.wrapped.push({ sock, handler, wrapped });
+    };
+    const patched = function (m) {
+        try {
+            if (typeof m === "string" && (m.includes('"command":"fileinfo"') || m.includes('"command":"fileread"'))) {
+                const msg = JSON.parse(m).message;
+                const path = String(msg?.data?.info?.path ?? "").replace(/\\\\/g, "/");
+                if (msg?.reqid && path.endsWith(want)) {
+                    watch(this);
+                    const k = msg.command === "fileinfo" ? "stat" : "read";
+                    if (tap[k] == null) tap[k] = { reqid: msg.reqid, start: performance.now(), end: null };
+                }
+            }
+        } catch {}
+        return orig.apply(this, arguments);
+    };
+    tap.orig = orig;
+    tap.patched = patched;
+    WebSocket.prototype.send = patched;
+    window.__codeFixesReadTap = tap;
+    return true;
+})()`;
+
+// puts the socket back the way it was and returns { start, end }: the stat's request and the read's reply, in the page's clock
+const TAKE_READ_TAP = `(() => {
+    const tap = window.__codeFixesReadTap;
+    delete window.__codeFixesReadTap;
+    if (!tap) return null;
+    if (WebSocket.prototype.send === tap.patched) WebSocket.prototype.send = tap.orig;
+    for (const { sock, handler, wrapped } of tap.wrapped) {
+        if (sock.onmessage === wrapped) sock.onmessage = handler;
+        delete sock.__codeReadTap;
+    }
+    return { start: tap.stat?.start ?? null, statEnd: tap.stat?.end ?? null, end: tap.read?.end ?? null };
+})()`;
+
 export default function (kits) {
     const { code, jarvis } = kits;
     const { git, chooseProjectNamed, setFinderQuery, waitForProjectInConfig, polishWaitFor, polishNap } = code;
@@ -311,31 +376,62 @@ export default function (kits) {
                 `fields=${JSON.stringify(fm)} hr=${fmRule}`
             );
 
-            // reopening reads the file again; every painted frame shows a document or the file before it, never the
-            // Opening… placeholder that sat on screen for the whole render of a large file
-            await h.ev(`(() => {
-                const seen = { frames: 0, placeholder: 0, blank: 0 };
-                const t0 = performance.now();
-                const frame = () => {
-                    seen.frames++;
-                    const doc = document.querySelector('[data-code-preview] .heading');
-                    const opening = [...document.querySelectorAll('body *')].some((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Opening…');
-                    if (opening) seen.placeholder++;
-                    else if (!doc) seen.blank++;
-                    if (performance.now() - t0 < 3000) requestAnimationFrame(frame);
-                    else window.__codeFixesReopen = seen;
-                };
-                requestAnimationFrame(frame);
-            })()`);
-            const bigOpened = await openByPalette(h, "docs/big.md", "docs/big.md");
-            await polishWaitFor(h, `window.__codeFixesReopen != null`, 6000);
-            const seen = await h.ev(`(() => { const s = window.__codeFixesReopen; delete window.__codeFixesReopen; return s; })()`);
+            // Opening the file reads it; every painted frame shows a document or the file before it. The Opening… placeholder
+            // is only for a read slower than OPENING_DELAY_MS (the app's rule: a really slow read should say so), so the
+            // step times the read and fails the placeholder on a read under that, on one that appears before the delay can
+            // have run out, on one still up while the text renders after the reply, and on any blank frame.
+            const tapped = (await h.ev(installReadTap("docs/big.md"))) === true;
+            let bigOpened = false;
+            let seen = null;
+            let timing = null;
+            try {
+                await h.ev(`(() => {
+                    const seen = { frames: 0, placeholder: 0, blank: 0, placeholderAt: [] };
+                    const t0 = performance.now();
+                    const frame = () => {
+                        seen.frames++;
+                        const doc = document.querySelector('[data-code-preview] .heading');
+                        const opening = [...document.querySelectorAll('body *')].some((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Opening…');
+                        if (opening) {
+                            seen.placeholder++;
+                            if (seen.placeholderAt.length < 20) seen.placeholderAt.push(performance.now());
+                        } else if (!doc) seen.blank++;
+                        if (performance.now() - t0 < 3000) requestAnimationFrame(frame);
+                        else window.__codeFixesReopen = seen;
+                    };
+                    requestAnimationFrame(frame);
+                })()`);
+                bigOpened = await openByPalette(h, "docs/big.md", "docs/big.md");
+                await polishWaitFor(h, `window.__codeFixesReopen != null`, 6000);
+                seen = await h.ev(`(() => { const s = window.__codeFixesReopen; delete window.__codeFixesReopen; return s; })()`);
+            } finally {
+                timing = tapped ? await h.ev(TAKE_READ_TAP).catch(() => null) : null;
+            }
             const bigShown = await h.ev(`(document.querySelector('[data-code-preview] .heading')?.textContent ?? '').trim()`);
             await h.shot("cdp-shots/code-fixes-markdown-large.png");
+            const measured = timing?.start != null && timing?.end != null;
+            const readMs = measured ? Math.round(timing.end - timing.start) : null;
+            const at = (seen?.placeholderAt ?? []).map((t) => (measured ? Math.round(t - timing.start) : Math.round(t)));
+            // a frame with the placeholder: on a read under the delay, before the delay can have run out (the timer starts a
+            // moment before the request goes out, so a few ms of slack), or lingering past the reply's hand-off to the render
+            const flashed = measured && at.some((ms) => readMs < OPENING_DELAY_MS || ms < OPENING_DELAY_MS - 10);
+            const sat = measured && at.some((ms) => ms > readMs + HANDOFF_MS);
+            const placeholderOk = seen != null && (seen.placeholder === 0 || (measured && !flashed && !sat));
             rec(
                 "a large markdown file opens without the Opening… flash or an empty pane",
-                bigOpened && seen != null && seen.placeholder === 0 && seen.blank === 0 && bigShown === "Big document",
-                JSON.stringify({ bigOpened, bigShown, ...seen })
+                bigOpened && measured && placeholderOk && seen.blank === 0 && bigShown === "Big document",
+                JSON.stringify({
+                    bigOpened,
+                    bigShown,
+                    frames: seen?.frames,
+                    placeholder: seen?.placeholder,
+                    blank: seen?.blank,
+                    readMs,
+                    placeholderAtMs: at,
+                    flashed,
+                    sat,
+                    tapped,
+                })
             );
 
             const back = await openByPalette(h, "docs/guide.md", "docs/guide.md");
