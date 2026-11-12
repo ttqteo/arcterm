@@ -37,8 +37,7 @@ Commit `fix(orchestrate): a pause during a hang stop or a lead launch keeps the 
 ### Task 2: A lead reopened in a new tab keeps its tab when its process exits
 **Depends on:** none
 
-**Files:** `pkg/orchestrate/interrupted.go`, its test file (`pkg/orchestrate/interrupted_test.go`, or the file
-that already tests `resumeInNewTab`)
+**Files:** `pkg/orchestrate/interrupted.go`, `pkg/orchestrate/interrupted_test.go`
 
 Spec decision 6. `resumeInNewTab` (`interrupted.go:231`) spawns the reopened worker with
 `jarvis.RunWorkerOptions{RunId: run.ID}`, while the first spawn of an orchestrator lead passes `KeepOnExit: true`
@@ -48,8 +47,8 @@ pause/resume after that makes yet another tab.
 
 Steps:
 1. Failing test: resuming an orchestrator run's lead whose tab was closed spawns it with `KeepOnExit` true; a quick
-   (non-orchestrator) run's worker keeps `KeepOnExit` false. Capture the options through the existing spawn seam, or
-   add a narrow one if `resumeInNewTab` has none.
+   (non-orchestrator) run's worker keeps `KeepOnExit` false. Capture the options by stubbing `jarvis.SpawnRunWorker`
+   (a package var other tests already swap).
 2. Pass `KeepOnExit: run.Mode == jarvis.RunMode_Orchestrator`, the same rule `runexec.go` uses.
 
 Commit `fix(orchestrate): a lead reopened in a new tab keeps it after its process exits`.
