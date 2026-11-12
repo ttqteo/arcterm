@@ -457,7 +457,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Alt`+`Shift`+`M` | Send the review: open the toolbar's Send review, to pick an agent or copy it. Does nothing while the project has no comments. Also while typing in the editor |
 | `F12` | Go to the definition of the word at the caret: one match jumps there, several list in Search. Also while typing in the editor; the context menu has "Go to Definition in Project" |
 | `Shift`+`F12` | Find references to the word at the caret, in Search. Also while typing in the editor |
-| `Alt`+`O` | Go to a symbol in the open file: opens Search seeded with `@`, which lists the file's outline. Also while typing in the editor (`Mod`+`Shift`+`O` stays Open a tool) |
+| `Alt`+`O` | Go to a symbol in the open file: opens Search seeded with `@`, which lists the file's outline (an `@` typed into a plain `Ctrl`+`P` still searches paths). Also while typing in the editor (`Mod`+`Shift`+`O` stays Open a tool) |
 | `Mod`+`S` | Save the open file |
 | `Mod`+`Shift`+`F` | Search file contents, also while typing in the editor |
 | `Alt`+`T` (or `Mod`+`Shift`+`E`, VS Code's Explorer key) | Focus the file tree, also from inside the editor |
