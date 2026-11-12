@@ -660,21 +660,8 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                 {
                     id: "jarvis",
                     label: "Jarvis",
+                    // who Jarvis is, then how it shows, then what it does
                     rows: [
-                        {
-                            id: "appearance.petform",
-                            title: "Form",
-                            desc: "Sprout walks the footer. The hologram stays in the bottom-right corner: blue rings while all is calm, an amber neural sphere while something waits on you. It draws with WebGL, about 20–40 MB more. Float and the fold keep Sprout.",
-                            key: "jarvis.pet.form",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.petholosize",
-                            title: "Hologram size",
-                            desc: "How big the hologram is in its corner: S, M, or L (132 px). Sprout keeps its size.",
-                            key: "jarvis.pet.hologramsize",
-                            scope: "local",
-                        },
                         {
                             id: "appearance.petcharacter",
                             title: "Character",
@@ -687,6 +674,20 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             title: "Jarvis in Vietnam's colours",
                             desc: "The flag shirt, or the flag in its hand. On 30/4, 1/5 and 2/9 it wears the shirt even when this is off.",
                             key: "jarvis.pet.outfit",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petform",
+                            title: "Form",
+                            desc: "Sprout walks the footer. The hologram stays in the bottom-right corner: blue rings while all is calm, an amber neural sphere while something waits on you. It draws with WebGL, about 20–40 MB more. Float and the fold keep Sprout.",
+                            key: "jarvis.pet.form",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petholosize",
+                            title: "Hologram size",
+                            desc: "How big the hologram is in its corner: S, M, or L (132 px). Sprout keeps its size.",
+                            key: "jarvis.pet.hologramsize",
                             scope: "local",
                         },
                         {

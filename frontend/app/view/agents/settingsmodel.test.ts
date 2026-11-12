@@ -375,7 +375,7 @@ describe("settings pages", () => {
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
         expect(cards["jarvis/jarvis"]).toEqual([
-            "appearance.petform", "appearance.petholosize", "appearance.petcharacter", "appearance.petoutfit", "appearance.petstay", "appearance.petquotes",
+            "appearance.petcharacter", "appearance.petoutfit", "appearance.petform", "appearance.petholosize", "appearance.petstay", "appearance.petquotes",
         ]);
         expect(cards["jarvis/folding"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
         expect(cards["jarvis/office"]).toEqual([
