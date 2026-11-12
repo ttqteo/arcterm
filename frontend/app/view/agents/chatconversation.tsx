@@ -21,10 +21,11 @@
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
+import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, GitFork } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, EyeOff, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
@@ -49,6 +50,7 @@ import { forkFromChat } from "./chatforkaction";
 import { sameChatItem } from "./chatitemeq";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
+import { btwQuestion } from "./chatpending";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { ChatSteps } from "./chatstepsview";
@@ -240,34 +242,68 @@ function CommandCard({
     );
 }
 
-// a /btw you asked from Chat: the question, then the side answer the arc mod's fork of the session gave, as Markdown, under
-// a label saying it is no part of the conversation (Claude never reads it), or why there is none. Copy takes the answer.
-function BtwCard({ command, btw, onContextMenu }: { command: string; btw: BtwAnswer; onContextMenu: CopyMenu }) {
-    const copyText = "answer" in btw ? btw.answer : btw.failure;
+// the arc mod's failure reasons are lowercase clauses (btw-core.ts forkFailure); the card shows one as a sentence
+function asSentence(text: string): string {
+    const t = text.trim();
+    const capped = t.charAt(0).toUpperCase() + t.slice(1);
+    return /[.!?]$/.test(capped) ? capped : `${capped}.`;
+}
+
+// a /btw you asked from Chat, as one card in Claude's column, since it is mostly an answer: your question as its header,
+// the side answer the arc mod's fork of the session gave as Markdown under it, or why there is none, and a footer saying
+// Claude never reads it. `btw` null is the card while the fork still asks (chatpane.tsx PendingCommand), so the
+// transcript's copy that takes its place changes only the body.
+export function BtwCard({
+    question,
+    btw,
+    onContextMenu,
+}: {
+    question: string;
+    btw: BtwAnswer | null;
+    onContextMenu?: CopyMenu;
+}) {
+    const copyText = btw == null ? null : "answer" in btw ? btw.answer : btw.failure;
     return (
         <div
-            data-chat-you
             data-chat-command
             data-chat-btw
-            onContextMenu={onContextMenu(copyText)}
-            className="group relative mb-1 max-w-[75%] min-w-[220px] self-end"
+            data-chat-btw-state={btw == null ? "asking" : "answer" in btw ? "answered" : "failed"}
+            onContextMenu={copyText != null && onContextMenu != null ? onContextMenu(copyText) : undefined}
+            className="mb-1 flex min-w-0 flex-col self-stretch overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised"
         >
-            <div className="flex flex-col overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised">
-                <div className="px-[14px] py-[8px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]">
-                    {command}
-                </div>
-                <div className="flex flex-col gap-1 border-t border-edge-faint px-[14px] py-[9px]">
-                    <span className="text-[11px] text-muted">side answer · not in the conversation</span>
-                    {"answer" in btw ? (
-                        <CouncilText text={btw.answer} className="text-[13.5px] leading-[1.6] text-ink-hi" />
-                    ) : (
-                        <span data-chat-btw-failure className="text-[12.5px] text-muted">
-                            No side answer: {btw.failure}
-                        </span>
-                    )}
-                </div>
+            <div className="flex min-h-[38px] items-center gap-2 py-[6px] pr-[10px] pl-[16px]">
+                <span className="flex-none rounded-[5px] border border-edge-strong bg-pill px-1.5 text-[11px] leading-[17px] font-medium text-muted">
+                    btw
+                </span>
+                <span className="min-w-0 flex-1 text-[13.5px] font-medium text-primary [overflow-wrap:anywhere]">
+                    {question}
+                </span>
+                {btw != null && "answer" in btw ? (
+                    <CopyButton title="Copy the side answer" content={btw.answer} className="p-1 text-[12px]" />
+                ) : null}
             </div>
-            <BubbleCopy text={copyText} align="right" />
+            <div className="flex flex-col gap-3 border-t border-edge-faint px-[16px] pt-[12px] pb-[16px]">
+                {btw == null ? (
+                    <>
+                        <span className="text-[12px] text-muted">Asking on the side…</span>
+                        <div className="flex flex-col gap-[9px]">
+                            <SkeletonLine className="h-[10px] w-[92%] rounded-[4px]" />
+                            <SkeletonLine className="h-[10px] w-[70%] rounded-[4px]" />
+                        </div>
+                    </>
+                ) : "answer" in btw ? (
+                    <CouncilText text={btw.answer} className="text-[13.5px] leading-[1.6] text-ink-hi" />
+                ) : (
+                    <div data-chat-btw-failure className="flex flex-col gap-1">
+                        <span className="text-[12.5px] font-medium text-secondary">No side answer</span>
+                        <span className="text-[12.5px] leading-[1.55] text-muted">{asSentence(btw.failure)}</span>
+                    </div>
+                )}
+            </div>
+            <div className="flex items-center gap-[7px] border-t border-edge-faint px-[16px] py-[8px] text-[11.5px] text-muted">
+                <EyeOff size={12} strokeWidth={2} aria-hidden className="flex-none" />
+                <span>Not in the conversation: Claude doesn't read side answers</span>
+            </div>
         </div>
     );
 }
@@ -300,7 +336,13 @@ function YouBubble({
         return <CommandCard command={item.command.slice(2)} bash shell={item.shell} onContextMenu={onContextMenu} />;
     }
     if ("command" in item && item.btw != null) {
-        return <BtwCard command={item.command} btw={item.btw} onContextMenu={onContextMenu} />;
+        return (
+            <BtwCard
+                question={btwQuestion(item.command) ?? item.command}
+                btw={item.btw}
+                onContextMenu={onContextMenu}
+            />
+        );
     }
     if ("command" in item && (item.shell != null || item.terminal)) {
         return (

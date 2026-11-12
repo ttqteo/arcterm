@@ -42,7 +42,7 @@ import { openQuestion } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
-import { ChatConversation, youBubbleBox } from "./chatconversation";
+import { BtwCard, ChatConversation, youBubbleBox } from "./chatconversation";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
@@ -55,7 +55,14 @@ import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
-import { pendingLine, pendingStill, queuedBubbleUp, type PendingKind, type PendingMessage } from "./chatpending";
+import {
+    btwQuestion,
+    pendingLine,
+    pendingStill,
+    queuedBubbleUp,
+    type PendingKind,
+    type PendingMessage,
+} from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
@@ -106,10 +113,11 @@ function useRisesFromBox(sentAt: number): boolean {
     return rises;
 }
 
-// a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet: the command, dimmed, as its card will
-// draw it, and under it what it waits on: the side answer the arc mod is asking a fork of the session for, the panel
-// open on Claude Code's own screen (its row lands only once it closes), or the command running (its row and output land
-// only once it finishes, or goes to the background at 120 s), with a way to the terminal for the last two
+// a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet. A /btw is its card asking (BtwCard), the
+// side answer the arc mod is asking a fork of the session for still to come. The others are the command, dimmed, as its
+// card will draw it, and under it what it waits on: the panel open on Claude Code's own screen (its row lands only once
+// it closes), or the command running (its row and output land only once it finishes, or goes to the background at
+// 120 s), with a way to the terminal
 function PendingCommand({
     text,
     kind,
@@ -122,6 +130,22 @@ function PendingCommand({
     onOpenTerminal?: () => void;
 }) {
     const rises = useRisesFromBox(sentAt);
+    if (kind === "btw") {
+        // the card the transcript's copy will draw, asking: only its body changes when the answer lands
+        return (
+            <motion.div
+                data-chat-pending
+                data-chat-pending-kind={kind}
+                variants={sentRise}
+                initial={rises ? "initial" : false}
+                animate="animate"
+                style={{ transformOrigin: "bottom center" }}
+                className="flex flex-col"
+            >
+                <BtwCard question={btwQuestion(text) ?? text.trim()} btw={null} />
+            </motion.div>
+        );
+    }
     return (
         <motion.div
             data-chat-pending
@@ -136,10 +160,8 @@ function PendingCommand({
                 {text.trim()}
             </div>
             <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted">
-                    {kind === "btw" ? "Asking on the side…" : kind === "bash" ? "Running…" : "Open in Terminal"}
-                </span>
-                {kind !== "btw" && onOpenTerminal != null ? (
+                <span className="text-[11px] text-muted">{kind === "bash" ? "Running…" : "Open in Terminal"}</span>
+                {onOpenTerminal != null ? (
                     <button
                         type="button"
                         onClick={onOpenTerminal}

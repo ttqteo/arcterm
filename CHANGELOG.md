@@ -56,6 +56,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   suggestion showing, Tab still completes the word under the caret.
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,
   until Claude Code's own title for it arrives.
+- A `/btw` side question in Chat is now one card across Claude's column: your question as its header (no longer the raw
+  command in monospace), the side answer under it with its own Copy button, and a footer saying Claude doesn't read
+  it. While it asks, the same card shows placeholder lines, so nothing jumps when the answer lands.
 - Inline code in Chat and other markdown is now lavender, as in Claude Code's terminal, instead of gold, so it no
   longer blends into a highlighted sentence.
 - Chat's jump-to-latest button now shows its shortcut (Ctrl+End) beside the ↓, not only in its tooltip.
