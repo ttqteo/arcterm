@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael-sync edge fixes (branch `fix/kael-sync-edges`, 2026-11-12), unit-tested only:
+  on a Mac, Option+←/→ in Code's editor moves a word (Windows: Alt+←/→ there still goes back/forward);
+  Code → Send review shows an asking agent greyed with "answer it first";
+  Diff → pick a worktree in the sidebar → `m` on a line opens a comment, and the send bar offers a new agent in that
+  worktree; comment a dirty file in project scope, commit another file → the comment stays drawn;
+  start a Code comment (Alt+M), switch project → no comment box on the next project's file.
 - [ ] (arcterm) Chat's compaction summary collapses from inside: in a Chat that compacted, click the Compacted pill
   → the summary shows a Collapse button at its top right and at its end; the top one closes it, the end one closes it
   and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider). Since 2026-11-12 both
