@@ -79,6 +79,7 @@ import diffStatesScenarios from "./scenarios-diff-states.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
@@ -67134,6 +67135,7 @@ export const SCENARIOS = [
     ...usageWorkScenarios(KAEL_KITS),
     ...setupInstructionsScenarios(KAEL_KITS),
     ...kaelKeysScenarios(KAEL_KITS),
+    ...kaelAskKeysScenarios(KAEL_KITS),
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];
